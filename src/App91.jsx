@@ -1247,6 +1247,89 @@ function Slider({ label, value, min, max, step, format, onChange }) {
   );
 }
 
+/* ════ DUAL INPUT — text box + slider auto-sync ════ */
+function DualInput({ label, value, min, max, step, format, onChange }) {
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 6,
+        }}
+      >
+        <span style={{ fontSize: 12, color: "#94a3b8" }}>{label}</span>
+        <input
+          type="number"
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => {
+            const v = Math.max(min, Math.min(max, Number(e.target.value)));
+            if (!isNaN(v)) onChange(v);
+          }}
+          style={{
+            width: 100,
+            background: "#0d1b2a",
+            border: "1px solid #1e3a5f",
+            color: "#5eead4",
+            borderRadius: 5,
+            padding: "3px 8px",
+            fontSize: 12,
+            fontFamily: "'DM Mono',monospace",
+            textAlign: "right",
+          }}
+        />
+      </div>
+      <Slider
+        label=""
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        format={format}
+        onChange={onChange}
+      />
+    </div>
+  );
+}
+
+/* ════ IMPORT / EXPORT ════ */
+function exportProfile(values, name = "AiRA_Profile") {
+  const blob = new Blob([JSON.stringify(values, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${name}_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importProfile(onLoad) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json";
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        onLoad(data);
+      } catch {
+        alert("Invalid profile file — must be a valid AiRA JSON export.");
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
 function FanChart({ pcts, retireAge, ssAge, inf, useReal, title }) {
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
   return (
@@ -3951,7 +4034,474 @@ function ActionPlanTab() {
   );
 }
 
-function AssumptionsTab({ values, onChange }) {
+function ProfileWizard({ values, onChange }) {
+  const [step, setStep] = useState(0);
+
+  const STEPS = [
+    { label: "About You", icon: "👤", sub: `${values.currentAge} yrs old` },
+    { label: "Current Savings", icon: "💰", sub: `${fmtM(values.port)} saved` },
+    { label: "Contributions", icon: "📋", sub: `${fmtK(values.contrib)}/yr` },
+    { label: "Retirement Plan", icon: "🎯", sub: `Age ${values.retireAge}` },
+    {
+      label: "Other Income",
+      icon: "🏖",
+      sub: `$${(values.ab / 1000).toFixed(0)}K/yr`,
+    },
+    { label: "Assumptions", icon: "⚙️", sub: "Model parameters" },
+  ];
+
+  const PANELS = [
+    <AboutYouPanel values={values} onChange={onChange} />,
+    <SavingsPanel values={values} onChange={onChange} />,
+    <ContribPanel values={values} onChange={onChange} />,
+    <RetirementPanel values={values} onChange={onChange} />,
+    <IncomePanel values={values} onChange={onChange} />,
+    <AssumptionsPanel values={values} onChange={onChange} />,
+  ];
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "220px 1fr",
+        background: "rgba(255,255,255,0.02)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: 12,
+        overflow: "hidden",
+      }}
+    >
+      {/* LEFT SIDEBAR */}
+      <div
+        style={{ borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}
+      >
+        {STEPS.map((s, i) => (
+          <div
+            key={i}
+            onClick={() => setStep(i)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 12px",
+              borderRadius: 8,
+              marginBottom: 4,
+              cursor: "pointer",
+              background: i === step ? "rgba(13,148,136,0.15)" : "transparent",
+              border:
+                i === step
+                  ? "1px solid rgba(13,148,136,0.3)"
+                  : "1px solid transparent",
+            }}
+          >
+            {/* Dot */}
+            <div
+              style={{
+                width: 11,
+                height: 11,
+                borderRadius: "50%",
+                flexShrink: 0,
+                background:
+                  i < step
+                    ? "#0d9488"
+                    : i === step
+                    ? "#14b8a6"
+                    : "rgba(255,255,255,0.1)",
+                border: `2px solid ${
+                  i <= step ? "#0d9488" : "rgba(255,255,255,0.15)"
+                }`,
+                boxShadow: i === step ? "0 0 8px #0d948866" : "none",
+              }}
+            />
+            <div>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: i === step ? "#e2e8f0" : "#64748b",
+                }}
+              >
+                {s.icon} {s.label}
+              </div>
+              <div style={{ fontSize: 10, color: "#334155" }}>{s.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* RIGHT PANEL */}
+      <div style={{ padding: 24 }}>
+        <div
+          style={{
+            fontSize: 16,
+            fontWeight: 700,
+            color: "#e2e8f0",
+            marginBottom: 4,
+          }}
+        >
+          {STEPS[step].icon} {STEPS[step].label}
+        </div>
+        <div style={{ fontSize: 12, color: "#475569", marginBottom: 20 }}>
+          {STEPS[step].sub}
+        </div>
+
+        {/* Panel content */}
+        {PANELS[step]}
+
+        {/* Navigation */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: 24,
+            paddingTop: 16,
+            borderTop: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <button
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            disabled={step === 0}
+            style={{
+              padding: "7px 18px",
+              borderRadius: 7,
+              border: "1px solid rgba(255,255,255,0.1)",
+              background: "transparent",
+              color: step === 0 ? "#334155" : "#94a3b8",
+              cursor: step === 0 ? "not-allowed" : "pointer",
+              fontSize: 12,
+              fontFamily: "inherit",
+            }}
+          >
+            ← Previous
+          </button>
+          <div style={{ fontSize: 11, color: "#334155" }}>
+            {step + 1} / {STEPS.length}
+          </div>
+          <button
+            onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
+            disabled={step === STEPS.length - 1}
+            style={{
+              padding: "7px 18px",
+              borderRadius: 7,
+              border: "none",
+              background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+              color: "white",
+              cursor: step === STEPS.length - 1 ? "not-allowed" : "pointer",
+              fontSize: 12,
+              fontFamily: "inherit",
+              fontWeight: 600,
+            }}
+          >
+            Next →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SavingsPanel({ values, onChange }) {
+  const GOAL = 3_200_000;
+  // Account breakdown — auto-sum to port
+  const solo401k = values.solo401k || 0;
+  const alpha401k = values.alpha401k || 0;
+  const rothFid = values.rothFid || 0;
+  const rothVgd = values.rothVgd || 0;
+  const hsaBal = values.hsaBal || 0;
+  const taxable = values.taxable || 0;
+  const autoTotal = solo401k + alpha401k + rothFid + rothVgd + hsaBal + taxable;
+  const percentToGoal = Math.min(100, (autoTotal / GOAL) * 100);
+  const remaining = Math.max(0, GOAL - autoTotal);
+
+  // Keep port in sync with auto-total
+  const handleAcct = (k, v) => {
+    onChange(k, v);
+    // recalc total — use current values + new value
+    const map = {
+      solo401k,
+      alpha401k,
+      rothFid,
+      rothVgd,
+      hsaBal,
+      taxable,
+      [k]: v,
+    };
+    const total = Object.values(map).reduce((a, b) => a + b, 0);
+    onChange("port", total);
+  };
+
+  const ACCOUNTS = [
+    {
+      k: "solo401k",
+      label: "Solo 401k (Pre-Tax)",
+      color: "#0ea5e9",
+      max: 3_000_000,
+    },
+    {
+      k: "alpha401k",
+      label: "Alpha FMC 401k (Pre-Tax)",
+      color: "#0ea5e9",
+      max: 500_000,
+    },
+    {
+      k: "rothFid",
+      label: "Roth IRA — Fidelity",
+      color: "#a78bfa",
+      max: 1_000_000,
+    },
+    {
+      k: "rothVgd",
+      label: "Roth IRA — Vanguard",
+      color: "#a78bfa",
+      max: 500_000,
+    },
+    { k: "hsaBal", label: "HSA", color: "#34d399", max: 200_000 },
+    { k: "taxable", label: "Taxable / SGOV", color: "#fbbf24", max: 500_000 },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Account breakdown grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {ACCOUNTS.map((a) => (
+          <div
+            key={a.k}
+            style={{
+              background: "rgba(255,255,255,0.02)",
+              border: `1px solid ${a.color}22`,
+              borderRadius: 8,
+              padding: "10px 14px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: a.color,
+                fontWeight: 600,
+                marginBottom: 8,
+              }}
+            >
+              {a.label}
+            </div>
+            <DualInput
+              label=""
+              value={values[a.k] || 0}
+              min={0}
+              max={a.max}
+              step={5_000}
+              format={(v) => fmtM(v)}
+              onChange={(v) => handleAcct(a.k, v)}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Auto-total summary */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 10,
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: 10,
+          }}
+        >
+          <span style={{ fontSize: 12, color: "#e2e8f0" }}>
+            🎯 $3.2M Goal Progress
+          </span>
+          <span
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "#5eead4",
+              fontFamily: "'DM Mono',monospace",
+            }}
+          >
+            {percentToGoal.toFixed(1)}%
+          </span>
+        </div>
+        <div
+          style={{
+            height: 10,
+            background: "rgba(255,255,255,0.1)",
+            borderRadius: 5,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${percentToGoal}%`,
+              height: "100%",
+              background: "linear-gradient(90deg,#0d9488,#14b8a6)",
+              borderRadius: 5,
+              transition: "width 0.3s",
+            }}
+          />
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4,1fr)",
+            gap: 8,
+            marginTop: 12,
+          }}
+        >
+          {[
+            { label: "Pre-Tax", val: solo401k + alpha401k, color: "#0ea5e9" },
+            { label: "Roth", val: rothFid + rothVgd, color: "#a78bfa" },
+            { label: "HSA", val: hsaBal, color: "#34d399" },
+            { label: "Taxable", val: taxable, color: "#fbbf24" },
+          ].map((s) => (
+            <div key={s.label} style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: "#475569" }}>{s.label}</div>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: s.color,
+                  fontFamily: "'DM Mono',monospace",
+                }}
+              >
+                {fmtM(s.val)}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginTop: 10,
+            fontSize: 11,
+            color: "#64748b",
+          }}
+        >
+          <span>
+            Total:{" "}
+            <strong style={{ color: "#e2e8f0" }}>{fmtM(autoTotal)}</strong>
+          </span>
+          <span>
+            Remaining:{" "}
+            <strong style={{ color: "#f87171" }}>{fmtM(remaining)}</strong>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AboutYouPanel({ values, onChange }) {
+  const yearsToRetire = Math.max(0, values.retireAge - values.currentAge);
+  const yearsInRetire = Math.max(0, values.endAge - values.retireAge);
+  const totalHorizon = yearsToRetire + yearsInRetire;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Three sliders */}
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}
+      >
+        {[
+          {
+            label: "Current Age",
+            k: "currentAge",
+            min: 30,
+            max: 75,
+            step: 1,
+            fmt: (v) => `${v} yrs`,
+          },
+          {
+            label: "Retirement Age",
+            k: "retireAge",
+            min: 50,
+            max: 75,
+            step: 1,
+            fmt: (v) => `${v} yrs`,
+          },
+          {
+            label: "Planning Horizon",
+            k: "endAge",
+            min: 75,
+            max: 100,
+            step: 1,
+            fmt: (v) => `to age ${v}`,
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k]}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Summary row */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 8,
+          padding: "14px 20px",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 16,
+        }}
+      >
+        {[
+          {
+            label: "Years to retirement",
+            val: yearsToRetire,
+            color: "#14b8a6",
+          },
+          {
+            label: "Years in retirement",
+            val: yearsInRetire,
+            color: "#a78bfa",
+          },
+          {
+            label: "Total planning horizon",
+            val: `${totalHorizon} yrs`,
+            color: "#e2e8f0",
+          },
+        ].map((m) => (
+          <div key={m.label}>
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
+              {m.label}
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                color: m.color,
+                fontFamily: "'DM Mono',monospace",
+                lineHeight: 1,
+              }}
+            >
+              {m.val}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AssumptionsPanel({ values, onChange }) {
   const {
     dob,
     abReliability,
@@ -4190,6 +4740,430 @@ function AssumptionsTab({ values, onChange }) {
   );
 }
 
+function ContribPanel({ values, onChange }) {
+  const annual401k = values.contrib || 0;
+  const hsaAnnual = (values.hsaMonthly || 795.83) * 12;
+  const employerMatch = values.employerMatch || 4.5;
+  const matchAmount = (annual401k * employerMatch) / 100;
+  const totalSavings = annual401k + hsaAnnual + matchAmount;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            401(k) Annual Contribution
+          </div>
+          <Slider
+            label=""
+            value={annual401k}
+            min={0}
+            max={80_000}
+            step={500}
+            format={(v) => fmtK(v) + "/yr"}
+            onChange={(v) => onChange("contrib", v)}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            HSA Monthly Contribution
+          </div>
+          <Slider
+            label=""
+            value={values.hsaMonthly || 795.83}
+            min={0}
+            max={1000}
+            step={50}
+            format={(v) => fmtM(v) + "/mo"}
+            onChange={(v) => onChange("hsaMonthly", v)}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Employer Match (%)
+          </div>
+          <Slider
+            label=""
+            value={employerMatch}
+            min={0}
+            max={10}
+            step={0.5}
+            format={(v) => v.toFixed(1) + "%"}
+            onChange={(v) => onChange("employerMatch", v)}
+          />
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 10,
+          padding: 18,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 16,
+        }}
+      >
+        {[
+          { label: "401(k) Contribution", val: annual401k, color: "#0ea5e9" },
+          { label: "Employer Match", val: matchAmount, color: "#34d399" },
+          { label: "HSA Contribution", val: hsaAnnual, color: "#a78bfa" },
+        ].map((m) => (
+          <div key={m.label}>
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
+              {m.label}
+            </div>
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                color: m.color,
+                fontFamily: "'DM Mono',monospace",
+                lineHeight: 1,
+              }}
+            >
+              {fmtK(m.val)}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          background: "linear-gradient(135deg, #0d948818, #14b8a618)",
+          border: "1px solid #0d948844",
+          borderRadius: 10,
+          padding: 18,
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
+          💰 Total Annual Savings Rate
+        </div>
+        <div
+          style={{
+            fontSize: 36,
+            fontWeight: 900,
+            color: "#14b8a6",
+            fontFamily: "'DM Mono',monospace",
+            lineHeight: 1,
+          }}
+        >
+          {fmtK(totalSavings)}
+          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>
+            /yr
+          </span>
+        </div>
+        <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
+          Including employer match and HSA
+        </div>
+      </div>
+    </div>
+  );
+}
+function RetirementPanel({ values, onChange }) {
+  const spend = values.sp || 100_000;
+  const floor = values.gkFloor || 88_000;
+  const ceiling = values.gkCeiling || 115_000;
+  const floorPct = (floor / spend) * 100;
+  const ceilingPct = (ceiling / spend) * 100;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        {[
+          {
+            k: "sp",
+            label: "Annual Spend (Both Households)",
+            min: 30000,
+            max: 200000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+          {
+            k: "spThailand",
+            label: "Vin Thailand Solo Spend",
+            min: 20000,
+            max: 150000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+          {
+            k: "spMiraNJ",
+            label: "Mira NJ Household Spend",
+            min: 20000,
+            max: 150000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k] || 0}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
+          </div>
+        ))}
+        {[
+          {
+            k: "gkFloor",
+            label: "Guyton-Klinger Floor",
+            min: 20000,
+            max: 150000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+          {
+            k: "gkCeiling",
+            label: "Guyton-Klinger Ceiling",
+            min: 50000,
+            max: 250000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k] || 0}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* GK % of spend */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 10,
+          padding: 18,
+        }}
+      >
+        <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 16 }}>
+          🛡️ Guardrails as % of Spend
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 20,
+            justifyContent: "center",
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
+              Floor
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                color: "#fbbf24",
+                fontFamily: "'DM Mono',monospace",
+              }}
+            >
+              {floorPct.toFixed(0)}%
+            </div>
+            <div style={{ fontSize: 10, color: "#334155" }}>
+              {fmtK(floor)} / {fmtK(spend)}
+            </div>
+          </div>
+          <div
+            style={{
+              width: 1,
+              height: 30,
+              background: "rgba(255,255,255,0.1)",
+            }}
+          />
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
+              Ceiling
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                color: "#34d399",
+                fontFamily: "'DM Mono',monospace",
+              }}
+            >
+              {ceilingPct.toFixed(0)}%
+            </div>
+            <div style={{ fontSize: 10, color: "#334155" }}>
+              {fmtK(ceiling)} / {fmtK(spend)}
+            </div>
+          </div>
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: "#64748b",
+            marginTop: 16,
+            fontStyle: "italic",
+          }}
+        >
+          GK adjusts spending ±10% when withdrawal rate deviates 20% from
+          initial.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IncomePanel({ values, onChange }) {
+  const ab = values.ab || 20_000;
+  const ssb = values.ssb || 31_543;
+  const totalRetirementIncome = ab + ssb;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        {[
+          {
+            k: "ab",
+            label: "Airbnb Net Income",
+            min: 0,
+            max: 60_000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+          {
+            k: "ssb",
+            label: "Social Security Benefit",
+            min: 0,
+            max: 50_000,
+            step: 500,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k] || 0}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
+          </div>
+        ))}
+        {[
+          {
+            k: "ssAge",
+            label: "SS Start Age",
+            min: 62,
+            max: 70,
+            step: 1,
+            fmt: (v) => "Age " + v,
+          },
+          {
+            k: "abReliability",
+            label: "Airbnb Reliability",
+            min: 0,
+            max: 100,
+            step: 5,
+            fmt: (v) => v + "%",
+          },
+          {
+            k: "abGrowth",
+            label: "Airbnb Growth Rate",
+            min: 0,
+            max: 10,
+            step: 0.5,
+            fmt: (v) => v + "%/yr",
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k] || 0}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Total income at retirement */}
+      <div
+        style={{
+          background: "linear-gradient(135deg, #05966918, #0ea5e918)",
+          border: "1px solid #05966944",
+          borderRadius: 10,
+          padding: 18,
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
+          🏖️ Total Income at Retirement (Pre-Tax)
+        </div>
+        <div
+          style={{
+            fontSize: 36,
+            fontWeight: 900,
+            color: "#34d399",
+            fontFamily: "'DM Mono',monospace",
+            lineHeight: 1,
+          }}
+        >
+          {fmtK(totalRetirementIncome)}
+          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>
+            /yr
+          </span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 20,
+            marginTop: 12,
+            fontSize: 12,
+            color: "#64748b",
+          }}
+        >
+          <span>🏖 Airbnb: {fmtK(ab)}</span>
+          <span>
+            🏛 SS: {fmtK(ssb)} @ age {values.ssAge || 64}
+          </span>
+        </div>
+        <div style={{ fontSize: 10, color: "#334155", marginTop: 8 }}>
+          Airbnb reliability: {values.abReliability || 80}% · Growth:{" "}
+          {values.abGrowth || 3}%/yr
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AiRAForecaster() {
   const [mode, setMode] = useState("vin");
   const [activeTab, setTab] = useState("scenarios");
@@ -4394,7 +5368,7 @@ export default function AiRAForecaster() {
               Healthcare shock · 3,000 paths
             </div>
           </div>
-          <div style={{ display: "flex", gap: 5 }}>
+          <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
             {Object.entries(PROFILES).map(([k, v]) => (
               <button
                 key={k}
@@ -4407,6 +5381,95 @@ export default function AiRAForecaster() {
                 {v.label}
               </button>
             ))}
+            <div
+              style={{
+                width: 1,
+                height: 20,
+                background: "rgba(255,255,255,0.1)",
+                margin: "0 4px",
+              }}
+            />
+            <button
+              className="mbtn"
+              title="Export profile to JSON"
+              onClick={() =>
+                exportProfile({
+                  ...assumptions,
+                  retireAge: retAge,
+                  endAge,
+                  port,
+                  contrib,
+                  sp,
+                  ssAge,
+                  ssb,
+                  ab,
+                })
+              }
+            >
+              ⬇ Export
+            </button>
+            <button
+              className="mbtn"
+              title="Import profile from JSON"
+              onClick={() =>
+                importProfile((data) => {
+                  if (data.retireAge) setRetAge(data.retireAge);
+                  if (data.endAge) setEndAge(data.endAge);
+                  if (data.port) setPort(data.port);
+                  if (data.contrib) setContrib(data.contrib);
+                  if (data.sp) setSp(data.sp);
+                  if (data.ssAge) setSsAge(data.ssAge);
+                  if (data.ssb) setSsb(data.ssb);
+                  if (data.ab) setAb(data.ab);
+                  [
+                    "dob",
+                    "abReliability",
+                    "abGrowth",
+                    "ssCola",
+                    "preRetireEq",
+                    "postRetireEq",
+                    "hcShockAge",
+                    "hcProb",
+                    "hcMin",
+                    "hcMax",
+                  ].forEach((k) => {
+                    if (data[k] !== undefined) updateAssumption(k, data[k]);
+                  });
+                  setStale(true);
+                })
+              }
+            >
+              ⬆ Import
+            </button>
+            <a
+              href="https://buymeacoffee.com/vincentplansfreedom"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "5px 13px",
+                borderRadius: 7,
+                border: "1px solid rgba(255,193,7,0.4)",
+                background: "rgba(255,193,7,0.08)",
+                color: "#fbbf24",
+                fontSize: 11,
+                fontFamily: "'DM Sans',sans-serif",
+                fontWeight: 600,
+                textDecoration: "none",
+                cursor: "pointer",
+                transition: "all 0.2s",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "rgba(255,193,7,0.18)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "rgba(255,193,7,0.08)")
+              }
+            >
+              ☕ Buy me a coffee
+            </a>
           </div>
           <div style={{ textAlign: "right" }}>
             <div
@@ -4924,9 +5987,31 @@ export default function AiRAForecaster() {
                 )}
                 {activeTab === "actionplan" && <ActionPlanTab />}
                 {activeTab === "assumptions" && (
-                  <AssumptionsTab
-                    values={assumptions}
-                    onChange={updateAssumption}
+                  <ProfileWizard
+                    values={{
+                      ...assumptions,
+                      currentAge,
+                      retireAge: retAge,
+                      endAge,
+                      port,
+                      contrib,
+                      sp,
+                      ssAge,
+                      ssb,
+                      ab,
+                    }}
+                    onChange={(k, v) => {
+                      updateAssumption(k, v);
+                      // also wire to main sliders
+                      if (k === "retireAge") setRetAge(v);
+                      if (k === "endAge") setEndAge(v);
+                      if (k === "port") setPort(v);
+                      if (k === "contrib") setContrib(v);
+                      if (k === "sp") setSp(v);
+                      if (k === "ssAge") setSsAge(v);
+                      if (k === "ssb") setSsb(v);
+                      if (k === "ab") setAb(v);
+                    }}
                   />
                 )}
               </>
