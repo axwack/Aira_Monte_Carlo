@@ -83,7 +83,7 @@ const PROFILES = {
     tax: true,
     real: true,
     gkFloor: 88_000, // both households floor
-    gkFloorThailand: 48_000, // solo floor (FIX 1: added)
+    gkFloorThailand: 48_000, // solo floor
     gkTarget: 100_000,
     gkCeiling: 115_000,
     mortBalance: 267_518,
@@ -198,8 +198,8 @@ function bootstrapDraw(arr, rand) {
   return arr[Math.floor(rand() * arr.length)];
 }
 
-function portReturn(age, rand) {
-  const eqW = age < 62 ? 0.91 : 0.7;
+function portReturn(age, rand, preRetireEq, postRetireEq) {
+  const eqW = age < 62 ? (preRetireEq || 91) / 100 : (postRetireEq || 70) / 100;
   return (
     eqW * bootstrapDraw(SP500, rand) + (1 - eqW) * bootstrapDraw(BONDS, rand)
   );
@@ -219,18 +219,6 @@ function taxDragRate(age, ssAge, useTax) {
   return 0.132;
 }
 
-/**
- * Guyton-Klinger dynamic withdrawal — replaces all inline GK logic.
- * Called once per year inside each MC path and Roth Explorer year.
- * @param {number} portfolioValue - portfolio at start of year
- * @param {number} initialWR - initial withdrawal rate set at retirement
- * @param {number} lastWithdrawal - last year's withdrawal amount
- * @param {number} lastReturn - previous year's portfolio return (decimal)
- * @param {number} inflationRate - year's inflation rate (decimal)
- * @param {number} floor - absolute minimum withdrawal (never breach)
- * @param {number} ceiling - absolute maximum withdrawal
- * @returns {number} adjusted withdrawal amount
- */
 function guytonKlingerWithdrawal(
   portfolioValue,
   initialWR,
@@ -241,20 +229,14 @@ function guytonKlingerWithdrawal(
   ceiling
 ) {
   if (portfolioValue <= 0) return floor;
-  // 1. Inflation adjustment — skip if prior year return was negative
   let w =
     lastReturn >= 0 ? lastWithdrawal * (1 + inflationRate) : lastWithdrawal;
-  // 2. Current withdrawal rate
   const currentWR = w / portfolioValue;
-  // 3. Prosperity Rule — WR too low → increase 10%
   if (currentWR <= initialWR * 0.8) w *= 1.1;
-  // 4. Capital Preservation Rule — WR too high → decrease 10%
   else if (currentWR >= initialWR * 1.2) w *= 0.9;
-  // 5. Enforce floor and ceiling
   return Math.max(floor, Math.min(ceiling, w));
 }
 
-/* ════ TAX CALCULATOR (for GK deterministic path) ════ Added DS*/
 function calcYearTax(
   age,
   yr,
@@ -266,66 +248,52 @@ function calcYearTax(
   isTwoHousehold,
   inflationRate
 ) {
-  // 1. Taxable portion of Social Security (85% inclusion)
   const taxableSS = ssIncome * 0.85;
-
-  // 2. Total other income
   const otherIncome =
     (withdrawalAmount || 0) +
     (airbnbIncome || 0) +
     (rmdIncome || 0) +
     (conversionAmount || 0);
   const totalIncome = taxableSS + otherIncome;
-
-  // 3. Standard deduction (MFJ 2026 base $32,200, indexed by inflation)
   const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - 2026));
   let stdDeduction = Math.round(32200 * inflationFactor);
   if (age >= 65) stdDeduction += Math.round(3300 * inflationFactor);
-
   const taxableIncome = Math.max(0, totalIncome - stdDeduction);
-
-  // 4. Federal tax using indexed brackets
   const fedBrackets = idxB(FED_BRACKETS_2026, inflationFactor);
   const fedTax = progTax(taxableIncome, fedBrackets);
-
-  // 5. State tax: 0 if twoHousehold (FL/Thailand), else NJ brackets
   let stateTax = 0;
   if (!isTwoHousehold) {
     const njBrackets = idxB(NJ_BRACKETS_2026, inflationFactor);
     stateTax = progTax(taxableIncome, njBrackets);
   }
-
-  // 6. IRMAA (based on MAGI ≈ totalIncome before deductions)
   const magi = totalIncome;
   const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
-
   const totalTax = fedTax + stateTax + irmaa;
   const effectiveRate = totalIncome > 0 ? totalTax / totalIncome : 0;
-
-  // Marginal bracket – simplified: return top bracket rate
   let marginalBracket = 0;
   for (const b of fedBrackets) {
     if (taxableIncome > b.lo) marginalBracket = b.rate;
     else break;
   }
-
   return { fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket };
 }
-/* ════ MONTE CARLO ENGINE — all bugs fixed ════ */
+
 function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
   const retYrs = endAge - p.retireAge;
   const results = [];
-
-  // FIX 5: use 48_000 fallback not 0
   const gkFloor = p.gkFloor || 48_000;
   const gkCeiling = p.gkCeiling || 115_000;
 
   for (let i = 0; i < N; i++) {
     let port = p.port;
     for (let y = 0; y < accYrs; y++) {
-      port = port * (1 + portReturn(p.currentAge + y, rand)) + p.contrib;
+      port =
+        port *
+          (1 +
+            portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq)) +
+        p.contrib;
     }
     const portAtRetire = Math.round(port);
 
@@ -337,9 +305,8 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     let survived = true,
       exhaustAge = null;
     let sp = p.sp;
-    let lastReturn = 0; // track prior year return for GK inflation skip
+    let lastReturn = 0;
 
-    // initWR: net portfolio draw at retirement / portfolio at retirement
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
     const ab0 = p.useAb ? p.ab : 0;
     const initDraw =
@@ -349,10 +316,9 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
 
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
-      const r = portReturn(age, rand);
+      const r = portReturn(age, rand, p.preRetireEq, p.postRetireEq);
       const inflY = bootstrapDraw(INFL, rand);
 
-      // GK dynamic withdrawal — replaces both smile spending AND inline guardrails
       if (useGK && y > 0 && port > 0) {
         sp = guytonKlingerWithdrawal(
           port,
@@ -364,16 +330,14 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           gkCeiling
         );
       } else if (y > 0) {
-        // Non-GK fallback: smile or flat inflation
         sp = p.smile
           ? sp * (1 + (age < 75 ? gg : age < 85 ? sg : ng))
           : sp * (1 + inflY);
       }
-      lastReturn = r; // store for next year's inflation skip check
+      lastReturn = r;
 
       const ss =
         age >= p.ssAge ? p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y) : 0;
-      // Airbnb reliability — configurable (default 80%)
       const abReliable = rand() < (p.abReliability || 80) / 100;
       const ab =
         p.useAb && abReliable
@@ -381,7 +345,6 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           : 0;
       const need = Math.max(0, sp - ss - ab);
       const td = taxDragRate(age, p.ssAge, p.tax);
-      // Healthcare shock — configurable age/prob/range
       const hShock =
         age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100
           ? (p.hcMin || 70_000) +
@@ -436,7 +399,6 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   };
 }
 
-// FIX: runStress — fixed initWR + Airbnb reliability + healthcare shock
 function runStress(p, endAge, N = 2000, seed = 99) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
@@ -448,7 +410,11 @@ function runStress(p, endAge, N = 2000, seed = 99) {
   for (let i = 0; i < N; i++) {
     let port = p.port;
     for (let y = 0; y < accYrs; y++) {
-      port = port * (1 + portReturn(p.currentAge + y, rand)) + p.contrib;
+      port =
+        port *
+          (1 +
+            portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq)) +
+        p.contrib;
     }
     const portAtRetire = Math.round(port);
     const path = [portAtRetire];
@@ -465,7 +431,8 @@ function runStress(p, endAge, N = 2000, seed = 99) {
 
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
-      const eqW = age < 62 ? 0.91 : 0.7;
+      const eqW =
+        age < 62 ? (p.preRetireEq || 91) / 100 : (p.postRetireEq || 70) / 100;
       const eq =
         y < SEQ_2000_2012.length
           ? SEQ_2000_2012[y]
@@ -473,7 +440,6 @@ function runStress(p, endAge, N = 2000, seed = 99) {
       const r = eqW * eq + (1 - eqW) * bootstrapDraw(BONDS, rand);
       const inflY = bootstrapDraw(INFL, rand);
 
-      // GK dynamic withdrawal — same function as base MC
       if (y > 0 && port > 0) {
         sp = guytonKlingerWithdrawal(
           port,
@@ -488,13 +454,11 @@ function runStress(p, endAge, N = 2000, seed = 99) {
       lastReturn = r;
 
       const ss = age >= p.ssAge ? p.ssb * Math.pow(1.024, y) : 0;
-      // FIX 4: Airbnb unreliable in stress test too
       const ab =
         p.useAb && rand() < (p.abReliability || 80) / 100
           ? p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20))
           : 0;
       const td = taxDragRate(age, p.ssAge, p.tax);
-      // Healthcare shock in stress test — configurable
       const hShock =
         age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100
           ? (p.hcMin || 70_000) +
@@ -529,15 +493,13 @@ function runStress(p, endAge, N = 2000, seed = 99) {
   return { rate: results.filter((r) => r.survived).length / N, pcts };
 }
 
-/* ════ DETERMINISTIC GK SCHEDULE (Median Path) ════ Added as part of income analysis from DS*/
 function simulateMedianGK(p, inf) {
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
   const retYrs = p.endAge - p.retireAge;
   let port = p.port;
 
-  // Accumulation using median historical returns
   for (let y = 0; y < accYrs; y++) {
-    const ret = CALIB.phase1Mean / 100; // 9.68%
+    const ret = CALIB.phase1Mean / 100;
     port = port * (1 + ret) + p.contrib;
   }
 
@@ -556,11 +518,9 @@ function simulateMedianGK(p, inf) {
   for (let y = 0; y < retYrs; y++) {
     const age = p.retireAge + y;
     const yr = 2026 + (age - p.currentAge);
-    // Median return: phase1 (pre‑62) 9.68%, phase2 8.93%
     const ret = age < 62 ? CALIB.phase1Mean / 100 : CALIB.phase2Mean / 100;
     const inflY = inf / 100;
 
-    // Apply GK rule (same as in runMC)
     if (y > 0 && port > 0) {
       sp = guytonKlingerWithdrawal(
         port,
@@ -620,7 +580,7 @@ function simulateMedianGK(p, inf) {
   return { schedule, portAtRetire: Math.round(portAtRetire), initWR };
 }
 
-/* ════ ROTH CONVERSION EXPLORER — v6 Boldin-style ════ */
+/* ════ ROTH CONVERSION EXPLORER ════ */
 const FED_BRACKETS_2026 = [
   { lo: 0, hi: 24800, rate: 0.1 },
   { lo: 24800, hi: 100800, rate: 0.12 },
@@ -701,7 +661,7 @@ function buildRothExplorer(params = {}) {
     inf = 2.5,
     port = 2434000,
     twoHousehold = true,
-    rothMode = "fill_22", // fill_12 | fill_22 | fill_24 | irmaa_safe | no_convert
+    rothMode = "fill_22",
   } = params;
   const infR = inf / 100,
     retireYear = ROTH_BASE_YEAR + (retireAge - currentAge),
@@ -710,10 +670,9 @@ function buildRothExplorer(params = {}) {
     rothBal = port * 0.4,
     gr = 0.07;
 
-  // IRMAA threshold (MFJ, indexed) — used as ceiling when irmaa_safe selected
   function irmaaCeiling(yr) {
     const f = Math.pow(1.025, yr - 2026);
-    return Math.round(218000 * f); // first IRMAA tier
+    return Math.round(218000 * f);
   }
 
   const gkF = params.gkFloor || 48000;
@@ -728,9 +687,8 @@ function buildRothExplorer(params = {}) {
       cIrmaa = 0,
       cRmd = 0;
     const rows = [];
-    let sp = baseSp; // spending — will be adjusted by GK each year
-    let lastReturn = gr; // assume positive first year
-    // initWR for GK: net portfolio draw / portfolio at retirement
+    let sp = baseSp,
+      lastReturn = gr;
     const totalPort0 = pretaxBal + rothBal;
     const ss0 = retireAge >= ssAge ? ssb : 0;
     const ab0 = useAb ? ab : 0;
@@ -750,7 +708,6 @@ function buildRothExplorer(params = {}) {
       const b24t =
         fB.find((b) => b.rate === 0.24)?.hi || Math.round(403550 * f);
 
-      // GK dynamic spending (after year 0)
       const totalPort = pT + ro;
       if (age > retireAge && totalPort > 0) {
         sp = guytonKlingerWithdrawal(
@@ -772,8 +729,6 @@ function buildRothExplorer(params = {}) {
           ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
           : 0;
       const baseInc = ssT + abn;
-
-      // Withdrawal need from portfolio (spending minus income offsets)
       const portDraw = Math.max(0, sp - ss - abn);
 
       let rmd = 0;
@@ -782,9 +737,8 @@ function buildRothExplorer(params = {}) {
         rmd = Math.round(pT / d);
       }
       const incBC = baseInc + rmd;
-      const txBC = Math.max(0, incBC - stdD); // taxable income before conversion
+      const txBC = Math.max(0, incBC - stdD);
 
-      // ── Dynamic bracket-fill logic ──
       let conv = 0;
       if (
         doConvert &&
@@ -793,31 +747,18 @@ function buildRothExplorer(params = {}) {
         age < 73 &&
         pT > 0
       ) {
-        // Select target bracket ceiling based on mode + constraints
         let targetTop;
         if (rothMode === "fill_12") targetTop = b12t;
         else if (rothMode === "fill_22") targetTop = b22t;
         else if (rothMode === "fill_24") targetTop = b24t;
         else if (rothMode === "irmaa_safe")
           targetTop = Math.min(b22t, irmaaCeiling(yr) + stdD);
-        // stay below first IRMAA tier
-        else targetTop = b22t; // default
+        else targetTop = b22t;
 
-        // ── CONSTRAINT: IRMAA lookback throttle (ages 63-65) ──
-        // Medicare looks back 2 years. At age 65 it checks age 63 income.
-        // Stay below 22% bracket in these years to avoid surcharges.
-        if (age >= 63 && age <= 65 && rothMode !== "fill_12") {
+        if (age >= 63 && age <= 65 && rothMode !== "fill_12")
           targetTop = Math.min(targetTop, b22t);
-        }
-
-        // ── CONSTRAINT: FAFSA years (through 2029) — cap at 12% ──
-        if (yr <= 2029) {
-          targetTop = Math.min(targetTop, b12t);
-        }
-
-        // Room in target bracket
+        if (yr <= 2029) targetTop = Math.min(targetTop, b12t);
         const room = Math.max(0, targetTop - txBC);
-        // Convert: fill the room, but never more than available pre-tax balance
         conv = Math.round(Math.min(room, Math.max(0, pT)));
       }
 
@@ -827,20 +768,18 @@ function buildRothExplorer(params = {}) {
       const stT = isFL ? 0 : Math.round(progTax(Math.max(0, txInc), nB));
       const totT = fedT + stT,
         effR = totInc > 0 ? totT / totInc : 0;
-      // IRMAA calc uses full MAGI (gross SS + other income)
-      const magi = totInc + (ss - ssT); // add back untaxed SS portion
+      const magi = totInc + (ss - ssT);
       const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
 
       pT =
         Math.max(0, pT - rmd - conv - Math.max(0, portDraw * 0.6)) * (1 + gr);
       ro = Math.max(0, ro + conv - Math.max(0, portDraw * 0.4)) * (1 + gr);
-      lastReturn = gr; // deterministic projection uses expected return
+      lastReturn = gr;
       cTax += totT;
       cConv += conv;
       cIrmaa += irmaa;
       cRmd += rmd;
 
-      // Label logic
       let label = "";
       if (conv > 0) {
         if (age === ssAge - 1) label = "Golden Year ★";
@@ -922,7 +861,6 @@ function buildRothExplorer(params = {}) {
   };
 }
 
-// Keep backward compat — old name delegates to new
 function buildRothLadder(params = {}) {
   const ex = buildRothExplorer(params);
   return ex.convRows.map((r) => ({
@@ -1176,7 +1114,6 @@ const CSS = `
   ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:2px; }
 `;
 
-/* ════ COMPONENTS ════ */
 const Tip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
@@ -1475,6 +1412,7 @@ function PeopleViz({ rate }) {
         make it to 90.{" "}
         {26 - success > 0 && (
           <>
+            {" "}
             <span style={{ color: "#ef4444", fontWeight: 600 }}>
               {26 - success}
             </span>{" "}
@@ -1642,9 +1580,8 @@ function SmileChart({ p, inf }) {
 
 function RothLadder({ params }) {
   const [showInputs, setShowInputs] = useState(false);
-  const [view, setView] = useState("optimized"); // "optimized" | "comparison" | "table"
-  const [rothMode, setRothMode] = useState("fill_22"); // fill_12 | fill_22 | fill_24 | irmaa_safe
-
+  const [view, setView] = useState("optimized");
+  const [rothMode, setRothMode] = useState("fill_22");
   const ex = useMemo(
     () => buildRothExplorer({ ...(params ?? {}), rothMode }),
     [
@@ -1660,7 +1597,6 @@ function RothLadder({ params }) {
       rothMode,
     ]
   );
-
   const {
     opt,
     cur,
@@ -1692,8 +1628,6 @@ function RothLadder({ params }) {
     irmaa_safe:
       "Dynamic — fills 22% normally, auto-throttles near IRMAA threshold.",
   };
-
-  // Collapsible assumptions panel
   const InputsPanel = () => (
     <div
       style={{
@@ -1785,16 +1719,12 @@ function RothLadder({ params }) {
       )}
     </div>
   );
-
-  // Conversion plan bar chart data (just conversion window years)
   const barData = convRows.map((r) => ({
     yr: r.yr,
     age: r.age,
     conv: r.conv,
     label: r.label,
   }));
-
-  // Tax comparison data (every 2 years to save space)
   const taxCompare = opt.rows
     .filter((_, i) => i % 2 === 0 || i < 10)
     .map((r, i) => {
@@ -1808,8 +1738,6 @@ function RothLadder({ params }) {
         curTax: c ? c.totT : 0,
       };
     });
-
-  // RMD comparison
   const rmdYears = opt.rows
     .filter((r) => r.age >= 73 && r.age <= 90)
     .map((r) => {
@@ -1822,10 +1750,8 @@ function RothLadder({ params }) {
         curPT: c ? c.pT : 0,
       };
     });
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {/* Toggle + Assumptions */}
       <div
         style={{
           display: "flex",
@@ -1854,9 +1780,7 @@ function RothLadder({ params }) {
                 ? "📊 Conversion Plan"
                 : v === "comparison"
                 ? "⚖️ Compare"
-                : v === "table"
-                ? "📋 Year-by-Year"
-                : ""}
+                : "📋 Year-by-Year"}
             </button>
           ))}
         </div>
@@ -1877,8 +1801,6 @@ function RothLadder({ params }) {
         </button>
       </div>
       <InputsPanel />
-
-      {/* Bracket mode selector */}
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <div
           style={{
@@ -1921,8 +1843,6 @@ function RothLadder({ params }) {
           {modeDescs[rothMode]}
         </div>
       </div>
-
-      {/* Domicile indicator */}
       <div
         style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}
       >
@@ -1936,8 +1856,6 @@ function RothLadder({ params }) {
           · {isFL ? "🌴 Two households toggle ON" : "🏠 Both in NJ"}
         </span>
       </div>
-
-      {/* Summary cards (Boldin-style) */}
       <div
         style={{
           display: "grid",
@@ -1980,16 +1898,13 @@ function RothLadder({ params }) {
           <div className="ms">optimized vs current</div>
         </div>
       </div>
-
       {view === "optimized" && (
         <>
-          {/* Conversion schedule table */}
           <div className="chart-card">
             <div className="ct">
               Conversion Plan · Ages {convRows[0]?.age}–
               {convRows[convRows.length - 1]?.age} · {domLabel}
             </div>
-            {/* Bar chart */}
             <ResponsiveContainer width="100%" height={180}>
               <BarChart
                 data={barData}
@@ -2019,7 +1934,6 @@ function RothLadder({ params }) {
                 />
               </BarChart>
             </ResponsiveContainer>
-            {/* Conversion table */}
             <table className="roth-tbl" style={{ marginTop: 10 }}>
               <thead>
                 <tr>
@@ -2109,8 +2023,6 @@ function RothLadder({ params }) {
               </tbody>
             </table>
           </div>
-
-          {/* Projected balances */}
           <div className="chart-card">
             <div className="ct">
               Projected Account Balances · Pre-Tax vs Roth
@@ -2147,8 +2059,6 @@ function RothLadder({ params }) {
               </BarChart>
             </ResponsiveContainer>
           </div>
-
-          {/* Savings at longevity */}
           <div
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
           >
@@ -2165,8 +2075,6 @@ function RothLadder({ params }) {
               </div>
             </div>
           </div>
-
-          {/* RMD comparison */}
           {rmdYears.length > 0 && (
             <div className="chart-card">
               <div className="ct">
@@ -2234,8 +2142,6 @@ function RothLadder({ params }) {
               </ResponsiveContainer>
             </div>
           )}
-
-          {/* Golden year callout */}
           {(() => {
             const g = convRows.find((r) => r.label === "Golden Year ★");
             return g ? (
@@ -2257,10 +2163,8 @@ function RothLadder({ params }) {
           })()}
         </>
       )}
-
       {view === "comparison" && (
         <>
-          {/* Effective tax rate comparison */}
           <div className="chart-card">
             <div className="ct">Effective Federal Tax Rate · Year-by-Year</div>
             <ResponsiveContainer width="100%" height={200}>
@@ -2295,8 +2199,6 @@ function RothLadder({ params }) {
               </LineChart>
             </ResponsiveContainer>
           </div>
-
-          {/* Tax liability comparison */}
           <div className="chart-card">
             <div className="ct">
               Tax Liability Comparison · Optimized vs Current Plan
@@ -2329,8 +2231,6 @@ function RothLadder({ params }) {
               </div>
             </div>
           </div>
-
-          {/* IRMAA section */}
           <div className="chart-card">
             <div className="ct">IRMAA Fees · Medicare Premium Surcharges</div>
             <div
@@ -2368,7 +2268,6 @@ function RothLadder({ params }) {
           </div>
         </>
       )}
-
       {view === "table" && (
         <div className="chart-card" style={{ overflowX: "auto" }}>
           <div className="ct">Year-by-Year Comparison Table</div>
@@ -2414,7 +2313,6 @@ function RothLadder({ params }) {
           </table>
         </div>
       )}
-
       <div
         style={{
           fontSize: 9,
@@ -2432,12 +2330,10 @@ function RothLadder({ params }) {
   );
 }
 
-/* ════ DETERMINISTIC GK VIEW (Median Path Schedule) ════ Added as part of DS*/
 function DeterministicGKView({ p, inf }) {
   const [showTable, setShowTable] = useState(false);
   const data = useMemo(() => simulateMedianGK(p, inf), [p, inf]);
   const { schedule, portAtRetire, initWR } = data;
-
   const chartData = schedule.map((s) => ({
     age: s.age,
     "Total Withdrawal": s.totalWithdrawal,
@@ -2445,8 +2341,17 @@ function DeterministicGKView({ p, inf }) {
     Spending: s.spending,
   }));
 
+  // If schedule is empty (no data), show a placeholder
+  if (!schedule || schedule.length === 0) {
+    return (
+      <div className="chart-card">
+        No data available. Run Monte Carlo first.
+      </div>
+    );
+  }
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <>
       <div className="chart-card">
         <div className="ct">
           📈 Deterministic GK Schedule · Median historical returns (
@@ -2628,7 +2533,7 @@ function DeterministicGKView({ p, inf }) {
         returns (9.68% pre‑62, 8.93% after). Use it for planning a realistic
         withdrawal schedule, but remember that actual outcomes will vary.
       </div>
-    </div>
+    </>
   );
 }
 
@@ -2719,347 +2624,152 @@ function BucketsTab() {
   );
 }
 
-/* ════ FIX 6: SCENARIOS TAB ════ */
-function ScenariosTab({ baseParams }) {
-  const [scenResults, setScenResults] = useState(null);
-  const [running, setRunning] = useState(false);
+function ScenariosTab({
+  baseParams,
+  r85,
+  r90,
+  stress,
+  running,
+  runSimulation,
+  retAge,
+  ssAge,
+  inf,
+  real,
+  endAge,
+  fmtPct,
+  fmtM,
+  FanChart,
+  SEQ_2000_2012,
+  DeterministicGKView,
+  RothLadder,
+  BucketsTab,
+  SmileChart,
+}) {
+  const [scenarioSubTab, setScenarioSubTab] = useState("stress");
 
-  const SCENARIOS = [
-    {
-      key: "base",
-      label: "Base Case",
-      color: "#0d9488",
-      emoji: "📊",
-      desc: "Current plan as configured",
-      mutate: (p) => p,
-    },
-    {
-      key: "noAirbnb",
-      label: "No Airbnb",
-      color: "#f87171",
-      emoji: "🚫",
-      desc: "Airbnb income stops permanently ($0)",
-      mutate: (p) => ({ ...p, useAb: false }),
-    },
-    {
-      key: "ssAt70",
-      label: "SS at 70",
-      color: "#a78bfa",
-      emoji: "⏳",
-      desc: "Delay SS to 70 for 24% higher benefit",
-      mutate: (p) => ({ ...p, ssAge: 70, ssb: Math.round(p.ssb * 1.24) }),
-    },
-    {
-      key: "spendMore",
-      label: "Spend +$20K",
-      color: "#fbbf24",
-      emoji: "💸",
-      desc: "Total household spend increases $20K/yr",
-      mutate: (p) => ({ ...p, sp: p.sp + 20_000, gkFloor: p.gkFloor + 20_000 }),
-    },
-    {
-      key: "earlyOut",
-      label: "Retire at 58",
-      color: "#fb923c",
-      emoji: "🏃",
-      desc: "Leave 2 years early — less accumulation",
-      mutate: (p) => ({ ...p, retireAge: 58 }),
-    },
+  const SCENARIO_SUBTABS = [
+    ["stress", "🔶 Stress"],
+    ["gk", "📐 Guardrails"],
+    ["roth", "🔄 Roth"],
+    ["buckets", "🪣 Buckets"],
+    ["smile", "🙂 Smile"],
   ];
 
-  const runScenarios = useCallback(() => {
-    setRunning(true);
-    setTimeout(() => {
-      const results = SCENARIOS.map((s, idx) => {
-        const p = s.mutate({ ...baseParams });
-        const r85 = runMC(p, 85, 1500, 42 + idx * 7, true);
-        const r90 = runMC(p, 90, 1500, 43 + idx * 7, true);
-        return { ...s, r85, r90 };
-      });
-      setScenResults(results);
-      setRunning(false);
-    }, 50);
-  }, [baseParams]);
-
-  const rateColor = (r) =>
-    r >= 0.9
-      ? "#0d9488"
-      : r >= 0.8
-      ? "#34d399"
-      : r >= 0.7
-      ? "#fbbf24"
-      : r >= 0.6
-      ? "#f97316"
-      : "#ef4444";
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div className="chart-card">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 12,
-          }}
-        >
-          <div>
-            <div className="ct" style={{ margin: 0 }}>
-              What-if scenario comparison · 1,500 paths each · GK guardrails
-              active
-            </div>
-            <div style={{ fontSize: 11, color: "#475569", marginTop: 3 }}>
-              How does your plan hold up under different assumptions?
-            </div>
-          </div>
+    <div>
+      <div
+        style={{
+          display: "flex",
+          gap: 4,
+          marginBottom: 12,
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          paddingBottom: 8,
+        }}
+      >
+        {SCENARIO_SUBTABS.map(([key, label]) => (
           <button
-            onClick={runScenarios}
-            disabled={running}
+            key={key}
+            onClick={() => setScenarioSubTab(key)}
             style={{
-              padding: "8px 16px",
-              background: running
-                ? "#1e3a5f"
-                : "linear-gradient(135deg,#0d9488,#14b8a6)",
+              padding: "5px 12px",
+              fontSize: 11,
+              borderRadius: 6,
               border: "none",
-              borderRadius: 8,
-              color: "white",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: running ? "not-allowed" : "pointer",
-              fontFamily: "'DM Sans',sans-serif",
-              whiteSpace: "nowrap",
+              cursor: "pointer",
+              background:
+                scenarioSubTab === key
+                  ? "rgba(255,255,255,0.1)"
+                  : "transparent",
+              color: scenarioSubTab === key ? "#e2e8f0" : "#475569",
+              fontFamily: "inherit",
             }}
           >
-            {running ? "Running..." : "▶ Run All Scenarios"}
+            {label}
           </button>
-        </div>
-
-        {!scenResults && !running && (
+        ))}
+      </div>
+      {scenarioSubTab === "stress" && stress && (
+        <div>
+          <FanChart
+            pcts={stress.pcts}
+            retireAge={retAge}
+            ssAge={ssAge}
+            inf={inf}
+            useReal={real}
+            title="Stress test: 2000–2012 actual S&P sequence at retirement"
+          />
           <div
             style={{
-              textAlign: "center",
-              padding: "40px 20px",
-              color: "#475569",
-              fontSize: 13,
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 10,
+              marginTop: 10,
             }}
           >
-            Press Run All Scenarios to compare 5 what-if cases side by side.
+            <div className="met">
+              <div className="ml">Stress success</div>
+              <div
+                className="mv"
+                style={{ color: stress.rate >= 0.85 ? "#0d9488" : "#f59e0b" }}
+              >
+                {fmtPct(stress.rate)}
+              </div>
+            </div>
+            <div className="met">
+              <div className="ml">Delta vs base</div>
+              <div
+                className="mv"
+                style={{
+                  color: r90 && stress.rate >= r90.rate ? "#0d9488" : "#ef4444",
+                }}
+              >
+                {r90 ? `${((stress.rate - r90.rate) * 100).toFixed(1)}pp` : "—"}
+              </div>
+            </div>
           </div>
-        )}
-
-        {running && (
           <div
-            style={{
-              textAlign: "center",
-              padding: "40px 20px",
-              color: "#5eead4",
-              fontSize: 13,
-            }}
+            style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 4 }}
           >
-            Running 5 × 3,000 simulation paths...
-          </div>
-        )}
-
-        {scenResults && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {scenResults.map((s) => {
-              const base = scenResults[0];
-              const delta90 = s.r90.rate - base.r90.rate;
-              return (
-                <div
-                  key={s.key}
-                  style={{
-                    background: "rgba(255,255,255,0.03)",
-                    border: `1px solid ${s.color}33`,
-                    borderRadius: 9,
-                    padding: 14,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: s.color,
-                        }}
-                      >
-                        {s.emoji} {s.label}
-                      </div>
-                      <div
-                        style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}
-                      >
-                        {s.desc}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      {s.key !== "base" && (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: delta90 >= 0 ? "#34d399" : "#f87171",
-                            fontWeight: 600,
-                            marginBottom: 3,
-                          }}
-                        >
-                          {delta90 >= 0 ? "+" : ""}
-                          {(delta90 * 100).toFixed(1)}pp vs Base
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Success rate bars */}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 8,
-                    }}
-                  >
-                    {[
-                      { label: "To age 85", rate: s.r85.rate },
-                      { label: "To age 90", rate: s.r90.rate },
-                    ].map(({ label, rate }) => (
-                      <div key={label}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            marginBottom: 4,
-                          }}
-                        >
-                          <span style={{ fontSize: 10, color: "#64748b" }}>
-                            {label}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 700,
-                              color: rateColor(rate),
-                              fontFamily: "'DM Mono',monospace",
-                            }}
-                          >
-                            {fmtPct(rate)}
-                          </span>
-                        </div>
-                        <div
-                          style={{
-                            height: 6,
-                            background: "rgba(255,255,255,0.08)",
-                            borderRadius: 3,
-                            overflow: "hidden",
-                          }}
-                        >
-                          <div
-                            style={{
-                              height: "100%",
-                              width: `${rate * 100}%`,
-                              background: rateColor(rate),
-                              borderRadius: 3,
-                              transition: "width 0.5s",
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Key metrics row */}
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 16,
-                      marginTop: 10,
-                      fontSize: 11,
-                      color: "#64748b",
-                    }}
-                  >
-                    <span>
-                      Median at D-Day:{" "}
-                      <strong style={{ color: "#e2e8f0" }}>
-                        {fmtM(s.r90.medR)}
-                      </strong>
-                    </span>
-                    <span>
-                      Median final:{" "}
-                      <strong style={{ color: "#e2e8f0" }}>
-                        {fmtM(s.r90.term.p50)}
-                      </strong>
-                    </span>
-                    <span>
-                      10th pct:{" "}
-                      <strong style={{ color: "#f87171" }}>
-                        {fmtM(s.r90.term.p10)}
-                      </strong>
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="chart-card">
-        <div className="ct">Reading the scenarios</div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 10,
-            fontSize: 11,
-            color: "#94a3b8",
-          }}
-        >
-          <div>
-            • <strong style={{ color: "#e2e8f0" }}>Base Case</strong> — your
-            plan with all current inputs and assumptions
-          </div>
-          <div>
-            • <strong style={{ color: "#e2e8f0" }}>No Airbnb</strong> — tests
-            plan resilience if Airbnb income stops entirely
-          </div>
-          <div>
-            • <strong style={{ color: "#e2e8f0" }}>SS at 70</strong> — delay SS
-            for +24% benefit; break-even vs age 64 ≈ age 78
-          </div>
-          <div>
-            • <strong style={{ color: "#e2e8f0" }}>Spend +$20K</strong> — stress
-            tests higher total household costs
-          </div>
-          <div>
-            • <strong style={{ color: "#e2e8f0" }}>Retire at 58</strong> —
-            leaving Alpha 2 years early, less accumulation time
-          </div>
-          <div>
-            • <strong style={{ color: "#e2e8f0" }}>Each path</strong> includes
-            80% Airbnb reliability + 3.5% annual healthcare shock risk
+            {SEQ_2000_2012.map((r, i) => (
+              <span
+                key={i}
+                style={{
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                  fontSize: 10,
+                  fontFamily: "'DM Mono',monospace",
+                  background:
+                    r < 0 ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.12)",
+                  color: r < 0 ? "#f87171" : "#34d399",
+                  border: `1px solid ${
+                    r < 0 ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.25)"
+                  }`,
+                }}
+              >
+                {2000 + i}: {r > 0 ? "+" : ""}
+                {(r * 100).toFixed(1)}%
+              </span>
+            ))}
           </div>
         </div>
-      </div>
+      )}
+      {scenarioSubTab === "gk" && (
+        <DeterministicGKView p={baseParams} inf={inf} />
+      )}
+      {scenarioSubTab === "roth" && <RothLadder params={baseParams} />}
+      {scenarioSubTab === "buckets" && <BucketsTab />}
+      {scenarioSubTab === "smile" && <SmileChart p={baseParams} inf={inf} />}
     </div>
   );
 }
 
-/* ════ MECO-STYLE MONTE CARLO TAB ════ */
 function MCTab({ params, r85, r90, stress, running, onRun }) {
   const [showInputs, setShowInputs] = useState(true);
   const [showHow, setShowHow] = useState(false);
-
   const accPhase = `Age ${params.currentAge} → ${params.retireAge}`;
   const retPhase = `Age ${params.retireAge} → ${params.endAge}`;
-  const hcYear20 = Math.round(15000 * Math.pow(1.055, 20));
   const mortAnnual = Math.round((params.mortBalance > 0 ? 1847.15 : 0) * 12);
-  const mortPayoffAge = params.retireAge + 4; // approx with extra payments
-
+  const mortPayoffAge = params.retireAge + 4;
   const rateColor = (r) =>
     r >= 0.9
       ? "#0d9488"
@@ -3078,7 +2788,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
       : r >= 0.7
       ? "Elevated risk — plan needs some work."
       : "High risk — most scenarios deplete savings before target age.";
-
   const SectionHeader = ({ label, open, onToggle, color = "#5eead4" }) => (
     <div
       onClick={onToggle}
@@ -3108,7 +2817,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
       </div>
     </div>
   );
-
   const InputCard = ({ title, rows }) => (
     <div
       style={{
@@ -3154,10 +2862,8 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
       ))}
     </div>
   );
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Explainer */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -3199,8 +2905,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
           spending a fixed amount no matter what.
         </div>
       </div>
-
-      {/* Simulation Inputs & Assumptions */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -3214,10 +2918,8 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
           open={showInputs}
           onToggle={() => setShowInputs(!showInputs)}
         />
-
         {showInputs && (
           <>
-            {/* Accumulation Phase */}
             <div style={{ marginBottom: 14 }}>
               <div
                 style={{
@@ -3268,8 +2970,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                 />
               </div>
             </div>
-
-            {/* Withdrawal Phase */}
             <div style={{ marginBottom: 14 }}>
               <div
                 style={{
@@ -3320,8 +3020,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                 />
               </div>
             </div>
-
-            {/* Market & Statistical Model */}
             <div>
               <div
                 style={{
@@ -3372,8 +3070,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
           </>
         )}
       </div>
-
-      {/* How it works collapsible */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -3446,8 +3142,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
           </div>
         )}
       </div>
-
-      {/* Run button if no results */}
       {!r90 && (
         <div
           style={{
@@ -3462,8 +3156,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
             : "Run Monte Carlo from the sidebar to see results here."}
         </div>
       )}
-
-      {/* Results cards — MECO style */}
       {r90 && (
         <div
           style={{
@@ -3472,7 +3164,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
             gap: 12,
           }}
         >
-          {/* Success Rate */}
           <div
             style={{
               background: `${rateColor(r90.rate)}12`,
@@ -3578,8 +3269,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
               </div>
             </div>
           </div>
-
-          {/* Median Final Balance */}
           <div
             style={{
               background: "rgba(255,255,255,0.04)",
@@ -3661,8 +3350,6 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
               ))}
             </div>
           </div>
-
-          {/* Data Sources */}
           <div
             style={{
               background: "rgba(255,255,255,0.04)",
@@ -3994,7 +3681,7 @@ function NetWorthTab({ p, results90, inf }) {
           <Toggle
             val={showRE}
             onChange={setShowRE}
-            label="Include Rental Income "
+            label="Include RE"
             accent="#fbbf24"
           />
         </div>
@@ -4264,8 +3951,396 @@ function ActionPlanTab() {
   );
 }
 
-/* ════ ASSUMPTIONS TAB ════ */
-function AssumptionsTab({ values, onChange }) {
+function ProfileWizard({ values, onChange }) {
+  const [step, setStep] = useState(0);
+
+  const STEPS = [
+    { label: "About You", icon: "👤", sub: `${values.currentAge} yrs old` },
+    { label: "Current Savings", icon: "💰", sub: `${fmtM(values.port)} saved` },
+    { label: "Contributions", icon: "📋", sub: `${fmtK(values.contrib)}/yr` },
+    { label: "Retirement Plan", icon: "🎯", sub: `Age ${values.retireAge}` },
+    {
+      label: "Other Income",
+      icon: "🏖",
+      sub: `$${(values.ab / 1000).toFixed(0)}K/yr`,
+    },
+    { label: "Assumptions", icon: "⚙️", sub: "Model parameters" },
+  ];
+
+  const PANELS = [
+    <AboutYouPanel values={values} onChange={onChange} />,
+    <SavingsPanel values={values} onChange={onChange} />,
+    <ContribPanel values={values} onChange={onChange} />,
+    <RetirementPanel values={values} onChange={onChange} />,
+    <IncomePanel values={values} onChange={onChange} />,
+    <AssumptionsPanel values={values} onChange={onChange} />,
+  ];
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "220px 1fr",
+        background: "rgba(255,255,255,0.02)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: 12,
+        overflow: "hidden",
+      }}
+    >
+      {/* LEFT SIDEBAR */}
+      <div
+        style={{ borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}
+      >
+        {STEPS.map((s, i) => (
+          <div
+            key={i}
+            onClick={() => setStep(i)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 12px",
+              borderRadius: 8,
+              marginBottom: 4,
+              cursor: "pointer",
+              background: i === step ? "rgba(13,148,136,0.15)" : "transparent",
+              border:
+                i === step
+                  ? "1px solid rgba(13,148,136,0.3)"
+                  : "1px solid transparent",
+            }}
+          >
+            {/* Dot */}
+            <div
+              style={{
+                width: 11,
+                height: 11,
+                borderRadius: "50%",
+                flexShrink: 0,
+                background:
+                  i < step
+                    ? "#0d9488"
+                    : i === step
+                    ? "#14b8a6"
+                    : "rgba(255,255,255,0.1)",
+                border: `2px solid ${
+                  i <= step ? "#0d9488" : "rgba(255,255,255,0.15)"
+                }`,
+                boxShadow: i === step ? "0 0 8px #0d948866" : "none",
+              }}
+            />
+            <div>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: i === step ? "#e2e8f0" : "#64748b",
+                }}
+              >
+                {s.icon} {s.label}
+              </div>
+              <div style={{ fontSize: 10, color: "#334155" }}>{s.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* RIGHT PANEL */}
+      <div style={{ padding: 24 }}>
+        <div
+          style={{
+            fontSize: 16,
+            fontWeight: 700,
+            color: "#e2e8f0",
+            marginBottom: 4,
+          }}
+        >
+          {STEPS[step].icon} {STEPS[step].label}
+        </div>
+        <div style={{ fontSize: 12, color: "#475569", marginBottom: 20 }}>
+          {STEPS[step].sub}
+        </div>
+
+        {/* Panel content */}
+        {PANELS[step]}
+
+        {/* Navigation */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: 24,
+            paddingTop: 16,
+            borderTop: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <button
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            disabled={step === 0}
+            style={{
+              padding: "7px 18px",
+              borderRadius: 7,
+              border: "1px solid rgba(255,255,255,0.1)",
+              background: "transparent",
+              color: step === 0 ? "#334155" : "#94a3b8",
+              cursor: step === 0 ? "not-allowed" : "pointer",
+              fontSize: 12,
+              fontFamily: "inherit",
+            }}
+          >
+            ← Previous
+          </button>
+          <div style={{ fontSize: 11, color: "#334155" }}>
+            {step + 1} / {STEPS.length}
+          </div>
+          <button
+            onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
+            disabled={step === STEPS.length - 1}
+            style={{
+              padding: "7px 18px",
+              borderRadius: 7,
+              border: "none",
+              background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+              color: "white",
+              cursor: step === STEPS.length - 1 ? "not-allowed" : "pointer",
+              fontSize: 12,
+              fontFamily: "inherit",
+              fontWeight: 600,
+            }}
+          >
+            Next →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SavingsPanel({ values, onChange }) {
+  const GOAL = 3_200_000;
+  const totalBalance = (values.rothBalance || 0) + (values.preTaxBalance || 0);
+  const percentToGoal = Math.min(100, (totalBalance / GOAL) * 100);
+  const remaining = Math.max(0, GOAL - totalBalance);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Current Portfolio Total
+          </div>
+          <Slider
+            label=""
+            value={values.port || 0}
+            min={0}
+            max={5_000_000}
+            step={10_000}
+            format={(v) => fmtM(v)}
+            onChange={(v) => onChange("port", v)}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Roth Balance
+          </div>
+          <Slider
+            label=""
+            value={values.rothBalance || 0}
+            min={0}
+            max={2_000_000}
+            step={10_000}
+            format={(v) => fmtM(v)}
+            onChange={(v) => onChange("rothBalance", v)}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Pre-Tax Balance
+          </div>
+          <Slider
+            label=""
+            value={values.preTaxBalance || 0}
+            min={0}
+            max={3_000_000}
+            step={10_000}
+            format={(v) => fmtM(v)}
+            onChange={(v) => onChange("preTaxBalance", v)}
+          />
+        </div>
+      </div>
+
+      {/* Goal progress */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 10,
+          padding: 18,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: 10,
+          }}
+        >
+          <span style={{ fontSize: 12, color: "#e2e8f0" }}>
+            🎯 $3.2M Goal Progress
+          </span>
+          <span
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "#5eead4",
+              fontFamily: "'DM Mono',monospace",
+            }}
+          >
+            {percentToGoal.toFixed(1)}%
+          </span>
+        </div>
+        <div
+          style={{
+            height: 10,
+            background: "rgba(255,255,255,0.1)",
+            borderRadius: 5,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${percentToGoal}%`,
+              height: "100%",
+              background: "linear-gradient(90deg, #0d9488, #14b8a6)",
+              borderRadius: 5,
+              transition: "width 0.3s",
+            }}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginTop: 8,
+            fontSize: 11,
+            color: "#64748b",
+          }}
+        >
+          <span>Current: {fmtM(totalBalance)}</span>
+          <span>Remaining: {fmtM(remaining)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AboutYouPanel({ values, onChange }) {
+  const yearsToRetire = Math.max(0, values.retireAge - values.currentAge);
+  const yearsInRetire = Math.max(0, values.endAge - values.retireAge);
+  const totalHorizon = yearsToRetire + yearsInRetire;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Three sliders */}
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}
+      >
+        {[
+          {
+            label: "Current Age",
+            k: "currentAge",
+            min: 30,
+            max: 75,
+            step: 1,
+            fmt: (v) => `${v} yrs`,
+          },
+          {
+            label: "Retirement Age",
+            k: "retireAge",
+            min: 50,
+            max: 75,
+            step: 1,
+            fmt: (v) => `${v} yrs`,
+          },
+          {
+            label: "Planning Horizon",
+            k: "endAge",
+            min: 75,
+            max: 100,
+            step: 1,
+            fmt: (v) => `to age ${v}`,
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k]}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Summary row */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 8,
+          padding: "14px 20px",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 16,
+        }}
+      >
+        {[
+          {
+            label: "Years to retirement",
+            val: yearsToRetire,
+            color: "#14b8a6",
+          },
+          {
+            label: "Years in retirement",
+            val: yearsInRetire,
+            color: "#a78bfa",
+          },
+          {
+            label: "Total planning horizon",
+            val: `${totalHorizon} yrs`,
+            color: "#e2e8f0",
+          },
+        ].map((m) => (
+          <div key={m.label}>
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
+              {m.label}
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                color: m.color,
+                fontFamily: "'DM Mono',monospace",
+                lineHeight: 1,
+              }}
+            >
+              {m.val}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AssumptionsPanel({ values, onChange }) {
   const {
     dob,
     abReliability,
@@ -4277,13 +4352,12 @@ function AssumptionsTab({ values, onChange }) {
     hcProb,
     hcMin,
     hcMax,
+    ab,
+    ssb,
   } = values;
-
-  // Derive age live from DOB
   const derivedAge = dob
     ? Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 3600 * 1000))
     : "—";
-
   const Row = ({ label, desc, children }) => (
     <div
       style={{
@@ -4307,7 +4381,6 @@ function AssumptionsTab({ values, onChange }) {
       <div style={{ marginLeft: 16, flexShrink: 0 }}>{children}</div>
     </div>
   );
-
   const NumInput = ({ k, min, max, step, suffix = "" }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <input
@@ -4334,7 +4407,6 @@ function AssumptionsTab({ values, onChange }) {
       )}
     </div>
   );
-
   const DateInput = ({ k }) => (
     <input
       type="date"
@@ -4351,10 +4423,8 @@ function AssumptionsTab({ values, onChange }) {
       }}
     />
   );
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* ── PERSONAL PROFILE ── */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -4373,23 +4443,20 @@ function AssumptionsTab({ values, onChange }) {
             marginBottom: 12,
           }}
         >
-          0 Personal Profile
+          Personal Profile
         </div>
-
         <Row
           label="Date of Birth"
           desc={`Current age: ${derivedAge} · Used to derive D-Day and accumulation years`}
         >
           <DateInput k="dob" />
         </Row>
-
         <Row
           label="Airbnb net income / yr"
           desc="Net after expenses · Always use net, never gross"
         >
           <NumInput k="ab" min={0} max={100000} step={1000} suffix="/yr" />
         </Row>
-
         <Row
           label="Social Security benefit"
           desc="Monthly benefit at your SS start age"
@@ -4397,8 +4464,6 @@ function AssumptionsTab({ values, onChange }) {
           <NumInput k="ssb" min={0} max={5000} step={100} suffix="/mo" />
         </Row>
       </div>
-
-      {/* ── MODEL PARAMETERS ── */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -4419,35 +4484,30 @@ function AssumptionsTab({ values, onChange }) {
         >
           Monte Carlo Model Parameters
         </div>
-
         <Row
           label="Airbnb reliability"
           desc="Probability Airbnb income arrives in any given year (default 80%)"
         >
           <NumInput k="abReliability" min={0} max={100} step={5} suffix="%" />
         </Row>
-
         <Row
           label="Airbnb income growth / yr"
           desc="Annual growth rate for Airbnb income (default 3%)"
         >
           <NumInput k="abGrowth" min={0} max={10} step={0.5} suffix="%" />
         </Row>
-
         <Row
           label="SS COLA / yr"
           desc="Social Security cost-of-living adjustment (default 2.4%)"
         >
           <NumInput k="ssCola" min={0} max={6} step={0.1} suffix="%" />
         </Row>
-
         <Row
           label="Pre-retirement equity weight"
           desc="Equity % before retirement age (default 91%)"
         >
           <NumInput k="preRetireEq" min={50} max={100} step={1} suffix="%" />
         </Row>
-
         <Row
           label="Post-retirement equity weight"
           desc="Equity % after retirement age (default 70%)"
@@ -4455,8 +4515,6 @@ function AssumptionsTab({ values, onChange }) {
           <NumInput k="postRetireEq" min={30} max={90} step={1} suffix="%" />
         </Row>
       </div>
-
-      {/* ── HEALTHCARE SHOCK ── */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -4481,28 +4539,24 @@ function AssumptionsTab({ values, onChange }) {
           In each simulation year after the shock age, there is a random
           probability of a large one-time healthcare cost.
         </div>
-
         <Row
           label="Shock start age"
           desc="Age after which annual healthcare shocks can occur (default 72)"
         >
           <NumInput k="hcShockAge" min={60} max={85} step={1} suffix="yrs" />
         </Row>
-
         <Row
           label="Annual shock probability"
           desc="Chance of a shock in any given year (default 3.5%)"
         >
           <NumInput k="hcProb" min={0} max={20} step={0.5} suffix="%" />
         </Row>
-
         <Row
           label="Shock cost — minimum"
           desc="Low end of randomized healthcare shock cost (default $70K)"
         >
           <NumInput k="hcMin" min={0} max={200000} step={5000} suffix="$" />
         </Row>
-
         <Row
           label="Shock cost — maximum"
           desc="High end of randomized healthcare shock cost (default $130K)"
@@ -4510,7 +4564,6 @@ function AssumptionsTab({ values, onChange }) {
           <NumInput k="hcMax" min={0} max={500000} step={5000} suffix="$" />
         </Row>
       </div>
-
       <div
         style={{
           fontSize: 10,
@@ -4526,10 +4579,433 @@ function AssumptionsTab({ values, onChange }) {
   );
 }
 
-/* ════ MAIN APP ════ */
+function ContribPanel({ values, onChange }) {
+  const annual401k = values.contrib || 0;
+  const hsaAnnual = (values.hsaMonthly || 795.83) * 12;
+  const employerMatch = values.employerMatch || 4.5;
+  const matchAmount = (annual401k * employerMatch) / 100;
+  const totalSavings = annual401k + hsaAnnual + matchAmount;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            401(k) Annual Contribution
+          </div>
+          <Slider
+            label=""
+            value={annual401k}
+            min={0}
+            max={80_000}
+            step={500}
+            format={(v) => fmtK(v) + "/yr"}
+            onChange={(v) => onChange("contrib", v)}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            HSA Monthly Contribution
+          </div>
+          <Slider
+            label=""
+            value={values.hsaMonthly || 795.83}
+            min={0}
+            max={1000}
+            step={50}
+            format={(v) => fmtM(v) + "/mo"}
+            onChange={(v) => onChange("hsaMonthly", v)}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Employer Match (%)
+          </div>
+          <Slider
+            label=""
+            value={employerMatch}
+            min={0}
+            max={10}
+            step={0.5}
+            format={(v) => v.toFixed(1) + "%"}
+            onChange={(v) => onChange("employerMatch", v)}
+          />
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 10,
+          padding: 18,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 16,
+        }}
+      >
+        {[
+          { label: "401(k) Contribution", val: annual401k, color: "#0ea5e9" },
+          { label: "Employer Match", val: matchAmount, color: "#34d399" },
+          { label: "HSA Contribution", val: hsaAnnual, color: "#a78bfa" },
+        ].map((m) => (
+          <div key={m.label}>
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
+              {m.label}
+            </div>
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                color: m.color,
+                fontFamily: "'DM Mono',monospace",
+                lineHeight: 1,
+              }}
+            >
+              {fmtK(m.val)}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          background: "linear-gradient(135deg, #0d948818, #14b8a618)",
+          border: "1px solid #0d948844",
+          borderRadius: 10,
+          padding: 18,
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
+          💰 Total Annual Savings Rate
+        </div>
+        <div
+          style={{
+            fontSize: 36,
+            fontWeight: 900,
+            color: "#14b8a6",
+            fontFamily: "'DM Mono',monospace",
+            lineHeight: 1,
+          }}
+        >
+          {fmtK(totalSavings)}
+          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>
+            /yr
+          </span>
+        </div>
+        <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
+          Including employer match and HSA
+        </div>
+      </div>
+    </div>
+  );
+}
+function RetirementPanel({ values, onChange }) {
+  const spend = values.sp || 100_000;
+  const floor = values.gkFloor || 88_000;
+  const ceiling = values.gkCeiling || 115_000;
+  const floorPct = (floor / spend) * 100;
+  const ceilingPct = (ceiling / spend) * 100;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        {[
+          {
+            k: "sp",
+            label: "Annual Spend (Both Households)",
+            min: 30000,
+            max: 200000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+          {
+            k: "spThailand",
+            label: "Vin Thailand Solo Spend",
+            min: 20000,
+            max: 150000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+          {
+            k: "spMiraNJ",
+            label: "Mira NJ Household Spend",
+            min: 20000,
+            max: 150000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k] || 0}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
+          </div>
+        ))}
+        {[
+          {
+            k: "gkFloor",
+            label: "Guyton-Klinger Floor",
+            min: 20000,
+            max: 150000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+          {
+            k: "gkCeiling",
+            label: "Guyton-Klinger Ceiling",
+            min: 50000,
+            max: 250000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k] || 0}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* GK % of spend */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 10,
+          padding: 18,
+        }}
+      >
+        <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 16 }}>
+          🛡️ Guardrails as % of Spend
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 20,
+            justifyContent: "center",
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
+              Floor
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                color: "#fbbf24",
+                fontFamily: "'DM Mono',monospace",
+              }}
+            >
+              {floorPct.toFixed(0)}%
+            </div>
+            <div style={{ fontSize: 10, color: "#334155" }}>
+              {fmtK(floor)} / {fmtK(spend)}
+            </div>
+          </div>
+          <div
+            style={{
+              width: 1,
+              height: 30,
+              background: "rgba(255,255,255,0.1)",
+            }}
+          />
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
+              Ceiling
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                color: "#34d399",
+                fontFamily: "'DM Mono',monospace",
+              }}
+            >
+              {ceilingPct.toFixed(0)}%
+            </div>
+            <div style={{ fontSize: 10, color: "#334155" }}>
+              {fmtK(ceiling)} / {fmtK(spend)}
+            </div>
+          </div>
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: "#64748b",
+            marginTop: 16,
+            fontStyle: "italic",
+          }}
+        >
+          GK adjusts spending ±10% when withdrawal rate deviates 20% from
+          initial.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IncomePanel({ values, onChange }) {
+  const ab = values.ab || 20_000;
+  const ssb = values.ssb || 31_543;
+  const totalRetirementIncome = ab + ssb;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        {[
+          {
+            k: "ab",
+            label: "Airbnb Net Income",
+            min: 0,
+            max: 60_000,
+            step: 1000,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+          {
+            k: "ssb",
+            label: "Social Security Benefit",
+            min: 0,
+            max: 50_000,
+            step: 500,
+            fmt: (v) => fmtK(v) + "/yr",
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k] || 0}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
+          </div>
+        ))}
+        {[
+          {
+            k: "ssAge",
+            label: "SS Start Age",
+            min: 62,
+            max: 70,
+            step: 1,
+            fmt: (v) => "Age " + v,
+          },
+          {
+            k: "abReliability",
+            label: "Airbnb Reliability",
+            min: 0,
+            max: 100,
+            step: 5,
+            fmt: (v) => v + "%",
+          },
+          {
+            k: "abGrowth",
+            label: "Airbnb Growth Rate",
+            min: 0,
+            max: 10,
+            step: 0.5,
+            fmt: (v) => v + "%/yr",
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k] || 0}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Total income at retirement */}
+      <div
+        style={{
+          background: "linear-gradient(135deg, #05966918, #0ea5e918)",
+          border: "1px solid #05966944",
+          borderRadius: 10,
+          padding: 18,
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
+          🏖️ Total Income at Retirement (Pre-Tax)
+        </div>
+        <div
+          style={{
+            fontSize: 36,
+            fontWeight: 900,
+            color: "#34d399",
+            fontFamily: "'DM Mono',monospace",
+            lineHeight: 1,
+          }}
+        >
+          {fmtK(totalRetirementIncome)}
+          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>
+            /yr
+          </span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 20,
+            marginTop: 12,
+            fontSize: 12,
+            color: "#64748b",
+          }}
+        >
+          <span>🏖 Airbnb: {fmtK(ab)}</span>
+          <span>
+            🏛 SS: {fmtK(ssb)} @ age {values.ssAge || 64}
+          </span>
+        </div>
+        <div style={{ fontSize: 10, color: "#334155", marginTop: 8 }}>
+          Airbnb reliability: {values.abReliability || 80}% · Growth:{" "}
+          {values.abGrowth || 3}%/yr
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AiRAForecaster() {
   const [mode, setMode] = useState("vin");
-  const [activeTab, setTab] = useState("stress");
+  const [activeTab, setTab] = useState("scenarios");
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
   const [r85, setR85] = useState(null);
@@ -4553,27 +5029,25 @@ export default function AiRAForecaster() {
   const [real, setReal] = useState(prof.real);
   const [twoHousehold, setTwoHousehold] = useState(true);
 
-  // ── ASSUMPTION STATE — replaces all hardcoded simulation values ──
   const [assumptions, setAssumptions] = useState({
-    dob: "1970-03-14", // Date of birth
-    abReliability: 80, // Airbnb reliability %
-    abGrowth: 3.0, // Airbnb income growth %/yr
-    ssCola: 2.4, // SS COLA %/yr
-    preRetireEq: 91, // Pre-retirement equity weight %
-    postRetireEq: 70, // Post-retirement equity weight %
-    hcShockAge: 72, // Healthcare shock start age
-    hcProb: 3.5, // Healthcare shock probability %
-    hcMin: 70_000, // Healthcare shock min cost
-    hcMax: 130_000, // Healthcare shock max cost
-    ab: 20_000, // Airbnb net income (override)
-    ssb: 31_543, // SS monthly benefit (override)
+    dob: "1970-03-14",
+    abReliability: 80,
+    abGrowth: 3.0,
+    ssCola: 2.4,
+    preRetireEq: 91,
+    postRetireEq: 70,
+    hcShockAge: 72,
+    hcProb: 3.5,
+    hcMin: 70_000,
+    hcMax: 130_000,
+    ab: 20_000,
+    ssb: 31_543,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
     []
   );
 
-  // Derive currentAge live from DOB
   const currentAge = useMemo(() => {
     try {
       const d = new Date(assumptions.dob);
@@ -4584,7 +5058,6 @@ export default function AiRAForecaster() {
     }
   }, [assumptions.dob, prof.currentAge]);
 
-  // Derive D-Day dynamically from DOB + retireAge
   const DDAY_dynamic = useMemo(() => {
     try {
       const d = new Date(assumptions.dob);
@@ -4614,14 +5087,13 @@ export default function AiRAForecaster() {
     setTax(p.tax);
     setUseAb(p.useAb);
     setReal(p.real);
-    setTwoHousehold(true); // FIX: reset toggle on mode switch
+    setTwoHousehold(true);
     setR85(null);
     setR90(null);
     setStress(null);
     setStale(false);
   }, []);
 
-  // FIX 1+2: single sp key, twoHousehold IN deps array
   const params = useMemo(
     () => ({
       currentAge: prof.currentAge,
@@ -4630,7 +5102,7 @@ export default function AiRAForecaster() {
       port,
       contrib,
       inf,
-      sp: twoHousehold ? sp : prof.spThailand, // single sp — no duplicate
+      sp: twoHousehold ? sp : prof.spThailand,
       ssAge,
       ssb,
       ab,
@@ -4649,7 +5121,6 @@ export default function AiRAForecaster() {
       reOrlando105: prof.reOrlando105,
       reOrlando306: prof.reOrlando306,
       twoHousehold,
-      // Model assumption overrides — feed MC engine
       currentAge,
       abReliability: assumptions.abReliability,
       abGrowth: assumptions.abGrowth,
@@ -4682,7 +5153,6 @@ export default function AiRAForecaster() {
     ]
   );
 
-  // Mark stale when params change after a run
   useEffect(() => {
     if (isFirst.current) {
       isFirst.current = false;
@@ -4704,28 +5174,23 @@ export default function AiRAForecaster() {
       setR90(r90_);
       setStress(str);
       setRunning(false);
-      setTab("monte");
+      setTab("montecarlo");
     }, 40);
   }, [params]);
 
   const analogue = r90 ? getAnalogue(r90.rate) : null;
 
   const TABS = [
-    ["stress", "🔶 Stress"],
-    ["gk_det", "🔶 Guyton Klinger"],
-    ["income", "💵 Income"],
-    ["roth", "🔄 Roth"],
-    ["buckets", "🪣 Buckets"],
-    ["smile", "🙂 Smile"],
-    ["monte", "🎲 Monte Carlo"],
     ["scenarios", "🎯 Scenarios"],
+    ["income", "💵 Income"],
+    ["montecarlo", "🎲 Monte Carlo"],
     ["mortgage", "🏠 Mortgage"],
     ["networth", "📊 Net Worth"],
     ["actionplan", "✅ Action Plan"],
     ["assumptions", "⚙️ Assumptions"],
   ];
 
-  const needsMC = ["stress", "networth", "monte"];
+  const needsMC = ["montecarlo", "networth", "fan"];
   const hasMC = !!r90;
 
   return (
@@ -4767,16 +5232,15 @@ export default function AiRAForecaster() {
             >
               {days.toLocaleString()}
             </div>
-            <div style={{ fontSize: 9, color: "#334155" }}>
-              {`days · ${DDAY_dynamic.toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })}`}
-            </div>
+            <div
+              style={{ fontSize: 9, color: "#334155" }}
+            >{`days · ${DDAY_dynamic.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}`}</div>
           </div>
         </div>
-
         <div className="layout">
           <div className="sidebar">
             <div className="sb-card">
@@ -4815,7 +5279,6 @@ export default function AiRAForecaster() {
                 </span>
               </div>
             </div>
-
             <div className="sb-card">
               <div className="sb-title">MC Engine — v5.1</div>
               <div style={{ fontSize: 9, color: "#475569", lineHeight: 1.8 }}>
@@ -4849,7 +5312,6 @@ export default function AiRAForecaster() {
                 </div>
               </div>
             </div>
-
             <div className="sb-card">
               <div className="sb-title">Portfolio</div>
               <Slider
@@ -4871,7 +5333,6 @@ export default function AiRAForecaster() {
                 onChange={setContrib}
               />
             </div>
-
             <div className="sb-card">
               <div className="sb-title">Retirement</div>
               <Slider
@@ -4929,7 +5390,6 @@ export default function AiRAForecaster() {
                 onChange={setAb}
               />
             </div>
-
             <div className="sb-card">
               <div className="sb-title">Options</div>
               <Toggle
@@ -4962,7 +5422,6 @@ export default function AiRAForecaster() {
                 accent="#a78bfa"
               />
             </div>
-
             <button
               className="run-btn"
               onClick={runSimulation}
@@ -4984,7 +5443,6 @@ export default function AiRAForecaster() {
               healthcare shocks
             </div>
           </div>
-
           <div className="main">
             <div className="flag-w">
               ⚠ NJ domicile — establish FL residency before Dec 31, 2030 · Roth
@@ -4999,7 +5457,6 @@ export default function AiRAForecaster() {
               {twoHousehold ? "Both households" : "Vin solo"} · Airbnb 80%
               reliable · Healthcare shocks modeled
             </div>
-
             {stale && (
               <div
                 style={{
@@ -5015,7 +5472,6 @@ export default function AiRAForecaster() {
                 to update.
               </div>
             )}
-
             <div className="metrics">
               <div className="met">
                 <div className="ml">Success to 85</div>
@@ -5081,7 +5537,6 @@ export default function AiRAForecaster() {
                 <div className="ms">4% = safe benchmark</div>
               </div>
             </div>
-
             {analogue && (
               <div
                 className="analogue"
@@ -5098,8 +5553,6 @@ export default function AiRAForecaster() {
                 <SectorBadge age={prof.currentAge} />
               </div>
             )}
-
-            {/* 26 People — always visible headline visual after a run */}
             {r90 &&
               (() => {
                 const success = Math.round(r90.rate * 26);
@@ -5158,6 +5611,7 @@ export default function AiRAForecaster() {
                         make it to {endAge}.{" "}
                         {fail > 0 && (
                           <>
+                            {" "}
                             <span style={{ color: "#ef4444", fontWeight: 700 }}>
                               {fail}
                             </span>{" "}
@@ -5185,7 +5639,6 @@ export default function AiRAForecaster() {
                   </div>
                 );
               })()}
-
             <div className="gk-bar">
               <strong style={{ color: "#5eead4" }}>GK Guardrails:</strong> Floor{" "}
               {fmtM(params.gkFloor)} (
@@ -5194,7 +5647,6 @@ export default function AiRAForecaster() {
               80% reliability. Healthcare shocks 3.5%/yr from age 72. As Bill
               Perkins says — spend in the right life phase. 🌴
             </div>
-
             <div className="tabs">
               {TABS.map(([k, l]) => (
                 <button
@@ -5206,7 +5658,6 @@ export default function AiRAForecaster() {
                 </button>
               ))}
             </div>
-
             {needsMC.includes(activeTab) && !hasMC ? (
               <div
                 className="chart-card"
@@ -5222,7 +5673,17 @@ export default function AiRAForecaster() {
               </div>
             ) : (
               <>
-                {activeTab === "monte" && (
+                {activeTab === "fan" && r90 && (
+                  <FanChart
+                    pcts={r90.pcts}
+                    retireAge={retAge}
+                    ssAge={ssAge}
+                    inf={inf}
+                    useReal={real}
+                    title={`Portfolio fan · age ${endAge} · 3,000 paths`}
+                  />
+                )}
+                {activeTab === "montecarlo" && (
                   <>
                     <MCTab
                       params={params}
@@ -5244,97 +5705,30 @@ export default function AiRAForecaster() {
                     )}
                   </>
                 )}
-                {activeTab === "gk_det" && (
-                  <DeterministicGKView p={params} inf={inf} /> // ← use params, not p
-                )}
-                {activeTab === "stress" && stress && (
-                  <div>
-                    <FanChart
-                      pcts={stress.pcts}
-                      retireAge={retAge}
-                      ssAge={ssAge}
-                      inf={inf}
-                      useReal={real}
-                      title="Stress test: 2000–2012 actual S&P sequence at retirement"
-                    />
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: 10,
-                        marginTop: 10,
-                      }}
-                    >
-                      <div className="met">
-                        <div className="ml">Stress success</div>
-                        <div
-                          className="mv"
-                          style={{
-                            color: stress.rate >= 0.85 ? "#0d9488" : "#f59e0b",
-                          }}
-                        >
-                          {fmtPct(stress.rate)}
-                        </div>
-                      </div>
-                      <div className="met">
-                        <div className="ml">Delta vs base</div>
-                        <div
-                          className="mv"
-                          style={{
-                            color:
-                              r90 && stress.rate >= r90.rate
-                                ? "#0d9488"
-                                : "#ef4444",
-                          }}
-                        >
-                          {r90
-                            ? `${((stress.rate - r90.rate) * 100).toFixed(1)}pp`
-                            : "—"}
-                        </div>
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 10,
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 4,
-                      }}
-                    >
-                      {SEQ_2000_2012.map((r, i) => (
-                        <span
-                          key={i}
-                          style={{
-                            padding: "2px 6px",
-                            borderRadius: 4,
-                            fontSize: 10,
-                            fontFamily: "'DM Mono',monospace",
-                            background:
-                              r < 0
-                                ? "rgba(239,68,68,0.15)"
-                                : "rgba(16,185,129,0.12)",
-                            color: r < 0 ? "#f87171" : "#34d399",
-                            border: `1px solid ${
-                              r < 0
-                                ? "rgba(239,68,68,0.3)"
-                                : "rgba(16,185,129,0.25)"
-                            }`,
-                          }}
-                        >
-                          {2000 + i}: {r > 0 ? "+" : ""}
-                          {(r * 100).toFixed(1)}%
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                {activeTab === "scenarios" && (
+                  <ScenariosTab
+                    baseParams={params}
+                    r85={r85}
+                    r90={r90}
+                    stress={stress}
+                    running={running}
+                    runSimulation={runSimulation}
+                    retAge={retAge}
+                    ssAge={ssAge}
+                    inf={inf}
+                    real={real}
+                    endAge={endAge}
+                    fmtPct={fmtPct}
+                    fmtM={fmtM}
+                    FanChart={FanChart}
+                    SEQ_2000_2012={SEQ_2000_2012}
+                    DeterministicGKView={DeterministicGKView}
+                    RothLadder={RothLadder}
+                    BucketsTab={BucketsTab}
+                    SmileChart={SmileChart}
+                  />
                 )}
                 {activeTab === "income" && <IncomeMap p={params} inf={inf} />}
-                {activeTab === "roth" && <RothLadder params={params} />}
-                {activeTab === "buckets" && <BucketsTab />}
-                {activeTab === "smile" && <SmileChart p={params} inf={inf} />}
-                {activeTab === "scenarios" && (
-                  <ScenariosTab baseParams={params} />
-                )}
                 {activeTab === "mortgage" && (
                   <MortgageTab prof={PROFILES[mode]} />
                 )}
@@ -5343,14 +5737,35 @@ export default function AiRAForecaster() {
                 )}
                 {activeTab === "actionplan" && <ActionPlanTab />}
                 {activeTab === "assumptions" && (
-                  <AssumptionsTab
-                    values={assumptions}
-                    onChange={updateAssumption}
+                  <ProfileWizard
+                    values={{
+                      ...assumptions,
+                      currentAge,
+                      retireAge: retAge,
+                      endAge,
+                      port,
+                      contrib,
+                      sp,
+                      ssAge,
+                      ssb,
+                      ab,
+                    }}
+                    onChange={(k, v) => {
+                      updateAssumption(k, v);
+                      // also wire to main sliders
+                      if (k === "retireAge") setRetAge(v);
+                      if (k === "endAge") setEndAge(v);
+                      if (k === "port") setPort(v);
+                      if (k === "contrib") setContrib(v);
+                      if (k === "sp") setSp(v);
+                      if (k === "ssAge") setSsAge(v);
+                      if (k === "ssb") setSsb(v);
+                      if (k === "ab") setAb(v);
+                    }}
                   />
                 )}
               </>
             )}
-
             <div
               style={{
                 fontSize: 9,
