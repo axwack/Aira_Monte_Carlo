@@ -1719,7 +1719,7 @@ function RothLadder({ params }) {
     retireYear,
   } = ex;
   const domLabel = isFL
-    ? "FL / Thailand (0% state)"
+    ? "No Tax State Move or Out of Country"
     : "NJ (graduated 1.4–10.75%)";
   const domColor = isFL ? "#34d399" : "#fb923c";
   const modeLabels = {
@@ -1799,7 +1799,7 @@ function RothLadder({ params }) {
             ],
             [
               "RMD Table",
-              "Joint & Last Survivor (Mira 9yr younger)",
+              "Joint & Last Survivor (Spouse)",
               "#94a3b8",
             ],
           ].map(([k, v, c]) => (
@@ -3556,7 +3556,7 @@ function MortgageTab({ prof }) {
           <div className="mv" style={{ color: "#0ea5e9", fontSize: 18 }}>
             {fmtM(bal)}
           </div>
-          <div className="ms">Harrington Park NJ</div>
+          <div className="ms">Primary Residence</div>
         </div>
         <div className="met">
           <div className="ml">Payoff year</div>
@@ -3858,6 +3858,280 @@ function NetWorthTab({ p, results90, inf }) {
   );
 }
 
+
+// Add this function before ActionPlanTab (after imports or near other helpers)
+
+function generateActions({
+  params,
+  r90,
+  r85,
+  assumptions,
+  mortgagePayoffYear,
+  currentYear,
+  retireYear,
+  daysToRetire,
+  goal = 3_200_000,
+  fafsaEndYear = 2029,
+}) {
+  const actions = [];
+  const swr = (params.sp / params.port) * 100;
+  const isFL = params.twoHousehold;
+  const preTaxTotal = (assumptions.solo401k || 0) + (assumptions.alpha401k || 0);
+  const rothPct = (assumptions.roth || 0) / params.port;
+  const preTaxPct = (assumptions.preTax || 0) / params.port;
+  const successRate = r90 ? r90.rate : 0;
+  const portFundedPct = (params.port / goal) * 100;
+
+  // 🔴 RED rules
+  if (r90 && successRate < 0.80) {
+    actions.push({
+      priority: "red",
+      category: "Monte Carlo",
+      action: "Success rate below 80%",
+      reason: `${(successRate * 100).toFixed(1)}% — plan needs restructuring`,
+      deadline: "Now",
+    });
+  }
+  if (r90 && successRate < 0.70) {
+    actions.push({
+      priority: "red",
+      category: "Monte Carlo",
+      action: "Plan failure risk — urgent review",
+      reason: `Less than 70% success to age ${params.endAge}`,
+      deadline: "Now",
+    });
+  }
+  if (swr > 5.0) {
+    actions.push({
+      priority: "red",
+      category: "Withdrawal Rate",
+      action: "Withdrawal rate dangerously high",
+      reason: `${swr.toFixed(1)}% — safe benchmark is 4%`,
+      deadline: "Now",
+    });
+  }
+  if (preTaxPct > 0.75) {
+    actions.push({
+      priority: "red",
+      category: "Tax",
+      action: "Pre-tax concentration — RMD bomb",
+      reason: `${(preTaxPct * 100).toFixed(0)}% in taxable accounts, RMD age 73`,
+      deadline: "Before age 66",
+    });
+  }
+  if (daysToRetire < 730 && !isFL) {
+    actions.push({
+      priority: "red",
+      category: "Domicile",
+      action: "FL domicile not established",
+      reason: "NJ tax on withdrawals = ~$50K+ loss",
+      deadline: "Before D-Day",
+    });
+  }
+  if (portFundedPct < 60) {
+    actions.push({
+      priority: "red",
+      category: "Savings",
+      action: `Portfolio below 60% of goal (${(portFundedPct).toFixed(0)}%)`,
+      reason: `${(goal - params.port).toLocaleString()} gap remaining`,
+      deadline: "Now",
+    });
+  }
+
+  // 🟡 YELLOW rules
+  if (currentYear <= fafsaEndYear) {
+    actions.push({
+      priority: "yellow",
+      category: "FAFSA/CSS",
+      action: "Minimize AGI — FAFSA years active",
+      reason: `CSS/FAFSA through ${fafsaEndYear} — cap Roth conversions at 12%`,
+      deadline: `Spring ${fafsaEndYear}`,
+    });
+  }
+  if (portFundedPct < 75) {
+    actions.push({
+      priority: "yellow",
+      category: "Savings",
+      action: "Increase contributions or reduce spend",
+      reason: `${portFundedPct.toFixed(0)}% funded — ${params.retireAge - params.currentAge} years to D-Day`,
+      deadline: "D-Day",
+    });
+  }
+  if (mortgagePayoffYear > retireYear) {
+    actions.push({
+      priority: "yellow",
+      category: "Mortgage",
+      action: "Mortgage outlasts retirement date",
+      reason: `Payoff ${mortgagePayoffYear} — balance remains at D-Day`,
+      deadline: "Pre-retirement",
+    });
+  }
+  const hsaBal = assumptions.hsa || 0;
+  if (hsaBal < 50000) {
+    actions.push({
+      priority: "yellow",
+      category: "HSA",
+      action: "Maximize HSA contributions",
+      reason: `Current HSA $${hsaBal.toLocaleString()} — triple tax advantage`,
+      deadline: "Each year",
+    });
+  }
+  if (rothPct < 0.25) {
+    actions.push({
+      priority: "yellow",
+      category: "Roth",
+      action: "Roth balance low — conversion needed",
+      reason: `${(rothPct * 100).toFixed(0)}% Roth — target 40%+ before RMDs`,
+      deadline: "Ages 61-72",
+    });
+  }
+  if (daysToRetire < 1460) {
+    actions.push({
+      priority: "yellow",
+      category: "Liquidity",
+      action: "Bucket 1 funding — confirm cash",
+      reason: `D-Day in ${Math.ceil(daysToRetire / 365)} years — need 2yr expenses liquid`,
+      deadline: "1 year before D-Day",
+    });
+  }
+  if (params.ssAge > 64) {
+    actions.push({
+      priority: "yellow",
+      category: "Social Security",
+      action: "Confirm SS claiming age",
+      reason: `Each year delay = 8% increase — verify break-even at age ${params.ssAge}`,
+      deadline: "Before retirement",
+    });
+  }
+  const taxableBrok = assumptions.taxableBrok|| 0;
+  if (taxableBrok < 50000) {
+    actions.push({
+      priority: "yellow",
+      category: "Emergency Fund",
+      action: "Build emergency dry powder",
+      reason: `Less than $50K liquid taxable — sequence risk`,
+      deadline: "Now",
+    });
+  }
+
+  // 🟢 GREEN rules
+  if (r90 && successRate >= 0.90) {
+    actions.push({
+      priority: "green",
+      category: "Monte Carlo",
+      action: "Plan on track — stay the course",
+      reason: `${(successRate * 100).toFixed(1)}% success — JL Collins would approve`,
+      deadline: "Ongoing",
+    });
+  }
+  if (swr <= 3.5) {
+    actions.push({
+      priority: "green",
+      category: "Withdrawal Rate",
+      action: "Withdrawal rate conservative",
+      reason: `${swr.toFixed(1)}% — strong margin of safety`,
+      deadline: "Monitor",
+    });
+  }
+  if (mortgagePayoffYear <= retireYear) {
+    actions.push({
+      priority: "green",
+      category: "Mortgage",
+      action: "Mortgage paid off before retirement",
+      reason: `Payoff ${mortgagePayoffYear} — debt-free at D-Day ✅`,
+      deadline: "✅ Done",
+    });
+  }
+  if (r90 && successRate >= 0.85 && swr <= 4) {
+    actions.push({
+      priority: "green",
+      category: "Guardrails",
+      action: "Guyton-Klinger guardrails healthy",
+      reason: `Floor ${params.gkFloor?.toLocaleString()} · Ceiling ${params.gkCeiling?.toLocaleString()} · WR ${swr.toFixed(1)}%`,
+      deadline: "Monitor",
+    });
+  }
+  if (rothPct >= 0.30) {
+    actions.push({
+      priority: "green",
+      category: "Roth",
+      action: "Roth allocation healthy",
+      reason: `${(rothPct * 100).toFixed(0)}% Roth — reducing future RMD exposure`,
+      deadline: "Monitor",
+    });
+  }
+  if (portFundedPct >= 85) {
+    actions.push({
+      priority: "green",
+      category: "Savings",
+      action: `On pace for ${(goal / 1e6).toFixed(1)}M goal`,
+      reason: `${portFundedPct.toFixed(0)}% funded · ${params.retireAge - params.currentAge} years remaining`,
+      deadline: "D-Day",
+    });
+  }
+
+  // Sort: red → yellow → green
+  return actions.sort((a, b) => {
+    const order = { red: 0, yellow: 1, green: 2 };
+    return order[a.priority] - order[b.priority];
+  });
+}
+// Replace the existing ActionPlanTab with this dynamic version
+function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
+  const currentYear = new Date().getFullYear();
+  const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
+  const daysToRetire = Math.max(0,
+    Math.floor((new Date(`${retireYear}-03-15`) - new Date()) / 86400000)
+  );
+
+  if (!params || !r90) {
+    return (
+      <div className="chart-card" style={{ textAlign:"center", padding:"40px 20px" }}>
+        <div style={{ fontSize:14, color:"#94a3b8", marginBottom:8 }}>🎲 Monte Carlo not run yet</div>
+        <div style={{ fontSize:12, color:"#64748b" }}>Press ▶ Run Monte Carlo to generate your personalized action plan.</div>
+      </div>
+    );
+  }
+
+  const dynActions = generateActions({
+    params, r90, r85, assumptions, mortgagePayoffYear,
+    currentYear, retireYear, daysToRetire,
+    goal: assumptions?.portfolioGoal || 3_200_000,
+  });
+
+  const colors = {
+    red:    { bg:"rgba(239,68,68,0.08)",   border:"rgba(239,68,68,0.25)",   label:"#f87171", badge:"🔴 Critical" },
+    yellow: { bg:"rgba(245,158,11,0.08)",  border:"rgba(245,158,11,0.25)",  label:"#fbbf24", badge:"🟡 Important" },
+    green:  { bg:"rgba(16,185,129,0.08)",  border:"rgba(16,185,129,0.25)",  label:"#34d399", badge:"🟢 On Track" },
+  };
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+      {dynActions.map((a, i) => {
+        const c = colors[a.priority];
+        return (
+          <div key={i} style={{ background:c.bg, border:`1px solid ${c.border}`,
+            borderRadius:9, padding:"11px 15px",
+            display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase",
+                letterSpacing:"0.08em", color:c.label, marginBottom:3 }}>
+                {c.badge} · {a.category}
+              </div>
+              <div style={{ fontSize:13, fontWeight:600, color:"#f1f5f9", marginBottom:2 }}>
+                {a.action}
+              </div>
+              <div style={{ fontSize:11, color:"#64748b" }}>{a.reason}</div>
+            </div>
+            <div style={{ fontSize:11, color:"#475569", whiteSpace:"nowrap",
+              marginLeft:16, paddingTop:2 }}>⏱ {a.deadline}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+/*
 function ActionPlanTab() {
   const milestones = [
     {
@@ -3896,7 +4170,7 @@ function ActionPlanTab() {
       status: "target",
       items: [
         "Target $3.2M liquid · Trigger $3.5M",
-        "Retire · Thailand solo 🌴",
+        "Retire · Solo Abroad🌴",
         "Bucket strategy operational · GK engaged",
       ],
     },
@@ -4059,7 +4333,7 @@ function ActionPlanTab() {
     </div>
   );
 }
-
+*/
 function ProfileWizard({ values, onChange }) {
   const [step, setStep] = useState(0);
 
@@ -5270,6 +5544,19 @@ export default function AiRAForecaster() {
     ]
   );
 
+  const mortgageSched = useMemo(
+  () => mortgageSchedule(
+    prof.mortBalance,
+    prof.mortRate,
+    prof.mortStart,
+    prof.mortTerm,
+    prof.mortExtra
+  ),
+  [prof.mortBalance, prof.mortRate, prof.mortStart, prof.mortTerm, prof.mortExtra]
+);
+
+const mortgagePayoffYear = mortgageSched.payoffYr;
+
   useEffect(() => {
     if (isFirst.current) {
       isFirst.current = false;
@@ -5319,7 +5606,7 @@ export default function AiRAForecaster() {
             <div className="logo">
               AiRA <span className="logo-sub">Freedom Financial</span>
             </div>
-            <div style={{ fontSize: 10, color: "#334155" }}>
+            <div style={{ fontSize: 12, color: "#6e8099" }}>
               v5.9 · Inter font · Brighter UI · GK dynamic · Roth age-gated · CSS/FAFSA guards
             </div>
           </div>
@@ -5955,7 +6242,15 @@ export default function AiRAForecaster() {
                 {activeTab === "networth" && (
                   <NetWorthTab p={params} results90={r90} inf={inf} />
                 )}
-                {activeTab === "actionplan" && <ActionPlanTab />}
+                {activeTab === "actionplan" && (
+                    <ActionPlanTab
+                      params={params}
+                      r90={r90}
+                      r85={r85}
+                      assumptions={assumptions}
+                      mortgagePayoffYear={mortgagePayoffYear}
+                    />
+                  )}
                 {activeTab === "assumptions" && (
                   <ProfileWizard
                     values={{
