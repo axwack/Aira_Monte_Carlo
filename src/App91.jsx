@@ -5374,6 +5374,31 @@ export default function AiRAForecaster() {
               })}>
               ⬆ Import
             </button>
+            <a href="https://buymeacoffee.com/axwacki"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "5px 13px",
+                borderRadius: 7,
+                border: "1px solid rgba(255,193,7,0.4)",
+                background: "rgba(255,193,7,0.08)",
+                color: "#fbbf24",
+                fontSize: 11,
+                fontFamily: "'DM Sans',sans-serif",
+                fontWeight: 600,
+                textDecoration: "none",
+                cursor: "pointer",
+                transition: "all 0.2s",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,193,7,0.18)"}
+              onMouseLeave={e => e.currentTarget.style.background = "rgba(255,193,7,0.08)"}
+            >
+              ☕ Buy me a coffee
+            </a>   
+
           </div>
           <div style={{ textAlign: "right" }}>
             <div
