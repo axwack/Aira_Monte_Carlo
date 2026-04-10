@@ -755,11 +755,19 @@ function buildRothExplorer(params = {}) {
           targetTop = Math.min(b22t, irmaaCeiling(yr) + stdD);
         else targetTop = b22t;
 
-        if (age >= 63 && age <= 65 && rothMode !== "fill_12")
+        // IRMAA lookback guard: ages 60-65 — cap at 22% (Medicare checks 2yr prior)
+        if (age >= 60 && age <= 65 && rothMode === "fill_24")
           targetTop = Math.min(targetTop, b22t);
+        // FAFSA/CSS guard: through 2029 (Chris) + 2033 (Danielle) — cap at 12%
         if (yr <= 2029) targetTop = Math.min(targetTop, b12t);
+        // CSS Profile guard: 2030-2033 Danielle in college — cap at 22%
+        if (yr > 2029 && yr <= 2033) targetTop = Math.min(targetTop, b22t);
+        // 24% permitted ages 66-72 only (per Section 4.G v3.6.2)
+        if (rothMode === "fill_24" && (age < 66 || age > 72))
+          targetTop = Math.min(targetTop, b22t);
         const room = Math.max(0, targetTop - txBC);
-        conv = Math.round(Math.min(room, Math.max(0, pT)));
+        // Hard cap: never convert more than $250K in a single year
+        conv = Math.round(Math.min(room, Math.max(0, pT), 250_000));
       }
 
       const totInc = incBC + conv,
@@ -1042,76 +1050,78 @@ function SectorBadge({ age }) {
 
 /* ════ CSS ════ */
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
   * { box-sizing:border-box; }
-  body { margin:0; font-family:'DM Sans',sans-serif; background:#060e1a; color:#e2e8f0; }
-  .app { min-height:100vh; background:linear-gradient(160deg,#040b16 0%,#071220 50%,#04091a 100%); }
-  .hdr { background:rgba(7,18,32,0.97); border-bottom:1px solid rgba(13,148,136,0.3); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(12px); }
-  .logo { font-size:17px; font-weight:700; letter-spacing:-0.02em; }
-  .logo-sub { color:#5eead4; font-weight:300; font-size:13px; }
-  .mbtn { padding:5px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.1); cursor:pointer; font-size:11px; font-family:'DM Sans',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:#64748b; }
-  .mbtn.on { background:linear-gradient(135deg,#0d9488,#14b8a6); border-color:transparent; color:white; }
+  body { margin:0; font-family:'Inter',sans-serif; background:#0a0f1e; color:#f1f5f9; font-size:13px; line-height:1.5; }
+  .app { min-height:100vh; background:linear-gradient(135deg,#0a0f1e 0%,#0d1529 50%,#0a0f1e 100%); }
+  .hdr { background:rgba(10,15,30,0.98); border-bottom:1px solid rgba(99,179,237,0.15); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(16px); }
+  .logo { font-size:18px; font-weight:800; letter-spacing:-0.03em; color:#f8fafc; }
+  .logo-sub { color:#38bdf8; font-weight:400; font-size:13px; margin-left:6px; }
+  .mbtn { padding:5px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.12); cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:#94a3b8; }
+  .mbtn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
+  .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
   .mbtn.demo-on { background:linear-gradient(135deg,#7c3aed,#4f46e5); border-color:transparent; color:white; }
-  .layout { display:grid; grid-template-columns:260px 1fr; height:calc(100vh - 56px); }
-  .sidebar { border-right:1px solid rgba(255,255,255,0.06); padding:14px; overflow-y:auto; background:rgba(7,14,26,0.6); display:flex; flex-direction:column; gap:10px; }
-  .sb-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:10px; padding:12px; }
-  .sb-title { font-size:11px; font-weight:600; color:#475569; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px; }
-  .sl-row { display:grid; grid-template-columns:110px 1fr 62px; align-items:center; gap:8px; margin-bottom:12px; }
-  .sl-label { font-size:12px; color:#94a3b8; }
-  .sl-val { font-size:12px; font-weight:600; text-align:right; color:#e2e8f0; font-family:'DM Mono',monospace; }
+  .layout { display:grid; grid-template-columns:268px 1fr; height:calc(100vh - 56px); }
+  .sidebar { border-right:1px solid rgba(255,255,255,0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; }
+  .sb-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:13px; }
+  .sb-title { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.12em; margin-bottom:12px; }
+  .sl-row { display:grid; grid-template-columns:108px 1fr 66px; align-items:center; gap:8px; margin-bottom:13px; }
+  .sl-label { font-size:12px; color:#cbd5e1; font-weight:500; }
+  .sl-val { font-size:12px; font-weight:700; text-align:right; color:#f1f5f9; font-family:'JetBrains Mono',monospace; }
   input[type=range] { display:none; }
-  .tog-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:9px; }
-  .tog-label { font-size:12px; color:#94a3b8; }
+  .tog-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .tog-label { font-size:12px; color:#cbd5e1; font-weight:500; }
   .tog { width:34px; height:18px; border-radius:9px; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
-  .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; }
-  .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0d9488,#14b8a6); border:none; border-radius:9px; color:white; font-size:13px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all 0.2s; }
-  .run-btn:hover { opacity:0.88; }
-  .run-btn:disabled { opacity:0.45; cursor:not-allowed; }
+  .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.4); }
+  .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); }
+  .run-btn:hover { opacity:0.9; box-shadow:0 6px 20px rgba(14,165,233,0.35); }
+  .run-btn:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
   .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; }
-  .flag-w { border-left:3px solid #f59e0b; background:rgba(245,158,11,0.08); padding:7px 12px; font-size:12px; color:#fcd34d; border-radius:0 7px 7px 0; margin-bottom:4px; }
-  .flag-i { border-left:3px solid #0ea5e9; background:rgba(14,165,233,0.08); color:#7dd3fc; border-radius:0 7px 7px 0; padding:7px 12px; font-size:12px; margin-bottom:4px; }
-  .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
-  .met { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:9px; padding:12px 14px; }
-  .ml { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:6px; }
-  .mv { font-size:22px; font-weight:700; font-family:'DM Mono',monospace; line-height:1; }
-  .ms { font-size:11px; color:#475569; margin-top:4px; }
-  .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:9px; padding:11px 15px; font-size:13px; color:#94a3b8; font-style:italic; }
-  .tabs { display:flex; gap:2px; background:rgba(255,255,255,0.04); border-radius:9px; padding:3px; flex-wrap:wrap; }
-  .tab { flex:1; min-width:66px; padding:6px 4px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:10px; font-family:'DM Sans',sans-serif; color:#64748b; transition:all 0.15s; font-weight:500; white-space:nowrap; }
-  .tab.on { background:rgba(255,255,255,0.08); color:#e2e8f0; border:1px solid rgba(255,255,255,0.1); }
-  .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:10px; padding:14px 16px; }
-  .ct { font-size:12px; color:#64748b; margin-bottom:12px; }
+  .flag-w { border-left:3px solid #f59e0b; background:rgba(245,158,11,0.1); padding:7px 12px; font-size:12px; color:#fde68a; border-radius:0 8px 8px 0; margin-bottom:4px; font-weight:500; }
+  .flag-i { border-left:3px solid #38bdf8; background:rgba(56,189,248,0.08); color:#bae6fd; border-radius:0 8px 8px 0; padding:7px 12px; font-size:12px; margin-bottom:4px; font-weight:500; }
+  .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
+  .met { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:10px; padding:13px 15px; }
+  .ml { font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.09em; margin-bottom:7px; font-weight:600; }
+  .mv { font-size:22px; font-weight:800; font-family:'JetBrains Mono',monospace; line-height:1; }
+  .ms { font-size:11px; color:#64748b; margin-top:5px; }
+  .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:#cbd5e1; font-style:italic; }
+  .tabs { display:flex; gap:3px; background:rgba(255,255,255,0.04); border-radius:10px; padding:3px; flex-wrap:wrap; }
+  .tab { flex:1; min-width:72px; padding:7px 6px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; color:#64748b; transition:all 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; }
+  .tab:hover { color:#94a3b8; }
+  .tab.on { background:rgba(255,255,255,0.09); color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); font-weight:600; }
+  .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:15px 17px; }
+  .ct { font-size:12px; color:#94a3b8; margin-bottom:12px; font-weight:500; }
   .leg { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
   .li { display:flex; align-items:center; gap:5px; font-size:11px; color:#64748b; }
   .ll { width:18px; height:2px; border-radius:1px; }
   .ppl-grid { display:flex; flex-wrap:wrap; gap:4px; margin:8px 0; }
   .ppl-dot { width:18px; height:18px; border-radius:50%; }
   .roth-tbl { width:100%; border-collapse:collapse; font-size:12px; }
-  .roth-tbl th { font-size:11px; font-weight:600; color:#475569; text-transform:uppercase; letter-spacing:0.07em; padding:6px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .roth-tbl th { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.09); }
   .roth-tbl th:first-child { text-align:left; }
-  .roth-tbl td { padding:9px 8px; border-bottom:1px solid rgba(255,255,255,0.05); text-align:right; font-family:'DM Mono',monospace; font-size:12px; }
-  .roth-tbl td:first-child { text-align:left; font-family:'DM Sans',sans-serif; }
-  .gold { background:rgba(251,191,36,0.06); }
-  .gk-bar { background:rgba(13,148,136,0.08); border:1px solid rgba(13,148,136,0.2); border-radius:8px; padding:11px 15px; font-size:12px; }
+  .roth-tbl td { padding:9px 8px; border-bottom:1px solid rgba(255,255,255,0.05); text-align:right; font-family:'JetBrains Mono',monospace; font-size:12px; color:#e2e8f0; }
+  .roth-tbl td:first-child { text-align:left; font-family:'Inter',sans-serif; color:#f1f5f9; }
+  .gold { background:rgba(251,191,36,0.07); }
+  .gk-bar { background:rgba(14,165,233,0.07); border:1px solid rgba(14,165,233,0.2); border-radius:9px; padding:11px 15px; font-size:12px; color:#bae6fd; }
   .countdown-grid { display:flex; gap:5px; }
-  .cd-unit { text-align:center; background:rgba(255,255,255,0.04); border-radius:5px; padding:5px 7px; min-width:36px; }
-  .cd-val { font-size:16px; font-weight:700; color:#f0fdfa; font-family:'DM Mono',monospace; line-height:1; }
-  .cd-lbl { font-size:10px; color:#475569; letter-spacing:0.1em; }
+  .cd-unit { text-align:center; background:rgba(255,255,255,0.05); border-radius:6px; padding:5px 8px; min-width:38px; }
+  .cd-val { font-size:17px; font-weight:800; color:#f0fdfa; font-family:'JetBrains Mono',monospace; line-height:1; }
+  .cd-lbl { font-size:9px; color:#64748b; letter-spacing:0.12em; margin-top:2px; }
   .progress-bar { height:5px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden; margin-top:6px; }
-  .progress-fill { height:100%; background:linear-gradient(90deg,#0d9488,#14b8a6); border-radius:3px; transition:width 1s; }
+  .progress-fill { height:100%; background:linear-gradient(90deg,#0ea5e9,#38bdf8); border-radius:3px; transition:width 1s; }
   .nw-table { width:100%; border-collapse:collapse; font-size:12px; }
-  .nw-table th { font-size:11px; color:#475569; text-transform:uppercase; letter-spacing:0.07em; padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.08); text-align:right; }
+  .nw-table th { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; border-bottom:1px solid rgba(255,255,255,0.09); text-align:right; font-weight:700; }
   .nw-table th:first-child { text-align:left; }
-  .nw-table td { padding:7px 8px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right; font-family:'DM Mono',monospace; }
-  .nw-table td:first-child { text-align:left; font-family:'DM Sans',sans-serif; }
-  .ap-col { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:9px; padding:13px; }
-  .ap-hdr { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:11px; }
-  .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); color:#94a3b8; }
+  .nw-table td { padding:8px 8px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right; font-family:'JetBrains Mono',monospace; color:#e2e8f0; }
+  .nw-table td:first-child { text-align:left; font-family:'Inter',sans-serif; color:#f1f5f9; }
+  .ap-col { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px; }
+  .ap-hdr { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:11px; }
+  .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); color:#cbd5e1; }
   .ms-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; margin-top:2px; }
   .ms-line { width:2px; background:rgba(255,255,255,0.08); margin:0 4px; }
-  .tip-box { background:rgba(7,18,32,0.97); border:1px solid rgba(255,255,255,0.1); border-radius:7px; padding:8px 11px; font-size:12px; }
+  .tip-box { background:rgba(10,15,30,0.98); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:9px 12px; font-size:12px; color:#f1f5f9; }
   ::-webkit-scrollbar { width:3px; height:3px; }
-  ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:2px; }
+  ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.12); border-radius:2px; }
 `;
 
 const Tip = ({ active, payload, label }) => {
@@ -1251,56 +1261,29 @@ function Slider({ label, value, min, max, step, format, onChange }) {
 function DualInput({ label, value, min, max, step, format, onChange }) {
   return (
     <div style={{ marginBottom: 8 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 6,
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <span style={{ fontSize: 12, color: "#94a3b8" }}>{label}</span>
         <input
           type="number"
           value={value}
-          min={min}
-          max={max}
-          step={step}
-          onChange={(e) => {
+          min={min} max={max} step={step}
+          onChange={e => {
             const v = Math.max(min, Math.min(max, Number(e.target.value)));
             if (!isNaN(v)) onChange(v);
           }}
-          style={{
-            width: 100,
-            background: "#0d1b2a",
-            border: "1px solid #1e3a5f",
-            color: "#5eead4",
-            borderRadius: 5,
-            padding: "3px 8px",
-            fontSize: 12,
-            fontFamily: "'DM Mono',monospace",
-            textAlign: "right",
-          }}
+          style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f",
+            color: "#5eead4", borderRadius: 5, padding: "3px 8px",
+            fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
         />
       </div>
-      <Slider
-        label=""
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        format={format}
-        onChange={onChange}
-      />
+      <Slider label="" value={value} min={min} max={max} step={step} format={format} onChange={onChange} />
     </div>
   );
 }
 
 /* ════ IMPORT / EXPORT ════ */
 function exportProfile(values, name = "AiRA_Profile") {
-  const blob = new Blob([JSON.stringify(values, null, 2)], {
-    type: "application/json",
-  });
+  const blob = new Blob([JSON.stringify(values, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -4203,193 +4186,75 @@ function ProfileWizard({ values, onChange }) {
 function SavingsPanel({ values, onChange }) {
   const GOAL = 3_200_000;
   // Account breakdown — auto-sum to port
-  const solo401k = values.solo401k || 0;
-  const alpha401k = values.alpha401k || 0;
-  const rothFid = values.rothFid || 0;
-  const rothVgd = values.rothVgd || 0;
-  const hsaBal = values.hsaBal || 0;
-  const taxable = values.taxable || 0;
-  const autoTotal = solo401k + alpha401k + rothFid + rothVgd + hsaBal + taxable;
+  const solo401k    = values.solo401k    || 0;
+  const alpha401k   = values.alpha401k   || 0;
+  const rothFid     = values.rothFid     || 0;
+  const rothVgd     = values.rothVgd     || 0;
+  const hsaBal      = values.hsaBal      || 0;
+  const taxable     = values.taxable     || 0;
+  const autoTotal   = solo401k + alpha401k + rothFid + rothVgd + hsaBal + taxable;
   const percentToGoal = Math.min(100, (autoTotal / GOAL) * 100);
-  const remaining = Math.max(0, GOAL - autoTotal);
+  const remaining   = Math.max(0, GOAL - autoTotal);
 
   // Keep port in sync with auto-total
   const handleAcct = (k, v) => {
     onChange(k, v);
     // recalc total — use current values + new value
-    const map = {
-      solo401k,
-      alpha401k,
-      rothFid,
-      rothVgd,
-      hsaBal,
-      taxable,
-      [k]: v,
-    };
+    const map = { solo401k, alpha401k, rothFid, rothVgd, hsaBal, taxable, [k]: v };
     const total = Object.values(map).reduce((a, b) => a + b, 0);
     onChange("port", total);
   };
 
   const ACCOUNTS = [
-    {
-      k: "solo401k",
-      label: "Solo 401k (Pre-Tax)",
-      color: "#0ea5e9",
-      max: 3_000_000,
-    },
-    {
-      k: "alpha401k",
-      label: "Alpha FMC 401k (Pre-Tax)",
-      color: "#0ea5e9",
-      max: 500_000,
-    },
-    {
-      k: "rothFid",
-      label: "Roth IRA — Fidelity",
-      color: "#a78bfa",
-      max: 1_000_000,
-    },
-    {
-      k: "rothVgd",
-      label: "Roth IRA — Vanguard",
-      color: "#a78bfa",
-      max: 500_000,
-    },
-    { k: "hsaBal", label: "HSA", color: "#34d399", max: 200_000 },
-    { k: "taxable", label: "Taxable / SGOV", color: "#fbbf24", max: 500_000 },
+    { k:"solo401k",  label:"Solo 401k (Pre-Tax)",        color:"#0ea5e9", max:3_000_000 },
+    { k:"alpha401k", label:"Alpha FMC 401k (Pre-Tax)",   color:"#0ea5e9", max:500_000 },
+    { k:"rothFid",   label:"Roth IRA — Fidelity",        color:"#a78bfa", max:1_000_000 },
+    { k:"rothVgd",   label:"Roth IRA — Vanguard",        color:"#a78bfa", max:500_000 },
+    { k:"hsaBal",    label:"HSA",                        color:"#34d399", max:200_000 },
+    { k:"taxable",   label:"Taxable / SGOV",             color:"#fbbf24", max:500_000 },
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       {/* Account breakdown grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        {ACCOUNTS.map((a) => (
-          <div
-            key={a.k}
-            style={{
-              background: "rgba(255,255,255,0.02)",
-              border: `1px solid ${a.color}22`,
-              borderRadius: 8,
-              padding: "10px 14px",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 11,
-                color: a.color,
-                fontWeight: 600,
-                marginBottom: 8,
-              }}
-            >
-              {a.label}
-            </div>
-            <DualInput
-              label=""
-              value={values[a.k] || 0}
-              min={0}
-              max={a.max}
-              step={5_000}
-              format={(v) => fmtM(v)}
-              onChange={(v) => handleAcct(a.k, v)}
-            />
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+        {ACCOUNTS.map(a => (
+          <div key={a.k} style={{ background:"rgba(255,255,255,0.02)", border:`1px solid ${a.color}22`, borderRadius:8, padding:"10px 14px" }}>
+            <div style={{ fontSize:11, color:a.color, fontWeight:600, marginBottom:8 }}>{a.label}</div>
+            <DualInput label="" value={values[a.k] || 0} min={0} max={a.max} step={5_000}
+              format={v => fmtM(v)} onChange={v => handleAcct(a.k, v)} />
           </div>
         ))}
       </div>
 
       {/* Auto-total summary */}
-      <div
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 10,
-          padding: 16,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginBottom: 10,
-          }}
-        >
-          <span style={{ fontSize: 12, color: "#e2e8f0" }}>
-            🎯 $3.2M Goal Progress
-          </span>
-          <span
-            style={{
-              fontSize: 14,
-              fontWeight: 700,
-              color: "#5eead4",
-              fontFamily: "'DM Mono',monospace",
-            }}
-          >
+      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
+          <span style={{ fontSize:12, color:"#e2e8f0" }}>🎯 $3.2M Goal Progress</span>
+          <span style={{ fontSize:14, fontWeight:700, color:"#5eead4", fontFamily:"'DM Mono',monospace" }}>
             {percentToGoal.toFixed(1)}%
           </span>
         </div>
-        <div
-          style={{
-            height: 10,
-            background: "rgba(255,255,255,0.1)",
-            borderRadius: 5,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              width: `${percentToGoal}%`,
-              height: "100%",
-              background: "linear-gradient(90deg,#0d9488,#14b8a6)",
-              borderRadius: 5,
-              transition: "width 0.3s",
-            }}
-          />
+        <div style={{ height:10, background:"rgba(255,255,255,0.1)", borderRadius:5, overflow:"hidden" }}>
+          <div style={{ width:`${percentToGoal}%`, height:"100%",
+            background:"linear-gradient(90deg,#0d9488,#14b8a6)", borderRadius:5, transition:"width 0.3s" }} />
         </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4,1fr)",
-            gap: 8,
-            marginTop: 12,
-          }}
-        >
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginTop:12 }}>
           {[
-            { label: "Pre-Tax", val: solo401k + alpha401k, color: "#0ea5e9" },
-            { label: "Roth", val: rothFid + rothVgd, color: "#a78bfa" },
-            { label: "HSA", val: hsaBal, color: "#34d399" },
-            { label: "Taxable", val: taxable, color: "#fbbf24" },
-          ].map((s) => (
-            <div key={s.label} style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 10, color: "#475569" }}>{s.label}</div>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: s.color,
-                  fontFamily: "'DM Mono',monospace",
-                }}
-              >
-                {fmtM(s.val)}
-              </div>
+            { label:"Pre-Tax",  val:solo401k+alpha401k, color:"#0ea5e9" },
+            { label:"Roth",     val:rothFid+rothVgd,    color:"#a78bfa" },
+            { label:"HSA",      val:hsaBal,             color:"#34d399" },
+            { label:"Taxable",  val:taxable,            color:"#fbbf24" },
+          ].map(s => (
+            <div key={s.label} style={{ textAlign:"center" }}>
+              <div style={{ fontSize:10, color:"#475569" }}>{s.label}</div>
+              <div style={{ fontSize:13, fontWeight:700, color:s.color, fontFamily:"'DM Mono',monospace" }}>{fmtM(s.val)}</div>
             </div>
           ))}
         </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginTop: 10,
-            fontSize: 11,
-            color: "#64748b",
-          }}
-        >
-          <span>
-            Total:{" "}
-            <strong style={{ color: "#e2e8f0" }}>{fmtM(autoTotal)}</strong>
-          </span>
-          <span>
-            Remaining:{" "}
-            <strong style={{ color: "#f87171" }}>{fmtM(remaining)}</strong>
-          </span>
+        <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:11, color:"#64748b" }}>
+          <span>Total: <strong style={{ color:"#e2e8f0" }}>{fmtM(autoTotal)}</strong></span>
+          <span>Remaining: <strong style={{ color:"#f87171" }}>{fmtM(remaining)}</strong></span>
         </div>
       </div>
     </div>
@@ -5271,8 +5136,10 @@ export default function AiRAForecaster() {
       smile,
       tax,
       real,
-      gkFloor: twoHousehold ? prof.gkFloor : prof.gkFloorThailand,
-      gkCeiling: prof.gkCeiling,
+      // GK dynamic — calculated from portfolio per v3.6.1 (never hardcoded)
+      // Floor = 2.5% of port, min $48K. Ceiling = 4% of port, max $150K.
+      gkFloor: Math.max(twoHousehold ? 88_000 : 48_000, Math.round(port * 0.025)),
+      gkCeiling: Math.min(150_000, Math.round(port * 0.04)),
       mortBalance: prof.mortBalance,
       mortRate: prof.mortRate,
       mortStart: prof.mortStart,
@@ -5342,13 +5209,13 @@ export default function AiRAForecaster() {
   const analogue = r90 ? getAnalogue(r90.rate) : null;
 
   const TABS = [
-    ["scenarios", "🎯 Scenarios"],
-    ["income", "💵 Income"],
-    ["montecarlo", "🎲 Monte Carlo"],
-    ["mortgage", "🏠 Mortgage"],
-    ["networth", "📊 Net Worth"],
+    ["montecarlo", "🎲 Forecast"],
+    ["scenarios",  "🎯 Scenarios"],
+    ["income",     "💵 Income"],
+    ["mortgage",   "🏠 Mortgage"],
+    ["networth",   "📊 Net Worth"],
     ["actionplan", "✅ Action Plan"],
-    ["assumptions", "⚙️ Assumptions"],
+    ["assumptions","👤 Profile"],
   ];
 
   const needsMC = ["montecarlo", "networth", "fan"];
@@ -5364,8 +5231,7 @@ export default function AiRAForecaster() {
               AiRA <span className="logo-sub">Freedom Financial</span>
             </div>
             <div style={{ fontSize: 10, color: "#334155" }}>
-              v5.1 · All bugs fixed · GK Guardrails · 80% Airbnb reliability ·
-              Healthcare shock · 3,000 paths
+              v5.9 · Inter font · Brighter UI · GK dynamic · Roth age-gated · CSS/FAFSA guards
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
@@ -5381,95 +5247,27 @@ export default function AiRAForecaster() {
                 {v.label}
               </button>
             ))}
-            <div
-              style={{
-                width: 1,
-                height: 20,
-                background: "rgba(255,255,255,0.1)",
-                margin: "0 4px",
-              }}
-            />
-            <button
-              className="mbtn"
-              title="Export profile to JSON"
-              onClick={() =>
-                exportProfile({
-                  ...assumptions,
-                  retireAge: retAge,
-                  endAge,
-                  port,
-                  contrib,
-                  sp,
-                  ssAge,
-                  ssb,
-                  ab,
-                })
-              }
-            >
+            <div style={{ width:1, height:20, background:"rgba(255,255,255,0.1)", margin:"0 4px" }} />
+            <button className="mbtn" title="Export profile to JSON"
+              onClick={() => exportProfile({ ...assumptions, retireAge:retAge, endAge, port, contrib, sp, ssAge, ssb, ab })}>
               ⬇ Export
             </button>
-            <button
-              className="mbtn"
-              title="Import profile from JSON"
-              onClick={() =>
-                importProfile((data) => {
-                  if (data.retireAge) setRetAge(data.retireAge);
-                  if (data.endAge) setEndAge(data.endAge);
-                  if (data.port) setPort(data.port);
-                  if (data.contrib) setContrib(data.contrib);
-                  if (data.sp) setSp(data.sp);
-                  if (data.ssAge) setSsAge(data.ssAge);
-                  if (data.ssb) setSsb(data.ssb);
-                  if (data.ab) setAb(data.ab);
-                  [
-                    "dob",
-                    "abReliability",
-                    "abGrowth",
-                    "ssCola",
-                    "preRetireEq",
-                    "postRetireEq",
-                    "hcShockAge",
-                    "hcProb",
-                    "hcMin",
-                    "hcMax",
-                  ].forEach((k) => {
-                    if (data[k] !== undefined) updateAssumption(k, data[k]);
-                  });
-                  setStale(true);
-                })
-              }
-            >
+            <button className="mbtn" title="Import profile from JSON"
+              onClick={() => importProfile((data) => {
+                if (data.retireAge) setRetAge(data.retireAge);
+                if (data.endAge) setEndAge(data.endAge);
+                if (data.port) setPort(data.port);
+                if (data.contrib) setContrib(data.contrib);
+                if (data.sp) setSp(data.sp);
+                if (data.ssAge) setSsAge(data.ssAge);
+                if (data.ssb) setSsb(data.ssb);
+                if (data.ab) setAb(data.ab);
+                ["dob","abReliability","abGrowth","ssCola","preRetireEq","postRetireEq","hcShockAge","hcProb","hcMin","hcMax"]
+                  .forEach(k => { if (data[k] !== undefined) updateAssumption(k, data[k]); });
+                setStale(true);
+              })}>
               ⬆ Import
             </button>
-            <a
-              href="https://buymeacoffee.com/vincentplansfreedom"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "5px 13px",
-                borderRadius: 7,
-                border: "1px solid rgba(255,193,7,0.4)",
-                background: "rgba(255,193,7,0.08)",
-                color: "#fbbf24",
-                fontSize: 11,
-                fontFamily: "'DM Sans',sans-serif",
-                fontWeight: 600,
-                textDecoration: "none",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "rgba(255,193,7,0.18)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "rgba(255,193,7,0.08)")
-              }
-            >
-              ☕ Buy me a coffee
-            </a>
           </div>
           <div style={{ textAlign: "right" }}>
             <div
@@ -5530,7 +5328,7 @@ export default function AiRAForecaster() {
               </div>
             </div>
             <div className="sb-card">
-              <div className="sb-title">MC Engine — v5.1</div>
+              <div className="sb-title">MC Engine — v5.9</div>
               <div style={{ fontSize: 9, color: "#475569", lineHeight: 1.8 }}>
                 <div>
                   📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P
@@ -6025,9 +5823,7 @@ export default function AiRAForecaster() {
                 lineHeight: 1.6,
               }}
             >
-              AiRA Freedom Financial v5.1 · 6 bugs fixed · GK guardrails · 80%
-              Airbnb reliability · Healthcare shocks · Historical bootstrap 99yr
-              S&P + 50yr Bloomberg · MFJ throughout · Not financial advice
+              AiRA Freedom Financial v5.9 · Inter font · GK dynamic · Roth age-gated · CSS/FAFSA guards · Historical bootstrap 99yr S&P + 50yr Bloomberg · Not financial advice
               <br />
               "The best financial plan is the one you can stick with." — Morgan
               Housel
