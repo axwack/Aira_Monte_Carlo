@@ -5099,18 +5099,29 @@ export default function AiRAForecaster() {
   const [twoHousehold, setTwoHousehold] = useState(true);
 
   const [assumptions, setAssumptions] = useState({
-    dob: "1970-03-14",
-    abReliability: 80,
-    abGrowth: 3.0,
-    ssCola: 2.4,
-    preRetireEq: 91,
-    postRetireEq: 70,
-    hcShockAge: 72,
-    hcProb: 3.5,
-    hcMin: 70_000,
-    hcMax: 130_000,
-    ab: 20_000,
-    ssb: 31_543,
+    // Personal — blank by default, loaded from JSON
+    name: BLANK_PROFILE.name,
+    dob:  BLANK_PROFILE.dob,
+    // Account breakdown
+    solo401k:  BLANK_PROFILE.solo401k,
+    alpha401k: BLANK_PROFILE.alpha401k,
+    rothFid:   BLANK_PROFILE.rothFid,
+    rothVgd:   BLANK_PROFILE.rothVgd,
+    hsaBal:    BLANK_PROFILE.hsaBal,
+    taxable:   BLANK_PROFILE.taxable,
+    // MC model parameters
+    abReliability: BLANK_PROFILE.abReliability,
+    abGrowth:      BLANK_PROFILE.abGrowth,
+    ssCola:        BLANK_PROFILE.ssCola,
+    preRetireEq:   BLANK_PROFILE.preRetireEq,
+    postRetireEq:  BLANK_PROFILE.postRetireEq,
+    hcShockAge:    BLANK_PROFILE.hcShockAge,
+    hcProb:        BLANK_PROFILE.hcProb,
+    hcMin:         BLANK_PROFILE.hcMin,
+    hcMax:         BLANK_PROFILE.hcMax,
+    // Income (also blank by default)
+    ab:  BLANK_PROFILE.ab,
+    ssb: BLANK_PROFILE.ssb,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
@@ -5286,8 +5297,7 @@ export default function AiRAForecaster() {
                 }`}
                 onClick={() => switchMode(k)}
               >
-                {k === "demo" ? "🎬 " : "👤 "}
-                {v.label}
+                {k === "demo" ? "🎬 Demo" : "👤 My Plan"}
               </button>
             ))}
             <div style={{ width:1, height:20, background:"rgba(255,255,255,0.1)", margin:"0 4px" }} />
@@ -5588,6 +5598,12 @@ export default function AiRAForecaster() {
             </div>
           </div>
           <div className="main">
+            {mode === "user" && !assumptions.dob && (
+              <div style={{ background:"rgba(14,165,233,0.1)", border:"2px solid rgba(14,165,233,0.3)", borderRadius:9, padding:"12px 16px" }}>
+                <div style={{ fontSize:13, fontWeight:700, color:"#38bdf8" }}>📂 No profile loaded</div>
+                <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Click ⬆ Import in the header to load your AiRA_Profile.json, or go to 👤 Profile tab to enter data manually, then Export to save it.</div>
+              </div>
+            )}
             <div className="flag-w">
               ⚠ NJ domicile — establish FL residency before Dec 31, 2030 · Roth
               ladder saves ~$50,575 vs NJ
@@ -5598,7 +5614,7 @@ export default function AiRAForecaster() {
             </div>
             <div className="flag-i">
               🛡 GK active · WR {swr}% ·{" "}
-              {twoHousehold ? "Both households" : "Vin solo"} · Airbnb 80%
+              {twoHousehold ? "Both households" : "Solo"} · Airbnb 80%
               reliable · Healthcare shocks modeled
             </div>
             {stale && (
