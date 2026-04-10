@@ -61,74 +61,117 @@ const CALIB = {
 };
 
 /* ════ PROFILES ════ */
-const DDAY = new Date("2030-03-14T00:00:00");
+/* Personal data lives in AiRA_Profile.json — never hardcoded here */
+/* Use Export button to save your data. Use Import to load it back. */
 
-const PROFILES = {
-  vin: {
-    label: "My Plan",
-    currentAge: 56,
-    retireAge: 60,
-    endAge: 85,
-    port: 2_434_000,
-    contrib: 38_525,
-    inf: 2.5,
-    sp: 100_000, // total both households
-    spThailand: 48_000, // Vin solo abroad
-    spMiraNJ: 52_000, // Mira NJ household
-    ssAge: 64,
-    ssb: 31_543,
-    ab: 20_000,
-    useAb: true,
-    smile: true,
-    tax: true,
-    real: true,
-    gkFloor: 88_000, // both households floor
-    gkFloorThailand: 48_000, // solo floor
-    gkTarget: 100_000,
-    gkCeiling: 115_000,
-    mortBalance: 267_518,
-    mortRate: 6.25,
-    mortStart: "2023-05",
-    mortTerm: 30,
-    mortExtra: 310,
-    mortPI: 1847.15,
-    reHarrington: 1_340_000,
-    reOrlando105: 500_000,
-    reOrlando306: 500_000,
-  },
-  demo: {
-    label: "Demo Mode",
-    currentAge: 51,
-    retireAge: 62,
-    endAge: 88,
-    port: 1_000_000,
-    contrib: 24_000,
-    inf: 2.5,
-    sp: 72_000,
-    spThailand: 72_000,
-    spMiraNJ: 0,
-    ssAge: 67,
-    ssb: 28_000,
-    ab: 0,
-    useAb: false,
-    smile: true,
-    tax: true,
-    real: true,
-    gkFloor: 48_000,
-    gkFloorThailand: 48_000,
-    gkTarget: 72_000,
-    gkCeiling: 100_000,
-    mortBalance: 200_000,
-    mortRate: 7.0,
-    mortStart: "2022-01",
-    mortTerm: 30,
-    mortExtra: 0,
-    mortPI: 1330,
-    reHarrington: 600_000,
-    reOrlando105: 0,
-    reOrlando306: 0,
-  },
+const BLANK_PROFILE = {
+  label: "My Plan",
+  name: "",
+  dob: "",
+  currentAge: 50,
+  retireAge: 60,
+  endAge: 85,
+  port: 1_000_000,
+  contrib: 20_000,
+  inf: 2.5,
+  sp: 72_000,
+  spThailand: 48_000,
+  spMiraNJ: 0,
+  ssAge: 67,
+  ssb: 24_000,
+  ab: 0,
+  useAb: false,
+  smile: true,
+  tax: true,
+  real: true,
+  twoHousehold: false,
+  gkFloor: 48_000,
+  gkFloorThailand: 48_000,
+  gkTarget: 72_000,
+  gkCeiling: 100_000,
+  // Mortgage
+  mortBalance: 0,
+  mortRate: 6.5,
+  mortStart: "2020-01",
+  mortTerm: 30,
+  mortExtra: 0,
+  mortPI: 0,
+  // Real estate (not in liquid portfolio)
+  reHarrington: 0,
+  reOrlando105: 0,
+  reOrlando306: 0,
+  // Account breakdown (feeds port total)
+  solo401k: 0,
+  alpha401k: 0,
+  rothFid: 0,
+  rothVgd: 0,
+  hsaBal: 0,
+  taxable: 0,
+  // MC assumptions
+  abReliability: 80,
+  abGrowth: 3.0,
+  ssCola: 2.4,
+  preRetireEq: 91,
+  postRetireEq: 70,
+  hcShockAge: 72,
+  hcProb: 3.5,
+  hcMin: 70_000,
+  hcMax: 130_000,
 };
+
+const DEMO_PROFILE = {
+  label: "Demo Mode",
+  name: "Alex",
+  dob: "1974-06-15",
+  currentAge: 51,
+  retireAge: 62,
+  endAge: 88,
+  port: 1_000_000,
+  contrib: 24_000,
+  inf: 2.5,
+  sp: 72_000,
+  spThailand: 72_000,
+  spMiraNJ: 0,
+  ssAge: 67,
+  ssb: 28_000,
+  ab: 0,
+  useAb: false,
+  smile: true,
+  tax: true,
+  real: true,
+  twoHousehold: false,
+  gkFloor: 48_000,
+  gkFloorThailand: 48_000,
+  gkTarget: 72_000,
+  gkCeiling: 100_000,
+  mortBalance: 200_000,
+  mortRate: 7.0,
+  mortStart: "2022-01",
+  mortTerm: 30,
+  mortExtra: 0,
+  mortPI: 1330,
+  reHarrington: 600_000,
+  reOrlando105: 0,
+  reOrlando306: 0,
+  solo401k: 750_000,
+  alpha401k: 0,
+  rothFid: 150_000,
+  rothVgd: 0,
+  hsaBal: 50_000,
+  taxable: 50_000,
+  abReliability: 80,
+  abGrowth: 3.0,
+  ssCola: 2.4,
+  preRetireEq: 91,
+  postRetireEq: 70,
+  hcShockAge: 72,
+  hcProb: 3.5,
+  hcMin: 70_000,
+  hcMax: 130_000,
+};
+
+const PROFILES = { user: BLANK_PROFILE, demo: DEMO_PROFILE };
+
 
 const ANALOGUES = [
   {
@@ -5030,7 +5073,7 @@ function IncomePanel({ values, onChange }) {
 }
 
 export default function AiRAForecaster() {
-  const [mode, setMode] = useState("vin");
+  const [mode, setMode] = useState("user");
   const [activeTab, setTab] = useState("scenarios");
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
@@ -5249,22 +5292,75 @@ export default function AiRAForecaster() {
             ))}
             <div style={{ width:1, height:20, background:"rgba(255,255,255,0.1)", margin:"0 4px" }} />
             <button className="mbtn" title="Export profile to JSON"
-              onClick={() => exportProfile({ ...assumptions, retireAge:retAge, endAge, port, contrib, sp, ssAge, ssb, ab })}>
+              onClick={() => exportProfile({
+                // Identity
+                name: assumptions.name || "", dob: assumptions.dob || "",
+                // Core retirement
+                retireAge: retAge, endAge, port, contrib, inf: inf,
+                sp, ssAge, ssb, ab, useAb, smile, tax, real, twoHousehold,
+                // Spending
+                spThailand: prof.spThailand || 48000,
+                spMiraNJ: prof.spMiraNJ || 0,
+                // Mortgage
+                mortBalance: prof.mortBalance || 0,
+                mortRate: prof.mortRate || 6.5,
+                mortStart: prof.mortStart || "2020-01",
+                mortTerm: prof.mortTerm || 30,
+                mortExtra: prof.mortExtra || 0,
+                mortPI: prof.mortPI || 0,
+                // Real estate
+                reHarrington: prof.reHarrington || 0,
+                reOrlando105: prof.reOrlando105 || 0,
+                reOrlando306: prof.reOrlando306 || 0,
+                // Account breakdown
+                solo401k: assumptions.solo401k || 0,
+                alpha401k: assumptions.alpha401k || 0,
+                rothFid: assumptions.rothFid || 0,
+                rothVgd: assumptions.rothVgd || 0,
+                hsaBal: assumptions.hsaBal || 0,
+                taxable: assumptions.taxable || 0,
+                // MC assumptions
+                abReliability: assumptions.abReliability,
+                abGrowth: assumptions.abGrowth,
+                ssCola: assumptions.ssCola,
+                preRetireEq: assumptions.preRetireEq,
+                postRetireEq: assumptions.postRetireEq,
+                hcShockAge: assumptions.hcShockAge,
+                hcProb: assumptions.hcProb,
+                hcMin: assumptions.hcMin,
+                hcMax: assumptions.hcMax,
+                // Meta
+                exportedAt: new Date().toISOString(),
+                appVersion: "5.9",
+              }, assumptions.name ? `AiRA_Profile_${assumptions.name}` : "AiRA_Profile")}>
               ⬇ Export
             </button>
             <button className="mbtn" title="Import profile from JSON"
               onClick={() => importProfile((data) => {
-                if (data.retireAge) setRetAge(data.retireAge);
-                if (data.endAge) setEndAge(data.endAge);
-                if (data.port) setPort(data.port);
-                if (data.contrib) setContrib(data.contrib);
-                if (data.sp) setSp(data.sp);
-                if (data.ssAge) setSsAge(data.ssAge);
-                if (data.ssb) setSsb(data.ssb);
-                if (data.ab) setAb(data.ab);
-                ["dob","abReliability","abGrowth","ssCola","preRetireEq","postRetireEq","hcShockAge","hcProb","hcMin","hcMax"]
-                  .forEach(k => { if (data[k] !== undefined) updateAssumption(k, data[k]); });
+                // Wire all main sliders
+                if (data.retireAge)  setRetAge(data.retireAge);
+                if (data.endAge)     setEndAge(data.endAge);
+                if (data.port)       setPort(data.port);
+                if (data.contrib)    setContrib(data.contrib);
+                if (data.inf)        setInf(data.inf);
+                if (data.sp)         setSp(data.sp);
+                if (data.ssAge)      setSsAge(data.ssAge);
+                if (data.ssb)        setSsb(data.ssb);
+                if (data.ab !== undefined) setAb(data.ab);
+                if (data.useAb !== undefined) setUseAb(data.useAb);
+                if (data.smile !== undefined) setSmile(data.smile);
+                if (data.tax !== undefined) setTax(data.tax);
+                if (data.real !== undefined) setReal(data.real);
+                if (data.twoHousehold !== undefined) setTwoHousehold(data.twoHousehold);
+                // Wire all assumptions
+                const keys = ["name","dob","abReliability","abGrowth","ssCola",
+                  "preRetireEq","postRetireEq","hcShockAge","hcProb","hcMin","hcMax",
+                  "solo401k","alpha401k","rothFid","rothVgd","hsaBal","taxable"];
+                keys.forEach(k => { if (data[k] !== undefined) updateAssumption(k, data[k]); });
+                // Switch to user mode
+                setMode("user");
                 setStale(true);
+                alert(`✅ Profile loaded${data.name ? ` for ${data.name}` : ""}. Press ▶ Run Monte Carlo to update.`);
               })}>
               ⬆ Import
             </button>
