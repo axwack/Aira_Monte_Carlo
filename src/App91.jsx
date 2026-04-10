@@ -4305,60 +4305,95 @@ function SavingsPanel({ values, onChange }) {
 }
 
 function AboutYouPanel({ values, onChange }) {
-  const yearsToRetire = Math.max(0, values.retireAge - values.currentAge);
+  // Derive currentAge from values.dob (if valid)
+  const derivedAge = useMemo(() => {
+    if (!values.dob) return null;
+    try {
+      const dobDate = new Date(values.dob);
+      if (isNaN(dobDate.getTime())) return null;
+      const today = new Date();
+      let age = today.getFullYear() - dobDate.getFullYear();
+      const m = today.getMonth() - dobDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) age--;
+      return age;
+    } catch {
+      return null;
+    }
+  }, [values.dob]);
+
+  // Years to retirement (uses derivedAge if available, otherwise values.currentAge fallback)
+  const currentAgeForCalc = derivedAge ?? values.currentAge;
+  const yearsToRetire = Math.max(0, values.retireAge - currentAgeForCalc);
   const yearsInRetire = Math.max(0, values.endAge - values.retireAge);
   const totalHorizon = yearsToRetire + yearsInRetire;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Three sliders */}
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}
-      >
-        {[
-          {
-            label: "Current Age",
-            k: "currentAge",
-            min: 30,
-            max: 75,
-            step: 1,
-            fmt: (v) => `${v} yrs`,
-          },
-          {
-            label: "Retirement Age",
-            k: "retireAge",
-            min: 50,
-            max: 75,
-            step: 1,
-            fmt: (v) => `${v} yrs`,
-          },
-          {
-            label: "Planning Horizon",
-            k: "endAge",
-            min: 75,
-            max: 100,
-            step: 1,
-            fmt: (v) => `to age ${v}`,
-          },
-        ].map((s) => (
-          <div key={s.k}>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-              {s.label}
-            </div>
-            <Slider
-              label=""
-              value={values[s.k]}
-              min={s.min}
-              max={s.max}
-              step={s.step}
-              format={s.fmt}
-              onChange={(v) => onChange(s.k, v)}
-            />
+      {/* DOB Input + derived age */}
+      <div>
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>
+          Date of Birth
+        </div>
+        <input
+          type="date"
+          value={values.dob || ""}
+          onChange={(e) => onChange("dob", e.target.value)}
+          style={{
+            width: "100%",
+            background: "#0d1b2a",
+            border: "1px solid #1e3a5f",
+            color: "#e2e8f0",
+            borderRadius: 6,
+            padding: "8px 12px",
+            fontSize: 13,
+            fontFamily: "'DM Mono',monospace",
+          }}
+        />
+        {derivedAge !== null && (
+          <div style={{ fontSize: 11, color: "#5eead4", marginTop: 6 }}>
+            Current age: <strong>{derivedAge}</strong> (calculated from DOB)
           </div>
-        ))}
+        )}
+        {derivedAge === null && values.dob && (
+          <div style={{ fontSize: 11, color: "#f87171", marginTop: 6 }}>
+            Invalid date format. Use YYYY-MM-DD.
+          </div>
+        )}
       </div>
 
-      {/* Summary row */}
+      {/* Retirement Age slider (unchanged) */}
+      <div>
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+          Retirement Age
+        </div>
+        <Slider
+          label=""
+          value={values.retireAge}
+          min={50}
+          max={75}
+          step={1}
+          format={(v) => `${v} yrs`}
+          onChange={(v) => onChange("retireAge", v)}
+        />
+      </div>
+
+      {/* Planning Horizon (endAge) slider (unchanged) */}
+      <div>
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+          Planning Horizon
+        </div>
+        <Slider
+          label=""
+          value={values.endAge}
+          min={75}
+          max={100}
+          step={1}
+          format={(v) => `to age ${v}`}
+          onChange={(v) => onChange("endAge", v)}
+        />
+      </div>
+
+      {/* Summary row (uses derived age) */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
