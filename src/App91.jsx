@@ -320,7 +320,7 @@ function calcYearTax(
   yr,
   withdrawalAmount,
   ssIncome,
-  airbnbIncome,
+  RentalIncome,
   rmdIncome,
   conversionAmount,
   isTwoHousehold,
@@ -329,7 +329,7 @@ function calcYearTax(
   const taxableSS = ssIncome * 0.85;
   const otherIncome =
     (withdrawalAmount || 0) +
-    (airbnbIncome || 0) +
+    (RentalIncome || 0) +
     (rmdIncome || 0) +
     (conversionAmount || 0);
   const totalIncome = taxableSS + otherIncome;
@@ -364,21 +364,20 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   const results = [];
   const gkFloor = p.gkFloor || 48_000;
   const gkCeiling = p.gkCeiling || 115_000;
+  const withdrawalStrategy = p.withdrawalStrategy || "gk";
   
   // User settings for cash return and RMD table
   const cashRealReturn = (p.cashRealReturn ?? 1.0) / 100;
   const useJointTable = p.useJointRmdTable ?? false;
 
   // Simplified Joint & Last Survivor table (assumes spouse is 10 years younger)
-  // For a full public tool, you would need a 2D table keyed by owner age and spouse age.
   const JOINT_RMD_TABLE = {
     73: 25.3, 74: 24.6, 75: 24.0, 76: 23.4, 77: 22.8,
     78: 22.3, 79: 21.8, 80: 21.3, 81: 20.9, 82: 20.5,
     83: 20.1, 84: 19.7, 85: 19.3, 86: 19.0, 87: 18.7,
     88: 18.4, 89: 18.1, 90: 17.8,
   };
-  // Uniform Lifetime Table (same as your existing RMD_DIV)
-  const UNIFORM_TABLE = RMD_DIV; // RMD_DIV is defined elsewhere in your file
+  const UNIFORM_TABLE = RMD_DIV;
 
   for (let i = 0; i < N; i++) {
     // Initialize buckets from p.accounts for this path
@@ -395,12 +394,10 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     // Accumulation phase
     for (let y = 0; y < accYrs; y++) {
       const ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq);
-      // Apply growth to all buckets equally (simplified)
       pretax   = Math.max(0, pretax   * (1 + ret));
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
       cash     = Math.max(0, cash     * (1 + ret));
-      // Add contributions to pre‑tax (simplest assumption)
       pretax += p.contrib;
       totalPort = pretax + roth + taxable + cash;
     }
@@ -415,6 +412,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     let survived = true, exhaustAge = null;
     let sp = p.sp;
     let lastReturn = 0;
+    let startingPort = portAtRetire; // for Kitces ratcheting
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
     const ab0 = p.useAb ? p.ab : 0;
@@ -426,14 +424,63 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       const r = portReturn(age, rand, p.preRetireEq, p.postRetireEq);
       const inflY = bootstrapDraw(INFL, rand);
 
-      // GK guardrails — inflate floor/ceiling to preserve real purchasing power
       const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
       const adjFloor = gkFloor * cumInfl;
       const adjCeiling = gkCeiling * cumInfl;
-      if (useGK && y > 0 && totalPort > 0) {
-        sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
-      } else if (y > 0) {
-        sp = p.smile ? sp * (1 + (age < 75 ? gg : age < 85 ? sg : ng)) : sp * (1 + inflY);
+      
+      // ========== WITHDRAWAL STRATEGY ==========
+      if (y === 0) {
+        // First year: use target spend (p.sp)
+      } else {
+        if (withdrawalStrategy === "gk") {
+          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+        }
+        else if (withdrawalStrategy === "fixed") {
+          const fixedRate = p.fixedWithdrawalRate ?? 0.04;
+          let newSp = totalPort * fixedRate;
+          sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
+        }
+        else if (withdrawalStrategy === "vanguard") {
+          const initialRate = p.vanguardInitialRate ?? 0.04;
+          const cap = p.vanguardCap ?? 0.05;
+          const floorRate = p.vanguardFloor ?? -0.025;
+          
+          if (y === 1) {
+            const pctOfPort = totalPort * initialRate;
+            const inflationAdj = sp * (1 + inflY);
+            let candidate = (inflationAdj + pctOfPort) / 2;
+            let change = (candidate / sp) - 1;
+            let cappedChange = Math.max(floorRate, Math.min(cap, change));
+            sp = sp * (1 + cappedChange);
+          } else {
+            const pctOfPort = totalPort * initialRate;
+            const dynamic = sp * (1 + inflY) * (1 + (r - inflY) * 0.5);
+            let candidate = dynamic;
+            let change = (candidate / sp) - 1;
+            let cappedChange = Math.max(floorRate, Math.min(cap, change));
+            sp = sp * (1 + cappedChange);
+          }
+          sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
+        }
+        else if (withdrawalStrategy === "risk") {
+          const safeWR = p.safeWithdrawalRate ?? 0.04;
+          const currentWR = sp / totalPort;
+          if (currentWR > safeWR * 1.2) {
+            sp = sp * 0.9;
+          } else if (currentWR < safeWR * 0.8) {
+            sp = sp * 1.1;
+          }
+          sp = sp * (1 + inflY);
+          sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
+        }
+        else if (withdrawalStrategy === "kitces") {
+          if (totalPort >= startingPort * 1.5) {
+            sp = sp * 1.10;
+            startingPort = totalPort;
+          }
+          sp = sp * (1 + inflY);
+          sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
+        }
       }
       lastReturn = r;
 
@@ -456,7 +503,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       }
       const totalNeed = need + rmd;
 
-      // Tax calculation (conservative: all withdrawal is ordinary income)
+      // Tax calculation
       const yr = 2026 + (age - p.currentAge);
       const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY);
       const totalTax = taxResult.totalTax;
@@ -479,13 +526,13 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         break;
       }
 
-      // Update bucket balances after withdrawals and RMD
+      // Update bucket balances
       cash    = Math.max(0, cash    - fromCash);
       taxable = Math.max(0, taxable - fromTaxable);
       pretax  = Math.max(0, pretax  - fromPretax - rmd);
       roth    = Math.max(0, roth    - fromRoth);
 
-      // Apply growth: cash gets user-defined real return; others get portfolio return
+      // Apply growth
       cash    = Math.max(0, cash    * (1 + cashRealReturn));
       pretax  = Math.max(0, pretax  * (1 + r));
       roth    = Math.max(0, roth    * (1 + r));
@@ -502,7 +549,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     results.push({ path, survived, exhaustAge, portAtRetire });
   }
 
-  // Aggregate results (unchanged)
+  // Aggregate results
   const pL = results[0].path.length;
   const pcts = [];
   for (let t = 0; t < pL; t++) {
@@ -525,17 +572,6 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     term: { p10: qt(0.1), p25: qt(0.25), p50: qt(0.5), p75: qt(0.75), p90: qt(0.9) },
     N,
   };
-}
-function withdrawFromBuckets(need, pretax, roth, taxable, cash) {
-  let remaining = need;
-  let fromTaxable = Math.min(remaining, taxable);
-  remaining -= fromTaxable;
-  let fromPretax = Math.min(remaining, pretax);
-  remaining -= fromPretax;
-  let fromRoth = Math.min(remaining, roth);
-  remaining -= fromRoth;
-  // If still short, you fail – but GK should prevent that.
-  return { fromTaxable, fromPretax, fromRoth, success: remaining === 0 };
 }
 function runStress(p, endAge, N = 2000, seed = 99) {
   const rand = mulberry32(seed);
@@ -567,7 +603,6 @@ function runStress(p, endAge, N = 2000, seed = 99) {
       const r = eqW * eq + (1 - eqW) * bootstrapDraw(BONDS, rand);
       const inflY = bootstrapDraw(INFL, rand);
 
-      // Inflate GK guardrails to preserve real purchasing power
       const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
       const adjFloor = gkFloor * cumInfl;
       const adjCeiling = gkCeiling * cumInfl;
@@ -612,107 +647,6 @@ function runStress(p, endAge, N = 2000, seed = 99) {
   }
   return { rate: results.filter((r) => r.survived).length / N, pcts };
 }
-function simulateMedianGK(p, inf) {
-  const accYrs = Math.max(0, p.retireAge - p.currentAge);
-  const retYrs = p.endAge - p.retireAge;
-  let port = p.port;
-
-  for (let y = 0; y < accYrs; y++) {
-    const ret = CALIB.phase1Mean / 100;
-    port = port * (1 + ret) + p.contrib;
-  }
-
-  const portAtRetire = port;
-  const gkFloor = p.gkFloor || 48_000;
-  const gkCeiling = p.gkCeiling || 115_000;
-  const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-  const ab0 = p.useAb ? p.ab : 0;
-  const initDraw = Math.max(0, p.sp - ss0 - ab0);
-  const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
-
-  let sp = p.sp;
-  let lastReturn = 0;
-  const schedule = [];
-
-  for (let y = 0; y < retYrs; y++) {
-    const age = p.retireAge + y;
-    const yr = 2026 + (age - p.currentAge);
-    const ret = age < 62 ? CALIB.phase1Mean / 100 : CALIB.phase2Mean / 100;
-    const inflY = inf / 100;
-
-    // Inflate GK guardrails to preserve real purchasing power
-    const cumInfl = Math.pow(1 + inflY, y);
-    const adjFloor = gkFloor * cumInfl;
-    const adjCeiling = gkCeiling * cumInfl;
-    if (y > 0 && port > 0) {
-      sp = guytonKlingerWithdrawal(
-        port,
-        initWR,
-        sp,
-        lastReturn,
-        inflY,
-        adjFloor,
-        adjCeiling
-      );
-    }
-    lastReturn = ret;
-
-    const ss =
-      age >= p.ssAge
-        ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y))
-        : 0;
-    const ab = p.useAb
-      ? Math.round(
-          p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20))
-        )
-      : 0;
-    const need = Math.max(0, sp - ss - ab);
-
-    const taxResult = calcYearTax(
-      age,
-      yr,
-      need,
-      ss,
-      ab,
-      0,
-      0,
-      p.twoHousehold || false,
-      inflY
-    );
-
-    const totalDraw = need + taxResult.totalTax;
-    port = port * (1 + ret) - totalDraw;
-
-    // Determine which GK band is active
-    const wr = port > 0 ? sp / port : 0;
-    let gkBand = "normal";
-    if (wr <= initWR * 0.8) gkBand = "prosperity";
-    else if (wr >= initWR * 1.2) gkBand = "capital_preservation";
-
-    schedule.push({
-      age,
-      yr,
-      spending: Math.round(sp),
-      ss,
-      airbnb: ab,
-      portfolioDraw: Math.round(need),
-      fedTax: taxResult.fedTax,
-      stateTax: taxResult.stateTax,
-      irmaa: taxResult.irmaa,
-      totalTax: taxResult.totalTax,
-      totalWithdrawal: Math.round(totalDraw),
-      portfolioEnd: Math.max(0, Math.round(port)),
-      gkFloor: Math.round(adjFloor),
-      gkCeiling: Math.round(adjCeiling),
-      gkBand,
-      withdrawalRate: wr,
-    });
-
-    if (port <= 0) break;
-  }
-  return { schedule, portAtRetire: Math.round(portAtRetire), initWR };
-}
-
 /* ════ ROTH CONVERSION EXPLORER ════ */
 const FED_BRACKETS_2026 = [
   { lo: 0, hi: 24800, rate: 0.1 },
@@ -1632,14 +1566,14 @@ function IncomeMap({ p, inf }) {
         age,
         "Portfolio Draw": Math.max(0, Math.round(sp) - ss - ab),
         "Social Security": ss,
-        "Airbnb Net": ab,
+        "Rental Net": ab,
       };
     });
   }, [p, inf]);
   return (
     <div className="chart-card">
       <div className="ct">
-        Annual income coverage · {p.smile ? "Smile" : "Flat"} spending · Airbnb
+        Annual income coverage · {p.smile ? "Smile" : "Flat"} spending · Rental
         80% reliability modeled
       </div>
       <ResponsiveContainer width="100%" height={250}>
@@ -1666,7 +1600,7 @@ function IncomeMap({ p, inf }) {
           <Bar dataKey="Portfolio Draw" stackId="a" fill="#0d9488cc" />
           <Bar dataKey="Social Security" stackId="a" fill="#7c3aedcc" />
           <Bar
-            dataKey="Airbnb Net"
+            dataKey="Rental Net"
             stackId="a"
             fill="#059669cc"
             radius={[2, 2, 0, 0]}
@@ -1844,7 +1778,7 @@ function RothLadder({ params }) {
             ],
             [
               "Other Income",
-              "Airbnb $" +
+              "Rental $" +
                 (params.ab || 20000).toLocaleString() +
                 "/yr (3% growth)",
               "#94a3b8",
@@ -2740,7 +2674,7 @@ function DeterministicGKView({ p, inf }) {
                   <th>WR%</th>
                   <th>Band</th>
                   <th>SS</th>
-                  <th>Airbnb</th>
+                  <th>Rental</th>
                   <th>Portfolio Draw</th>
                   <th>Fed Tax</th>
                   <th>State Tax</th>
@@ -2765,7 +2699,7 @@ function DeterministicGKView({ p, inf }) {
                     <td style={{ color: "#94a3b8", fontSize: 10 }}>{(s.withdrawalRate * 100).toFixed(1)}%</td>
                     <td style={{ color: bandColor, fontSize: 10, fontWeight: 600 }}>{bandLabel}</td>
                     <td>{fmtM(s.ss)}</td>
-                    <td>{fmtM(s.airbnb)}</td>
+                    <td>{fmtM(s.Rental)}</td>
                     <td>{fmtM(s.portfolioDraw)}</td>
                     <td style={{ color: "#f87171" }}>{fmtM(s.fedTax)}</td>
                     <td style={{ color: "#fb923c" }}>{fmtM(s.stateTax)}</td>
@@ -2883,7 +2817,6 @@ function BucketsTab() {
     </div>
   );
 }
-
 function ScenariosTab({
   baseParams,
   r85,
@@ -2906,10 +2839,11 @@ function ScenariosTab({
   SmileChart,
 }) {
   const [scenarioSubTab, setScenarioSubTab] = useState("stress");
+  const [withdrawalStrategy, setWithdrawalStrategy] = useState("gk");
 
   const SCENARIO_SUBTABS = [
     ["stress", "🔶 Stress"],
-    ["gk", "📐 Guardrails"],
+    ["withdrawal", "💸 Withdrawal Analysis"],
     ["roth", "🔄 Roth"],
     ["buckets", "🪣 Buckets"],
     ["smile", "🙂 Smile"],
@@ -2948,6 +2882,7 @@ function ScenariosTab({
           </button>
         ))}
       </div>
+
       {scenarioSubTab === "stress" && stress && (
         <div>
           <FanChart
@@ -3013,9 +2948,71 @@ function ScenariosTab({
           </div>
         </div>
       )}
-      {scenarioSubTab === "gk" && (
-        <DeterministicGKView p={baseParams} inf={inf} />
+
+      {scenarioSubTab === "withdrawal" && (
+        <div>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              marginBottom: 12,
+              paddingBottom: 8,
+              borderBottom: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            {[
+              { key: "gk", label: "Guyton‑Klinger" },
+              { key: "risk", label: "Risk Guardrails" },
+              { key: "fixed", label: "Fixed % (Constant)" },
+            ].map((strat) => (
+              <button
+                key={strat.key}
+                onClick={() => setWithdrawalStrategy(strat.key)}
+                style={{
+                  padding: "4px 12px",
+                  fontSize: 11,
+                  borderRadius: 6,
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  cursor: "pointer",
+                  background:
+                    withdrawalStrategy === strat.key
+                      ? "rgba(13,148,136,0.2)"
+                      : "transparent",
+                  color:
+                    withdrawalStrategy === strat.key ? "#5eead4" : "#64748b",
+                  fontFamily: "inherit",
+                  transition: "all 0.15s",
+                }}
+              >
+                {strat.label}
+              </button>
+            ))}
+          </div>
+
+          {withdrawalStrategy === "gk" && (
+            <DeterministicGKView p={baseParams} inf={inf} />
+          )}
+          {withdrawalStrategy === "risk" && (
+            <div className="chart-card">
+              <div className="ct">⚠️ Risk Guardrails – Coming Soon</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 12 }}>
+                This strategy will implement Kitces' ratchet guardrails or other
+                dynamic spending rules.
+              </div>
+            </div>
+          )}
+          {withdrawalStrategy === "fixed" && (
+            <div className="chart-card">
+              <div className="ct">📊 Fixed Percentage Withdrawal – Coming Soon</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 12 }}>
+                This will show a constant withdrawal rate (e.g., 4%) adjusted
+                for inflation, without guardrails.
+              </div>
+            </div>
+          )}
+        </div>
       )}
+
       {scenarioSubTab === "roth" && <RothLadder params={baseParams} />}
       {scenarioSubTab === "buckets" && <BucketsTab />}
       {scenarioSubTab === "smile" && <SmileChart p={baseParams} inf={inf} />}
@@ -3262,7 +3259,7 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                   rows={[
                     ["Social Security", "$31,543/yr @ 64"],
                     ["SS COLA", "2.4%/yr"],
-                    ["Airbnb net (80% reliable)", "$20,000/yr"],
+                    ["Rental net (80% reliable)", "$20,000/yr"],
                     ["SS gap", "Ages 60–63: $0"],
                   ]}
                 />
@@ -3322,7 +3319,7 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                     ["Simulations", "3,000 paths"],
                     ["Horizons", "Age 85 + Age 90"],
                     ["Withdrawal", "Guyton-Klinger"],
-                    ["Airbnb reliability", "80% per year"],
+                    ["Rental reliability", "80% per year"],
                   ]}
                 />
               </div>
@@ -3373,8 +3370,8 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                 2. Retirement spending
               </div>
               Each path draws fresh random returns year by year. Spending
-              follows the Blanchett smile curve. SS and Airbnb income offset
-              draws. Airbnb fails 20% of years randomly. Healthcare shocks hit
+              follows the Blanchett smile curve. SS and Rental income offset
+              draws. Rental fails 20% of years randomly. Healthcare shocks hit
               3.5% of years after age 72.
             </div>
             <div>
@@ -3634,11 +3631,11 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
               ["3,000 randomized return sequences", "#5eead4"],
               ["99yr S&P 500 + 50yr Bloomberg Agg bootstrap", "#5eead4"],
               ["Separate equity & bond draws each year", "#5eead4"],
-              ["Airbnb income fails 20% of years randomly", "#fbbf24"],
+              ["Rental income fails 20% of years randomly", "#fbbf24"],
               ["Healthcare shocks 3.5%/yr from age 72", "#fbbf24"],
               ["Guyton-Klinger guardrails each path", "#a78bfa"],
               ["Blanchett smile spending (not flat)", "#a78bfa"],
-              ["SS COLA 2.4%/yr · Airbnb growth 3%/yr", "#94a3b8"],
+              ["SS COLA 2.4%/yr · Rental growth 3%/yr", "#94a3b8"],
               [
                 params.tax
                   ? "Tax drag modeled (pre/post SS/RMD)"
@@ -3862,57 +3859,70 @@ function NetWorthTab({ p, results90, inf }) {
       ),
     [p]
   );
+
   const nwData = useMemo(() => {
     if (!results90) return [];
-    return Array.from(
-      { length: Math.floor(Math.min(35, p.endAge - p.currentAge + 1) / 5) + 1 },
-      (_, i) => {
-        const age = p.currentAge + i * 5,
-          yr = new Date().getFullYear() + i * 5;
-        const idx = Math.floor(
-          ((i * 5) / (p.endAge - p.currentAge)) * (results90.pcts.length - 1)
-        );
-        const port =
-          results90.pcts[Math.min(idx, results90.pcts.length - 1)]?.p50 || 0;
-        const mortEntry = mortSched.years.find((y) => y.yr === yr);
-        const mortBal = mortEntry ? mortEntry.bal : 0;
-        const re = showRE ? reTotal : 0;
-        return {
-          age,
-          "Liquid Portfolio": port,
-          "Mortgage Debt": -mortBal,
-          "Real Estate": re,
-          "Net Worth": port + re - mortBal,
-        };
-      }
-    );
+    
+    // Build ages dynamically: from current age to plan end age, step 5
+    const maxChartAge = p.endAge;
+    const step = 5;
+    const ages = [];
+    for (let age = p.currentAge; age <= maxChartAge; age += step) {
+      ages.push(age);
+    }
+    
+    return ages.map((age, idx) => {
+      const yr = new Date().getFullYear() + idx * step;
+      // Map age to closest index in results90.pcts (which goes to age 90)
+      const pctIndex = Math.min(
+        Math.max(0, age - p.retireAge),
+        results90.pcts.length - 1
+      );
+      const port = results90.pcts[pctIndex]?.p50 || 0;
+      const mortEntry = mortSched.years.find((y) => y.yr === yr);
+      const mortBal = mortEntry ? mortEntry.bal : 0;
+      const re = showRE ? reTotal : 0;
+      return {
+        age,
+        "Liquid Portfolio": port,
+        "Mortgage Debt": -mortBal,
+        "Real Estate": re,
+        "Net Worth": port + re - mortBal,
+      };
+    });
   }, [p, results90, showRE, mortSched, reTotal]);
+
+  // Peak liquid portfolio (median) – from full MC horizon (age 90) – optional note
   const peakPort = results90
     ? Math.max(...results90.pcts.map((d) => d.p50))
     : 0;
   const peakAge = results90
     ? p.retireAge + results90.pcts.findIndex((d) => d.p50 === peakPort)
     : 0;
+
+  // Final net worth at the user's plan age (p.endAge)
   const finalNW = nwData[nwData.length - 1]?.["Net Worth"] || 0;
+  const planAge = p.endAge;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="metrics">
         <div className="met">
-          <div className="ml">Peak liquid (median)</div>
+          <div className="ml">Peak liquid (median)*</div>
           <div className="mv" style={{ color: "#10b981", fontSize: 18 }}>
             {fmtM(peakPort)}
           </div>
           <div className="ms">Age {peakAge}</div>
         </div>
         <div className="met">
-          <div className="ml">Net worth at 90</div>
+          <div className="ml">Net worth at age {planAge}</div>
           <div className="mv" style={{ color: "#0ea5e9", fontSize: 18 }}>
             {fmtM(finalNW)}
           </div>
           <div className="ms">{showRE ? "Incl." : "Excl."} real estate</div>
         </div>
         <div className="met">
-          <div className="ml">Mortgage-free</div>
+          <div className="ml">Mortgage‑free</div>
           <div className="mv" style={{ color: "#a78bfa", fontSize: 18 }}>
             {mortSched.payoffYr}
           </div>
@@ -3926,6 +3936,7 @@ function NetWorthTab({ p, results90, inf }) {
           <div className="ms">NOT in liquid total</div>
         </div>
       </div>
+
       <div className="chart-card">
         <div
           style={{
@@ -3935,8 +3946,16 @@ function NetWorthTab({ p, results90, inf }) {
             marginBottom: 10,
           }}
         >
-          <div className="ct" style={{ margin: 0 }}>
-            Net worth projection · 5-year intervals · median MC path
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="ct" style={{ margin: 0 }}>
+              Net worth projection · 5‑year intervals to age {planAge} · median MC path
+            </div>
+            <span
+              style={{ cursor: "pointer", color: "#64748b", fontSize: 12 }}
+              title="Liquid Portfolio = investments (excl. real estate). Mortgage Debt shown as negative (dashed red line). Net Worth = Liquid + Real Estate - Mortgage Debt."
+            >
+              ⓘ
+            </span>
           </div>
           <Toggle
             val={showRE}
@@ -3945,15 +3964,13 @@ function NetWorthTab({ p, results90, inf }) {
             accent="#fbbf24"
           />
         </div>
+
         <ResponsiveContainer width="100%" height={230}>
           <LineChart
             data={nwData}
             margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           >
-            <CartesianGrid
-              strokeDasharray="2 4"
-              stroke="rgba(255,255,255,0.05)"
-            />
+            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
             <XAxis
               dataKey="age"
               stroke="#1e3a5f"
@@ -3988,6 +4005,7 @@ function NetWorthTab({ p, results90, inf }) {
               dataKey="Mortgage Debt"
               stroke="#f87171"
               strokeWidth={1.5}
+              strokeDasharray="4 3"
               dot={false}
             />
             <Line
@@ -3999,7 +4017,21 @@ function NetWorthTab({ p, results90, inf }) {
             />
           </LineChart>
         </ResponsiveContainer>
+
+        {/* Legend */}
+        <div className="leg" style={{ marginTop: 8, justifyContent: "center" }}>
+          <div className="li"><div className="ll" style={{ background: "#0ea5e9" }} />Liquid Portfolio</div>
+          <div className="li"><div className="ll" style={{ background: "#f87171", borderTop: "1px dashed #f87171", height: 2 }} />Mortgage Debt (dashed)</div>
+          {showRE && <div className="li"><div className="ll" style={{ background: "#fbbf24" }} />Real Estate</div>}
+          <div className="li"><div className="ll" style={{ background: "#10b981" }} />Net Worth</div>
+        </div>
+
+        {/* Footnote about peak age */}
+        <div style={{ fontSize: 10, color: "#64748b", marginTop: 6, textAlign: "center" }}>
+          * Peak liquid based on full Monte Carlo horizon (age 90). May exceed your plan age.
+        </div>
       </div>
+
       {!results90 && (
         <div className="flag-i">
           ℹ Run Monte Carlo first to see net worth projections.
@@ -4330,7 +4362,7 @@ function ActionPlanTab() {
       status: "critical",
       items: [
         "Zero SS for 3 years — highest-risk window",
-        "Bucket 1 + Bucket 2 + Airbnb covers expenses",
+        "Bucket 1 + Bucket 2 + Rental covers expenses",
         "🚩 Always flag",
       ],
     },
@@ -4378,7 +4410,7 @@ function ActionPlanTab() {
     "Bootstrap MC engine 99yr S&P + 50yr bonds",
     "Roth IRA ~$732K combined · growth only",
     "Solo 401k $1.658M · FSKAX ✅",
-    "Vista Cay debt-free · Airbnb $20K ready",
+    "Vista Cay debt-free · Rental $20K ready",
     "VOO→VTI ✅ · FXAIX→FSKAX ✅",
   ];
   return (
@@ -5039,7 +5071,7 @@ function AssumptionsPanel({ values, onChange }) {
           <DateInput k="dob" />
         </Row>
         <Row
-          label="Airbnb net income / yr"
+          label="Rental net income / yr"
           desc="Net after expenses · Always use net, never gross"
         >
           <NumInput k="ab" min={0} max={100000} step={1000} suffix="/yr" />
@@ -5084,14 +5116,14 @@ function AssumptionsPanel({ values, onChange }) {
           Monte Carlo Model Parameters
         </div>
         <Row
-          label="Airbnb reliability"
-          desc="Probability Airbnb income arrives in any given year (default 80%)"
+          label="Rental reliability"
+          desc="Probability Rental income arrives in any given year (default 80%)"
         >
           <NumInput k="abReliability" min={0} max={100} step={5} suffix="%" />
         </Row>
         <Row
-          label="Airbnb income growth / yr"
-          desc="Annual growth rate for Airbnb income (default 3%)"
+          label="Rental income growth / yr"
+          desc="Annual growth rate for Rental income (default 3%)"
         >
           <NumInput k="abGrowth" min={0} max={10} step={0.5} suffix="%" />
         </Row>
@@ -5479,7 +5511,7 @@ function IncomePanel({ values, onChange }) {
         {[
           {
             k: "ab",
-            label: "Airbnb Net Income",
+            label: "Rental Net Income",
             min: 0,
             max: 60_000,
             step: 1000,
@@ -5520,7 +5552,7 @@ function IncomePanel({ values, onChange }) {
           },
           {
             k: "abReliability",
-            label: "Airbnb Reliability",
+            label: "Rental Reliability",
             min: 0,
             max: 100,
             step: 5,
@@ -5528,7 +5560,7 @@ function IncomePanel({ values, onChange }) {
           },
           {
             k: "abGrowth",
-            label: "Airbnb Growth Rate",
+            label: "Rental Growth Rate",
             min: 0,
             max: 10,
             step: 0.5,
@@ -5589,13 +5621,13 @@ function IncomePanel({ values, onChange }) {
             color: "#64748b",
           }}
         >
-          <span>🏖 Airbnb: {fmtK(ab)}</span>
+          <span>🏖 Rental: {fmtK(ab)}</span>
           <span>
             🏛 SS: {fmtK(ssb)} @ age {values.ssAge || 64}
           </span>
         </div>
         <div style={{ fontSize: 10, color: "#334155", marginTop: 8 }}>
-          Airbnb reliability: {values.abReliability || 80}% · Growth:{" "}
+          Rental reliability: {values.abReliability || 80}% · Growth:{" "}
           {values.abGrowth || 3}%/yr
         </div>
       </div>
@@ -5628,6 +5660,7 @@ export default function AiRAForecaster() {
   const [useAb, setUseAb] = useState(prof.useAb);
   const [real, setReal] = useState(prof.real);
   const [twoHousehold, setTwoHousehold] = useState(true);
+  const [withdrawalStrategy, setWithdrawalStrategy] = useState("gk"); // "gk", "fixed", "vanguard", "risk", "kitces"
 
   const [assumptions, setAssumptions] = useState({
     // Personal — blank by default, loaded from JSON
@@ -5800,7 +5833,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       setR90(r90_);
       setStress(str);
       setRunning(false);
-      setTab("montecarlo");
     }, 40);
   }, [params]);
 
@@ -6024,20 +6056,20 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 </span>
               </div>
               <div style={{
-                marginTop: 10, paddingTop: 10,
-                borderTop: "1px solid rgba(255,255,255,0.06)",
-                display: "flex", justifyContent: "space-between", alignItems: "baseline",
-              }}>
-                <span style={{ fontSize: 10, color: "#64748b" }}>Total Portfolio</span>
-                <span style={{
-                  fontSize: 18, fontWeight: 700, color: "#5eead4",
-                  fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px",
-                }}>{fmtM(port)}</span>
+                    marginTop: 10, paddingTop: 10,
+                    borderTop: "1px solid rgba(255,255,255,0.06)",
+                    display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                  }}>
+                    <span style={{ fontSize: 10, color: "#64748b" }}>Total Portfolio</span>
+                    <span style={{
+                      fontSize: 18, fontWeight: 700, color: "#5eead4",
+                      fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px",
+                    }}>{fmtM(port)}</span>
               </div>
             </div>
             <div className="sb-card">
               <div className="sb-title">MC Engine — v6.1</div>
-              <div style={{ fontSize: 9, color: "#475569", lineHeight: 1.8 }}>
+              <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
                 <div>
                   📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P
                   bootstrap [-30/+30%]
@@ -6047,11 +6079,14 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   Bloomberg [-15/+20%]
                 </div>
                 <div>
-                  🛡️ <span style={{ color: "#fbbf24" }}>GK Floor:</span>{" "}
-                  {fmtM(params.gkFloor)} · Ceiling {fmtM(params.gkCeiling)}
+                  🛡️ <span style={
+                                    { color: "#fbbf24" }
+                                 }>Guyton Klinger
+                      </span>{" "} Floor: {fmtM(params.gkFloor)} 
+                  · Ceiling {fmtM(params.gkCeiling)}
                 </div>
                 <div>
-                  🏖 <span style={{ color: "#059669" }}>Airbnb:</span> 80%
+                  🏖 <span style={{ color: "#059669" }}>Rental:</span> 80%
                   reliability per year
                 </div>
                 <div>
@@ -6128,7 +6163,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 onChange={setSsb}
               />
               <Slider
-                label="Airbnb net"
+                label="Rental net"
                 value={ab}
                 min={0}
                 max={50000}
@@ -6153,7 +6188,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               <Toggle
                 val={useAb}
                 onChange={setUseAb}
-                label="🏖 Airbnb income"
+                label="🏖 Rental income"
                 accent="#059669"
               />
               <Toggle
@@ -6168,6 +6203,29 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 label="🏠🌴 Two households · Vin TH / Mira NJ"
                 accent="#a78bfa"
               />
+              <div className="sb-card">
+                <div className="sb-title">Withdrawal Strategy</div>
+                <select
+                  value={withdrawalStrategy}
+                  onChange={(e) => setWithdrawalStrategy(e.target.value)}
+                  style={{
+                    width: "100%",
+                    background: "#0d1b2a",
+                    border: "1px solid #1e3a5f",
+                    color: "#e2e8f0",
+                    borderRadius: 6,
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    fontFamily: "'Inter',sans-serif",
+                  }}
+                >
+                  <option value="gk">Guyton‑Klinger (Dynamic)</option>
+                  <option value="fixed">Fixed % of Portfolio</option>
+                  <option value="vanguard">Vanguard Dynamic Spending</option>
+                  <option value="risk">Risk‑Based Guardrails</option>
+                  <option value="kitces">Kitces Ratcheting</option>
+                </select>
+              </div>
             </div>
             <button
               className="run-btn"
@@ -6186,7 +6244,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 : "▶ Run Monte Carlo"}
             </button>
             <div style={{ fontSize: 9, color: "#334155", textAlign: "center" }}>
-              3,000 × age 85 · 3,000 × age 90 · GK guardrails · 80% Airbnb ·
+              3,000 × age 85 · 3,000 × age 90 · GK guardrails · 80% Rental ·
               healthcare shocks
             </div>
           </div>
@@ -6228,7 +6286,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
             <div className="flag-i">
               🛡 GK active · WR {swr}% ·{" "}
-              {twoHousehold ? "Both households" : "Solo"} · Airbnb 80%
+              {twoHousehold ? "Both households" : "Solo"} · Rental 80%
               reliable · Healthcare shocks modeled
             </div>
             {stale && (
@@ -6417,7 +6475,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               <strong style={{ color: "#5eead4" }}>GK Guardrails:</strong> Floor{" "}
               {fmtM(params.gkFloor)} (
               {twoHousehold ? "both households" : "Vin solo"}) · Ceiling{" "}
-              {fmtM(params.gkCeiling)} · Initial WR {swr}%. Airbnb modeled at
+              {fmtM(params.gkCeiling)} · Initial WR {swr}%. Rental modeled at
               80% reliability. Healthcare shocks 3.5%/yr from age 72. As Bill
               Perkins says — spend in the right life phase. 🌴
             </div>
