@@ -23,7 +23,7 @@ if (typeof document !== "undefined") {
   document.head.appendChild(link);
 }
 
-/* ════ REFERENCE DATA ════ */
+/* ════ REFERENCE DATA ════ updated to 12/20/2026*/ 
 const SP500 = [
   37.88, -11.91, -28.48, -47.07, -15.15, 46.59, -5.94, 41.37, 27.92, -38.59,
   25.21, -5.45, -15.29, -17.86, 12.43, 19.45, 13.8, 30.72, -11.87, 0, -0.65,
@@ -101,12 +101,13 @@ const BLANK_PROFILE = {
   reOrlando105: 0,
   reOrlando306: 0,
   // Account breakdown (feeds port total)
-  solo401k: 0,
-  alpha401k: 0,
-  rothFid: 0,
-  rothVgd: 0,
-  hsaBal: 0,
-  taxable: 0,
+  accounts: [
+    { id: "1", category: "pretax", name: "401(k)", balance: 0 },
+    { id: "2", category: "roth", name: "Roth IRA", balance: 0 },
+    { id: "3", category: "taxable", name: "Brokerage", balance: 0 },
+    { id: "4", category: "hsa", name: "HSA", balance: 0 },
+    { id: "5", category: "cash", name: "Savings", balance: 0 },
+  ],
   // MC assumptions
   abReliability: 80,
   abGrowth: 3.0,
@@ -153,12 +154,13 @@ const DEMO_PROFILE = {
   reHarrington: 600_000,
   reOrlando105: 0,
   reOrlando306: 0,
-  solo401k: 750_000,
-  alpha401k: 0,
-  rothFid: 150_000,
-  rothVgd: 0,
-  hsaBal: 50_000,
-  taxable: 50_000,
+  accounts: [
+    { id: "d1", category: "pretax", name: "Solo 401k", balance: 750_000 },
+    { id: "d2", category: "roth", name: "Roth IRA", balance: 150_000 },
+    { id: "d3", category: "taxable", name: "Taxable", balance: 50_000 },
+    { id: "d4", category: "hsa", name: "HSA", balance: 50_000 },
+    { id: "d5", category: "cash", name: "Savings", balance: 0 },
+  ],
   abReliability: 80,
   abGrowth: 3.0,
   ssCola: 2.4,
@@ -709,8 +711,12 @@ function buildRothExplorer(params = {}) {
   const infR = inf / 100,
     retireYear = ROTH_BASE_YEAR + (retireAge - currentAge),
     isFL = twoHousehold;
-  const pretaxBal = port * 0.6,
-    rothBal = port * 0.4,
+  const _pretaxSum = (params.accounts || []).filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
+  const _rothSum = (params.accounts || []).filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
+  const _otherSum = (params.accounts || []).filter(a => !["pretax","roth"].includes(a.category)).reduce((s, a) => s + (a.balance || 0), 0);
+  const _totalFromAccounts = _pretaxSum + _rothSum + _otherSum;
+  const pretaxBal = _totalFromAccounts > 0 ? _pretaxSum : port * 0.6,
+    rothBal = _totalFromAccounts > 0 ? (_rothSum + _otherSum) : port * 0.4,
     gr = 0.07;
 
   function irmaaCeiling(yr) {
@@ -1345,8 +1351,32 @@ function importProfile(onLoad) {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const data = JSON.parse(ev.target.result);
-        onLoad(data);
+        const parsed = JSON.parse(ev.target.result);
+        // Migrate old account fields to new accounts array
+        if (parsed.solo401k !== undefined && !parsed.accounts) {
+          parsed.accounts = [
+            ...(parsed.solo401k ? [{ id: "m1", category: "pretax", name: "Solo 401k", balance: parsed.solo401k }] : []),
+            ...(parsed.alpha401k ? [{ id: "m2", category: "pretax", name: "Alpha 401k", balance: parsed.alpha401k }] : []),
+            ...(parsed.rothFid ? [{ id: "m3", category: "roth", name: "Roth Fidelity", balance: parsed.rothFid }] : []),
+            ...(parsed.rothVgd ? [{ id: "m4", category: "roth", name: "Roth Vanguard", balance: parsed.rothVgd }] : []),
+            ...(parsed.hsaBal ? [{ id: "m5", category: "hsa", name: "HSA", balance: parsed.hsaBal }] : []),
+            ...(parsed.taxable ? [{ id: "m6", category: "taxable", name: "Taxable", balance: parsed.taxable }] : []),
+          ];
+          if (parsed.accounts.length === 0) {
+            parsed.accounts = BLANK_PROFILE.accounts;
+          }
+          delete parsed.solo401k;
+          delete parsed.alpha401k;
+          delete parsed.rothFid;
+          delete parsed.rothVgd;
+          delete parsed.hsaBal;
+          delete parsed.taxable;
+        }
+        // Ensure accounts is always a valid array
+        if (!Array.isArray(parsed.accounts)) {
+          parsed.accounts = BLANK_PROFILE.accounts;
+        }
+        onLoad(parsed);
       } catch {
         alert("Invalid profile file — must be a valid AiRA JSON export.");
       }
@@ -1703,6 +1733,7 @@ function RothLadder({ params }) {
       params?.twoHousehold,
       params?.useAb,
       params?.ssb,
+      params?.accounts,
       rothMode,
     ]
   );
@@ -3876,9 +3907,11 @@ function generateActions({
   const actions = [];
   const swr = (params.sp / params.port) * 100;
   const isFL = params.twoHousehold;
-  const preTaxTotal = (assumptions.solo401k || 0) + (assumptions.alpha401k || 0);
-  const rothPct = (assumptions.roth || 0) / params.port;
-  const preTaxPct = (assumptions.preTax || 0) / params.port;
+  const _accts = assumptions.accounts || [];
+  const preTaxTotal = _accts.filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
+  const _rothTotal = _accts.filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
+  const rothPct = params.port > 0 ? _rothTotal / params.port : 0;
+  const preTaxPct = params.port > 0 ? preTaxTotal / params.port : 0;
   const successRate = r90 ? r90.rate : 0;
   const portFundedPct = (params.port / goal) * 100;
 
@@ -3966,13 +3999,13 @@ function generateActions({
       deadline: "Pre-retirement",
     });
   }
-  const hsaBal = assumptions.hsa || 0;
-  if (hsaBal < 50000) {
+  const _hsaBal = (assumptions.accounts || []).filter(a => a.category === "hsa").reduce((s, a) => s + (a.balance || 0), 0);
+  if (_hsaBal < 50000) {
     actions.push({
       priority: "yellow",
       category: "HSA",
       action: "Maximize HSA contributions",
-      reason: `Current HSA $${hsaBal.toLocaleString()} — triple tax advantage`,
+      reason: `Current HSA $${_hsaBal.toLocaleString()} — triple tax advantage`,
       deadline: "Each year",
     });
   }
@@ -4502,47 +4535,103 @@ function ProfileWizard({ values, onChange }) {
 
 function SavingsPanel({ values, onChange }) {
   const GOAL = 3_200_000;
-  // Account breakdown — auto-sum to port
-  const solo401k    = values.solo401k    || 0;
-  const alpha401k   = values.alpha401k   || 0;
-  const rothFid     = values.rothFid     || 0;
-  const rothVgd     = values.rothVgd     || 0;
-  const hsaBal      = values.hsaBal      || 0;
-  const taxable     = values.taxable     || 0;
-  const autoTotal   = solo401k + alpha401k + rothFid + rothVgd + hsaBal + taxable;
-  const percentToGoal = Math.min(100, (autoTotal / GOAL) * 100);
-  const remaining   = Math.max(0, GOAL - autoTotal);
+  const accounts = values.accounts || BLANK_PROFILE.accounts;
 
-  // Keep port in sync with auto-total
-  const handleAcct = (k, v) => {
-    onChange(k, v);
-    // recalc total — use current values + new value
-    const map = { solo401k, alpha401k, rothFid, rothVgd, hsaBal, taxable, [k]: v };
-    const total = Object.values(map).reduce((a, b) => a + b, 0);
+  const CATEGORIES = [
+    { key: "pretax",  label: "Pre-Tax",        color: "#0ea5e9", defaultName: "401(k)" },
+    { key: "roth",    label: "Roth",           color: "#a78bfa", defaultName: "Roth IRA" },
+    { key: "taxable", label: "Taxable",        color: "#fbbf24", defaultName: "Brokerage" },
+    { key: "hsa",     label: "HSA",            color: "#34d399", defaultName: "HSA" },
+    { key: "cash",    label: "Cash / Savings", color: "#94a3b8", defaultName: "Savings" },
+  ];
+
+  const catSum = (cat) => accounts.filter(a => a.category === cat).reduce((s, a) => s + (a.balance || 0), 0);
+  const autoTotal = accounts.reduce((s, a) => s + (a.balance || 0), 0);
+  const percentToGoal = Math.min(100, (autoTotal / GOAL) * 100);
+  const remaining = Math.max(0, GOAL - autoTotal);
+
+  const updateAccounts = (newAccounts) => {
+    onChange("accounts", newAccounts);
+    const total = newAccounts.reduce((s, a) => s + (a.balance || 0), 0);
     onChange("port", total);
   };
 
-  const ACCOUNTS = [
-    { k:"solo401k",  label:"Solo 401k (Pre-Tax)",        color:"#0ea5e9", max:3_000_000 },
-    { k:"alpha401k", label:"Alpha FMC 401k (Pre-Tax)",   color:"#0ea5e9", max:500_000 },
-    { k:"rothFid",   label:"Roth IRA — Fidelity",        color:"#a78bfa", max:1_000_000 },
-    { k:"rothVgd",   label:"Roth IRA — Vanguard",        color:"#a78bfa", max:500_000 },
-    { k:"hsaBal",    label:"HSA",                        color:"#34d399", max:200_000 },
-    { k:"taxable",   label:"Taxable / SGOV",             color:"#fbbf24", max:500_000 },
-  ];
+  const handleBalance = (id, bal) => {
+    const newAccounts = accounts.map(a => a.id === id ? { ...a, balance: bal } : a);
+    updateAccounts(newAccounts);
+  };
+
+  const handleName = (id, name) => {
+    const newAccounts = accounts.map(a => a.id === id ? { ...a, name } : a);
+    onChange("accounts", newAccounts);
+  };
+
+  const addAccount = (cat) => {
+    const def = CATEGORIES.find(c => c.key === cat);
+    const newAccounts = [...accounts, { id: Date.now().toString(), category: cat, name: def ? def.defaultName : cat, balance: 0 }];
+    onChange("accounts", newAccounts);
+  };
+
+  const removeAccount = (id, cat) => {
+    const catAccounts = accounts.filter(a => a.category === cat);
+    if (catAccounts.length <= 1) return;
+    const newAccounts = accounts.filter(a => a.id !== id);
+    updateAccounts(newAccounts);
+  };
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-      {/* Account breakdown grid */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-        {ACCOUNTS.map(a => (
-          <div key={a.k} style={{ background:"rgba(255,255,255,0.02)", border:`1px solid ${a.color}22`, borderRadius:8, padding:"10px 14px" }}>
-            <div style={{ fontSize:11, color:a.color, fontWeight:600, marginBottom:8 }}>{a.label}</div>
-            <DualInput label="" value={values[a.k] || 0} min={0} max={a.max} step={5_000}
-              format={v => fmtM(v)} onChange={v => handleAcct(a.k, v)} />
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      {CATEGORIES.map(cat => {
+        const catAccounts = accounts.filter(a => a.category === cat.key);
+        return (
+          <div key={cat.key} style={{
+            background:"rgba(255,255,255,0.02)", borderRadius:8,
+            borderLeft:`3px solid ${cat.color}`, padding:"8px 12px",
+          }}>
+            <div style={{ fontSize:11, color:cat.color, fontWeight:600, marginBottom:6, fontFamily:"'DM Sans',sans-serif" }}>
+              {cat.label}
+            </div>
+            {catAccounts.map(acct => (
+              <div key={acct.id} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+                <input
+                  type="text" value={acct.name}
+                  onChange={e => handleName(acct.id, e.target.value)}
+                  style={{
+                    width:100, fontSize:11, color:"#e2e8f0", background:"transparent",
+                    border:"1px solid rgba(255,255,255,0.06)", borderRadius:4, padding:"2px 6px",
+                    fontFamily:"'DM Sans',sans-serif", outline:"none",
+                  }}
+                  onFocus={e => { e.target.style.borderColor = cat.color + "66"; }}
+                  onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.06)"; }}
+                />
+                <div style={{ flex:1 }}>
+                  <DualInput label="" value={acct.balance} min={0} max={5_000_000} step={5_000}
+                    format={v => fmtM(v)} onChange={v => handleBalance(acct.id, v)} />
+                </div>
+                <button
+                  onClick={() => removeAccount(acct.id, acct.category)}
+                  title={catAccounts.length <= 1 ? "Cannot remove last account in category" : "Remove account"}
+                  style={{
+                    background:"transparent", border:"none", color:"#64748b", cursor: catAccounts.length <= 1 ? "not-allowed" : "pointer",
+                    fontSize:14, lineHeight:1, padding:"2px 4px", opacity: catAccounts.length <= 1 ? 0.2 : 0.4,
+                    transition:"opacity 0.15s, color 0.15s",
+                  }}
+                  onMouseEnter={e => { if (catAccounts.length > 1) { e.target.style.opacity = 1; e.target.style.color = "#f87171"; } }}
+                  onMouseLeave={e => { e.target.style.opacity = catAccounts.length <= 1 ? 0.2 : 0.4; e.target.style.color = "#64748b"; }}
+                >x</button>
+              </div>
+            ))}
+            <button onClick={() => addAccount(cat.key)} style={{
+              background:"transparent", border:`1px dashed ${cat.color}33`, borderRadius:4,
+              color:cat.color, fontSize:11, padding:"2px 8px", cursor:"pointer", opacity:0.6,
+              marginTop:2, transition:"opacity 0.15s",
+            }}
+            onMouseEnter={e => { e.target.style.opacity = 1; }}
+            onMouseLeave={e => { e.target.style.opacity = 0.6; }}
+            >+ Add</button>
           </div>
-        ))}
-      </div>
+        );
+      })}
 
       {/* Auto-total summary */}
       <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
@@ -4556,16 +4645,17 @@ function SavingsPanel({ values, onChange }) {
           <div style={{ width:`${percentToGoal}%`, height:"100%",
             background:"linear-gradient(90deg,#0d9488,#14b8a6)", borderRadius:5, transition:"width 0.3s" }} />
         </div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginTop:12 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, marginTop:12 }}>
           {[
-            { label:"Pre-Tax",  val:solo401k+alpha401k, color:"#0ea5e9" },
-            { label:"Roth",     val:rothFid+rothVgd,    color:"#a78bfa" },
-            { label:"HSA",      val:hsaBal,             color:"#34d399" },
-            { label:"Taxable",  val:taxable,            color:"#fbbf24" },
+            { label:"Pre-Tax", val:catSum("pretax"),  color:"#0ea5e9" },
+            { label:"Roth",    val:catSum("roth"),     color:"#a78bfa" },
+            { label:"Taxable", val:catSum("taxable"),  color:"#fbbf24" },
+            { label:"HSA",     val:catSum("hsa"),      color:"#34d399" },
+            { label:"Cash",    val:catSum("cash"),     color:"#94a3b8" },
           ].map(s => (
             <div key={s.label} style={{ textAlign:"center" }}>
               <div style={{ fontSize:10, color:"#475569" }}>{s.label}</div>
-              <div style={{ fontSize:13, fontWeight:700, color:s.color, fontFamily:"'DM Mono',monospace" }}>{fmtM(s.val)}</div>
+              <div style={{ fontSize:12, fontWeight:700, color:s.color, fontFamily:"'DM Mono',monospace" }}>{fmtM(s.val)}</div>
             </div>
           ))}
         </div>
@@ -5412,12 +5502,7 @@ export default function AiRAForecaster() {
     name: BLANK_PROFILE.name,
     dob:  BLANK_PROFILE.dob,
     // Account breakdown
-    solo401k:  BLANK_PROFILE.solo401k,
-    alpha401k: BLANK_PROFILE.alpha401k,
-    rothFid:   BLANK_PROFILE.rothFid,
-    rothVgd:   BLANK_PROFILE.rothVgd,
-    hsaBal:    BLANK_PROFILE.hsaBal,
-    taxable:   BLANK_PROFILE.taxable,
+    accounts: BLANK_PROFILE.accounts,
     // MC model parameters
     abReliability: BLANK_PROFILE.abReliability,
     abGrowth:      BLANK_PROFILE.abGrowth,
@@ -5463,7 +5548,8 @@ export default function AiRAForecaster() {
   const switchMode = useCallback((m) => {
     setMode(m);
     const p = PROFILES[m];
-    setPort(p.port);
+    const acctTotal = (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0);
+    setPort(acctTotal > 0 ? acctTotal : p.port);
     setContrib(p.contrib);
     setInf(p.inf);
     setRetAge(p.retireAge);
@@ -5477,11 +5563,12 @@ export default function AiRAForecaster() {
     setUseAb(p.useAb);
     setReal(p.real);
     setTwoHousehold(true);
+    if (p.accounts) updateAssumption("accounts", p.accounts);
     setR85(null);
     setR90(null);
     setStress(null);
     setStale(false);
-  }, []);
+  }, [updateAssumption]);
 
   const params = useMemo(
     () => ({
@@ -5522,6 +5609,7 @@ export default function AiRAForecaster() {
       hcProb: assumptions.hcProb,
       hcMin: assumptions.hcMin,
       hcMax: assumptions.hcMax,
+      accounts: assumptions.accounts,
     }),
     [
       prof,
@@ -5645,12 +5733,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 reOrlando105: prof.reOrlando105 || 0,
                 reOrlando306: prof.reOrlando306 || 0,
                 // Account breakdown
-                solo401k: assumptions.solo401k || 0,
-                alpha401k: assumptions.alpha401k || 0,
-                rothFid: assumptions.rothFid || 0,
-                rothVgd: assumptions.rothVgd || 0,
-                hsaBal: assumptions.hsaBal || 0,
-                taxable: assumptions.taxable || 0,
+                accounts: assumptions.accounts || BLANK_PROFILE.accounts,
                 // MC assumptions
                 abReliability: assumptions.abReliability,
                 abGrowth: assumptions.abGrowth,
@@ -5685,9 +5768,36 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 if (data.real !== undefined) setReal(data.real);
                 if (data.twoHousehold !== undefined) setTwoHousehold(data.twoHousehold);
                 // Wire all assumptions
+                // Migrate old account fields to new accounts array
+                if (data.solo401k !== undefined && !data.accounts) {
+                  data.accounts = [
+                    ...(data.solo401k ? [{ id: "m1", category: "pretax", name: "Solo 401k", balance: data.solo401k }] : []),
+                    ...(data.alpha401k ? [{ id: "m2", category: "pretax", name: "Alpha 401k", balance: data.alpha401k }] : []),
+                    ...(data.rothFid ? [{ id: "m3", category: "roth", name: "Roth Fidelity", balance: data.rothFid }] : []),
+                    ...(data.rothVgd ? [{ id: "m4", category: "roth", name: "Roth Vanguard", balance: data.rothVgd }] : []),
+                    ...(data.hsaBal ? [{ id: "m5", category: "hsa", name: "HSA", balance: data.hsaBal }] : []),
+                    ...(data.taxable ? [{ id: "m6", category: "taxable", name: "Taxable", balance: data.taxable }] : []),
+                  ];
+                  if (data.accounts.length === 0) {
+                    data.accounts = BLANK_PROFILE.accounts;
+                  }
+                  delete data.solo401k;
+                  delete data.alpha401k;
+                  delete data.rothFid;
+                  delete data.rothVgd;
+                  delete data.hsaBal;
+                  delete data.taxable;
+                }
+                // Ensure accounts is always a valid array
+                if (!Array.isArray(data.accounts)) {
+                  data.accounts = BLANK_PROFILE.accounts;
+                }
+                // Recalculate port from accounts (source of truth)
+                const acctTotal = data.accounts.reduce((s, a) => s + (a.balance || 0), 0);
+                if (acctTotal > 0) setPort(acctTotal);
                 const keys = ["name","dob","abReliability","abGrowth","ssCola",
                   "preRetireEq","postRetireEq","hcShockAge","hcProb","hcMin","hcMax",
-                  "solo401k","alpha401k","rothFid","rothVgd","hsaBal","taxable"];
+                  "accounts"];
                 keys.forEach(k => { if (data[k] !== undefined) updateAssumption(k, data[k]); });
                 // Switch to user mode
                 setMode("user");
@@ -5779,6 +5889,17 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   {countdown.pct}%
                 </span>
               </div>
+              <div style={{
+                marginTop: 10, paddingTop: 10,
+                borderTop: "1px solid rgba(255,255,255,0.06)",
+                display: "flex", justifyContent: "space-between", alignItems: "baseline",
+              }}>
+                <span style={{ fontSize: 10, color: "#64748b" }}>Total Portfolio</span>
+                <span style={{
+                  fontSize: 18, fontWeight: 700, color: "#5eead4",
+                  fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px",
+                }}>{fmtM(port)}</span>
+              </div>
             </div>
             <div className="sb-card">
               <div className="sb-title">MC Engine — v5.9</div>
@@ -5815,15 +5936,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
             <div className="sb-card">
               <div className="sb-title">Portfolio</div>
-              <Slider
-                label="Current value"
-                value={port}
-                min={500000}
-                max={5000000}
-                step={10000}
-                format={(v) => fmtM(v)}
-                onChange={setPort}
-              />
               <Slider
                 label="Annual contrib"
                 value={contrib}
