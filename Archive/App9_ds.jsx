@@ -23,17 +23,7 @@ if (typeof document !== "undefined") {
   document.head.appendChild(link);
 }
 
-/** This application is  Aira - Freedom Financial Forecaster
- * Here is some reference information: 
- * IRS Publication 590‑B (PDF) – see Appendix B (pages 46‑60)  https://www.irs.gov/pub/irs-pdf/p590b.pdf
- * Capital Group's joint life table – excerpt for ages 55‑80 https://www.capitalgroup.com/individual/service-and-support/rmd/how-to-calculate/irs-joint-life-table.html
-
-🔢 Please see the disclaimer below. This is an app to help you with retirement planning but not financial advice.
- * 
- */
-
-
-/* ════ REFERENCE DATA ════ updated to 12/20/2026*/ 
+/* ════ REFERENCE DATA ════ */
 const SP500 = [
   37.88, -11.91, -28.48, -47.07, -15.15, 46.59, -5.94, 41.37, 27.92, -38.59,
   25.21, -5.45, -15.29, -17.86, 12.43, 19.45, 13.8, 30.72, -11.87, 0, -0.65,
@@ -70,147 +60,76 @@ const CALIB = {
   phase2Std: 10.35,
 };
 
-const JOINT_RMD_TABLE = {
-  // Format: [ownerAge]: { [spouseAge]: divisor }
-  73: { 64: 25.3 },
-  74: { 65: 24.6 },
-  75: { 66: 24.0 },
-  76: { 67: 23.4 },
-  77: { 68: 22.8 },
-  78: { 69: 22.3 },
-  79: { 70: 21.8 },
-  80: { 71: 21.3 },
-  81: { 72: 20.9 },
-  82: { 73: 20.5 },
-  83: { 74: 20.1 },
-  84: { 75: 19.7 },
-  85: { 76: 19.3 },
-  86: { 77: 19.0 },
-  87: { 78: 18.7 },
-  88: { 79: 18.4 },
-  89: { 80: 18.1 },
-  90: { 81: 17.8 },
-};
-
 /* ════ PROFILES ════ */
-/* Personal data lives in AiRA_Profile.json — never hardcoded here */
-/* Use Export button to save your data. Use Import to load it back. */
+const DDAY = new Date("2030-03-14T00:00:00");
 
-const BLANK_PROFILE = {
-  label: "My Plan",
-  name: "",
-  dob: "",
-  currentAge: 50,
-  retireAge: 60,
-  endAge: 85,
-  port: 1_000_000,
-  contrib: 20_000,
-  inf: 2.5,
-  sp: 72_000,
-  spThailand: 48_000,
-  spMiraNJ: 0,
-  ssAge: 67,
-  ssb: 24_000,
-  ab: 0,
-  useAb: false,
-  smile: true,
-  tax: true,
-  real: true,
-  twoHousehold: false,
-  gkFloor: 48_000,
-  gkFloorThailand: 48_000,
-  gkTarget: 72_000,
-  gkCeiling: 100_000,
-  // Mortgage
-  mortBalance: 0,
-  mortRate: 6.5,
-  mortStart: "2020-01",
-  mortTerm: 30,
-  mortExtra: 0,
-  mortPI: 0,
-  // Real estate (not in liquid portfolio)
-  reHarrington: 0,
-  reOrlando105: 0,
-  reOrlando306: 0,
-  // NEW:
-  useJointRmdTable: false,      // default: use Uniform Lifetime table
-  cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
-  // Account breakdown (feeds port total)
-  accounts: [
-    { id: "1", category: "pretax", name: "401(k)", balance: 0 },
-    { id: "2", category: "roth", name: "Roth IRA", balance: 0 },
-    { id: "3", category: "taxable", name: "Brokerage", balance: 0 },
-    { id: "4", category: "hsa", name: "HSA", balance: 0 },
-    { id: "5", category: "cash", name: "Savings", balance: 0 },
-  ],
-  // MC assumptions
-  abReliability: 80,
-  abGrowth: 3.0,
-  ssCola: 2.4,
-  preRetireEq: 91,
-  postRetireEq: 70,
-  hcShockAge: 72,
-  hcProb: 3.5,
-  hcMin: 70_000,
-  hcMax: 130_000,
+const PROFILES = {
+  vin: {
+    label: "My Plan",
+    currentAge: 56,
+    retireAge: 60,
+    endAge: 85,
+    port: 2_434_000,
+    contrib: 38_525,
+    inf: 2.5,
+    sp: 100_000, // total both households
+    spThailand: 48_000, // Vin solo abroad
+    spMiraNJ: 52_000, // Mira NJ household
+    ssAge: 64,
+    ssb: 31_543,
+    ab: 20_000,
+    useAb: true,
+    smile: true,
+    tax: true,
+    real: true,
+    gkFloor: 88_000, // both households floor
+    gkFloorThailand: 48_000, // solo floor
+    gkTarget: 100_000,
+    gkCeiling: 115_000,
+    mortBalance: 267_518,
+    mortRate: 6.25,
+    mortStart: "2023-05",
+    mortTerm: 30,
+    mortExtra: 310,
+    mortPI: 1847.15,
+    reHarrington: 1_340_000,
+    reOrlando105: 500_000,
+    reOrlando306: 500_000,
+  },
+  demo: {
+    label: "Demo Mode",
+    currentAge: 51,
+    retireAge: 62,
+    endAge: 88,
+    port: 1_000_000,
+    contrib: 24_000,
+    inf: 2.5,
+    sp: 72_000,
+    spThailand: 72_000,
+    spMiraNJ: 0,
+    ssAge: 67,
+    ssb: 28_000,
+    ab: 0,
+    useAb: false,
+    smile: true,
+    tax: true,
+    real: true,
+    gkFloor: 48_000,
+    gkFloorThailand: 48_000,
+    gkTarget: 72_000,
+    gkCeiling: 100_000,
+    mortBalance: 200_000,
+    mortRate: 7.0,
+    mortStart: "2022-01",
+    mortTerm: 30,
+    mortExtra: 0,
+    mortPI: 1330,
+    reHarrington: 600_000,
+    reOrlando105: 0,
+    reOrlando306: 0,
+  },
 };
 
-const DEMO_PROFILE = {
-  label: "Demo Mode",
-  name: "Alex",
-  dob: "1974-06-15",
-  // NEW:
-  useJointRmdTable: false,      // default: use Uniform Lifetime table
-  cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
-  currentAge: 51,
-  retireAge: 62,
-  endAge: 88,
-  port: 1_000_000,
-  contrib: 24_000,
-  inf: 2.5,
-  sp: 72_000,
-  spThailand: 72_000,
-  spMiraNJ: 0,
-  ssAge: 67,
-  ssb: 28_000,
-  ab: 0,
-  useAb: false,
-  smile: true,
-  tax: true,
-  real: true,
-  twoHousehold: false,
-  gkFloor: 48_000,
-  gkFloorThailand: 48_000,
-  gkTarget: 72_000,
-  gkCeiling: 100_000,
-  mortBalance: 200_000,
-  mortRate: 7.0,
-  mortStart: "2022-01",
-  mortTerm: 30,
-  mortExtra: 0,
-  mortPI: 1330,
-  reHarrington: 600_000,
-  reOrlando105: 0,
-  reOrlando306: 0,
-  accounts: [
-    { id: "d1", category: "pretax", name: "Solo 401k", balance: 750_000 },
-    { id: "d2", category: "roth", name: "Roth IRA", balance: 150_000 },
-    { id: "d3", category: "taxable", name: "Taxable", balance: 50_000 },
-    { id: "d4", category: "hsa", name: "HSA", balance: 50_000 },
-    { id: "d5", category: "cash", name: "Savings", balance: 0 },
-  ],
-  abReliability: 80,
-  abGrowth: 3.0,
-  ssCola: 2.4,
-  preRetireEq: 91,
-  postRetireEq: 70,
-  hcShockAge: 72,
-  hcProb: 3.5,
-  hcMin: 70_000,
-  hcMax: 130_000,
-};
-
-const PROFILES = { user: BLANK_PROFILE, demo: DEMO_PROFILE };
 const ANALOGUES = [
   {
     min: 95,
@@ -278,6 +197,7 @@ function clip(v, lo, hi) {
 function bootstrapDraw(arr, rand) {
   return arr[Math.floor(rand() * arr.length)];
 }
+
 function portReturn(age, rand, preRetireEq, postRetireEq) {
   const eqW = age < 62 ? (preRetireEq || 91) / 100 : (postRetireEq || 70) / 100;
   return (
@@ -298,6 +218,7 @@ function taxDragRate(age, ssAge, useTax) {
   if (age < 73) return 0.09;
   return 0.132;
 }
+
 function guytonKlingerWithdrawal(
   portfolioValue,
   initialWR,
@@ -315,6 +236,7 @@ function guytonKlingerWithdrawal(
   else if (currentWR >= initialWR * 1.2) w *= 0.9;
   return Math.max(floor, Math.min(ceiling, w));
 }
+
 function calcYearTax(
   age,
   yr,
@@ -340,23 +262,22 @@ function calcYearTax(
   const fedBrackets = idxB(FED_BRACKETS_2026, inflationFactor);
   const fedTax = progTax(taxableIncome, fedBrackets);
   let stateTax = 0;
-
   if (!isTwoHousehold) {
     const njBrackets = idxB(NJ_BRACKETS_2026, inflationFactor);
     stateTax = progTax(taxableIncome, njBrackets);
   }
-      const magi = totalIncome;
-      const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
-      const totalTax = fedTax + stateTax + irmaa;
-      const effectiveRate = totalIncome > 0 ? totalTax / totalIncome : 0;
-      let marginalBracket = 0;
-
+  const magi = totalIncome;
+  const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
+  const totalTax = fedTax + stateTax + irmaa;
+  const effectiveRate = totalIncome > 0 ? totalTax / totalIncome : 0;
+  let marginalBracket = 0;
   for (const b of fedBrackets) {
     if (taxableIncome > b.lo) marginalBracket = b.rate;
     else break;
   }
   return { fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket };
 }
+
 function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
@@ -364,61 +285,33 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   const results = [];
   const gkFloor = p.gkFloor || 48_000;
   const gkCeiling = p.gkCeiling || 115_000;
-  
-  // User settings for cash return and RMD table
-  const cashRealReturn = (p.cashRealReturn ?? 1.0) / 100;
-  const useJointTable = p.useJointRmdTable ?? false;
-
-  // Simplified Joint & Last Survivor table (assumes spouse is 10 years younger)
-  // For a full public tool, you would need a 2D table keyed by owner age and spouse age.
-  const JOINT_RMD_TABLE = {
-    73: 25.3, 74: 24.6, 75: 24.0, 76: 23.4, 77: 22.8,
-    78: 22.3, 79: 21.8, 80: 21.3, 81: 20.9, 82: 20.5,
-    83: 20.1, 84: 19.7, 85: 19.3, 86: 19.0, 87: 18.7,
-    88: 18.4, 89: 18.1, 90: 17.8,
-  };
-  // Uniform Lifetime Table (same as your existing RMD_DIV)
-  const UNIFORM_TABLE = RMD_DIV; // RMD_DIV is defined elsewhere in your file
 
   for (let i = 0; i < N; i++) {
-    // Initialize buckets from p.accounts for this path
-    let pretax = 0, roth = 0, taxable = 0, cash = 0;
-    for (const acct of (p.accounts || [])) {
-      const bal = acct.balance || 0;
-      if (acct.category === "pretax") pretax += bal;
-      else if (acct.category === "roth") roth += bal;
-      else if (acct.category === "taxable") taxable += bal;
-      else if (acct.category === "cash") cash += bal;
-    }
-    let totalPort = pretax + roth + taxable + cash;
-
-    // Accumulation phase
+    let port = p.port;
     for (let y = 0; y < accYrs; y++) {
-      const ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq);
-      // Apply growth to all buckets equally (simplified)
-      pretax   = Math.max(0, pretax   * (1 + ret));
-      roth     = Math.max(0, roth     * (1 + ret));
-      taxable  = Math.max(0, taxable  * (1 + ret));
-      cash     = Math.max(0, cash     * (1 + ret));
-      // Add contributions to pre‑tax (simplest assumption)
-      pretax += p.contrib;
-      totalPort = pretax + roth + taxable + cash;
+      port =
+        port *
+          (1 +
+            portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq)) +
+        p.contrib;
     }
-
-    const portAtRetire = Math.round(totalPort);
+    const portAtRetire = Math.round(port);
 
     const gg = clip(normalDraw(0.03, 0.005, rand), 0.005, 0.08);
     const sg = clip(normalDraw(0.015, 0.005, rand), 0.002, 0.05);
     const ng = clip(normalDraw(0.025, 0.005, rand), 0.005, 0.08);
 
     const path = [portAtRetire];
-    let survived = true, exhaustAge = null;
+    let survived = true,
+      exhaustAge = null;
     let sp = p.sp;
     let lastReturn = 0;
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
     const ab0 = p.useAb ? p.ab : 0;
-    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax));
+    const initDraw =
+      Math.max(0, p.sp - ss0 - ab0) *
+      (1 + taxDragRate(p.retireAge, p.ssAge, p.tax));
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
     for (let y = 0; y < retYrs; y++) {
@@ -426,117 +319,86 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       const r = portReturn(age, rand, p.preRetireEq, p.postRetireEq);
       const inflY = bootstrapDraw(INFL, rand);
 
-      // GK guardrails — inflate floor/ceiling to preserve real purchasing power
-      const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
-      const adjFloor = gkFloor * cumInfl;
-      const adjCeiling = gkCeiling * cumInfl;
-      if (useGK && y > 0 && totalPort > 0) {
-        sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+      if (useGK && y > 0 && port > 0) {
+        sp = guytonKlingerWithdrawal(
+          port,
+          initWR,
+          sp,
+          lastReturn,
+          inflY,
+          gkFloor,
+          gkCeiling
+        );
       } else if (y > 0) {
-        sp = p.smile ? sp * (1 + (age < 75 ? gg : age < 85 ? sg : ng)) : sp * (1 + inflY);
+        sp = p.smile
+          ? sp * (1 + (age < 75 ? gg : age < 85 ? sg : ng))
+          : sp * (1 + inflY);
       }
       lastReturn = r;
 
-      // Income from SS and Airbnb
-      const ss = age >= p.ssAge ? p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y) : 0;
-      const abReliable = rand() < (p.abReliability || 80)/100;
-      const ab = p.useAb && abReliable ? p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20)) : 0;
+      const ss =
+        age >= p.ssAge ? p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y) : 0;
+      const abReliable = rand() < (p.abReliability || 80) / 100;
+      const ab =
+        p.useAb && abReliable
+          ? p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20))
+          : 0;
       const need = Math.max(0, sp - ss - ab);
+      const td = taxDragRate(age, p.ssAge, p.tax);
+      const hShock =
+        age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100
+          ? (p.hcMin || 70_000) +
+            rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000))
+          : 0;
+      const draw = need * (1 + td) + hShock;
 
-      // RMD calculation
-      let rmd = 0;
-      if (age >= 73 && pretax > 0) {
-        let divisor;
-        if (useJointTable && JOINT_RMD_TABLE[age]) {
-          divisor = JOINT_RMD_TABLE[age];
-        } else {
-          divisor = UNIFORM_TABLE[age] || 15.0;
-        }
-        rmd = Math.round(pretax / divisor);
-      }
-      const totalNeed = need + rmd;
-
-      // Tax calculation (conservative: all withdrawal is ordinary income)
-      const yr = 2026 + (age - p.currentAge);
-      const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY);
-      const totalTax = taxResult.totalTax;
-      const totalWithdrawalNeeded = totalNeed + totalTax;
-
-      // Withdraw from buckets in order: cash → taxable → pretax → roth
-      let remaining = totalWithdrawalNeeded;
-      let fromCash = Math.min(remaining, cash);
-      remaining -= fromCash;
-      let fromTaxable = Math.min(remaining, taxable);
-      remaining -= fromTaxable;
-      let fromPretax = Math.min(remaining, pretax);
-      remaining -= fromPretax;
-      let fromRoth = Math.min(remaining, roth);
-      remaining -= fromRoth;
-
-      if (remaining > 0.01) {
+      port = port * (1 + r) - draw;
+      if (port <= 0 && survived) {
         survived = false;
         exhaustAge = age;
-        break;
+        port = 0;
       }
-
-      // Update bucket balances after withdrawals and RMD
-      cash    = Math.max(0, cash    - fromCash);
-      taxable = Math.max(0, taxable - fromTaxable);
-      pretax  = Math.max(0, pretax  - fromPretax - rmd);
-      roth    = Math.max(0, roth    - fromRoth);
-
-      // Apply growth: cash gets user-defined real return; others get portfolio return
-      cash    = Math.max(0, cash    * (1 + cashRealReturn));
-      pretax  = Math.max(0, pretax  * (1 + r));
-      roth    = Math.max(0, roth    * (1 + r));
-      taxable = Math.max(0, taxable * (1 + r));
-
-      totalPort = pretax + roth + taxable + cash;
-      path.push(Math.round(totalPort));
-
-      if (totalPort <= 0 && survived) {
-        survived = false;
-        exhaustAge = age;
-      }
+      path.push(Math.max(0, Math.round(port)));
     }
     results.push({ path, survived, exhaustAge, portAtRetire });
   }
 
-  // Aggregate results (unchanged)
   const pL = results[0].path.length;
   const pcts = [];
   for (let t = 0; t < pL; t++) {
-    const vals = results.map(r => r.path[t]).sort((a, b) => a - b);
-    const q = pct => vals[Math.floor(pct * (vals.length - 1))];
+    const vals = results.map((r) => r.path[t]).sort((a, b) => a - b);
+    const q = (pct) => vals[Math.floor(pct * (vals.length - 1))];
     pcts.push({
       age: p.retireAge + t,
-      p10: q(0.1), p25: q(0.25), p50: q(0.5), p75: q(0.75), p90: q(0.9),
+      p10: q(0.1),
+      p25: q(0.25),
+      p50: q(0.5),
+      p75: q(0.75),
+      p90: q(0.9),
     });
   }
-  const nS = results.filter(r => r.survived).length;
-  const rV = results.map(r => r.portAtRetire).sort((a, b) => a - b);
+  const nS = results.filter((r) => r.survived).length;
+  const rV = results.map((r) => r.portAtRetire).sort((a, b) => a - b);
   const medR = rV[Math.floor(rV.length / 2)];
-  const tV = results.map(r => r.path[r.path.length - 1]).sort((a, b) => a - b);
-  const qt = p => tV[Math.floor(p * (tV.length - 1))];
+  const tV = results
+    .map((r) => r.path[r.path.length - 1])
+    .sort((a, b) => a - b);
+  const qt = (p) => tV[Math.floor(p * (tV.length - 1))];
   return {
     rate: nS / N,
     pcts,
     medR,
-    term: { p10: qt(0.1), p25: qt(0.25), p50: qt(0.5), p75: qt(0.75), p90: qt(0.9) },
+    term: {
+      p10: qt(0.1),
+      p25: qt(0.25),
+      p50: qt(0.5),
+      p75: qt(0.75),
+      p90: qt(0.9),
+    },
     N,
   };
 }
-function withdrawFromBuckets(need, pretax, roth, taxable, cash) {
-  let remaining = need;
-  let fromTaxable = Math.min(remaining, taxable);
-  remaining -= fromTaxable;
-  let fromPretax = Math.min(remaining, pretax);
-  remaining -= fromPretax;
-  let fromRoth = Math.min(remaining, roth);
-  remaining -= fromRoth;
-  // If still short, you fail – but GK should prevent that.
-  return { fromTaxable, fromPretax, fromRoth, success: remaining === 0 };
-}
+
 function runStress(p, endAge, N = 2000, seed = 99) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
@@ -548,42 +410,60 @@ function runStress(p, endAge, N = 2000, seed = 99) {
   for (let i = 0; i < N; i++) {
     let port = p.port;
     for (let y = 0; y < accYrs; y++) {
-      port = port * (1 + portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq)) + p.contrib;
+      port =
+        port *
+          (1 +
+            portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq)) +
+        p.contrib;
     }
     const portAtRetire = Math.round(port);
     const path = [portAtRetire];
-    let survived = true, sp = p.sp;
+    let survived = true,
+      sp = p.sp;
     let lastReturn = 0;
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
     const ab0 = p.useAb ? p.ab : 0;
-    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax));
+    const initDraw =
+      Math.max(0, p.sp - ss0 - ab0) *
+      (1 + taxDragRate(p.retireAge, p.ssAge, p.tax));
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
-      const eqW = age < 62 ? (p.preRetireEq || 91) / 100 : (p.postRetireEq || 70) / 100;
-      const eq = y < SEQ_2000_2012.length ? SEQ_2000_2012[y] : bootstrapDraw(SP500, rand);
+      const eqW =
+        age < 62 ? (p.preRetireEq || 91) / 100 : (p.postRetireEq || 70) / 100;
+      const eq =
+        y < SEQ_2000_2012.length
+          ? SEQ_2000_2012[y]
+          : bootstrapDraw(SP500, rand);
       const r = eqW * eq + (1 - eqW) * bootstrapDraw(BONDS, rand);
       const inflY = bootstrapDraw(INFL, rand);
 
-      // Inflate GK guardrails to preserve real purchasing power
-      const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
-      const adjFloor = gkFloor * cumInfl;
-      const adjCeiling = gkCeiling * cumInfl;
       if (y > 0 && port > 0) {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+        sp = guytonKlingerWithdrawal(
+          port,
+          initWR,
+          sp,
+          lastReturn,
+          inflY,
+          gkFloor,
+          gkCeiling
+        );
       }
       lastReturn = r;
 
       const ss = age >= p.ssAge ? p.ssb * Math.pow(1.024, y) : 0;
-      const ab = p.useAb && rand() < (p.abReliability || 80) / 100
-        ? p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20))
-        : 0;
+      const ab =
+        p.useAb && rand() < (p.abReliability || 80) / 100
+          ? p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20))
+          : 0;
       const td = taxDragRate(age, p.ssAge, p.tax);
-      const hShock = age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100
-        ? (p.hcMin || 70_000) + rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000))
-        : 0;
+      const hShock =
+        age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100
+          ? (p.hcMin || 70_000) +
+            rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000))
+          : 0;
       const draw = Math.max(0, sp - ss - ab) * (1 + td) + hShock;
 
       port = port * (1 + r) - draw;
@@ -612,6 +492,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
   }
   return { rate: results.filter((r) => r.survived).length / N, pcts };
 }
+
 function simulateMedianGK(p, inf) {
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
   const retYrs = p.endAge - p.retireAge;
@@ -640,10 +521,6 @@ function simulateMedianGK(p, inf) {
     const ret = age < 62 ? CALIB.phase1Mean / 100 : CALIB.phase2Mean / 100;
     const inflY = inf / 100;
 
-    // Inflate GK guardrails to preserve real purchasing power
-    const cumInfl = Math.pow(1 + inflY, y);
-    const adjFloor = gkFloor * cumInfl;
-    const adjCeiling = gkCeiling * cumInfl;
     if (y > 0 && port > 0) {
       sp = guytonKlingerWithdrawal(
         port,
@@ -651,8 +528,8 @@ function simulateMedianGK(p, inf) {
         sp,
         lastReturn,
         inflY,
-        adjFloor,
-        adjCeiling
+        gkFloor,
+        gkCeiling
       );
     }
     lastReturn = ret;
@@ -683,12 +560,6 @@ function simulateMedianGK(p, inf) {
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
-    // Determine which GK band is active
-    const wr = port > 0 ? sp / port : 0;
-    let gkBand = "normal";
-    if (wr <= initWR * 0.8) gkBand = "prosperity";
-    else if (wr >= initWR * 1.2) gkBand = "capital_preservation";
-
     schedule.push({
       age,
       yr,
@@ -702,10 +573,6 @@ function simulateMedianGK(p, inf) {
       totalTax: taxResult.totalTax,
       totalWithdrawal: Math.round(totalDraw),
       portfolioEnd: Math.max(0, Math.round(port)),
-      gkFloor: Math.round(adjFloor),
-      gkCeiling: Math.round(adjCeiling),
-      gkBand,
-      withdrawalRate: wr,
     });
 
     if (port <= 0) break;
@@ -796,17 +663,11 @@ function buildRothExplorer(params = {}) {
     twoHousehold = true,
     rothMode = "fill_22",
   } = params;
-
   const infR = inf / 100,
     retireYear = ROTH_BASE_YEAR + (retireAge - currentAge),
     isFL = twoHousehold;
-
-  const _pretaxSum = (params.accounts || []).filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
-  const _rothSum = (params.accounts || []).filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
-  const _otherSum = (params.accounts || []).filter(a => !["pretax","roth"].includes(a.category)).reduce((s, a) => s + (a.balance || 0), 0);
-  const _totalFromAccounts = _pretaxSum + _rothSum + _otherSum;
-  const pretaxBal = _totalFromAccounts > 0 ? _pretaxSum : port * 0.6,
-    rothBal = _totalFromAccounts > 0 ? (_rothSum + _otherSum) : port * 0.4,
+  const pretaxBal = port * 0.6,
+    rothBal = port * 0.4,
     gr = 0.07;
 
   function irmaaCeiling(yr) {
@@ -840,9 +701,12 @@ function buildRothExplorer(params = {}) {
       const fB = idxB(FED_BRACKETS_2026, f),
         nB = idxB(NJ_BRACKETS_2026, f);
       const stdD = Math.round(32200 * f) + (age >= 65 ? 3300 : 0);
-      const b12t = fB.find((b) => b.rate === 0.12)?.hi || Math.round(100800 * f);
-      const b22t = fB.find((b) => b.rate === 0.22)?.hi || Math.round(211400 * f);
-      const b24t = fB.find((b) => b.rate === 0.24)?.hi || Math.round(403550 * f);
+      const b12t =
+        fB.find((b) => b.rate === 0.12)?.hi || Math.round(100800 * f);
+      const b22t =
+        fB.find((b) => b.rate === 0.22)?.hi || Math.round(211400 * f);
+      const b24t =
+        fB.find((b) => b.rate === 0.24)?.hi || Math.round(403550 * f);
 
       const totalPort = pT + ro;
       if (age > retireAge && totalPort > 0) {
@@ -857,20 +721,20 @@ function buildRothExplorer(params = {}) {
         );
       }
 
-      const ss = age >= ssAge ? Math.round(ssb * Math.pow(1.024, age - ssAge)) : 0;
+      const ss =
+        age >= ssAge ? Math.round(ssb * Math.pow(1.024, age - ssAge)) : 0;
       const ssT = Math.round(ss * 0.85);
-      const abn = useAb && age <= 80
-        ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
-        : 0;
+      const abn =
+        useAb && age <= 80
+          ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
+          : 0;
       const baseInc = ssT + abn;
       const portDraw = Math.max(0, sp - ss - abn);
 
-      // RMD calculation – using Uniform Lifetime Table (RMD_DIV)
-      // For Joint & Last Survivor, you would need spouse age and a 2D table.
       let rmd = 0;
       if (age >= 73 && pT > 0) {
-        const divisor = RMD_DIV[age] || 15.0;
-        rmd = Math.round(pT / divisor);
+        const d = RMD_DIV[age] || 15.0;
+        rmd = Math.round(pT / d);
       }
       const incBC = baseInc + rmd;
       const txBC = Math.max(0, incBC - stdD);
@@ -891,19 +755,11 @@ function buildRothExplorer(params = {}) {
           targetTop = Math.min(b22t, irmaaCeiling(yr) + stdD);
         else targetTop = b22t;
 
-        // IRMAA lookback guard: ages 60-65 — cap at 22%
-        if (age >= 60 && age <= 65 && rothMode === "fill_24")
+        if (age >= 63 && age <= 65 && rothMode !== "fill_12")
           targetTop = Math.min(targetTop, b22t);
-        // FAFSA/CSS guard: through 2029 — cap at 12%
         if (yr <= 2029) targetTop = Math.min(targetTop, b12t);
-        // CSS Profile guard: 2030-2033 — cap at 22%
-        if (yr > 2029 && yr <= 2033) targetTop = Math.min(targetTop, b22t);
-        // 24% permitted ages 66-72 only
-        if (rothMode === "fill_24" && (age < 66 || age > 72))
-          targetTop = Math.min(targetTop, b22t);
         const room = Math.max(0, targetTop - txBC);
-        // Hard cap: never convert more than $250K in a single year
-        conv = Math.round(Math.min(room, Math.max(0, pT), 250_000));
+        conv = Math.round(Math.min(room, Math.max(0, pT)));
       }
 
       const totInc = incBC + conv,
@@ -915,7 +771,8 @@ function buildRothExplorer(params = {}) {
       const magi = totInc + (ss - ssT);
       const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
 
-      pT = Math.max(0, pT - rmd - conv - Math.max(0, portDraw * 0.6)) * (1 + gr);
+      pT =
+        Math.max(0, pT - rmd - conv - Math.max(0, portDraw * 0.6)) * (1 + gr);
       ro = Math.max(0, ro + conv - Math.max(0, portDraw * 0.4)) * (1 + gr);
       lastReturn = gr;
       cTax += totT;
@@ -931,24 +788,57 @@ function buildRothExplorer(params = {}) {
       }
 
       rows.push({
-        yr, age, ss, abn, rmd, conv, baseInc: incBC, totInc, txInc,
-        fedT, stT, totT, effR, irmaa, magi,
-        pT: Math.round(pT), ro: Math.round(ro), nw: Math.round(pT + ro),
+        yr,
+        age,
+        ss,
+        abn,
+        rmd,
+        conv,
+        baseInc: incBC,
+        totInc,
+        txInc,
+        fedT,
+        stT,
+        totT,
+        effR,
+        irmaa,
+        magi,
+        pT: Math.round(pT),
+        ro: Math.round(ro),
+        nw: Math.round(pT + ro),
         label,
-        bracketUsed: conv > 0
-          ? txInc <= b12t ? "12%" : txInc <= b22t ? "22%" : txInc <= b24t ? "24%" : "32%"
-          : "-",
-        sp: Math.round(sp), portDraw: Math.round(portDraw),
+        bracketUsed:
+          conv > 0
+            ? txInc <= b12t
+              ? "12%"
+              : txInc <= b22t
+              ? "22%"
+              : txInc <= b24t
+              ? "24%"
+              : "32%"
+            : "-",
+        sp: Math.round(sp),
+        portDraw: Math.round(portDraw),
       });
     }
-    return { rows, cTax, cConv, cIrmaa, cRmd, fPT: Math.round(pT), fRo: Math.round(ro) };
+    return {
+      rows,
+      cTax,
+      cConv,
+      cIrmaa,
+      cRmd,
+      fPT: Math.round(pT),
+      fRo: Math.round(ro),
+    };
   }
 
   const opt = runScenario(true),
     cur = runScenario(false);
   const convRows = opt.rows.filter((r) => r.conv > 0);
   const taxD = opt.cTax - cur.cTax;
-  const estD = (cur.rows[cur.rows.length - 1]?.nw || 0) - (opt.rows[opt.rows.length - 1]?.nw || 0);
+  const estD =
+    (cur.rows[cur.rows.length - 1]?.nw || 0) -
+    (opt.rows[opt.rows.length - 1]?.nw || 0);
   const totIncOpt = opt.rows.reduce((s, r) => s + r.totInc, 0);
   const totIncCur = cur.rows.reduce((s, r) => s + r.totInc, 0);
   const leOpt = totIncOpt > 0 ? opt.cTax / totIncOpt : 0;
@@ -956,8 +846,18 @@ function buildRothExplorer(params = {}) {
   const rmdRed = cur.cRmd > 0 ? Math.round((1 - opt.cRmd / cur.cRmd) * 100) : 0;
 
   return {
-    opt, cur, convRows, taxD, estD, leOpt, leCur, rmdRed,
-    isFL, retireYear, retireAge, ssAge,
+    opt,
+    cur,
+    convRows,
+    taxD,
+    estD,
+    leOpt,
+    leCur,
+    rmdRed,
+    isFL,
+    retireYear,
+    retireAge,
+    ssAge,
   };
 }
 
@@ -1142,78 +1042,76 @@ function SectorBadge({ age }) {
 
 /* ════ CSS ════ */
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
   * { box-sizing:border-box; }
-  body { margin:0; font-family:'Inter',sans-serif; background:#0a0f1e; color:#f1f5f9; font-size:13px; line-height:1.5; }
-  .app { min-height:100vh; background:linear-gradient(135deg,#0a0f1e 0%,#0d1529 50%,#0a0f1e 100%); }
-  .hdr { background:rgba(10,15,30,0.98); border-bottom:1px solid rgba(99,179,237,0.15); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(16px); }
-  .logo { font-size:18px; font-weight:800; letter-spacing:-0.03em; color:#f8fafc; }
-  .logo-sub { color:#38bdf8; font-weight:400; font-size:13px; margin-left:6px; }
-  .mbtn { padding:5px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.12); cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:#94a3b8; }
-  .mbtn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
-  .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
+  body { margin:0; font-family:'DM Sans',sans-serif; background:#060e1a; color:#e2e8f0; }
+  .app { min-height:100vh; background:linear-gradient(160deg,#040b16 0%,#071220 50%,#04091a 100%); }
+  .hdr { background:rgba(7,18,32,0.97); border-bottom:1px solid rgba(13,148,136,0.3); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(12px); }
+  .logo { font-size:17px; font-weight:700; letter-spacing:-0.02em; }
+  .logo-sub { color:#5eead4; font-weight:300; font-size:13px; }
+  .mbtn { padding:5px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.1); cursor:pointer; font-size:11px; font-family:'DM Sans',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:#64748b; }
+  .mbtn.on { background:linear-gradient(135deg,#0d9488,#14b8a6); border-color:transparent; color:white; }
   .mbtn.demo-on { background:linear-gradient(135deg,#7c3aed,#4f46e5); border-color:transparent; color:white; }
-  .layout { display:grid; grid-template-columns:268px 1fr; height:calc(100vh - 56px); }
-  .sidebar { border-right:1px solid rgba(255,255,255,0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; }
-  .sb-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:13px; }
-  .sb-title { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.12em; margin-bottom:12px; }
-  .sl-row { display:grid; grid-template-columns:108px 1fr 66px; align-items:center; gap:8px; margin-bottom:13px; }
-  .sl-label { font-size:12px; color:#cbd5e1; font-weight:500; }
-  .sl-val { font-size:12px; font-weight:700; text-align:right; color:#f1f5f9; font-family:'JetBrains Mono',monospace; }
+  .layout { display:grid; grid-template-columns:260px 1fr; height:calc(100vh - 56px); }
+  .sidebar { border-right:1px solid rgba(255,255,255,0.06); padding:14px; overflow-y:auto; background:rgba(7,14,26,0.6); display:flex; flex-direction:column; gap:10px; }
+  .sb-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:10px; padding:12px; }
+  .sb-title { font-size:11px; font-weight:600; color:#475569; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px; }
+  .sl-row { display:grid; grid-template-columns:110px 1fr 62px; align-items:center; gap:8px; margin-bottom:12px; }
+  .sl-label { font-size:12px; color:#94a3b8; }
+  .sl-val { font-size:12px; font-weight:600; text-align:right; color:#e2e8f0; font-family:'DM Mono',monospace; }
   input[type=range] { display:none; }
-  .tog-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
-  .tog-label { font-size:12px; color:#cbd5e1; font-weight:500; }
+  .tog-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:9px; }
+  .tog-label { font-size:12px; color:#94a3b8; }
   .tog { width:34px; height:18px; border-radius:9px; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
-  .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.4); }
-  .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); }
-  .run-btn:hover { opacity:0.9; box-shadow:0 6px 20px rgba(14,165,233,0.35); }
-  .run-btn:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
+  .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; }
+  .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0d9488,#14b8a6); border:none; border-radius:9px; color:white; font-size:13px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all 0.2s; }
+  .run-btn:hover { opacity:0.88; }
+  .run-btn:disabled { opacity:0.45; cursor:not-allowed; }
   .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; }
-  .flag-w { border-left:3px solid #f59e0b; background:rgba(245,158,11,0.1); padding:7px 12px; font-size:12px; color:#fde68a; border-radius:0 8px 8px 0; margin-bottom:4px; font-weight:500; }
-  .flag-i { border-left:3px solid #38bdf8; background:rgba(56,189,248,0.08); color:#bae6fd; border-radius:0 8px 8px 0; padding:7px 12px; font-size:12px; margin-bottom:4px; font-weight:500; }
-  .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
-  .met { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:10px; padding:13px 15px; }
-  .ml { font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.09em; margin-bottom:7px; font-weight:600; }
-  .mv { font-size:22px; font-weight:800; font-family:'JetBrains Mono',monospace; line-height:1; }
-  .ms { font-size:11px; color:#64748b; margin-top:5px; }
-  .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:#cbd5e1; font-style:italic; }
-  .tabs { display:flex; gap:3px; background:rgba(255,255,255,0.04); border-radius:10px; padding:3px; flex-wrap:wrap; }
-  .tab { flex:1; min-width:72px; padding:7px 6px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; color:#64748b; transition:all 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; }
-  .tab:hover { color:#94a3b8; }
-  .tab.on { background:rgba(255,255,255,0.09); color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); font-weight:600; }
-  .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:15px 17px; }
-  .ct { font-size:12px; color:#94a3b8; margin-bottom:12px; font-weight:500; }
+  .flag-w { border-left:3px solid #f59e0b; background:rgba(245,158,11,0.08); padding:7px 12px; font-size:12px; color:#fcd34d; border-radius:0 7px 7px 0; margin-bottom:4px; }
+  .flag-i { border-left:3px solid #0ea5e9; background:rgba(14,165,233,0.08); color:#7dd3fc; border-radius:0 7px 7px 0; padding:7px 12px; font-size:12px; margin-bottom:4px; }
+  .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .met { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:9px; padding:12px 14px; }
+  .ml { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:6px; }
+  .mv { font-size:22px; font-weight:700; font-family:'DM Mono',monospace; line-height:1; }
+  .ms { font-size:11px; color:#475569; margin-top:4px; }
+  .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:9px; padding:11px 15px; font-size:13px; color:#94a3b8; font-style:italic; }
+  .tabs { display:flex; gap:2px; background:rgba(255,255,255,0.04); border-radius:9px; padding:3px; flex-wrap:wrap; }
+  .tab { flex:1; min-width:66px; padding:6px 4px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:10px; font-family:'DM Sans',sans-serif; color:#64748b; transition:all 0.15s; font-weight:500; white-space:nowrap; }
+  .tab.on { background:rgba(255,255,255,0.08); color:#e2e8f0; border:1px solid rgba(255,255,255,0.1); }
+  .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:10px; padding:14px 16px; }
+  .ct { font-size:12px; color:#64748b; margin-bottom:12px; }
   .leg { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
   .li { display:flex; align-items:center; gap:5px; font-size:11px; color:#64748b; }
   .ll { width:18px; height:2px; border-radius:1px; }
   .ppl-grid { display:flex; flex-wrap:wrap; gap:4px; margin:8px 0; }
   .ppl-dot { width:18px; height:18px; border-radius:50%; }
   .roth-tbl { width:100%; border-collapse:collapse; font-size:12px; }
-  .roth-tbl th { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.09); }
+  .roth-tbl th { font-size:11px; font-weight:600; color:#475569; text-transform:uppercase; letter-spacing:0.07em; padding:6px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.08); }
   .roth-tbl th:first-child { text-align:left; }
-  .roth-tbl td { padding:9px 8px; border-bottom:1px solid rgba(255,255,255,0.05); text-align:right; font-family:'JetBrains Mono',monospace; font-size:12px; color:#e2e8f0; }
-  .roth-tbl td:first-child { text-align:left; font-family:'Inter',sans-serif; color:#f1f5f9; }
-  .gold { background:rgba(251,191,36,0.07); }
-  .gk-bar { background:rgba(14,165,233,0.07); border:1px solid rgba(14,165,233,0.2); border-radius:9px; padding:11px 15px; font-size:12px; color:#bae6fd; }
+  .roth-tbl td { padding:9px 8px; border-bottom:1px solid rgba(255,255,255,0.05); text-align:right; font-family:'DM Mono',monospace; font-size:12px; }
+  .roth-tbl td:first-child { text-align:left; font-family:'DM Sans',sans-serif; }
+  .gold { background:rgba(251,191,36,0.06); }
+  .gk-bar { background:rgba(13,148,136,0.08); border:1px solid rgba(13,148,136,0.2); border-radius:8px; padding:11px 15px; font-size:12px; }
   .countdown-grid { display:flex; gap:5px; }
-  .cd-unit { text-align:center; background:rgba(255,255,255,0.05); border-radius:6px; padding:5px 8px; min-width:38px; }
-  .cd-val { font-size:17px; font-weight:800; color:#f0fdfa; font-family:'JetBrains Mono',monospace; line-height:1; }
-  .cd-lbl { font-size:9px; color:#64748b; letter-spacing:0.12em; margin-top:2px; }
+  .cd-unit { text-align:center; background:rgba(255,255,255,0.04); border-radius:5px; padding:5px 7px; min-width:36px; }
+  .cd-val { font-size:16px; font-weight:700; color:#f0fdfa; font-family:'DM Mono',monospace; line-height:1; }
+  .cd-lbl { font-size:10px; color:#475569; letter-spacing:0.1em; }
   .progress-bar { height:5px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden; margin-top:6px; }
-  .progress-fill { height:100%; background:linear-gradient(90deg,#0ea5e9,#38bdf8); border-radius:3px; transition:width 1s; }
+  .progress-fill { height:100%; background:linear-gradient(90deg,#0d9488,#14b8a6); border-radius:3px; transition:width 1s; }
   .nw-table { width:100%; border-collapse:collapse; font-size:12px; }
-  .nw-table th { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; border-bottom:1px solid rgba(255,255,255,0.09); text-align:right; font-weight:700; }
+  .nw-table th { font-size:11px; color:#475569; text-transform:uppercase; letter-spacing:0.07em; padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.08); text-align:right; }
   .nw-table th:first-child { text-align:left; }
-  .nw-table td { padding:8px 8px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right; font-family:'JetBrains Mono',monospace; color:#e2e8f0; }
-  .nw-table td:first-child { text-align:left; font-family:'Inter',sans-serif; color:#f1f5f9; }
-  .ap-col { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px; }
-  .ap-hdr { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:11px; }
-  .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); color:#cbd5e1; }
+  .nw-table td { padding:7px 8px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right; font-family:'DM Mono',monospace; }
+  .nw-table td:first-child { text-align:left; font-family:'DM Sans',sans-serif; }
+  .ap-col { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:9px; padding:13px; }
+  .ap-hdr { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:11px; }
+  .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); color:#94a3b8; }
   .ms-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; margin-top:2px; }
   .ms-line { width:2px; background:rgba(255,255,255,0.08); margin:0 4px; }
-  .tip-box { background:rgba(10,15,30,0.98); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:9px 12px; font-size:12px; color:#f1f5f9; }
+  .tip-box { background:rgba(7,18,32,0.97); border:1px solid rgba(255,255,255,0.1); border-radius:7px; padding:8px 11px; font-size:12px; }
   ::-webkit-scrollbar { width:3px; height:3px; }
-  ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.12); border-radius:2px; }
+  ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:2px; }
 `;
 
 const Tip = ({ active, payload, label }) => {
@@ -1347,86 +1245,6 @@ function Slider({ label, value, min, max, step, format, onChange }) {
       <span className="sl-val">{format(value)}</span>
     </div>
   );
-}
-
-/* ════ DUAL INPUT — text box + slider auto-sync ════ */
-function DualInput({ label, value, min, max, step, format, onChange }) {
-  return (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <span style={{ fontSize: 12, color: "#94a3b8" }}>{label}</span>
-        <input
-          type="number"
-          value={value}
-          min={min} max={max} step={step}
-          onChange={e => {
-            const v = Math.max(min, Math.min(max, Number(e.target.value)));
-            if (!isNaN(v)) onChange(v);
-          }}
-          style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f",
-            color: "#5eead4", borderRadius: 5, padding: "3px 8px",
-            fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
-        />
-      </div>
-      <Slider label="" value={value} min={min} max={max} step={step} format={format} onChange={onChange} />
-    </div>
-  );
-}
-
-/* ════ IMPORT / EXPORT ════ */
-function exportProfile(values, name = "AiRA_Profile") {
-  const blob = new Blob([JSON.stringify(values, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${name}_${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function importProfile(onLoad) {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = ".json";
-  input.onchange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const parsed = JSON.parse(ev.target.result);
-        // Migrate old account fields to new accounts array
-        if (parsed.solo401k !== undefined && !parsed.accounts) {
-          parsed.accounts = [
-            ...(parsed.solo401k ? [{ id: "m1", category: "pretax", name: "Solo 401k", balance: parsed.solo401k }] : []),
-            ...(parsed.alpha401k ? [{ id: "m2", category: "pretax", name: "Alpha 401k", balance: parsed.alpha401k }] : []),
-            ...(parsed.rothFid ? [{ id: "m3", category: "roth", name: "Roth Fidelity", balance: parsed.rothFid }] : []),
-            ...(parsed.rothVgd ? [{ id: "m4", category: "roth", name: "Roth Vanguard", balance: parsed.rothVgd }] : []),
-            ...(parsed.hsaBal ? [{ id: "m5", category: "hsa", name: "HSA", balance: parsed.hsaBal }] : []),
-            ...(parsed.taxable ? [{ id: "m6", category: "taxable", name: "Taxable", balance: parsed.taxable }] : []),
-          ];
-          if (parsed.accounts.length === 0) {
-            parsed.accounts = BLANK_PROFILE.accounts;
-          }
-          delete parsed.solo401k;
-          delete parsed.alpha401k;
-          delete parsed.rothFid;
-          delete parsed.rothVgd;
-          delete parsed.hsaBal;
-          delete parsed.taxable;
-        }
-        // Ensure accounts is always a valid array
-        if (!Array.isArray(parsed.accounts)) {
-          parsed.accounts = BLANK_PROFILE.accounts;
-        }
-        onLoad(parsed);
-      } catch {
-        alert("Invalid profile file — must be a valid AiRA JSON export.");
-      }
-    };
-    reader.readAsText(file);
-  };
-  input.click();
 }
 
 function FanChart({ pcts, retireAge, ssAge, inf, useReal, title }) {
@@ -1776,7 +1594,6 @@ function RothLadder({ params }) {
       params?.twoHousehold,
       params?.useAb,
       params?.ssb,
-      params?.accounts,
       rothMode,
     ]
   );
@@ -1793,7 +1610,7 @@ function RothLadder({ params }) {
     retireYear,
   } = ex;
   const domLabel = isFL
-    ? "No Tax State Move or Out of Country"
+    ? "FL / Thailand (0% state)"
     : "NJ (graduated 1.4–10.75%)";
   const domColor = isFL ? "#34d399" : "#fb923c";
   const modeLabels = {
@@ -1873,7 +1690,7 @@ function RothLadder({ params }) {
             ],
             [
               "RMD Table",
-              "Joint & Last Survivor (Spouse)",
+              "Joint & Last Survivor (Mira 9yr younger)",
               "#94a3b8",
             ],
           ].map(([k, v, c]) => (
@@ -2522,8 +2339,6 @@ function DeterministicGKView({ p, inf }) {
     "Total Withdrawal": s.totalWithdrawal,
     "Portfolio End": s.portfolioEnd,
     Spending: s.spending,
-    "GK Floor": s.gkFloor,
-    "GK Ceiling": s.gkCeiling,
   }));
 
   // If schedule is empty (no data), show a placeholder
@@ -2543,8 +2358,8 @@ function DeterministicGKView({ p, inf }) {
           {CALIB.phase1Mean}% pre‑62 / {CALIB.phase2Mean}% after) · Inflation{" "}
           {inf}%
         </div>
-        <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart
+        <ResponsiveContainer width="100%" height={260}>
+          <LineChart
             data={chartData}
             margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           >
@@ -2558,88 +2373,33 @@ function DeterministicGKView({ p, inf }) {
               tick={{ fill: "#475569", fontSize: 10 }}
             />
             <YAxis
-              yAxisId="port"
               stroke="#1e3a5f"
               tick={{ fill: "#475569", fontSize: 10 }}
               tickFormatter={(v) => fmtM(v)}
               width={58}
             />
-            <YAxis
-              yAxisId="spend"
-              orientation="right"
-              stroke="#1e3a5f"
-              tick={{ fill: "#64748b", fontSize: 9 }}
-              tickFormatter={(v) => fmtK(v)}
-              width={52}
-            />
             <Tooltip content={<Tip />} />
-            {/* GK Band — shaded area between floor and ceiling */}
-            <Area
-              yAxisId="spend"
-              type="monotone"
-              dataKey="GK Ceiling"
-              stroke="none"
-              fill="rgba(34,197,94,0.08)"
-              dot={false}
-              name="GK Ceiling"
-              activeDot={false}
-            />
-            <Area
-              yAxisId="spend"
-              type="monotone"
-              dataKey="GK Floor"
-              stroke="none"
-              fill="#0a1628"
-              dot={false}
-              name="GK Floor"
-              activeDot={false}
-            />
-            {/* GK Floor/Ceiling border lines */}
-            <Line
-              yAxisId="spend"
-              type="monotone"
-              dataKey="GK Floor"
-              stroke="#ef4444"
-              strokeWidth={1}
-              strokeDasharray="6 4"
-              dot={false}
-              name="GK Floor"
-              legendType="none"
+            <Legend
+              wrapperStyle={{ fontSize: 10, color: "#64748b", paddingTop: 6 }}
             />
             <Line
-              yAxisId="spend"
-              type="monotone"
-              dataKey="GK Ceiling"
-              stroke="#22c55e"
-              strokeWidth={1}
-              strokeDasharray="6 4"
-              dot={false}
-              name="GK Ceiling"
-              legendType="none"
-            />
-            {/* Spending line on right axis */}
-            <Line
-              yAxisId="spend"
               type="monotone"
               dataKey="Spending"
               stroke="#fbbf24"
-              strokeWidth={2.5}
+              strokeWidth={2}
               dot={false}
               name="Spending (GK)"
             />
             <Line
-              yAxisId="spend"
               type="monotone"
               dataKey="Total Withdrawal"
               stroke="#f87171"
-              strokeWidth={1.5}
+              strokeWidth={2}
               strokeDasharray="4 3"
               dot={false}
               name="Total Withdrawal (inc. tax)"
             />
-            {/* Portfolio on left axis */}
             <Line
-              yAxisId="port"
               type="monotone"
               dataKey="Portfolio End"
               stroke="#14b8a6"
@@ -2647,13 +2407,9 @@ function DeterministicGKView({ p, inf }) {
               dot={false}
               name="Portfolio Balance (EOY)"
             />
-          </ComposedChart>
+          </LineChart>
         </ResponsiveContainer>
         <div className="leg">
-          <div className="li">
-            <div className="ll" style={{ background: "rgba(34,197,94,0.25)", border: "1px dashed #ef4444", borderRight: "1px dashed #22c55e" }} />
-            GK Band (floor–ceiling)
-          </div>
           <div className="li">
             <div className="ll" style={{ background: "#fbbf24" }} />
             Spending (GK)
@@ -2664,7 +2420,7 @@ function DeterministicGKView({ p, inf }) {
           </div>
           <div className="li">
             <div className="ll" style={{ background: "#14b8a6" }} />
-            Portfolio Balance (left axis)
+            Portfolio Balance
           </div>
         </div>
       </div>
@@ -2735,10 +2491,6 @@ function DeterministicGKView({ p, inf }) {
                   <th>Age</th>
                   <th>Year</th>
                   <th>Spending (GK)</th>
-                  <th>GK Floor</th>
-                  <th>GK Ceiling</th>
-                  <th>WR%</th>
-                  <th>Band</th>
                   <th>SS</th>
                   <th>Airbnb</th>
                   <th>Portfolio Draw</th>
@@ -2750,20 +2502,11 @@ function DeterministicGKView({ p, inf }) {
                 </tr>
               </thead>
               <tbody>
-                {schedule.map((s) => {
-                  const bandColor = s.gkBand === "prosperity" ? "#22c55e"
-                    : s.gkBand === "capital_preservation" ? "#ef4444" : "#fbbf24";
-                  const bandLabel = s.gkBand === "prosperity" ? "🔼 Boost"
-                    : s.gkBand === "capital_preservation" ? "⚠️ Cut" : "✅ Normal";
-                  return (
+                {schedule.map((s) => (
                   <tr key={s.age}>
                     <td style={{ textAlign: "left" }}>{s.age}</td>
                     <td>{s.yr}</td>
                     <td style={{ color: "#fbbf24" }}>{fmtM(s.spending)}</td>
-                    <td style={{ color: "#ef4444", fontSize: 10 }}>{fmtM(s.gkFloor)}</td>
-                    <td style={{ color: "#22c55e", fontSize: 10 }}>{fmtM(s.gkCeiling)}</td>
-                    <td style={{ color: "#94a3b8", fontSize: 10 }}>{(s.withdrawalRate * 100).toFixed(1)}%</td>
-                    <td style={{ color: bandColor, fontSize: 10, fontWeight: 600 }}>{bandLabel}</td>
                     <td>{fmtM(s.ss)}</td>
                     <td>{fmtM(s.airbnb)}</td>
                     <td>{fmtM(s.portfolioDraw)}</td>
@@ -2777,8 +2520,7 @@ function DeterministicGKView({ p, inf }) {
                       {fmtM(s.portfolioEnd)}
                     </td>
                   </tr>
-                  );
-                })}
+                ))}
               </tbody>
             </table>
           </div>
@@ -2788,10 +2530,8 @@ function DeterministicGKView({ p, inf }) {
       <div className="flag-i" style={{ fontSize: 11 }}>
         ℹ️ This is a deterministic (median) path – not a Monte Carlo average. It
         shows how Guyton‑Klinger would behave in a single "typical" sequence of
-        returns (9.68% pre‑62, 8.93% after). GK floor and ceiling are
-        inflation‑adjusted each year to preserve real purchasing power. Bands:
-        🔼 Boost = WR ≤ 80% of initial (raise 10%), ⚠️ Cut = WR ≥ 120% of
-        initial (reduce 10%), ✅ Normal = within guardrails.
+        returns (9.68% pre‑62, 8.93% after). Use it for planning a realistic
+        withdrawal schedule, but remember that actual outcomes will vary.
       </div>
     </>
   );
@@ -3024,7 +2764,7 @@ function ScenariosTab({
 }
 
 function MCTab({ params, r85, r90, stress, running, onRun }) {
-  const [showInputs, setShowInputs] = useState(false);
+  const [showInputs, setShowInputs] = useState(true);
   const [showHow, setShowHow] = useState(false);
   const accPhase = `Age ${params.currentAge} → ${params.retireAge}`;
   const retPhase = `Age ${params.retireAge} → ${params.endAge}`;
@@ -3707,7 +3447,7 @@ function MortgageTab({ prof }) {
           <div className="mv" style={{ color: "#0ea5e9", fontSize: 18 }}>
             {fmtM(bal)}
           </div>
-          <div className="ms">Primary Residence</div>
+          <div className="ms">Harrington Park NJ</div>
         </div>
         <div className="met">
           <div className="ml">Payoff year</div>
@@ -4009,279 +3749,6 @@ function NetWorthTab({ p, results90, inf }) {
   );
 }
 
-function generateActions({
-  params,
-  r90,
-  r85,
-  assumptions,
-  mortgagePayoffYear,
-  currentYear,
-  retireYear,
-  daysToRetire,
-  goal = 3_200_000,
-  fafsaEndYear = 2029,
-}) {
-  const actions = [];
-  const swr = (params.sp / params.port) * 100;
-  const isFL = params.twoHousehold;
-  const _accts = assumptions.accounts || [];
-  const preTaxTotal = _accts.filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
-  const _rothTotal = _accts.filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
-  const rothPct = params.port > 0 ? _rothTotal / params.port : 0;
-  const preTaxPct = params.port > 0 ? preTaxTotal / params.port : 0;
-  const successRate = r90 ? r90.rate : 0;
-  const portFundedPct = (params.port / goal) * 100;
-
-  // 🔴 RED rules
-  if (r90 && successRate < 0.80) {
-    actions.push({
-      priority: "red",
-      category: "Monte Carlo",
-      action: "Success rate below 80%",
-      reason: `${(successRate * 100).toFixed(1)}% — plan needs restructuring`,
-      deadline: "Now",
-    });
-  }
-  if (r90 && successRate < 0.70) {
-    actions.push({
-      priority: "red",
-      category: "Monte Carlo",
-      action: "Plan failure risk — urgent review",
-      reason: `Less than 70% success to age ${params.endAge}`,
-      deadline: "Now",
-    });
-  }
-  if (swr > 5.0) {
-    actions.push({
-      priority: "red",
-      category: "Withdrawal Rate",
-      action: "Withdrawal rate dangerously high",
-      reason: `${swr.toFixed(1)}% — safe benchmark is 4%`,
-      deadline: "Now",
-    });
-  }
-  if (preTaxPct > 0.75) {
-    actions.push({
-      priority: "red",
-      category: "Tax",
-      action: "Pre-tax concentration — RMD bomb",
-      reason: `${(preTaxPct * 100).toFixed(0)}% in taxable accounts, RMD age 73`,
-      deadline: "Before age 66",
-    });
-  }
-  if (daysToRetire < 730 && !isFL) {
-    actions.push({
-      priority: "red",
-      category: "Domicile",
-      action: "FL domicile not established",
-      reason: "NJ tax on withdrawals = ~$50K+ loss",
-      deadline: "Before D-Day",
-    });
-  }
-  if (portFundedPct < 60) {
-    actions.push({
-      priority: "red",
-      category: "Savings",
-      action: `Portfolio below 60% of goal (${(portFundedPct).toFixed(0)}%)`,
-      reason: `${(goal - params.port).toLocaleString()} gap remaining`,
-      deadline: "Now",
-    });
-  }
-
-  // 🟡 YELLOW rules
-  if (currentYear <= fafsaEndYear) {
-    actions.push({
-      priority: "yellow",
-      category: "FAFSA/CSS",
-      action: "Minimize AGI — FAFSA years active",
-      reason: `CSS/FAFSA through ${fafsaEndYear} — cap Roth conversions at 12%`,
-      deadline: `Spring ${fafsaEndYear}`,
-    });
-  }
-  if (portFundedPct < 75) {
-    actions.push({
-      priority: "yellow",
-      category: "Savings",
-      action: "Increase contributions or reduce spend",
-      reason: `${portFundedPct.toFixed(0)}% funded — ${params.retireAge - params.currentAge} years to D-Day`,
-      deadline: "D-Day",
-    });
-  }
-  if (mortgagePayoffYear > retireYear) {
-    actions.push({
-      priority: "yellow",
-      category: "Mortgage",
-      action: "Mortgage outlasts retirement date",
-      reason: `Payoff ${mortgagePayoffYear} — balance remains at D-Day`,
-      deadline: "Pre-retirement",
-    });
-  }
-  const _hsaBal = (assumptions.accounts || []).filter(a => a.category === "hsa").reduce((s, a) => s + (a.balance || 0), 0);
-  if (_hsaBal < 50000) {
-    actions.push({
-      priority: "yellow",
-      category: "HSA",
-      action: "Maximize HSA contributions",
-      reason: `Current HSA $${_hsaBal.toLocaleString()} — triple tax advantage`,
-      deadline: "Each year",
-    });
-  }
-  if (rothPct < 0.25) {
-    actions.push({
-      priority: "yellow",
-      category: "Roth",
-      action: "Roth balance low — conversion needed",
-      reason: `${(rothPct * 100).toFixed(0)}% Roth — target 40%+ before RMDs`,
-      deadline: "Ages 61-72",
-    });
-  }
-  if (daysToRetire < 1460) {
-    actions.push({
-      priority: "yellow",
-      category: "Liquidity",
-      action: "Bucket 1 funding — confirm cash",
-      reason: `D-Day in ${Math.ceil(daysToRetire / 365)} years — need 2yr expenses liquid`,
-      deadline: "1 year before D-Day",
-    });
-  }
-  if (params.ssAge > 64) {
-    actions.push({
-      priority: "yellow",
-      category: "Social Security",
-      action: "Confirm SS claiming age",
-      reason: `Each year delay = 8% increase — verify break-even at age ${params.ssAge}`,
-      deadline: "Before retirement",
-    });
-  }
-  const taxableBrok = assumptions.taxableBrok|| 0;
-  if (taxableBrok < 50000) {
-    actions.push({
-      priority: "yellow",
-      category: "Emergency Fund",
-      action: "Build emergency dry powder",
-      reason: `Less than $50K liquid taxable — sequence risk`,
-      deadline: "Now",
-    });
-  }
-
-  // 🟢 GREEN rules
-  if (r90 && successRate >= 0.90) {
-    actions.push({
-      priority: "green",
-      category: "Monte Carlo",
-      action: "Plan on track — stay the course",
-      reason: `${(successRate * 100).toFixed(1)}% success — JL Collins would approve`,
-      deadline: "Ongoing",
-    });
-  }
-  if (swr <= 3.5) {
-    actions.push({
-      priority: "green",
-      category: "Withdrawal Rate",
-      action: "Withdrawal rate conservative",
-      reason: `${swr.toFixed(1)}% — strong margin of safety`,
-      deadline: "Monitor",
-    });
-  }
-  if (mortgagePayoffYear <= retireYear) {
-    actions.push({
-      priority: "green",
-      category: "Mortgage",
-      action: "Mortgage paid off before retirement",
-      reason: `Payoff ${mortgagePayoffYear} — debt-free at D-Day ✅`,
-      deadline: "✅ Done",
-    });
-  }
-  if (r90 && successRate >= 0.85 && swr <= 4) {
-    actions.push({
-      priority: "green",
-      category: "Guardrails",
-      action: "Guyton-Klinger guardrails healthy",
-      reason: `Floor ${params.gkFloor?.toLocaleString()} · Ceiling ${params.gkCeiling?.toLocaleString()} · WR ${swr.toFixed(1)}%`,
-      deadline: "Monitor",
-    });
-  }
-  if (rothPct >= 0.30) {
-    actions.push({
-      priority: "green",
-      category: "Roth",
-      action: "Roth allocation healthy",
-      reason: `${(rothPct * 100).toFixed(0)}% Roth — reducing future RMD exposure`,
-      deadline: "Monitor",
-    });
-  }
-  if (portFundedPct >= 85) {
-    actions.push({
-      priority: "green",
-      category: "Savings",
-      action: `On pace for ${(goal / 1e6).toFixed(1)}M goal`,
-      reason: `${portFundedPct.toFixed(0)}% funded · ${params.retireAge - params.currentAge} years remaining`,
-      deadline: "D-Day",
-    });
-  }
-
-  // Sort: red → yellow → green
-  return actions.sort((a, b) => {
-    const order = { red: 0, yellow: 1, green: 2 };
-    return order[a.priority] - order[b.priority];
-  });
-}
-// Replace the existing ActionPlanTab with this dynamic version
-function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
-  const currentYear = new Date().getFullYear();
-  const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
-  const daysToRetire = Math.max(0,
-    Math.floor((new Date(`${retireYear}-03-15`) - new Date()) / 86400000)
-  );
-
-  if (!params || !r90) {
-    return (
-      <div className="chart-card" style={{ textAlign:"center", padding:"40px 20px" }}>
-        <div style={{ fontSize:14, color:"#94a3b8", marginBottom:8 }}>🎲 Monte Carlo not run yet</div>
-        <div style={{ fontSize:12, color:"#64748b" }}>Press ▶ Run Monte Carlo to generate your personalized action plan.</div>
-      </div>
-    );
-  }
-
-  const dynActions = generateActions({
-    params, r90, r85, assumptions, mortgagePayoffYear,
-    currentYear, retireYear, daysToRetire,
-    goal: assumptions?.portfolioGoal || 3_200_000,
-  });
-
-  const colors = {
-    red:    { bg:"rgba(239,68,68,0.08)",   border:"rgba(239,68,68,0.25)",   label:"#f87171", badge:"🔴 Critical" },
-    yellow: { bg:"rgba(245,158,11,0.08)",  border:"rgba(245,158,11,0.25)",  label:"#fbbf24", badge:"🟡 Important" },
-    green:  { bg:"rgba(16,185,129,0.08)",  border:"rgba(16,185,129,0.25)",  label:"#34d399", badge:"🟢 On Track" },
-  };
-
-  return (
-    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-      {dynActions.map((a, i) => {
-        const c = colors[a.priority];
-        return (
-          <div key={i} style={{ background:c.bg, border:`1px solid ${c.border}`,
-            borderRadius:9, padding:"11px 15px",
-            display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase",
-                letterSpacing:"0.08em", color:c.label, marginBottom:3 }}>
-                {c.badge} · {a.category}
-              </div>
-              <div style={{ fontSize:13, fontWeight:600, color:"#f1f5f9", marginBottom:2 }}>
-                {a.action}
-              </div>
-              <div style={{ fontSize:11, color:"#64748b" }}>{a.reason}</div>
-            </div>
-            <div style={{ fontSize:11, color:"#475569", whiteSpace:"nowrap",
-              marginLeft:16, paddingTop:2 }}>⏱ {a.deadline}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-/*
 function ActionPlanTab() {
   const milestones = [
     {
@@ -4320,7 +3787,7 @@ function ActionPlanTab() {
       status: "target",
       items: [
         "Target $3.2M liquid · Trigger $3.5M",
-        "Retire · Solo Abroad🌴",
+        "Retire · Thailand solo 🌴",
         "Bucket strategy operational · GK engaged",
       ],
     },
@@ -4483,7 +3950,7 @@ function ActionPlanTab() {
     </div>
   );
 }
-*/
+
 function ProfileWizard({ values, onChange }) {
   const [step, setStep] = useState(0);
 
@@ -4652,133 +4119,116 @@ function ProfileWizard({ values, onChange }) {
 
 function SavingsPanel({ values, onChange }) {
   const GOAL = 3_200_000;
-  const accounts = values.accounts || BLANK_PROFILE.accounts;
-
-  const CATEGORIES = [
-    { key: "pretax",  label: "Pre-Tax",        color: "#0ea5e9", defaultName: "401(k)" },
-    { key: "roth",    label: "Roth",           color: "#a78bfa", defaultName: "Roth IRA" },
-    { key: "taxable", label: "Taxable",        color: "#fbbf24", defaultName: "Brokerage" },
-    { key: "hsa",     label: "HSA",            color: "#34d399", defaultName: "HSA" },
-    { key: "cash",    label: "Cash / Savings", color: "#94a3b8", defaultName: "Savings" },
-  ];
-
-  const catSum = (cat) => accounts.filter(a => a.category === cat).reduce((s, a) => s + (a.balance || 0), 0);
-  const autoTotal = accounts.reduce((s, a) => s + (a.balance || 0), 0);
-  const percentToGoal = Math.min(100, (autoTotal / GOAL) * 100);
-  const remaining = Math.max(0, GOAL - autoTotal);
-
-  const updateAccounts = (newAccounts) => {
-    onChange("accounts", newAccounts);
-    const total = newAccounts.reduce((s, a) => s + (a.balance || 0), 0);
-    onChange("port", total);
-  };
-
-  const handleBalance = (id, bal) => {
-    const newAccounts = accounts.map(a => a.id === id ? { ...a, balance: bal } : a);
-    updateAccounts(newAccounts);
-  };
-
-  const handleName = (id, name) => {
-    const newAccounts = accounts.map(a => a.id === id ? { ...a, name } : a);
-    onChange("accounts", newAccounts);
-  };
-
-  const addAccount = (cat) => {
-    const def = CATEGORIES.find(c => c.key === cat);
-    const newAccounts = [...accounts, { id: Date.now().toString(), category: cat, name: def ? def.defaultName : cat, balance: 0 }];
-    onChange("accounts", newAccounts);
-  };
-
-  const removeAccount = (id, cat) => {
-    const catAccounts = accounts.filter(a => a.category === cat);
-    if (catAccounts.length <= 1) return;
-    const newAccounts = accounts.filter(a => a.id !== id);
-    updateAccounts(newAccounts);
-  };
+  const totalBalance = (values.rothBalance || 0) + (values.preTaxBalance || 0);
+  const percentToGoal = Math.min(100, (totalBalance / GOAL) * 100);
+  const remaining = Math.max(0, GOAL - totalBalance);
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-      {CATEGORIES.map(cat => {
-        const catAccounts = accounts.filter(a => a.category === cat.key);
-        return (
-          <div key={cat.key} style={{
-            background:"rgba(255,255,255,0.02)", borderRadius:8,
-            borderLeft:`3px solid ${cat.color}`, padding:"8px 12px",
-          }}>
-            <div style={{ fontSize:11, color:cat.color, fontWeight:600, marginBottom:6, fontFamily:"'DM Sans',sans-serif" }}>
-              {cat.label}
-            </div>
-            {catAccounts.map(acct => (
-              <div key={acct.id} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                <input
-                  type="text" value={acct.name}
-                  onChange={e => handleName(acct.id, e.target.value)}
-                  style={{
-                    width:100, fontSize:11, color:"#e2e8f0", background:"transparent",
-                    border:"1px solid rgba(255,255,255,0.06)", borderRadius:4, padding:"2px 6px",
-                    fontFamily:"'DM Sans',sans-serif", outline:"none",
-                  }}
-                  onFocus={e => { e.target.style.borderColor = cat.color + "66"; }}
-                  onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.06)"; }}
-                />
-                <div style={{ flex:1 }}>
-                  <DualInput label="" value={acct.balance} min={0} max={5_000_000} step={5_000}
-                    format={v => fmtM(v)} onChange={v => handleBalance(acct.id, v)} />
-                </div>
-                <button
-                  onClick={() => removeAccount(acct.id, acct.category)}
-                  title={catAccounts.length <= 1 ? "Cannot remove last account in category" : "Remove account"}
-                  style={{
-                    background:"transparent", border:"none", color:"#64748b", cursor: catAccounts.length <= 1 ? "not-allowed" : "pointer",
-                    fontSize:14, lineHeight:1, padding:"2px 4px", opacity: catAccounts.length <= 1 ? 0.2 : 0.4,
-                    transition:"opacity 0.15s, color 0.15s",
-                  }}
-                  onMouseEnter={e => { if (catAccounts.length > 1) { e.target.style.opacity = 1; e.target.style.color = "#f87171"; } }}
-                  onMouseLeave={e => { e.target.style.opacity = catAccounts.length <= 1 ? 0.2 : 0.4; e.target.style.color = "#64748b"; }}
-                >x</button>
-              </div>
-            ))}
-            <button onClick={() => addAccount(cat.key)} style={{
-              background:"transparent", border:`1px dashed ${cat.color}33`, borderRadius:4,
-              color:cat.color, fontSize:11, padding:"2px 8px", cursor:"pointer", opacity:0.6,
-              marginTop:2, transition:"opacity 0.15s",
-            }}
-            onMouseEnter={e => { e.target.style.opacity = 1; }}
-            onMouseLeave={e => { e.target.style.opacity = 0.6; }}
-            >+ Add</button>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Current Portfolio Total
           </div>
-        );
-      })}
+          <Slider
+            label=""
+            value={values.port || 0}
+            min={0}
+            max={5_000_000}
+            step={10_000}
+            format={(v) => fmtM(v)}
+            onChange={(v) => onChange("port", v)}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Roth Balance
+          </div>
+          <Slider
+            label=""
+            value={values.rothBalance || 0}
+            min={0}
+            max={2_000_000}
+            step={10_000}
+            format={(v) => fmtM(v)}
+            onChange={(v) => onChange("rothBalance", v)}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Pre-Tax Balance
+          </div>
+          <Slider
+            label=""
+            value={values.preTaxBalance || 0}
+            min={0}
+            max={3_000_000}
+            step={10_000}
+            format={(v) => fmtM(v)}
+            onChange={(v) => onChange("preTaxBalance", v)}
+          />
+        </div>
+      </div>
 
-      {/* Auto-total summary */}
-      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
-          <span style={{ fontSize:12, color:"#e2e8f0" }}>🎯 $3.2M Goal Progress</span>
-          <span style={{ fontSize:14, fontWeight:700, color:"#5eead4", fontFamily:"'DM Mono',monospace" }}>
+      {/* Goal progress */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 10,
+          padding: 18,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: 10,
+          }}
+        >
+          <span style={{ fontSize: 12, color: "#e2e8f0" }}>
+            🎯 $3.2M Goal Progress
+          </span>
+          <span
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "#5eead4",
+              fontFamily: "'DM Mono',monospace",
+            }}
+          >
             {percentToGoal.toFixed(1)}%
           </span>
         </div>
-        <div style={{ height:10, background:"rgba(255,255,255,0.1)", borderRadius:5, overflow:"hidden" }}>
-          <div style={{ width:`${percentToGoal}%`, height:"100%",
-            background:"linear-gradient(90deg,#0d9488,#14b8a6)", borderRadius:5, transition:"width 0.3s" }} />
+        <div
+          style={{
+            height: 10,
+            background: "rgba(255,255,255,0.1)",
+            borderRadius: 5,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${percentToGoal}%`,
+              height: "100%",
+              background: "linear-gradient(90deg, #0d9488, #14b8a6)",
+              borderRadius: 5,
+              transition: "width 0.3s",
+            }}
+          />
         </div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, marginTop:12 }}>
-          {[
-            { label:"Pre-Tax", val:catSum("pretax"),  color:"#0ea5e9" },
-            { label:"Roth",    val:catSum("roth"),     color:"#a78bfa" },
-            { label:"Taxable", val:catSum("taxable"),  color:"#fbbf24" },
-            { label:"HSA",     val:catSum("hsa"),      color:"#34d399" },
-            { label:"Cash",    val:catSum("cash"),     color:"#94a3b8" },
-          ].map(s => (
-            <div key={s.label} style={{ textAlign:"center" }}>
-              <div style={{ fontSize:10, color:"#475569" }}>{s.label}</div>
-              <div style={{ fontSize:12, fontWeight:700, color:s.color, fontFamily:"'DM Mono',monospace" }}>{fmtM(s.val)}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:11, color:"#64748b" }}>
-          <span>Total: <strong style={{ color:"#e2e8f0" }}>{fmtM(autoTotal)}</strong></span>
-          <span>Remaining: <strong style={{ color:"#f87171" }}>{fmtM(remaining)}</strong></span>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginTop: 8,
+            fontSize: 11,
+            color: "#64748b",
+          }}
+        >
+          <span>Current: {fmtM(totalBalance)}</span>
+          <span>Remaining: {fmtM(remaining)}</span>
         </div>
       </div>
     </div>
@@ -4786,95 +4236,60 @@ function SavingsPanel({ values, onChange }) {
 }
 
 function AboutYouPanel({ values, onChange }) {
-  // Derive currentAge from values.dob (if valid)
-  const derivedAge = useMemo(() => {
-    if (!values.dob) return null;
-    try {
-      const dobDate = new Date(values.dob);
-      if (isNaN(dobDate.getTime())) return null;
-      const today = new Date();
-      let age = today.getFullYear() - dobDate.getFullYear();
-      const m = today.getMonth() - dobDate.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) age--;
-      return age;
-    } catch {
-      return null;
-    }
-  }, [values.dob]);
-
-  // Years to retirement (uses derivedAge if available, otherwise values.currentAge fallback)
-  const currentAgeForCalc = derivedAge ?? values.currentAge;
-  const yearsToRetire = Math.max(0, values.retireAge - currentAgeForCalc);
+  const yearsToRetire = Math.max(0, values.retireAge - values.currentAge);
   const yearsInRetire = Math.max(0, values.endAge - values.retireAge);
   const totalHorizon = yearsToRetire + yearsInRetire;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* DOB Input + derived age */}
-      <div>
-        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>
-          Date of Birth
-        </div>
-        <input
-          type="date"
-          value={values.dob || ""}
-          onChange={(e) => onChange("dob", e.target.value)}
-          style={{
-            width: "100%",
-            background: "#0d1b2a",
-            border: "1px solid #1e3a5f",
-            color: "#e2e8f0",
-            borderRadius: 6,
-            padding: "8px 12px",
-            fontSize: 13,
-            fontFamily: "'DM Mono',monospace",
-          }}
-        />
-        {derivedAge !== null && (
-          <div style={{ fontSize: 11, color: "#5eead4", marginTop: 6 }}>
-            Current age: <strong>{derivedAge}</strong> (calculated from DOB)
+      {/* Three sliders */}
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}
+      >
+        {[
+          {
+            label: "Current Age",
+            k: "currentAge",
+            min: 30,
+            max: 75,
+            step: 1,
+            fmt: (v) => `${v} yrs`,
+          },
+          {
+            label: "Retirement Age",
+            k: "retireAge",
+            min: 50,
+            max: 75,
+            step: 1,
+            fmt: (v) => `${v} yrs`,
+          },
+          {
+            label: "Planning Horizon",
+            k: "endAge",
+            min: 75,
+            max: 100,
+            step: 1,
+            fmt: (v) => `to age ${v}`,
+          },
+        ].map((s) => (
+          <div key={s.k}>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+              {s.label}
+            </div>
+            <Slider
+              label=""
+              value={values[s.k]}
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              format={s.fmt}
+              onChange={(v) => onChange(s.k, v)}
+            />
           </div>
-        )}
-        {derivedAge === null && values.dob && (
-          <div style={{ fontSize: 11, color: "#f87171", marginTop: 6 }}>
-            Invalid date format. Use YYYY-MM-DD.
-          </div>
-        )}
+        ))}
       </div>
 
-      {/* Retirement Age slider (unchanged) */}
-      <div>
-        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-          Retirement Age
-        </div>
-        <Slider
-          label=""
-          value={values.retireAge}
-          min={50}
-          max={75}
-          step={1}
-          format={(v) => `${v} yrs`}
-          onChange={(v) => onChange("retireAge", v)}
-        />
-      </div>
-
-      {/* Planning Horizon (endAge) slider (unchanged) */}
-      <div>
-        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-          Planning Horizon
-        </div>
-        <Slider
-          label=""
-          value={values.endAge}
-          min={75}
-          max={100}
-          step={1}
-          format={(v) => `to age ${v}`}
-          onChange={(v) => onChange("endAge", v)}
-        />
-      </div>
-
-      {/* Summary row (uses derived age) */}
+      {/* Summary row */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -5008,8 +4423,6 @@ function AssumptionsPanel({ values, onChange }) {
       }}
     />
   );
-
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div
@@ -5050,18 +4463,6 @@ function AssumptionsPanel({ values, onChange }) {
         >
           <NumInput k="ssb" min={0} max={5000} step={100} suffix="/mo" />
         </Row>
-        <Row
-            label="Cash real return"
-            desc="Annual real return on cash/savings (e.g., HYSA)"
-          >
-        <NumInput k="cashRealReturn" min={0} max={3} step={0.1} suffix="%" />
-      </Row>
-      <Toggle
-        val={values.useJointRmdTable}
-        onChange={(v) => onChange("useJointRmdTable", v)}
-        label="👥 Use Joint & Last Survivor RMD Table (spouse >10 yrs younger)"
-        accent="#a78bfa"
-      />
       </div>
       <div
         style={{
@@ -5301,7 +4702,6 @@ function ContribPanel({ values, onChange }) {
     </div>
   );
 }
-
 function RetirementPanel({ values, onChange }) {
   const spend = values.sp || 100_000;
   const floor = values.gkFloor || 88_000;
@@ -5604,8 +5004,8 @@ function IncomePanel({ values, onChange }) {
 }
 
 export default function AiRAForecaster() {
-  const [mode, setMode] = useState("user");
-  const [activeTab, setTab] = useState("networth");
+  const [mode, setMode] = useState("vin");
+  const [activeTab, setTab] = useState("scenarios");
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
   const [r85, setR85] = useState(null);
@@ -5630,26 +5030,18 @@ export default function AiRAForecaster() {
   const [twoHousehold, setTwoHousehold] = useState(true);
 
   const [assumptions, setAssumptions] = useState({
-    // Personal — blank by default, loaded from JSON
-    name: BLANK_PROFILE.name,
-    dob:  BLANK_PROFILE.dob,
-    // Account breakdown
-    accounts: BLANK_PROFILE.accounts,
-    // MC model parameters
-    abReliability: BLANK_PROFILE.abReliability,
-    abGrowth:      BLANK_PROFILE.abGrowth,
-    ssCola:        BLANK_PROFILE.ssCola,
-    preRetireEq:   BLANK_PROFILE.preRetireEq,
-    postRetireEq:  BLANK_PROFILE.postRetireEq,
-    hcShockAge:    BLANK_PROFILE.hcShockAge,
-    hcProb:        BLANK_PROFILE.hcProb,
-    hcMin:         BLANK_PROFILE.hcMin,
-    hcMax:         BLANK_PROFILE.hcMax,
-    // Income (also blank by default)
-    ab:  BLANK_PROFILE.ab,
-    ssb: BLANK_PROFILE.ssb,
-    useJointRmdTable: BLANK_PROFILE.useJointRmdTable,
-    cashRealReturn: BLANK_PROFILE.cashRealReturn,
+    dob: "1970-03-14",
+    abReliability: 80,
+    abGrowth: 3.0,
+    ssCola: 2.4,
+    preRetireEq: 91,
+    postRetireEq: 70,
+    hcShockAge: 72,
+    hcProb: 3.5,
+    hcMin: 70_000,
+    hcMax: 130_000,
+    ab: 20_000,
+    ssb: 31_543,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
@@ -5682,8 +5074,7 @@ export default function AiRAForecaster() {
   const switchMode = useCallback((m) => {
     setMode(m);
     const p = PROFILES[m];
-    const acctTotal = (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0);
-    setPort(acctTotal > 0 ? acctTotal : p.port);
+    setPort(p.port);
     setContrib(p.contrib);
     setInf(p.inf);
     setRetAge(p.retireAge);
@@ -5697,12 +5088,11 @@ export default function AiRAForecaster() {
     setUseAb(p.useAb);
     setReal(p.real);
     setTwoHousehold(true);
-    if (p.accounts) updateAssumption("accounts", p.accounts);
     setR85(null);
     setR90(null);
     setStress(null);
     setStale(false);
-  }, [updateAssumption]);
+  }, []);
 
   const params = useMemo(
     () => ({
@@ -5720,10 +5110,8 @@ export default function AiRAForecaster() {
       smile,
       tax,
       real,
-      // GK dynamic — derived from spending needs (today's dollars, inflation-adjusted in MC)
-      // Floor = 65% of target spending (bare essentials). Ceiling = 135% of target (comfort cap).
-      gkFloor: Math.round((twoHousehold ? sp : (prof.spThailand || sp)) * 0.65),
-      gkCeiling: Math.round((twoHousehold ? sp : (prof.spThailand || sp)) * 1.35),
+      gkFloor: twoHousehold ? prof.gkFloor : prof.gkFloorThailand,
+      gkCeiling: prof.gkCeiling,
       mortBalance: prof.mortBalance,
       mortRate: prof.mortRate,
       mortStart: prof.mortStart,
@@ -5743,7 +5131,6 @@ export default function AiRAForecaster() {
       hcProb: assumptions.hcProb,
       hcMin: assumptions.hcMin,
       hcMax: assumptions.hcMax,
-      accounts: assumptions.accounts,
     }),
     [
       prof,
@@ -5765,19 +5152,6 @@ export default function AiRAForecaster() {
       currentAge,
     ]
   );
-
-  const mortgageSched = useMemo(
-  () => mortgageSchedule(
-    prof.mortBalance,
-    prof.mortRate,
-    prof.mortStart,
-    prof.mortTerm,
-    prof.mortExtra
-  ),
-  [prof.mortBalance, prof.mortRate, prof.mortStart, prof.mortTerm, prof.mortExtra]
-);
-
-const mortgagePayoffYear = mortgageSched.payoffYr;
 
   useEffect(() => {
     if (isFirst.current) {
@@ -5807,13 +5181,13 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   const analogue = r90 ? getAnalogue(r90.rate) : null;
 
   const TABS = [
-    ["networth",   "📊 Net Worth"],
-    ["montecarlo", "🎲 Forecast"],
-    ["scenarios",  "🎯 Scenarios"],
-    ["income",     "💵 Income"],
-    ["mortgage",   "🏠 Mortgage"],
+    ["scenarios", "🎯 Scenarios"],
+    ["income", "💵 Income"],
+    ["montecarlo", "🎲 Monte Carlo"],
+    ["mortgage", "🏠 Mortgage"],
+    ["networth", "📊 Net Worth"],
     ["actionplan", "✅ Action Plan"],
-    ["assumptions","👤 Profile"],
+    ["assumptions", "⚙️ Assumptions"],
   ];
 
   const needsMC = ["montecarlo", "networth", "fan"];
@@ -5828,11 +5202,12 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             <div className="logo">
               AiRA <span className="logo-sub">Freedom Financial</span>
             </div>
-            <div style={{ fontSize: 12, color: "#6e8099" }}>
-              v6.1 · Inter font · Brighter UI · GK dynamic · Roth age-gated · CSS/FAFSA guards
+            <div style={{ fontSize: 10, color: "#334155" }}>
+              v5.1 · All bugs fixed · GK Guardrails · 80% Airbnb reliability ·
+              Healthcare shock · 3,000 paths
             </div>
           </div>
-          <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 5 }}>
             {Object.entries(PROFILES).map(([k, v]) => (
               <button
                 key={k}
@@ -5841,130 +5216,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 }`}
                 onClick={() => switchMode(k)}
               >
-                {k === "demo" ? "🎬 Demo" : "👤 My Plan"}
+                {k === "demo" ? "🎬 " : "👤 "}
+                {v.label}
               </button>
             ))}
-            <div style={{ width:1, height:20, background:"rgba(255,255,255,0.1)", margin:"0 4px" }} />
-            <button className="mbtn" title="Export profile to JSON"
-              onClick={() => exportProfile({
-                // Identity
-                name: assumptions.name || "", dob: assumptions.dob || "",
-                // Core retirement
-                retireAge: retAge, endAge, port, contrib, inf: inf,
-                sp, ssAge, ssb, ab, useAb, smile, tax, real, twoHousehold,
-                // Spending
-                spThailand: prof.spThailand || 48000,
-                spMiraNJ: prof.spMiraNJ || 0,
-                // Mortgage
-                mortBalance: prof.mortBalance || 0,
-                mortRate: prof.mortRate || 6.5,
-                mortStart: prof.mortStart || "2020-01",
-                mortTerm: prof.mortTerm || 30,
-                mortExtra: prof.mortExtra || 0,
-                mortPI: prof.mortPI || 0,
-                // Real estate
-                reHarrington: prof.reHarrington || 0,
-                reOrlando105: prof.reOrlando105 || 0,
-                reOrlando306: prof.reOrlando306 || 0,
-                // Account breakdown
-                accounts: assumptions.accounts || BLANK_PROFILE.accounts,
-                // MC assumptions
-                abReliability: assumptions.abReliability,
-                abGrowth: assumptions.abGrowth,
-                ssCola: assumptions.ssCola,
-                preRetireEq: assumptions.preRetireEq,
-                postRetireEq: assumptions.postRetireEq,
-                hcShockAge: assumptions.hcShockAge,
-                hcProb: assumptions.hcProb,
-                hcMin: assumptions.hcMin,
-                hcMax: assumptions.hcMax,
-                // Meta
-                exportedAt: new Date().toISOString(),
-                appVersion: "6.0",
-              }, assumptions.name ? `AiRA_Profile_${assumptions.name}` : "AiRA_Profile")}>
-              ⬇ Export
-            </button>
-            <button className="mbtn" title="Import profile from JSON"
-              onClick={() => importProfile((data) => {
-                // Wire all main sliders
-                if (data.retireAge)  setRetAge(data.retireAge);
-                if (data.endAge)     setEndAge(data.endAge);
-                if (data.port)       setPort(data.port);
-                if (data.contrib)    setContrib(data.contrib);
-                if (data.inf)        setInf(data.inf);
-                if (data.sp)         setSp(data.sp);
-                if (data.ssAge)      setSsAge(data.ssAge);
-                if (data.ssb)        setSsb(data.ssb);
-                if (data.ab !== undefined) setAb(data.ab);
-                if (data.useAb !== undefined) setUseAb(data.useAb);
-                if (data.smile !== undefined) setSmile(data.smile);
-                if (data.tax !== undefined) setTax(data.tax);
-                if (data.real !== undefined) setReal(data.real);
-                if (data.twoHousehold !== undefined) setTwoHousehold(data.twoHousehold);
-                // Wire all assumptions
-                // Migrate old account fields to new accounts array
-                if (data.solo401k !== undefined && !data.accounts) {
-                  data.accounts = [
-                    ...(data.solo401k ? [{ id: "m1", category: "pretax", name: "Solo 401k", balance: data.solo401k }] : []),
-                    ...(data.alpha401k ? [{ id: "m2", category: "pretax", name: "Alpha 401k", balance: data.alpha401k }] : []),
-                    ...(data.rothFid ? [{ id: "m3", category: "roth", name: "Roth Fidelity", balance: data.rothFid }] : []),
-                    ...(data.rothVgd ? [{ id: "m4", category: "roth", name: "Roth Vanguard", balance: data.rothVgd }] : []),
-                    ...(data.hsaBal ? [{ id: "m5", category: "hsa", name: "HSA", balance: data.hsaBal }] : []),
-                    ...(data.taxable ? [{ id: "m6", category: "taxable", name: "Taxable", balance: data.taxable }] : []),
-                  ];
-                  if (data.accounts.length === 0) {
-                    data.accounts = BLANK_PROFILE.accounts;
-                  }
-                  delete data.solo401k;
-                  delete data.alpha401k;
-                  delete data.rothFid;
-                  delete data.rothVgd;
-                  delete data.hsaBal;
-                  delete data.taxable;
-                }
-                // Ensure accounts is always a valid array
-                if (!Array.isArray(data.accounts)) {
-                  data.accounts = BLANK_PROFILE.accounts;
-                }
-                // Recalculate port from accounts (source of truth)
-                const acctTotal = data.accounts.reduce((s, a) => s + (a.balance || 0), 0);
-                if (acctTotal > 0) setPort(acctTotal);
-                const keys = ["name","dob","abReliability","abGrowth","ssCola",
-                  "preRetireEq","postRetireEq","hcShockAge","hcProb","hcMin","hcMax",
-                  "accounts"];
-                keys.forEach(k => { if (data[k] !== undefined) updateAssumption(k, data[k]); });
-                // Switch to user mode
-                setMode("user");
-                setStale(true);
-                alert(`✅ Profile loaded${data.name ? ` for ${data.name}` : ""}. Press ▶ Run Monte Carlo to update.`);
-              })}>
-              ⬆ Import
-            </button>
-            <a href="https://buymeacoffee.com/axwacki"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "5px 13px",
-                borderRadius: 7,
-                border: "1px solid rgba(255,193,7,0.4)",
-                background: "rgba(255,193,7,0.08)",
-                color: "#fbbf24",
-                fontSize: 11,
-                fontFamily: "'DM Sans',sans-serif",
-                fontWeight: 600,
-                textDecoration: "none",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,193,7,0.18)"}
-              onMouseLeave={e => e.currentTarget.style.background = "rgba(255,193,7,0.08)"}
-            >
-              ☕ Buy me a coffee
-            </a>   
-
           </div>
           <div style={{ textAlign: "right" }}>
             <div
@@ -6023,20 +5278,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   {countdown.pct}%
                 </span>
               </div>
-              <div style={{
-                marginTop: 10, paddingTop: 10,
-                borderTop: "1px solid rgba(255,255,255,0.06)",
-                display: "flex", justifyContent: "space-between", alignItems: "baseline",
-              }}>
-                <span style={{ fontSize: 10, color: "#64748b" }}>Total Portfolio</span>
-                <span style={{
-                  fontSize: 18, fontWeight: 700, color: "#5eead4",
-                  fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px",
-                }}>{fmtM(port)}</span>
-              </div>
             </div>
             <div className="sb-card">
-              <div className="sb-title">MC Engine — v6.1</div>
+              <div className="sb-title">MC Engine — v5.1</div>
               <div style={{ fontSize: 9, color: "#475569", lineHeight: 1.8 }}>
                 <div>
                   📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P
@@ -6070,6 +5314,15 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
             <div className="sb-card">
               <div className="sb-title">Portfolio</div>
+              <Slider
+                label="Current value"
+                value={port}
+                min={500000}
+                max={5000000}
+                step={10000}
+                format={(v) => fmtM(v)}
+                onChange={setPort}
+              />
               <Slider
                 label="Annual contrib"
                 value={contrib}
@@ -6191,33 +5444,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
           </div>
           <div className="main">
-            {mode === "user" && !assumptions.dob && (
-              <div style={{ background:"rgba(14,165,233,0.1)", border:"2px solid rgba(14,165,233,0.3)", borderRadius:9, padding:"12px 16px" }}>
-                <div style={{ fontSize:13, fontWeight:700, color:"#38bdf8" }}>📂 No profile loaded</div>
-                <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Click ⬆ Import in the header to load your AiRA_Profile.json, or go to 👤 Profile tab to enter data manually, then Export to save it.</div>
-              </div>
-            )}
-
-            {mode === "demo" && (
-                <div style={{
-                  background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
-                  borderRadius: 8,
-                  padding: "8px 16px",
-                  marginBottom: 12,
-                  textAlign: "center",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  color: "white",
-                  boxShadow: "0 2px 8px rgba(124,58,237,0.3)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                }}>
-                  <span>🎬</span> DEMO MODE – Data is for illustration only <span>🎬</span>
-                </div>
-              )}  
-
             <div className="flag-w">
               ⚠ NJ domicile — establish FL residency before Dec 31, 2030 · Roth
               ladder saves ~$50,575 vs NJ
@@ -6228,7 +5454,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
             <div className="flag-i">
               🛡 GK active · WR {swr}% ·{" "}
-              {twoHousehold ? "Both households" : "Solo"} · Airbnb 80%
+              {twoHousehold ? "Both households" : "Vin solo"} · Airbnb 80%
               reliable · Healthcare shocks modeled
             </div>
             {stale && (
@@ -6509,15 +5735,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 {activeTab === "networth" && (
                   <NetWorthTab p={params} results90={r90} inf={inf} />
                 )}
-                {activeTab === "actionplan" && (
-                    <ActionPlanTab
-                      params={params}
-                      r90={r90}
-                      r85={r85}
-                      assumptions={assumptions}
-                      mortgagePayoffYear={mortgagePayoffYear}
-                    />
-                  )}
+                {activeTab === "actionplan" && <ActionPlanTab />}
                 {activeTab === "assumptions" && (
                   <ProfileWizard
                     values={{
@@ -6557,7 +5775,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 lineHeight: 1.6,
               }}
             >
-              AiRA Freedom Financial v6.1 · Inter font · GK dynamic · Roth age-gated · CSS/FAFSA guards · Historical bootstrap 99yr S&P + 50yr Bloomberg · Not financial advice
+              AiRA Freedom Financial v5.1 · 6 bugs fixed · GK guardrails · 80%
+              Airbnb reliability · Healthcare shocks · Historical bootstrap 99yr
+              S&P + 50yr Bloomberg · MFJ throughout · Not financial advice
               <br />
               "The best financial plan is the one you can stick with." — Morgan
               Housel
@@ -6568,40 +5788,3 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     </>
   );
 }
-
-
-/*Disclaimer and Terms of Use
-Last Updated: April 11, 2026
-
-1. Not Financial Advice
-The Aira Freedom Financial application (the "App") is provided as a financial modeling and educational tool for informational purposes only. 
-It does not constitute professional financial, investment, tax, or legal advice.  The developers of this app  are not acting as your financial advisor, fiduciary, or broker through the provision of this App.
-
-All simulations, including Monte Carlo analyses and withdrawal strategies, are based on historical data and mathematical projections. 
-Past performance is not indicative of future results. Financial markets are inherently volatile, and there is no guarantee that the assumptions used in the App will materialize.
-
-2. "Use at Your Own Risk" & Accuracy
-While the logic and methodologies used in this tool are utilized by the developer 
-for personal planning, they are provided "as is" and "as available." 
-We make no warranties, express or implied, regarding the accuracy, completeness, or reliability of the calculations. 
-Financial planning involves complex variables that may not be fully captured by this software. 
-You are solely responsible for verifying any output from the App with a qualified professional before making any financial decisions.
-
-3. Limitation of Liability and Indemnification
-By using this App, you agree to assume full responsibility for any financial decisions or "critical errors" made based on its output.
-
-To the maximum extent permitted by law, you agree to indemnify, defend, and 
-hold harmless the developers of this app, and any affiliates 
-from and against any and all claims, losses, damages, liabilities, and expenses (including legal fees) arising from:
-
-Your use or misuse of the App.
-
-Any errors, omissions, or inaccuracies in the data or results generated.
-
-Any financial loss, loss of profit, or "sequence of returns" failures resulting from reliance on the App.
-
-4. User Responsibility
-You acknowledge that financial planning is highly individualized. 
-The "spending smiles," guardrails, or projections provided by Aira may not be suitable for your specific financial situation, risk tolerance, or time horizon.  Use at  your own risk and always
-consult your fiduciary, CPA or tax accountant. 
-*/

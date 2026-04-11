@@ -1,18 +1,12 @@
 {
   "name": "Vin",
   "dob": "1970-03-14",
-  "currentAge": 56,
   "retireAge": 60,
   "endAge": 85,
-
-  "port": 2438196,
+  "port": 2578501,
   "contrib": 38525,
   "inf": 2.5,
-
   "sp": 100000,
-  "spThailand": 48000,
-  "spMiraNJ": 52000,
-
   "ssAge": 64,
   "ssb": 31543,
   "ab": 20000,
@@ -21,49 +15,51 @@
   "tax": true,
   "real": true,
   "twoHousehold": true,
-
-  "portfolioGoal": 3200000,
-
-  "preTax": 1220000,
-  "roth": 732000,
-  "hsa": 73396,
-  "taxableBrok": 114400,
-  "realEstate": 2340000,
-
-  "accounts": {
-    "preTax": [
-      { "label": "Solo 401k @ Fidelity (FSKAX)", "amount": 1220000 }
-    ],
-    "roth": [
-      { "label": "Roth IRA @ Fidelity (SPMO/VOO)", "amount": 491000 },
-      { "label": "Roth IRA @ Vanguard", "amount": 241000 }
-    ],
-    "hsa": [
-      { "label": "HSA @ Fidelity (VFIAX)", "amount": 73396 }
-    ],
-    "taxableBrok": [
-      { "label": "SGOV @ Fidelity (dry powder)", "amount": 114400 }
-    ],
-    "realEstate": [
-      { "label": "Harrington Park NJ (primary)", "amount": 1340000 },
-      { "label": "Vista Cay Unit 105 (Airbnb)", "amount": 500000 },
-      { "label": "Vista Cay Unit 306 (Airbnb)", "amount": 500000 }
-    ]
-  },
-
-  "mortBalance": 267518,
-  "mortRate": 6.25,
-  "mortStart": "2023-05",
+  "spThailand": 48000,
+  "spMiraNJ": 0,
+  "mortBalance": 0,
+  "mortRate": 6.5,
+  "mortStart": "2020-01",
   "mortTerm": 30,
-  "mortExtra": 310,
-  "mortPI": 1847.15,
-
-  "reHarrington": 1340000,
-  "reOrlando105": 500000,
-  "reOrlando306": 500000,
-
+  "mortExtra": 0,
+  "mortPI": 0,
+  "reHarrington": 0,
+  "reOrlando105": 0,
+  "reOrlando306": 0,
+  "accounts": [
+    {
+      "id": "1",
+      "category": "pretax",
+      "name": "Fidelity 401k",
+      "balance": 1725468
+    },
+    {
+      "id": "2",
+      "category": "roth",
+      "name": "Fidelity Roth",
+      "balance": 665371
+    },
+    {
+      "id": "3",
+      "category": "taxable",
+      "name": "Brokerage",
+      "balance": 110000
+    },
+    {
+      "id": "4",
+      "category": "hsa",
+      "name": "Fidelity HSA",
+      "balance": 76162
+    },
+    {
+      "id": "5",
+      "category": "cash",
+      "name": "Savings",
+      "balance": 1500
+    }
+  ],
   "abReliability": 80,
-  "abGrowth": 3.0,
+  "abGrowth": 3,
   "ssCola": 2.4,
   "preRetireEq": 91,
   "postRetireEq": 70,
@@ -71,7 +67,6 @@
   "hcProb": 3.5,
   "hcMin": 70000,
   "hcMax": 130000,
-
-  "exportedAt": "2026-04-10T00:00:00.000Z",
-  "appVersion": "5.9"
+  "exportedAt": "2026-04-11T18:45:46.580Z",
+  "appVersion": "6.0"
 }
