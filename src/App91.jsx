@@ -5912,7 +5912,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 hcMax: assumptions.hcMax,
                 // Meta
                 exportedAt: new Date().toISOString(),
-                appVersion: "6.0",
+                appVersion: "6.5",
               }, assumptions.name ? `AiRA_Profile_${assumptions.name}` : "AiRA_Profile")}>
               ⬇ Export
             </button>
@@ -6068,7 +6068,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               </div>
             </div>
             <div className="sb-card">
-              <div className="sb-title">MC Engine — v6.1</div>
+              <div className="sb-title">MC Engine — v6.5</div>
               <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
                 <div>
                   📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P
@@ -6615,7 +6615,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 lineHeight: 1.6,
               }}
             >
-              AiRA Freedom Financial v6.1 · Inter font · GK dynamic · Roth age-gated · CSS/FAFSA guards · Historical bootstrap 99yr S&P + 50yr Bloomberg · Not financial advice
+              AiRA Freedom Financial v6.5 · Inter font · GK dynamic · Roth age-gated · CSS/FAFSA guards · Historical bootstrap 99yr S&P + 50yr Bloomberg · Not financial advice
               <br />
               "The best financial plan is the one you can stick with." — Morgan
               Housel
