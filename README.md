@@ -1,3 +1,5 @@
+[View on GitHub](https://github.com/axwack/Aira_Monte_Carlo)
+
 # AiRA Forecaster
 
 **AI Retirement Assessment — Dedicated to AERA**
@@ -45,3 +47,7 @@ git clone https://github.com/yourusername/aira-forecaster.git
 cd aira-forecaster
 npm install
 npm run dev
+
+### DISCLAIMER
+
+AiRA Forecaster is a financial modelling and educational tool. It does not constitute professional financial, investment, tax, or legal advice. All simulations are based on historical data and mathematical projections. Past performance is not indicative of future results. Use at your own risk and consult a qualified financial advisor, CPA, or tax professional before making any financial decisions.
