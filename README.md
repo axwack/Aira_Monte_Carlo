@@ -47,6 +47,7 @@ git clone https://github.com/yourusername/aira-forecaster.git
 cd aira-forecaster
 npm install
 npm run dev
+```
 
 ### DISCLAIMER
 
