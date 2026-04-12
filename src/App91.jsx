@@ -14,6 +14,7 @@ import {
   ReferenceLine,
   Legend,
 } from "recharts";
+import packageJson from "../package.json";
 
 if (typeof document !== "undefined") {
   const link = document.createElement("link");
@@ -34,6 +35,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/ 
+const APP_VERSION = "6.5";
+
 const SP500 = [
   37.88, -11.91, -28.48, -47.07, -15.15, 46.59, -5.94, 41.37, 27.92, -38.59,
   25.21, -5.45, -15.29, -17.86, 12.43, 19.45, 13.8, 30.72, -11.87, 0, -0.65,
@@ -3676,17 +3679,19 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
   );
 }
 
-function MortgageTab({ prof }) {
-  const [bal, setBal] = useState(prof.mortBalance),
-    [rate, setRate] = useState(prof.mortRate),
-    [extra, setExtra] = useState(prof.mortExtra);
+function MortgageTab({ values, onChange }) {
+  const bal = values.mortBalance || 0;
+  const rate = values.mortRate || 6.5;
+  const extra = values.mortExtra || 0;
+  const start = values.mortStart || "2020-01";
+  const term = values.mortTerm || 30;
   const sched = useMemo(
-    () => mortgageSchedule(bal, rate, prof.mortStart, prof.mortTerm, extra),
-    [bal, rate, extra, prof]
+    () => mortgageSchedule(bal, rate, start, term, extra),
+    [bal, rate, start, term, extra]
   );
   const schedNE = useMemo(
-    () => mortgageSchedule(bal, rate, prof.mortStart, prof.mortTerm, 0),
-    [bal, rate, prof]
+    () => mortgageSchedule(bal, rate, start, term, 0),
+    [bal, rate, start, term]
   );
   const chartData = useMemo(() => {
     const maxLen = Math.max(sched.years.length, schedNE.years.length);
@@ -3740,33 +3745,47 @@ function MortgageTab({ prof }) {
             marginBottom: 12,
           }}
         >
-          <Slider
+          <DualInput
             label="Balance"
             value={bal}
-            min={100000}
-            max={500000}
+            min={0}
+            max={1500000}
             step={1000}
             format={(v) => fmtM(v)}
-            onChange={setBal}
+            onChange={(v) => onChange("mortBalance", v)}
           />
-          <Slider
-            label="Rate"
+          <DualInput
+            label="Rate %"
             value={rate}
-            min={3}
-            max={10}
+            min={0}
+            max={12}
             step={0.125}
             format={(v) => v.toFixed(3) + "%"}
-            onChange={setRate}
+            onChange={(v) => onChange("mortRate", v)}
           />
-          <Slider
+          <DualInput
+            label="Term (yrs)"
+            value={term}
+            min={10}
+            max={30}
+            step={1}
+            format={(v) => v + " yrs"}
+            onChange={(v) => onChange("mortTerm", v)}
+          />
+          <DualInput
             label="Extra/mo"
             value={extra}
             min={0}
-            max={3000}
+            max={5000}
             step={50}
-            format={(v) => fmtM(v) + "/mo"}
-            onChange={setExtra}
+            format={(v) => "$" + v.toLocaleString() + "/mo"}
+            onChange={(v) => onChange("mortExtra", v)}
           />
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "#94a3b8", minWidth: 70 }}>Start date</span>
+            <input type="month" value={start} onChange={(e) => onChange("mortStart", e.target.value)}
+              style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 4, padding: "4px 8px", fontSize: 11, fontFamily: "'DM Mono',monospace" }} />
+          </div>
         </div>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart
@@ -5643,6 +5662,9 @@ export default function AiRAForecaster() {
   const [r85, setR85] = useState(null);
   const [r90, setR90] = useState(null);
   const [stress, setStress] = useState(null);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackType, setFeedbackType] = useState(null);
+  const [feedbackText, setFeedbackText] = useState("");
   const isFirst = useRef(true);
 
   const prof = PROFILES[mode];
@@ -5683,6 +5705,13 @@ export default function AiRAForecaster() {
     ssb: BLANK_PROFILE.ssb,
     useJointRmdTable: BLANK_PROFILE.useJointRmdTable,
     cashRealReturn: BLANK_PROFILE.cashRealReturn,
+    // Mortgage
+    mortBalance: BLANK_PROFILE.mortBalance,
+    mortRate: BLANK_PROFILE.mortRate,
+    mortStart: BLANK_PROFILE.mortStart,
+    mortTerm: BLANK_PROFILE.mortTerm,
+    mortExtra: BLANK_PROFILE.mortExtra,
+    mortPI: BLANK_PROFILE.mortPI,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
@@ -5731,6 +5760,11 @@ export default function AiRAForecaster() {
     setReal(p.real);
     setTwoHousehold(true);
     if (p.accounts) updateAssumption("accounts", p.accounts);
+    if (p.mortBalance !== undefined) updateAssumption("mortBalance", p.mortBalance);
+    if (p.mortRate !== undefined) updateAssumption("mortRate", p.mortRate);
+    if (p.mortStart) updateAssumption("mortStart", p.mortStart);
+    if (p.mortTerm) updateAssumption("mortTerm", p.mortTerm);
+    if (p.mortExtra !== undefined) updateAssumption("mortExtra", p.mortExtra);
     setR85(null);
     setR90(null);
     setStress(null);
@@ -5757,11 +5791,11 @@ export default function AiRAForecaster() {
       // Floor = 65% of target spending (bare essentials). Ceiling = 135% of target (comfort cap).
       gkFloor: Math.round((twoHousehold ? sp : (prof.spThailand || sp)) * 0.65),
       gkCeiling: Math.round((twoHousehold ? sp : (prof.spThailand || sp)) * 1.35),
-      mortBalance: prof.mortBalance,
-      mortRate: prof.mortRate,
-      mortStart: prof.mortStart,
-      mortTerm: prof.mortTerm,
-      mortExtra: prof.mortExtra,
+      mortBalance: assumptions.mortBalance || 0,
+      mortRate: assumptions.mortRate || 6.5,
+      mortStart: assumptions.mortStart || "2020-01",
+      mortTerm: assumptions.mortTerm || 30,
+      mortExtra: assumptions.mortExtra || 0,
       reHarrington: prof.reHarrington,
       reOrlando105: prof.reOrlando105,
       reOrlando306: prof.reOrlando306,
@@ -5801,13 +5835,13 @@ export default function AiRAForecaster() {
 
   const mortgageSched = useMemo(
   () => mortgageSchedule(
-    prof.mortBalance,
-    prof.mortRate,
-    prof.mortStart,
-    prof.mortTerm,
-    prof.mortExtra
+    assumptions.mortBalance || 0,
+    assumptions.mortRate || 6.5,
+    assumptions.mortStart || "2020-01",
+    assumptions.mortTerm || 30,
+    assumptions.mortExtra || 0
   ),
-  [prof.mortBalance, prof.mortRate, prof.mortStart, prof.mortTerm, prof.mortExtra]
+  [assumptions.mortBalance, assumptions.mortRate, assumptions.mortStart, assumptions.mortTerm, assumptions.mortExtra]
 );
 
 const mortgagePayoffYear = mortgageSched.payoffYr;
@@ -5861,7 +5895,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               AiRA <span className="logo-sub">Freedom Financial</span>
             </div>
             <div style={{ fontSize: 12, color: "#6e8099" }}>
-              v6.1 · Inter font · Brighter UI · GK dynamic · Roth age-gated · CSS/FAFSA guards
+              v{packageJson.version} · Inter font · Brighter UI · GK dynamic · Roth age-gated · CSS/FAFSA guards
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
@@ -5888,12 +5922,12 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 spThailand: prof.spThailand || 48000,
                 spMiraNJ: prof.spMiraNJ || 0,
                 // Mortgage
-                mortBalance: prof.mortBalance || 0,
-                mortRate: prof.mortRate || 6.5,
-                mortStart: prof.mortStart || "2020-01",
-                mortTerm: prof.mortTerm || 30,
-                mortExtra: prof.mortExtra || 0,
-                mortPI: prof.mortPI || 0,
+                mortBalance: assumptions.mortBalance || 0,
+                mortRate: assumptions.mortRate || 6.5,
+                mortStart: assumptions.mortStart || "2020-01",
+                mortTerm: assumptions.mortTerm || 30,
+                mortExtra: assumptions.mortExtra || 0,
+                mortPI: assumptions.mortPI || 0,
                 // Real estate
                 reHarrington: prof.reHarrington || 0,
                 reOrlando105: prof.reOrlando105 || 0,
@@ -5963,7 +5997,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 if (acctTotal > 0) setPort(acctTotal);
                 const keys = ["name","dob","abReliability","abGrowth","ssCola",
                   "preRetireEq","postRetireEq","hcShockAge","hcProb","hcMin","hcMax",
-                  "accounts"];
+                  "accounts","mortBalance","mortRate","mortStart","mortTerm","mortExtra","mortPI"];
                 keys.forEach(k => { if (data[k] !== undefined) updateAssumption(k, data[k]); });
                 // Switch to user mode
                 setMode("user");
@@ -5995,8 +6029,98 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               onMouseLeave={e => e.currentTarget.style.background = "rgba(255,193,7,0.08)"}
             >
               ☕ Buy me a coffee
-            </a>   
-
+            </a>
+            {/* Feedback widget */}
+            <div style={{ position: "relative", display: "inline-flex" }}>
+              <button
+                onClick={() => setShowFeedback(prev => !prev)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  padding: "5px 13px", borderRadius: 7,
+                  border: "1px solid rgba(139,92,246,0.4)",
+                  background: "rgba(139,92,246,0.08)",
+                  color: "#a78bfa", fontSize: 11,
+                  fontFamily: "'DM Sans',sans-serif", fontWeight: 600,
+                  cursor: "pointer", transition: "all 0.2s",
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.18)"}
+                onMouseLeave={e => e.currentTarget.style.background = "rgba(139,92,246,0.08)"}
+              >
+                💬 Feedback
+              </button>
+              {showFeedback && (
+                <div style={{
+                  position: "absolute", top: "100%", right: 0, marginTop: 6,
+                  background: "#0f2138", border: "1px solid #1e3a5f", borderRadius: 10,
+                  padding: 14, width: 280, zIndex: 999,
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                }}>
+                  <div style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 600, marginBottom: 10 }}>
+                    How's AiRA working for you?
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                    {[
+                      { emoji: "👍", label: "Great", type: "praise" },
+                      { emoji: "💡", label: "Idea", type: "suggestion" },
+                      { emoji: "🐛", label: "Bug", type: "bug" },
+                      { emoji: "👎", label: "Issue", type: "issue" },
+                    ].map(fb => (
+                      <button key={fb.type}
+                        onClick={() => setFeedbackType(fb.type)}
+                        style={{
+                          flex: 1, padding: "6px 4px", borderRadius: 6, cursor: "pointer",
+                          border: feedbackType === fb.type ? "1px solid #a78bfa" : "1px solid rgba(255,255,255,0.08)",
+                          background: feedbackType === fb.type ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.03)",
+                          transition: "all 0.15s",
+                        }}>
+                        <div style={{ fontSize: 18 }}>{fb.emoji}</div>
+                        <div style={{ fontSize: 9, color: feedbackType === fb.type ? "#a78bfa" : "#64748b", marginTop: 2 }}>{fb.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={feedbackText}
+                    onChange={e => setFeedbackText(e.target.value)}
+                    placeholder="Tell us more (optional)..."
+                    rows={3}
+                    style={{
+                      width: "100%", background: "#0a1628", border: "1px solid #1e3a5f",
+                      color: "#e2e8f0", borderRadius: 6, padding: "8px 10px",
+                      fontSize: 11, fontFamily: "'DM Sans',sans-serif",
+                      resize: "vertical", outline: "none", boxSizing: "border-box",
+                    }}
+                    onFocus={e => e.target.style.borderColor = "#a78bfa"}
+                    onBlur={e => e.target.style.borderColor = "#1e3a5f"}
+                  />
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+                    <button onClick={() => setShowFeedback(false)}
+                      style={{ background: "transparent", border: "none", color: "#475569", fontSize: 11, cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!feedbackType) { alert("Please select a feedback type"); return; }
+                        const payload = { type: feedbackType, message: feedbackText, timestamp: new Date().toISOString(), appVersion: "6.1" };
+                        const existing = JSON.parse(localStorage.getItem("aira_feedback") || "[]");
+                        existing.push(payload);
+                        localStorage.setItem("aira_feedback", JSON.stringify(existing));
+                        alert("Thanks for your feedback! \ud83d\ude4f");
+                        setFeedbackType(null);
+                        setFeedbackText("");
+                        setShowFeedback(false);
+                      }}
+                      style={{
+                        padding: "5px 16px", borderRadius: 6,
+                        border: "none", background: "linear-gradient(135deg,#7c3aed,#a78bfa)",
+                        color: "white", fontSize: 11, fontWeight: 600,
+                        cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
+                      }}>
+                      Send
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div style={{ textAlign: "right" }}>
             <div
@@ -6243,10 +6367,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 ? "⚠ Inputs changed — Re-run"
                 : "▶ Run Monte Carlo"}
             </button>
-            <div style={{ fontSize: 9, color: "#334155", textAlign: "center" }}>
-              3,000 × age 85 · 3,000 × age 90 · GK guardrails · 80% Rental ·
-              healthcare shocks
-            </div>
+            
           </div>
           <div className="main">
             {mode === "user" && !assumptions.dob && (
@@ -6562,7 +6683,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 )}
                 {activeTab === "income" && <IncomeMap p={params} inf={inf} />}
                 {activeTab === "mortgage" && (
-                  <MortgageTab prof={PROFILES[mode]} />
+                  <MortgageTab values={assumptions} onChange={updateAssumption} />
                 )}
                 {activeTab === "networth" && (
                   <NetWorthTab p={params} results90={r90} inf={inf} />
@@ -6615,7 +6736,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 lineHeight: 1.6,
               }}
             >
-              AiRA Freedom Financial v6.5 · Inter font · GK dynamic · Roth age-gated · CSS/FAFSA guards · Historical bootstrap 99yr S&P + 50yr Bloomberg · Not financial advice
+              AiRA Freedom Financial v{packageJson.version} · This is not financial advice. Seek a professional fiduciary, CPA, or tax accountant. Use at your own risk. See full disclaimer in code.
               <br />
               "The best financial plan is the one you can stick with." — Morgan
               Housel
