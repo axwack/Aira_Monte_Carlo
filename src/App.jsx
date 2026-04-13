@@ -4751,6 +4751,7 @@ function ProfileWizard({ values, onChange }) {
         border: "1px solid rgba(255,255,255,0.08)",
         borderRadius: 12,
         overflow: "hidden",
+        alignItems: "start"
       }}
     >
       {/* LEFT SIDEBAR */}
@@ -4812,7 +4813,7 @@ function ProfileWizard({ values, onChange }) {
       </div>
 
       {/* RIGHT PANEL */}
-      <div style={{ padding: 24 }}>
+       <div style={{ padding: 24, overflowY: "auto", maxHeight: "calc(100vh - 120px)" }}>
         <div
           style={{
             fontSize: 16,
