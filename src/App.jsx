@@ -14,7 +14,6 @@ import {
   ReferenceLine,
   Legend,
 } from "recharts";
-import packageJson from "../package.json";
 
 if (typeof document !== "undefined") {
   const link = document.createElement("link");
@@ -35,7 +34,7 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/ 
-const APP_VERSION = packageJson.version;
+const APP_VERSION = "9.2";
 
 const SP500 = [
   37.88, -11.91, -28.48, -47.07, -15.15, 46.59, -5.94, 41.37, 27.92, -38.59,
@@ -147,9 +146,10 @@ const BLANK_PROFILE = {
   mortExtra: 0,
   mortPI: 0,
   // Real estate (not in liquid portfolio)
-  rePrimaryResidencce: 0,
-  reRentalUnit1: 0,
-  reRentalUnit2: 0,
+  properties: [
+    { id:"p1", label:"Primary Residence", value:0, mortgage:0, income:0 },
+    { id:"p2", label:"Property 2",        value:0, mortgage:0, income:0 },
+  ],
   // NEW:
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
@@ -209,9 +209,10 @@ const DEMO_PROFILE = {
   mortTerm: 30,
   mortExtra: 0,
   mortPI: 1330,
-  rePrimaryResidencce: 600_000,
-  reRentalUnit1: 0,
-  reRentalUnit2: 0,
+  properties: [
+    { id:"p1", label:"Primary Residence", value:600_000, mortgage:200_000, income:0 },
+    { id:"p2", label:"Rental Unit",        value:0,       mortgage:0,       income:0 },
+  ],
   accounts: [
     { id: "d1", category: "pretax", name: "Solo 401k", balance: 750_000 },
     { id: "d2", category: "roth", name: "Roth IRA", balance: 150_000 },
@@ -1715,6 +1716,20 @@ function importProfile(onLoad) {
         // Ensure accounts is always a valid array
         if (!Array.isArray(parsed.accounts)) {
           parsed.accounts = BLANK_PROFILE.accounts;
+        }
+        // Migrate old rePrimaryResidencce fields to properties array
+        if (parsed.rePrimaryResidencce !== undefined && !parsed.properties) {
+          parsed.properties = [
+            { id:"p1", label:"Primary Residence", value: parsed.rePrimaryResidencce||0, mortgage: parsed.mortBalance||0, income:0 },
+            { id:"p2", label:"Rental Unit 1",     value: parsed.reRentalUnit1||0,       mortgage:0, income:0 },
+            { id:"p3", label:"Rental Unit 2",     value: parsed.reRentalUnit2||0,       mortgage:0, income:0 },
+          ].filter((p,i) => p.value > 0 || i === 0);
+          delete parsed.rePrimaryResidencce;
+          delete parsed.reRentalUnit1;
+          delete parsed.reRentalUnit2;
+        }
+        if (!Array.isArray(parsed.properties)) {
+          parsed.properties = BLANK_PROFILE.properties;
         }
         if (parsed.dob && !/^\d{4}-\d{2}-\d{2}$/.test(parsed.dob)) {
           const d = new Date(parsed.dob);
@@ -3789,181 +3804,236 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
 }
 
 function MortgageTab({ values, onChange }) {
-  const bal = values.mortBalance || 0;
-  const rate = values.mortRate || 6.5;
-  const extra = values.mortExtra || 0;
-  const start = values.mortStart || "2020-01";
-  const term = values.mortTerm || 30;
-  const sched = useMemo(
-    () => mortgageSchedule(bal, rate, start, term, extra),
-    [bal, rate, start, term, extra]
-  );
-  const schedNE = useMemo(
-    () => mortgageSchedule(bal, rate, start, term, 0),
-    [bal, rate, start, term]
-  );
+  const bal   = values.mortBalance || 0;
+  const rate  = values.mortRate    || 6.5;
+  const extra = values.mortExtra   || 0;
+  const start = values.mortStart   || "2020-01";
+  const term  = values.mortTerm    || 30;
+
+  const sched   = useMemo(() => mortgageSchedule(bal, rate, start, term, extra),  [bal, rate, start, term, extra]);
+  const schedNE = useMemo(() => mortgageSchedule(bal, rate, start, term, 0),       [bal, rate, start, term]);
   const chartData = useMemo(() => {
     const maxLen = Math.max(sched.years.length, schedNE.years.length);
     return Array.from({ length: maxLen }, (_, i) => ({
       yr: new Date().getFullYear() + i,
       "With extra": sched.years[i]?.bal ?? 0,
-      Original: schedNE.years[i]?.bal ?? 0,
+      Original:     schedNE.years[i]?.bal ?? 0,
     }));
   }, [sched, schedNE]);
+
+  // Properties state — sourced from assumptions via values
+  const properties = values.properties || [
+    { id:"p1", label:"Primary Residence", value:0, mortgage:0, income:0 },
+    { id:"p2", label:"Property 2",        value:0, mortgage:0, income:0 },
+  ];
+
+  const updateProp = (id, field, val) => {
+    const updated = properties.map(p => p.id === id ? { ...p, [field]: val } : p);
+    onChange("properties", updated);
+    // Keep primary mortgage in sync with mortgage calculator
+    if (id === properties[0]?.id && field === "mortgage") {
+      onChange("mortBalance", val);
+    }
+  };
+
+  const updateLabel = (id, label) => {
+    onChange("properties", properties.map(p => p.id === id ? { ...p, label } : p));
+  };
+
+  const addProperty = () => {
+    if (properties.length >= 5) return;
+    onChange("properties", [
+      ...properties,
+      { id:"p"+Date.now(), label:`Property ${properties.length + 1}`, value:0, mortgage:0, income:0 },
+    ]);
+  };
+
+  const removeProperty = (id) => {
+    if (properties.length <= 1) return;
+    onChange("properties", properties.filter(p => p.id !== id));
+  };
+
+  const totalValue    = properties.reduce((s, p) => s + (p.value||0), 0);
+  const totalMortgage = properties.reduce((s, p) => s + (p.mortgage||0), 0);
+  const totalEquity   = totalValue - totalMortgage;
+  const totalIncome   = properties.reduce((s, p) => s + (p.income||0), 0);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div className="metrics">
-        <div className="met">
-          <div className="ml">Current balance</div>
-          <div className="mv" style={{ color: "#0ea5e9", fontSize: 18 }}>
-            {fmtM(bal)}
-          </div>
-          <div className="ms">Primary Residence</div>
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+
+      {/* ── PROPERTY CARDS ── */}
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div style={{ fontSize:12, fontWeight:600, color:"#e2e8f0" }}>Properties</div>
+          {properties.length < 5 && (
+            <button onClick={addProperty}
+              style={{ padding:"4px 12px", borderRadius:6,
+                border:"1px dashed rgba(13,148,136,0.4)", background:"transparent",
+                color:"#0d9488", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
+              + Add property
+            </button>
+          )}
         </div>
-        <div className="met">
-          <div className="ml">Payoff year</div>
-          <div className="mv" style={{ color: "#10b981", fontSize: 18 }}>
-            {sched.payoffYr}
-          </div>
-          <div className="ms">With ${extra}/mo extra</div>
-        </div>
-        <div className="met">
-          <div className="ml">Interest saved</div>
-          <div className="mv" style={{ color: "#34d399", fontSize: 18 }}>
-            {fmtM(sched.interestSaved)}
-          </div>
-          <div className="ms">vs no extra payments</div>
-        </div>
-        <div className="met">
-          <div className="ml">Monthly P&I</div>
-          <div className="mv" style={{ color: "#94a3b8", fontSize: 18 }}>
-            {fmtM(sched.pmt)}
-          </div>
-          <div className="ms">At {rate}% fixed</div>
+
+        {properties.map((prop, idx) => {
+          const equity  = (prop.value||0) - (prop.mortgage||0);
+          const isFirst = idx === 0;
+          return (
+            <div key={prop.id} style={{
+              background: isFirst ? "rgba(13,148,136,0.05)" : "rgba(255,255,255,0.03)",
+              border:`1px solid ${isFirst ? "rgba(13,148,136,0.25)" : "rgba(255,255,255,0.08)"}`,
+              borderRadius:10, padding:14,
+            }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                <input type="text" value={prop.label}
+                  onChange={e => updateLabel(prop.id, e.target.value)}
+                  style={{ fontSize:13, fontWeight:600, color:"#e2e8f0",
+                    background:"transparent", border:"none", outline:"none",
+                    borderBottom:"1px solid rgba(255,255,255,0.12)",
+                    padding:"2px 0", width:180, fontFamily:"'DM Sans',sans-serif" }}/>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  {isFirst && (
+                    <span style={{ fontSize:9, color:"#0d9488",
+                      background:"rgba(13,148,136,0.1)", border:"1px solid rgba(13,148,136,0.3)",
+                      borderRadius:8, padding:"2px 7px" }}>
+                      Primary · wired to mortgage calc
+                    </span>
+                  )}
+                  {properties.length > 1 && (
+                    <button onClick={() => removeProperty(prop.id)}
+                      style={{ background:"transparent", border:"none", color:"#475569",
+                        cursor:"pointer", fontSize:13, padding:"2px 4px", transition:"color 0.15s" }}
+                      onMouseEnter={e=>e.currentTarget.style.color="#f87171"}
+                      onMouseLeave={e=>e.currentTarget.style.color="#475569"}>
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
+                <div>
+                  <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Gross value</div>
+                  <DualInput label="" value={prop.value||0} min={0} max={5_000_000} step={5_000}
+                    format={v=>fmtM(v)} onChange={v=>updateProp(prop.id,"value",v)}/>
+                </div>
+                <div>
+                  <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Mortgage balance</div>
+                  <DualInput label="" value={prop.mortgage||0} min={0} max={3_000_000} step={1_000}
+                    format={v=>fmtM(v)} onChange={v=>updateProp(prop.id,"mortgage",v)}/>
+                </div>
+                <div>
+                  <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Annual income (opt)</div>
+                  <DualInput label="" value={prop.income||0} min={0} max={200_000} step={1_000}
+                    format={v=>fmtK(v)+"/yr"} onChange={v=>updateProp(prop.id,"income",v)}/>
+                </div>
+              </div>
+
+              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                <span style={{ fontSize:10, color:"#64748b" }}>Net equity:</span>
+                <span style={{ fontSize:13, fontWeight:700,
+                  fontFamily:"'DM Mono',monospace",
+                  color: equity >= 0 ? "#10b981" : "#f87171" }}>
+                  {equity < 0 ? "-" : ""}{fmtM(Math.abs(equity))}
+                </span>
+                {(prop.income||0) > 0 && (
+                  <span style={{ fontSize:10, color:"#059669" }}>
+                    · {fmtK(prop.income)}/yr income
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Totals row */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
+          {[
+            { l:"Total value",    v:totalValue,    c:"#0ea5e9" },
+            { l:"Total mortgage", v:totalMortgage, c:"#f87171" },
+            { l:"Total equity",   v:totalEquity,   c:"#10b981" },
+            { l:"Annual income",  v:totalIncome,   c:"#a78bfa" },
+          ].map(m => (
+            <div key={m.l} className="met">
+              <div className="ml">{m.l}</div>
+              <div className="mv" style={{ color:m.c, fontSize:16 }}>{fmtM(m.v)}</div>
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* ── PRIMARY MORTGAGE CALCULATOR ── */}
       <div className="chart-card">
-        <div className="ct">
-          Balance over time · with vs without extra payments
-        </div>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            marginBottom: 12,
-          }}
-        >
-          <DualInput
-            label="Balance"
-            value={bal}
-            min={0}
-            max={1500000}
-            step={1000}
-            format={(v) => fmtM(v)}
-            onChange={(v) => onChange("mortBalance", v)}
-          />
-          <DualInput
-            label="Rate %"
-            value={rate}
-            min={0}
-            max={12}
-            step={0.125}
-            format={(v) => v.toFixed(3) + "%"}
-            onChange={(v) => onChange("mortRate", v)}
-          />
-          <DualInput
-            label="Term (yrs)"
-            value={term}
-            min={10}
-            max={30}
-            step={1}
-            format={(v) => v + " yrs"}
-            onChange={(v) => onChange("mortTerm", v)}
-          />
-          <DualInput
-            label="Extra/mo"
-            value={extra}
-            min={0}
-            max={5000}
-            step={50}
-            format={(v) => "$" + v.toLocaleString() + "/mo"}
-            onChange={(v) => onChange("mortExtra", v)}
-          />
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span style={{ fontSize: 11, color: "#94a3b8", minWidth: 70 }}>Start date</span>
-            <input type="month" value={start} onChange={(e) => onChange("mortStart", e.target.value)}
-              style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 4, padding: "4px 8px", fontSize: 11, fontFamily: "'DM Mono',monospace" }} />
+        <div className="ct">{properties[0]?.label || "Primary Residence"} · Mortgage calculator</div>
+
+        <div className="metrics" style={{ marginBottom:12 }}>
+          <div className="met">
+            <div className="ml">Current balance</div>
+            <div className="mv" style={{ color:"#0ea5e9", fontSize:18 }}>{fmtM(bal)}</div>
+          </div>
+          <div className="met">
+            <div className="ml">Payoff year</div>
+            <div className="mv" style={{ color:"#10b981", fontSize:18 }}>{sched.payoffYr}</div>
+            <div className="ms">With ${extra}/mo extra</div>
+          </div>
+          <div className="met">
+            <div className="ml">Interest saved</div>
+            <div className="mv" style={{ color:"#34d399", fontSize:18 }}>{fmtM(sched.interestSaved)}</div>
+            <div className="ms">vs no extra</div>
+          </div>
+          <div className="met">
+            <div className="ml">Monthly P&I</div>
+            <div className="mv" style={{ color:"#94a3b8", fontSize:18 }}>{fmtM(sched.pmt)}</div>
+            <div className="ms">At {rate}% fixed</div>
           </div>
         </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
+          <DualInput label="Balance" value={bal} min={0} max={1_500_000} step={1_000}
+            format={v=>fmtM(v)}
+            onChange={v=>{ onChange("mortBalance",v); updateProp(properties[0]?.id,"mortgage",v); }}/>
+          <DualInput label="Rate %" value={rate} min={0} max={12} step={0.125}
+            format={v=>v.toFixed(3)+"%"} onChange={v=>onChange("mortRate",v)}/>
+          <DualInput label="Term (yrs)" value={term} min={10} max={30} step={1}
+            format={v=>v+" yrs"} onChange={v=>onChange("mortTerm",v)}/>
+          <DualInput label="Extra/mo" value={extra} min={0} max={5_000} step={50}
+            format={v=>"$"+v.toLocaleString()+"/mo"} onChange={v=>onChange("mortExtra",v)}/>
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            <span style={{ fontSize:11, color:"#94a3b8", minWidth:70 }}>Start date</span>
+            <input type="month" value={start} onChange={e=>onChange("mortStart",e.target.value)}
+              style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0",
+                borderRadius:4, padding:"4px 8px", fontSize:11, fontFamily:"'DM Mono',monospace" }}/>
+          </div>
+        </div>
+
         <ResponsiveContainer width="100%" height={200}>
-          <LineChart
-            data={chartData}
-            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-          >
-            <CartesianGrid
-              strokeDasharray="2 4"
-              stroke="rgba(255,255,255,0.05)"
-            />
-            <XAxis
-              dataKey="yr"
-              stroke="#1e3a5f"
-              tick={{ fill: "#475569", fontSize: 9 }}
-            />
-            <YAxis
-              stroke="#1e3a5f"
-              tick={{ fill: "#475569", fontSize: 9 }}
-              tickFormatter={(v) => fmtM(v)}
-              width={54}
-            />
-            <Tooltip content={<Tip />} />
-            <Line
-              type="monotone"
-              dataKey="With extra"
-              stroke="#10b981"
-              strokeWidth={2.5}
-              dot={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="Original"
-              stroke="#475569"
-              strokeWidth={1.5}
-              strokeDasharray="4 3"
-              dot={false}
-            />
+          <LineChart data={chartData} margin={{ top:8, right:8, left:0, bottom:0 }}>
+            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)"/>
+            <XAxis dataKey="yr" stroke="#1e3a5f" tick={{ fill:"#475569", fontSize:9 }}/>
+            <YAxis stroke="#1e3a5f" tick={{ fill:"#475569", fontSize:9 }}
+              tickFormatter={v=>fmtM(v)} width={54}/>
+            <Tooltip content={<Tip/>}/>
+            <Line type="monotone" dataKey="With extra" stroke="#10b981" strokeWidth={2.5} dot={false}/>
+            <Line type="monotone" dataKey="Original" stroke="#475569" strokeWidth={1.5} strokeDasharray="4 3" dot={false}/>
           </LineChart>
         </ResponsiveContainer>
       </div>
+
+      {/* ── AMORTIZATION TABLE ── */}
       <div className="chart-card">
-        <div className="ct">
-          Amortization — first 10 years with extra payments
-        </div>
+        <div className="ct">Amortization — first 10 years with extra payments</div>
         <table className="nw-table">
           <thead>
-            <tr>
-              <th>Year</th>
-              <th>Principal</th>
-              <th>Interest</th>
-              <th>Extra</th>
-              <th>Balance</th>
-            </tr>
+            <tr><th>Year</th><th>Principal</th><th>Interest</th><th>Extra</th><th>Balance</th></tr>
           </thead>
           <tbody>
-            {sched.years.slice(0, 10).map((r) => (
+            {sched.years.slice(0,10).map(r => (
               <tr key={r.yr}>
-                <td
-                  style={{
-                    textAlign: "left",
-                    fontFamily: "'DM Sans',sans-serif",
-                  }}
-                >
-                  {r.yr}
-                </td>
+                <td style={{ textAlign:"left", fontFamily:"'DM Sans',sans-serif" }}>{r.yr}</td>
                 <td>{fmtM(r.pPaid)}</td>
-                <td style={{ color: "#f87171" }}>{fmtM(r.iPaid)}</td>
-                <td style={{ color: "#34d399" }}>{fmtM(r.ePaid)}</td>
-                <td style={{ color: "#0ea5e9" }}>{fmtM(r.bal)}</td>
+                <td style={{ color:"#f87171" }}>{fmtM(r.iPaid)}</td>
+                <td style={{ color:"#34d399" }}>{fmtM(r.ePaid)}</td>
+                <td style={{ color:"#0ea5e9" }}>{fmtM(r.bal)}</td>
               </tr>
             ))}
           </tbody>
@@ -3975,7 +4045,10 @@ function MortgageTab({ values, onChange }) {
 
 function NetWorthTab({ p, results90, inf }) {
   const [showRE, setShowRE] = useState(false);
-  const reTotal = p.rePrimaryResidencce + p.reRentalUnit1 + p.reRentalUnit2;
+  const props    = p.properties || [];
+  const reTotal   = props.reduce((s, pr) => s + (pr.value||0), 0);
+  const reMortgs  = props.reduce((s, pr) => s + (pr.mortgage||0), 0);
+  const reEquity  = reTotal - reMortgs;
   const mortSched = useMemo(
     () =>
       mortgageSchedule(
@@ -4059,7 +4132,7 @@ function NetWorthTab({ p, results90, inf }) {
         <div className="met">
           <div className="ml">Real estate equity</div>
           <div className="mv" style={{ color: "#fbbf24", fontSize: 18 }}>
-            {fmtM(reTotal)}
+            {fmtM(reEquity)}
           </div>
           <div className="ms">NOT in liquid total</div>
         </div>
@@ -5877,6 +5950,7 @@ export default function AiRAForecaster() {
     mortTerm: BLANK_PROFILE.mortTerm,
     mortExtra: BLANK_PROFILE.mortExtra,
     mortPI: BLANK_PROFILE.mortPI,
+    properties: BLANK_PROFILE.properties,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
@@ -5976,6 +6050,7 @@ export default function AiRAForecaster() {
       hcMin: assumptions.hcMin,
       hcMax: assumptions.hcMax,
       accounts: assumptions.accounts,
+      properties: assumptions.properties || BLANK_PROFILE.properties,
       withdrawalStrategy: withdrawalStrategy,
       fixedWithdrawalRate: 0.04,
       vanguardInitialRate: 0.04,
@@ -6067,7 +6142,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               AiRA <span className="logo-sub">Freedom Financial</span>
             </div>
             <div style={{ fontSize: 12, color: "#6e8099" }}>
-              v{packageJson.version} · Inter font · Brighter UI · GK dynamic · Roth age-gated · CSS/FAFSA guards
+              v9.2 · Property cards · Dynamic action plan · Premium AI layer · GK dynamic · CSS/FAFSA guards
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
@@ -6103,9 +6178,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 mortExtra: assumptions.mortExtra || 0,
                 mortPI: assumptions.mortPI || 0,
                 // Real estate
-                rePrimaryResidencce: prof.rePrimaryResidencce || 0,
-                reRentalUnit1: prof.reRentalUnit1 || 0,
-                reRentalUnit2: prof.reRentalUnit2 || 0,
+                properties: assumptions.properties || BLANK_PROFILE.properties,
                 // Account breakdown
                 accounts: assumptions.accounts || BLANK_PROFILE.accounts,
                 // MC assumptions
@@ -6922,7 +6995,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 lineHeight: 1.6,
               }}
             >
-              AiRA Freedom Financial v{packageJson.version} · This is not financial advice. Seek a professional fiduciary, CPA, or tax accountant. Use at your own risk. See full disclaimer in code.
+              AiRA Freedom Financial v{APP_VERSION} · This is not financial advice. Seek a professional fiduciary, CPA, or tax accountant. Use at your own risk. See full disclaimer in code.
               <br />
               "The best financial plan is the one you can stick with." — Morgan
               Housel
@@ -6935,6 +7008,82 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
 }
 
 
+
+/* ════════════════════════════════════════════════════════════════
+   VERSION LOG
+   ════════════════════════════════════════════════════════════════
+
+   v9.2 — April 13, 2026 (Claude / this session)
+   ─────────────────────────────────────────────
+   • Property cards in MortgageTab — editable label, gross value,
+     mortgage balance, annual income, net equity per property
+   • First property auto-wires to primary mortgage calculator
+   • Add/remove properties (2 default, max 5)
+   • BLANK_PROFILE: replaced rePrimaryResidencce/reRentalUnit* with
+     properties[] array
+   • importProfile: migration converts old re* fields automatically
+   • NetWorthTab: reTotal + reEquity now derived from properties[]
+   • params useMemo: properties[] flows to all downstream tabs
+   • exportProfile: properties[] included in JSON export
+   • Expanded static rules engine in generateActions (35+ rules)
+   • Premium AI analysis layer (credit code + Vercel proxy)
+   • Dynamic AI payload with narrative + structured data
+   • AI returns {diagnosis, actions} — diagnosis shown as header card
+   • packageJson import replaced with hardcoded APP_VERSION = "9.2"
+
+   v9.1 — April 13, 2026 (AiRA-DS + Claude Code + Gemini)
+   ────────────────────────────────────────────────────────
+   • BLANK_PROFILE + DEMO_PROFILE — no personal data hardcoded
+   • ProfileWizard 6-step guided setup
+   • Import/Export profile JSON
+   • generateActions() dynamic rules engine
+   • ActionPlanTab reads live MC results
+   • Multiple withdrawal strategies: GK, Fixed 4%, Vanguard,
+     Risk-based, Kitces
+   • simulateDeterministic + simulateDeterministicWithStrategy
+   • useJointRmdTable flag + JOINT_RMD_TABLE
+   • guytonKlingerWithdrawal extracted as standalone function
+   • calcYearTax function
+   • GK floor/ceiling dynamic: sp × 0.65 / sp × 1.35
+   • DualInput component (text + slider sync)
+   • Feedback thumbs widget
+   • APP_VERSION from package.json
+   • ScenariosTab with sub-tabs
+   • Assumptions tab → ProfileWizard panels
+
+   v9.0-ds — April 8, 2026 (AiRA-DS)
+   ────────────────────────────────────
+   • DS variant — 5,375 lines
+   • Account breakdown by category (pretax/roth/taxable/hsa/cash)
+   • SavingsPanel with add/remove accounts
+   • AssumptionsPanel with model parameter inputs
+   • DOB-driven dynamic currentAge and DDAY_dynamic
+   • useCountdown accepts dday param
+   • Assumptions state (abReliability, hcProb, ssCola etc.)
+
+   v8.0 — April 13, 2026 (Claude)
+   ────────────────────────────────
+   • Assumptions tab (standalone, pre-wizard)
+   • MC engine: all hardcoded rates replaced with p.* params
+   • currentAge derived live from DOB
+   • DDAY_dynamic computed from DOB + retireAge
+   • AssumptionsTab with Personal Profile + Model Parameters +
+     Healthcare Shock sections
+
+   v5.1 — April 2026 (Claude)
+   ───────────────────────────
+   • 6 MC engine bugs fixed
+   • initWR uses net portfolio draw (not gross spend)
+   • Airbnb modeled at 80% annual reliability
+   • Healthcare shocks 3.5%/yr age 72+
+   • GK floor/ceiling hardcoded (pre-dynamic)
+   • twoHousehold toggle wired to sp and gkFloor
+   • 11 tabs: Fan, Stress, Income, Roth, Buckets, Smile,
+     Monte Carlo, Scenarios, Mortgage, Net Worth, Action Plan
+   • 26-people visualization inline in headline panel
+   • Stale results detection (amber Re-run button)
+
+════════════════════════════════════════════════════════════════ */
 /*Disclaimer and Terms of Use
 Last Updated: April 11, 2026
 
