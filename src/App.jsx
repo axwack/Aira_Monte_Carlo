@@ -6661,14 +6661,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 </div>
               )}  
 
-            <div className="flag-w">
-              ⚠ NJ domicile — establish FL residency before Dec 31, 2030 · Roth
-              ladder saves ~$50,575 vs NJ
-            </div>
-            <div className="flag-w">
-              ⚠ SS gap Jan 2031 → Mar 2034 — zero SS for 3 years · highest-risk
-              window
-            </div>
             <div className="flag-i">
               🛡 GK active · WR {swr}% ·{" "}
               {twoHousehold ? "Both households" : "Solo"} · Rental 80%
@@ -7085,6 +7077,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
    • Stale results detection (amber Re-run button)
 
 ════════════════════════════════════════════════════════════════ */
+export { runMC };
 /*Disclaimer and Terms of Use
 Last Updated: April 11, 2026
 
