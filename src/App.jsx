@@ -4649,7 +4649,7 @@ function ProfileWizard({ values, onChange }) {
       </div>
 
       {/* RIGHT PANEL */}
-       <div style={{ padding: 24, overflowY: "auto", maxHeight: "calc(100vh - 120px)" }}>
+       <div style={{ padding: 24 }}>
         <div
           style={{
             fontSize: 16,
