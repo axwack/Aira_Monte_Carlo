@@ -45,7 +45,9 @@ describe("Yellow flag-w banners – personal data hardcoding check", () => {
   });
 
   test("flag-w banner should NOT contain hardcoded SS gap dates (personal SS timeline)", () => {
-    const hasSS = flagWBlocks.some((b) => b.includes("SS gap") || b.includes("Jan 2031"));
+    // "SS gap" alone is acceptable in dynamic banners that use {p.retireAge}/{p.ssAge}.
+    // Flag only hardcoded specific calendar dates like "Jan 2031".
+    const hasSS = flagWBlocks.some((b) => b.includes("Jan 2031") || b.includes("Mar 2034"));
     if (hasSS) {
       console.warn(
         "PERSONAL DATA FOUND: Specific SS gap dates are hardcoded in a yellow flag-w banner."
