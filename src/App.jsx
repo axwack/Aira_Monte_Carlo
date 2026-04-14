@@ -151,6 +151,8 @@ const BLANK_PROFILE = {
     { id:"p2", label:"Property 2",        value:0, mortgage:0, income:0 },
   ],
   // NEW:
+  filingStatus: "mfj",          // "mfj" | "single" — drives federal brackets & std deduction
+  reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
   // Account breakdown (feeds port total)
@@ -178,6 +180,8 @@ const DEMO_PROFILE = {
   name: "Alex",
   dob: "1974-06-15",
   // NEW:
+  filingStatus: "mfj",          // "mfj" | "single"
+  reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
   currentAge: 51,
@@ -345,8 +349,10 @@ function calcYearTax(
   rmdIncome,
   conversionAmount,
   isTwoHousehold,
-  inflationRate
+  inflationRate,
+  filingStatus = "mfj"
 ) {
+  const isMFJ = filingStatus !== "single";
   const taxableSS = ssIncome * 0.85;
   const otherIncome =
     (withdrawalAmount || 0) +
@@ -355,10 +361,14 @@ function calcYearTax(
     (conversionAmount || 0);
   const totalIncome = taxableSS + otherIncome;
   const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - 2026));
-  let stdDeduction = Math.round(32200 * inflationFactor);
-  if (age >= 65) stdDeduction += Math.round(3300 * inflationFactor);
+  // Standard deduction: MFJ $32,200 / Single $16,100 (2026 est.), inflation-adjusted forward
+  let stdDeduction = Math.round((isMFJ ? 32200 : 16100) * inflationFactor);
+  // Additional deduction for age 65+: MFJ adds $3,300, Single adds $1,650
+  if (age >= 65) stdDeduction += Math.round((isMFJ ? 3300 : 1650) * inflationFactor);
   const taxableIncome = Math.max(0, totalIncome - stdDeduction);
-  const fedBrackets = idxB(FED_BRACKETS_2026, inflationFactor);
+  // Select federal brackets by filing status
+  const rawBrackets = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
+  const fedBrackets = idxB(rawBrackets, inflationFactor);
   const fedTax = progTax(taxableIncome, fedBrackets);
   let stateTax = 0;
 
@@ -599,7 +609,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
 
       // Tax calculation
       const yr = 2026 + (age - p.currentAge);
-      const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY);
+      const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj");
       const totalTax = taxResult.totalTax;
       const totalWithdrawalNeeded = totalNeed + totalTax;
 
@@ -824,7 +834,7 @@ function simulateDeterministic(p, inf) {
       : 0;
     const need = Math.max(0, sp - ss - ab);
 
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY);
+    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -991,7 +1001,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
     const ab = p.useAb ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20))) : 0;
     const need = Math.max(0, sp - ss - ab);
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY);
+    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -1013,12 +1023,21 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 }
 
 /* ════ ROTH CONVERSION EXPLORER ════ */
-const FED_BRACKETS_2026 = [
-  { lo: 0, hi: 24800, rate: 0.1 },
-  { lo: 24800, hi: 100800, rate: 0.12 },
-  { lo: 100800, hi: 211400, rate: 0.22 },
-  { lo: 211400, hi: 403550, rate: 0.24 },
-  { lo: 403550, hi: 512450, rate: 0.32 },
+// 2026 MFJ federal brackets (inflation-adjusted from 2025)
+const FED_BRACKETS_2026_MFJ = [
+  { lo: 0,       hi: 24800,  rate: 0.10 },
+  { lo: 24800,   hi: 100800, rate: 0.12 },
+  { lo: 100800,  hi: 211400, rate: 0.22 },
+  { lo: 211400,  hi: 403550, rate: 0.24 },
+  { lo: 403550,  hi: 512450, rate: 0.32 },
+];
+// 2026 Single filer federal brackets (~half the MFJ thresholds)
+const FED_BRACKETS_2026_SINGLE = [
+  { lo: 0,      hi: 12400,  rate: 0.10 },
+  { lo: 12400,  hi: 50400,  rate: 0.12 },
+  { lo: 50400,  hi: 105700, rate: 0.22 },
+  { lo: 105700, hi: 201800, rate: 0.24 },
+  { lo: 201800, hi: 256225, rate: 0.32 },
 ];
 const NJ_BRACKETS_2026 = [
   { lo: 0, hi: 20000, rate: 0.014 },
@@ -4098,7 +4117,9 @@ function NetWorthTab({ p, results90, inf }) {
       const port = results90.pcts[pctIndex]?.p50 || 0;
       const mortEntry = mortSched.years.find((y) => y.yr === yr);
       const mortBal = mortEntry ? mortEntry.bal : 0;
-      const re = showRE ? reTotal : 0;
+      const yearsFromNow = yr - new Date().getFullYear();
+      const reGrow = Math.pow(1 + (p.reGrowthRate ?? 3.0) / 100, yearsFromNow);
+      const re = showRE ? Math.round(reTotal * reGrow) : 0;
       return {
         age,
         "Liquid Portfolio": port,
@@ -5353,6 +5374,28 @@ function AssumptionsPanel({ values, onChange }) {
         >
           <DateInput k="employerStartDate" />
       </Row>
+      <Row
+        label="Federal Filing Status"
+        desc="MFJ doubles standard deduction ($32,200) and uses wider brackets. Single uses $16,100 deduction and narrower brackets."
+      >
+        <select
+          value={values.filingStatus || "mfj"}
+          onChange={(e) => onChange("filingStatus", e.target.value)}
+          style={{
+            background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0",
+            borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer",
+          }}
+        >
+          <option value="mfj">Married Filing Jointly (MFJ)</option>
+          <option value="single">Single</option>
+        </select>
+      </Row>
+      <Row
+        label="Home / RE Annual Growth"
+        desc="Annual appreciation rate applied to real estate values in Net Worth projection"
+      >
+        <NumInput k="reGrowthRate" min={0} max={10} step={0.5} suffix="%" />
+      </Row>
       <Toggle
         val={values.useJointRmdTable}
         onChange={(v) => onChange("useJointRmdTable", v)}
@@ -6068,6 +6111,8 @@ export default function AiRAForecaster() {
       hcMax: assumptions.hcMax,
       accounts: assumptions.accounts,
       properties: assumptions.properties || BLANK_PROFILE.properties,
+      filingStatus: assumptions.filingStatus || "mfj",
+      reGrowthRate: assumptions.reGrowthRate ?? 3.0,
       withdrawalStrategy: withdrawalStrategy,
       fixedWithdrawalRate: 0.04,
       vanguardInitialRate: 0.04,
@@ -6194,6 +6239,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 mortTerm: assumptions.mortTerm || 30,
                 mortExtra: assumptions.mortExtra || 0,
                 mortPI: assumptions.mortPI || 0,
+                // Tax & RE
+                filingStatus: assumptions.filingStatus || "mfj",
+                reGrowthRate: assumptions.reGrowthRate ?? 3.0,
                 // Real estate
                 properties: assumptions.properties || BLANK_PROFILE.properties,
                 // Account breakdown
@@ -6266,6 +6314,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 // ---- 6. Update ALL assumptions fields (including missing ones) ----
                 const keys = [
                   "name", "dob", "stateOfResidence", "employerStartDate", "useJointRmdTable", "cashRealReturn",
+                  "filingStatus", "reGrowthRate",
                   "abReliability", "abGrowth", "ssCola", "preRetireEq", "postRetireEq",
                   "hcShockAge", "hcProb", "hcMin", "hcMax", "accounts",
                   "mortBalance", "mortRate", "mortStart", "mortTerm", "mortExtra", "mortPI"
