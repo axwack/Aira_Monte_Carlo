@@ -1498,6 +1498,7 @@ const CSS = `
   .run-btn:hover { opacity:0.9; box-shadow:0 6px 20px rgba(14,165,233,0.35); }
   .run-btn:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
   .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; min-height:0; }
+  .main > * { flex-shrink:0; }
   .flag-w { border-left:3px solid #f59e0b; background:rgba(245,158,11,0.1); padding:7px 12px; font-size:12px; color:#fde68a; border-radius:0 8px 8px 0; margin-bottom:4px; font-weight:500; }
   .flag-i { border-left:3px solid #38bdf8; background:rgba(56,189,248,0.08); color:#bae6fd; border-radius:0 8px 8px 0; padding:7px 12px; font-size:12px; margin-bottom:4px; font-weight:500; }
   .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
@@ -4586,8 +4587,8 @@ function ProfileWizard({ values, onChange }) {
         background: "rgba(255,255,255,0.02)",
         border: "1px solid rgba(255,255,255,0.08)",
         borderRadius: 12,
-        overflow: "hidden",
-        alignItems: "start"
+        alignItems: "start",
+        flexShrink: 0,
       }}
     >
       {/* LEFT SIDEBAR */}
