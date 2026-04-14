@@ -391,6 +391,14 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   const cashRealReturn = (p.cashRealReturn ?? 1.0) / 100;
   const useJointTable = p.useJointRmdTable ?? false;
 
+  // Pre-compute annual mortgage P&I obligation (constant across all paths)
+  let mortAnnualPI = 0, mortPayoffYr = 0;
+  if (p.mortBalance > 0) {
+    const ms = mortgageSchedule(p.mortBalance, p.mortRate || 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
+    mortAnnualPI = ms.pmt * 12;
+    mortPayoffYr = ms.payoffYr;
+  }
+
   // Simplified Joint & Last Survivor table (assumes spouse is 10 years younger)
   const JOINT_RMD_TABLE = {
     73: 25.3, 74: 24.6, 75: 24.0, 76: 23.4, 77: 22.8,
@@ -571,7 +579,10 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       const ss = age >= p.ssAge ? p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y) : 0;
       const abReliable = rand() < (p.abReliability || 80)/100;
       const ab = p.useAb && abReliable ? p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20)) : 0;
-      const need = Math.max(0, sp - ss - ab);
+      // Add annual mortgage P&I to the portfolio draw while the mortgage is active
+      const calYear = 2026 + (age - p.currentAge);
+      const mortCost = mortAnnualPI > 0 && calYear < mortPayoffYr ? mortAnnualPI : 0;
+      const need = Math.max(0, sp - ss - ab) + mortCost;
 
       // RMD calculation
       let rmd = 0;
@@ -3152,8 +3163,13 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
   const [showHow, setShowHow] = useState(false);
   const accPhase = `Age ${params.currentAge} → ${params.retireAge}`;
   const retPhase = `Age ${params.retireAge} → ${params.endAge}`;
-  const mortAnnual = Math.round((params.mortBalance > 0 ? 1847.15 : 0) * 12);
-  const mortPayoffAge = params.retireAge + 4;
+  const mortSched = params.mortBalance > 0
+    ? mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0)
+    : null;
+  const mortAnnual = mortSched ? mortSched.pmt * 12 : 0;
+  const mortPayoffAge = mortSched
+    ? params.currentAge + (mortSched.payoffYr - new Date().getFullYear())
+    : 0;
   const rateColor = (r) =>
     r >= 0.9
       ? "#0d9488"
@@ -7077,7 +7093,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
    • Stale results detection (amber Re-run button)
 
 ════════════════════════════════════════════════════════════════ */
-export { runMC };
+export { runMC, mortgageSchedule };
 /*Disclaimer and Terms of Use
 Last Updated: April 11, 2026
 
