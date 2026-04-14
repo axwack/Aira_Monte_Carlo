@@ -317,11 +317,13 @@ function smileMult(age) {
   if (age < 85) return 0.8;
   return 0.9;
 }
-function taxDragRate(age, ssAge, useTax) {
+function taxDragRate(age, ssAge, useTax, filingStatus = "mfj") {
   if (!useTax) return 0;
-  if (age < ssAge) return 0.072;
-  if (age < 73) return 0.09;
-  return 0.132;
+  // Single filers hit higher brackets sooner (halved thresholds, halved deduction)
+  const single = filingStatus === "single";
+  if (age < ssAge) return single ? 0.092 : 0.072;
+  if (age < 73)    return single ? 0.115 : 0.090;
+  return                  single ? 0.162 : 0.132;
 }
 function guytonKlingerWithdrawal(
   portfolioValue,
@@ -455,7 +457,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
     const ab0 = p.useAb ? p.ab : 0;
-    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax));
+    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
     for (let y = 0; y < retYrs; y++) {
@@ -697,7 +699,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
     const ab0 = p.useAb ? p.ab : 0;
-    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax));
+    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
     for (let y = 0; y < retYrs; y++) {
@@ -719,7 +721,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
       const ab = p.useAb && rand() < (p.abReliability || 80) / 100
         ? p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20))
         : 0;
-      const td = taxDragRate(age, p.ssAge, p.tax);
+      const td = taxDragRate(age, p.ssAge, p.tax, p.filingStatus);
       const hShock = age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100
         ? (p.hcMin || 70_000) + rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000))
         : 0;
@@ -4551,209 +4553,6 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     </div>
   );
 }
-/*
-function ActionPlanTab() {
-  const milestones = [
-    {
-      date: "Now · Age 56 (Mar 2026)",
-      color: "#0ea5e9",
-      status: "active",
-      items: [
-        "Alpha FMC engaged · $38,525/yr into 401k",
-        "NVDA trigger @ $162.45 armed 🔴",
-        "TSLA trigger @ $341.60 armed 🔴",
-        "SGOV dry powder $134,895 ready",
-        "VOO→VTI Fidelity Roth ✅ · FXAIX→FSKAX Solo 401k ✅",
-      ],
-    },
-    {
-      date: "Bucket 2 Begins · Age 58 (Jan 2028)",
-      color: "#a78bfa",
-      status: "upcoming",
-      items: [
-        "Begin SCHD in Solo 401k · DRIP ON",
-        "No income ETFs before this date",
-      ],
-    },
-    {
-      date: "Alpha FMC Ends · Age 58 (Mar 2028)",
-      color: "#a78bfa",
-      status: "upcoming",
-      items: [
-        "MVL Advisors target: $20K/mo C2C",
-        "Solo 401k resumes ~$77K/yr max",
-      ],
-    },
-    {
-      date: "D-Day 🎯 · Age 60 (Mar 14, 2030)",
-      color: "#10b981",
-      status: "target",
-      items: [
-        "Target $3.2M liquid · Trigger $3.5M",
-        "Retire · Solo Abroad🌴",
-        "Bucket strategy operational · GK engaged",
-      ],
-    },
-    {
-      date: "SS Gap · Ages 60-64 (Jan 2031-Mar 2034)",
-      color: "#f87171",
-      status: "critical",
-      items: [
-        "Zero SS for 3 years — highest-risk window",
-        "Bucket 1 + Bucket 2 + Rental covers expenses",
-        "🚩 Always flag",
-      ],
-    },
-    {
-      date: "Roth Window · Ages 61-63",
-      color: "#fbbf24",
-      status: "upcoming",
-      items: [
-        "~$60K/yr at 22% bracket",
-        "Golden 2033 (age 63): ~$210K conversion",
-      ],
-    },
-    {
-      date: "SS Starts · Age 64 (Mar 2034)",
-      color: "#10b981",
-      status: "upcoming",
-      items: [
-        "$2,629/mo ($31,543/yr) · CLOSED DECISION",
-        "GK prosperity rule likely triggers — spend more",
-      ],
-    },
-    {
-      date: "RMDs Begin · Age 73 (2043)",
-      color: "#f97316",
-      status: "future",
-      items: [
-        "Joint & Last Survivor table ",
-        "With conversions: ~$28K/yr · Without: ~$272K/yr",
-      ],
-    },
-  ];
-  const critical = [
-    "SS gap Jan 2031→Mar 2034",
-    "NJ domicile — FL before Dec 31, 2030",
-    "AAPL concentration ~15% Solo 401k",
-  ];
-  const actions = [
-    "Confirm Alpha 401k elections in Empower",
-    "NJ tax attorney consultation 2029",
-    "Get Chris earning income → Roth IRA",
-    "Backdoor Roth Vin + Mira",
-    "CSS Profile before Christopher applies (2027)",
-  ];
-  const onTrack = [
-    "Bootstrap MC engine 99yr S&P + 50yr bonds",
-    "Roth IRA ~$732K combined · growth only",
-    "Solo 401k $1.658M · FSKAX ✅",
-    "Vista Cay debt-free · Rental $20K ready",
-    "VOO→VTI ✅ · FXAIX→FSKAX ✅",
-  ];
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3,1fr)",
-          gap: 10,
-        }}
-      >
-        <div className="ap-col">
-          <div className="ap-hdr" style={{ color: "#ef4444" }}>
-            🔴 Critical
-          </div>
-          {critical.map((i) => (
-            <div key={i} className="ap-item">
-              • {i}
-            </div>
-          ))}
-        </div>
-        <div className="ap-col">
-          <div className="ap-hdr" style={{ color: "#fbbf24" }}>
-            🟡 Action items
-          </div>
-          {actions.map((i) => (
-            <div key={i} className="ap-item">
-              • {i}
-            </div>
-          ))}
-        </div>
-        <div className="ap-col">
-          <div className="ap-hdr" style={{ color: "#10b981" }}>
-            🟢 On track
-          </div>
-          {onTrack.map((i) => (
-            <div key={i} className="ap-item">
-              • {i}
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="chart-card">
-        <div className="ct">Milestone timeline · D-Day and beyond</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-          {milestones.map((m, i) => (
-            <div
-              key={m.date}
-              style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                }}
-              >
-                <div
-                  className="ms-dot"
-                  style={{
-                    background:
-                      m.status === "active" || m.status === "target"
-                        ? m.color
-                        : `${m.color}44`,
-                    border: `2px solid ${m.color}`,
-                  }}
-                />
-                {i < milestones.length - 1 && (
-                  <div
-                    className="ms-line"
-                    style={{
-                      height: Math.max(30, m.items.length * 16 + 10),
-                      flex: "none",
-                    }}
-                  />
-                )}
-              </div>
-              <div style={{ paddingBottom: 12, flex: 1 }}>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: m.color,
-                    marginBottom: 3,
-                  }}
-                >
-                  {m.date}
-                </div>
-                {m.items.map((it) => (
-                  <div
-                    key={it}
-                    style={{ fontSize: 10, color: "#64748b", marginBottom: 2 }}
-                  >
-                    · {it}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-*/
 function ProfileWizard({ values, onChange }) {
   const [step, setStep] = useState(0);
 
@@ -6916,7 +6715,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             <div className="gk-bar">
               <strong style={{ color: "#5eead4" }}>GK Guardrails:</strong> Floor{" "}
               {fmtM(params.gkFloor)} (
-              {twoHousehold ? "both households" : "Vin solo"}) · Ceiling{" "}
+              {twoHousehold ? "both households" : (assumptions.name || "solo")}) · Ceiling{" "}
               {fmtM(params.gkCeiling)} · Initial WR {swr}%. Rental modeled at
               80% reliability. Healthcare shocks 3.5%/yr from age 72. As Bill
               Perkins says — spend in the right life phase. 🌴
