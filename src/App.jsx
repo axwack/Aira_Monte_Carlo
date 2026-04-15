@@ -5108,6 +5108,59 @@ function AboutYouPanel({ values, onChange }) {
   );
 }
 
+/* ── Stable module-level helpers for AssumptionsPanel ──────────────────
+   Defined OUTSIDE the component so their reference never changes between
+   renders — prevents React from unmounting/remounting inputs on each keystroke.
+*/
+function ARow({ label, desc, children }) {
+  return (
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+      <div>
+        <div style={{ fontSize:12, color:"#e2e8f0", fontWeight:500 }}>{label}</div>
+        {desc && <div style={{ fontSize:10, color:"#475569", marginTop:2 }}>{desc}</div>}
+      </div>
+      <div style={{ marginLeft:16, flexShrink:0 }}>{children}</div>
+    </div>
+  );
+}
+function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+      <input
+        type="number"
+        value={value ?? ""}
+        min={min} max={max} step={step}
+        onChange={(e) => onSet(Number(e.target.value))}
+        style={{ width:80, background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"right" }}
+      />
+      {suffix && <span style={{ fontSize:11, color:"#475569" }}>{suffix}</span>}
+    </div>
+  );
+}
+function AStateSelect({ value, onSet }) {
+  return (
+    <select
+      value={value || "NJ"}
+      onChange={(e) => onSet(e.target.value)}
+      style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
+    >
+      {Object.entries(STATE_TAX_RATES).map(([state, rate]) => (
+        <option key={state} value={state}>{state} ({(rate * 100).toFixed(1)}%)</option>
+      ))}
+    </select>
+  );
+}
+function ADateInput({ value, onSet }) {
+  return (
+    <input
+      type="date"
+      value={value || ""}
+      onChange={(e) => onSet(e.target.value)}
+      style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
+    />
+  );
+}
+
 function AssumptionsPanel({ values, onChange }) {
   const {
     dob,
@@ -5126,96 +5179,6 @@ function AssumptionsPanel({ values, onChange }) {
   const derivedAge = dob
     ? Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 3600 * 1000))
     : "—";
-  const Row = ({ label, desc, children }) => (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: "10px 0",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-      }}
-    >
-      <div>
-        <div style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 500 }}>
-          {label}
-        </div>
-        {desc && (
-          <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
-            {desc}
-          </div>
-        )}
-      </div>
-      <div style={{ marginLeft: 16, flexShrink: 0 }}>{children}</div>
-    </div>
-  );
-  const NumInput = ({ k, min, max, step, suffix = "" }) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <input
-        type="number"
-        value={values[k]}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(e) => onChange(k, Number(e.target.value))}
-        style={{
-          width: 80,
-          background: "#0d1b2a",
-          border: "1px solid #1e3a5f",
-          color: "#e2e8f0",
-          borderRadius: 6,
-          padding: "4px 8px",
-          fontSize: 12,
-          fontFamily: "'DM Mono',monospace",
-          textAlign: "right",
-        }}
-      />
-      {suffix && (
-        <span style={{ fontSize: 11, color: "#475569" }}>{suffix}</span>
-      )}
-    </div>
-  );
-  const StateSelect = ({ k }) => {
-    const [local, setLocal] = useState(values[k] || "NJ");
-    useEffect(() => { setLocal(values[k] || "NJ"); }, [values[k]]);
-    return (
-      <select
-        value={local}
-        onChange={(e) => { setLocal(e.target.value); onChange(k, e.target.value); }}
-        style={{
-          background: "#0d1b2a",
-          border: "1px solid #1e3a5f",
-          color: "#e2e8f0",
-          borderRadius: 6,
-          padding: "4px 8px",
-          fontSize: 12,
-          fontFamily: "'DM Mono',monospace",
-        }}
-      >
-        {Object.entries(STATE_TAX_RATES).map(([state, rate]) => (
-          <option key={state} value={state}>
-            {state} ({(rate * 100).toFixed(1)}%)
-          </option>
-        ))}
-      </select>
-    );
-  };
-  const DateInput = ({ k }) => (
-    <input
-      type="date"
-      value={values[k]}
-      onChange={(e) => onChange(k, e.target.value)}
-      style={{
-        background: "#0d1b2a",
-        border: "1px solid #1e3a5f",
-        color: "#e2e8f0",
-        borderRadius: 6,
-        padding: "4px 8px",
-        fontSize: 12,
-        fontFamily: "'DM Mono',monospace",
-      }}
-    />
-  );
 
 
   return (
@@ -5240,64 +5203,49 @@ function AssumptionsPanel({ values, onChange }) {
         >
           Personal Profile
         </div>
-        <Row
+        <ARow
           label="Date of Birth"
           desc={`Current age: ${derivedAge} · Used to derive D-Day and accumulation years`}
         >
-          <DateInput k="dob" />
-        </Row>
-        <Row
+          <ADateInput value={values.dob} onSet={(v) => onChange("dob", v)} />
+        </ARow>
+        <ARow
           label="State of Residence at Retirement"
           desc="State where RMD taxes will be applied. Use the Two Household toggle for out-of-country scenarios.">
-          <StateSelect k="stateOfResidence" />
-        </Row>
+          <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
+        </ARow>
 
-        <Row
+        <ARow
           label="Rental net income / yr"
           desc="Net after expenses · Always use net, never gross"
         >
-          <NumInput k="ab" min={0} max={100000} step={1000} suffix="/yr" />
-        </Row>
-        <Row
+          <ANumInput value={values.ab} onSet={(v) => onChange("ab", v)} min={0} max={100000} step={1000} suffix="/yr" />
+        </ARow>
+        <ARow
           label="Social Security Benefit"
           desc="Monthly benefit at your SS start age"
         >
-          <NumInput k="ssb" min={0} max={5000} step={100} suffix="/mo" />
-        </Row>
-        <Row
-            label="Cash real return"
-            desc="Annual real return on cash/savings (e.g., HYSA)"
+          <ANumInput value={values.ssb} onSet={(v) => onChange("ssb", v)} min={0} max={5000} step={100} suffix="/mo" />
+        </ARow>
+        <ARow label="Cash real return" desc="Annual real return on cash/savings (e.g., HYSA)">
+          <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} suffix="%" />
+        </ARow>
+        <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
+          <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
+        </ARow>
+        <ARow label="Federal Filing Status" desc="MFJ doubles standard deduction ($32,200) and uses wider brackets. Single uses $16,100 deduction and narrower brackets.">
+          <select
+            value={values.filingStatus || "mfj"}
+            onChange={(e) => onChange("filingStatus", e.target.value)}
+            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
           >
-        <NumInput k="cashRealReturn" min={0} max={3} step={0.1} suffix="%" />
-      </Row>
-      <Row
-          label="Employer Start Date (Countdown to D-Day)"
-          desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day"
-        >
-          <DateInput k="employerStartDate" />
-      </Row>
-      <Row
-        label="Federal Filing Status"
-        desc="MFJ doubles standard deduction ($32,200) and uses wider brackets. Single uses $16,100 deduction and narrower brackets."
-      >
-        <select
-          value={values.filingStatus || "mfj"}
-          onChange={(e) => onChange("filingStatus", e.target.value)}
-          style={{
-            background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0",
-            borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer",
-          }}
-        >
-          <option value="mfj">Married Filing Jointly (MFJ)</option>
-          <option value="single">Single</option>
-        </select>
-      </Row>
-      <Row
-        label="Home / RE Annual Growth"
-        desc="Annual appreciation rate applied to real estate values in Net Worth projection"
-      >
-        <NumInput k="reGrowthRate" min={0} max={10} step={0.5} suffix="%" />
-      </Row>
+            <option value="mfj">Married Filing Jointly (MFJ)</option>
+            <option value="single">Single</option>
+          </select>
+        </ARow>
+        <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in Net Worth projection">
+          <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
+        </ARow>
       <Toggle
         val={values.useJointRmdTable}
         onChange={(v) => onChange("useJointRmdTable", v)}
@@ -5315,7 +5263,7 @@ function AssumptionsPanel({ values, onChange }) {
           Separate housing &amp; fixed obligations from core lifestyle spend. The MC engine adds each carveout to the portfolio draw automatically.
         </div>
 
-        <Row label="Housing type" desc="Own = mortgage P&I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
+        <ARow label="Housing type" desc="Own = mortgage P&I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
           <select
             value={values.housingType || "own"}
             onChange={(e) => onChange("housingType", e.target.value)}
@@ -5325,12 +5273,12 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="rent">Rent</option>
             <option value="none">None / already in spend</option>
           </select>
-        </Row>
+        </ARow>
 
         {(values.housingType || "own") === "rent" && (
-          <Row label="Annual rent" desc="Today's dollars — inflated each year in simulation">
-            <NumInput k="annualRent" min={0} max={60000} step={500} suffix="/yr" />
-          </Row>
+          <ARow label="Annual rent" desc="Today's dollars — inflated each year in simulation">
+            <ANumInput value={values.annualRent} onSet={(v) => onChange("annualRent", v)} min={0} max={60000} step={500} suffix="/yr" />
+          </ARow>
         )}
 
         {/* Carveouts */}
@@ -5435,85 +5383,41 @@ function AssumptionsPanel({ values, onChange }) {
         >
           Monte Carlo Model Parameters
         </div>
-        <Row
-          label="Rental reliability"
-          desc="Probability Rental income arrives in any given year (default 80%)"
-        >
-          <NumInput k="abReliability" min={0} max={100} step={5} suffix="%" />
-        </Row>
-        <Row
-          label="Rental income growth / yr"
-          desc="Annual growth rate for Rental income (default 3%)"
-        >
-          <NumInput k="abGrowth" min={0} max={10} step={0.5} suffix="%" />
-        </Row>
-        <Row
-          label="SS COLA / yr"
-          desc="Social Security cost-of-living adjustment (default 2.4%)"
-        >
-          <NumInput k="ssCola" min={0} max={6} step={0.1} suffix="%" />
-        </Row>
-        <Row
-          label="Pre-retirement equity weight"
-          desc="Equity % before retirement age (default 91%)"
-        >
-          <NumInput k="preRetireEq" min={50} max={100} step={1} suffix="%" />
-        </Row>
-        <Row
-          label="Post-retirement equity weight"
-          desc="Equity % after retirement age (default 70%)"
-        >
-          <NumInput k="postRetireEq" min={30} max={90} step={1} suffix="%" />
-        </Row>
+        <ARow label="Rental reliability" desc="Probability Rental income arrives in any given year (default 80%)">
+          <ANumInput value={values.abReliability} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
+        </ARow>
+        <ARow label="Rental income growth / yr" desc="Annual growth rate for Rental income (default 3%)">
+          <ANumInput value={values.abGrowth} onSet={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} suffix="%" />
+        </ARow>
+        <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
+          <ANumInput value={values.ssCola} onSet={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} suffix="%" />
+        </ARow>
+        <ARow label="Pre-retirement equity weight" desc="Equity % before retirement age (default 91%)">
+          <ANumInput value={values.preRetireEq} onSet={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} suffix="%" />
+        </ARow>
+        <ARow label="Post-retirement equity weight" desc="Equity % after retirement age (default 70%)">
+          <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} suffix="%" />
+        </ARow>
       </div>
-      <div
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 10,
-          padding: 16,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: "#f87171",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            marginBottom: 4,
-          }}
-        >
+      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#f87171", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
           Healthcare Shock Model
         </div>
-        <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
-          In each simulation year after the shock age, there is a random
-          probability of a large one-time healthcare cost.
+        <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
+          In each simulation year after the shock age, there is a random probability of a large one-time healthcare cost.
         </div>
-        <Row
-          label="Shock start age"
-          desc="Age after which annual healthcare shocks can occur (default 72)"
-        >
-          <NumInput k="hcShockAge" min={60} max={85} step={1} suffix="yrs" />
-        </Row>
-        <Row
-          label="Annual shock probability"
-          desc="Chance of a shock in any given year (default 3.5%)"
-        >
-          <NumInput k="hcProb" min={0} max={20} step={0.5} suffix="%" />
-        </Row>
-        <Row
-          label="Shock cost — minimum"
-          desc="Low end of randomized healthcare shock cost (default $70K)"
-        >
-          <NumInput k="hcMin" min={0} max={200000} step={5000} suffix="$" />
-        </Row>
-        <Row
-          label="Shock cost — maximum"
-          desc="High end of randomized healthcare shock cost (default $130K)"
-        >
-          <NumInput k="hcMax" min={0} max={500000} step={5000} suffix="$" />
-        </Row>
+        <ARow label="Shock start age" desc="Age after which annual healthcare shocks can occur (default 72)">
+          <ANumInput value={values.hcShockAge} onSet={(v) => onChange("hcShockAge", v)} min={60} max={85} step={1} suffix="yrs" />
+        </ARow>
+        <ARow label="Annual shock probability" desc="Chance of a shock in any given year (default 3.5%)">
+          <ANumInput value={values.hcProb} onSet={(v) => onChange("hcProb", v)} min={0} max={20} step={0.5} suffix="%" />
+        </ARow>
+        <ARow label="Shock cost — minimum" desc="Low end of randomized healthcare shock cost (default $70K)">
+          <ANumInput value={values.hcMin} onSet={(v) => onChange("hcMin", v)} min={0} max={200000} step={5000} suffix="$" />
+        </ARow>
+        <ARow label="Shock cost — maximum" desc="High end of randomized healthcare shock cost (default $130K)">
+          <ANumInput value={values.hcMax} onSet={(v) => onChange("hcMax", v)} min={0} max={500000} step={5000} suffix="$" />
+        </ARow>
       </div>
       <div
         style={{
@@ -6263,6 +6167,13 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 // Tax & RE
                 filingStatus: assumptions.filingStatus || "mfj",
                 reGrowthRate: assumptions.reGrowthRate ?? 3.0,
+                useJointRmdTable: assumptions.useJointRmdTable || false,
+                cashRealReturn: assumptions.cashRealReturn ?? 1.0,
+                // Expense model
+                housingType: assumptions.housingType || "own",
+                annualRent: assumptions.annualRent || 0,
+                carveouts: assumptions.carveouts || [],
+                rothConversionTarget: assumptions.rothConversionTarget || "off",
                 // Real estate
                 properties: assumptions.properties || BLANK_PROFILE.properties,
                 // Account breakdown
@@ -6279,7 +6190,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 hcMax: assumptions.hcMax,
                 // Meta
                 exportedAt: new Date().toISOString(),
-                appVersion: "6.5",
+                appVersion: APP_VERSION,
               }, assumptions.name ? `AiRA_Profile_${assumptions.name}` : "AiRA_Profile")}>
               ⬇ Export
             </button>
