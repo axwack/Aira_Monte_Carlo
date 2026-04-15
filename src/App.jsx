@@ -155,6 +155,11 @@ const BLANK_PROFILE = {
   reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
+  // Expense model
+  housingType: "own",           // "own" | "rent" | "none"
+  annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
+  carveouts: [],                // [{id, label, annual, endYear}] fixed obligations (car, HOA, etc.)
+  rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
   // Account breakdown (feeds port total)
   accounts: [
     { id: "1", category: "pretax", name: "401(k)", balance: 0 },
@@ -184,6 +189,10 @@ const DEMO_PROFILE = {
   reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
+  housingType: "own",
+  annualRent: 0,
+  carveouts: [],
+  rothConversionTarget: "off",
   currentAge: 51,
   retireAge: 62,
   stateOfResidence: "NJ",
@@ -388,8 +397,21 @@ function calcYearTax(
     if (taxableIncome > b.lo) marginalBracket = b.rate;
     else break;
   }
-  return { fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket };
+  return { fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket, taxableIncome };
 }
+
+/**
+ * Returns the TAXABLE INCOME ceiling (after std deduction) for a given bracket target.
+ * Values are 2026 estimates, inflated by inflFactor for future years.
+ */
+function getBracketCeiling(target, filingStatus, inflFactor) {
+  const mfj = filingStatus !== "single";
+  const ceilings = mfj
+    ? { "12": 100_800, "22": 211_400, "24": 403_550, "irmaa": 212_000 }
+    : { "12":  50_400, "22": 105_700, "24": 201_800, "irmaa": 106_000 };
+  return Math.round((ceilings[target] ?? ceilings["22"]) * inflFactor);
+}
+
 function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
@@ -587,14 +609,27 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       }
       lastReturn = r;
 
-      // Income from SS and Airbnb
+      // Income from SS and rental/AB
       const ss = age >= p.ssAge ? p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y) : 0;
       const abReliable = rand() < (p.abReliability || 80)/100;
       const ab = p.useAb && abReliable ? p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20)) : 0;
-      // Add annual mortgage P&I to the portfolio draw while the mortgage is active
+
+      // Housing cost (own = mortgage P&I while active, rent = inflation-adjusted rent, none = 0)
       const calYear = 2026 + (age - p.currentAge);
-      const mortCost = mortAnnualPI > 0 && calYear < mortPayoffYr ? mortAnnualPI : 0;
-      const need = Math.max(0, sp - ss - ab) + mortCost;
+      const housingType = p.housingType || "own";
+      let housingCost = 0;
+      if (housingType === "own") {
+        housingCost = mortAnnualPI > 0 && calYear < mortPayoffYr ? mortAnnualPI : 0;
+      } else if (housingType === "rent") {
+        housingCost = Math.round((p.annualRent || 0) * inflY);
+      }
+
+      // Active fixed carveouts (car loans, HOA, etc.) — inflation-adjusted
+      const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
+        return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * inflY) : 0);
+      }, 0);
+
+      const need = Math.max(0, sp - ss - ab) + housingCost + carveoutCost;
 
       // RMD calculation
       let rmd = 0;
@@ -611,7 +646,8 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
 
       // Tax calculation
       const yr = 2026 + (age - p.currentAge);
-      const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj");
+      const filingStatus = p.filingStatus || "mfj";
+      const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY, filingStatus);
       const totalTax = taxResult.totalTax;
       const totalWithdrawalNeeded = totalNeed + totalTax;
 
@@ -637,6 +673,25 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       taxable = Math.max(0, taxable - fromTaxable);
       pretax  = Math.max(0, pretax  - fromPretax - rmd);
       roth    = Math.max(0, roth    - fromRoth);
+
+      // Bracket-fill Roth conversion (after spending withdrawals, before growth)
+      if (p.rothConversionTarget && p.rothConversionTarget !== "off" && pretax > 1000) {
+        const inflFactor = Math.pow(1 + inflY, Math.max(0, yr - 2026));
+        const bracketCeiling = getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor);
+        // Room = ceiling minus current taxable income (from spending + RMD)
+        const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
+        if (room > 500) {
+          // Convert up to room, capped at 40% of pretax to avoid over-converting
+          const convAmt = Math.min(room, pretax * 0.4);
+          // Tax on conversion at the marginal rate, funded from pretax
+          const convTax = Math.round(convAmt * (taxResult.marginalBracket || 0.22));
+          const totalCost = convAmt + convTax;
+          if (pretax >= totalCost) {
+            pretax -= totalCost;
+            roth   += convAmt;
+          }
+        }
+      }
 
       // Apply growth
       cash    = Math.max(0, cash    * (1 + cashRealReturn));
@@ -5203,6 +5258,116 @@ function AssumptionsPanel({ values, onChange }) {
         accent="#a78bfa"
       />
       </div>
+
+      {/* ── Expense Model ── */}
+      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#f59e0b", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
+          Expense Model
+        </div>
+        <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
+          Separate housing &amp; fixed obligations from core lifestyle spend. The MC engine adds each carveout to the portfolio draw automatically.
+        </div>
+
+        <Row label="Housing type" desc="Own = mortgage P&I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
+          <select
+            value={values.housingType || "own"}
+            onChange={(e) => onChange("housingType", e.target.value)}
+            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
+          >
+            <option value="own">Own (mortgage)</option>
+            <option value="rent">Rent</option>
+            <option value="none">None / already in spend</option>
+          </select>
+        </Row>
+
+        {(values.housingType || "own") === "rent" && (
+          <Row label="Annual rent" desc="Today's dollars — inflated each year in simulation">
+            <NumInput k="annualRent" min={0} max={60000} step={500} suffix="/yr" />
+          </Row>
+        )}
+
+        {/* Carveouts */}
+        <div style={{ marginTop:12 }}>
+          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:600, marginBottom:8 }}>
+            Fixed Obligations (car loans, HOA, etc.)
+          </div>
+          {(values.carveouts || []).map((c, idx) => (
+            <div key={c.id} style={{ display:"grid", gridTemplateColumns:"1fr 90px 80px 28px", gap:6, marginBottom:6, alignItems:"center" }}>
+              <input
+                type="text"
+                value={c.label}
+                placeholder="Label"
+                onChange={(e) => {
+                  const updated = [...(values.carveouts||[])];
+                  updated[idx] = { ...c, label: e.target.value };
+                  onChange("carveouts", updated);
+                }}
+                style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
+              />
+              <input
+                type="number"
+                value={c.annual}
+                min={0}
+                step={100}
+                placeholder="$/yr"
+                onChange={(e) => {
+                  const updated = [...(values.carveouts||[])];
+                  updated[idx] = { ...c, annual: Number(e.target.value) };
+                  onChange("carveouts", updated);
+                }}
+                style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"right" }}
+              />
+              <input
+                type="number"
+                value={c.endYear}
+                min={2025}
+                max={2080}
+                step={1}
+                placeholder="End yr"
+                onChange={(e) => {
+                  const updated = [...(values.carveouts||[])];
+                  updated[idx] = { ...c, endYear: Number(e.target.value) };
+                  onChange("carveouts", updated);
+                }}
+                style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"right" }}
+              />
+              <button
+                onClick={() => onChange("carveouts", (values.carveouts||[]).filter((_,i) => i !== idx))}
+                style={{ background:"rgba(239,68,68,0.15)", border:"1px solid rgba(239,68,68,0.3)", color:"#f87171", borderRadius:5, cursor:"pointer", fontSize:13, padding:"2px 6px" }}
+              >×</button>
+            </div>
+          ))}
+          <div style={{ fontSize:9, color:"#334155", marginBottom:6 }}>Label · $/yr · End year (calendar year when obligation ends)</div>
+          <button
+            onClick={() => onChange("carveouts", [...(values.carveouts||[]), { id: Date.now().toString(), label:"", annual:0, endYear: new Date().getFullYear() + 5 }])}
+            style={{ fontSize:11, background:"rgba(14,165,233,0.1)", border:"1px solid rgba(14,165,233,0.25)", color:"#38bdf8", borderRadius:6, padding:"5px 12px", cursor:"pointer" }}
+          >+ Add obligation</button>
+        </div>
+      </div>
+
+      {/* ── Roth Conversion Strategy ── */}
+      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#a78bfa", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
+          Roth Conversion Strategy
+        </div>
+        <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
+          After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
+        </div>
+        <Row label="Bracket-fill target" desc="AiRA converts pretax → Roth up to this bracket ceiling each year (off = no conversions)">
+          <select
+            value={values.rothConversionTarget || "off"}
+            onChange={(e) => onChange("rothConversionTarget", e.target.value)}
+            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
+          >
+            <option value="off">Off — no conversions</option>
+            <option value="12">Fill to top of 12% bracket</option>
+            <option value="22">Fill to top of 22% bracket</option>
+            <option value="24">Fill to top of 24% bracket</option>
+            <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
+          </select>
+        </Row>
+      </div>
+
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -5455,7 +5620,7 @@ function RetirementPanel({ values, onChange }) {
         {[
           {
             k: "sp",
-            label: "Annual Spend (Both Households)",
+            label: "Core Lifestyle Spend (excl. housing & fixed obligations)",
             min: 30000,
             max: 200000,
             step: 1000,
@@ -5811,6 +5976,11 @@ export default function AiRAForecaster() {
     mortExtra: BLANK_PROFILE.mortExtra,
     mortPI: BLANK_PROFILE.mortPI,
     properties: BLANK_PROFILE.properties,
+    // Expense model
+    housingType: BLANK_PROFILE.housingType,
+    annualRent: BLANK_PROFILE.annualRent,
+    carveouts: BLANK_PROFILE.carveouts,
+    rothConversionTarget: BLANK_PROFILE.rothConversionTarget,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
@@ -5913,6 +6083,10 @@ export default function AiRAForecaster() {
       properties: assumptions.properties || BLANK_PROFILE.properties,
       filingStatus: assumptions.filingStatus || "mfj",
       reGrowthRate: assumptions.reGrowthRate ?? 3.0,
+      housingType: assumptions.housingType || "own",
+      annualRent: assumptions.annualRent || 0,
+      carveouts: assumptions.carveouts || [],
+      rothConversionTarget: assumptions.rothConversionTarget || "off",
       withdrawalStrategy: withdrawalStrategy,
       fixedWithdrawalRate: 0.04,
       vanguardInitialRate: 0.04,
@@ -6117,7 +6291,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   "filingStatus", "reGrowthRate",
                   "abReliability", "abGrowth", "ssCola", "preRetireEq", "postRetireEq",
                   "hcShockAge", "hcProb", "hcMin", "hcMax", "accounts",
-                  "mortBalance", "mortRate", "mortStart", "mortTerm", "mortExtra", "mortPI"
+                  "mortBalance", "mortRate", "mortStart", "mortTerm", "mortExtra", "mortPI",
+                  "housingType", "annualRent", "carveouts", "rothConversionTarget", "properties"
                 ];
                 keys.forEach(k => {
                   if (data[k] !== undefined) updateAssumption(k, data[k]);
