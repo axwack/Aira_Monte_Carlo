@@ -4642,8 +4642,9 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     </div>
   );
 }
-function ProfileWizard({ values, onChange }) {
+function ProfileWizard({ values, onChange, onSave }) {
   const [step, setStep] = useState(0);
+  const [saveFlash, setSaveFlash] = useState(false);
 
   const STEPS = [
     { label: "About You", icon: "👤", sub: `${values.currentAge} yrs old` },
@@ -4800,23 +4801,48 @@ function ProfileWizard({ values, onChange }) {
           <div style={{ fontSize: 11, color: "#334155" }}>
             {step + 1} / {STEPS.length}
           </div>
-          <button
-            onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
-            disabled={step === STEPS.length - 1}
-            style={{
-              padding: "7px 18px",
-              borderRadius: 7,
-              border: "none",
-              background: "linear-gradient(135deg,#0d9488,#14b8a6)",
-              color: "white",
-              cursor: step === STEPS.length - 1 ? "not-allowed" : "pointer",
-              fontSize: 12,
-              fontFamily: "inherit",
-              fontWeight: 600,
-            }}
-          >
-            Next →
-          </button>
+          {step < STEPS.length - 1 ? (
+            <button
+              onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
+              style={{
+                padding: "7px 18px",
+                borderRadius: 7,
+                border: "none",
+                background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+                color: "white",
+                cursor: "pointer",
+                fontSize: 12,
+                fontFamily: "inherit",
+                fontWeight: 600,
+              }}
+            >
+              Next →
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                if (onSave) onSave();
+                setSaveFlash(true);
+                setTimeout(() => setSaveFlash(false), 2000);
+              }}
+              style={{
+                padding: "7px 18px",
+                borderRadius: 7,
+                border: "none",
+                background: saveFlash
+                  ? "linear-gradient(135deg,#16a34a,#22c55e)"
+                  : "linear-gradient(135deg,#0ea5e9,#38bdf8)",
+                color: "white",
+                cursor: "pointer",
+                fontSize: 12,
+                fontFamily: "inherit",
+                fontWeight: 600,
+                transition: "background 0.3s",
+              }}
+            >
+              {saveFlash ? "✓ Saved!" : "💾 Save Profile"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -5348,7 +5374,7 @@ function AssumptionsPanel({ values, onChange }) {
         <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
           After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
         </div>
-        <Row label="Bracket-fill target" desc="AiRA converts pretax → Roth up to this bracket ceiling each year (off = no conversions)">
+        <ARow label="Bracket-fill target" desc="AiRA converts pretax → Roth up to this bracket ceiling each year (off = no conversions)">
           <select
             value={values.rothConversionTarget || "off"}
             onChange={(e) => onChange("rothConversionTarget", e.target.value)}
@@ -5360,7 +5386,7 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="24">Fill to top of 24% bracket</option>
             <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
           </select>
-        </Row>
+        </ARow>
       </div>
 
       <div
@@ -5865,7 +5891,17 @@ function formatDate(dateString) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+const STORAGE_KEY = "aira_profile_autosave";
+function loadSavedProfile() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore corrupt data */ }
+  return null;
+}
+
 export default function AiRAForecaster() {
+  const saved = useRef(loadSavedProfile());
   const [mode, setMode] = useState("user");
   const [activeTab, setTab] = useState("networth");
   const [running, setRunning] = useState(false);
@@ -5879,64 +5915,80 @@ export default function AiRAForecaster() {
   const isFirst = useRef(true);
 
   const prof = PROFILES[mode];
-  const [port, setPort] = useState(prof.port);
-  const [contrib, setContrib] = useState(prof.contrib);
-  const [inf, setInf] = useState(prof.inf);
-  const [retAge, setRetAge] = useState(prof.retireAge);
-  const [endAge, setEndAge] = useState(prof.endAge);
-  const [sp, setSp] = useState(prof.sp);
-  const [ssAge, setSsAge] = useState(prof.ssAge);
-  const [ssb, setSsb] = useState(prof.ssb);
-  const [ab, setAb] = useState(prof.ab);
-  const [smile, setSmile] = useState(prof.smile);
-  const [tax, setTax] = useState(prof.tax);
-  const [useAb, setUseAb] = useState(prof.useAb);
-  const [real, setReal] = useState(prof.real);
-  const [twoHousehold, setTwoHousehold] = useState(true);
+  const _s = saved.current; // localStorage snapshot (null if none)
+  const [port, setPort] = useState(_s?.port ?? prof.port);
+  const [contrib, setContrib] = useState(_s?.contrib ?? prof.contrib);
+  const [inf, setInf] = useState(_s?.inf ?? prof.inf);
+  const [retAge, setRetAge] = useState(_s?.retireAge ?? prof.retireAge);
+  const [endAge, setEndAge] = useState(_s?.endAge ?? prof.endAge);
+  const [sp, setSp] = useState(_s?.sp ?? prof.sp);
+  const [ssAge, setSsAge] = useState(_s?.ssAge ?? prof.ssAge);
+  const [ssb, setSsb] = useState(_s?.ssb ?? prof.ssb);
+  const [ab, setAb] = useState(_s?.ab ?? prof.ab);
+  const [smile, setSmile] = useState(_s?.smile ?? prof.smile);
+  const [tax, setTax] = useState(_s?.tax ?? prof.tax);
+  const [useAb, setUseAb] = useState(_s?.useAb ?? prof.useAb);
+  const [real, setReal] = useState(_s?.real ?? prof.real);
+  const [twoHousehold, setTwoHousehold] = useState(_s?.twoHousehold ?? true);
   const [withdrawalStrategy, setWithdrawalStrategy] = useState("gk"); // "gk", "fixed", "vanguard", "risk", "kitces"
 
   const [assumptions, setAssumptions] = useState({
-    // Personal — blank by default, loaded from JSON
-    name: BLANK_PROFILE.name,
-    dob:  BLANK_PROFILE.dob,
-    stateOfResidence: BLANK_PROFILE.stateOfResidence,
-    employerStartDate: BLANK_PROFILE.employerStartDate,
+    // Personal — blank by default, loaded from JSON or localStorage
+    name: _s?.name ?? BLANK_PROFILE.name,
+    dob:  _s?.dob ?? BLANK_PROFILE.dob,
+    stateOfResidence: _s?.stateOfResidence ?? BLANK_PROFILE.stateOfResidence,
+    employerStartDate: _s?.employerStartDate ?? BLANK_PROFILE.employerStartDate,
     // Account breakdown
-    accounts: BLANK_PROFILE.accounts,
+    accounts: _s?.accounts ?? BLANK_PROFILE.accounts,
     // MC model parameters
-    abReliability: BLANK_PROFILE.abReliability,
-    abGrowth:      BLANK_PROFILE.abGrowth,
-    ssCola:        BLANK_PROFILE.ssCola,
-    preRetireEq:   BLANK_PROFILE.preRetireEq,
-    postRetireEq:  BLANK_PROFILE.postRetireEq,
-    hcShockAge:    BLANK_PROFILE.hcShockAge,
-    hcProb:        BLANK_PROFILE.hcProb,
-    hcMin:         BLANK_PROFILE.hcMin,
-    hcMax:         BLANK_PROFILE.hcMax,
-    
+    abReliability: _s?.abReliability ?? BLANK_PROFILE.abReliability,
+    abGrowth:      _s?.abGrowth ?? BLANK_PROFILE.abGrowth,
+    ssCola:        _s?.ssCola ?? BLANK_PROFILE.ssCola,
+    preRetireEq:   _s?.preRetireEq ?? BLANK_PROFILE.preRetireEq,
+    postRetireEq:  _s?.postRetireEq ?? BLANK_PROFILE.postRetireEq,
+    hcShockAge:    _s?.hcShockAge ?? BLANK_PROFILE.hcShockAge,
+    hcProb:        _s?.hcProb ?? BLANK_PROFILE.hcProb,
+    hcMin:         _s?.hcMin ?? BLANK_PROFILE.hcMin,
+    hcMax:         _s?.hcMax ?? BLANK_PROFILE.hcMax,
+
     // Income (also blank by default)
-    ab:  BLANK_PROFILE.ab,
-    ssb: BLANK_PROFILE.ssb,
-    useJointRmdTable: BLANK_PROFILE.useJointRmdTable,
-    cashRealReturn: BLANK_PROFILE.cashRealReturn,
+    ab:  _s?.ab ?? BLANK_PROFILE.ab,
+    ssb: _s?.ssb ?? BLANK_PROFILE.ssb,
+    filingStatus: _s?.filingStatus ?? BLANK_PROFILE.filingStatus,
+    reGrowthRate: _s?.reGrowthRate ?? BLANK_PROFILE.reGrowthRate,
+    useJointRmdTable: _s?.useJointRmdTable ?? BLANK_PROFILE.useJointRmdTable,
+    cashRealReturn: _s?.cashRealReturn ?? BLANK_PROFILE.cashRealReturn,
     // Mortgage
-    mortBalance: BLANK_PROFILE.mortBalance,
-    mortRate: BLANK_PROFILE.mortRate,
-    mortStart: BLANK_PROFILE.mortStart,
-    mortTerm: BLANK_PROFILE.mortTerm,
-    mortExtra: BLANK_PROFILE.mortExtra,
-    mortPI: BLANK_PROFILE.mortPI,
-    properties: BLANK_PROFILE.properties,
+    mortBalance: _s?.mortBalance ?? BLANK_PROFILE.mortBalance,
+    mortRate: _s?.mortRate ?? BLANK_PROFILE.mortRate,
+    mortStart: _s?.mortStart ?? BLANK_PROFILE.mortStart,
+    mortTerm: _s?.mortTerm ?? BLANK_PROFILE.mortTerm,
+    mortExtra: _s?.mortExtra ?? BLANK_PROFILE.mortExtra,
+    mortPI: _s?.mortPI ?? BLANK_PROFILE.mortPI,
+    properties: _s?.properties ?? BLANK_PROFILE.properties,
     // Expense model
-    housingType: BLANK_PROFILE.housingType,
-    annualRent: BLANK_PROFILE.annualRent,
-    carveouts: BLANK_PROFILE.carveouts,
-    rothConversionTarget: BLANK_PROFILE.rothConversionTarget,
+    housingType: _s?.housingType ?? BLANK_PROFILE.housingType,
+    annualRent: _s?.annualRent ?? BLANK_PROFILE.annualRent,
+    carveouts: _s?.carveouts ?? BLANK_PROFILE.carveouts,
+    rothConversionTarget: _s?.rothConversionTarget ?? BLANK_PROFILE.rothConversionTarget,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
     []
   );
+
+  // ── Auto-save profile to localStorage on every change ──
+  useEffect(() => {
+    if (mode !== "user") return; // only save user profile, not demo
+    try {
+      const snapshot = {
+        ...assumptions,
+        port, contrib, inf, retireAge: retAge, endAge, sp,
+        ssAge, ssb, ab, smile, tax, useAb, real, twoHousehold,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    } catch { /* storage full or unavailable */ }
+  }, [mode, assumptions, port, contrib, inf, retAge, endAge, sp, ssAge, ssb, ab, smile, tax, useAb, real, twoHousehold]);
 
   const currentAge = useMemo(() => {
     try {
@@ -5963,28 +6015,37 @@ export default function AiRAForecaster() {
 
   const switchMode = useCallback((m) => {
     setMode(m);
-    const p = PROFILES[m];
+    // When switching back to user mode, restore from localStorage if available
+    const savedData = m === "user" ? loadSavedProfile() : null;
+    const p = savedData || PROFILES[m];
     const acctTotal = (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0);
     setPort(acctTotal > 0 ? acctTotal : p.port);
-    setContrib(p.contrib);
-    setInf(p.inf);
-    setRetAge(p.retireAge);
-    setEndAge(p.endAge);
-    setSp(p.sp);
-    setSsAge(p.ssAge);
-    setSsb(p.ssb);
-    setAb(p.ab);
-    setSmile(p.smile);
-    setTax(p.tax);
-    setUseAb(p.useAb);
-    setReal(p.real);
-    setTwoHousehold(true);
-    if (p.accounts) updateAssumption("accounts", p.accounts);
-    if (p.mortBalance !== undefined) updateAssumption("mortBalance", p.mortBalance);
-    if (p.mortRate !== undefined) updateAssumption("mortRate", p.mortRate);
-    if (p.mortStart) updateAssumption("mortStart", p.mortStart);
-    if (p.mortTerm) updateAssumption("mortTerm", p.mortTerm);
-    if (p.mortExtra !== undefined) updateAssumption("mortExtra", p.mortExtra);
+    setContrib(p.contrib ?? BLANK_PROFILE.contrib);
+    setInf(p.inf ?? BLANK_PROFILE.inf);
+    setRetAge(p.retireAge ?? BLANK_PROFILE.retireAge);
+    setEndAge(p.endAge ?? BLANK_PROFILE.endAge);
+    setSp(p.sp ?? BLANK_PROFILE.sp);
+    setSsAge(p.ssAge ?? BLANK_PROFILE.ssAge);
+    setSsb(p.ssb ?? BLANK_PROFILE.ssb);
+    setAb(p.ab ?? BLANK_PROFILE.ab);
+    setSmile(p.smile ?? BLANK_PROFILE.smile);
+    setTax(p.tax ?? BLANK_PROFILE.tax);
+    setUseAb(p.useAb ?? BLANK_PROFILE.useAb);
+    setReal(p.real ?? BLANK_PROFILE.real);
+    setTwoHousehold(p.twoHousehold ?? true);
+    // Restore ALL assumptions fields
+    const assumptionKeys = [
+      "name", "dob", "stateOfResidence", "employerStartDate",
+      "accounts", "abReliability", "abGrowth", "ssCola", "preRetireEq", "postRetireEq",
+      "hcShockAge", "hcProb", "hcMin", "hcMax",
+      "ab", "ssb", "filingStatus", "reGrowthRate", "useJointRmdTable", "cashRealReturn",
+      "mortBalance", "mortRate", "mortStart", "mortTerm", "mortExtra", "mortPI", "properties",
+      "housingType", "annualRent", "carveouts", "rothConversionTarget",
+    ];
+    assumptionKeys.forEach(k => {
+      if (p[k] !== undefined) updateAssumption(k, p[k]);
+      else if (BLANK_PROFILE[k] !== undefined) updateAssumption(k, BLANK_PROFILE[k]);
+    });
     setR85(null);
     setR90(null);
     setStress(null);
@@ -6972,6 +7033,17 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       if (k === "ssAge") setSsAge(v);
                       if (k === "ssb") setSsb(v);
                       if (k === "ab") setAb(v);
+                    }}
+                    onSave={() => {
+                      try {
+                        const snapshot = {
+                          ...assumptions,
+                          port, contrib, inf, retireAge: retAge, endAge, sp,
+                          ssAge, ssb, ab, smile, tax, useAb, real, twoHousehold,
+                        };
+                        localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+                      } catch { /* storage full */ }
+                      setStale(true);
                     }}
                   />
                 )}
