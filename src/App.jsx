@@ -1170,7 +1170,13 @@ function buildRothExplorer(params = {}) {
     port = 2434000,
     twoHousehold = true,
     rothMode = "fill_22",
+    filingStatus = "mfj",
   } = params;
+
+  const isMFJ = filingStatus === "mfj";
+  const FED_BRACKETS = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
+  const baseStdD = isMFJ ? 32200 : 16100;
+  const age65Extra = isMFJ ? 3300 : 1650;
 
   const infR = inf / 100,
     retireYear = ROTH_BASE_YEAR + (retireAge - currentAge),
@@ -1212,9 +1218,9 @@ function buildRothExplorer(params = {}) {
     for (let age = retireAge; age <= 90; age++) {
       const yr = retireYear + (age - retireAge),
         f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
-      const fB = idxB(FED_BRACKETS_2026, f),
+      const fB = idxB(FED_BRACKETS, f),
         nB = idxB(NJ_BRACKETS_2026, f);
-      const stdD = Math.round(32200 * f) + (age >= 65 ? 3300 : 0);
+      const stdD = Math.round(baseStdD * f) + (age >= 65 ? Math.round(age65Extra * f) : 0);
       const b12t = fB.find((b) => b.rate === 0.12)?.hi || Math.round(100800 * f);
       const b22t = fB.find((b) => b.rate === 0.22)?.hi || Math.round(211400 * f);
       const b24t = fB.find((b) => b.rate === 0.24)?.hi || Math.round(403550 * f);
@@ -2274,11 +2280,11 @@ function RothLadder({ params }) {
         >
           {[
             ["Domicile", domLabel, domColor],
-            ["Filing Status", "MFJ", "#94a3b8"],
+            ["Filing Status", params.filingStatus === "single" ? "Single" : "MFJ", "#94a3b8"],
             ["Bracket Target", modeLabels[rothMode], "#5eead4"],
             [
               "Std Deduction (2026)",
-              "$32,200 (indexed " + params.inf + "%/yr)",
+              "$" + (params.filingStatus === "single" ? "16,100" : "32,200") + " (indexed " + params.inf + "%/yr)",
               "#94a3b8",
             ],
             [
