@@ -1591,6 +1591,7 @@ const CSS = `
   .nw-table th:first-child { text-align:left; }
   .nw-table td { padding:8px 8px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right; font-family:'JetBrains Mono',monospace; color:#e2e8f0; }
   .nw-table td:first-child { text-align:left; font-family:'Inter',sans-serif; color:#f1f5f9; }
+  .wizard-mobile-steps { display:none; }
   .ap-col { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px; }
   .ap-hdr { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:11px; }
   .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); color:#cbd5e1; }
@@ -1599,6 +1600,38 @@ const CSS = `
   .tip-box { background:rgba(10,15,30,0.98); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:9px 12px; font-size:12px; color:#f1f5f9; }
   ::-webkit-scrollbar { width:3px; height:3px; }
   ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.12); border-radius:2px; }
+
+  /* ── Mobile / Responsive ── */
+  @media (max-width: 768px) {
+    .hdr { padding:8px 12px; gap:6px; flex-wrap:wrap; }
+    .logo-sub { display:none; }
+    .mbtn { padding:4px 9px; font-size:10px; }
+    .layout { grid-template-columns:1fr; height:auto; overflow:visible; }
+    .sidebar { border-right:none; border-bottom:1px solid rgba(255,255,255,0.06); max-height:220px; overflow-y:auto; min-height:unset; padding:10px; flex-direction:row; flex-wrap:wrap; gap:8px; }
+    .sb-card { padding:10px; }
+    .main { padding:10px; overflow-y:visible; min-height:unset; }
+    .main > * { flex-shrink:0; }
+    .metrics { grid-template-columns:1fr 1fr; }
+    .sl-row { grid-template-columns:1fr 52px; }
+    .tabs { gap:2px; }
+    .tab { min-width:56px; padding:6px 4px; font-size:10px; }
+    .wizard-grid { grid-template-columns:1fr !important; }
+    .wizard-sidebar { display:none !important; }
+    .wizard-panel { border-radius:0 !important; }
+    .wizard-mobile-steps { display:block !important; }
+    .metrics .met { padding:10px 12px; }
+    .metrics .mv { font-size:17px; }
+    .roth-tbl { font-size:11px; }
+    .roth-tbl th, .roth-tbl td { padding:6px 5px; }
+    .nw-table { font-size:11px; }
+    .nw-table th, .nw-table td { padding:6px 5px; }
+  }
+  @media (max-width: 480px) {
+    .metrics { grid-template-columns:1fr; }
+    .tabs { gap:1px; }
+    .tab { min-width:44px; font-size:9px; padding:5px 3px; }
+    .hdr { justify-content:center; }
+  }
 `;
 
 const Tip = ({ active, payload, label }) => {
@@ -4636,6 +4669,7 @@ function ProfileWizard({ values, onChange }) {
 
   return (
     <div
+      className="wizard-grid"
       style={{
         display: "grid",
         gridTemplateColumns: "220px 1fr",
@@ -4648,6 +4682,7 @@ function ProfileWizard({ values, onChange }) {
     >
       {/* LEFT SIDEBAR */}
       <div
+        className="wizard-sidebar"
         style={{ borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}
       >
         {STEPS.map((s, i) => (
@@ -4705,7 +4740,19 @@ function ProfileWizard({ values, onChange }) {
       </div>
 
       {/* RIGHT PANEL */}
-       <div style={{ padding: 24 }}>
+       <div className="wizard-panel" style={{ padding: 24 }}>
+        {/* Mobile step selector — only visible when sidebar is hidden */}
+        <div className="wizard-mobile-steps" style={{ marginBottom: 16 }}>
+          <select
+            value={step}
+            onChange={(e) => setStep(Number(e.target.value))}
+            style={{ width:"100%", background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"'Inter',sans-serif" }}
+          >
+            {STEPS.map((s, i) => (
+              <option key={i} value={i}>{s.icon} {s.label}</option>
+            ))}
+          </select>
+        </div>
         <div
           style={{
             fontSize: 16,
