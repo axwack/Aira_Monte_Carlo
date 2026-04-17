@@ -1,0 +1,16 @@
+[build]
+  command   = "npm run build"
+  publish   = "build"
+
+[build.environment]
+  NODE_VERSION             = "18"
+  NPM_VERSION              = "10"
+  GENERATE_SOURCEMAP       = "false"
+  CI                       = "false"
+  NETLIFY_NEXT_PLUGIN_SKIP = "true"
+
+# Serve the SPA for all routes
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
