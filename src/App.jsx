@@ -151,8 +151,15 @@ const BLANK_PROFILE = {
     { id:"p2", label:"Property 2",        value:0, mortgage:0, income:0 },
   ],
   // NEW:
+  filingStatus: "mfj",          // "mfj" | "single" — drives federal brackets & std deduction
+  reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
+  // Expense model
+  housingType: "own",           // "own" | "rent" | "none"
+  annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
+  carveouts: [],                // [{id, label, annual, endYear}] fixed obligations (car, HOA, etc.)
+  rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
   // Account breakdown (feeds port total)
   accounts: [
     { id: "1", category: "pretax", name: "401(k)", balance: 0 },
@@ -178,8 +185,14 @@ const DEMO_PROFILE = {
   name: "Alex",
   dob: "1974-06-15",
   // NEW:
+  filingStatus: "mfj",          // "mfj" | "single"
+  reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
+  housingType: "own",
+  annualRent: 0,
+  carveouts: [],
+  rothConversionTarget: "off",
   currentAge: 51,
   retireAge: 62,
   stateOfResidence: "NJ",
@@ -313,11 +326,13 @@ function smileMult(age) {
   if (age < 85) return 0.8;
   return 0.9;
 }
-function taxDragRate(age, ssAge, useTax) {
+function taxDragRate(age, ssAge, useTax, filingStatus = "mfj") {
   if (!useTax) return 0;
-  if (age < ssAge) return 0.072;
-  if (age < 73) return 0.09;
-  return 0.132;
+  // Single filers hit higher brackets sooner (halved thresholds, halved deduction)
+  const single = filingStatus === "single";
+  if (age < ssAge) return single ? 0.092 : 0.072;
+  if (age < 73)    return single ? 0.115 : 0.090;
+  return                  single ? 0.162 : 0.132;
 }
 function guytonKlingerWithdrawal(
   portfolioValue,
@@ -345,8 +360,10 @@ function calcYearTax(
   rmdIncome,
   conversionAmount,
   isTwoHousehold,
-  inflationRate
+  inflationRate,
+  filingStatus = "mfj"
 ) {
+  const isMFJ = filingStatus !== "single";
   const taxableSS = ssIncome * 0.85;
   const otherIncome =
     (withdrawalAmount || 0) +
@@ -355,10 +372,14 @@ function calcYearTax(
     (conversionAmount || 0);
   const totalIncome = taxableSS + otherIncome;
   const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - 2026));
-  let stdDeduction = Math.round(32200 * inflationFactor);
-  if (age >= 65) stdDeduction += Math.round(3300 * inflationFactor);
+  // Standard deduction: MFJ $32,200 / Single $16,100 (2026 est.), inflation-adjusted forward
+  let stdDeduction = Math.round((isMFJ ? 32200 : 16100) * inflationFactor);
+  // Additional deduction for age 65+: MFJ adds $3,300, Single adds $1,650
+  if (age >= 65) stdDeduction += Math.round((isMFJ ? 3300 : 1650) * inflationFactor);
   const taxableIncome = Math.max(0, totalIncome - stdDeduction);
-  const fedBrackets = idxB(FED_BRACKETS_2026, inflationFactor);
+  // Select federal brackets by filing status
+  const rawBrackets = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
+  const fedBrackets = idxB(rawBrackets, inflationFactor);
   const fedTax = progTax(taxableIncome, fedBrackets);
   let stateTax = 0;
 
@@ -376,8 +397,21 @@ function calcYearTax(
     if (taxableIncome > b.lo) marginalBracket = b.rate;
     else break;
   }
-  return { fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket };
+  return { fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket, taxableIncome };
 }
+
+/**
+ * Returns the TAXABLE INCOME ceiling (after std deduction) for a given bracket target.
+ * Values are 2026 estimates, inflated by inflFactor for future years.
+ */
+function getBracketCeiling(target, filingStatus, inflFactor) {
+  const mfj = filingStatus !== "single";
+  const ceilings = mfj
+    ? { "12": 100_800, "22": 211_400, "24": 403_550, "irmaa": 212_000 }
+    : { "12":  50_400, "22": 105_700, "24": 201_800, "irmaa": 106_000 };
+  return Math.round((ceilings[target] ?? ceilings["22"]) * inflFactor);
+}
+
 function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
@@ -390,6 +424,14 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   // User settings for cash return and RMD table
   const cashRealReturn = (p.cashRealReturn ?? 1.0) / 100;
   const useJointTable = p.useJointRmdTable ?? false;
+
+  // Pre-compute annual mortgage P&I obligation (constant across all paths)
+  let mortAnnualPI = 0, mortPayoffYr = 0;
+  if (p.mortBalance > 0) {
+    const ms = mortgageSchedule(p.mortBalance, p.mortRate || 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
+    mortAnnualPI = ms.pmt * 12;
+    mortPayoffYr = ms.payoffYr;
+  }
 
   // Simplified Joint & Last Survivor table (assumes spouse is 10 years younger)
   const JOINT_RMD_TABLE = {
@@ -437,7 +479,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
     const ab0 = p.useAb ? p.ab : 0;
-    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax));
+    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
     for (let y = 0; y < retYrs; y++) {
@@ -567,11 +609,27 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       }
       lastReturn = r;
 
-      // Income from SS and Airbnb
+      // Income from SS and rental/AB
       const ss = age >= p.ssAge ? p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y) : 0;
       const abReliable = rand() < (p.abReliability || 80)/100;
       const ab = p.useAb && abReliable ? p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20)) : 0;
-      const need = Math.max(0, sp - ss - ab);
+
+      // Housing cost (own = mortgage P&I while active, rent = inflation-adjusted rent, none = 0)
+      const calYear = 2026 + (age - p.currentAge);
+      const housingType = p.housingType || "own";
+      let housingCost = 0;
+      if (housingType === "own") {
+        housingCost = mortAnnualPI > 0 && calYear < mortPayoffYr ? mortAnnualPI : 0;
+      } else if (housingType === "rent") {
+        housingCost = Math.round((p.annualRent || 0) * inflY);
+      }
+
+      // Active fixed carveouts (car loans, HOA, etc.) — inflation-adjusted
+      const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
+        return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * inflY) : 0);
+      }, 0);
+
+      const need = Math.max(0, sp - ss - ab) + housingCost + carveoutCost;
 
       // RMD calculation
       let rmd = 0;
@@ -588,7 +646,8 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
 
       // Tax calculation
       const yr = 2026 + (age - p.currentAge);
-      const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY);
+      const filingStatus = p.filingStatus || "mfj";
+      const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY, filingStatus);
       const totalTax = taxResult.totalTax;
       const totalWithdrawalNeeded = totalNeed + totalTax;
 
@@ -614,6 +673,25 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       taxable = Math.max(0, taxable - fromTaxable);
       pretax  = Math.max(0, pretax  - fromPretax - rmd);
       roth    = Math.max(0, roth    - fromRoth);
+
+      // Bracket-fill Roth conversion (after spending withdrawals, before growth)
+      if (p.rothConversionTarget && p.rothConversionTarget !== "off" && pretax > 1000) {
+        const inflFactor = Math.pow(1 + inflY, Math.max(0, yr - 2026));
+        const bracketCeiling = getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor);
+        // Room = ceiling minus current taxable income (from spending + RMD)
+        const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
+        if (room > 500) {
+          // Convert up to room, capped at 40% of pretax to avoid over-converting
+          const convAmt = Math.min(room, pretax * 0.4);
+          // Tax on conversion at the marginal rate, funded from pretax
+          const convTax = Math.round(convAmt * (taxResult.marginalBracket || 0.22));
+          const totalCost = convAmt + convTax;
+          if (pretax >= totalCost) {
+            pretax -= totalCost;
+            roth   += convAmt;
+          }
+        }
+      }
 
       // Apply growth
       cash    = Math.max(0, cash    * (1 + cashRealReturn));
@@ -676,7 +754,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
     const ab0 = p.useAb ? p.ab : 0;
-    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax));
+    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
     for (let y = 0; y < retYrs; y++) {
@@ -698,7 +776,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
       const ab = p.useAb && rand() < (p.abReliability || 80) / 100
         ? p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20))
         : 0;
-      const td = taxDragRate(age, p.ssAge, p.tax);
+      const td = taxDragRate(age, p.ssAge, p.tax, p.filingStatus);
       const hShock = age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100
         ? (p.hcMin || 70_000) + rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000))
         : 0;
@@ -813,7 +891,7 @@ function simulateDeterministic(p, inf) {
       : 0;
     const need = Math.max(0, sp - ss - ab);
 
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY);
+    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -980,7 +1058,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
     const ab = p.useAb ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20))) : 0;
     const need = Math.max(0, sp - ss - ab);
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY);
+    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -1002,12 +1080,21 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 }
 
 /* ════ ROTH CONVERSION EXPLORER ════ */
-const FED_BRACKETS_2026 = [
-  { lo: 0, hi: 24800, rate: 0.1 },
-  { lo: 24800, hi: 100800, rate: 0.12 },
-  { lo: 100800, hi: 211400, rate: 0.22 },
-  { lo: 211400, hi: 403550, rate: 0.24 },
-  { lo: 403550, hi: 512450, rate: 0.32 },
+// 2026 MFJ federal brackets (inflation-adjusted from 2025)
+const FED_BRACKETS_2026_MFJ = [
+  { lo: 0,       hi: 24800,  rate: 0.10 },
+  { lo: 24800,   hi: 100800, rate: 0.12 },
+  { lo: 100800,  hi: 211400, rate: 0.22 },
+  { lo: 211400,  hi: 403550, rate: 0.24 },
+  { lo: 403550,  hi: 512450, rate: 0.32 },
+];
+// 2026 Single filer federal brackets (~half the MFJ thresholds)
+const FED_BRACKETS_2026_SINGLE = [
+  { lo: 0,      hi: 12400,  rate: 0.10 },
+  { lo: 12400,  hi: 50400,  rate: 0.12 },
+  { lo: 50400,  hi: 105700, rate: 0.22 },
+  { lo: 105700, hi: 201800, rate: 0.24 },
+  { lo: 201800, hi: 256225, rate: 0.32 },
 ];
 const NJ_BRACKETS_2026 = [
   { lo: 0, hi: 20000, rate: 0.014 },
@@ -1450,8 +1537,8 @@ const CSS = `
   .mbtn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
   .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
   .mbtn.demo-on { background:linear-gradient(135deg,#7c3aed,#4f46e5); border-color:transparent; color:white; }
-  .layout { display:grid; grid-template-columns:268px 1fr; height:calc(100vh - 56px); }
-  .sidebar { border-right:1px solid rgba(255,255,255,0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; }
+  .layout { display:grid; grid-template-columns:268px 1fr; height:calc(100vh - 56px); overflow:hidden; }
+  .sidebar { border-right:1px solid rgba(255,255,255,0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
   .sb-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:13px; }
   .sb-title { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.12em; margin-bottom:12px; }
   .sl-row { display:grid; grid-template-columns:108px 1fr 66px; align-items:center; gap:8px; margin-bottom:13px; }
@@ -1465,7 +1552,8 @@ const CSS = `
   .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); }
   .run-btn:hover { opacity:0.9; box-shadow:0 6px 20px rgba(14,165,233,0.35); }
   .run-btn:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
-  .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; }
+  .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; min-height:0; }
+  .main > * { flex-shrink:0; }
   .flag-w { border-left:3px solid #f59e0b; background:rgba(245,158,11,0.1); padding:7px 12px; font-size:12px; color:#fde68a; border-radius:0 8px 8px 0; margin-bottom:4px; font-weight:500; }
   .flag-i { border-left:3px solid #38bdf8; background:rgba(56,189,248,0.08); color:#bae6fd; border-radius:0 8px 8px 0; padding:7px 12px; font-size:12px; margin-bottom:4px; font-weight:500; }
   .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
@@ -1503,6 +1591,7 @@ const CSS = `
   .nw-table th:first-child { text-align:left; }
   .nw-table td { padding:8px 8px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right; font-family:'JetBrains Mono',monospace; color:#e2e8f0; }
   .nw-table td:first-child { text-align:left; font-family:'Inter',sans-serif; color:#f1f5f9; }
+  .wizard-mobile-steps { display:none; }
   .ap-col { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px; }
   .ap-hdr { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:11px; }
   .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); color:#cbd5e1; }
@@ -1511,6 +1600,38 @@ const CSS = `
   .tip-box { background:rgba(10,15,30,0.98); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:9px 12px; font-size:12px; color:#f1f5f9; }
   ::-webkit-scrollbar { width:3px; height:3px; }
   ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.12); border-radius:2px; }
+
+  /* ── Mobile / Responsive ── */
+  @media (max-width: 768px) {
+    .hdr { padding:8px 12px; gap:6px; flex-wrap:wrap; }
+    .logo-sub { display:none; }
+    .mbtn { padding:4px 9px; font-size:10px; }
+    .layout { grid-template-columns:1fr; height:auto; overflow:visible; }
+    .sidebar { border-right:none; border-bottom:1px solid rgba(255,255,255,0.06); max-height:220px; overflow-y:auto; min-height:unset; padding:10px; flex-direction:row; flex-wrap:wrap; gap:8px; }
+    .sb-card { padding:10px; }
+    .main { padding:10px; overflow-y:visible; min-height:unset; }
+    .main > * { flex-shrink:0; }
+    .metrics { grid-template-columns:1fr 1fr; }
+    .sl-row { grid-template-columns:1fr 52px; }
+    .tabs { gap:2px; }
+    .tab { min-width:56px; padding:6px 4px; font-size:10px; }
+    .wizard-grid { grid-template-columns:1fr !important; }
+    .wizard-sidebar { display:none !important; }
+    .wizard-panel { border-radius:0 !important; }
+    .wizard-mobile-steps { display:block !important; }
+    .metrics .met { padding:10px 12px; }
+    .metrics .mv { font-size:17px; }
+    .roth-tbl { font-size:11px; }
+    .roth-tbl th, .roth-tbl td { padding:6px 5px; }
+    .nw-table { font-size:11px; }
+    .nw-table th, .nw-table td { padding:6px 5px; }
+  }
+  @media (max-width: 480px) {
+    .metrics { grid-template-columns:1fr; }
+    .tabs { gap:1px; }
+    .tab { min-width:44px; font-size:9px; padding:5px 3px; }
+    .hdr { justify-content:center; }
+  }
 `;
 
 const Tip = ({ active, payload, label }) => {
@@ -3152,8 +3273,13 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
   const [showHow, setShowHow] = useState(false);
   const accPhase = `Age ${params.currentAge} → ${params.retireAge}`;
   const retPhase = `Age ${params.retireAge} → ${params.endAge}`;
-  const mortAnnual = Math.round((params.mortBalance > 0 ? 1847.15 : 0) * 12);
-  const mortPayoffAge = params.retireAge + 4;
+  const mortSched = params.mortBalance > 0
+    ? mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0)
+    : null;
+  const mortAnnual = mortSched ? mortSched.pmt * 12 : 0;
+  const mortPayoffAge = mortSched
+    ? params.currentAge + (mortSched.payoffYr - new Date().getFullYear())
+    : 0;
   const rateColor = (r) =>
     r >= 0.9
       ? "#0d9488"
@@ -4082,7 +4208,9 @@ function NetWorthTab({ p, results90, inf }) {
       const port = results90.pcts[pctIndex]?.p50 || 0;
       const mortEntry = mortSched.years.find((y) => y.yr === yr);
       const mortBal = mortEntry ? mortEntry.bal : 0;
-      const re = showRE ? reTotal : 0;
+      const yearsFromNow = yr - new Date().getFullYear();
+      const reGrow = Math.pow(1 + (p.reGrowthRate ?? 3.0) / 100, yearsFromNow);
+      const re = showRE ? Math.round(reTotal * reGrow) : 0;
       return {
         age,
         "Liquid Portfolio": port,
@@ -4514,209 +4642,6 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     </div>
   );
 }
-/*
-function ActionPlanTab() {
-  const milestones = [
-    {
-      date: "Now · Age 56 (Mar 2026)",
-      color: "#0ea5e9",
-      status: "active",
-      items: [
-        "Alpha FMC engaged · $38,525/yr into 401k",
-        "NVDA trigger @ $162.45 armed 🔴",
-        "TSLA trigger @ $341.60 armed 🔴",
-        "SGOV dry powder $134,895 ready",
-        "VOO→VTI Fidelity Roth ✅ · FXAIX→FSKAX Solo 401k ✅",
-      ],
-    },
-    {
-      date: "Bucket 2 Begins · Age 58 (Jan 2028)",
-      color: "#a78bfa",
-      status: "upcoming",
-      items: [
-        "Begin SCHD in Solo 401k · DRIP ON",
-        "No income ETFs before this date",
-      ],
-    },
-    {
-      date: "Alpha FMC Ends · Age 58 (Mar 2028)",
-      color: "#a78bfa",
-      status: "upcoming",
-      items: [
-        "MVL Advisors target: $20K/mo C2C",
-        "Solo 401k resumes ~$77K/yr max",
-      ],
-    },
-    {
-      date: "D-Day 🎯 · Age 60 (Mar 14, 2030)",
-      color: "#10b981",
-      status: "target",
-      items: [
-        "Target $3.2M liquid · Trigger $3.5M",
-        "Retire · Solo Abroad🌴",
-        "Bucket strategy operational · GK engaged",
-      ],
-    },
-    {
-      date: "SS Gap · Ages 60-64 (Jan 2031-Mar 2034)",
-      color: "#f87171",
-      status: "critical",
-      items: [
-        "Zero SS for 3 years — highest-risk window",
-        "Bucket 1 + Bucket 2 + Rental covers expenses",
-        "🚩 Always flag",
-      ],
-    },
-    {
-      date: "Roth Window · Ages 61-63",
-      color: "#fbbf24",
-      status: "upcoming",
-      items: [
-        "~$60K/yr at 22% bracket",
-        "Golden 2033 (age 63): ~$210K conversion",
-      ],
-    },
-    {
-      date: "SS Starts · Age 64 (Mar 2034)",
-      color: "#10b981",
-      status: "upcoming",
-      items: [
-        "$2,629/mo ($31,543/yr) · CLOSED DECISION",
-        "GK prosperity rule likely triggers — spend more",
-      ],
-    },
-    {
-      date: "RMDs Begin · Age 73 (2043)",
-      color: "#f97316",
-      status: "future",
-      items: [
-        "Joint & Last Survivor table ",
-        "With conversions: ~$28K/yr · Without: ~$272K/yr",
-      ],
-    },
-  ];
-  const critical = [
-    "SS gap Jan 2031→Mar 2034",
-    "NJ domicile — FL before Dec 31, 2030",
-    "AAPL concentration ~15% Solo 401k",
-  ];
-  const actions = [
-    "Confirm Alpha 401k elections in Empower",
-    "NJ tax attorney consultation 2029",
-    "Get Chris earning income → Roth IRA",
-    "Backdoor Roth Vin + Mira",
-    "CSS Profile before Christopher applies (2027)",
-  ];
-  const onTrack = [
-    "Bootstrap MC engine 99yr S&P + 50yr bonds",
-    "Roth IRA ~$732K combined · growth only",
-    "Solo 401k $1.658M · FSKAX ✅",
-    "Vista Cay debt-free · Rental $20K ready",
-    "VOO→VTI ✅ · FXAIX→FSKAX ✅",
-  ];
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3,1fr)",
-          gap: 10,
-        }}
-      >
-        <div className="ap-col">
-          <div className="ap-hdr" style={{ color: "#ef4444" }}>
-            🔴 Critical
-          </div>
-          {critical.map((i) => (
-            <div key={i} className="ap-item">
-              • {i}
-            </div>
-          ))}
-        </div>
-        <div className="ap-col">
-          <div className="ap-hdr" style={{ color: "#fbbf24" }}>
-            🟡 Action items
-          </div>
-          {actions.map((i) => (
-            <div key={i} className="ap-item">
-              • {i}
-            </div>
-          ))}
-        </div>
-        <div className="ap-col">
-          <div className="ap-hdr" style={{ color: "#10b981" }}>
-            🟢 On track
-          </div>
-          {onTrack.map((i) => (
-            <div key={i} className="ap-item">
-              • {i}
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="chart-card">
-        <div className="ct">Milestone timeline · D-Day and beyond</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-          {milestones.map((m, i) => (
-            <div
-              key={m.date}
-              style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                }}
-              >
-                <div
-                  className="ms-dot"
-                  style={{
-                    background:
-                      m.status === "active" || m.status === "target"
-                        ? m.color
-                        : `${m.color}44`,
-                    border: `2px solid ${m.color}`,
-                  }}
-                />
-                {i < milestones.length - 1 && (
-                  <div
-                    className="ms-line"
-                    style={{
-                      height: Math.max(30, m.items.length * 16 + 10),
-                      flex: "none",
-                    }}
-                  />
-                )}
-              </div>
-              <div style={{ paddingBottom: 12, flex: 1 }}>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: m.color,
-                    marginBottom: 3,
-                  }}
-                >
-                  {m.date}
-                </div>
-                {m.items.map((it) => (
-                  <div
-                    key={it}
-                    style={{ fontSize: 10, color: "#64748b", marginBottom: 2 }}
-                  >
-                    · {it}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-*/
 function ProfileWizard({ values, onChange }) {
   const [step, setStep] = useState(0);
 
@@ -4744,18 +4669,20 @@ function ProfileWizard({ values, onChange }) {
 
   return (
     <div
+      className="wizard-grid"
       style={{
         display: "grid",
         gridTemplateColumns: "220px 1fr",
         background: "rgba(255,255,255,0.02)",
         border: "1px solid rgba(255,255,255,0.08)",
         borderRadius: 12,
-        overflow: "hidden",
-        alignItems: "start"
+        alignItems: "start",
+        flexShrink: 0,
       }}
     >
       {/* LEFT SIDEBAR */}
       <div
+        className="wizard-sidebar"
         style={{ borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}
       >
         {STEPS.map((s, i) => (
@@ -4813,7 +4740,19 @@ function ProfileWizard({ values, onChange }) {
       </div>
 
       {/* RIGHT PANEL */}
-       <div style={{ padding: 24, overflowY: "auto", maxHeight: "calc(100vh - 120px)" }}>
+       <div className="wizard-panel" style={{ padding: 24 }}>
+        {/* Mobile step selector — only visible when sidebar is hidden */}
+        <div className="wizard-mobile-steps" style={{ marginBottom: 16 }}>
+          <select
+            value={step}
+            onChange={(e) => setStep(Number(e.target.value))}
+            style={{ width:"100%", background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"'Inter',sans-serif" }}
+          >
+            {STEPS.map((s, i) => (
+              <option key={i} value={i}>{s.icon} {s.label}</option>
+            ))}
+          </select>
+        </div>
         <div
           style={{
             fontSize: 16,
@@ -5169,6 +5108,59 @@ function AboutYouPanel({ values, onChange }) {
   );
 }
 
+/* ── Stable module-level helpers for AssumptionsPanel ──────────────────
+   Defined OUTSIDE the component so their reference never changes between
+   renders — prevents React from unmounting/remounting inputs on each keystroke.
+*/
+function ARow({ label, desc, children }) {
+  return (
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+      <div>
+        <div style={{ fontSize:12, color:"#e2e8f0", fontWeight:500 }}>{label}</div>
+        {desc && <div style={{ fontSize:10, color:"#475569", marginTop:2 }}>{desc}</div>}
+      </div>
+      <div style={{ marginLeft:16, flexShrink:0 }}>{children}</div>
+    </div>
+  );
+}
+function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+      <input
+        type="number"
+        value={value ?? ""}
+        min={min} max={max} step={step}
+        onChange={(e) => onSet(Number(e.target.value))}
+        style={{ width:80, background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"right" }}
+      />
+      {suffix && <span style={{ fontSize:11, color:"#475569" }}>{suffix}</span>}
+    </div>
+  );
+}
+function AStateSelect({ value, onSet }) {
+  return (
+    <select
+      value={value || "NJ"}
+      onChange={(e) => onSet(e.target.value)}
+      style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
+    >
+      {Object.entries(STATE_TAX_RATES).map(([state, rate]) => (
+        <option key={state} value={state}>{state} ({(rate * 100).toFixed(1)}%)</option>
+      ))}
+    </select>
+  );
+}
+function ADateInput({ value, onSet }) {
+  return (
+    <input
+      type="date"
+      value={value || ""}
+      onChange={(e) => onSet(e.target.value)}
+      style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
+    />
+  );
+}
+
 function AssumptionsPanel({ values, onChange }) {
   const {
     dob,
@@ -5187,96 +5179,6 @@ function AssumptionsPanel({ values, onChange }) {
   const derivedAge = dob
     ? Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 3600 * 1000))
     : "—";
-  const Row = ({ label, desc, children }) => (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: "10px 0",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-      }}
-    >
-      <div>
-        <div style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 500 }}>
-          {label}
-        </div>
-        {desc && (
-          <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
-            {desc}
-          </div>
-        )}
-      </div>
-      <div style={{ marginLeft: 16, flexShrink: 0 }}>{children}</div>
-    </div>
-  );
-  const NumInput = ({ k, min, max, step, suffix = "" }) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <input
-        type="number"
-        value={values[k]}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(e) => onChange(k, Number(e.target.value))}
-        style={{
-          width: 80,
-          background: "#0d1b2a",
-          border: "1px solid #1e3a5f",
-          color: "#e2e8f0",
-          borderRadius: 6,
-          padding: "4px 8px",
-          fontSize: 12,
-          fontFamily: "'DM Mono',monospace",
-          textAlign: "right",
-        }}
-      />
-      {suffix && (
-        <span style={{ fontSize: 11, color: "#475569" }}>{suffix}</span>
-      )}
-    </div>
-  );
-  const StateSelect = ({ k }) => {
-    const [local, setLocal] = useState(values[k] || "NJ");
-    useEffect(() => { setLocal(values[k] || "NJ"); }, [values[k]]);
-    return (
-      <select
-        value={local}
-        onChange={(e) => { setLocal(e.target.value); onChange(k, e.target.value); }}
-        style={{
-          background: "#0d1b2a",
-          border: "1px solid #1e3a5f",
-          color: "#e2e8f0",
-          borderRadius: 6,
-          padding: "4px 8px",
-          fontSize: 12,
-          fontFamily: "'DM Mono',monospace",
-        }}
-      >
-        {Object.entries(STATE_TAX_RATES).map(([state, rate]) => (
-          <option key={state} value={state}>
-            {state} ({(rate * 100).toFixed(1)}%)
-          </option>
-        ))}
-      </select>
-    );
-  };
-  const DateInput = ({ k }) => (
-    <input
-      type="date"
-      value={values[k]}
-      onChange={(e) => onChange(k, e.target.value)}
-      style={{
-        background: "#0d1b2a",
-        border: "1px solid #1e3a5f",
-        color: "#e2e8f0",
-        borderRadius: 6,
-        padding: "4px 8px",
-        fontSize: 12,
-        fontFamily: "'DM Mono',monospace",
-      }}
-    />
-  );
 
 
   return (
@@ -5301,42 +5203,49 @@ function AssumptionsPanel({ values, onChange }) {
         >
           Personal Profile
         </div>
-        <Row
+        <ARow
           label="Date of Birth"
           desc={`Current age: ${derivedAge} · Used to derive D-Day and accumulation years`}
         >
-          <DateInput k="dob" />
-        </Row>
-        <Row
+          <ADateInput value={values.dob} onSet={(v) => onChange("dob", v)} />
+        </ARow>
+        <ARow
           label="State of Residence at Retirement"
           desc="State where RMD taxes will be applied. Use the Two Household toggle for out-of-country scenarios.">
-          <StateSelect k="stateOfResidence" />
-        </Row>
+          <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
+        </ARow>
 
-        <Row
+        <ARow
           label="Rental net income / yr"
           desc="Net after expenses · Always use net, never gross"
         >
-          <NumInput k="ab" min={0} max={100000} step={1000} suffix="/yr" />
-        </Row>
-        <Row
+          <ANumInput value={values.ab} onSet={(v) => onChange("ab", v)} min={0} max={100000} step={1000} suffix="/yr" />
+        </ARow>
+        <ARow
           label="Social Security Benefit"
           desc="Monthly benefit at your SS start age"
         >
-          <NumInput k="ssb" min={0} max={5000} step={100} suffix="/mo" />
-        </Row>
-        <Row
-            label="Cash real return"
-            desc="Annual real return on cash/savings (e.g., HYSA)"
+          <ANumInput value={values.ssb} onSet={(v) => onChange("ssb", v)} min={0} max={5000} step={100} suffix="/mo" />
+        </ARow>
+        <ARow label="Cash real return" desc="Annual real return on cash/savings (e.g., HYSA)">
+          <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} suffix="%" />
+        </ARow>
+        <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
+          <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
+        </ARow>
+        <ARow label="Federal Filing Status" desc="MFJ doubles standard deduction ($32,200) and uses wider brackets. Single uses $16,100 deduction and narrower brackets.">
+          <select
+            value={values.filingStatus || "mfj"}
+            onChange={(e) => onChange("filingStatus", e.target.value)}
+            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
           >
-        <NumInput k="cashRealReturn" min={0} max={3} step={0.1} suffix="%" />
-      </Row>
-      <Row
-          label="Employer Start Date (Countdown to D-Day)"
-          desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day"
-        >
-          <DateInput k="employerStartDate" />
-      </Row>
+            <option value="mfj">Married Filing Jointly (MFJ)</option>
+            <option value="single">Single</option>
+          </select>
+        </ARow>
+        <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in Net Worth projection">
+          <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
+        </ARow>
       <Toggle
         val={values.useJointRmdTable}
         onChange={(v) => onChange("useJointRmdTable", v)}
@@ -5344,6 +5253,116 @@ function AssumptionsPanel({ values, onChange }) {
         accent="#a78bfa"
       />
       </div>
+
+      {/* ── Expense Model ── */}
+      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#f59e0b", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
+          Expense Model
+        </div>
+        <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
+          Separate housing &amp; fixed obligations from core lifestyle spend. The MC engine adds each carveout to the portfolio draw automatically.
+        </div>
+
+        <ARow label="Housing type" desc="Own = mortgage P&I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
+          <select
+            value={values.housingType || "own"}
+            onChange={(e) => onChange("housingType", e.target.value)}
+            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
+          >
+            <option value="own">Own (mortgage)</option>
+            <option value="rent">Rent</option>
+            <option value="none">None / already in spend</option>
+          </select>
+        </ARow>
+
+        {(values.housingType || "own") === "rent" && (
+          <ARow label="Annual rent" desc="Today's dollars — inflated each year in simulation">
+            <ANumInput value={values.annualRent} onSet={(v) => onChange("annualRent", v)} min={0} max={60000} step={500} suffix="/yr" />
+          </ARow>
+        )}
+
+        {/* Carveouts */}
+        <div style={{ marginTop:12 }}>
+          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:600, marginBottom:8 }}>
+            Fixed Obligations (car loans, HOA, etc.)
+          </div>
+          {(values.carveouts || []).map((c, idx) => (
+            <div key={c.id} style={{ display:"grid", gridTemplateColumns:"1fr 90px 80px 28px", gap:6, marginBottom:6, alignItems:"center" }}>
+              <input
+                type="text"
+                value={c.label}
+                placeholder="Label"
+                onChange={(e) => {
+                  const updated = [...(values.carveouts||[])];
+                  updated[idx] = { ...c, label: e.target.value };
+                  onChange("carveouts", updated);
+                }}
+                style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
+              />
+              <input
+                type="number"
+                value={c.annual}
+                min={0}
+                step={100}
+                placeholder="$/yr"
+                onChange={(e) => {
+                  const updated = [...(values.carveouts||[])];
+                  updated[idx] = { ...c, annual: Number(e.target.value) };
+                  onChange("carveouts", updated);
+                }}
+                style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"right" }}
+              />
+              <input
+                type="number"
+                value={c.endYear}
+                min={2025}
+                max={2080}
+                step={1}
+                placeholder="End yr"
+                onChange={(e) => {
+                  const updated = [...(values.carveouts||[])];
+                  updated[idx] = { ...c, endYear: Number(e.target.value) };
+                  onChange("carveouts", updated);
+                }}
+                style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"right" }}
+              />
+              <button
+                onClick={() => onChange("carveouts", (values.carveouts||[]).filter((_,i) => i !== idx))}
+                style={{ background:"rgba(239,68,68,0.15)", border:"1px solid rgba(239,68,68,0.3)", color:"#f87171", borderRadius:5, cursor:"pointer", fontSize:13, padding:"2px 6px" }}
+              >×</button>
+            </div>
+          ))}
+          <div style={{ fontSize:9, color:"#334155", marginBottom:6 }}>Label · $/yr · End year (calendar year when obligation ends)</div>
+          <button
+            onClick={() => onChange("carveouts", [...(values.carveouts||[]), { id: Date.now().toString(), label:"", annual:0, endYear: new Date().getFullYear() + 5 }])}
+            style={{ fontSize:11, background:"rgba(14,165,233,0.1)", border:"1px solid rgba(14,165,233,0.25)", color:"#38bdf8", borderRadius:6, padding:"5px 12px", cursor:"pointer" }}
+          >+ Add obligation</button>
+        </div>
+      </div>
+
+      {/* ── Roth Conversion Strategy ── */}
+      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#a78bfa", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
+          Roth Conversion Strategy
+        </div>
+        <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
+          After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
+        </div>
+        <Row label="Bracket-fill target" desc="AiRA converts pretax → Roth up to this bracket ceiling each year (off = no conversions)">
+          <select
+            value={values.rothConversionTarget || "off"}
+            onChange={(e) => onChange("rothConversionTarget", e.target.value)}
+            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
+          >
+            <option value="off">Off — no conversions</option>
+            <option value="12">Fill to top of 12% bracket</option>
+            <option value="22">Fill to top of 22% bracket</option>
+            <option value="24">Fill to top of 24% bracket</option>
+            <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
+          </select>
+        </Row>
+      </div>
+
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -5364,85 +5383,41 @@ function AssumptionsPanel({ values, onChange }) {
         >
           Monte Carlo Model Parameters
         </div>
-        <Row
-          label="Rental reliability"
-          desc="Probability Rental income arrives in any given year (default 80%)"
-        >
-          <NumInput k="abReliability" min={0} max={100} step={5} suffix="%" />
-        </Row>
-        <Row
-          label="Rental income growth / yr"
-          desc="Annual growth rate for Rental income (default 3%)"
-        >
-          <NumInput k="abGrowth" min={0} max={10} step={0.5} suffix="%" />
-        </Row>
-        <Row
-          label="SS COLA / yr"
-          desc="Social Security cost-of-living adjustment (default 2.4%)"
-        >
-          <NumInput k="ssCola" min={0} max={6} step={0.1} suffix="%" />
-        </Row>
-        <Row
-          label="Pre-retirement equity weight"
-          desc="Equity % before retirement age (default 91%)"
-        >
-          <NumInput k="preRetireEq" min={50} max={100} step={1} suffix="%" />
-        </Row>
-        <Row
-          label="Post-retirement equity weight"
-          desc="Equity % after retirement age (default 70%)"
-        >
-          <NumInput k="postRetireEq" min={30} max={90} step={1} suffix="%" />
-        </Row>
+        <ARow label="Rental reliability" desc="Probability Rental income arrives in any given year (default 80%)">
+          <ANumInput value={values.abReliability} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
+        </ARow>
+        <ARow label="Rental income growth / yr" desc="Annual growth rate for Rental income (default 3%)">
+          <ANumInput value={values.abGrowth} onSet={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} suffix="%" />
+        </ARow>
+        <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
+          <ANumInput value={values.ssCola} onSet={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} suffix="%" />
+        </ARow>
+        <ARow label="Pre-retirement equity weight" desc="Equity % before retirement age (default 91%)">
+          <ANumInput value={values.preRetireEq} onSet={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} suffix="%" />
+        </ARow>
+        <ARow label="Post-retirement equity weight" desc="Equity % after retirement age (default 70%)">
+          <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} suffix="%" />
+        </ARow>
       </div>
-      <div
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 10,
-          padding: 16,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: "#f87171",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            marginBottom: 4,
-          }}
-        >
+      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#f87171", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
           Healthcare Shock Model
         </div>
-        <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
-          In each simulation year after the shock age, there is a random
-          probability of a large one-time healthcare cost.
+        <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
+          In each simulation year after the shock age, there is a random probability of a large one-time healthcare cost.
         </div>
-        <Row
-          label="Shock start age"
-          desc="Age after which annual healthcare shocks can occur (default 72)"
-        >
-          <NumInput k="hcShockAge" min={60} max={85} step={1} suffix="yrs" />
-        </Row>
-        <Row
-          label="Annual shock probability"
-          desc="Chance of a shock in any given year (default 3.5%)"
-        >
-          <NumInput k="hcProb" min={0} max={20} step={0.5} suffix="%" />
-        </Row>
-        <Row
-          label="Shock cost — minimum"
-          desc="Low end of randomized healthcare shock cost (default $70K)"
-        >
-          <NumInput k="hcMin" min={0} max={200000} step={5000} suffix="$" />
-        </Row>
-        <Row
-          label="Shock cost — maximum"
-          desc="High end of randomized healthcare shock cost (default $130K)"
-        >
-          <NumInput k="hcMax" min={0} max={500000} step={5000} suffix="$" />
-        </Row>
+        <ARow label="Shock start age" desc="Age after which annual healthcare shocks can occur (default 72)">
+          <ANumInput value={values.hcShockAge} onSet={(v) => onChange("hcShockAge", v)} min={60} max={85} step={1} suffix="yrs" />
+        </ARow>
+        <ARow label="Annual shock probability" desc="Chance of a shock in any given year (default 3.5%)">
+          <ANumInput value={values.hcProb} onSet={(v) => onChange("hcProb", v)} min={0} max={20} step={0.5} suffix="%" />
+        </ARow>
+        <ARow label="Shock cost — minimum" desc="Low end of randomized healthcare shock cost (default $70K)">
+          <ANumInput value={values.hcMin} onSet={(v) => onChange("hcMin", v)} min={0} max={200000} step={5000} suffix="$" />
+        </ARow>
+        <ARow label="Shock cost — maximum" desc="High end of randomized healthcare shock cost (default $130K)">
+          <ANumInput value={values.hcMax} onSet={(v) => onChange("hcMax", v)} min={0} max={500000} step={5000} suffix="$" />
+        </ARow>
       </div>
       <div
         style={{
@@ -5596,7 +5571,7 @@ function RetirementPanel({ values, onChange }) {
         {[
           {
             k: "sp",
-            label: "Annual Spend (Both Households)",
+            label: "Core Lifestyle Spend (excl. housing & fixed obligations)",
             min: 30000,
             max: 200000,
             step: 1000,
@@ -5952,6 +5927,11 @@ export default function AiRAForecaster() {
     mortExtra: BLANK_PROFILE.mortExtra,
     mortPI: BLANK_PROFILE.mortPI,
     properties: BLANK_PROFILE.properties,
+    // Expense model
+    housingType: BLANK_PROFILE.housingType,
+    annualRent: BLANK_PROFILE.annualRent,
+    carveouts: BLANK_PROFILE.carveouts,
+    rothConversionTarget: BLANK_PROFILE.rothConversionTarget,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
@@ -6052,6 +6032,12 @@ export default function AiRAForecaster() {
       hcMax: assumptions.hcMax,
       accounts: assumptions.accounts,
       properties: assumptions.properties || BLANK_PROFILE.properties,
+      filingStatus: assumptions.filingStatus || "mfj",
+      reGrowthRate: assumptions.reGrowthRate ?? 3.0,
+      housingType: assumptions.housingType || "own",
+      annualRent: assumptions.annualRent || 0,
+      carveouts: assumptions.carveouts || [],
+      rothConversionTarget: assumptions.rothConversionTarget || "off",
       withdrawalStrategy: withdrawalStrategy,
       fixedWithdrawalRate: 0.04,
       vanguardInitialRate: 0.04,
@@ -6178,6 +6164,16 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 mortTerm: assumptions.mortTerm || 30,
                 mortExtra: assumptions.mortExtra || 0,
                 mortPI: assumptions.mortPI || 0,
+                // Tax & RE
+                filingStatus: assumptions.filingStatus || "mfj",
+                reGrowthRate: assumptions.reGrowthRate ?? 3.0,
+                useJointRmdTable: assumptions.useJointRmdTable || false,
+                cashRealReturn: assumptions.cashRealReturn ?? 1.0,
+                // Expense model
+                housingType: assumptions.housingType || "own",
+                annualRent: assumptions.annualRent || 0,
+                carveouts: assumptions.carveouts || [],
+                rothConversionTarget: assumptions.rothConversionTarget || "off",
                 // Real estate
                 properties: assumptions.properties || BLANK_PROFILE.properties,
                 // Account breakdown
@@ -6194,7 +6190,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 hcMax: assumptions.hcMax,
                 // Meta
                 exportedAt: new Date().toISOString(),
-                appVersion: "6.5",
+                appVersion: APP_VERSION,
               }, assumptions.name ? `AiRA_Profile_${assumptions.name}` : "AiRA_Profile")}>
               ⬇ Export
             </button>
@@ -6250,9 +6246,11 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 // ---- 6. Update ALL assumptions fields (including missing ones) ----
                 const keys = [
                   "name", "dob", "stateOfResidence", "employerStartDate", "useJointRmdTable", "cashRealReturn",
+                  "filingStatus", "reGrowthRate",
                   "abReliability", "abGrowth", "ssCola", "preRetireEq", "postRetireEq",
                   "hcShockAge", "hcProb", "hcMin", "hcMax", "accounts",
-                  "mortBalance", "mortRate", "mortStart", "mortTerm", "mortExtra", "mortPI"
+                  "mortBalance", "mortRate", "mortStart", "mortTerm", "mortExtra", "mortPI",
+                  "housingType", "annualRent", "carveouts", "rothConversionTarget", "properties"
                 ];
                 keys.forEach(k => {
                   if (data[k] !== undefined) updateAssumption(k, data[k]);
@@ -6661,14 +6659,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 </div>
               )}  
 
-            <div className="flag-w">
-              ⚠ NJ domicile — establish FL residency before Dec 31, 2030 · Roth
-              ladder saves ~$50,575 vs NJ
-            </div>
-            <div className="flag-w">
-              ⚠ SS gap Jan 2031 → Mar 2034 — zero SS for 3 years · highest-risk
-              window
-            </div>
             <div className="flag-i">
               🛡 GK active · WR {swr}% ·{" "}
               {twoHousehold ? "Both households" : "Solo"} · Rental 80%
@@ -6859,7 +6849,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             <div className="gk-bar">
               <strong style={{ color: "#5eead4" }}>GK Guardrails:</strong> Floor{" "}
               {fmtM(params.gkFloor)} (
-              {twoHousehold ? "both households" : "Vin solo"}) · Ceiling{" "}
+              {twoHousehold ? "both households" : (assumptions.name || "solo")}) · Ceiling{" "}
               {fmtM(params.gkCeiling)} · Initial WR {swr}%. Rental modeled at
               80% reliability. Healthcare shocks 3.5%/yr from age 72. As Bill
               Perkins says — spend in the right life phase. 🌴
@@ -7085,6 +7075,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
    • Stale results detection (amber Re-run button)
 
 ════════════════════════════════════════════════════════════════ */
+export { runMC, mortgageSchedule };
 /*Disclaimer and Terms of Use
 Last Updated: April 11, 2026
 
