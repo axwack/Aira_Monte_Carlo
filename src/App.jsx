@@ -1,13 +1,18 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-4  (prev: roth-fix-3)
- *  BUILD TIME: 2026-04-17 14:00 UTC
- *  NOTES     : Add 💾 Save + 🔁 Reload Saved controls to the
- *              AssumptionsPanel. Saves the full values object to
- *              localStorage under "aira_profile_v1" (persists
- *              across browser refresh). Status line shows the
- *              last-saved timestamp.
+ *  BUILD TAG : roth-fix-5  (prev: roth-fix-4)
+ *  BUILD TIME: 2026-04-17 14:23 UTC
+ *  NOTES     : Move 💾 Save / 🔁 Reload Saved bar from the
+ *              Assumptions step up to the ProfileWizard shell so
+ *              it's visible on every wizard step (About You,
+ *              Current Savings, Contributions, Retirement Plan,
+ *              Other Income, Assumptions).
+ *              Version bumps:
+ *                APP_VERSION "9.2" → "9.2.1"
+ *                package.json version "6.5.3" → "9.2.1"
+ *                Hardcoded "v9.2" banner → `v${APP_VERSION}`
  *  Branch history:
+ *    roth-fix-5: wizard-level save bar + version sync.
  *    roth-fix-4: in-panel Save button + localStorage persistence.
  *    roth-fix-3: <Row> → <ARow> fix in AssumptionsPanel.
  *    roth-fix-2: build stamp header + console log.
@@ -52,9 +57,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "9.2";
-export const BUILD_TAG = "roth-fix-4";
-export const BUILD_TIME = "2026-04-17 14:00 UTC";
+const APP_VERSION = "9.2.1";
+export const BUILD_TAG = "roth-fix-5";
+export const BUILD_TIME = "2026-04-17 14:23 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -4730,6 +4735,33 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
 }
 function ProfileWizard({ values, onChange }) {
   const [step, setStep] = useState(0);
+  const [saveStatus, setSaveStatus] = useState("");
+  const flashStatus = (msg) => {
+    setSaveStatus(msg);
+    setTimeout(() => setSaveStatus(""), 2000);
+  };
+  const handleSave = () => {
+    const ok = saveProfileToLocal(values);
+    flashStatus(ok ? "✓ Saved to this browser" : "✗ Save failed (localStorage blocked)");
+  };
+  const handleReload = () => {
+    const saved = loadProfileFromLocal();
+    if (!saved) {
+      flashStatus("No saved profile found");
+      return;
+    }
+    if (!window.confirm("Restore your last saved profile? Unsaved changes will be overwritten.")) return;
+    Object.entries(saved).forEach(([k, v]) => {
+      if (k === "savedAt" || k === "buildTag") return;
+      onChange(k, v);
+    });
+    flashStatus("✓ Restored saved profile");
+  };
+  const savedMeta = (() => {
+    const s = loadProfileFromLocal();
+    if (!s || !s.savedAt) return null;
+    try { return new Date(s.savedAt).toLocaleString(); } catch { return s.savedAt; }
+  })();
 
   const STEPS = [
     { label: "About You", icon: "👤", sub: `${values.currentAge} yrs old` },
@@ -4827,6 +4859,69 @@ function ProfileWizard({ values, onChange }) {
 
       {/* RIGHT PANEL */}
        <div className="wizard-panel" style={{ padding: 24 }}>
+        {/* Save bar — visible on every wizard step */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            padding: "10px 14px",
+            marginBottom: 16,
+            background: "rgba(13,148,136,0.08)",
+            border: "1px solid rgba(13,148,136,0.25)",
+            borderRadius: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4" }}>
+              Profile Save
+            </div>
+            <div style={{ fontSize: 10, color: "#64748b" }}>
+              {savedMeta
+                ? `Last saved to this browser: ${savedMeta}`
+                : "No saved profile in this browser yet"}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {saveStatus && (
+              <span style={{ fontSize: 11, color: "#5eead4" }}>{saveStatus}</span>
+            )}
+            <button
+              onClick={handleReload}
+              disabled={!savedMeta}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 7,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "transparent",
+                color: savedMeta ? "#94a3b8" : "#334155",
+                cursor: savedMeta ? "pointer" : "not-allowed",
+                fontSize: 11,
+                fontFamily: "inherit",
+              }}
+            >
+              🔁 Reload Saved
+            </button>
+            <button
+              onClick={handleSave}
+              style={{
+                padding: "6px 14px",
+                borderRadius: 7,
+                border: "none",
+                background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+                color: "white",
+                cursor: "pointer",
+                fontSize: 11,
+                fontFamily: "inherit",
+                fontWeight: 600,
+              }}
+            >
+              💾 Save
+            </button>
+          </div>
+        </div>
         {/* Mobile step selector — only visible when sidebar is hidden */}
         <div className="wizard-mobile-steps" style={{ marginBottom: 16 }}>
           <select
@@ -5266,98 +5361,9 @@ function AssumptionsPanel({ values, onChange }) {
     ? Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 3600 * 1000))
     : "—";
 
-  const [saveStatus, setSaveStatus] = useState("");
-  const flashStatus = (msg) => {
-    setSaveStatus(msg);
-    setTimeout(() => setSaveStatus(""), 2000);
-  };
-  const handleSave = () => {
-    const ok = saveProfileToLocal(values);
-    flashStatus(ok ? "✓ Saved to this browser" : "✗ Save failed (localStorage blocked)");
-  };
-  const handleReload = () => {
-    const saved = loadProfileFromLocal();
-    if (!saved) {
-      flashStatus("No saved profile found");
-      return;
-    }
-    if (!window.confirm("Restore your last saved profile? Unsaved changes will be overwritten.")) return;
-    Object.entries(saved).forEach(([k, v]) => {
-      if (k === "savedAt" || k === "buildTag") return;
-      onChange(k, v);
-    });
-    flashStatus("✓ Restored saved profile");
-  };
-  const savedMeta = (() => {
-    const s = loadProfileFromLocal();
-    if (!s || !s.savedAt) return null;
-    try { return new Date(s.savedAt).toLocaleString(); } catch { return s.savedAt; }
-  })();
-
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          padding: "10px 14px",
-          background: "rgba(13,148,136,0.08)",
-          border: "1px solid rgba(13,148,136,0.25)",
-          borderRadius: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4" }}>
-            Profile Save
-          </div>
-          <div style={{ fontSize: 10, color: "#64748b" }}>
-            {savedMeta
-              ? `Last saved to this browser: ${savedMeta}`
-              : "No saved profile in this browser yet"}
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {saveStatus && (
-            <span style={{ fontSize: 11, color: "#5eead4" }}>{saveStatus}</span>
-          )}
-          <button
-            onClick={handleReload}
-            disabled={!savedMeta}
-            style={{
-              padding: "6px 12px",
-              borderRadius: 7,
-              border: "1px solid rgba(255,255,255,0.15)",
-              background: "transparent",
-              color: savedMeta ? "#94a3b8" : "#334155",
-              cursor: savedMeta ? "pointer" : "not-allowed",
-              fontSize: 11,
-              fontFamily: "inherit",
-            }}
-          >
-            🔁 Reload Saved
-          </button>
-          <button
-            onClick={handleSave}
-            style={{
-              padding: "6px 14px",
-              borderRadius: 7,
-              border: "none",
-              background: "linear-gradient(135deg,#0d9488,#14b8a6)",
-              color: "white",
-              cursor: "pointer",
-              fontSize: 11,
-              fontFamily: "inherit",
-              fontWeight: 600,
-            }}
-          >
-            💾 Save
-          </button>
-        </div>
-      </div>
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -6304,7 +6310,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               AiRA <span className="logo-sub">Freedom Financial</span>
             </div>
             <div style={{ fontSize: 12, color: "#6e8099" }}>
-              v9.2 · Property cards · Dynamic action plan · Premium AI layer · GK dynamic · CSS/FAFSA guards
+              v{APP_VERSION} · Property cards · Dynamic action plan · Premium AI layer · GK dynamic · CSS/FAFSA guards
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
