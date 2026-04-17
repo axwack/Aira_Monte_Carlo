@@ -1141,6 +1141,30 @@ function progTax(ti, br) {
   }
   return t;
 }
+// Marginal rate at the top dollar of taxable income (decimal, e.g. 0.22)
+function marginalRate(ti, br) {
+  for (const b of br) {
+    if (ti > b.lo && ti <= b.hi) return b.rate;
+  }
+  return br.length ? br[br.length - 1].rate : 0;
+}
+// BETR — future marginal rate at which a Roth conversion breaks even.
+//   m   = current marginal rate on the conversion dollar (decimal)
+//   r   = nominal growth rate per year
+//   n   = years until withdrawal (e.g. rmdAge − currentAge)
+//   a   = tax drag on outside cash (effective annual rate on gains)
+//   src = "outside_cash" | "from_pretax"
+// Derivation (outside_cash): conv $1 costs $m in tax from taxable cash that
+//   would otherwise grow at r·(1−a) for n years. Compare FV of converted Roth
+//   vs FV of (pretax × (1−m_f)) + cash-that-was-used-for-tax.
+//   Break-even: m_f = m · [(1 + r(1−a)) / (1 + r)]^n
+// from_pretax: tax paid from pretax itself → m_f = m (no horizon effect).
+function computeBETR(m, r, n, a, src) {
+  if (m <= 0) return 0;
+  if (src === "from_pretax" || n <= 0 || r <= 0) return m;
+  const ratio = (1 + r * (1 - a)) / (1 + r);
+  return m * Math.pow(ratio, n);
+}
 function idxB(br, f) {
   return br.map((b) => ({
     lo: Math.round(b.lo * f),
@@ -1171,6 +1195,11 @@ function buildRothExplorer(params = {}) {
     twoHousehold = true,
     rothMode = "fill_22",
     filingStatus = "mfj",
+    rmdAge = 73,
+    rothFutureRate = 24,         // user's assumed future marginal rate (%)
+    rothReturn = 7,              // nominal return used for BETR horizon (%)
+    rothTaxDrag = 15,            // tax drag on outside cash (%) — LTCG/qual div blend
+    rothTaxSource = "outside_cash", // "outside_cash" | "from_pretax"
   } = params;
 
   const isMFJ = filingStatus === "mfj";
@@ -1311,6 +1340,19 @@ function buildRothExplorer(params = {}) {
         else label = `Year ${age - retireAge}`;
       }
 
+      // BETR: marginal rate on the top dollar converted, then solve for the
+      // future rate that makes today's conversion a wash. Uses txInc (post
+      // stdD) so brackets align with the actual tax computation.
+      const marg = conv > 0 ? marginalRate(txInc, fB) : 0;
+      const horizon = Math.max(0, rmdAge - age);
+      const betr = computeBETR(
+        marg,
+        rothReturn / 100,
+        horizon,
+        rothTaxDrag / 100,
+        rothTaxSource
+      );
+
       rows.push({
         yr, age, ss, abn, rmd, conv, baseInc: incBC, totInc, txInc,
         fedT, stT, totT, effR, irmaa, magi,
@@ -1320,6 +1362,7 @@ function buildRothExplorer(params = {}) {
           ? txInc <= b12t ? "12%" : txInc <= b22t ? "22%" : txInc <= b24t ? "24%" : "32%"
           : "-",
         sp: Math.round(sp), portDraw: Math.round(portDraw),
+        marg, betr, horizon,
       });
     }
     return { rows, cTax, cConv, cIrmaa, cRmd, fPT: Math.round(pT), fRo: Math.round(ro) };
@@ -1336,9 +1379,23 @@ function buildRothExplorer(params = {}) {
   const leCur = totIncCur > 0 ? cur.cTax / totIncCur : 0;
   const rmdRed = cur.cRmd > 0 ? Math.round((1 - opt.cRmd / cur.cRmd) * 100) : 0;
 
+  // Conversion-weighted average BETR. If future rate > avgBETR → convert.
+  const totalConv = convRows.reduce((s, r) => s + r.conv, 0);
+  const avgBETR = totalConv > 0
+    ? convRows.reduce((s, r) => s + r.betr * r.conv, 0) / totalConv
+    : 0;
+  const futureRate = rothFutureRate / 100;
+  const verdict = convRows.length === 0
+    ? "none"
+    : futureRate > avgBETR
+      ? "convert"
+      : "dont_convert";
+
   return {
     opt, cur, convRows, taxD, estD, leOpt, leCur, rmdRed,
     isNoTaxState, retireYear, retireAge, ssAge,
+    avgBETR, futureRate, verdict,
+    rothTaxSource, rothReturn, rothTaxDrag, rmdAge,
   };
 }
 
@@ -2209,8 +2266,17 @@ function RothLadder({ params }) {
   const [showInputs, setShowInputs] = useState(false);
   const [view, setView] = useState("optimized");
   const [rothMode, setRothMode] = useState("fill_22");
+  const [rothFutureRate, setRothFutureRate] = useState(24);
+  const [rothReturn, setRothReturn] = useState(7);
+  const [rothTaxSource, setRothTaxSource] = useState("outside_cash");
   const ex = useMemo(
-    () => buildRothExplorer({ ...(params ?? {}), rothMode }),
+    () => buildRothExplorer({
+      ...(params ?? {}),
+      rothMode,
+      rothFutureRate,
+      rothReturn,
+      rothTaxSource,
+    }),
     [
       params?.currentAge,
       params?.retireAge,
@@ -2222,7 +2288,12 @@ function RothLadder({ params }) {
       params?.useAb,
       params?.ssb,
       params?.accounts,
+      params?.filingStatus,
+      params?.rmdAge,
       rothMode,
+      rothFutureRate,
+      rothReturn,
+      rothTaxSource,
     ]
   );
   const {
@@ -2236,6 +2307,8 @@ function RothLadder({ params }) {
     rmdRed,
     isNoTaxState,
     retireYear,
+    avgBETR,
+    verdict,
   } = ex;
   const domLabel = isNoTaxState
     ? "No Tax State Move or Out of Country"
@@ -2429,6 +2502,111 @@ function RothLadder({ params }) {
         </button>
       </div>
       <InputsPanel />
+      {/* BETR verdict banner — compares conversion-weighted break-even rate to user's assumed future rate */}
+      {convRows.length > 0 && (() => {
+        const avgPct = (avgBETR * 100).toFixed(1);
+        const isConvert = verdict === "convert";
+        const color = isConvert ? "#34d399" : "#fb923c";
+        const bg = isConvert ? "rgba(52,211,153,0.10)" : "rgba(251,146,60,0.10)";
+        const border = isConvert ? "rgba(52,211,153,0.30)" : "rgba(251,146,60,0.30)";
+        return (
+          <div
+            style={{
+              fontSize: 12,
+              color,
+              background: bg,
+              border: `1px solid ${border}`,
+              borderRadius: 7,
+              padding: "8px 12px",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ fontWeight: 700 }}>
+              {isConvert ? "✅ Convert" : "⚠️ Reconsider"} — BETR {avgPct}%
+            </span>
+            <span style={{ color: "#94a3b8", fontSize: 11 }}>
+              Convert if future marginal rate &gt; <b style={{ color }}>{avgPct}%</b>.
+              Your assumption: <b style={{ color: "#e2e8f0" }}>{rothFutureRate}%</b>.
+              {rothTaxSource === "outside_cash"
+                ? " Tax paid from outside cash."
+                : " Tax paid from pre-tax (self-funded)."}
+            </span>
+          </div>
+        );
+      })()}
+      {/* Sensitivity sliders — future rate, return, and tax source */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.02)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 8,
+          padding: "10px 12px",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "8px 16px",
+          fontSize: 11,
+        }}
+      >
+        <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ color: "#94a3b8" }}>
+            Assumed Future Marginal Rate:{" "}
+            <b style={{ color: "#5eead4" }}>{rothFutureRate}%</b>
+          </span>
+          <input
+            type="range"
+            min={10}
+            max={37}
+            step={1}
+            value={rothFutureRate}
+            onChange={(e) => setRothFutureRate(Number(e.target.value))}
+          />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ color: "#94a3b8" }}>
+            Investment Return (nominal):{" "}
+            <b style={{ color: "#5eead4" }}>{rothReturn}%</b>
+          </span>
+          <input
+            type="range"
+            min={3}
+            max={10}
+            step={0.5}
+            value={rothReturn}
+            onChange={(e) => setRothReturn(Number(e.target.value))}
+          />
+        </label>
+        <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: "#94a3b8" }}>Pay Conversion Tax From:</span>
+          {[
+            ["outside_cash", "Outside Cash"],
+            ["from_pretax", "Pre-Tax (self-funded)"],
+          ].map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setRothTaxSource(k)}
+              style={{
+                padding: "3px 10px",
+                borderRadius: 5,
+                border:
+                  rothTaxSource === k
+                    ? "1px solid #0d9488"
+                    : "1px solid rgba(255,255,255,0.1)",
+                background:
+                  rothTaxSource === k ? "rgba(13,148,136,0.15)" : "transparent",
+                color: rothTaxSource === k ? "#5eead4" : "#64748b",
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <div
           style={{
@@ -2573,6 +2751,7 @@ function RothLadder({ params }) {
                   <th>State Tax</th>
                   <th>Bracket</th>
                   <th>Eff Rate</th>
+                  <th title="Break-Even Tax Rate — convert if your future marginal rate exceeds this">BETR</th>
                   <th>Net→Roth</th>
                 </tr>
               </thead>
@@ -2615,6 +2794,16 @@ function RothLadder({ params }) {
                     <td style={{ color: "#94a3b8" }}>
                       {(r.effR * 100).toFixed(1)}%
                     </td>
+                    <td
+                      style={{
+                        color:
+                          rothFutureRate / 100 > r.betr ? "#34d399" : "#fb923c",
+                        fontWeight: 600,
+                      }}
+                      title={`Marginal ${(r.marg * 100).toFixed(0)}% · horizon ${r.horizon}yr · convert if future rate > ${(r.betr * 100).toFixed(1)}%`}
+                    >
+                      {(r.betr * 100).toFixed(1)}%
+                    </td>
                     <td style={{ color: "#14b8a6", fontWeight: 600 }}>
                       {fmtM(r.conv - r.fedT - (isNoTaxState ? 0 : r.stT))}
                     </td>
@@ -2639,6 +2828,17 @@ function RothLadder({ params }) {
                       : fmtM(convRows.reduce((s, r) => s + r.stT, 0))}
                   </td>
                   <td>—</td>
+                  <td>—</td>
+                  <td
+                    style={{
+                      color:
+                        rothFutureRate / 100 > avgBETR ? "#34d399" : "#fb923c",
+                      fontWeight: 700,
+                    }}
+                    title="Conversion-weighted average BETR"
+                  >
+                    {(avgBETR * 100).toFixed(1)}%
+                  </td>
                   <td style={{ color: "#14b8a6", fontWeight: 700 }}>
                     {fmtM(
                       convRows.reduce(
