@@ -1,10 +1,15 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-2  (prev parent: ba1bb89)
- *  BUILD TIME: 2026-04-17 13:46 UTC
- *  NOTES     : Fix Roth tab blank (FED_BRACKETS_2026 bug) +
- *              SECURE Act 2.0 RMD age (73 / 75 by DOB) +
- *              visible build stamp in banner.
+ *  BUILD TAG : roth-fix-3  (prev: roth-fix-2 / ba1bb89)
+ *  BUILD TIME: 2026-04-17 13:53 UTC
+ *  NOTES     : Fix <Row> → <ARow> in AssumptionsPanel (Roth
+ *              Conversion Strategy block). Same class of bug
+ *              as the prior <AROW>/<ROW> incident: module-level
+ *              helpers are named ARow / ANumInput / AStateSelect
+ *              / ADateInput — never use unprefixed names.
+ *  Also in this branch:
+ *    roth-fix-2: build stamp header + console log.
+ *    roth-fix-1 (ba1bb89): FED_BRACKETS_2026 bug + SECURE 2.0 RMD age.
  *  If the browser console shows an older BUILD TAG than this,
  *  you are running a stale build — rebuild with `npm run build`
  *  and hard-refresh the page (Ctrl/Cmd-Shift-R).
@@ -46,8 +51,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2";
-export const BUILD_TAG = "roth-fix-2";
-export const BUILD_TIME = "2026-04-17 13:46 UTC";
+export const BUILD_TAG = "roth-fix-3";
+export const BUILD_TIME = "2026-04-17 13:53 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -5409,7 +5414,7 @@ function AssumptionsPanel({ values, onChange }) {
         <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
           After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
         </div>
-        <Row label="Bracket-fill target" desc="AiRA converts pretax → Roth up to this bracket ceiling each year (off = no conversions)">
+        <ARow label="Bracket-fill target" desc="AiRA converts pretax → Roth up to this bracket ceiling each year (off = no conversions)">
           <select
             value={values.rothConversionTarget || "off"}
             onChange={(e) => onChange("rothConversionTarget", e.target.value)}
@@ -5421,7 +5426,7 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="24">Fill to top of 24% bracket</option>
             <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
           </select>
-        </Row>
+        </ARow>
       </div>
 
       <div
