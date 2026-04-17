@@ -1,13 +1,15 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-3  (prev: roth-fix-2 / ba1bb89)
- *  BUILD TIME: 2026-04-17 13:53 UTC
- *  NOTES     : Fix <Row> → <ARow> in AssumptionsPanel (Roth
- *              Conversion Strategy block). Same class of bug
- *              as the prior <AROW>/<ROW> incident: module-level
- *              helpers are named ARow / ANumInput / AStateSelect
- *              / ADateInput — never use unprefixed names.
- *  Also in this branch:
+ *  BUILD TAG : roth-fix-4  (prev: roth-fix-3)
+ *  BUILD TIME: 2026-04-17 14:00 UTC
+ *  NOTES     : Add 💾 Save + 🔁 Reload Saved controls to the
+ *              AssumptionsPanel. Saves the full values object to
+ *              localStorage under "aira_profile_v1" (persists
+ *              across browser refresh). Status line shows the
+ *              last-saved timestamp.
+ *  Branch history:
+ *    roth-fix-4: in-panel Save button + localStorage persistence.
+ *    roth-fix-3: <Row> → <ARow> fix in AssumptionsPanel.
  *    roth-fix-2: build stamp header + console log.
  *    roth-fix-1 (ba1bb89): FED_BRACKETS_2026 bug + SECURE 2.0 RMD age.
  *  If the browser console shows an older BUILD TAG than this,
@@ -51,8 +53,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2";
-export const BUILD_TAG = "roth-fix-3";
-export const BUILD_TIME = "2026-04-17 13:53 UTC";
+export const BUILD_TAG = "roth-fix-4";
+export const BUILD_TIME = "2026-04-17 14:00 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1851,6 +1853,24 @@ function DualInput({ label, value, min, max, step, format, onChange }) {
 }
 
 /* ════ IMPORT / EXPORT ════ */
+const LS_PROFILE_KEY = "aira_profile_v1";
+function saveProfileToLocal(values) {
+  try {
+    const payload = { ...values, savedAt: new Date().toISOString(), buildTag: BUILD_TAG };
+    localStorage.setItem(LS_PROFILE_KEY, JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+function loadProfileFromLocal() {
+  try {
+    const raw = localStorage.getItem(LS_PROFILE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 function exportProfile(values, name = "AiRA_Profile") {
   const blob = new Blob([JSON.stringify(values, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -5246,9 +5266,98 @@ function AssumptionsPanel({ values, onChange }) {
     ? Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 3600 * 1000))
     : "—";
 
+  const [saveStatus, setSaveStatus] = useState("");
+  const flashStatus = (msg) => {
+    setSaveStatus(msg);
+    setTimeout(() => setSaveStatus(""), 2000);
+  };
+  const handleSave = () => {
+    const ok = saveProfileToLocal(values);
+    flashStatus(ok ? "✓ Saved to this browser" : "✗ Save failed (localStorage blocked)");
+  };
+  const handleReload = () => {
+    const saved = loadProfileFromLocal();
+    if (!saved) {
+      flashStatus("No saved profile found");
+      return;
+    }
+    if (!window.confirm("Restore your last saved profile? Unsaved changes will be overwritten.")) return;
+    Object.entries(saved).forEach(([k, v]) => {
+      if (k === "savedAt" || k === "buildTag") return;
+      onChange(k, v);
+    });
+    flashStatus("✓ Restored saved profile");
+  };
+  const savedMeta = (() => {
+    const s = loadProfileFromLocal();
+    if (!s || !s.savedAt) return null;
+    try { return new Date(s.savedAt).toLocaleString(); } catch { return s.savedAt; }
+  })();
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          padding: "10px 14px",
+          background: "rgba(13,148,136,0.08)",
+          border: "1px solid rgba(13,148,136,0.25)",
+          borderRadius: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4" }}>
+            Profile Save
+          </div>
+          <div style={{ fontSize: 10, color: "#64748b" }}>
+            {savedMeta
+              ? `Last saved to this browser: ${savedMeta}`
+              : "No saved profile in this browser yet"}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {saveStatus && (
+            <span style={{ fontSize: 11, color: "#5eead4" }}>{saveStatus}</span>
+          )}
+          <button
+            onClick={handleReload}
+            disabled={!savedMeta}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 7,
+              border: "1px solid rgba(255,255,255,0.15)",
+              background: "transparent",
+              color: savedMeta ? "#94a3b8" : "#334155",
+              cursor: savedMeta ? "pointer" : "not-allowed",
+              fontSize: 11,
+              fontFamily: "inherit",
+            }}
+          >
+            🔁 Reload Saved
+          </button>
+          <button
+            onClick={handleSave}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 7,
+              border: "none",
+              background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+              color: "white",
+              cursor: "pointer",
+              fontSize: 11,
+              fontFamily: "inherit",
+              fontWeight: 600,
+            }}
+          >
+            💾 Save
+          </button>
+        </div>
+      </div>
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
