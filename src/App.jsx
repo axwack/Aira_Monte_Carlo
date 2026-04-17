@@ -1,19 +1,25 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-9  (prev: roth-fix-8)
- *  BUILD TIME: 2026-04-17 19:35 UTC
- *  NOTES     : Roth fan chart now adapts when DOB changes.
- *              - params now forwards assumptions.dob and
- *                assumptions.rmdStartAge (previously omitted,
- *                so buildRothExplorer never saw the user's DOB).
- *              - RothLadder useMemo deps extended with dob,
- *                birthYear, filingStatus, rmdStartAge so
- *                edits in the Assumptions panel actually
- *                retrigger the chart computation.
- *              - Removed duplicate `currentAge: prof.currentAge`
- *                in params (the dynamic DOB-derived currentAge
- *                is now the single source of truth).
+ *  BUILD TAG : roth-fix-10 (prev: roth-fix-9)
+ *  BUILD TIME: 2026-04-17 20:10 UTC
+ *  NOTES     : Removed hardcoded personal info across the app.
+ *              - Golden-year banner: dropped "Danielle graduates"
+ *                reference; now uses generic pre-SS framing.
+ *              - BucketsTab: dollar targets now computed from
+ *                params.port × pct; holdings replaced with
+ *                asset-class descriptions; lock dates derive
+ *                from retireAge.
+ *              - MCTab Withdrawal Phase cards: SS amount/age,
+ *                COLA, rental net, SS gap, healthcare age+prob,
+ *                shock range, mortgage payoff all from params.
+ *              - MCTab Market & Statistical cards: glide-path
+ *                phases, horizon, rental reliability from params.
+ *              - RothLadder Assumptions: SS start and Portfolio
+ *                lines no longer fall back to my personal
+ *                defaults; pre-tax % now computed from accounts.
  *  Branch history:
+ *    roth-fix-10: strip hardcoded PII across MCTab, RothLadder,
+ *                 BucketsTab, and Golden-year banner.
  *    roth-fix-9: Roth chart reacts to DOB / rmdStartAge edits.
  *    roth-fix-8: dynamic MCTab input cards (no hardcoded names).
  *    roth-fix-7: merge Full Name + hide-Next-on-step-6.
@@ -64,8 +70,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-9";
-export const BUILD_TIME = "2026-04-17 19:35 UTC";
+export const BUILD_TAG = "roth-fix-10";
+export const BUILD_TIME = "2026-04-17 20:10 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2387,15 +2393,26 @@ function RothLadder({ params }) {
             [
               "SS Start",
               "Age " +
-                (params.ssAge || 64) +
+                (params.ssAge ?? "—") +
                 " / $" +
-                (params.ssb || 31543).toLocaleString() +
+                (params.ssb || 0).toLocaleString() +
                 "/yr",
               "#94a3b8",
             ],
             [
               "Portfolio",
-              fmtM(params.port || 2434000) + " (60% pre-tax est.)",
+              (() => {
+                const accts = params.accounts || [];
+                const total = accts.reduce((s, a) => s + (a.balance || 0), 0);
+                const pretax = accts
+                  .filter((a) => a.category === "pretax")
+                  .reduce((s, a) => s + (a.balance || 0), 0);
+                const pct = total > 0 ? Math.round((pretax / total) * 100) : 0;
+                return (
+                  fmtM(params.port || 0) +
+                  (total > 0 ? ` (${pct}% pre-tax)` : "")
+                );
+              })(),
               "#94a3b8",
             ],
             ["Growth Assumption", "7% nominal (balance projection)", "#94a3b8"],
@@ -2878,9 +2895,10 @@ function RothLadder({ params }) {
                   border: "1px solid rgba(124,58,237,0.2)",
                 }}
               >
-                ★ Golden year {g.yr} (age {g.age}): last before SS. Bracket room
-                up to 24% ceiling. After SS, space compresses. Delay aggressive
-                conversions until Danielle graduates Spring 2034.
+                ★ Golden year {g.yr} (age {g.age}): last year before Social
+                Security begins. Maximum bracket room up to the 24% ceiling.
+                Once SS starts, available space compresses — prioritize larger
+                conversions here.
               </div>
             ) : null;
           })()}
@@ -3144,37 +3162,46 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
   );
 }
 
-function BucketsTab() {
+function BucketsTab({ params = {} }) {
+  const port = params.port || 0;
+  const retireAge = params.retireAge || 60;
+  const currentAge = params.currentAge || 50;
+  const yrsToRetire = Math.max(0, retireAge - currentAge);
+  const retireYear = new Date().getFullYear() + yrsToRetire;
+  const bucketPcts = [6, 16, 78];
+  const bucketTargets = bucketPcts.map((pct) =>
+    port > 0 ? fmtM((port * pct) / 100) : `${pct}%`
+  );
   const buckets = [
     {
-      name: "Bucket 1 — Cash/SGOV",
-      target: "$160–200K",
-      pct: 6,
+      name: "Bucket 1 — Cash / Short-term",
+      target: bucketTargets[0],
+      pct: bucketPcts[0],
       color: "#0ea5e9",
       purpose:
         "Living expenses 3-5yr runway. GK floor mechanism. NEVER dual-purpose.",
-      holdings: "SGOV · Money Market · T-Bills",
-      locked: "Jan 2030",
+      holdings: "Cash · Money market · Short-term Treasuries",
+      locked: `Draws begin at retirement (age ${retireAge})`,
     },
     {
       name: "Bucket 2 — Income Sleeve",
-      target: "~$500K",
-      pct: 16,
+      target: bucketTargets[1],
+      pct: bucketPcts[1],
       color: "#a78bfa",
       purpose:
         "Dividend/income generation. Starts AT retirement. Reduces portfolio WR.",
-      holdings: "SCHD · SPYI · QQQI · Realty Income (O)",
-      locked: "Jan 2028 start",
+      holdings: "Dividend equities · Covered-call income · REITs",
+      locked: `Activates at retirement (${retireYear})`,
     },
     {
       name: "Bucket 3 — Growth",
-      target: "Remainder",
-      pct: 78,
+      target: bucketTargets[2],
+      pct: bucketPcts[2],
       color: "#10b981",
       purpose:
         "Never touch 7-10 years. Compounding engine. Draw only when Bucket 1 depleted.",
-      holdings: "VOO · SPMO · VTI · VXUS",
-      locked: "Never before 2037",
+      holdings: "Broad-market equity · Momentum · International",
+      locked: `Never before age ${retireAge + 7}`,
     },
   ];
   return (
@@ -3363,7 +3390,7 @@ function ScenariosTab({
       )}
 
       {scenarioSubTab === "roth" && <RothLadder params={baseParams} />}
-      {scenarioSubTab === "buckets" && <BucketsTab />}
+      {scenarioSubTab === "buckets" && <BucketsTab params={baseParams} />}
       {scenarioSubTab === "smile" && <SmileChart p={baseParams} inf={inf} />}
     </div>
   );
@@ -3615,30 +3642,45 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                   title="Living Expenses"
                   rows={[
                     ["Base annual spend", fmtM(params.sp) + "/yr"],
-                    ["Inflation model", "Blanchett smile"],
-                    ["Go-go (60–74)", "115% of base"],
-                    ["Slow-go (75–84)", "85% of base"],
+                    ["Inflation model", params.smile ? "Blanchett smile" : "Flat"],
+                    [`Go-go (${params.retireAge}–${Math.min(74, params.endAge)})`, "115% of base"],
+                    [`Slow-go (75–${Math.min(84, params.endAge)})`, "85% of base"],
                   ]}
                 />
                 <InputCard
                   title="Income Offsets"
                   rows={[
-                    ["Social Security", "$31,543/yr @ 64"],
-                    ["SS COLA", "2.4%/yr"],
-                    ["Rental net (80% reliable)", "$20,000/yr"],
-                    ["SS gap", "Ages 60–63: $0"],
+                    [
+                      "Social Security",
+                      `$${(params.ssb || 0).toLocaleString()}/yr @ ${params.ssAge || "—"}`,
+                    ],
+                    ["SS COLA", `${params.ssCola ?? 2.4}%/yr`],
+                    [
+                      `Rental net (${params.abReliability ?? 80}% reliable)`,
+                      params.useAb ? `$${(params.ab || 0).toLocaleString()}/yr` : "Off",
+                    ],
+                    [
+                      "SS gap",
+                      `Ages ${params.retireAge}–${(params.ssAge || params.retireAge) - 1}: $0`,
+                    ],
                   ]}
                 />
                 <InputCard
                   title="Additional Costs"
                   rows={[
-                    ["Healthcare (age 72+)", "3.5% shock prob/yr"],
-                    ["Shock range", "$70K–$130K"],
+                    [
+                      `Healthcare (age ${params.hcShockAge ?? 72}+)`,
+                      `${params.hcProb ?? 3.5}% shock prob/yr`,
+                    ],
+                    [
+                      "Shock range",
+                      `${fmtK(params.hcMin ?? 70000)}–${fmtK(params.hcMax ?? 130000)}`,
+                    ],
                     [
                       "Mortgage annual",
                       mortAnnual > 0 ? fmtM(mortAnnual) + "/yr" : "Paid off",
                     ],
-                    ["Mortgage payoff", "~" + mortPayoffAge],
+                    ["Mortgage payoff", mortPayoffAge > 0 ? "~" + mortPayoffAge : "—"],
                   ]}
                 />
               </div>
@@ -3666,8 +3708,14 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                   rows={[
                     ["Model", "Historical bootstrap"],
                     ["Equity data", "99yr S&P 500 (1928–2026)"],
-                    ["Phase 1 mean (91/9)", "9.68%/yr"],
-                    ["Phase 2 mean (70/30)", "8.93%/yr"],
+                    [
+                      `Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`,
+                      "Equity / Bonds",
+                    ],
+                    [
+                      `Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`,
+                      "Equity / Bonds",
+                    ],
                   ]}
                 />
                 <InputCard
@@ -3683,9 +3731,15 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                   title="Simulation Parameters"
                   rows={[
                     ["Simulations", "3,000 paths"],
-                    ["Horizons", "Age 85 + Age 90"],
+                    [
+                      "Horizons",
+                      `Age 85 + Age ${params.endAge || 90}`,
+                    ],
                     ["Withdrawal", "Guyton-Klinger"],
-                    ["Rental reliability", "80% per year"],
+                    [
+                      "Rental reliability",
+                      `${params.abReliability ?? 80}% per year`,
+                    ],
                   ]}
                 />
               </div>
