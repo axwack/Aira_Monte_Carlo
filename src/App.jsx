@@ -1,3 +1,14 @@
+/* ============================================================
+ *  AiRA Monte Carlo · App.jsx
+ *  BUILD TAG : roth-fix-2  (prev parent: ba1bb89)
+ *  BUILD TIME: 2026-04-17 13:46 UTC
+ *  NOTES     : Fix Roth tab blank (FED_BRACKETS_2026 bug) +
+ *              SECURE Act 2.0 RMD age (73 / 75 by DOB) +
+ *              visible build stamp in banner.
+ *  If the browser console shows an older BUILD TAG than this,
+ *  you are running a stale build — rebuild with `npm run build`
+ *  and hard-refresh the page (Ctrl/Cmd-Shift-R).
+ * ============================================================ */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   ComposedChart,
@@ -33,8 +44,15 @@ if (typeof document !== "undefined") {
  */
 
 
-/* ════ REFERENCE DATA ════ updated to 12/20/2026*/ 
+/* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2";
+export const BUILD_TAG = "roth-fix-2";
+export const BUILD_TIME = "2026-04-17 13:46 UTC";
+if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
+  window.__AIRA_BUILD_LOGGED__ = true;
+  // eslint-disable-next-line no-console
+  console.log(`[AiRA] build ${BUILD_TAG} · ${BUILD_TIME} · v${APP_VERSION}`);
+}
 
 const SP500 = [
   37.88, -11.91, -28.48, -47.07, -15.15, 46.59, -5.94, 41.37, 27.92, -38.59,
