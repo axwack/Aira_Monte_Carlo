@@ -93,8 +93,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-14";
-export const BUILD_TIME = "2026-04-17 22:15 UTC";
+export const BUILD_TAG = "roth-fix-15";
+export const BUILD_TIME = "2026-04-17 22:35 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1261,7 +1261,7 @@ function buildRothExplorer(params = {}) {
     dob,
     birthYear,
     rmdStartAge, // explicit override switch
-    taxFunding = "outside_cash", // "outside_cash" | "from_conv" | "from_taxable"
+    taxFunding = "from_taxable", // "outside_cash" | "from_conv" | "from_taxable"
   } = params;
 
   const isMFJ = filingStatus !== "single";
@@ -1405,6 +1405,18 @@ function buildRothExplorer(params = {}) {
       const magi = totInc + (ss - ssT);
       const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
 
+      // True marginal rate: Δ(fed + state + IRMAA) / conv when conv > 0.
+      let margR = 0;
+      if (conv > 0) {
+        const txIncNo = Math.max(0, incBC - stdD);
+        const fedTNo = Math.round(progTax(txIncNo, fB));
+        const stTNo = isNoTaxState ? 0 : Math.round(progTax(txIncNo, nB));
+        const magiNo = incBC + (ss - ssT);
+        const irmaaNo = age >= 65 ? irmaaCost(magiNo, yr) : 0;
+        const dTax = (fedT + stT + irmaa) - (fedTNo + stTNo + irmaaNo);
+        margR = dTax / conv;
+      }
+
       // Tax funding: determine how conversion tax is paid.
       let roAdd = conv;
       let taxFromTaxable = 0;
@@ -1446,7 +1458,7 @@ function buildRothExplorer(params = {}) {
       }
       rows.push({
         yr, age, ss, abn, rmd, conv, baseInc: incBC, totInc, txInc,
-        fedT, stT, totT, effR, irmaa, magi,
+        fedT, stT, totT, effR, margR, irmaa, magi,
         pT: Math.round(pT), ro: Math.round(ro), nw: Math.round(pT + ro),
         label,
         bracketUsed: conv > 0
@@ -2759,6 +2771,7 @@ function RothLadder({ params }) {
                   <th>State Tax</th>
                   <th>Bracket</th>
                   <th title="Why conversion was capped this year">Cap</th>
+                  <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg</th>
                   <th>Eff Rate</th>
                   <th>Net→Roth</th>
                 </tr>
@@ -2810,6 +2823,21 @@ function RothLadder({ params }) {
                     >
                       {r.capReason || "-"}
                     </td>
+                    <td
+                      style={{
+                        color: r.margR >= 0.32
+                          ? "#ef4444"
+                          : r.margR >= 0.24
+                          ? "#fbbf24"
+                          : r.margR >= 0.22
+                          ? "#5eead4"
+                          : "#34d399",
+                        fontWeight: 600,
+                      }}
+                      title="Δ(fed+state+IRMAA) / conversion"
+                    >
+                      {((r.margR || 0) * 100).toFixed(1)}%
+                    </td>
                     <td style={{ color: "#94a3b8" }}>
                       {(r.effR * 100).toFixed(1)}%
                     </td>
@@ -2836,6 +2864,7 @@ function RothLadder({ params }) {
                       ? "$0"
                       : fmtM(convRows.reduce((s, r) => s + r.stT, 0))}
                   </td>
+                  <td>—</td>
                   <td>—</td>
                   <td>—</td>
                   <td>—</td>
@@ -3153,7 +3182,9 @@ function RothLadder({ params }) {
         This analysis is for planning purposes only. Consult a tax professional
         before executing Roth conversions. Progressive fed brackets (IRS Rev.
         Proc. 2025-32) · NJ graduated rates · Joint & Last Survivor RMD table ·
-        7% growth assumption
+        7% growth assumption · Conversion tax default funded from your taxable /
+        HSA / cash bucket (Vanguard BETR best practice — lowest effective rate).
+        Override in Assumptions → Roth Conversion Strategy.
       </div>
     </div>
   );
@@ -5727,7 +5758,7 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
         <ARow label="Tax funding source" desc="How conversion taxes are paid. 'Outside cash' is most favorable (full conversion grows tax-free). 'From taxable' debits your taxable/HSA/cash buckets. 'From conversion' shrinks the Roth transfer by the tax owed.">
           <select
-            value={values.taxFunding || "outside_cash"}
+            value={values.taxFunding || "from_taxable"}
             onChange={(e) => onChange("taxFunding", e.target.value)}
             style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
           >
@@ -6420,7 +6451,7 @@ export default function AiRAForecaster() {
       annualRent: assumptions.annualRent || 0,
       carveouts: assumptions.carveouts || [],
       rothConversionTarget: assumptions.rothConversionTarget || "off",
-      taxFunding: assumptions.taxFunding || "outside_cash",
+      taxFunding: assumptions.taxFunding || "from_taxable",
       withdrawalStrategy: withdrawalStrategy,
       fixedWithdrawalRate: 0.04,
       vanguardInitialRate: 0.04,
