@@ -93,8 +93,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-13";
-export const BUILD_TIME = "2026-04-17 21:45 UTC";
+export const BUILD_TAG = "roth-fix-14";
+export const BUILD_TIME = "2026-04-17 22:15 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1261,6 +1261,7 @@ function buildRothExplorer(params = {}) {
     dob,
     birthYear,
     rmdStartAge, // explicit override switch
+    taxFunding = "outside_cash", // "outside_cash" | "from_conv" | "from_taxable"
   } = params;
 
   const isMFJ = filingStatus !== "single";
@@ -1280,7 +1281,8 @@ function buildRothExplorer(params = {}) {
   const _otherSum = (params.accounts || []).filter(a => !["pretax","roth"].includes(a.category)).reduce((s, a) => s + (a.balance || 0), 0);
   const _totalFromAccounts = _pretaxSum + _rothSum + _otherSum;
   const pretaxBal = _totalFromAccounts > 0 ? _pretaxSum : port * 0.6,
-    rothBal = _totalFromAccounts > 0 ? (_rothSum + _otherSum) : port * 0.4,
+    rothBal = _totalFromAccounts > 0 ? _rothSum : port * 0.4,
+    taxBal0 = _totalFromAccounts > 0 ? _otherSum : 0,
     gr = 0.07;
 
   function irmaaCeiling(yr) {
@@ -1295,6 +1297,7 @@ function buildRothExplorer(params = {}) {
   function runScenario(doConvert) {
     let pT = pretaxBal,
       ro = rothBal,
+      taxBal = taxBal0,
       cTax = 0,
       cConv = 0,
       cIrmaa = 0,
@@ -1402,8 +1405,23 @@ function buildRothExplorer(params = {}) {
       const magi = totInc + (ss - ssT);
       const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
 
+      // Tax funding: determine how conversion tax is paid.
+      let roAdd = conv;
+      let taxFromTaxable = 0;
+      if (doConvert && conv > 0 && totT > 0) {
+        if (taxFunding === "from_conv") {
+          roAdd = Math.max(0, conv - totT);
+        } else if (taxFunding === "from_taxable") {
+          taxFromTaxable = Math.min(taxBal, totT);
+          if (taxFromTaxable < totT) {
+            // taxable depleted — remainder comes out of the conversion
+            roAdd = Math.max(0, conv - (totT - taxFromTaxable));
+          }
+        }
+      }
+      taxBal = Math.max(0, taxBal - taxFromTaxable) * (1 + gr);
       pT = Math.max(0, pT - rmd - conv - Math.max(0, portDraw * 0.6)) * (1 + gr);
-      ro = Math.max(0, ro + conv - Math.max(0, portDraw * 0.4)) * (1 + gr);
+      ro = Math.max(0, ro + roAdd - Math.max(0, portDraw * 0.4)) * (1 + gr);
       lastReturn = gr;
       cTax += totT;
       cConv += conv;
@@ -2361,6 +2379,7 @@ function RothLadder({ params }) {
       params?.birthYear,
       params?.filingStatus,
       params?.rmdStartAge,
+      params?.taxFunding,
       rothMode,
     ]
   );
@@ -5706,6 +5725,17 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
           </select>
         </ARow>
+        <ARow label="Tax funding source" desc="How conversion taxes are paid. 'Outside cash' is most favorable (full conversion grows tax-free). 'From taxable' debits your taxable/HSA/cash buckets. 'From conversion' shrinks the Roth transfer by the tax owed.">
+          <select
+            value={values.taxFunding || "outside_cash"}
+            onChange={(e) => onChange("taxFunding", e.target.value)}
+            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
+          >
+            <option value="outside_cash">Outside cash (assumes unlimited)</option>
+            <option value="from_taxable">From taxable / HSA / cash bucket</option>
+            <option value="from_conv">From the conversion (withhold)</option>
+          </select>
+        </ARow>
       </div>
 
       <div
@@ -6390,6 +6420,7 @@ export default function AiRAForecaster() {
       annualRent: assumptions.annualRent || 0,
       carveouts: assumptions.carveouts || [],
       rothConversionTarget: assumptions.rothConversionTarget || "off",
+      taxFunding: assumptions.taxFunding || "outside_cash",
       withdrawalStrategy: withdrawalStrategy,
       fixedWithdrawalRate: 0.04,
       vanguardInitialRate: 0.04,
