@@ -1,15 +1,20 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-8  (prev: roth-fix-7)
- *  BUILD TIME: 2026-04-17 19:05 UTC
- *  NOTES     : MCTab "Simulation Inputs & Assumptions" cards
- *              are now dynamic. Starting Balances iterates
- *              params.accounts. Annual Contributions uses
- *              params.contrib × years-to-retirement. Plan
- *              Parameters uses params.preRetireEq /
- *              params.postRetireEq. Removed hardcoded names
- *              ("Fidelity", "Alpha FMC", "$1.66M", etc.).
+ *  BUILD TAG : roth-fix-9  (prev: roth-fix-8)
+ *  BUILD TIME: 2026-04-17 19:35 UTC
+ *  NOTES     : Roth fan chart now adapts when DOB changes.
+ *              - params now forwards assumptions.dob and
+ *                assumptions.rmdStartAge (previously omitted,
+ *                so buildRothExplorer never saw the user's DOB).
+ *              - RothLadder useMemo deps extended with dob,
+ *                birthYear, filingStatus, rmdStartAge so
+ *                edits in the Assumptions panel actually
+ *                retrigger the chart computation.
+ *              - Removed duplicate `currentAge: prof.currentAge`
+ *                in params (the dynamic DOB-derived currentAge
+ *                is now the single source of truth).
  *  Branch history:
+ *    roth-fix-9: Roth chart reacts to DOB / rmdStartAge edits.
  *    roth-fix-8: dynamic MCTab input cards (no hardcoded names).
  *    roth-fix-7: merge Full Name + hide-Next-on-step-6.
  *    roth-fix-6: Full Name input + filename sanitization.
@@ -59,8 +64,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-8";
-export const BUILD_TIME = "2026-04-17 19:05 UTC";
+export const BUILD_TAG = "roth-fix-9";
+export const BUILD_TIME = "2026-04-17 19:35 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2300,6 +2305,10 @@ function RothLadder({ params }) {
       params?.useAb,
       params?.ssb,
       params?.accounts,
+      params?.dob,
+      params?.birthYear,
+      params?.filingStatus,
+      params?.rmdStartAge,
       rothMode,
     ]
   );
@@ -6204,7 +6213,8 @@ export default function AiRAForecaster() {
 
   const params = useMemo(
     () => ({
-      currentAge: prof.currentAge,
+      dob: assumptions.dob || "",
+      rmdStartAge: assumptions.rmdStartAge,
       retireAge: retAge,
       endAge,
       port,
