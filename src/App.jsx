@@ -1158,6 +1158,28 @@ function irmaaCost(magi, yr) {
 
 const ROTH_BASE_YEAR = new Date().getFullYear();
 
+/**
+ * SECURE Act 2.0 RMD start age.
+ * Born before 1951 → 72 (pre-SECURE 2.0 transition)
+ * Born 1951–1959  → 73
+ * Born 1960+      → 75
+ * Accepts either a birth year (number) or an ISO dob string ("YYYY-MM-DD").
+ */
+function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
+  let by = null;
+  if (typeof birthYear === "number" && birthYear > 0) by = birthYear;
+  else if (typeof dob === "string" && dob.length >= 4) {
+    const y = parseInt(dob.slice(0, 4), 10);
+    if (!isNaN(y)) by = y;
+  } else if (typeof currentAge === "number" && currentAge > 0) {
+    by = ROTH_BASE_YEAR - currentAge;
+  }
+  if (by === null) return 73; // safe default
+  if (by >= 1960) return 75;
+  if (by >= 1951) return 73;
+  return 72;
+}
+
 function buildRothExplorer(params = {}) {
   const {
     currentAge = 56,
@@ -1170,7 +1192,19 @@ function buildRothExplorer(params = {}) {
     port = 2434000,
     twoHousehold = true,
     rothMode = "fill_22",
+    filingStatus = "mfj",
+    dob,
+    birthYear,
+    rmdStartAge, // explicit override switch
   } = params;
+
+  const isMFJ = filingStatus !== "single";
+  const fedBase = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
+  const stdDedBase = isMFJ ? 32200 : 16100;
+  const stdDedAgeBonus = isMFJ ? 3300 : 1650;
+  const rmdAge = typeof rmdStartAge === "number" && rmdStartAge > 0
+    ? rmdStartAge
+    : getRmdStartAge({ dob, birthYear, currentAge });
 
   const infR = inf / 100,
     retireYear = ROTH_BASE_YEAR + (retireAge - currentAge),
@@ -1212,12 +1246,12 @@ function buildRothExplorer(params = {}) {
     for (let age = retireAge; age <= 90; age++) {
       const yr = retireYear + (age - retireAge),
         f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
-      const fB = idxB(FED_BRACKETS_2026, f),
+      const fB = idxB(fedBase, f),
         nB = idxB(NJ_BRACKETS_2026, f);
-      const stdD = Math.round(32200 * f) + (age >= 65 ? 3300 : 0);
-      const b12t = fB.find((b) => b.rate === 0.12)?.hi || Math.round(100800 * f);
-      const b22t = fB.find((b) => b.rate === 0.22)?.hi || Math.round(211400 * f);
-      const b24t = fB.find((b) => b.rate === 0.24)?.hi || Math.round(403550 * f);
+      const stdD = Math.round(stdDedBase * f) + (age >= 65 ? Math.round(stdDedAgeBonus * f) : 0);
+      const b12t = fB.find((b) => b.rate === 0.12)?.hi || Math.round((isMFJ ? 100800 : 50400) * f);
+      const b22t = fB.find((b) => b.rate === 0.22)?.hi || Math.round((isMFJ ? 211400 : 105700) * f);
+      const b24t = fB.find((b) => b.rate === 0.24)?.hi || Math.round((isMFJ ? 403550 : 201800) * f);
 
       const totalPort = pT + ro;
       if (age > retireAge && totalPort > 0) {
@@ -1241,9 +1275,10 @@ function buildRothExplorer(params = {}) {
       const portDraw = Math.max(0, sp - ss - abn);
 
       // RMD calculation – using Uniform Lifetime Table (RMD_DIV)
+      // Start age follows SECURE Act 2.0: 75 if born 1960+, 73 if born 1951-1959, 72 if born before 1951.
       // For Joint & Last Survivor, you would need spouse age and a 2D table.
       let rmd = 0;
-      if (age >= 73 && pT > 0) {
+      if (age >= rmdAge && pT > 0) {
         const divisor = RMD_DIV[age] || 15.0;
         rmd = Math.round(pT / divisor);
       }
@@ -1255,7 +1290,7 @@ function buildRothExplorer(params = {}) {
         doConvert &&
         rothMode !== "no_convert" &&
         age >= retireAge &&
-        age < 73 &&
+        age < rmdAge &&
         pT > 0
       ) {
         let targetTop;
@@ -1273,8 +1308,8 @@ function buildRothExplorer(params = {}) {
         if (yr <= 2029) targetTop = Math.min(targetTop, b12t);
         // CSS Profile guard: 2030-2033 — cap at 22%
         if (yr > 2029 && yr <= 2033) targetTop = Math.min(targetTop, b22t);
-        // 24% permitted ages 66-72 only
-        if (rothMode === "fill_24" && (age < 66 || age > 72))
+        // 24% permitted from age 66 until the year before RMDs begin
+        if (rothMode === "fill_24" && (age < 66 || age >= rmdAge))
           targetTop = Math.min(targetTop, b22t);
         const room = Math.max(0, targetTop - txBC);
         // Hard cap: never convert more than $250K in a single year
@@ -1332,7 +1367,7 @@ function buildRothExplorer(params = {}) {
 
   return {
     opt, cur, convRows, taxD, estD, leOpt, leCur, rmdRed,
-    isNoTaxState, retireYear, retireAge, ssAge,
+    isNoTaxState, retireYear, retireAge, ssAge, rmdAge, filingStatus: isMFJ ? "mfj" : "single",
   };
 }
 
@@ -2230,6 +2265,8 @@ function RothLadder({ params }) {
     rmdRed,
     isNoTaxState,
     retireYear,
+    rmdAge,
+    filingStatus,
   } = ex;
   const domLabel = isNoTaxState
     ? "No Tax State Move or Out of Country"
@@ -2274,11 +2311,12 @@ function RothLadder({ params }) {
         >
           {[
             ["Domicile", domLabel, domColor],
-            ["Filing Status", "MFJ", "#94a3b8"],
+            ["Filing Status", filingStatus === "mfj" ? "MFJ" : "Single", "#94a3b8"],
             ["Bracket Target", modeLabels[rothMode], "#5eead4"],
             [
               "Std Deduction (2026)",
-              "$32,200 (indexed " + params.inf + "%/yr)",
+              (filingStatus === "mfj" ? "$32,200" : "$16,100") +
+                " (indexed " + params.inf + "%/yr)",
               "#94a3b8",
             ],
             [
@@ -2307,8 +2345,13 @@ function RothLadder({ params }) {
             ["FAFSA Guard", "Through 2029 · capped at 12%", "#fbbf24"],
             [
               "Conversion Window",
-              "Age " + (params.retireAge || 60) + "–72 (dynamic fill)",
+              "Age " + (params.retireAge || 60) + "–" + (rmdAge - 1) + " (dynamic fill)",
               "#5eead4",
+            ],
+            [
+              "RMD Start Age",
+              rmdAge + " (SECURE Act 2.0)",
+              "#94a3b8",
             ],
             [
               "RMD Table",
@@ -2361,7 +2404,7 @@ function RothLadder({ params }) {
       };
     });
   const rmdYears = opt.rows
-    .filter((r) => r.age >= 73 && r.age <= 90)
+    .filter((r) => r.age >= rmdAge && r.age <= 90)
     .map((r) => {
       const c = cur.rows.find((cr) => cr.yr === r.yr);
       return {
