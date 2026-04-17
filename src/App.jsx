@@ -1,9 +1,22 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-12 (prev: roth-fix-11)
- *  BUILD TIME: 2026-04-17 21:00 UTC
- *  NOTES     : FanChart top margin 10 → 28 so D-Day / SS /
- *              RMD reference labels are no longer clipped.
+ *  BUILD TAG : roth-fix-13 (prev: roth-fix-12)
+ *  BUILD TIME: 2026-04-17 21:45 UTC
+ *  NOTES     : Roth conversion plan diagnostics.
+ *              - Each year's row now carries capReason (why
+ *                the target bracket was capped) and a per-
+ *                bracket breakdown of the conversion dollars.
+ *              - Conversion Plan bar chart is now STACKED by
+ *                federal bracket: you can see how much of the
+ *                year's conversion lands in 10/12/22/24/32/
+ *                35/37 bracket segments (explains why fill_22
+ *                vs fill_24 can look identical when FAFSA /
+ *                CSS / IRMAA-lookback / age<66 guards bind).
+ *              - Added "Cap" column to the conversion plan
+ *                table — orange text when a guard binds,
+ *                grey when the chosen mode is the binding
+ *                constraint. Hover for full reason.
+ *  roth-fix-12: FanChart top margin so labels aren't clipped.
  *  roth-fix-11: FanChart RMD reference line is now dynamic.
  *              Was hardcoded at x={73}. Now threaded via
  *              rmdAge prop from the root (computed via
@@ -80,8 +93,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-12";
-export const BUILD_TIME = "2026-04-17 21:00 UTC";
+export const BUILD_TAG = "roth-fix-13";
+export const BUILD_TIME = "2026-04-17 21:45 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1338,6 +1351,7 @@ function buildRothExplorer(params = {}) {
       const txBC = Math.max(0, incBC - stdD);
 
       let conv = 0;
+      let capReason = "";
       if (
         doConvert &&
         rothMode !== "no_convert" &&
@@ -1346,26 +1360,37 @@ function buildRothExplorer(params = {}) {
         pT > 0
       ) {
         let targetTop;
-        if (rothMode === "fill_12") targetTop = b12t;
-        else if (rothMode === "fill_22") targetTop = b22t;
-        else if (rothMode === "fill_24") targetTop = b24t;
-        else if (rothMode === "irmaa_safe")
-          targetTop = Math.min(b22t, irmaaCeiling(yr) + stdD);
-        else targetTop = b22t;
+        if (rothMode === "fill_12") { targetTop = b12t; capReason = "mode 12%"; }
+        else if (rothMode === "fill_22") { targetTop = b22t; capReason = "mode 22%"; }
+        else if (rothMode === "fill_24") { targetTop = b24t; capReason = "mode 24%"; }
+        else if (rothMode === "irmaa_safe") {
+          const irmaaTop = irmaaCeiling(yr) + stdD;
+          if (irmaaTop < b22t) { targetTop = irmaaTop; capReason = "IRMAA ceiling"; }
+          else { targetTop = b22t; capReason = "mode 22%"; }
+        } else { targetTop = b22t; capReason = "mode 22%"; }
 
         // IRMAA lookback guard: ages 60-65 — cap at 22%
-        if (age >= 60 && age <= 65 && rothMode === "fill_24")
-          targetTop = Math.min(targetTop, b22t);
+        if (age >= 60 && age <= 65 && rothMode === "fill_24" && b22t < targetTop) {
+          targetTop = b22t; capReason = "IRMAA lookback (age 60-65)";
+        }
         // FAFSA/CSS guard: through 2029 — cap at 12%
-        if (yr <= 2029) targetTop = Math.min(targetTop, b12t);
+        if (yr <= 2029 && b12t < targetTop) {
+          targetTop = b12t; capReason = "FAFSA (≤2029)";
+        }
         // CSS Profile guard: 2030-2033 — cap at 22%
-        if (yr > 2029 && yr <= 2033) targetTop = Math.min(targetTop, b22t);
+        if (yr > 2029 && yr <= 2033 && b22t < targetTop) {
+          targetTop = b22t; capReason = "CSS Profile (2030-33)";
+        }
         // 24% permitted from age 66 until the year before RMDs begin
-        if (rothMode === "fill_24" && (age < 66 || age >= rmdAge))
-          targetTop = Math.min(targetTop, b22t);
+        if (rothMode === "fill_24" && (age < 66 || age >= rmdAge) && b22t < targetTop) {
+          targetTop = b22t; capReason = "24% gated (age 66+ only)";
+        }
         const room = Math.max(0, targetTop - txBC);
         // Hard cap: never convert more than $250K in a single year
-        conv = Math.round(Math.min(room, Math.max(0, pT), 250_000));
+        const preCap = Math.min(room, Math.max(0, pT));
+        conv = Math.round(Math.min(preCap, 250_000));
+        if (preCap > 250_000) capReason = "$250K annual cap";
+        else if (pT < room) capReason = "pretax exhausted";
       }
 
       const totInc = incBC + conv,
@@ -1392,6 +1417,15 @@ function buildRothExplorer(params = {}) {
         else label = `Year ${age - retireAge}`;
       }
 
+      // Per-bracket split of the conversion: which dollars landed in which bracket.
+      const convByBr = { conv10: 0, conv12: 0, conv22: 0, conv24: 0, conv32: 0, conv35: 0, conv37: 0 };
+      if (conv > 0) {
+        fB.forEach((b) => {
+          const inBr = Math.max(0, Math.min(txInc, b.hi) - Math.max(txBC, b.lo));
+          const key = `conv${Math.round(b.rate * 100)}`;
+          if (key in convByBr) convByBr[key] = Math.round(inBr);
+        });
+      }
       rows.push({
         yr, age, ss, abn, rmd, conv, baseInc: incBC, totInc, txInc,
         fedT, stT, totT, effR, irmaa, magi,
@@ -1400,6 +1434,8 @@ function buildRothExplorer(params = {}) {
         bracketUsed: conv > 0
           ? txInc <= b12t ? "12%" : txInc <= b22t ? "22%" : txInc <= b24t ? "24%" : "32%"
           : "-",
+        capReason,
+        ...convByBr,
         sp: Math.round(sp), portDraw: Math.round(portDraw),
       });
     }
@@ -2474,6 +2510,13 @@ function RothLadder({ params }) {
     age: r.age,
     conv: r.conv,
     label: r.label,
+    "10%": r.conv10 || 0,
+    "12%": r.conv12 || 0,
+    "22%": r.conv22 || 0,
+    "24%": r.conv24 || 0,
+    "32%": r.conv32 || 0,
+    "35%": r.conv35 || 0,
+    "37%": r.conv37 || 0,
   }));
   const taxCompare = opt.rows
     .filter((_, i) => i % 2 === 0 || i < 10)
@@ -2676,12 +2719,14 @@ function RothLadder({ params }) {
                   width={46}
                 />
                 <Tooltip content={<Tip />} />
-                <Bar
-                  dataKey="conv"
-                  name="Conversion"
-                  fill="#0d9488"
-                  radius={[4, 4, 0, 0]}
-                />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Bar dataKey="10%" stackId="br" fill="#1d4ed8" name="10%" />
+                <Bar dataKey="12%" stackId="br" fill="#0ea5e9" name="12%" />
+                <Bar dataKey="22%" stackId="br" fill="#14b8a6" name="22%" />
+                <Bar dataKey="24%" stackId="br" fill="#fbbf24" name="24%" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="32%" stackId="br" fill="#f97316" name="32%" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="35%" stackId="br" fill="#ef4444" name="35%" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="37%" stackId="br" fill="#991b1b" name="37%" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
             <table className="roth-tbl" style={{ marginTop: 10 }}>
@@ -2694,6 +2739,7 @@ function RothLadder({ params }) {
                   <th>Fed Tax</th>
                   <th>State Tax</th>
                   <th>Bracket</th>
+                  <th title="Why conversion was capped this year">Cap</th>
                   <th>Eff Rate</th>
                   <th>Net→Roth</th>
                 </tr>
@@ -2734,6 +2780,17 @@ function RothLadder({ params }) {
                     >
                       {r.bracketUsed}
                     </td>
+                    <td
+                      style={{
+                        color: r.capReason && r.capReason.startsWith("mode")
+                          ? "#64748b"
+                          : "#fb923c",
+                        fontSize: 9,
+                      }}
+                      title={r.capReason || ""}
+                    >
+                      {r.capReason || "-"}
+                    </td>
                     <td style={{ color: "#94a3b8" }}>
                       {(r.effR * 100).toFixed(1)}%
                     </td>
@@ -2760,6 +2817,8 @@ function RothLadder({ params }) {
                       ? "$0"
                       : fmtM(convRows.reduce((s, r) => s + r.stT, 0))}
                   </td>
+                  <td>—</td>
+                  <td>—</td>
                   <td>—</td>
                   <td style={{ color: "#14b8a6", fontWeight: 700 }}>
                     {fmtM(
