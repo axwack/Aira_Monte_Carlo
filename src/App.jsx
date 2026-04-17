@@ -4976,26 +4976,31 @@ function ProfileWizard({ values, onChange }) {
           >
             ← Previous
           </button>
+
           <div style={{ fontSize: 11, color: "#334155" }}>
             {step + 1} / {STEPS.length}
           </div>
-          <button
-            onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
-            disabled={step === STEPS.length - 1}
-            style={{
-              padding: "7px 18px",
-              borderRadius: 7,
-              border: "none",
-              background: "linear-gradient(135deg,#0d9488,#14b8a6)",
-              color: "white",
-              cursor: step === STEPS.length - 1 ? "not-allowed" : "pointer",
-              fontSize: 12,
-              fontFamily: "inherit",
-              fontWeight: 600,
-            }}
-          >
-            Next →
-          </button>
+
+          {/* Only show Next button if not on page 6 (step index 5) */}
+          {step !== 5 && (
+            <button
+              onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
+              disabled={step === STEPS.length - 1}
+              style={{
+                padding: "7px 18px",
+                borderRadius: 7,
+                border: "none",
+                background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+                color: "white",
+                cursor: step === STEPS.length - 1 ? "not-allowed" : "pointer",
+                fontSize: 12,
+                fontFamily: "inherit",
+                fontWeight: 600,
+              }}
+            >
+              Next →
+            </button>
+          )}
         </div>
       </div>
     </div>
