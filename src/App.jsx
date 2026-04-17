@@ -1,13 +1,53 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-4  (prev: roth-fix-3)
- *  BUILD TIME: 2026-04-17 14:00 UTC
- *  NOTES     : Add 💾 Save + 🔁 Reload Saved controls to the
- *              AssumptionsPanel. Saves the full values object to
- *              localStorage under "aira_profile_v1" (persists
- *              across browser refresh). Status line shows the
- *              last-saved timestamp.
+ *  BUILD TAG : roth-fix-13 (prev: roth-fix-12)
+ *  BUILD TIME: 2026-04-17 21:45 UTC
+ *  NOTES     : Roth conversion plan diagnostics.
+ *              - Each year's row now carries capReason (why
+ *                the target bracket was capped) and a per-
+ *                bracket breakdown of the conversion dollars.
+ *              - Conversion Plan bar chart is now STACKED by
+ *                federal bracket: you can see how much of the
+ *                year's conversion lands in 10/12/22/24/32/
+ *                35/37 bracket segments (explains why fill_22
+ *                vs fill_24 can look identical when FAFSA /
+ *                CSS / IRMAA-lookback / age<66 guards bind).
+ *              - Added "Cap" column to the conversion plan
+ *                table — orange text when a guard binds,
+ *                grey when the chosen mode is the binding
+ *                constraint. Hover for full reason.
+ *  roth-fix-12: FanChart top margin so labels aren't clipped.
+ *  roth-fix-11: FanChart RMD reference line is now dynamic.
+ *              Was hardcoded at x={73}. Now threaded via
+ *              rmdAge prop from the root (computed via
+ *              getRmdStartAge from assumptions.dob +
+ *              assumptions.rmdStartAge override). Passed to
+ *              all three FanChart call sites (Portfolio fan
+ *              tab, MCTab below the results, Stress scenario).
+ *  roth-fix-10 notes below ──────────────────────────────────
+ *              Removed hardcoded personal info across the app.
+ *              - Golden-year banner: dropped "Danielle graduates"
+ *                reference; now uses generic pre-SS framing.
+ *              - BucketsTab: dollar targets now computed from
+ *                params.port × pct; holdings replaced with
+ *                asset-class descriptions; lock dates derive
+ *                from retireAge.
+ *              - MCTab Withdrawal Phase cards: SS amount/age,
+ *                COLA, rental net, SS gap, healthcare age+prob,
+ *                shock range, mortgage payoff all from params.
+ *              - MCTab Market & Statistical cards: glide-path
+ *                phases, horizon, rental reliability from params.
+ *              - RothLadder Assumptions: SS start and Portfolio
+ *                lines no longer fall back to my personal
+ *                defaults; pre-tax % now computed from accounts.
  *  Branch history:
+ *    roth-fix-10: strip hardcoded PII across MCTab, RothLadder,
+ *                 BucketsTab, and Golden-year banner.
+ *    roth-fix-9: Roth chart reacts to DOB / rmdStartAge edits.
+ *    roth-fix-8: dynamic MCTab input cards (no hardcoded names).
+ *    roth-fix-7: merge Full Name + hide-Next-on-step-6.
+ *    roth-fix-6: Full Name input + filename sanitization.
+ *    roth-fix-5: wizard-level save bar + version sync to 9.2.1.
  *    roth-fix-4: in-panel Save button + localStorage persistence.
  *    roth-fix-3: <Row> → <ARow> fix in AssumptionsPanel.
  *    roth-fix-2: build stamp header + console log.
@@ -52,9 +92,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "9.2";
-export const BUILD_TAG = "roth-fix-4";
-export const BUILD_TIME = "2026-04-17 14:00 UTC";
+const APP_VERSION = "9.2.1";
+export const BUILD_TAG = "roth-fix-15";
+export const BUILD_TIME = "2026-04-17 22:35 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1221,6 +1261,7 @@ function buildRothExplorer(params = {}) {
     dob,
     birthYear,
     rmdStartAge, // explicit override switch
+    taxFunding = "from_taxable", // "outside_cash" | "from_conv" | "from_taxable"
   } = params;
 
   const isMFJ = filingStatus !== "single";
@@ -1240,7 +1281,8 @@ function buildRothExplorer(params = {}) {
   const _otherSum = (params.accounts || []).filter(a => !["pretax","roth"].includes(a.category)).reduce((s, a) => s + (a.balance || 0), 0);
   const _totalFromAccounts = _pretaxSum + _rothSum + _otherSum;
   const pretaxBal = _totalFromAccounts > 0 ? _pretaxSum : port * 0.6,
-    rothBal = _totalFromAccounts > 0 ? (_rothSum + _otherSum) : port * 0.4,
+    rothBal = _totalFromAccounts > 0 ? _rothSum : port * 0.4,
+    taxBal0 = _totalFromAccounts > 0 ? _otherSum : 0,
     gr = 0.07;
 
   function irmaaCeiling(yr) {
@@ -1255,6 +1297,7 @@ function buildRothExplorer(params = {}) {
   function runScenario(doConvert) {
     let pT = pretaxBal,
       ro = rothBal,
+      taxBal = taxBal0,
       cTax = 0,
       cConv = 0,
       cIrmaa = 0,
@@ -1311,6 +1354,7 @@ function buildRothExplorer(params = {}) {
       const txBC = Math.max(0, incBC - stdD);
 
       let conv = 0;
+      let capReason = "";
       if (
         doConvert &&
         rothMode !== "no_convert" &&
@@ -1319,26 +1363,37 @@ function buildRothExplorer(params = {}) {
         pT > 0
       ) {
         let targetTop;
-        if (rothMode === "fill_12") targetTop = b12t;
-        else if (rothMode === "fill_22") targetTop = b22t;
-        else if (rothMode === "fill_24") targetTop = b24t;
-        else if (rothMode === "irmaa_safe")
-          targetTop = Math.min(b22t, irmaaCeiling(yr) + stdD);
-        else targetTop = b22t;
+        if (rothMode === "fill_12") { targetTop = b12t; capReason = "mode 12%"; }
+        else if (rothMode === "fill_22") { targetTop = b22t; capReason = "mode 22%"; }
+        else if (rothMode === "fill_24") { targetTop = b24t; capReason = "mode 24%"; }
+        else if (rothMode === "irmaa_safe") {
+          const irmaaTop = irmaaCeiling(yr) + stdD;
+          if (irmaaTop < b22t) { targetTop = irmaaTop; capReason = "IRMAA ceiling"; }
+          else { targetTop = b22t; capReason = "mode 22%"; }
+        } else { targetTop = b22t; capReason = "mode 22%"; }
 
         // IRMAA lookback guard: ages 60-65 — cap at 22%
-        if (age >= 60 && age <= 65 && rothMode === "fill_24")
-          targetTop = Math.min(targetTop, b22t);
+        if (age >= 60 && age <= 65 && rothMode === "fill_24" && b22t < targetTop) {
+          targetTop = b22t; capReason = "IRMAA lookback (age 60-65)";
+        }
         // FAFSA/CSS guard: through 2029 — cap at 12%
-        if (yr <= 2029) targetTop = Math.min(targetTop, b12t);
+        if (yr <= 2029 && b12t < targetTop) {
+          targetTop = b12t; capReason = "FAFSA (≤2029)";
+        }
         // CSS Profile guard: 2030-2033 — cap at 22%
-        if (yr > 2029 && yr <= 2033) targetTop = Math.min(targetTop, b22t);
+        if (yr > 2029 && yr <= 2033 && b22t < targetTop) {
+          targetTop = b22t; capReason = "CSS Profile (2030-33)";
+        }
         // 24% permitted from age 66 until the year before RMDs begin
-        if (rothMode === "fill_24" && (age < 66 || age >= rmdAge))
-          targetTop = Math.min(targetTop, b22t);
+        if (rothMode === "fill_24" && (age < 66 || age >= rmdAge) && b22t < targetTop) {
+          targetTop = b22t; capReason = "24% gated (age 66+ only)";
+        }
         const room = Math.max(0, targetTop - txBC);
         // Hard cap: never convert more than $250K in a single year
-        conv = Math.round(Math.min(room, Math.max(0, pT), 250_000));
+        const preCap = Math.min(room, Math.max(0, pT));
+        conv = Math.round(Math.min(preCap, 250_000));
+        if (preCap > 250_000) capReason = "$250K annual cap";
+        else if (pT < room) capReason = "pretax exhausted";
       }
 
       const totInc = incBC + conv,
@@ -1350,8 +1405,35 @@ function buildRothExplorer(params = {}) {
       const magi = totInc + (ss - ssT);
       const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
 
+      // True marginal rate: Δ(fed + state + IRMAA) / conv when conv > 0.
+      let margR = 0;
+      if (conv > 0) {
+        const txIncNo = Math.max(0, incBC - stdD);
+        const fedTNo = Math.round(progTax(txIncNo, fB));
+        const stTNo = isNoTaxState ? 0 : Math.round(progTax(txIncNo, nB));
+        const magiNo = incBC + (ss - ssT);
+        const irmaaNo = age >= 65 ? irmaaCost(magiNo, yr) : 0;
+        const dTax = (fedT + stT + irmaa) - (fedTNo + stTNo + irmaaNo);
+        margR = dTax / conv;
+      }
+
+      // Tax funding: determine how conversion tax is paid.
+      let roAdd = conv;
+      let taxFromTaxable = 0;
+      if (doConvert && conv > 0 && totT > 0) {
+        if (taxFunding === "from_conv") {
+          roAdd = Math.max(0, conv - totT);
+        } else if (taxFunding === "from_taxable") {
+          taxFromTaxable = Math.min(taxBal, totT);
+          if (taxFromTaxable < totT) {
+            // taxable depleted — remainder comes out of the conversion
+            roAdd = Math.max(0, conv - (totT - taxFromTaxable));
+          }
+        }
+      }
+      taxBal = Math.max(0, taxBal - taxFromTaxable) * (1 + gr);
       pT = Math.max(0, pT - rmd - conv - Math.max(0, portDraw * 0.6)) * (1 + gr);
-      ro = Math.max(0, ro + conv - Math.max(0, portDraw * 0.4)) * (1 + gr);
+      ro = Math.max(0, ro + roAdd - Math.max(0, portDraw * 0.4)) * (1 + gr);
       lastReturn = gr;
       cTax += totT;
       cConv += conv;
@@ -1365,14 +1447,25 @@ function buildRothExplorer(params = {}) {
         else label = `Year ${age - retireAge}`;
       }
 
+      // Per-bracket split of the conversion: which dollars landed in which bracket.
+      const convByBr = { conv10: 0, conv12: 0, conv22: 0, conv24: 0, conv32: 0, conv35: 0, conv37: 0 };
+      if (conv > 0) {
+        fB.forEach((b) => {
+          const inBr = Math.max(0, Math.min(txInc, b.hi) - Math.max(txBC, b.lo));
+          const key = `conv${Math.round(b.rate * 100)}`;
+          if (key in convByBr) convByBr[key] = Math.round(inBr);
+        });
+      }
       rows.push({
         yr, age, ss, abn, rmd, conv, baseInc: incBC, totInc, txInc,
-        fedT, stT, totT, effR, irmaa, magi,
+        fedT, stT, totT, effR, margR, irmaa, magi,
         pT: Math.round(pT), ro: Math.round(ro), nw: Math.round(pT + ro),
         label,
         bracketUsed: conv > 0
           ? txInc <= b12t ? "12%" : txInc <= b22t ? "22%" : txInc <= b24t ? "24%" : "32%"
           : "-",
+        capReason,
+        ...convByBr,
         sp: Math.round(sp), portDraw: Math.round(portDraw),
       });
     }
@@ -1946,7 +2039,7 @@ function importProfile(onLoad) {
   input.click();
 }
 
-function FanChart({ pcts, retireAge, ssAge, inf, useReal, title }) {
+function FanChart({ pcts, retireAge, ssAge, inf, useReal, title, rmdAge = 73 }) {
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
   return (
     <div className="chart-card">
@@ -1956,7 +2049,7 @@ function FanChart({ pcts, retireAge, ssAge, inf, useReal, title }) {
       <ResponsiveContainer width="100%" height={260}>
         <ComposedChart
           data={data}
-          margin={{ top: 10, right: 8, left: 0, bottom: 0 }}
+          margin={{ top: 28, right: 8, left: 0, bottom: 0 }}
         >
           <defs>
             <linearGradient id="g90v5" x1="0" y1="0" x2="0" y2="1">
@@ -2009,7 +2102,7 @@ function FanChart({ pcts, retireAge, ssAge, inf, useReal, title }) {
             }}
           />
           <ReferenceLine
-            x={73}
+            x={rmdAge}
             stroke="#34d399"
             strokeWidth={1}
             strokeDasharray="4 3"
@@ -2294,6 +2387,11 @@ function RothLadder({ params }) {
       params?.useAb,
       params?.ssb,
       params?.accounts,
+      params?.dob,
+      params?.birthYear,
+      params?.filingStatus,
+      params?.rmdStartAge,
+      params?.taxFunding,
       rothMode,
     ]
   );
@@ -2372,15 +2470,26 @@ function RothLadder({ params }) {
             [
               "SS Start",
               "Age " +
-                (params.ssAge || 64) +
+                (params.ssAge ?? "—") +
                 " / $" +
-                (params.ssb || 31543).toLocaleString() +
+                (params.ssb || 0).toLocaleString() +
                 "/yr",
               "#94a3b8",
             ],
             [
               "Portfolio",
-              fmtM(params.port || 2434000) + " (60% pre-tax est.)",
+              (() => {
+                const accts = params.accounts || [];
+                const total = accts.reduce((s, a) => s + (a.balance || 0), 0);
+                const pretax = accts
+                  .filter((a) => a.category === "pretax")
+                  .reduce((s, a) => s + (a.balance || 0), 0);
+                const pct = total > 0 ? Math.round((pretax / total) * 100) : 0;
+                return (
+                  fmtM(params.port || 0) +
+                  (total > 0 ? ` (${pct}% pre-tax)` : "")
+                );
+              })(),
               "#94a3b8",
             ],
             ["Growth Assumption", "7% nominal (balance projection)", "#94a3b8"],
@@ -2432,6 +2541,13 @@ function RothLadder({ params }) {
     age: r.age,
     conv: r.conv,
     label: r.label,
+    "10%": r.conv10 || 0,
+    "12%": r.conv12 || 0,
+    "22%": r.conv22 || 0,
+    "24%": r.conv24 || 0,
+    "32%": r.conv32 || 0,
+    "35%": r.conv35 || 0,
+    "37%": r.conv37 || 0,
   }));
   const taxCompare = opt.rows
     .filter((_, i) => i % 2 === 0 || i < 10)
@@ -2634,12 +2750,14 @@ function RothLadder({ params }) {
                   width={46}
                 />
                 <Tooltip content={<Tip />} />
-                <Bar
-                  dataKey="conv"
-                  name="Conversion"
-                  fill="#0d9488"
-                  radius={[4, 4, 0, 0]}
-                />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Bar dataKey="10%" stackId="br" fill="#1d4ed8" name="10%" />
+                <Bar dataKey="12%" stackId="br" fill="#0ea5e9" name="12%" />
+                <Bar dataKey="22%" stackId="br" fill="#14b8a6" name="22%" />
+                <Bar dataKey="24%" stackId="br" fill="#fbbf24" name="24%" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="32%" stackId="br" fill="#f97316" name="32%" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="35%" stackId="br" fill="#ef4444" name="35%" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="37%" stackId="br" fill="#991b1b" name="37%" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
             <table className="roth-tbl" style={{ marginTop: 10 }}>
@@ -2652,6 +2770,8 @@ function RothLadder({ params }) {
                   <th>Fed Tax</th>
                   <th>State Tax</th>
                   <th>Bracket</th>
+                  <th title="Why conversion was capped this year">Cap</th>
+                  <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg</th>
                   <th>Eff Rate</th>
                   <th>Net→Roth</th>
                 </tr>
@@ -2692,6 +2812,32 @@ function RothLadder({ params }) {
                     >
                       {r.bracketUsed}
                     </td>
+                    <td
+                      style={{
+                        color: r.capReason && r.capReason.startsWith("mode")
+                          ? "#64748b"
+                          : "#fb923c",
+                        fontSize: 9,
+                      }}
+                      title={r.capReason || ""}
+                    >
+                      {r.capReason || "-"}
+                    </td>
+                    <td
+                      style={{
+                        color: r.margR >= 0.32
+                          ? "#ef4444"
+                          : r.margR >= 0.24
+                          ? "#fbbf24"
+                          : r.margR >= 0.22
+                          ? "#5eead4"
+                          : "#34d399",
+                        fontWeight: 600,
+                      }}
+                      title="Δ(fed+state+IRMAA) / conversion"
+                    >
+                      {((r.margR || 0) * 100).toFixed(1)}%
+                    </td>
                     <td style={{ color: "#94a3b8" }}>
                       {(r.effR * 100).toFixed(1)}%
                     </td>
@@ -2718,6 +2864,9 @@ function RothLadder({ params }) {
                       ? "$0"
                       : fmtM(convRows.reduce((s, r) => s + r.stT, 0))}
                   </td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
                   <td>—</td>
                   <td style={{ color: "#14b8a6", fontWeight: 700 }}>
                     {fmtM(
@@ -2863,9 +3012,10 @@ function RothLadder({ params }) {
                   border: "1px solid rgba(124,58,237,0.2)",
                 }}
               >
-                ★ Golden year {g.yr} (age {g.age}): last before SS. Bracket room
-                up to 24% ceiling. After SS, space compresses. Delay aggressive
-                conversions until Danielle graduates Spring 2034.
+                ★ Golden year {g.yr} (age {g.age}): last year before Social
+                Security begins. Maximum bracket room up to the 24% ceiling.
+                Once SS starts, available space compresses — prioritize larger
+                conversions here.
               </div>
             ) : null;
           })()}
@@ -3032,7 +3182,9 @@ function RothLadder({ params }) {
         This analysis is for planning purposes only. Consult a tax professional
         before executing Roth conversions. Progressive fed brackets (IRS Rev.
         Proc. 2025-32) · NJ graduated rates · Joint & Last Survivor RMD table ·
-        7% growth assumption
+        7% growth assumption · Conversion tax default funded from your taxable /
+        HSA / cash bucket (Vanguard BETR best practice — lowest effective rate).
+        Override in Assumptions → Roth Conversion Strategy.
       </div>
     </div>
   );
@@ -3129,37 +3281,46 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
   );
 }
 
-function BucketsTab() {
+function BucketsTab({ params = {} }) {
+  const port = params.port || 0;
+  const retireAge = params.retireAge || 60;
+  const currentAge = params.currentAge || 50;
+  const yrsToRetire = Math.max(0, retireAge - currentAge);
+  const retireYear = new Date().getFullYear() + yrsToRetire;
+  const bucketPcts = [6, 16, 78];
+  const bucketTargets = bucketPcts.map((pct) =>
+    port > 0 ? fmtM((port * pct) / 100) : `${pct}%`
+  );
   const buckets = [
     {
-      name: "Bucket 1 — Cash/SGOV",
-      target: "$160–200K",
-      pct: 6,
+      name: "Bucket 1 — Cash / Short-term",
+      target: bucketTargets[0],
+      pct: bucketPcts[0],
       color: "#0ea5e9",
       purpose:
         "Living expenses 3-5yr runway. GK floor mechanism. NEVER dual-purpose.",
-      holdings: "SGOV · Money Market · T-Bills",
-      locked: "Jan 2030",
+      holdings: "Cash · Money market · Short-term Treasuries",
+      locked: `Draws begin at retirement (age ${retireAge})`,
     },
     {
       name: "Bucket 2 — Income Sleeve",
-      target: "~$500K",
-      pct: 16,
+      target: bucketTargets[1],
+      pct: bucketPcts[1],
       color: "#a78bfa",
       purpose:
         "Dividend/income generation. Starts AT retirement. Reduces portfolio WR.",
-      holdings: "SCHD · SPYI · QQQI · Realty Income (O)",
-      locked: "Jan 2028 start",
+      holdings: "Dividend equities · Covered-call income · REITs",
+      locked: `Activates at retirement (${retireYear})`,
     },
     {
       name: "Bucket 3 — Growth",
-      target: "Remainder",
-      pct: 78,
+      target: bucketTargets[2],
+      pct: bucketPcts[2],
       color: "#10b981",
       purpose:
         "Never touch 7-10 years. Compounding engine. Draw only when Bucket 1 depleted.",
-      holdings: "VOO · SPMO · VTI · VXUS",
-      locked: "Never before 2037",
+      holdings: "Broad-market equity · Momentum · International",
+      locked: `Never before age ${retireAge + 7}`,
     },
   ];
   return (
@@ -3221,6 +3382,7 @@ function ScenariosTab({
   stress,
   retireAge,
   ssAge,
+  rmdAge,
   inf,
   real,
   fmtPct,
@@ -3283,6 +3445,7 @@ function ScenariosTab({
             pcts={stress.pcts}
             retireAge={retireAge}
             ssAge={ssAge}
+            rmdAge={rmdAge}
             inf={inf}
             useReal={real}
             title="Stress test: 2000–2012 actual S&P sequence at retirement"
@@ -3348,7 +3511,7 @@ function ScenariosTab({
       )}
 
       {scenarioSubTab === "roth" && <RothLadder params={baseParams} />}
-      {scenarioSubTab === "buckets" && <BucketsTab />}
+      {scenarioSubTab === "buckets" && <BucketsTab params={baseParams} />}
       {scenarioSubTab === "smile" && <SmileChart p={baseParams} inf={inf} />}
     </div>
   );
@@ -3537,31 +3700,43 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                 <InputCard
                   title="Starting Balances"
                   rows={[
-                    ["Solo 401k (Fidelity)", "$1.66M"],
-                    ["Combined Roth IRA", "$732K"],
-                    ["HSA", "~$16K"],
+                    ...((params.accounts || [])
+                      .filter((a) => (a.balance || 0) > 0)
+                      .map((a) => [a.name || a.category, fmtM(a.balance || 0)])),
                     ["Total liquid", fmtM(params.port)],
                   ]}
                 />
                 <InputCard
                   title="Annual Contributions"
                   rows={[
-                    ["401k (2% pre + 10% Roth)", fmtK(26_500) + "/yr"],
-                    ["Catch-up (forced Roth)", fmtK(8_000) + "/yr"],
-                    ["Employer (3% + 1.5%)", fmtK(8_325) + "/yr"],
-                    ["Total", fmtK(params.contrib) + "/yr"],
+                    ["Total savings", fmtK(params.contrib || 0) + "/yr"],
+                    [
+                      "Years contributing",
+                      Math.max(0, params.retireAge - params.currentAge) + " yrs",
+                    ],
+                    [
+                      "Projected added",
+                      fmtK((params.contrib || 0) * Math.max(0, params.retireAge - params.currentAge)),
+                    ],
                   ]}
                 />
                 <InputCard
                   title="Plan Parameters"
                   rows={[
+                    ["Current age", "Age " + params.currentAge],
                     ["Retire age", "Age " + params.retireAge],
                     [
                       "Years to retirement",
-                      params.retireAge - params.currentAge + " yrs",
+                      Math.max(0, params.retireAge - params.currentAge) + " yrs",
                     ],
-                    ["Glide path", "91% equity / 9% bonds"],
-                    ["Employer", "Alpha FMC"],
+                    [
+                      "Pre-retirement glide",
+                      `${params.preRetireEq ?? 91}% equity / ${100 - (params.preRetireEq ?? 91)}% bonds`,
+                    ],
+                    [
+                      "Post-retirement glide",
+                      `${params.postRetireEq ?? 70}% equity / ${100 - (params.postRetireEq ?? 70)}% bonds`,
+                    ],
                   ]}
                 />
               </div>
@@ -3588,30 +3763,45 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                   title="Living Expenses"
                   rows={[
                     ["Base annual spend", fmtM(params.sp) + "/yr"],
-                    ["Inflation model", "Blanchett smile"],
-                    ["Go-go (60–74)", "115% of base"],
-                    ["Slow-go (75–84)", "85% of base"],
+                    ["Inflation model", params.smile ? "Blanchett smile" : "Flat"],
+                    [`Go-go (${params.retireAge}–${Math.min(74, params.endAge)})`, "115% of base"],
+                    [`Slow-go (75–${Math.min(84, params.endAge)})`, "85% of base"],
                   ]}
                 />
                 <InputCard
                   title="Income Offsets"
                   rows={[
-                    ["Social Security", "$31,543/yr @ 64"],
-                    ["SS COLA", "2.4%/yr"],
-                    ["Rental net (80% reliable)", "$20,000/yr"],
-                    ["SS gap", "Ages 60–63: $0"],
+                    [
+                      "Social Security",
+                      `$${(params.ssb || 0).toLocaleString()}/yr @ ${params.ssAge || "—"}`,
+                    ],
+                    ["SS COLA", `${params.ssCola ?? 2.4}%/yr`],
+                    [
+                      `Rental net (${params.abReliability ?? 80}% reliable)`,
+                      params.useAb ? `$${(params.ab || 0).toLocaleString()}/yr` : "Off",
+                    ],
+                    [
+                      "SS gap",
+                      `Ages ${params.retireAge}–${(params.ssAge || params.retireAge) - 1}: $0`,
+                    ],
                   ]}
                 />
                 <InputCard
                   title="Additional Costs"
                   rows={[
-                    ["Healthcare (age 72+)", "3.5% shock prob/yr"],
-                    ["Shock range", "$70K–$130K"],
+                    [
+                      `Healthcare (age ${params.hcShockAge ?? 72}+)`,
+                      `${params.hcProb ?? 3.5}% shock prob/yr`,
+                    ],
+                    [
+                      "Shock range",
+                      `${fmtK(params.hcMin ?? 70000)}–${fmtK(params.hcMax ?? 130000)}`,
+                    ],
                     [
                       "Mortgage annual",
                       mortAnnual > 0 ? fmtM(mortAnnual) + "/yr" : "Paid off",
                     ],
-                    ["Mortgage payoff", "~" + mortPayoffAge],
+                    ["Mortgage payoff", mortPayoffAge > 0 ? "~" + mortPayoffAge : "—"],
                   ]}
                 />
               </div>
@@ -3639,8 +3829,14 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                   rows={[
                     ["Model", "Historical bootstrap"],
                     ["Equity data", "99yr S&P 500 (1928–2026)"],
-                    ["Phase 1 mean (91/9)", "9.68%/yr"],
-                    ["Phase 2 mean (70/30)", "8.93%/yr"],
+                    [
+                      `Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`,
+                      "Equity / Bonds",
+                    ],
+                    [
+                      `Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`,
+                      "Equity / Bonds",
+                    ],
                   ]}
                 />
                 <InputCard
@@ -3656,9 +3852,15 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                   title="Simulation Parameters"
                   rows={[
                     ["Simulations", "3,000 paths"],
-                    ["Horizons", "Age 85 + Age 90"],
+                    [
+                      "Horizons",
+                      `Age 85 + Age ${params.endAge || 90}`,
+                    ],
                     ["Withdrawal", "Guyton-Klinger"],
-                    ["Rental reliability", "80% per year"],
+                    [
+                      "Rental reliability",
+                      `${params.abReliability ?? 80}% per year`,
+                    ],
                   ]}
                 />
               </div>
@@ -4730,6 +4932,33 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
 }
 function ProfileWizard({ values, onChange }) {
   const [step, setStep] = useState(0);
+  const [saveStatus, setSaveStatus] = useState("");
+  const flashStatus = (msg) => {
+    setSaveStatus(msg);
+    setTimeout(() => setSaveStatus(""), 2000);
+  };
+  const handleSave = () => {
+    const ok = saveProfileToLocal(values);
+    flashStatus(ok ? "✓ Saved to this browser" : "✗ Save failed (localStorage blocked)");
+  };
+  const handleReload = () => {
+    const saved = loadProfileFromLocal();
+    if (!saved) {
+      flashStatus("No saved profile found");
+      return;
+    }
+    if (!window.confirm("Restore your last saved profile? Unsaved changes will be overwritten.")) return;
+    Object.entries(saved).forEach(([k, v]) => {
+      if (k === "savedAt" || k === "buildTag") return;
+      onChange(k, v);
+    });
+    flashStatus("✓ Restored saved profile");
+  };
+  const savedMeta = (() => {
+    const s = loadProfileFromLocal();
+    if (!s || !s.savedAt) return null;
+    try { return new Date(s.savedAt).toLocaleString(); } catch { return s.savedAt; }
+  })();
 
   const STEPS = [
     { label: "About You", icon: "👤", sub: `${values.currentAge} yrs old` },
@@ -4827,6 +5056,69 @@ function ProfileWizard({ values, onChange }) {
 
       {/* RIGHT PANEL */}
        <div className="wizard-panel" style={{ padding: 24 }}>
+        {/* Save bar — visible on every wizard step */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            padding: "10px 14px",
+            marginBottom: 16,
+            background: "rgba(13,148,136,0.08)",
+            border: "1px solid rgba(13,148,136,0.25)",
+            borderRadius: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4" }}>
+              Profile Save
+            </div>
+            <div style={{ fontSize: 10, color: "#64748b" }}>
+              {savedMeta
+                ? `Last saved to this browser: ${savedMeta}`
+                : "No saved profile in this browser yet"}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {saveStatus && (
+              <span style={{ fontSize: 11, color: "#5eead4" }}>{saveStatus}</span>
+            )}
+            <button
+              onClick={handleReload}
+              disabled={!savedMeta}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 7,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "transparent",
+                color: savedMeta ? "#94a3b8" : "#334155",
+                cursor: savedMeta ? "pointer" : "not-allowed",
+                fontSize: 11,
+                fontFamily: "inherit",
+              }}
+            >
+              🔁 Reload Saved
+            </button>
+            <button
+              onClick={handleSave}
+              style={{
+                padding: "6px 14px",
+                borderRadius: 7,
+                border: "none",
+                background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+                color: "white",
+                cursor: "pointer",
+                fontSize: 11,
+                fontFamily: "inherit",
+                fontWeight: 600,
+              }}
+            >
+              💾 Save
+            </button>
+          </div>
+        </div>
         {/* Mobile step selector — only visible when sidebar is hidden */}
         <div className="wizard-mobile-steps" style={{ marginBottom: 16 }}>
           <select
@@ -4883,26 +5175,31 @@ function ProfileWizard({ values, onChange }) {
           >
             ← Previous
           </button>
+
           <div style={{ fontSize: 11, color: "#334155" }}>
             {step + 1} / {STEPS.length}
           </div>
-          <button
-            onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
-            disabled={step === STEPS.length - 1}
-            style={{
-              padding: "7px 18px",
-              borderRadius: 7,
-              border: "none",
-              background: "linear-gradient(135deg,#0d9488,#14b8a6)",
-              color: "white",
-              cursor: step === STEPS.length - 1 ? "not-allowed" : "pointer",
-              fontSize: 12,
-              fontFamily: "inherit",
-              fontWeight: 600,
-            }}
-          >
-            Next →
-          </button>
+
+          {/* Only show Next button if not on page 6 (step index 5) */}
+          {step !== 5 && (
+            <button
+              onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
+              disabled={step === STEPS.length - 1}
+              style={{
+                padding: "7px 18px",
+                borderRadius: 7,
+                border: "none",
+                background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+                color: "white",
+                cursor: step === STEPS.length - 1 ? "not-allowed" : "pointer",
+                fontSize: 12,
+                fontFamily: "inherit",
+                fontWeight: 600,
+              }}
+            >
+              Next →
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -5266,98 +5563,9 @@ function AssumptionsPanel({ values, onChange }) {
     ? Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 3600 * 1000))
     : "—";
 
-  const [saveStatus, setSaveStatus] = useState("");
-  const flashStatus = (msg) => {
-    setSaveStatus(msg);
-    setTimeout(() => setSaveStatus(""), 2000);
-  };
-  const handleSave = () => {
-    const ok = saveProfileToLocal(values);
-    flashStatus(ok ? "✓ Saved to this browser" : "✗ Save failed (localStorage blocked)");
-  };
-  const handleReload = () => {
-    const saved = loadProfileFromLocal();
-    if (!saved) {
-      flashStatus("No saved profile found");
-      return;
-    }
-    if (!window.confirm("Restore your last saved profile? Unsaved changes will be overwritten.")) return;
-    Object.entries(saved).forEach(([k, v]) => {
-      if (k === "savedAt" || k === "buildTag") return;
-      onChange(k, v);
-    });
-    flashStatus("✓ Restored saved profile");
-  };
-  const savedMeta = (() => {
-    const s = loadProfileFromLocal();
-    if (!s || !s.savedAt) return null;
-    try { return new Date(s.savedAt).toLocaleString(); } catch { return s.savedAt; }
-  })();
-
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          padding: "10px 14px",
-          background: "rgba(13,148,136,0.08)",
-          border: "1px solid rgba(13,148,136,0.25)",
-          borderRadius: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4" }}>
-            Profile Save
-          </div>
-          <div style={{ fontSize: 10, color: "#64748b" }}>
-            {savedMeta
-              ? `Last saved to this browser: ${savedMeta}`
-              : "No saved profile in this browser yet"}
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {saveStatus && (
-            <span style={{ fontSize: 11, color: "#5eead4" }}>{saveStatus}</span>
-          )}
-          <button
-            onClick={handleReload}
-            disabled={!savedMeta}
-            style={{
-              padding: "6px 12px",
-              borderRadius: 7,
-              border: "1px solid rgba(255,255,255,0.15)",
-              background: "transparent",
-              color: savedMeta ? "#94a3b8" : "#334155",
-              cursor: savedMeta ? "pointer" : "not-allowed",
-              fontSize: 11,
-              fontFamily: "inherit",
-            }}
-          >
-            🔁 Reload Saved
-          </button>
-          <button
-            onClick={handleSave}
-            style={{
-              padding: "6px 14px",
-              borderRadius: 7,
-              border: "none",
-              background: "linear-gradient(135deg,#0d9488,#14b8a6)",
-              color: "white",
-              cursor: "pointer",
-              fontSize: 11,
-              fontFamily: "inherit",
-              fontWeight: 600,
-            }}
-          >
-            💾 Save
-          </button>
-        </div>
-      </div>
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -5378,6 +5586,18 @@ function AssumptionsPanel({ values, onChange }) {
         >
           Personal Profile
         </div>
+        <ARow
+          label="Full Name"
+          desc="Used in the exported JSON filename (AiRA_Profile_<name>_YYYY-MM-DD.json)."
+        >
+          <input
+            type="text"
+            value={values.name || ""}
+            placeholder="Full Name"
+            onChange={(e) => onChange("name", e.target.value)}
+            style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
+          />
+        </ARow>
         <ARow
           label="Date of Birth"
           desc={`Current age: ${derivedAge} · Used to derive D-Day and accumulation years`}
@@ -5534,6 +5754,17 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="22">Fill to top of 22% bracket</option>
             <option value="24">Fill to top of 24% bracket</option>
             <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
+          </select>
+        </ARow>
+        <ARow label="Tax funding source" desc="How conversion taxes are paid. 'Outside cash' is most favorable (full conversion grows tax-free). 'From taxable' debits your taxable/HSA/cash buckets. 'From conversion' shrinks the Roth transfer by the tax owed.">
+          <select
+            value={values.taxFunding || "from_taxable"}
+            onChange={(e) => onChange("taxFunding", e.target.value)}
+            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
+          >
+            <option value="outside_cash">Outside cash (assumes unlimited)</option>
+            <option value="from_taxable">From taxable / HSA / cash bucket</option>
+            <option value="from_conv">From the conversion (withhold)</option>
           </select>
         </ARow>
       </div>
@@ -6123,6 +6354,12 @@ export default function AiRAForecaster() {
     }
   }, [assumptions.dob, prof.currentAge]);
 
+  const rmdAge = useMemo(() => {
+    const override = assumptions.rmdStartAge;
+    if (typeof override === "number" && override > 0) return override;
+    return getRmdStartAge({ dob: assumptions.dob, currentAge });
+  }, [assumptions.dob, assumptions.rmdStartAge, currentAge]);
+
   const DDAY_dynamic = useMemo(() => {
     try {
       const d = new Date(assumptions.dob);
@@ -6168,7 +6405,8 @@ export default function AiRAForecaster() {
 
   const params = useMemo(
     () => ({
-      currentAge: prof.currentAge,
+      dob: assumptions.dob || "",
+      rmdStartAge: assumptions.rmdStartAge,
       retireAge: retAge,
       endAge,
       port,
@@ -6213,6 +6451,7 @@ export default function AiRAForecaster() {
       annualRent: assumptions.annualRent || 0,
       carveouts: assumptions.carveouts || [],
       rothConversionTarget: assumptions.rothConversionTarget || "off",
+      taxFunding: assumptions.taxFunding || "from_taxable",
       withdrawalStrategy: withdrawalStrategy,
       fixedWithdrawalRate: 0.04,
       vanguardInitialRate: 0.04,
@@ -6304,7 +6543,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               AiRA <span className="logo-sub">Freedom Financial</span>
             </div>
             <div style={{ fontSize: 12, color: "#6e8099" }}>
-              v9.2 · Property cards · Dynamic action plan · Premium AI layer · GK dynamic · CSS/FAFSA guards
+              v{APP_VERSION} · Property cards · Dynamic action plan · Premium AI layer · GK dynamic · CSS/FAFSA guards
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
@@ -6366,7 +6605,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 // Meta
                 exportedAt: new Date().toISOString(),
                 appVersion: APP_VERSION,
-              }, assumptions.name ? `AiRA_Profile_${assumptions.name}` : "AiRA_Profile")}>
+              }, assumptions.name
+                   ? `AiRA_Profile_${assumptions.name.trim().replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "AiRA_Profile"}`
+                   : "AiRA_Profile")}>
               ⬇ Export
             </button>
             <button className="mbtn" title="Import profile from JSON"
@@ -7060,6 +7301,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     pcts={r90.pcts}
                     retireAge={retAge}
                     ssAge={ssAge}
+                    rmdAge={rmdAge}
                     inf={inf}
                     useReal={real}
                     title={`Portfolio fan · age ${endAge} · 3,000 paths`}
@@ -7080,6 +7322,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         pcts={r90.pcts}
                         retireAge={retAge}
                         ssAge={ssAge}
+                        rmdAge={rmdAge}
                         inf={inf}
                         useReal={real}
                         title={`Portfolio fan · age ${endAge} · 3,000 paths`}
@@ -7095,6 +7338,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       stress={stress}
                       retAge={retAge}           // ✅ Add this
                       ssAge={ssAge}             // ✅ Add this
+                      rmdAge={rmdAge}
                       inf={inf}                 // ✅ Add this
                       real={real}               // ✅ Add this
                       FanChart={FanChart}
