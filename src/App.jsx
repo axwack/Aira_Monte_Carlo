@@ -1,18 +1,16 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-5  (prev: roth-fix-4)
- *  BUILD TIME: 2026-04-17 14:23 UTC
- *  NOTES     : Move 💾 Save / 🔁 Reload Saved bar from the
- *              Assumptions step up to the ProfileWizard shell so
- *              it's visible on every wizard step (About You,
- *              Current Savings, Contributions, Retirement Plan,
- *              Other Income, Assumptions).
- *              Version bumps:
- *                APP_VERSION "9.2" → "9.2.1"
- *                package.json version "6.5.3" → "9.2.1"
- *                Hardcoded "v9.2" banner → `v${APP_VERSION}`
+ *  BUILD TAG : roth-fix-6  (prev: roth-fix-5)
+ *  BUILD TIME: 2026-04-17 18:07 UTC
+ *  NOTES     : Add "Full Name" text input at top of
+ *              AssumptionsPanel → Personal Profile. Writes to
+ *              values.name via onChange, so it flows into the
+ *              export JSON payload and the download filename.
+ *              Export filename now sanitizes the name
+ *              (non-alnum → "_") so it's filesystem-safe.
  *  Branch history:
- *    roth-fix-5: wizard-level save bar + version sync.
+ *    roth-fix-6: Full Name input + filename sanitization.
+ *    roth-fix-5: wizard-level save bar + version sync to 9.2.1.
  *    roth-fix-4: in-panel Save button + localStorage persistence.
  *    roth-fix-3: <Row> → <ARow> fix in AssumptionsPanel.
  *    roth-fix-2: build stamp header + console log.
@@ -58,8 +56,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-5";
-export const BUILD_TIME = "2026-04-17 14:23 UTC";
+export const BUILD_TAG = "roth-fix-6";
+export const BUILD_TIME = "2026-04-17 18:07 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -5385,6 +5383,18 @@ function AssumptionsPanel({ values, onChange }) {
           Personal Profile
         </div>
         <ARow
+          label="Full Name"
+          desc="Used in the exported JSON filename (AiRA_Profile_<name>_YYYY-MM-DD.json)."
+        >
+          <input
+            type="text"
+            value={values.name || ""}
+            placeholder="Full Name"
+            onChange={(e) => onChange("name", e.target.value)}
+            style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
+          />
+        </ARow>
+        <ARow
           label="Date of Birth"
           desc={`Current age: ${derivedAge} · Used to derive D-Day and accumulation years`}
         >
@@ -6372,7 +6382,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 // Meta
                 exportedAt: new Date().toISOString(),
                 appVersion: APP_VERSION,
-              }, assumptions.name ? `AiRA_Profile_${assumptions.name}` : "AiRA_Profile")}>
+              }, assumptions.name
+                   ? `AiRA_Profile_${assumptions.name.trim().replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "AiRA_Profile"}`
+                   : "AiRA_Profile")}>
               ⬇ Export
             </button>
             <button className="mbtn" title="Import profile from JSON"
