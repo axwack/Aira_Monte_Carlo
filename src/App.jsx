@@ -1,14 +1,13 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-6  (prev: roth-fix-5)
- *  BUILD TIME: 2026-04-17 18:07 UTC
- *  NOTES     : Add "Full Name" text input at top of
- *              AssumptionsPanel → Personal Profile. Writes to
- *              values.name via onChange, so it flows into the
- *              export JSON payload and the download filename.
- *              Export filename now sanitizes the name
- *              (non-alnum → "_") so it's filesystem-safe.
+ *  BUILD TAG : roth-fix-7  (prev: roth-fix-6)
+ *  BUILD TIME: 2026-04-17 18:35 UTC
+ *  NOTES     : Merge of two diverging commits:
+ *              - Full Name input + export filename sanitization.
+ *              - Hide "Next" button on the Assumptions step so
+ *                the wizard doesn't advance past step 6.
  *  Branch history:
+ *    roth-fix-7: merge Full Name + hide-Next-on-step-6.
  *    roth-fix-6: Full Name input + filename sanitization.
  *    roth-fix-5: wizard-level save bar + version sync to 9.2.1.
  *    roth-fix-4: in-panel Save button + localStorage persistence.
@@ -56,8 +55,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-6";
-export const BUILD_TIME = "2026-04-17 18:07 UTC";
+export const BUILD_TAG = "roth-fix-7";
+export const BUILD_TIME = "2026-04-17 18:35 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
