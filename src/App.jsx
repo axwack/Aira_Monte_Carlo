@@ -1,8 +1,10 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-11 (prev: roth-fix-10)
- *  BUILD TIME: 2026-04-17 20:45 UTC
- *  NOTES     : FanChart RMD reference line is now dynamic.
+ *  BUILD TAG : roth-fix-12 (prev: roth-fix-11)
+ *  BUILD TIME: 2026-04-17 21:00 UTC
+ *  NOTES     : FanChart top margin 10 → 28 so D-Day / SS /
+ *              RMD reference labels are no longer clipped.
+ *  roth-fix-11: FanChart RMD reference line is now dynamic.
  *              Was hardcoded at x={73}. Now threaded via
  *              rmdAge prop from the root (computed via
  *              getRmdStartAge from assumptions.dob +
@@ -78,8 +80,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-11";
-export const BUILD_TIME = "2026-04-17 20:45 UTC";
+export const BUILD_TAG = "roth-fix-12";
+export const BUILD_TIME = "2026-04-17 21:00 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1981,7 +1983,7 @@ function FanChart({ pcts, retireAge, ssAge, inf, useReal, title, rmdAge = 73 }) 
       <ResponsiveContainer width="100%" height={260}>
         <ComposedChart
           data={data}
-          margin={{ top: 10, right: 8, left: 0, bottom: 0 }}
+          margin={{ top: 28, right: 8, left: 0, bottom: 0 }}
         >
           <defs>
             <linearGradient id="g90v5" x1="0" y1="0" x2="0" y2="1">
