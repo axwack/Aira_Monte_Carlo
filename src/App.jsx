@@ -1,12 +1,16 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-7  (prev: roth-fix-6)
- *  BUILD TIME: 2026-04-17 18:35 UTC
- *  NOTES     : Merge of two diverging commits:
- *              - Full Name input + export filename sanitization.
- *              - Hide "Next" button on the Assumptions step so
- *                the wizard doesn't advance past step 6.
+ *  BUILD TAG : roth-fix-8  (prev: roth-fix-7)
+ *  BUILD TIME: 2026-04-17 19:05 UTC
+ *  NOTES     : MCTab "Simulation Inputs & Assumptions" cards
+ *              are now dynamic. Starting Balances iterates
+ *              params.accounts. Annual Contributions uses
+ *              params.contrib × years-to-retirement. Plan
+ *              Parameters uses params.preRetireEq /
+ *              params.postRetireEq. Removed hardcoded names
+ *              ("Fidelity", "Alpha FMC", "$1.66M", etc.).
  *  Branch history:
+ *    roth-fix-8: dynamic MCTab input cards (no hardcoded names).
  *    roth-fix-7: merge Full Name + hide-Next-on-step-6.
  *    roth-fix-6: Full Name input + filename sanitization.
  *    roth-fix-5: wizard-level save bar + version sync to 9.2.1.
@@ -55,8 +59,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-7";
-export const BUILD_TIME = "2026-04-17 18:35 UTC";
+export const BUILD_TAG = "roth-fix-8";
+export const BUILD_TIME = "2026-04-17 19:05 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -3539,31 +3543,43 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
                 <InputCard
                   title="Starting Balances"
                   rows={[
-                    ["Solo 401k (Fidelity)", "$1.66M"],
-                    ["Combined Roth IRA", "$732K"],
-                    ["HSA", "~$16K"],
+                    ...((params.accounts || [])
+                      .filter((a) => (a.balance || 0) > 0)
+                      .map((a) => [a.name || a.category, fmtM(a.balance || 0)])),
                     ["Total liquid", fmtM(params.port)],
                   ]}
                 />
                 <InputCard
                   title="Annual Contributions"
                   rows={[
-                    ["401k (2% pre + 10% Roth)", fmtK(26_500) + "/yr"],
-                    ["Catch-up (forced Roth)", fmtK(8_000) + "/yr"],
-                    ["Employer (3% + 1.5%)", fmtK(8_325) + "/yr"],
-                    ["Total", fmtK(params.contrib) + "/yr"],
+                    ["Total savings", fmtK(params.contrib || 0) + "/yr"],
+                    [
+                      "Years contributing",
+                      Math.max(0, params.retireAge - params.currentAge) + " yrs",
+                    ],
+                    [
+                      "Projected added",
+                      fmtK((params.contrib || 0) * Math.max(0, params.retireAge - params.currentAge)),
+                    ],
                   ]}
                 />
                 <InputCard
                   title="Plan Parameters"
                   rows={[
+                    ["Current age", "Age " + params.currentAge],
                     ["Retire age", "Age " + params.retireAge],
                     [
                       "Years to retirement",
-                      params.retireAge - params.currentAge + " yrs",
+                      Math.max(0, params.retireAge - params.currentAge) + " yrs",
                     ],
-                    ["Glide path", "91% equity / 9% bonds"],
-                    ["Employer", "Alpha FMC"],
+                    [
+                      "Pre-retirement glide",
+                      `${params.preRetireEq ?? 91}% equity / ${100 - (params.preRetireEq ?? 91)}% bonds`,
+                    ],
+                    [
+                      "Post-retirement glide",
+                      `${params.postRetireEq ?? 70}% equity / ${100 - (params.postRetireEq ?? 70)}% bonds`,
+                    ],
                   ]}
                 />
               </div>
