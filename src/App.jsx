@@ -4514,7 +4514,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     </div>
   );
 }
-/*
+
 function ActionPlanTab() {
   const milestones = [
     {
@@ -4608,11 +4608,7 @@ function ActionPlanTab() {
     "CSS Profile before Christopher applies (2027)",
   ];
   const onTrack = [
-    "Bootstrap MC engine 99yr S&P + 50yr bonds",
-    "Roth IRA ~$732K combined · growth only",
-    "Solo 401k $1.658M · FSKAX ✅",
-    "Vista Cay debt-free · Rental $20K ready",
-    "VOO→VTI ✅ · FXAIX→FSKAX ✅",
+    
   ];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
