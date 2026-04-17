@@ -1,8 +1,16 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-10 (prev: roth-fix-9)
- *  BUILD TIME: 2026-04-17 20:10 UTC
- *  NOTES     : Removed hardcoded personal info across the app.
+ *  BUILD TAG : roth-fix-11 (prev: roth-fix-10)
+ *  BUILD TIME: 2026-04-17 20:45 UTC
+ *  NOTES     : FanChart RMD reference line is now dynamic.
+ *              Was hardcoded at x={73}. Now threaded via
+ *              rmdAge prop from the root (computed via
+ *              getRmdStartAge from assumptions.dob +
+ *              assumptions.rmdStartAge override). Passed to
+ *              all three FanChart call sites (Portfolio fan
+ *              tab, MCTab below the results, Stress scenario).
+ *  roth-fix-10 notes below ──────────────────────────────────
+ *              Removed hardcoded personal info across the app.
  *              - Golden-year banner: dropped "Danielle graduates"
  *                reference; now uses generic pre-SS framing.
  *              - BucketsTab: dollar targets now computed from
@@ -70,8 +78,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-10";
-export const BUILD_TIME = "2026-04-17 20:10 UTC";
+export const BUILD_TAG = "roth-fix-11";
+export const BUILD_TIME = "2026-04-17 20:45 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1963,7 +1971,7 @@ function importProfile(onLoad) {
   input.click();
 }
 
-function FanChart({ pcts, retireAge, ssAge, inf, useReal, title }) {
+function FanChart({ pcts, retireAge, ssAge, inf, useReal, title, rmdAge = 73 }) {
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
   return (
     <div className="chart-card">
@@ -2026,7 +2034,7 @@ function FanChart({ pcts, retireAge, ssAge, inf, useReal, title }) {
             }}
           />
           <ReferenceLine
-            x={73}
+            x={rmdAge}
             stroke="#34d399"
             strokeWidth={1}
             strokeDasharray="4 3"
@@ -3263,6 +3271,7 @@ function ScenariosTab({
   stress,
   retireAge,
   ssAge,
+  rmdAge,
   inf,
   real,
   fmtPct,
@@ -3325,6 +3334,7 @@ function ScenariosTab({
             pcts={stress.pcts}
             retireAge={retireAge}
             ssAge={ssAge}
+            rmdAge={rmdAge}
             inf={inf}
             useReal={real}
             title="Stress test: 2000–2012 actual S&P sequence at retirement"
@@ -6222,6 +6232,12 @@ export default function AiRAForecaster() {
     }
   }, [assumptions.dob, prof.currentAge]);
 
+  const rmdAge = useMemo(() => {
+    const override = assumptions.rmdStartAge;
+    if (typeof override === "number" && override > 0) return override;
+    return getRmdStartAge({ dob: assumptions.dob, currentAge });
+  }, [assumptions.dob, assumptions.rmdStartAge, currentAge]);
+
   const DDAY_dynamic = useMemo(() => {
     try {
       const d = new Date(assumptions.dob);
@@ -7162,6 +7178,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     pcts={r90.pcts}
                     retireAge={retAge}
                     ssAge={ssAge}
+                    rmdAge={rmdAge}
                     inf={inf}
                     useReal={real}
                     title={`Portfolio fan · age ${endAge} · 3,000 paths`}
@@ -7182,6 +7199,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         pcts={r90.pcts}
                         retireAge={retAge}
                         ssAge={ssAge}
+                        rmdAge={rmdAge}
                         inf={inf}
                         useReal={real}
                         title={`Portfolio fan · age ${endAge} · 3,000 paths`}
@@ -7197,6 +7215,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       stress={stress}
                       retAge={retAge}           // ✅ Add this
                       ssAge={ssAge}             // ✅ Add this
+                      rmdAge={rmdAge}
                       inf={inf}                 // ✅ Add this
                       real={real}               // ✅ Add this
                       FanChart={FanChart}
