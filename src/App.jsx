@@ -1,7 +1,7 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : roth-fix-13 (prev: roth-fix-12)
- *  BUILD TIME: 2026-04-17 21:45 UTC
+ *  BUILD TAG : Added new Fanchart for actual versus forecasted
+ *  BUILD TIME: 2026-04-18 21:45 UTC
  *  NOTES     : Roth conversion plan diagnostics.
  *              - Each year's row now carries capReason (why
  *                the target bracket was capped) and a per-
@@ -92,9 +92,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "9.2.1";
-export const BUILD_TAG = "roth-fix-15";
-export const BUILD_TIME = "2026-04-17 22:35 UTC";
+const APP_VERSION = "9.2.2";
+export const BUILD_TAG = "Fan Chart Forecast";
+export const BUILD_TIME = "2026-04-18 21:45 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -243,6 +243,8 @@ const BLANK_PROFILE = {
   hcProb: 3.5,
   hcMin: 70_000,
   hcMax: 130_000,
+  checkpoints: [],          // each: { id, date, value, note }
+  earlyRetireTarget: 3500000,
 };
 
 const DEMO_PROFILE = {
@@ -307,6 +309,8 @@ const DEMO_PROFILE = {
   hcProb: 3.5,
   hcMin: 70_000,
   hcMax: 130_000,
+  checkpoints: [],          // each: { id, date, value, note }
+  earlyRetireTarget: 3500000,
 }
 
 const PROFILES = { user: BLANK_PROFILE, demo: DEMO_PROFILE };
@@ -2039,7 +2043,7 @@ function importProfile(onLoad) {
   input.click();
 }
 
-function FanChart({ pcts, retireAge, ssAge, inf, useReal, title, rmdAge = 73 }) {
+function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob }) {
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
   return (
     <div className="chart-card">
@@ -2113,6 +2117,53 @@ function FanChart({ pcts, retireAge, ssAge, inf, useReal, title, rmdAge = 73 }) 
               position: "top",
             }}
           />
+          <ReferenceLine
+                y={3200000}
+                stroke="#fbbf24"
+                strokeDasharray="6 4"
+                strokeWidth={1.5}
+                label={{ value: "Reassess $3.2M", fill: "#fbbf24", fontSize: 10, position: "right" }}
+              />
+              <ReferenceLine
+                y={earlyRetireTarget}
+                stroke="#34d399"
+                strokeDasharray="6 4"
+                strokeWidth={1.5}
+                label={{ value: `Trigger $${(earlyRetireTarget/1e6).toFixed(1)}M`, fill: "#34d399", fontSize: 10, position: "right" }}
+              />
+
+              {/* Checkpoints (actual portfolio values) */}
+              {checkpoints && checkpoints.map((cp) => {
+                if (!dob || !cp.date) return null;
+                const birth = new Date(dob);
+                const checkDate = new Date(cp.date);
+                if (isNaN(birth) || isNaN(checkDate)) return null;
+                // compute age as of checkpoint date (simplified – year difference)
+                let age = checkDate.getFullYear() - birth.getFullYear();
+                // optionally adjust if birthday hasn't occurred yet in that year (more accurate)
+                const monthDay = `${checkDate.getMonth()}-${checkDate.getDate()}`;
+                const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
+                if (monthDay < birthMonthDay) age--;
+                // find median and 25th percentile at that age
+                const p50AtAge = pcts.find(d => d.age === age)?.p50;
+                const p25AtAge = pcts.find(d => d.age === age)?.p25;
+                let color = "#94a3b8";
+                if (cp.value >= p50AtAge) color = "#10b981";
+                else if (cp.value <= p25AtAge) color = "#ef4444";
+                else color = "#fbbf24";
+                return (
+                  <ReferenceDot
+                    key={cp.id}
+                    x={age}
+                    y={cp.value}
+                    r={5}
+                    fill={color}
+                    stroke="#fff"
+                    strokeWidth={1.5}
+                    label={{ value: cp.note || "●", fill: color, fontSize: 9, position: "top" }}
+                  />
+                );
+              })}
           <Area
             type="monotone"
             dataKey="p90"
@@ -3393,6 +3444,9 @@ function ScenariosTab({
   BucketsTab,
   SmileChart,
   withdrawalStrategy,   // ✅ only once
+  checkpoints,           // new
+  earlyRetireTarget,     // new
+  dob, 
 }) {
 
   const [scenarioSubTab, setScenarioSubTab] = useState("stress");
@@ -3443,12 +3497,15 @@ function ScenariosTab({
         <div>
           <FanChart
             pcts={stress.pcts}
-            retireAge={retireAge}
+            retireAge={retAge}
             ssAge={ssAge}
             rmdAge={rmdAge}
             inf={inf}
             useReal={real}
             title="Stress test: 2000–2012 actual S&P sequence at retirement"
+            checkpoints={checkpoints}
+            earlyRetireTarget={earlyRetireTarget}
+            dob={dob}
           />
           <div
             style={{
@@ -3517,7 +3574,7 @@ function ScenariosTab({
   );
 }
 
-function MCTab({ params, r85, r90, stress, running, onRun }) {
+function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onAddCheckpoint, onDeleteCheckpoint, earlyRetireTarget, dob }) {
   const [showInputs, setShowInputs] = useState(false);
   const [showHow, setShowHow] = useState(false);
   const accPhase = `Age ${params.currentAge} → ${params.retireAge}`;
@@ -3621,6 +3678,11 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
       ))}
     </div>
   );
+const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
+const [newCpDate, setNewCpDate] = useState("");
+const [newCpValue, setNewCpValue] = useState("");
+const [newCpNote, setNewCpNote] = useState("");
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div
@@ -3940,6 +4002,85 @@ function MCTab({ params, r85, r90, stress, running, onRun }) {
           </div>
         )}
       </div>
+        {/* Checkpoint panel */}
+          <div className="chart-card" style={{ marginBottom: 12 }}>
+            <div className="ct">📌 Portfolio Checkpoints (Actual vs Forecast)</div>
+            <div style={{ marginBottom: 12 }}>
+              <button
+                onClick={() => setShowAddCheckpoint(!showAddCheckpoint)}
+                style={{ background: "rgba(13,148,136,0.2)", border: "1px solid #0d9488", borderRadius: 6, padding: "4px 12px", color: "#5eead4", cursor: "pointer" }}
+              >
+                {showAddCheckpoint ? "− Hide Form" : "+ Add Checkpoint"}
+              </button>
+            </div>
+            {showAddCheckpoint && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                <input type="date" value={newCpDate} onChange={e => setNewCpDate(e.target.value)} style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
+                <input type="number" placeholder="Portfolio value ($)" value={newCpValue} onChange={e => setNewCpValue(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
+                <input type="text" placeholder="Note (optional)" value={newCpNote} onChange={e => setNewCpNote(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
+                <button
+                  onClick={() => {
+                    if (!newCpDate || !newCpValue) return;
+                    const newCp = {
+                      id: Date.now().toString(),
+                      date: newCpDate,
+                      value: Number(newCpValue),
+                      note: newCpNote || "",
+                    };
+                    onAddCheckpoint(newCp);
+                    setNewCpDate("");
+                    setNewCpValue("");
+                    setNewCpNote("");
+                    setShowAddCheckpoint(false);
+                  }}
+                  style={{ background: "#0d9488", border: "none", borderRadius: 6, padding: "6px 16px", color: "white", cursor: "pointer" }}
+                >
+                  Save Checkpoint
+                </button>
+              </div>
+            )}
+            {checkpoints && checkpoints.length > 0 && (
+              <div style={{ overflowX: "auto", marginTop: 12 }}>
+                <table className="nw-table" style={{ fontSize: 11 }}>
+                  <thead>
+                    <tr><th>Date</th><th>Actual ($M)</th><th>MC Median ($M)</th><th>Delta</th><th>Status</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {[...checkpoints].reverse().slice(0, 6).map(cp => {
+                      let age = null;
+                      if (dob && cp.date) {
+                        const birth = new Date(dob);
+                        const cd = new Date(cp.date);
+                        if (!isNaN(birth) && !isNaN(cd)) {
+                          age = cd.getFullYear() - birth.getFullYear();
+                          // adjust month/day
+                          const cdMonthDay = `${cd.getMonth()}-${cd.getDate()}`;
+                          const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
+                          if (cdMonthDay < birthMonthDay) age--;
+                        }
+                      }
+                      const p50AtAge = (age !== null && r90?.pcts) ? (r90.pcts.find(d => d.age === age)?.p50 || 0) : 0;
+                      const delta = cp.value - p50AtAge;
+                      const status = delta > 0 ? "Ahead" : delta < 0 ? "Behind" : "On track";
+                      return (
+                        <tr key={cp.id}>
+                          <td>{new Date(cp.date).toLocaleDateString()}</td>
+                          <td>{fmtM(cp.value)}</td>
+                          <td>{fmtM(p50AtAge)}</td>
+                          <td style={{ color: delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8" }}>
+                            {delta > 0 ? "+" : ""}{fmtM(delta)}
+                          </td>
+                          <td style={{ color: delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8" }}>{status}</td>
+                          <td><button onClick={() => onDeleteCheckpoint(cp.id)} style={{ background:"none", border:"none", color:"#64748b", cursor:"pointer" }}>🗑️</button></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
       {!r90 && (
         <div
           style={{
@@ -6338,6 +6479,8 @@ export default function AiRAForecaster() {
     annualRent: BLANK_PROFILE.annualRent,
     carveouts: BLANK_PROFILE.carveouts,
     rothConversionTarget: BLANK_PROFILE.rothConversionTarget,
+    checkpoints: BLANK_PROFILE.checkpoints,
+    earlyRetireTarget: BLANK_PROFILE.earlyRetireTarget,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
@@ -6602,6 +6745,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 hcProb: assumptions.hcProb,
                 hcMin: assumptions.hcMin,
                 hcMax: assumptions.hcMax,
+                checkpoints: assumptions.checkpoints,
+                earlyRetireTarget: assumptions.earlyRetireTarget,
                 // Meta
                 exportedAt: new Date().toISOString(),
                 appVersion: APP_VERSION,
@@ -6666,7 +6811,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   "abReliability", "abGrowth", "ssCola", "preRetireEq", "postRetireEq",
                   "hcShockAge", "hcProb", "hcMin", "hcMax", "accounts",
                   "mortBalance", "mortRate", "mortStart", "mortTerm", "mortExtra", "mortPI",
-                  "housingType", "annualRent", "carveouts", "rothConversionTarget", "properties"
+                  "housingType", "annualRent", "carveouts", "rothConversionTarget", "properties","checkpoints","earlyRetireTarget",
                 ];
                 keys.forEach(k => {
                   if (data[k] !== undefined) updateAssumption(k, data[k]);
@@ -7298,14 +7443,17 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               <>
                 {activeTab === "fan" && r90 && (
                   <FanChart
-                    pcts={r90.pcts}
-                    retireAge={retAge}
-                    ssAge={ssAge}
-                    rmdAge={rmdAge}
-                    inf={inf}
-                    useReal={real}
-                    title={`Portfolio fan · age ${endAge} · 3,000 paths`}
-                  />
+                        pcts={r90.pcts}
+                        retireAge={retAge}
+                        ssAge={ssAge}
+                        rmdAge={rmdAge}
+                        inf={inf}
+                        useReal={real}
+                        title={`Portfolio fan · age ${endAge} · 3,000 paths`}
+                        checkpoints={assumptions.checkpoints}           // new
+                        earlyRetireTarget={assumptions.earlyRetireTarget} // new
+                        dob={assumptions.dob}                           // needed to compute age from checkpoint date
+                      />
                 )}
                 {activeTab === "montecarlo" && (
                   <>
@@ -7316,6 +7464,11 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       stress={stress}
                       running={running}
                       onRun={runSimulation}
+                      checkpoints={assumptions.checkpoints}
+                      onAddCheckpoint={(newCp) => updateAssumption("checkpoints", [...assumptions.checkpoints, newCp])}
+                      onDeleteCheckpoint={(id) => updateAssumption("checkpoints", assumptions.checkpoints.filter(c => c.id !== id))}
+                      earlyRetireTarget={assumptions.earlyRetireTarget}
+                      dob={assumptions.dob}
                     />
                     {r90 && (
                       <FanChart
@@ -7348,6 +7501,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       BucketsTab={BucketsTab}
                       SmileChart={SmileChart}
                       withdrawalStrategy={withdrawalStrategy}
+                      checkpoints={assumptions.checkpoints}            // new
+                      earlyRetireTarget={assumptions.earlyRetireTarget} // new
+                      dob={assumptions.dob}   
                     />
                 )}
                 {activeTab === "income" && <IncomeMap p={params} inf={inf} />}
