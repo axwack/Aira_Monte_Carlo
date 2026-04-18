@@ -70,6 +70,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceDot,
   Legend,
 } from "recharts";
 
@@ -92,8 +93,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "9.2.2";
-export const BUILD_TAG = "Fan Chart Forecast";
+const APP_VERSION = "9.2.3";
+export const BUILD_TAG = "Fan Chart Forecast with Dynamic RMD Reference Line and Target Retirement number to measure against MC paths";
 export const BUILD_TIME = "2026-04-18 21:45 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -189,6 +190,7 @@ const BLANK_PROFILE = {
   inf: 2.5,
   sp: 72_000,
   spSpendOutofState: 48_000,
+  portfolioGoal: 2_000_000,
   spInStateSpend: 0,
   ssAge: 67,
   ssb: 24_000,
@@ -258,6 +260,7 @@ const DEMO_PROFILE = {
   cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
   housingType: "own",
   annualRent: 0,
+  portfolioGoal: 3_200_000,
   carveouts: [],
   rothConversionTarget: "off",
   currentAge: 51,
@@ -358,6 +361,7 @@ const ANALOGUES = [
     color: "#ef4444",
   },
 ];
+
 
 /* ════ MATH CORE ════ */
 function mulberry32(seed) {
@@ -1720,11 +1724,11 @@ const CSS = `
   .ms { font-size:11px; color:#64748b; margin-top:5px; }
   .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:#cbd5e1; font-style:italic; }
   .tabs { display:flex; gap:3px; background:rgba(255,255,255,0.04); border-radius:10px; padding:3px; flex-wrap:wrap; }
-  .tab { flex:1; min-width:72px; padding:7px 6px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; color:#64748b; transition:all 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; }
+  .tab { flex:1; min-width:72px; padding:12px 6px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:14px; font-family:'Inter',sans-serif; color:#64748b; transition:all 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; }
   .tab:hover { color:#94a3b8; }
   .tab.on { background:rgba(255,255,255,0.09); color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); font-weight:600; }
   .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:15px 17px; }
-  .ct { font-size:12px; color:#94a3b8; margin-bottom:12px; font-weight:500; }
+  .ct { font-size:18px; color:#94a3b8; margin-bottom:12px; font-weight:500; }
   .leg { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
   .li { display:flex; align-items:center; gap:5px; font-size:11px; color:#64748b; }
   .ll { width:18px; height:2px; border-radius:1px; }
@@ -2043,7 +2047,7 @@ function importProfile(onLoad) {
   input.click();
 }
 
-function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob }) {
+function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob , portfolioGoal}) {
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
   return (
     <div className="chart-card">
@@ -2082,6 +2086,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           />
           <Tooltip content={<Tip />} />
           <ReferenceLine
+
             x={retireAge}
             stroke="#fbbf24"
             strokeWidth={1.5}
@@ -2118,14 +2123,16 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             }}
           />
           <ReferenceLine
-                y={3200000}
+                y={portfolioGoal}
+                ifOverflow="extendDomain"
                 stroke="#fbbf24"
                 strokeDasharray="6 4"
                 strokeWidth={1.5}
-                label={{ value: "Reassess $3.2M", fill: "#fbbf24", fontSize: 10, position: "right" }}
+                label={{ value: "Reassess {}", fill: "#fbbf24", fontSize: 10, position: "right" }}
               />
               <ReferenceLine
                 y={earlyRetireTarget}
+                ifOverflow="extendDomain"
                 stroke="#34d399"
                 strokeDasharray="6 4"
                 strokeWidth={1.5}
@@ -2133,37 +2140,44 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
               />
 
               {/* Checkpoints (actual portfolio values) */}
-              {checkpoints && checkpoints.map((cp) => {
-                if (!dob || !cp.date) return null;
-                const birth = new Date(dob);
-                const checkDate = new Date(cp.date);
-                if (isNaN(birth) || isNaN(checkDate)) return null;
-                // compute age as of checkpoint date (simplified – year difference)
-                let age = checkDate.getFullYear() - birth.getFullYear();
-                // optionally adjust if birthday hasn't occurred yet in that year (more accurate)
-                const monthDay = `${checkDate.getMonth()}-${checkDate.getDate()}`;
-                const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
-                if (monthDay < birthMonthDay) age--;
-                // find median and 25th percentile at that age
-                const p50AtAge = pcts.find(d => d.age === age)?.p50;
-                const p25AtAge = pcts.find(d => d.age === age)?.p25;
-                let color = "#94a3b8";
-                if (cp.value >= p50AtAge) color = "#10b981";
-                else if (cp.value <= p25AtAge) color = "#ef4444";
-                else color = "#fbbf24";
-                return (
-                  <ReferenceDot
-                    key={cp.id}
-                    x={age}
-                    y={cp.value}
-                    r={5}
-                    fill={color}
-                    stroke="#fff"
-                    strokeWidth={1.5}
-                    label={{ value: cp.note || "●", fill: color, fontSize: 9, position: "top" }}
-                  />
-                );
-              })}
+                {checkpoints && checkpoints.map((cp) => {
+                  if (!dob || !cp.date) return null;
+                  const birth = new Date(dob);
+                  const checkDate = new Date(cp.date);
+                  if (isNaN(birth) || isNaN(checkDate)) return null;
+
+                  let age = checkDate.getFullYear() - birth.getFullYear();
+                  const monthDay = `${checkDate.getMonth()}-${checkDate.getDate()}`;
+                  const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
+                  if (monthDay < birthMonthDay) age--;
+
+                  // Try to find percentile data for this age (only exists from retireAge onward)
+                  const p50AtAge = pcts.find(d => d.age === age)?.p50;
+                  const p25AtAge = pcts.find(d => d.age === age)?.p25;
+
+                  // Default color for pre‑retirement (no percentile data)
+                  let color = "#64748b"; // neutral gray
+
+                  // If we have percentile data, color based on comparison
+                  if (p50AtAge !== undefined && p25AtAge !== undefined) {
+                    if (cp.value >= p50AtAge) color = "#10b981";      // green – ahead
+                    else if (cp.value <= p25AtAge) color = "#ef4444"; // red – behind
+                    else color = "#fbbf24";                           // yellow – on track
+                  }
+
+                  return (
+                    <ReferenceDot
+                      key={cp.id}
+                      x={age}
+                      y={cp.value}
+                      r={5}
+                      fill={color}
+                      stroke="#fff"
+                      strokeWidth={1.5}
+                      label={{ value: cp.note || "●", fill: color, fontSize: 9, position: "top" }}
+                    />
+                  );
+                })}
           <Area
             type="monotone"
             dataKey="p90"
@@ -3497,7 +3511,7 @@ function ScenariosTab({
         <div>
           <FanChart
             pcts={stress.pcts}
-            retireAge={retAge}
+            retireAge={retireAge}
             ssAge={ssAge}
             rmdAge={rmdAge}
             inf={inf}
@@ -3574,9 +3588,15 @@ function ScenariosTab({
   );
 }
 
-function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onAddCheckpoint, onDeleteCheckpoint, earlyRetireTarget, dob }) {
+function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, earlyRetireTarget, dob ,onSetBaselineFromCheckpoint}) {
   const [showInputs, setShowInputs] = useState(false);
   const [showHow, setShowHow] = useState(false);
+  const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [newCpDate, setNewCpDate] = useState("");
+  const [newCpValue, setNewCpValue] = useState("");
+  const [newCpNote, setNewCpNote] = useState("");
+
   const accPhase = `Age ${params.currentAge} → ${params.retireAge}`;
   const retPhase = `Age ${params.retireAge} → ${params.endAge}`;
   const mortSched = params.mortBalance > 0
@@ -3587,768 +3607,244 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onAddChe
     ? params.currentAge + (mortSched.payoffYr - new Date().getFullYear())
     : 0;
   const rateColor = (r) =>
-    r >= 0.9
-      ? "#0d9488"
-      : r >= 0.8
-      ? "#34d399"
-      : r >= 0.7
-      ? "#fbbf24"
-      : r >= 0.6
-      ? "#f97316"
-      : "#ef4444";
+    r >= 0.9 ? "#0d9488" : r >= 0.8 ? "#34d399" : r >= 0.7 ? "#fbbf24" : r >= 0.6 ? "#f97316" : "#ef4444";
   const riskLabel = (r) =>
-    r >= 0.9
-      ? "Low risk — strong plan. As JL Collins would say — F-You Money."
-      : r >= 0.8
-      ? "Moderate risk — solid foundation. Consider small adjustments."
-      : r >= 0.7
-      ? "Elevated risk — plan needs some work."
-      : "High risk — most scenarios deplete savings before target age.";
+    r >= 0.9 ? "Low risk — strong plan. As JL Collins would say — F-You Money."
+    : r >= 0.8 ? "Moderate risk — solid foundation. Consider small adjustments."
+    : r >= 0.7 ? "Elevated risk — plan needs some work."
+    : "High risk — most scenarios deplete savings before target age.";
+
   const SectionHeader = ({ label, open, onToggle, color = "#5eead4" }) => (
-    <div
-      onClick={onToggle}
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        cursor: "pointer",
-        padding: "10px 0",
-        borderBottom: "1px solid rgba(255,255,255,0.07)",
-        marginBottom: open ? 14 : 0,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          color,
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontSize: 10, color: "#475569" }}>
-        {open ? "▲ Hide" : "▼ Show"}
-      </div>
+    <div onClick={onToggle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.07)", marginBottom: open ? 14 : 0 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>
+      <div style={{ fontSize: 10, color: "#475569" }}>{open ? "▲ Hide" : "▼ Show"}</div>
     </div>
   );
+
   const InputCard = ({ title, rows }) => (
-    <div
-      style={{
-        background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        borderRadius: 9,
-        padding: 14,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 9,
-          fontWeight: 600,
-          color: "#475569",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
-          marginBottom: 10,
-        }}
-      >
-        {title}
-      </div>
+    <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 9, padding: 14 }}>
+      <div style={{ fontSize: 9, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>{title}</div>
       {rows.map(([label, val]) => (
-        <div
-          key={label}
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginBottom: 6,
-            fontSize: 12,
-          }}
-        >
+        <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
           <span style={{ color: "#64748b" }}>{label}</span>
-          <span
-            style={{
-              color: "#e2e8f0",
-              fontFamily: "'DM Mono',monospace",
-              fontWeight: 500,
-            }}
-          >
-            {val}
-          </span>
+          <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace", fontWeight: 500 }}>{val}</span>
         </div>
       ))}
     </div>
   );
-const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
-const [newCpDate, setNewCpDate] = useState("");
-const [newCpValue, setNewCpValue] = useState("");
-const [newCpNote, setNewCpNote] = useState("");
+
+  const startEdit = (cp) => {
+    setEditingId(cp.id);
+    setNewCpDate(cp.date);
+    setNewCpValue(cp.value.toString());
+    setNewCpNote(cp.note || "");
+    setShowAddCheckpoint(true);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setNewCpDate("");
+    setNewCpValue("");
+    setNewCpNote("");
+    setShowAddCheckpoint(false);
+  };
+
+  const handleSaveCheckpoint = () => {
+    if (!newCpDate || !newCpValue) return;
+    const cpData = {
+      date: newCpDate,
+      value: Number(newCpValue),
+      note: newCpNote || "",
+    };
+    let updatedCheckpoints;
+    if (editingId) {
+      updatedCheckpoints = checkpoints.map(cp => cp.id === editingId ? { ...cp, ...cpData } : cp);
+    } else {
+      const newCp = { id: Date.now().toString(), ...cpData };
+      updatedCheckpoints = [...checkpoints, newCp];
+    }
+    onUpdateCheckpoints(updatedCheckpoints);
+    setEditingId(null);
+    setNewCpDate("");
+    setNewCpValue("");
+    setNewCpNote("");
+    setShowAddCheckpoint(false);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 10,
-          padding: 18,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 700,
-            color: "#e2e8f0",
-            marginBottom: 10,
-          }}
-        >
-          WHAT IS A MONTE CARLO SIMULATION?
-        </div>
+      {/* Explanation card */}
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 10 }}>WHAT IS A MONTE CARLO SIMULATION?</div>
         <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.7 }}>
-          A Monte Carlo simulation tests your retirement plan against{" "}
-          <strong style={{ color: "#e2e8f0" }}>
-            3,000 different market scenarios
-          </strong>{" "}
-          using randomized annual returns drawn from 99 years of actual S&P 500
-          history. Instead of assuming a single fixed growth rate, it models the
-          real-world uncertainty of markets — some years boom, some years crash
-          — and tells you how often your savings last through retirement.{" "}
-          <strong style={{ color: "#5eead4" }}>
-            A success rate above 85% is generally considered a solid plan.
-          </strong>
+          A Monte Carlo simulation tests your retirement plan against <strong style={{ color: "#e2e8f0" }}>3,000 different market scenarios</strong> using randomized annual returns drawn from 99 years of actual S&P 500 history. Instead of assuming a single fixed growth rate, it models the real-world uncertainty of markets — some years boom, some years crash — and tells you how often your savings last through retirement. <strong style={{ color: "#5eead4" }}>A success rate above 85% is generally considered a solid plan.</strong>
         </div>
         <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-          AiRA also applies{" "}
-          <strong style={{ color: "#fbbf24" }}>
-            Guyton-Klinger guardrails
-          </strong>{" "}
-          — your spending adapts each year based on portfolio performance, so
-          the simulation reflects how a real retiree would behave, not a robot
-          spending a fixed amount no matter what.
+          AiRA also applies <strong style={{ color: "#fbbf24" }}>Guyton-Klinger guardrails</strong> — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.
         </div>
       </div>
-      <div
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 10,
-          padding: 16,
-        }}
-      >
-        <SectionHeader
-          label="Simulation Inputs & Assumptions"
-          open={showInputs}
-          onToggle={() => setShowInputs(!showInputs)}
-        />
+
+      {/* Inputs collapsible */}
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+        <SectionHeader label="Simulation Inputs & Assumptions" open={showInputs} onToggle={() => setShowInputs(!showInputs)} />
         {showInputs && (
           <>
             <div style={{ marginBottom: 14 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: "#0ea5e9",
-                  marginBottom: 10,
-                }}
-              >
-                ACCUMULATION PHASE ({accPhase})
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3,1fr)",
-                  gap: 10,
-                }}
-              >
-                <InputCard
-                  title="Starting Balances"
-                  rows={[
-                    ...((params.accounts || [])
-                      .filter((a) => (a.balance || 0) > 0)
-                      .map((a) => [a.name || a.category, fmtM(a.balance || 0)])),
-                    ["Total liquid", fmtM(params.port)],
-                  ]}
-                />
-                <InputCard
-                  title="Annual Contributions"
-                  rows={[
-                    ["Total savings", fmtK(params.contrib || 0) + "/yr"],
-                    [
-                      "Years contributing",
-                      Math.max(0, params.retireAge - params.currentAge) + " yrs",
-                    ],
-                    [
-                      "Projected added",
-                      fmtK((params.contrib || 0) * Math.max(0, params.retireAge - params.currentAge)),
-                    ],
-                  ]}
-                />
-                <InputCard
-                  title="Plan Parameters"
-                  rows={[
-                    ["Current age", "Age " + params.currentAge],
-                    ["Retire age", "Age " + params.retireAge],
-                    [
-                      "Years to retirement",
-                      Math.max(0, params.retireAge - params.currentAge) + " yrs",
-                    ],
-                    [
-                      "Pre-retirement glide",
-                      `${params.preRetireEq ?? 91}% equity / ${100 - (params.preRetireEq ?? 91)}% bonds`,
-                    ],
-                    [
-                      "Post-retirement glide",
-                      `${params.postRetireEq ?? 70}% equity / ${100 - (params.postRetireEq ?? 70)}% bonds`,
-                    ],
-                  ]}
-                />
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#0ea5e9", marginBottom: 10 }}>ACCUMULATION PHASE ({accPhase})</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                <InputCard title="Starting Balances" rows={[...(params.accounts || []).filter(a => (a.balance || 0) > 0).map(a => [a.name || a.category, fmtM(a.balance || 0)]), ["Total liquid", fmtM(params.port)]]} />
+                <InputCard title="Annual Contributions" rows={[["Total savings", fmtK(params.contrib || 0) + "/yr"], ["Years contributing", Math.max(0, params.retireAge - params.currentAge) + " yrs"], ["Projected added", fmtK((params.contrib || 0) * Math.max(0, params.retireAge - params.currentAge))]]} />
+                <InputCard title="Plan Parameters" rows={[["Current age", "Age " + params.currentAge], ["Retire age", "Age " + params.retireAge], ["Years to retirement", Math.max(0, params.retireAge - params.currentAge) + " yrs"], ["Pre-retirement glide", `${params.preRetireEq ?? 91}% equity / ${100 - (params.preRetireEq ?? 91)}% bonds`], ["Post-retirement glide", `${params.postRetireEq ?? 70}% equity / ${100 - (params.postRetireEq ?? 70)}% bonds`]]} />
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: "#a78bfa",
-                  marginBottom: 10,
-                }}
-              >
-                WITHDRAWAL PHASE ({retPhase})
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3,1fr)",
-                  gap: 10,
-                }}
-              >
-                <InputCard
-                  title="Living Expenses"
-                  rows={[
-                    ["Base annual spend", fmtM(params.sp) + "/yr"],
-                    ["Inflation model", params.smile ? "Blanchett smile" : "Flat"],
-                    [`Go-go (${params.retireAge}–${Math.min(74, params.endAge)})`, "115% of base"],
-                    [`Slow-go (75–${Math.min(84, params.endAge)})`, "85% of base"],
-                  ]}
-                />
-                <InputCard
-                  title="Income Offsets"
-                  rows={[
-                    [
-                      "Social Security",
-                      `$${(params.ssb || 0).toLocaleString()}/yr @ ${params.ssAge || "—"}`,
-                    ],
-                    ["SS COLA", `${params.ssCola ?? 2.4}%/yr`],
-                    [
-                      `Rental net (${params.abReliability ?? 80}% reliable)`,
-                      params.useAb ? `$${(params.ab || 0).toLocaleString()}/yr` : "Off",
-                    ],
-                    [
-                      "SS gap",
-                      `Ages ${params.retireAge}–${(params.ssAge || params.retireAge) - 1}: $0`,
-                    ],
-                  ]}
-                />
-                <InputCard
-                  title="Additional Costs"
-                  rows={[
-                    [
-                      `Healthcare (age ${params.hcShockAge ?? 72}+)`,
-                      `${params.hcProb ?? 3.5}% shock prob/yr`,
-                    ],
-                    [
-                      "Shock range",
-                      `${fmtK(params.hcMin ?? 70000)}–${fmtK(params.hcMax ?? 130000)}`,
-                    ],
-                    [
-                      "Mortgage annual",
-                      mortAnnual > 0 ? fmtM(mortAnnual) + "/yr" : "Paid off",
-                    ],
-                    ["Mortgage payoff", mortPayoffAge > 0 ? "~" + mortPayoffAge : "—"],
-                  ]}
-                />
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#a78bfa", marginBottom: 10 }}>WITHDRAWAL PHASE ({retPhase})</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                <InputCard title="Living Expenses" rows={[["Base annual spend", fmtM(params.sp) + "/yr"], ["Inflation model", params.smile ? "Blanchett smile" : "Flat"], [`Go-go (${params.retireAge}–${Math.min(74, params.endAge)})`, "115% of base"], [`Slow-go (75–${Math.min(84, params.endAge)})`, "85% of base"]]} />
+                <InputCard title="Income Offsets" rows={[["Social Security", `$${(params.ssb || 0).toLocaleString()}/yr @ ${params.ssAge || "—"}`], ["SS COLA", `${params.ssCola ?? 2.4}%/yr`], [`Rental net (${params.abReliability ?? 80}% reliable)`, params.useAb ? `$${(params.ab || 0).toLocaleString()}/yr` : "Off"], ["SS gap", `Ages ${params.retireAge}–${(params.ssAge || params.retireAge) - 1}: $0`]]} />
+                <InputCard title="Additional Costs" rows={[[`Healthcare (age ${params.hcShockAge ?? 72}+)`, `${params.hcProb ?? 3.5}% shock prob/yr`], ["Shock range", `${fmtK(params.hcMin ?? 70000)}–${fmtK(params.hcMax ?? 130000)}`], ["Mortgage annual", mortAnnual > 0 ? fmtM(mortAnnual) + "/yr" : "Paid off"], ["Mortgage payoff", mortPayoffAge > 0 ? "~" + mortPayoffAge : "—"]]} />
               </div>
             </div>
             <div>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: "#34d399",
-                  marginBottom: 10,
-                }}
-              >
-                MARKET & STATISTICAL MODEL
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3,1fr)",
-                  gap: 10,
-                }}
-              >
-                <InputCard
-                  title="Return Distribution"
-                  rows={[
-                    ["Model", "Historical bootstrap"],
-                    ["Equity data", "99yr S&P 500 (1928–2026)"],
-                    [
-                      `Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`,
-                      "Equity / Bonds",
-                    ],
-                    [
-                      `Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`,
-                      "Equity / Bonds",
-                    ],
-                  ]}
-                />
-                <InputCard
-                  title="Inflation & Guardrails"
-                  rows={[
-                    ["Inflation", "Historical bootstrap"],
-                    ["Inflation source", "2000–2024 actual CPI"],
-                    ["GK floor", fmtM(params.gkFloor) + "/yr"],
-                    ["GK ceiling", fmtM(params.gkCeiling) + "/yr"],
-                  ]}
-                />
-                <InputCard
-                  title="Simulation Parameters"
-                  rows={[
-                    ["Simulations", "3,000 paths"],
-                    [
-                      "Horizons",
-                      `Age 85 + Age ${params.endAge || 90}`,
-                    ],
-                    ["Withdrawal", "Guyton-Klinger"],
-                    [
-                      "Rental reliability",
-                      `${params.abReliability ?? 80}% per year`,
-                    ],
-                  ]}
-                />
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#34d399", marginBottom: 10 }}>MARKET & STATISTICAL MODEL</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                <InputCard title="Return Distribution" rows={[["Model", "Historical bootstrap"], ["Equity data", "99yr S&P 500 (1928–2026)"], [`Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`, "Equity / Bonds"], [`Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`, "Equity / Bonds"]]} />
+                <InputCard title="Inflation & Guardrails" rows={[["Inflation", "Historical bootstrap"], ["Inflation source", "2000–2024 actual CPI"], ["GK floor", fmtM(params.gkFloor) + "/yr"], ["GK ceiling", fmtM(params.gkCeiling) + "/yr"]]} />
+                <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizons", `Age 85 + Age ${params.endAge || 90}`], ["Withdrawal", "Guyton-Klinger"], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
               </div>
             </div>
           </>
         )}
       </div>
-      <div
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 10,
-          padding: 16,
-        }}
-      >
-        <SectionHeader
-          label="How the Simulation Works"
-          open={showHow}
-          onToggle={() => setShowHow(!showHow)}
-          color="#64748b"
-        />
+
+      {/* How it works */}
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+        <SectionHeader label="How the Simulation Works" open={showHow} onToggle={() => setShowHow(!showHow)} color="#64748b" />
         {showHow && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 12,
-              fontSize: 12,
-              color: "#94a3b8",
-              lineHeight: 1.7,
-            }}
-          >
-            <div>
-              <div
-                style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}
-              >
-                1. Accumulation (ages {params.currentAge}–{params.retireAge})
-              </div>
-              Each of 3,000 paths independently draws a random S&P 500 year and
-              a random bond year, blended by glide path weight. Contributions
-              are added annually. The result is a unique portfolio value at
-              retirement for each path.
-            </div>
-            <div>
-              <div
-                style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}
-              >
-                2. Retirement spending
-              </div>
-              Each path draws fresh random returns year by year. Spending
-              follows the Blanchett smile curve. SS and Rental income offset
-              draws. Rental fails 20% of years randomly. Healthcare shocks hit
-              3.5% of years after age 72.
-            </div>
-            <div>
-              <div
-                style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}
-              >
-                3. Guyton-Klinger guardrails
-              </div>
-              Every year, if the current withdrawal rate exceeds 120% of the
-              initial rate, spending cuts 10% (never below floor). If it falls
-              below 80%, spending increases 10% (never above ceiling). This
-              mimics real retiree behavior.
-            </div>
-            <div>
-              <div
-                style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}
-              >
-                4. Survival check
-              </div>
-              A path "succeeds" if the portfolio balance stays above $0 through
-              the target age. The success rate is the percentage of paths that
-              survive. The fan chart shows the 10th–90th percentile spread of
-              all outcomes.
-            </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each of 3,000 paths independently draws a random S&P 500 year and a random bond year, blended by glide path weight. Contributions are added annually. The result is a unique portfolio value at retirement for each path.</div>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>2. Retirement spending</div>Each path draws fresh random returns year by year. Spending follows the Blanchett smile curve. SS and Rental income offset draws. Rental fails 20% of years randomly. Healthcare shocks hit 3.5% of years after age 72.</div>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>3. Guyton-Klinger guardrails</div>Every year, if the current withdrawal rate exceeds 120% of the initial rate, spending cuts 10% (never below floor). If it falls below 80%, spending increases 10% (never above ceiling). This mimics real retiree behavior.</div>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>4. Survival check</div>A path "succeeds" if the portfolio balance stays above $0 through the target age. The success rate is the percentage of paths that survive. The fan chart shows the 10th–90th percentile spread of all outcomes.</div>
           </div>
         )}
       </div>
-        {/* Checkpoint panel */}
-          <div className="chart-card" style={{ marginBottom: 12 }}>
-            <div className="ct">📌 Portfolio Checkpoints (Actual vs Forecast)</div>
-            <div style={{ marginBottom: 12 }}>
-              <button
-                onClick={() => setShowAddCheckpoint(!showAddCheckpoint)}
-                style={{ background: "rgba(13,148,136,0.2)", border: "1px solid #0d9488", borderRadius: 6, padding: "4px 12px", color: "#5eead4", cursor: "pointer" }}
-              >
-                {showAddCheckpoint ? "− Hide Form" : "+ Add Checkpoint"}
-              </button>
-            </div>
-            {showAddCheckpoint && (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
-                <input type="date" value={newCpDate} onChange={e => setNewCpDate(e.target.value)} style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
-                <input type="number" placeholder="Portfolio value ($)" value={newCpValue} onChange={e => setNewCpValue(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
-                <input type="text" placeholder="Note (optional)" value={newCpNote} onChange={e => setNewCpNote(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
-                <button
-                  onClick={() => {
-                    if (!newCpDate || !newCpValue) return;
-                    const newCp = {
-                      id: Date.now().toString(),
-                      date: newCpDate,
-                      value: Number(newCpValue),
-                      note: newCpNote || "",
-                    };
-                    onAddCheckpoint(newCp);
-                    setNewCpDate("");
-                    setNewCpValue("");
-                    setNewCpNote("");
-                    setShowAddCheckpoint(false);
-                  }}
-                  style={{ background: "#0d9488", border: "none", borderRadius: 6, padding: "6px 16px", color: "white", cursor: "pointer" }}
-                >
-                  Save Checkpoint
-                </button>
-              </div>
-            )}
-            {checkpoints && checkpoints.length > 0 && (
-              <div style={{ overflowX: "auto", marginTop: 12 }}>
-                <table className="nw-table" style={{ fontSize: 11 }}>
-                  <thead>
-                    <tr><th>Date</th><th>Actual ($M)</th><th>MC Median ($M)</th><th>Delta</th><th>Status</th><th></th></tr>
-                  </thead>
-                  <tbody>
-                    {[...checkpoints].reverse().slice(0, 6).map(cp => {
-                      let age = null;
-                      if (dob && cp.date) {
-                        const birth = new Date(dob);
-                        const cd = new Date(cp.date);
-                        if (!isNaN(birth) && !isNaN(cd)) {
-                          age = cd.getFullYear() - birth.getFullYear();
-                          // adjust month/day
-                          const cdMonthDay = `${cd.getMonth()}-${cd.getDate()}`;
-                          const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
-                          if (cdMonthDay < birthMonthDay) age--;
-                        }
-                      }
-                      const p50AtAge = (age !== null && r90?.pcts) ? (r90.pcts.find(d => d.age === age)?.p50 || 0) : 0;
-                      const delta = cp.value - p50AtAge;
-                      const status = delta > 0 ? "Ahead" : delta < 0 ? "Behind" : "On track";
-                      return (
-                        <tr key={cp.id}>
-                          <td>{new Date(cp.date).toLocaleDateString()}</td>
-                          <td>{fmtM(cp.value)}</td>
-                          <td>{fmtM(p50AtAge)}</td>
-                          <td style={{ color: delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8" }}>
-                            {delta > 0 ? "+" : ""}{fmtM(delta)}
-                          </td>
-                          <td style={{ color: delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8" }}>{status}</td>
-                          <td><button onClick={() => onDeleteCheckpoint(cp.id)} style={{ background:"none", border:"none", color:"#64748b", cursor:"pointer" }}>🗑️</button></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
 
-      {!r90 && (
-        <div
-          style={{
-            textAlign: "center",
-            padding: "20px",
-            color: "#475569",
-            fontSize: 13,
-          }}
-        >
-          {running
-            ? "Running 6,000 paths..."
-            : "Run Monte Carlo from the sidebar to see results here."}
+      {/* Checkpoint panel */}
+      <div className="chart-card" style={{ marginBottom: 12 }}>
+        <div className="ct">📌 Portfolio Checkpoints (Actual vs Forecast)</div>
+        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
+          Add real portfolio values at specific dates to compare against the simulation's projected median path. This helps you see if you're ahead or behind your retirement goals.
         </div>
-      )}
-      {r90 && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              background: `${rateColor(r90.rate)}12`,
-              border: `1.5px solid ${rateColor(r90.rate)}44`,
-              borderRadius: 10,
-              padding: 18,
+        <div style={{ marginBottom: 12 }}>
+          <button
+            onClick={() => {
+              if (showAddCheckpoint) cancelEdit();
+              else {
+                setEditingId(null);
+                setNewCpDate("");
+                setNewCpValue("");
+                setNewCpNote("");
+                setShowAddCheckpoint(true);
+              }
             }}
+            style={{ background: "rgba(13,148,136,0.2)", border: "1px solid #0d9488", borderRadius: 6, padding: "4px 12px", color: "#5eead4", cursor: "pointer" }}
           >
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: "#64748b",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                marginBottom: 8,
-              }}
-            >
-              SUCCESS RATE ⓘ
-            </div>
-            <div
-              style={{
-                fontSize: 48,
-                fontWeight: 900,
-                color: rateColor(r90.rate),
-                fontFamily: "'DM Mono',monospace",
-                lineHeight: 1,
-                marginBottom: 6,
-              }}
-            >
-              {fmtPct(r90.rate)}
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>
-              of 3,000 simulations last to age {params.endAge}
-            </div>
-            <div
-              style={{
-                fontSize: 12,
-                color: rateColor(r90.rate),
-                marginBottom: 14,
-                lineHeight: 1.5,
-              }}
-            >
-              {riskLabel(r90.rate)}
-            </div>
-            <div
-              style={{
-                borderTop: "1px solid rgba(255,255,255,0.07)",
-                paddingTop: 10,
-                display: "flex",
-                gap: 12,
-              }}
-            >
-              <div style={{ flex: 1, textAlign: "center" }}>
-                <div
-                  style={{
-                    fontSize: 9,
-                    color: "#475569",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  To age 85
-                </div>
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 700,
-                    color: rateColor(r85?.rate || 0),
-                    fontFamily: "'DM Mono',monospace",
-                  }}
-                >
-                  {r85 ? fmtPct(r85.rate) : "—"}
-                </div>
-              </div>
-              <div
-                style={{
-                  flex: 1,
-                  textAlign: "center",
-                  borderLeft: "1px solid rgba(255,255,255,0.07)",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 9,
-                    color: "#475569",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  Stress test
-                </div>
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 700,
-                    color: rateColor(stress?.rate || 0),
-                    fontFamily: "'DM Mono',monospace",
-                  }}
-                >
-                  {stress ? fmtPct(stress.rate) : "—"}
-                </div>
-              </div>
+            {showAddCheckpoint ? "− Hide Form" : "+ Add Checkpoint"}
+          </button>
+        </div>
+        {showAddCheckpoint && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+            <input type="date" value={newCpDate} onChange={e => setNewCpDate(e.target.value)} style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
+            <input type="number" placeholder="Portfolio value ($)" value={newCpValue} onChange={e => setNewCpValue(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
+            <input type="text" placeholder="Note (optional)" value={newCpNote} onChange={e => setNewCpNote(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
+            <button onClick={handleSaveCheckpoint} style={{ background: "#0d9488", border: "none", borderRadius: 6, padding: "6px 16px", color: "white", cursor: "pointer" }}>
+              {editingId ? "Update Checkpoint" : "Save Checkpoint"}
+            </button>
+            {editingId && (
+              <button onClick={cancelEdit} style={{ background: "transparent", border: "1px solid #f87171", borderRadius: 6, padding: "6px 12px", color: "#f87171", cursor: "pointer" }}>
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
+        {checkpoints && checkpoints.length > 0 && (
+          <div style={{ overflowX: "auto", marginTop: 12 }}>
+            <table className="nw-table" style={{ fontSize: 14 }}>
+              <thead>
+                <tr><th>Date</th><th>Actual ($M)</th><th>MC Median ($M)</th><th>Delta</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody>
+                {[...checkpoints].reverse().slice(0, 6).map(cp => {
+                  let age = null;
+                  if (dob && cp.date) {
+                    const birth = new Date(dob);
+                    const cd = new Date(cp.date);
+                    if (!isNaN(birth) && !isNaN(cd)) {
+                      age = cd.getFullYear() - birth.getFullYear();
+                      const cdMonthDay = `${cd.getMonth()}-${cd.getDate()}`;
+                      const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
+                      if (cdMonthDay < birthMonthDay) age--;
+                    }
+                  }
+                  const p50AtAge = (age !== null && r90?.pcts) ? (r90.pcts.find(d => d.age === age)?.p50 || 0) : 0;
+                  const delta = p50AtAge > 0 ? cp.value - p50AtAge : null;
+                  const status = p50AtAge > 0 ? (delta > 0 ? "Ahead" : delta < 0 ? "Behind" : "On track") : "Pre‑retirement";
+                  return (
+                    <tr key={cp.id}>
+                      <td>{cp.date ? new Date(cp.date + "T00:00:00").toLocaleDateString() : "—"}</td>
+                      <td>{fmtM(cp.value)}</td>
+                      <td>{p50AtAge > 0 ? fmtM(p50AtAge) : "—"}</td>
+                      <td style={{ color: delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8" }}>
+                        {delta !== null ? (delta > 0 ? "+" : "") + fmtM(delta) : "—"}
+                      </td>
+                      <td style={{ color: delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8" }}>{status}</td>
+                      <td>
+                        <button onClick={() => startEdit(cp)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", marginRight: 4 }}>✏️</button>
+                        <button onClick={() => onDeleteCheckpoint(cp.id)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer" }}>🗑️</button>
+                       <button onClick={() => onSetBaselineFromCheckpoint(cp.value)} style={{ background: "none", border: "none", color: "#5eead4", cursor: "pointer", marginLeft: 4 }}title="Roll forward to this value">📍</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Results panel */}
+      {!r90 && <div style={{ textAlign: "center", padding: "20px", color: "#475569", fontSize: 13 }}>{running ? "Running 6,000 paths..." : "Run Monte Carlo from the sidebar to see results here."}</div>}
+      {r90 && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <div style={{ background: `${rateColor(r90.rate)}12`, border: `1.5px solid ${rateColor(r90.rate)}44`, borderRadius: 10, padding: 18 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>SUCCESS RATE ⓘ</div>
+            <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(r90.rate), fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(r90.rate)}</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>of 3,000 simulations last to age {params.endAge}</div>
+            <div style={{ fontSize: 12, color: rateColor(r90.rate), marginBottom: 14, lineHeight: 1.5 }}>{riskLabel(r90.rate)}</div>
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10, display: "flex", gap: 12 }}>
+              <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>To age 85</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(r85?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{r85 ? fmtPct(r85.rate) : "—"}</div></div>
+              <div style={{ flex: 1, textAlign: "center", borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Stress test</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(stress?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{stress ? fmtPct(stress.rate) : "—"}</div></div>
             </div>
           </div>
-          <div
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 10,
-              padding: 18,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: "#64748b",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                marginBottom: 8,
-              }}
-            >
-              MEDIAN FINAL BALANCE ⓘ
-            </div>
-            <div
-              style={{
-                fontSize: 42,
-                fontWeight: 900,
-                color: "#14b8a6",
-                fontFamily: "'DM Mono',monospace",
-                lineHeight: 1,
-                marginBottom: 6,
-              }}
-            >
-              {fmtM(r90.term.p50)}
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>
-              50th percentile at age {params.endAge}
-            </div>
-            <div
-              style={{
-                fontSize: 12,
-                color: "#94a3b8",
-                lineHeight: 1.5,
-                marginBottom: 14,
-              }}
-            >
-              Half of all simulations end above this. A higher balance cushions
-              against sequence-of-returns risk.
-            </div>
-            <div
-              style={{
-                borderTop: "1px solid rgba(255,255,255,0.07)",
-                paddingTop: 10,
-              }}
-            >
-              {[
-                { l: "10th (near-worst)", v: r90.term.p10, c: "#f87171" },
-                { l: "25th (cautious)", v: r90.term.p25, c: "#fbbf24" },
-                { l: "75th (good case)", v: r90.term.p75, c: "#34d399" },
-                { l: "90th (best 10%)", v: r90.term.p90, c: "#5eead4" },
-              ].map(({ l, v, c }) => (
-                <div
-                  key={l}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginBottom: 5,
-                    fontSize: 11,
-                  }}
-                >
-                  <span style={{ color: "#475569" }}>{l}</span>
-                  <span
-                    style={{
-                      color: c,
-                      fontFamily: "'DM Mono',monospace",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {fmtM(v)}
-                  </span>
+          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>MEDIAN FINAL BALANCE ⓘ</div>
+            <div style={{ fontSize: 42, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtM(r90.term.p50)}</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>50th percentile at age {params.endAge}</div>
+            <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 14 }}>Half of all simulations end above this. A higher balance cushions against sequence-of-returns risk.</div>
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10 }}>
+              {[{ l: "10th (near-worst)", v: r90.term.p10, c: "#f87171" }, { l: "25th (cautious)", v: r90.term.p25, c: "#fbbf24" }, { l: "75th (good case)", v: r90.term.p75, c: "#34d399" }, { l: "90th (best 10%)", v: r90.term.p90, c: "#5eead4" }].map(({ l, v, c }) => (
+                <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 11 }}>
+                  <span style={{ color: "#475569" }}>{l}</span><span style={{ color: c, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmtM(v)}</span>
                 </div>
               ))}
             </div>
           </div>
-          <div
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 10,
-              padding: 18,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: "#64748b",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                marginBottom: 12,
-              }}
-            >
-              MODEL ASSUMPTIONS
-            </div>
-            {[
-              ["3,000 randomized return sequences", "#5eead4"],
-              ["99yr S&P 500 + 50yr Bloomberg Agg bootstrap", "#5eead4"],
-              ["Separate equity & bond draws each year", "#5eead4"],
-              ["Rental income fails 20% of years randomly", "#fbbf24"],
-              ["Healthcare shocks 3.5%/yr from age 72", "#fbbf24"],
-              ["Guyton-Klinger guardrails each path", "#a78bfa"],
-              ["Blanchett smile spending (not flat)", "#a78bfa"],
-              ["SS COLA 2.4%/yr · Rental growth 3%/yr", "#94a3b8"],
-              [
-                params.tax
-                  ? "Tax drag modeled (pre/post SS/RMD)"
-                  : "Tax drag OFF",
-                "#94a3b8",
-              ],
-              ["Glide path: 91/9 → 70/30 at age 62", "#94a3b8"],
-            ].map(([text, color]) => (
-              <div
-                key={text}
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "flex-start",
-                  marginBottom: 7,
-                  fontSize: 11,
-                }}
-              >
-                <div
-                  style={{
-                    width: 5,
-                    height: 5,
-                    borderRadius: "50%",
-                    background: color,
-                    marginTop: 5,
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ color: "#64748b", lineHeight: 1.4 }}>
-                  {text}
-                </span>
+          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>MODEL ASSUMPTIONS</div>
+            {[["3,000 randomized return sequences", "#5eead4"], ["99yr S&P 500 + 50yr Bloomberg Agg bootstrap", "#5eead4"], ["Separate equity & bond draws each year", "#5eead4"], ["Rental income fails 20% of years randomly", "#fbbf24"], ["Healthcare shocks 3.5%/yr from age 72", "#fbbf24"], ["Guyton-Klinger guardrails each path", "#a78bfa"], ["Blanchett smile spending (not flat)", "#a78bfa"], ["SS COLA 2.4%/yr · Rental growth 3%/yr", "#94a3b8"], [params.tax ? "Tax drag modeled (pre/post SS/RMD)" : "Tax drag OFF", "#94a3b8"], ["Glide path: 91/9 → 70/30 at age 62", "#94a3b8"]].map(([text, color]) => (
+              <div key={text} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 7, fontSize: 11 }}>
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: color, marginTop: 5, flexShrink: 0 }} />
+                <span style={{ color: "#64748b", lineHeight: 1.4 }}>{text}</span>
               </div>
             ))}
           </div>
@@ -5102,6 +4598,7 @@ function ProfileWizard({ values, onChange }) {
   })();
 
   const STEPS = [
+    { label: "Assumptions", icon: "⚙️", sub: "Model parameters" },
     { label: "About You", icon: "👤", sub: `${values.currentAge} yrs old` },
     { label: "Current Savings", icon: "💰", sub: `${fmtM(values.port)} saved` },
     { label: "Contributions", icon: "📋", sub: `${fmtK(values.contrib)}/yr` },
@@ -5111,16 +4608,17 @@ function ProfileWizard({ values, onChange }) {
       icon: "🏖",
       sub: `$${(values.ab / 1000).toFixed(0)}K/yr`,
     },
-    { label: "Assumptions", icon: "⚙️", sub: "Model parameters" },
+   
   ];
 
   const PANELS = [
+    <AssumptionsPanel values={values} onChange={onChange} />,
     <AboutYouPanel values={values} onChange={onChange} />,
     <SavingsPanel values={values} onChange={onChange} />,
     <ContribPanel values={values} onChange={onChange} />,
     <RetirementPanel values={values} onChange={onChange} />,
     <IncomePanel values={values} onChange={onChange} />,
-    <AssumptionsPanel values={values} onChange={onChange} />,
+
   ];
 
   return (
@@ -5189,7 +4687,7 @@ function ProfileWizard({ values, onChange }) {
               >
                 {s.icon} {s.label}
               </div>
-              <div style={{ fontSize: 10, color: "#334155" }}>{s.sub}</div>
+              <div style={{ fontSize: 14, color: "#4174bd" }}>{s.sub}</div>
             </div>
           </div>
         ))}
@@ -5348,7 +4846,8 @@ function ProfileWizard({ values, onChange }) {
 }
 
 function SavingsPanel({ values, onChange }) {
-  const GOAL = 3_200_000;
+  const GOAL = values.portfolioGoal || 1_000_000; // Default goal for progress bar (can be adjusted or made dynamic)  
+
   const accounts = values.accounts || BLANK_PROFILE.accounts;
 
   const CATEGORIES = [
@@ -5651,12 +5150,23 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   return (
     <div style={{ display:"flex", alignItems:"center", gap:6 }}>
       <input
-        type="number"
-        value={value ?? ""}
-        min={min} max={max} step={step}
-        onChange={(e) => onSet(Number(e.target.value))}
-        style={{ width:80, background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"right" }}
-      />
+  type="number"
+  value={value ?? ""}
+  min={min} max={max} step={step}
+  onChange={(e) => onSet(Number(e.target.value))}
+  style={{ 
+    width: "120px", 
+    maxWidth: "100%",
+    background: "#0d1b2a", 
+    border: "1px solid #1e3a5f", 
+    color: "#e2e8f0", 
+    borderRadius: 6, 
+    padding: "4px 8px", 
+    fontSize: 12, 
+    fontFamily: "'DM Mono',monospace", 
+    textAlign: "right" 
+  }}
+/>
       {suffix && <span style={{ fontSize:11, color:"#475569" }}>{suffix}</span>}
     </div>
   );
@@ -5930,6 +5440,12 @@ function AssumptionsPanel({ values, onChange }) {
         >
           Monte Carlo Model Parameters
         </div>
+         <ARow label="Target Portfolio Value for Early Retirement" desc="If you want to attain a certain portfolio value, this will show that value on all Monte Carlo charts so you can see how far away you are from the forecast.">
+          <ANumInput value={values.earlyRetireTarget} onSet={(v) => onChange("earlyRetireTarget", v)} min={500_000} max={10_000_000} step={50_000} prefix="$" />
+        </ARow>
+        <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit (default $3.2M)">
+            <ANumInput value={values.portfolioGoal} onSet={(v) => onChange("portfolioGoal", v)}  min={500_000}  max={10_000_000} step={50_000}  prefix="$" />
+          </ARow>
         <ARow label="Rental reliability" desc="Probability Rental income arrives in any given year (default 80%)">
           <ANumInput value={values.abReliability} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
         </ARow>
@@ -6481,11 +5997,14 @@ export default function AiRAForecaster() {
     rothConversionTarget: BLANK_PROFILE.rothConversionTarget,
     checkpoints: BLANK_PROFILE.checkpoints,
     earlyRetireTarget: BLANK_PROFILE.earlyRetireTarget,
+    portfolioGoal: BLANK_PROFILE.portfolioGoal,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
     []
   );
+
+
 
   const currentAge = useMemo(() => {
     try {
@@ -7457,7 +6976,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 )}
                 {activeTab === "montecarlo" && (
                   <>
-                    <MCTab
+                   <MCTab
                       params={params}
                       r85={r85}
                       r90={r90}
@@ -7465,10 +6984,24 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       running={running}
                       onRun={runSimulation}
                       checkpoints={assumptions.checkpoints}
-                      onAddCheckpoint={(newCp) => updateAssumption("checkpoints", [...assumptions.checkpoints, newCp])}
+                      onUpdateCheckpoints={(newCheckpoints) => updateAssumption("checkpoints", newCheckpoints)}
                       onDeleteCheckpoint={(id) => updateAssumption("checkpoints", assumptions.checkpoints.filter(c => c.id !== id))}
                       earlyRetireTarget={assumptions.earlyRetireTarget}
                       dob={assumptions.dob}
+                      onSetBaselineFromCheckpoint={(value) => {
+                        setPort(value);
+                        const currentTotal = port;
+                        if (currentTotal > 0) {
+                          const scale = value / currentTotal;
+                          const scaledAccounts = assumptions.accounts.map(acc => ({
+                            ...acc,
+                            balance: Math.round((acc.balance || 0) * scale)
+                          }));
+                          updateAssumption("accounts", scaledAccounts);
+                        }
+                        setStale(true);
+                        setTimeout(runSimulation, 100);
+                      }}
                     />
                     {r90 && (
                       <FanChart
@@ -7479,6 +7012,11 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         inf={inf}
                         useReal={real}
                         title={`Portfolio fan · age ${endAge} · 3,000 paths`}
+                        checkpoints={assumptions.checkpoints}                 // ✅ add this
+                        earlyRetireTarget={assumptions.earlyRetireTarget}     // ✅ add this
+                        dob={assumptions.dob}                                 // ✅ needed for checkpoint age calculation
+                        portfolioGoal={assumptions.portfolioGoal}
+                        earlyRetireTarget={assumptions.earlyRetireTarget}
                       />
                     )}
                   </>
@@ -7489,7 +7027,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       r90={r90}
                       fmtPct={fmtPct}  
                       stress={stress}
-                      retAge={retAge}           // ✅ Add this
+                      retireAge={retAge}           // ✅ Add this
                       ssAge={ssAge}             // ✅ Add this
                       rmdAge={rmdAge}
                       inf={inf}                 // ✅ Add this
@@ -7563,8 +7101,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             >
               AiRA Freedom Financial v{APP_VERSION} · This is not financial advice. Seek a professional fiduciary, CPA, or tax accountant. Use at your own risk. See full disclaimer in code.
               <br />
-              "The best financial plan is the one you can stick with." — Morgan
-              Housel
+              "The best financial plan is the one you can stick with." — Morgan Housel
             </div>
           </div>
         </div>
