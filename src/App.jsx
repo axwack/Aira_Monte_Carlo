@@ -57,6 +57,7 @@
  *  and hard-refresh the page (Ctrl/Cmd-Shift-R).
  * ============================================================ */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import emailjs from '@emailjs/browser';
 import {
   ComposedChart,
   Area,
@@ -1797,10 +1798,19 @@ const CSS = `
 
 const Tip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
+  
+  // Filter to keep only the first occurrence of each name
+  const seen = new Set();
+  const uniquePayload = payload.filter(p => {
+    if (seen.has(p.name)) return false;
+    seen.add(p.name);
+    return true;
+  });
+
   return (
     <div className="tip-box">
       <div style={{ color: "#64748b", marginBottom: 3 }}>Age {label}</div>
-      {payload
+      {uniquePayload
         .filter((p) => p.value > 0)
         .map((p, i) => (
           <div key={i} style={{ color: p.color, marginBottom: 1 }}>
@@ -1811,7 +1821,6 @@ const Tip = ({ active, payload, label }) => {
     </div>
   );
 };
-
 function Toggle({ val, onChange, label, accent = "#0d9488" }) {
   return (
     <div className="tog-row">
@@ -2047,8 +2056,17 @@ function importProfile(onLoad) {
   input.click();
 }
 
-function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob , portfolioGoal}) {
+function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal }) {
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
+
+  // Safe maxY calculation with fallback
+  const maxY = useMemo(() => {
+    if (!data || data.length === 0) return 5_000_000;
+    const maxPortfolio = Math.max(...data.map(d => Math.max(d.p90 || 0, d.p75 || 0, d.p50 || 0)));
+    const result = Math.max(maxPortfolio, portfolioGoal || 0, earlyRetireTarget || 0) * 1.05;
+    return result;
+  }, [data, portfolioGoal, earlyRetireTarget]);
+
   return (
     <div className="chart-card">
       <div className="ct">
@@ -2082,152 +2100,91 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             stroke="#1e3a5f"
             tick={{ fill: "#475569", fontSize: 11 }}
             tickFormatter={(v) => fmtM(v)}
-            width={58}
+            domain={[0, maxY]}
           />
           <Tooltip content={<Tip />} />
-          <ReferenceLine
+          
+          {/* Vertical reference lines (D-Day, SS, RMD) */}
+          <ReferenceLine x={retireAge} stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day", fill: "#fbbf24", fontSize: 10, position: "top" }} />
+          <ReferenceLine x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: 10, position: "top" }} />
+          <ReferenceLine x={rmdAge} stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "#34d399", fontSize: 10, position: "top" }} />
 
-            x={retireAge}
-            stroke="#fbbf24"
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-            label={{
-              value: "D-Day",
-              fill: "#fbbf24",
-              fontSize: 10,
-              position: "top",
-            }}
-          />
-          <ReferenceLine
-            x={ssAge}
-            stroke="#c084fc"
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-            label={{
-              value: "SS",
-              fill: "#c084fc",
-              fontSize: 10,
-              position: "top",
-            }}
-          />
-          <ReferenceLine
-            x={rmdAge}
-            stroke="#34d399"
-            strokeWidth={1}
-            strokeDasharray="4 3"
-            label={{
-              value: "RMD",
-              fill: "#34d399",
-              fontSize: 10,
-              position: "top",
-            }}
-          />
-          <ReferenceLine
-                y={portfolioGoal}
-                ifOverflow="extendDomain"
-                stroke="#fbbf24"
-                strokeDasharray="6 4"
+          {/* Fan areas and percentile lines */}
+          <Area type="monotone" dataKey="p90" stroke="#5eead4" strokeWidth={1} strokeDasharray="4 2" fill="url(#g90v5)" dot={false} name="90th" legendType="none" />
+          <Area type="monotone" dataKey="p75" stroke="#0d9488" strokeWidth={1} strokeDasharray="3 2" fill="url(#g75v5)" dot={false} name="75th" legendType="none" />
+          <Line type="monotone" dataKey="p50" stroke="#14b8a6" strokeWidth={2.5} dot={false} name="Median" />
+          <Line type="monotone" dataKey="p25" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 3" name="25th" />
+          <Line type="monotone" dataKey="p10" stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="3 3" name="10th" />
+
+          {/* Checkpoint dots */}
+          {checkpoints && checkpoints.map((cp) => {
+            if (!dob || !cp.date) return null;
+            const birth = new Date(dob);
+            const checkDate = new Date(cp.date);
+            if (isNaN(birth) || isNaN(checkDate)) return null;
+
+            let age = checkDate.getFullYear() - birth.getFullYear();
+            const monthDay = `${checkDate.getMonth()}-${checkDate.getDate()}`;
+            const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
+            if (monthDay < birthMonthDay) age--;
+
+            const p50AtAge = pcts.find(d => d.age === age)?.p50;
+            const p25AtAge = pcts.find(d => d.age === age)?.p25;
+
+            let color = "#64748b";
+            if (p50AtAge !== undefined && p25AtAge !== undefined) {
+              if (cp.value >= p50AtAge) color = "#10b981";      // green – ahead
+              else if (cp.value <= p25AtAge) color = "#ef4444"; // red – behind
+              else color = "#fbbf24";                           // yellow – on track
+            }
+
+            return (
+              <ReferenceDot
+                key={cp.id}
+                x={age}
+                y={cp.value}
+                r={5}
+                fill={color}
+                stroke="#fff"
                 strokeWidth={1.5}
-                label={{ value: "Reassess {}", fill: "#fbbf24", fontSize: 10, position: "right" }}
+                label={{ value: cp.note || "●", fill: color, fontSize: 9, position: "top" }}
               />
-              <ReferenceLine
-                y={earlyRetireTarget}
-                ifOverflow="extendDomain"
-                stroke="#34d399"
-                strokeDasharray="6 4"
-                strokeWidth={1.5}
-                label={{ value: `Trigger $${(earlyRetireTarget/1e6).toFixed(1)}M`, fill: "#34d399", fontSize: 10, position: "right" }}
-              />
+            );
+          })}
 
-              {/* Checkpoints (actual portfolio values) */}
-                {checkpoints && checkpoints.map((cp) => {
-                  if (!dob || !cp.date) return null;
-                  const birth = new Date(dob);
-                  const checkDate = new Date(cp.date);
-                  if (isNaN(birth) || isNaN(checkDate)) return null;
-
-                  let age = checkDate.getFullYear() - birth.getFullYear();
-                  const monthDay = `${checkDate.getMonth()}-${checkDate.getDate()}`;
-                  const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
-                  if (monthDay < birthMonthDay) age--;
-
-                  // Try to find percentile data for this age (only exists from retireAge onward)
-                  const p50AtAge = pcts.find(d => d.age === age)?.p50;
-                  const p25AtAge = pcts.find(d => d.age === age)?.p25;
-
-                  // Default color for pre‑retirement (no percentile data)
-                  let color = "#64748b"; // neutral gray
-
-                  // If we have percentile data, color based on comparison
-                  if (p50AtAge !== undefined && p25AtAge !== undefined) {
-                    if (cp.value >= p50AtAge) color = "#10b981";      // green – ahead
-                    else if (cp.value <= p25AtAge) color = "#ef4444"; // red – behind
-                    else color = "#fbbf24";                           // yellow – on track
-                  }
-
-                  return (
-                    <ReferenceDot
-                      key={cp.id}
-                      x={age}
-                      y={cp.value}
-                      r={5}
-                      fill={color}
-                      stroke="#fff"
-                      strokeWidth={1.5}
-                      label={{ value: cp.note || "●", fill: color, fontSize: 9, position: "top" }}
-                    />
-                  );
-                })}
-          <Area
-            type="monotone"
-            dataKey="p90"
-            stroke="#5eead4"
-            strokeWidth={1}
-            strokeDasharray="4 2"
-            fill="url(#g90v5)"
-            dot={false}
-            name="90th"
-            legendType="none"
-          />
-          <Area
-            type="monotone"
-            dataKey="p75"
-            stroke="#0d9488"
-            strokeWidth={1}
-            strokeDasharray="3 2"
-            fill="url(#g75v5)"
-            dot={false}
-            name="75th"
-            legendType="none"
-          />
-          <Line
-            type="monotone"
-            dataKey="p50"
-            stroke="#14b8a6"
+          {/* Target horizontal lines (placed last so they appear on top) */}
+          <ReferenceLine
+            y={portfolioGoal}
+            stroke="#f59e0b"
             strokeWidth={2.5}
-            dot={false}
-            name="Median"
+            strokeDasharray="0"
+            label={{
+              value: `🎯 Reassess $${(portfolioGoal / 1e6).toFixed(1)}M`,
+              fill: "#0a0f1e",
+              fontSize: 12,
+              fontWeight: 700,
+              position: "right",
+              style: { background: "#f59e0b", padding: "4px 8px", borderRadius: 4, boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }
+            }}
           />
-          <Line
-            type="monotone"
-            dataKey="p25"
-            stroke="#fbbf24"
-            strokeWidth={1.5}
-            dot={false}
-            strokeDasharray="5 3"
-            name="25th"
-          />
-          <Line
-            type="monotone"
-            dataKey="p10"
-            stroke="#f87171"
-            strokeWidth={1.5}
-            dot={false}
-            strokeDasharray="3 3"
-            name="10th"
+          <ReferenceLine
+            y={earlyRetireTarget}
+            stroke="#8b5cf6"   // purple-blue as you chose
+            strokeWidth={2.5}
+            strokeDasharray="0"
+            label={{
+              value: `🚀 Trigger $${(earlyRetireTarget / 1e6).toFixed(1)}M`,
+              fill: "#fff",
+              fontSize: 12,
+              fontWeight: 700,
+              position: "right",
+              style: { background: "#8b5cf6", padding: "4px 8px", borderRadius: 4, boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }
+            }}
           />
         </ComposedChart>
       </ResponsiveContainer>
+
+      {/* Unified Legend */}
       <div className="leg">
         {[
           { c: "#5eead4", l: "90th" },
@@ -2235,6 +2192,8 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           { c: "#14b8a6", l: "Median" },
           { c: "#fbbf24", l: "25th" },
           { c: "#f87171", l: "10th" },
+          { c: "#f59e0b", l: `🎯 Reassess $${(portfolioGoal / 1e6).toFixed(1)}M` },
+          { c: "#8b5cf6", l: `🚀 Trigger $${(earlyRetireTarget / 1e6).toFixed(1)}M` },
         ].map((i) => (
           <div key={i.l} className="li">
             <div className="ll" style={{ background: i.c }} />
@@ -2287,6 +2246,16 @@ function PeopleViz({ rate }) {
       >
         100% doesn't exist. As Morgan Housel says — room for error IS the plan.
       </div>
+    
+    <div style={{ display: "flex", gap: 20, marginTop: 10, justifyContent: "center" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ width: 20, height: 2, background: "#fbbf24", borderTop: "2px dashed #fbbf24" }} />
+        <span style={{ color: "#fbbf24", fontSize: 12, fontWeight: 600 }}>Reassess ${(portfolioGoal / 1e6).toFixed(1)}M</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ width: 20, height: 2, background: "#34d399", borderTop: "2px dashed #34d399" }} />
+        <span style={{ color: "#34d399", fontSize: 12, fontWeight: 600 }}>Trigger ${(earlyRetireTarget / 1e6).toFixed(1)}M</span>
+      </div></div>
     </div>
   );
 }
@@ -2330,9 +2299,9 @@ function IncomeMap({ p, inf }) {
           />
           <YAxis
             stroke="#1e3a5f"
-            tick={{ fill: "#475569", fontSize: 9 }}
+            tick={{ fill: "#475569", fontSize: 11}}
             tickFormatter={(v) => fmtM(v)}
-            width={50}
+            width={58}
           />
           <Tooltip content={<Tip />} />
           <Legend
@@ -3460,6 +3429,7 @@ function ScenariosTab({
   withdrawalStrategy,   // ✅ only once
   checkpoints,           // new
   earlyRetireTarget,     // new
+  portfolioGoal,           // new
   dob, 
 }) {
 
@@ -3518,6 +3488,7 @@ function ScenariosTab({
             useReal={real}
             title="Stress test: 2000–2012 actual S&P sequence at retirement"
             checkpoints={checkpoints}
+            portfolioGoal={portfolioGoal}
             earlyRetireTarget={earlyRetireTarget}
             dob={dob}
           />
@@ -3588,7 +3559,7 @@ function ScenariosTab({
   );
 }
 
-function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, earlyRetireTarget, dob ,onSetBaselineFromCheckpoint}) {
+function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob ,onSetBaselineFromCheckpoint}) {
   const [showInputs, setShowInputs] = useState(false);
   const [showHow, setShowHow] = useState(false);
   const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
@@ -3670,6 +3641,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
     setNewCpNote("");
     setShowAddCheckpoint(false);
   };
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -6984,6 +6956,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       running={running}
                       onRun={runSimulation}
                       checkpoints={assumptions.checkpoints}
+                      portfolioGoal={assumptions.portfolioGoal}
+                      earlyRetireTarget={assumptions.earlyRetireTarget}
                       onUpdateCheckpoints={(newCheckpoints) => updateAssumption("checkpoints", newCheckpoints)}
                       onDeleteCheckpoint={(id) => updateAssumption("checkpoints", assumptions.checkpoints.filter(c => c.id !== id))}
                       earlyRetireTarget={assumptions.earlyRetireTarget}
@@ -7038,6 +7012,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       RothLadder={RothLadder}
                       BucketsTab={BucketsTab}
                       SmileChart={SmileChart}
+                      portfolioGoal={assumptions.portfolioGoal}
+                      earlyRetireTarget={assumptions.earlyRetireTarget}
                       withdrawalStrategy={withdrawalStrategy}
                       checkpoints={assumptions.checkpoints}            // new
                       earlyRetireTarget={assumptions.earlyRetireTarget} // new
