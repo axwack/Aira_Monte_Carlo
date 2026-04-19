@@ -174,6 +174,22 @@ const STATE_TAX_RATES = {
   "VA": 0.0575, "WA": 0, "WV": 0.0512, "WI": 0.0753, "WY": 0,
 };
 
+const getStrategyLabel = (strategy) => {
+  const labels = {
+    gk: "Guyton‑Klinger",
+    fixed: "Fixed Percentage",
+    vanguard: "Vanguard Dynamic Spending",
+    risk: "Risk‑Based Guardrails",
+    kitces: "Kitces Ratcheting",
+    vpw: "VPW (Variable Percentage)",
+    cape: "CAPE‑Based",
+    endowment: "Endowment Model",
+    one_n: "1/N (Remaining Years)",
+    ninety_five_rule: "95% Rule",
+  };
+  return labels[strategy] || strategy;
+};
+
 /* ════ PROFILES ════ */
 /* Personal data lives in AiRA_Profile.json — never hardcoded here */
 /* Use Export button to save your data. Use Import to load it back. */
@@ -247,7 +263,8 @@ const BLANK_PROFILE = {
   hcMin: 70_000,
   hcMax: 130_000,
   checkpoints: [],          // each: { id, date, value, note }
-  earlyRetireTarget: 3500000,
+  earlyRetireTarget: 2_000_000,
+  withdrawalStrategy: "gk",
 };
 
 const DEMO_PROFILE = {
@@ -260,6 +277,7 @@ const DEMO_PROFILE = {
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
   housingType: "own",
+  withdrawalStrategy: "gk",
   annualRent: 0,
   portfolioGoal: 3_200_000,
   carveouts: [],
@@ -1256,22 +1274,29 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
 
 function buildRothExplorer(params = {}) {
   const {
-    currentAge = 56,
-    retireAge = 60,
-    ssAge = 64,
-    ssb = 31543,
-    ab = 20000,
-    useAb = true,
-    inf = 2.5,
-    port = 2434000,
-    twoHousehold = true,
-    rothMode = "fill_22",
+    currentAge,
+    retireAge,
+    ssAge,
+    ssb,
+    ab,
+    useAb,
+    inf,
+    port,
+    twoHousehold,
+    rothMode = "fill_22",           // keep default for mode only
     filingStatus = "mfj",
     dob,
     birthYear,
-    rmdStartAge, // explicit override switch
-    taxFunding = "from_taxable", // "outside_cash" | "from_conv" | "from_taxable"
+    rmdStartAge,
+    taxFunding = "from_taxable",
   } = params;
+
+  // Safeguard: if critical numbers are missing, return empty or throw a helpful error
+  if (currentAge == null || retireAge == null || port == null) {
+    console.warn("buildRothExplorer missing required params:", { currentAge, retireAge, port });
+    return { opt: { rows: [], cTax: 0, cConv: 0 }, cur: { rows: [], cTax: 0, cConv: 0 }, convRows: [] };
+  }
+
 
   const isMFJ = filingStatus !== "single";
   const fedBase = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
@@ -1500,18 +1525,18 @@ function buildRothExplorer(params = {}) {
 
 function buildRothLadder(params = {}) {
   const ex = buildRothExplorer(params);
-  return ex.convRows.map((r) => ({
-    yr: r.yr,
-    age: r.age,
-    label: r.label,
-    otherInc: r.abn,
-    conv: r.conv,
-    fedTax: r.fedT,
-    stateNJ: r.stT,
-    effFL: r.conv > 0 ? ((r.fedT / r.conv) * 100).toFixed(1) : "0.0",
-    effNJ: r.conv > 0 ? (((r.fedT + r.stT) / r.conv) * 100).toFixed(1) : "0.0",
-    netRoth: Math.round(r.conv - r.fedT - (params.twoHousehold ? 0 : r.stT)),
-  }));
+    return ex.convRows.map((r) => ({
+      yr: r.yr,
+      age: r.age,
+      label: r.label,
+      otherInc: r.abn,
+      conv: r.conv,
+      fedTax: r.fedT,
+      stateNJ: r.stT,
+      effFL: r.conv > 0 ? ((r.fedT / r.conv) * 100).toFixed(1) : "0.0",
+      effNJ: r.conv > 0 ? (((r.fedT + r.stT) / r.conv) * 100).toFixed(1) : "0.0",
+      netRoth: Math.round(r.conv - r.fedT - (params.twoHousehold ? 0 : r.stT)),
+    }));
 }
 
 /* ════ MORTGAGE MATH ════ */
@@ -2072,7 +2097,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
       <div className="ct">
         {title} · {useReal ? "Real $" : "Nominal $"}
       </div>
-      <ResponsiveContainer width="100%" height={260}>
+      <ResponsiveContainer width="100%" height={640}>
         <ComposedChart
           data={data}
           margin={{ top: 28, right: 8, left: 0, bottom: 0 }}
@@ -4542,14 +4567,17 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
 function ProfileWizard({ values, onChange }) {
   const [step, setStep] = useState(0);
   const [saveStatus, setSaveStatus] = useState("");
+
   const flashStatus = (msg) => {
     setSaveStatus(msg);
     setTimeout(() => setSaveStatus(""), 2000);
   };
+
   const handleSave = () => {
     const ok = saveProfileToLocal(values);
     flashStatus(ok ? "✓ Saved to this browser" : "✗ Save failed (localStorage blocked)");
   };
+
   const handleReload = () => {
     const saved = loadProfileFromLocal();
     if (!saved) {
@@ -4563,10 +4591,15 @@ function ProfileWizard({ values, onChange }) {
     });
     flashStatus("✓ Restored saved profile");
   };
+
   const savedMeta = (() => {
     const s = loadProfileFromLocal();
     if (!s || !s.savedAt) return null;
-    try { return new Date(s.savedAt).toLocaleString(); } catch { return s.savedAt; }
+    try {
+      return new Date(s.savedAt).toLocaleString();
+    } catch {
+      return s.savedAt;
+    }
   })();
 
   const STEPS = [
@@ -4575,12 +4608,6 @@ function ProfileWizard({ values, onChange }) {
     { label: "Current Savings", icon: "💰", sub: `${fmtM(values.port)} saved` },
     { label: "Contributions", icon: "📋", sub: `${fmtK(values.contrib)}/yr` },
     { label: "Retirement Plan", icon: "🎯", sub: `Age ${values.retireAge}` },
-    {
-      label: "Other Income",
-      icon: "🏖",
-      sub: `$${(values.ab / 1000).toFixed(0)}K/yr`,
-    },
-   
   ];
 
   const PANELS = [
@@ -4589,9 +4616,20 @@ function ProfileWizard({ values, onChange }) {
     <SavingsPanel values={values} onChange={onChange} />,
     <ContribPanel values={values} onChange={onChange} />,
     <RetirementPanel values={values} onChange={onChange} />,
-    <IncomePanel values={values} onChange={onChange} />,
-
   ];
+
+  // Safety: clamp step if it somehow becomes invalid
+  useEffect(() => {
+    if (step >= STEPS.length) {
+      setStep(STEPS.length - 1);
+    }
+  }, [step, STEPS.length]);
+
+  const goNext = () => setStep((s) => Math.min(STEPS.length - 1, s + 1));
+  const goPrev = () => setStep((s) => Math.max(0, s - 1));
+
+  const currentStepData = STEPS[step];
+  const currentPanel = PANELS[step];
 
   return (
     <div
@@ -4624,13 +4662,9 @@ function ProfileWizard({ values, onChange }) {
               marginBottom: 4,
               cursor: "pointer",
               background: i === step ? "rgba(13,148,136,0.15)" : "transparent",
-              border:
-                i === step
-                  ? "1px solid rgba(13,148,136,0.3)"
-                  : "1px solid transparent",
+              border: i === step ? "1px solid rgba(13,148,136,0.3)" : "1px solid transparent",
             }}
           >
-            {/* Dot */}
             <div
               style={{
                 width: 11,
@@ -4638,14 +4672,8 @@ function ProfileWizard({ values, onChange }) {
                 borderRadius: "50%",
                 flexShrink: 0,
                 background:
-                  i < step
-                    ? "#0d9488"
-                    : i === step
-                    ? "#14b8a6"
-                    : "rgba(255,255,255,0.1)",
-                border: `2px solid ${
-                  i <= step ? "#0d9488" : "rgba(255,255,255,0.15)"
-                }`,
+                  i < step ? "#0d9488" : i === step ? "#14b8a6" : "rgba(255,255,255,0.1)",
+                border: `2px solid ${i <= step ? "#0d9488" : "rgba(255,255,255,0.15)"}`,
                 boxShadow: i === step ? "0 0 8px #0d948866" : "none",
               }}
             />
@@ -4666,8 +4694,8 @@ function ProfileWizard({ values, onChange }) {
       </div>
 
       {/* RIGHT PANEL */}
-       <div className="wizard-panel" style={{ padding: 24 }}>
-        {/* Save bar — visible on every wizard step */}
+      <div className="wizard-panel" style={{ padding: 24 }}>
+        {/* Save bar */}
         <div
           style={{
             display: "flex",
@@ -4730,34 +4758,40 @@ function ProfileWizard({ values, onChange }) {
             </button>
           </div>
         </div>
-        {/* Mobile step selector — only visible when sidebar is hidden */}
+
+        {/* Mobile step selector */}
         <div className="wizard-mobile-steps" style={{ marginBottom: 16 }}>
           <select
             value={step}
             onChange={(e) => setStep(Number(e.target.value))}
-            style={{ width:"100%", background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:8, padding:"8px 12px", fontSize:13, fontFamily:"'Inter',sans-serif" }}
+            style={{
+              width: "100%",
+              background: "#0d1b2a",
+              border: "1px solid #1e3a5f",
+              color: "#e2e8f0",
+              borderRadius: 8,
+              padding: "8px 12px",
+              fontSize: 13,
+              fontFamily: "'Inter',sans-serif",
+            }}
           >
             {STEPS.map((s, i) => (
-              <option key={i} value={i}>{s.icon} {s.label}</option>
+              <option key={i} value={i}>
+                {s.icon} {s.label}
+              </option>
             ))}
           </select>
         </div>
-        <div
-          style={{
-            fontSize: 16,
-            fontWeight: 700,
-            color: "#e2e8f0",
-            marginBottom: 4,
-          }}
-        >
-          {STEPS[step].icon} {STEPS[step].label}
+
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>
+          {currentStepData.icon} {currentStepData.label}
         </div>
         <div style={{ fontSize: 12, color: "#475569", marginBottom: 20 }}>
-          {STEPS[step].sub}
+          {currentStepData.sub}
         </div>
 
         {/* Panel content */}
-        {PANELS[step]}
+        {currentPanel}
 
         {/* Navigation */}
         <div
@@ -4771,7 +4805,7 @@ function ProfileWizard({ values, onChange }) {
           }}
         >
           <button
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            onClick={goPrev}
             disabled={step === 0}
             style={{
               padding: "7px 18px",
@@ -4791,26 +4825,25 @@ function ProfileWizard({ values, onChange }) {
             {step + 1} / {STEPS.length}
           </div>
 
-          {/* Only show Next button if not on page 6 (step index 5) */}
-          {step !== 5 && (
-            <button
-              onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
-              disabled={step === STEPS.length - 1}
-              style={{
-                padding: "7px 18px",
-                borderRadius: 7,
-                border: "none",
-                background: "linear-gradient(135deg,#0d9488,#14b8a6)",
-                color: "white",
-                cursor: step === STEPS.length - 1 ? "not-allowed" : "pointer",
-                fontSize: 12,
-                fontFamily: "inherit",
-                fontWeight: 600,
-              }}
-            >
-              Next →
-            </button>
-          )}
+          <button
+            onClick={goNext}
+            disabled={step === STEPS.length - 1}
+            style={{
+              padding: "7px 18px",
+              borderRadius: 7,
+              border: "none",
+              background: step === STEPS.length - 1
+                ? "rgba(255,255,255,0.05)"
+                : "linear-gradient(135deg,#0d9488,#14b8a6)",
+              color: step === STEPS.length - 1 ? "#334155" : "white",
+              cursor: step === STEPS.length - 1 ? "not-allowed" : "pointer",
+              fontSize: 12,
+              fontFamily: "inherit",
+              fontWeight: 600,
+            }}
+          >
+            Next →
+          </button>
         </div>
       </div>
     </div>
@@ -4818,7 +4851,7 @@ function ProfileWizard({ values, onChange }) {
 }
 
 function SavingsPanel({ values, onChange }) {
-  const GOAL = values.portfolioGoal || 1_000_000; // Default goal for progress bar (can be adjusted or made dynamic)  
+  const GOAL = values.earlyRetireTarget || 1_000_000; // Default goal for progress bar (can be adjusted or made dynamic)  
 
   const accounts = values.accounts || BLANK_PROFILE.accounts;
 
@@ -4863,6 +4896,7 @@ function SavingsPanel({ values, onChange }) {
     const newAccounts = accounts.filter(a => a.id !== id);
     updateAccounts(newAccounts);
   };
+
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
@@ -4921,7 +4955,7 @@ function SavingsPanel({ values, onChange }) {
       {/* Auto-total summary */}
       <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
         <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
-          <span style={{ fontSize:12, color:"#e2e8f0" }}>🎯 $3.2M Goal Progress</span>
+          <span style={{ fontSize:12, color:"#e2e8f0" }}>🎯 {fmtM(values.earlyRetireTarget)} Goal Progress</span>
           <span style={{ fontSize:14, fontWeight:700, color:"#5eead4", fontFamily:"'DM Mono',monospace" }}>
             {percentToGoal.toFixed(1)}%
           </span>
@@ -4955,18 +4989,17 @@ function SavingsPanel({ values, onChange }) {
 
 function AboutYouPanel({ values, onChange }) {
   const formatDateForInput = (dateStr) => {
-      if (!dateStr) return "";
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-      try {
-        const d = new Date(dateStr);
-        if (!isNaN(d.getTime())) {
-          return d.toISOString().slice(0, 10);
-        }
-      } catch(e) {}
-      return "";
-    };
+    if (!dateStr) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    try {
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().slice(0, 10);
+      }
+    } catch(e) {}
+    return "";
+  };
 
-  // Derive currentAge from values.dob (if valid)
   const derivedAge = useMemo(() => {
     if (!values.dob) return null;
     try {
@@ -4982,116 +5015,97 @@ function AboutYouPanel({ values, onChange }) {
     }
   }, [values.dob]);
 
-  // Years to retirement (uses derivedAge if available, otherwise values.currentAge fallback)
   const currentAgeForCalc = derivedAge ?? values.currentAge;
   const yearsToRetire = Math.max(0, values.retireAge - currentAgeForCalc);
   const yearsInRetire = Math.max(0, values.endAge - values.retireAge);
   const totalHorizon = yearsToRetire + yearsInRetire;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* DOB Input + derived age */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* DOB Input */}
       <div>
-        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4 }}>
           Date of Birth
         </div>
-        <input type="date" value={formatDateForInput(values.dob)}
+        <input
+          type="date"
+          value={formatDateForInput(values.dob)}
           onChange={(e) => onChange("dob", e.target.value)}
-              style={{
-                width: "100%",
-                background: "#0d1b2a",
-                border: "1px solid #1e3a5f",
-                color: "#e2e8f0",
-                borderRadius: 6,
-                padding: "8px 12px",
-                fontSize: 13,
-                fontFamily: "'DM Mono',monospace",
-              }}
+          style={{
+            width: "100%",
+            maxWidth: "200px",
+            background: "#0d1b2a",
+            border: "1px solid #1e3a5f",
+            color: "#e2e8f0",
+            borderRadius: 6,
+            padding: "6px 10px",
+            fontSize: 12,
+            fontFamily: "'DM Mono',monospace",
+          }}
         />
         {derivedAge !== null && (
-          <div style={{ fontSize: 11, color: "#5eead4", marginTop: 6 }}>
-            Current age: <strong>{derivedAge}</strong> (calculated from DOB)
+          <div style={{ fontSize: 10, color: "#5eead4", marginTop: 4 }}>
+            Current age: <strong>{derivedAge}</strong> (calculated)
           </div>
         )}
         {derivedAge === null && values.dob && (
-          <div style={{ fontSize: 11, color: "#f87171", marginTop: 6 }}>
+          <div style={{ fontSize: 10, color: "#f87171", marginTop: 4 }}>
             Invalid date format. Use YYYY-MM-DD.
           </div>
         )}
       </div>
 
-      {/* Retirement Age slider (unchanged) */}
-      <div>
-        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-          Retirement Age
-        </div>
-        <Slider
-          label=""
-          value={values.retireAge}
-          min={50}
-          max={75}
-          step={1}
-          format={(v) => `${v} yrs`}
-          onChange={(v) => onChange("retireAge", v)}
-        />
-      </div>
+      {/* Retirement Age */}
+      <DualInput
+        label="Retirement Age"
+        value={values.retireAge}
+        min={50}
+        max={75}
+        step={1}
+        format={(v) => `${v} yrs`}
+        onChange={(v) => onChange("retireAge", v)}
+      />
 
-      {/* Planning Horizon (endAge) slider (unchanged) */}
-      <div>
-        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-          Planning Horizon
-        </div>
-        <Slider
-          label=""
-          value={values.endAge}
-          min={75}
-          max={100}
-          step={1}
-          format={(v) => `to age ${v}`}
-          onChange={(v) => onChange("endAge", v)}
-        />
-      </div>
+      {/* Planning Horizon */}
+      <DualInput
+        label="Planning Horizon"
+        value={values.endAge}
+        min={75}
+        max={100}
+        step={1}
+        format={(v) => `to age ${v}`}
+        onChange={(v) => onChange("endAge", v)}
+      />
 
-      {/* Summary row (uses derived age) */}
+      {/* Summary row */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
           border: "1px solid rgba(255,255,255,0.08)",
           borderRadius: 8,
-          padding: "14px 20px",
+          padding: "12px 16px",
           display: "grid",
           gridTemplateColumns: "1fr 1fr 1fr",
-          gap: 16,
+          gap: 12,
+          marginTop: 4,
         }}
       >
         {[
-          {
-            label: "Years to retirement",
-            val: yearsToRetire,
-            color: "#14b8a6",
-          },
-          {
-            label: "Years in retirement",
-            val: yearsInRetire,
-            color: "#a78bfa",
-          },
-          {
-            label: "Total planning horizon",
-            val: `${totalHorizon} yrs`,
-            color: "#e2e8f0",
-          },
+          { label: "Years to retirement", val: yearsToRetire, color: "#14b8a6" },
+          { label: "Years in retirement", val: yearsInRetire, color: "#a78bfa" },
+          { label: "Total horizon", val: `${totalHorizon} yrs`, color: "#e2e8f0" },
         ].map((m) => (
           <div key={m.label}>
-            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
+            <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>
               {m.label}
             </div>
             <div
               style={{
-                fontSize: 28,
+                fontSize: 22,
                 fontWeight: 700,
                 color: m.color,
                 fontFamily: "'DM Mono',monospace",
-                lineHeight: 1,
+                lineHeight: 1.2,
               }}
             >
               {m.val}
@@ -5119,27 +5133,49 @@ function ARow({ label, desc, children }) {
   );
 }
 function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  const displayValue = useMemo(() => {
+    if (value == null || value === "") return "";
+    // When focused, show the raw number for easy editing
+    if (isFocused) return value.toString();
+    // When not focused, show with commas
+    return new Intl.NumberFormat('en-US').format(value);
+  }, [value, isFocused]);
+
+  const handleChange = (e) => {
+    const raw = e.target.value.replace(/,/g, ''); // strip commas
+    const num = Number(raw);
+    if (!isNaN(num)) {
+      onSet(Math.max(min, Math.min(max, num)));
+    }
+  };
+
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <input
-  type="number"
-  value={value ?? ""}
-  min={min} max={max} step={step}
-  onChange={(e) => onSet(Number(e.target.value))}
-  style={{ 
-    width: "120px", 
-    maxWidth: "100%",
-    background: "#0d1b2a", 
-    border: "1px solid #1e3a5f", 
-    color: "#e2e8f0", 
-    borderRadius: 6, 
-    padding: "4px 8px", 
-    fontSize: 12, 
-    fontFamily: "'DM Mono',monospace", 
-    textAlign: "right" 
-  }}
-/>
-      {suffix && <span style={{ fontSize:11, color:"#475569" }}>{suffix}</span>}
+        type="text"  // changed from "number" to allow commas
+        value={displayValue}
+        min={min}
+        max={max}
+        step={step}
+        onChange={handleChange}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        style={{
+          width: "120px",
+          maxWidth: "100%",
+          background: "#0d1b2a",
+          border: "1px solid #1e3a5f",
+          color: "#e2e8f0",
+          borderRadius: 6,
+          padding: "4px 8px",
+          fontSize: 12,
+          fontFamily: "'DM Mono',monospace",
+          textAlign: "right",
+        }}
+      />
+      {suffix && <span style={{ fontSize: 11, color: "#475569" }}>{suffix}</span>}
     </div>
   );
 }
@@ -5412,10 +5448,10 @@ function AssumptionsPanel({ values, onChange }) {
         >
           Monte Carlo Model Parameters
         </div>
-         <ARow label="Target Portfolio Value for Early Retirement" desc="If you want to attain a certain portfolio value, this will show that value on all Monte Carlo charts so you can see how far away you are from the forecast.">
+         <ARow label="Target Portfolio Value for Early Retirement" desc="This number is a hypothetical value you have set that 'If you hit this number, would you retire?'. This is where you are in the monte carlo curve. You can view this as a line on the Monte Carlo simulation.">
           <ANumInput value={values.earlyRetireTarget} onSet={(v) => onChange("earlyRetireTarget", v)} min={500_000} max={10_000_000} step={50_000} prefix="$" />
         </ARow>
-        <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit (default $3.2M)">
+        <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is your internal Portfolio Goal and where if you hit this number before you have accomplished your retirement goal. It's your minimal goal and anything aboive this numnber is extra beyond what is your ultimate goal. (default $3.2M)">
             <ANumInput value={values.portfolioGoal} onSet={(v) => onChange("portfolioGoal", v)}  min={500_000}  max={10_000_000} step={50_000}  prefix="$" />
           </ARow>
         <ARow label="Rental reliability" desc="Probability Rental income arrives in any given year (default 80%)">
@@ -5483,7 +5519,7 @@ function ContribPanel({ values, onChange }) {
           <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
             401(k) Annual Contribution
           </div>
-          <Slider
+          <DualInput
             label=""
             value={annual401k}
             min={0}
@@ -5497,7 +5533,7 @@ function ContribPanel({ values, onChange }) {
           <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
             HSA Monthly Contribution
           </div>
-          <Slider
+          <DualInput
             label=""
             value={values.hsaMonthly || 795.83}
             min={0}
@@ -5511,7 +5547,7 @@ function ContribPanel({ values, onChange }) {
           <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
             Employer Match (%)
           </div>
-          <Slider
+          <DualInput
             label=""
             value={employerMatch}
             min={0}
@@ -5595,252 +5631,193 @@ function ContribPanel({ values, onChange }) {
 
 function RetirementPanel({ values, onChange }) {
   const spend = values.sp || 100_000;
-  const floor = values.gkFloor || 88_000;
-  const ceiling = values.gkCeiling || 115_000;
-  const floorPct = (floor / spend) * 100;
-  const ceilingPct = (ceiling / spend) * 100;
+  const twoHousehold = values.twoHousehold ?? true;
+  const baseSpend = twoHousehold ? spend : (values.spSpendOutofState || spend);
+  const floor = Math.round(baseSpend * 0.65);
+  const ceiling = Math.round(baseSpend * 1.35);
+
+  const ssbMonthly = (values.ssb || 0) / 12;
+  const ab = values.ab || 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Spending Inputs */}
+      <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: -8 }}>
+        💵 Annual Spending
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         {[
-          {
-            k: "sp",
-            label: "Core Lifestyle Spend (excl. housing & fixed obligations)",
-            min: 30000,
-            max: 200000,
-            step: 1000,
-            fmt: (v) => fmtK(v) + "/yr",
-          },
-          {
-            k: "spSpendOutofState",
-            label: "Out of State Solo Spend",
-            min: 20000,
-            max: 150000,
-            step: 1000,
-            fmt: (v) => fmtK(v) + "/yr",
-          },
-          {
-            k: "spInStateSpend",
-            label: "Non Taxable State/Offshore Spend",
-            min: 20000,
-            max: 150000,
-            step: 1000,
-            fmt: (v) => fmtK(v) + "/yr",
-          },
+          { k: "sp", label: "Core Lifestyle Spend", min: 30000, max: 200000, step: 1000, fmt: (v) => fmtK(v) + "/yr" },
+          { k: "spSpendOutofState", label: "Out of State Solo Spend", min: 20000, max: 150000, step: 1000, fmt: (v) => fmtK(v) + "/yr" },
+          { k: "spInStateSpend", label: "Non Taxable State/Offshore Spend", min: 20000, max: 150000, step: 1000, fmt: (v) => fmtK(v) + "/yr" },
         ].map((s) => (
           <div key={s.k}>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-              {s.label}
-            </div>
-            <Slider
-              label=""
-              value={values[s.k] || 0}
-              min={s.min}
-              max={s.max}
-              step={s.step}
-              format={s.fmt}
-              onChange={(v) => onChange(s.k, v)}
-            />
-          </div>
-        ))}
-        {[
-          {
-            k: "gkFloor",
-            label: "Guyton-Klinger Floor",
-            min: 20000,
-            max: 150000,
-            step: 1000,
-            fmt: (v) => fmtK(v) + "/yr",
-          },
-          {
-            k: "gkCeiling",
-            label: "Guyton-Klinger Ceiling",
-            min: 50000,
-            max: 250000,
-            step: 1000,
-            fmt: (v) => fmtK(v) + "/yr",
-          },
-        ].map((s) => (
-          <div key={s.k}>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-              {s.label}
-            </div>
-            <Slider
-              label=""
-              value={values[s.k] || 0}
-              min={s.min}
-              max={s.max}
-              step={s.step}
-              format={s.fmt}
-              onChange={(v) => onChange(s.k, v)}
-            />
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>{s.label}</div>
+            <DualInput label="" value={values[s.k] || 0} min={s.min} max={s.max} step={s.step} format={s.fmt} onChange={(v) => onChange(s.k, v)} />
           </div>
         ))}
       </div>
 
-      {/* GK % of spend */}
-      <div
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 10,
-          padding: 18,
-        }}
-      >
-        <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 16 }}>
-          🛡️ Guardrails as % of Spend
+      {/* Income Sources */}
+      <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginTop: 8, marginBottom: -8 }}>
+        🏦 Retirement Income
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>Social Security (monthly)</div>
+          <DualInput label="" value={ssbMonthly} min={0} max={5000} step={50} format={(v) => fmtM(v) + "/mo"} onChange={(v) => onChange("ssb", v * 12)} />
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 20,
-            justifyContent: "center",
-          }}
-        >
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
-              Floor
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>SS Start Age</div>
+          <DualInput label="" value={values.ssAge || 67} min={62} max={70} step={1} format={(v) => `Age ${v}`} onChange={(v) => onChange("ssAge", v)} />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>Rental Net Income (annual)</div>
+          <DualInput label="" value={ab} min={0} max={60000} step={1000} format={(v) => fmtK(v) + "/yr"} onChange={(v) => onChange("ab", v)} />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>Rental Reliability</div>
+          <DualInput label="" value={values.abReliability || 80} min={0} max={100} step={5} format={(v) => v + "%"} onChange={(v) => onChange("abReliability", v)} />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>Rental Growth Rate</div>
+          <DualInput label="" value={values.abGrowth || 3} min={0} max={10} step={0.5} format={(v) => v + "%/yr"} onChange={(v) => onChange("abGrowth", v)} />
+        </div>
+      </div>
+
+      {/* Dynamic Guardrails (GK or other strategy) */}
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
+        {values.withdrawalStrategy === "gk" ? (
+          <>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails (Auto‑calculated)</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = 65% of core spend · Ceiling = 135% of core spend</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "#475569" }}>Floor</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>65%</div>
+                <div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div>
+              </div>
+              <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "#475569" }}>Ceiling</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>135%</div>
+                <div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div>
+              </div>
             </div>
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 700,
-                color: "#fbbf24",
-                fontFamily: "'DM Mono',monospace",
-              }}
-            >
-              {floorPct.toFixed(0)}%
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>
+              Spending adjusts ±10% when withdrawal rate deviates 20% from initial.
             </div>
-            <div style={{ fontSize: 10, color: "#334155" }}>
-              {fmtK(floor)} / {fmtK(spend)}
+          </>
+        ) : values.withdrawalStrategy === "fixed" ? (
+          <>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>📊 Fixed Percentage Withdrawal</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Each year, withdraw a fixed percentage of the current portfolio balance.</div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 11, color: "#475569" }}>Withdrawal Rate</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>
+                {((values.fixedWithdrawalRate ?? 0.04) * 100).toFixed(1)}%
+              </div>
+              <div style={{ fontSize: 10, color: "#334155" }}>of portfolio balance each year</div>
             </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center" }}>
+            {getStrategyLabel(values.withdrawalStrategy)} strategy active — see documentation.
           </div>
-          <div
-            style={{
-              width: 1,
-              height: 30,
-              background: "rgba(255,255,255,0.1)",
-            }}
-          />
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
-              Ceiling
-            </div>
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 700,
-                color: "#34d399",
-                fontFamily: "'DM Mono',monospace",
-              }}
-            >
-              {ceilingPct.toFixed(0)}%
-            </div>
-            <div style={{ fontSize: 10, color: "#334155" }}>
-              {fmtK(ceiling)} / {fmtK(spend)}
-            </div>
-          </div>
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: "#64748b",
-            marginTop: 16,
-            fontStyle: "italic",
-          }}
-        >
-          GK adjusts spending ±10% when withdrawal rate deviates 20% from
-          initial.
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
 function IncomePanel({ values, onChange }) {
-  const ab = values.ab || 20_000;
-  const ssb = values.ssb || 31_543;
-  const totalRetirementIncome = ab + ssb;
+  // Convert annual ssb to monthly for display
+  const ssbMonthly = (values.ssb || 0) / 12;
+  const ab = values.ab || 0;
+  const totalRetirementIncome = ab + (values.ssb || 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        {[
-          {
-            k: "ab",
-            label: "Rental Net Income",
-            min: 0,
-            max: 60_000,
-            step: 1000,
-            fmt: (v) => fmtK(v) + "/yr",
-          },
-          {
-            k: "ssb",
-            label: "Social Security Benefit",
-            min: 0,
-            max: 50_000,
-            step: 500,
-            fmt: (v) => fmtK(v) + "/yr",
-          },
-        ].map((s) => (
-          <div key={s.k}>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-              {s.label}
-            </div>
-            <Slider
-              label=""
-              value={values[s.k] || 0}
-              min={s.min}
-              max={s.max}
-              step={s.step}
-              format={s.fmt}
-              onChange={(v) => onChange(s.k, v)}
-            />
+        {/* Rental Net Income */}
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Rental Net Income (annual)
           </div>
-        ))}
-        {[
-          {
-            k: "ssAge",
-            label: "SS Start Age",
-            min: 62,
-            max: 70,
-            step: 1,
-            fmt: (v) => "Age " + v,
-          },
-          {
-            k: "abReliability",
-            label: "Rental Reliability",
-            min: 0,
-            max: 100,
-            step: 5,
-            fmt: (v) => v + "%",
-          },
-          {
-            k: "abGrowth",
-            label: "Rental Growth Rate",
-            min: 0,
-            max: 10,
-            step: 0.5,
-            fmt: (v) => v + "%/yr",
-          },
-        ].map((s) => (
-          <div key={s.k}>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-              {s.label}
-            </div>
-            <Slider
-              label=""
-              value={values[s.k] || 0}
-              min={s.min}
-              max={s.max}
-              step={s.step}
-              format={s.fmt}
-              onChange={(v) => onChange(s.k, v)}
-            />
+          <DualInput
+            label=""
+            value={ab}
+            min={0}
+            max={60000}
+            step={1000}
+            format={(v) => fmtK(v) + "/yr"}
+            onChange={(v) => onChange("ab", v)}
+          />
+        </div>
+
+        {/* Social Security Benefit - Monthly Input */}
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Social Security Benefit (monthly)
           </div>
-        ))}
+          <DualInput
+            label=""
+            value={ssbMonthly}
+            min={0}
+            max={5000}
+            step={50}
+            format={(v) => fmtM(v) + "/mo"}
+            onChange={(v) => onChange("ssb", v * 12)}   // store as annual
+          />
+        </div>
+
+        {/* SS Start Age */}
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            SS Start Age
+          </div>
+          <DualInput
+            label=""
+            value={values.ssAge || 67}
+            min={62}
+            max={70}
+            step={1}
+            format={(v) => `Age ${v}`}
+            onChange={(v) => onChange("ssAge", v)}
+          />
+        </div>
+
+        {/* Rental Reliability */}
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Rental Reliability
+          </div>
+          <DualInput
+            label=""
+            value={values.abReliability || 80}
+            min={0}
+            max={100}
+            step={5}
+            format={(v) => v + "%"}
+            onChange={(v) => onChange("abReliability", v)}
+          />
+        </div>
+
+        {/* Rental Growth Rate */}
+        <div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+            Rental Growth Rate
+          </div>
+          <DualInput
+            label=""
+            value={values.abGrowth || 3}
+            min={0}
+            max={10}
+            step={0.5}
+            format={(v) => v + "%/yr"}
+            onChange={(v) => onChange("abGrowth", v)}
+          />
+        </div>
       </div>
 
       {/* Total income at retirement */}
@@ -5854,7 +5831,7 @@ function IncomePanel({ values, onChange }) {
         }}
       >
         <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
-          🏖️ Total Income at Retirement (Pre-Tax)
+          🏖️ Total Annual Income at Retirement (Pre-Tax)
         </div>
         <div
           style={{
@@ -5866,9 +5843,7 @@ function IncomePanel({ values, onChange }) {
           }}
         >
           {fmtK(totalRetirementIncome)}
-          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>
-            /yr
-          </span>
+          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>/yr</span>
         </div>
         <div
           style={{
@@ -5880,14 +5855,13 @@ function IncomePanel({ values, onChange }) {
             color: "#64748b",
           }}
         >
-          <span>🏖 Rental: {fmtK(ab)}</span>
+          <span>🏖 Rental: {fmtK(ab)}/yr</span>
           <span>
-            🏛 SS: {fmtK(ssb)} @ age {values.ssAge || 64}
+            🏛 SS: {fmtM(values.ssb || 0)}/yr (≈ {fmtM(ssbMonthly)}/mo)
           </span>
         </div>
         <div style={{ fontSize: 10, color: "#334155", marginTop: 8 }}>
-          Rental reliability: {values.abReliability || 80}% · Growth:{" "}
-          {values.abGrowth || 3}%/yr
+          Rental reliability: {values.abReliability || 80}% · Growth: {values.abGrowth || 3}%/yr
         </div>
       </div>
     </div>
@@ -5927,7 +5901,6 @@ export default function AiRAForecaster() {
   const [tax, setTax] = useState(prof.tax);
   const [useAb, setUseAb] = useState(prof.useAb);
   const [real, setReal] = useState(prof.real);
-  const [twoHousehold, setTwoHousehold] = useState(true);
   const [withdrawalStrategy, setWithdrawalStrategy] = useState("gk"); // "gk", "fixed", "vanguard", "risk", "kitces"
 
   const [assumptions, setAssumptions] = useState({
@@ -5948,6 +5921,7 @@ export default function AiRAForecaster() {
     hcProb:        BLANK_PROFILE.hcProb,
     hcMin:         BLANK_PROFILE.hcMin,
     hcMax:         BLANK_PROFILE.hcMax,
+    withdrawalStrategy: BLANK_PROFILE.withdrawalStrategy,
     
     // Income (also blank by default)
     ab:  BLANK_PROFILE.ab,
@@ -5970,6 +5944,7 @@ export default function AiRAForecaster() {
     checkpoints: BLANK_PROFILE.checkpoints,
     earlyRetireTarget: BLANK_PROFILE.earlyRetireTarget,
     portfolioGoal: BLANK_PROFILE.portfolioGoal,
+    twoHousehold: BLANK_PROFILE.twoHousehold,
   });
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
@@ -6040,82 +6015,80 @@ export default function AiRAForecaster() {
   }, [updateAssumption]);
 
   const params = useMemo(
-    () => ({
-      dob: assumptions.dob || "",
-      rmdStartAge: assumptions.rmdStartAge,
-      retireAge: retAge,
-      endAge,
-      port,
-      contrib,
-      inf,
-      sp: twoHousehold ? sp : prof.spSpendOutofState,
-      ssAge,
-      ssb,
-      ab,
-      useAb,
-      smile,
-      tax,
-      real,
-      // GK dynamic — derived from spending needs (today's dollars, inflation-adjusted in MC)
-      // Floor = 65% of target spending (bare essentials). Ceiling = 135% of target (comfort cap).
-      gkFloor: Math.round((twoHousehold ? sp : (prof.spSpendOutofState || sp)) * 0.65),
-      gkCeiling: Math.round((twoHousehold ? sp : (prof.spSpendOutofState || sp)) * 1.35),
-      mortBalance: assumptions.mortBalance || 0,
-      mortRate: assumptions.mortRate || 6.5,
-      mortStart: assumptions.mortStart || "2020-01",
-      mortTerm: assumptions.mortTerm || 30,
-      mortExtra: assumptions.mortExtra || 0,
-      rePrimaryResidencce: prof.rePrimaryResidencce,
-      reRentalUnit1: prof.reRentalUnit1,
-      reRentalUnit2: prof.reRentalUnit2,
-      twoHousehold,
-      currentAge,
-      abReliability: assumptions.abReliability,
-      abGrowth: assumptions.abGrowth,
-      ssCola: assumptions.ssCola,
-      preRetireEq: assumptions.preRetireEq,
-      postRetireEq: assumptions.postRetireEq,
-      hcShockAge: assumptions.hcShockAge,
-      hcProb: assumptions.hcProb,
-      hcMin: assumptions.hcMin,
-      hcMax: assumptions.hcMax,
-      accounts: assumptions.accounts,
-      properties: assumptions.properties || BLANK_PROFILE.properties,
-      filingStatus: assumptions.filingStatus || "mfj",
-      reGrowthRate: assumptions.reGrowthRate ?? 3.0,
-      housingType: assumptions.housingType || "own",
-      annualRent: assumptions.annualRent || 0,
-      carveouts: assumptions.carveouts || [],
-      rothConversionTarget: assumptions.rothConversionTarget || "off",
-      taxFunding: assumptions.taxFunding || "from_taxable",
-      withdrawalStrategy: withdrawalStrategy,
-      fixedWithdrawalRate: 0.04,
-      vanguardInitialRate: 0.04,
-      vanguardCap: 0.05,
-      vanguardFloor: -0.025,
-      safeWithdrawalRate: 0.04,
-    }),
-    [
-      prof,
-      retAge,
-      endAge,
-      port,
-      contrib,
-      inf,
-      sp,
-      ssAge,
-      ssb,
-      ab,
-      useAb,
-      smile,
-      tax,
-      real,
-      twoHousehold,
-      assumptions,
-      currentAge,
-      withdrawalStrategy,
-    ]
-  );
+      () => ({
+        dob: assumptions.dob || "",
+        rmdStartAge: assumptions.rmdStartAge,
+        retireAge: retAge,
+        endAge,
+        port,
+        contrib,
+        inf,
+        sp: assumptions.twoHousehold ? sp : prof.spSpendOutofState,
+        ssAge,
+        ssb,
+        ab,
+        useAb,
+        smile,
+        tax,
+        real,
+        // GK dynamic — derived from spending needs
+        gkFloor: Math.round((assumptions.twoHousehold ? sp : (prof.spSpendOutofState || sp)) * 0.65),
+        gkCeiling: Math.round((assumptions.twoHousehold ? sp : (prof.spSpendOutofState || sp)) * 1.35),
+        mortBalance: assumptions.mortBalance || 0,
+        mortRate: assumptions.mortRate || 6.5,
+        mortStart: assumptions.mortStart || "2020-01",
+        mortTerm: assumptions.mortTerm || 30,
+        mortExtra: assumptions.mortExtra || 0,
+        rePrimaryResidencce: prof.rePrimaryResidencce,
+        reRentalUnit1: prof.reRentalUnit1,
+        reRentalUnit2: prof.reRentalUnit2,
+        twoHousehold: assumptions.twoHousehold,           // ✅ reference from assumptions
+        currentAge,
+        abReliability: assumptions.abReliability,
+        abGrowth: assumptions.abGrowth,
+        ssCola: assumptions.ssCola,
+        preRetireEq: assumptions.preRetireEq,
+        postRetireEq: assumptions.postRetireEq,
+        hcShockAge: assumptions.hcShockAge,
+        hcProb: assumptions.hcProb,
+        hcMin: assumptions.hcMin,
+        hcMax: assumptions.hcMax,
+        accounts: assumptions.accounts,
+        properties: assumptions.properties || BLANK_PROFILE.properties,
+        filingStatus: assumptions.filingStatus || "mfj",
+        reGrowthRate: assumptions.reGrowthRate ?? 3.0,
+        housingType: assumptions.housingType || "own",
+        annualRent: assumptions.annualRent || 0,
+        carveouts: assumptions.carveouts || [],
+        rothConversionTarget: assumptions.rothConversionTarget || "off",
+        taxFunding: assumptions.taxFunding || "from_taxable",
+        withdrawalStrategy: withdrawalStrategy,
+        fixedWithdrawalRate: 0.04,
+        vanguardInitialRate: 0.04,
+        vanguardCap: 0.05,
+        vanguardFloor: -0.025,
+        safeWithdrawalRate: 0.04,
+      }),
+      [
+        prof,
+        retAge,
+        endAge,
+        port,
+        contrib,
+        inf,
+        sp,
+        ssAge,
+        ssb,
+        ab,
+        useAb,
+        smile,
+        tax,
+        real,
+        assumptions,                // ✅ only assumptions is needed now
+        currentAge,
+        withdrawalStrategy,
+      ]
+    );  
 
   const mortgageSched = useMemo(
   () => mortgageSchedule(
@@ -6231,38 +6204,64 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             <div style={{ width:1, height:20, background:"rgba(255,255,255,0.1)", margin:"0 4px" }} />
             <button className="mbtn" title="Export profile to JSON"
               onClick={() => exportProfile({
-                // Identity
-                name: assumptions.name || "", dob: assumptions.dob || "",
+                // ---- Identity ----
+                name: assumptions.name || "",
+                dob: assumptions.dob || "",
                 stateOfResidence: assumptions.stateOfResidence || "NJ",
                 employerStartDate: assumptions.employerStartDate || "",
-                // Core retirement
-                retireAge: retAge, endAge, port, contrib, inf: inf,
-                sp, ssAge, ssb, ab, useAb, smile, tax, real, twoHousehold,
-                // Spending
+                filingStatus: assumptions.filingStatus || "mfj",
+                twoHousehold: assumptions.twoHousehold,               // ✅ added
+
+                // ---- Core Retirement ----
+                retireAge: retAge,
+                endAge: endAge,
+                currentAge: currentAge,                                // derived, but save for reference
+                port: port,
+                contrib: contrib,
+                inf: inf,
+                sp: sp,
                 spSpendOutofState: prof.spSpendOutofState || 48000,
                 spInStateSpend: prof.spInStateSpend || 0,
-                // Mortgage
+                ssAge: ssAge,
+                ssb: ssb,
+                ab: ab,
+                useAb: useAb,
+                smile: smile,
+                tax: tax,
+                real: real,
+
+                // ---- GK Guardrails (calculated, but save for reference) ----
+                gkFloor: params.gkFloor,
+                gkCeiling: params.gkCeiling,
+                withdrawalStrategy: withdrawalStrategy,
+
+                // ---- Targets ----
+                portfolioGoal: assumptions.portfolioGoal,              // ✅ added
+                earlyRetireTarget: assumptions.earlyRetireTarget,
+
+                // ---- Mortgage ----
                 mortBalance: assumptions.mortBalance || 0,
                 mortRate: assumptions.mortRate || 6.5,
                 mortStart: assumptions.mortStart || "2020-01",
                 mortTerm: assumptions.mortTerm || 30,
                 mortExtra: assumptions.mortExtra || 0,
                 mortPI: assumptions.mortPI || 0,
-                // Tax & RE
-                filingStatus: assumptions.filingStatus || "mfj",
+
+                // ---- Real Estate ----
+                properties: assumptions.properties || BLANK_PROFILE.properties,
                 reGrowthRate: assumptions.reGrowthRate ?? 3.0,
-                useJointRmdTable: assumptions.useJointRmdTable || false,
-                cashRealReturn: assumptions.cashRealReturn ?? 1.0,
-                // Expense model
+
+                // ---- Accounts ----
+                accounts: assumptions.accounts || BLANK_PROFILE.accounts,
+
+                // ---- Expense Model ----
                 housingType: assumptions.housingType || "own",
                 annualRent: assumptions.annualRent || 0,
                 carveouts: assumptions.carveouts || [],
                 rothConversionTarget: assumptions.rothConversionTarget || "off",
-                // Real estate
-                properties: assumptions.properties || BLANK_PROFILE.properties,
-                // Account breakdown
-                accounts: assumptions.accounts || BLANK_PROFILE.accounts,
-                // MC assumptions
+                taxFunding: assumptions.taxFunding || "from_taxable",
+
+                // ---- Monte Carlo Parameters ----
                 abReliability: assumptions.abReliability,
                 abGrowth: assumptions.abGrowth,
                 ssCola: assumptions.ssCola,
@@ -6272,35 +6271,40 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 hcProb: assumptions.hcProb,
                 hcMin: assumptions.hcMin,
                 hcMax: assumptions.hcMax,
-                checkpoints: assumptions.checkpoints,
-                earlyRetireTarget: assumptions.earlyRetireTarget,
-                // Meta
+                cashRealReturn: assumptions.cashRealReturn ?? 1.0,
+                useJointRmdTable: assumptions.useJointRmdTable || false,
+
+                // ---- Checkpoints ----
+                checkpoints: assumptions.checkpoints || [],
+
+                // ---- Meta ----
                 exportedAt: new Date().toISOString(),
                 appVersion: APP_VERSION,
               }, assumptions.name
-                   ? `AiRA_Profile_${assumptions.name.trim().replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "AiRA_Profile"}`
-                   : "AiRA_Profile")}>
+                  ? `AiRA_Profile_${assumptions.name.trim().replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "AiRA_Profile"}`
+                  : "AiRA_Profile")}
+            >
               ⬇ Export
             </button>
             <button className="mbtn" title="Import profile from JSON"
-              onClick={() => importProfile((data) => {
-                // ---- 1. Main sliders (already working) ----
-                if (data.retireAge)  setRetAge(data.retireAge);
-                if (data.endAge)     setEndAge(data.endAge);
-                if (data.port)       setPort(data.port);
-                if (data.contrib)    setContrib(data.contrib);
-                if (data.inf)        setInf(data.inf);
-                if (data.sp)         setSp(data.sp);
-                if (data.ssAge)      setSsAge(data.ssAge);
-                if (data.ssb)        setSsb(data.ssb);
-                if (data.ab !== undefined) setAb(data.ab);
-                if (data.useAb !== undefined) setUseAb(data.useAb);
+                onClick={() => importProfile((data) => {
+                  // ---- 1. Update main sliders ----
+                  if (data.retireAge !== undefined) setRetAge(data.retireAge);
+                  if (data.endAge !== undefined) setEndAge(data.endAge);
+                  if (data.port !== undefined) setPort(data.port);
+                  if (data.contrib !== undefined) setContrib(data.contrib);
+                  if (data.inf !== undefined) setInf(data.inf);
+                  if (data.sp !== undefined) setSp(data.sp);
+                  if (data.ssAge !== undefined) setSsAge(data.ssAge);
+                  if (data.ssb !== undefined) setSsb(data.ssb);
+                  if (data.ab !== undefined) setAb(data.ab);
+                  if (data.useAb !== undefined) setUseAb(data.useAb);
                 if (data.smile !== undefined) setSmile(data.smile);
                 if (data.tax !== undefined) setTax(data.tax);
                 if (data.real !== undefined) setReal(data.real);
-                if (data.twoHousehold !== undefined) setTwoHousehold(data.twoHousehold);
+                if (data.withdrawalStrategy !== undefined) setWithdrawalStrategy(data.withdrawalStrategy);
 
-                // ---- 2. Migrate old account fields to new accounts array ----
+                // ---- 2. Migrate old account fields if necessary ----
                 if (data.solo401k !== undefined && !data.accounts) {
                   data.accounts = [
                     ...(data.solo401k ? [{ id: "m1", category: "pretax", name: "Solo 401k", balance: data.solo401k }] : []),
@@ -6310,41 +6314,52 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     ...(data.hsaBal ? [{ id: "m5", category: "hsa", name: "HSA", balance: data.hsaBal }] : []),
                     ...(data.taxable ? [{ id: "m6", category: "taxable", name: "Taxable", balance: data.taxable }] : []),
                   ];
-                  if (data.accounts.length === 0) data.accounts = BLANK_PROFILE.accounts;
-                  delete data.solo401k;
-                  delete data.alpha401k;
-                  delete data.rothFid;
-                  delete data.rothVgd;
-                  delete data.hsaBal;
-                  delete data.taxable;
+                  delete data.solo401k; delete data.alpha401k; delete data.rothFid;
+                  delete data.rothVgd; delete data.hsaBal; delete data.taxable;
                 }
 
-                // ---- 3. Ensure accounts is always an array ----
+                // Ensure accounts is always an array
                 if (!Array.isArray(data.accounts)) data.accounts = BLANK_PROFILE.accounts;
 
-                // ---- 4. Recalculate portfolio total from accounts ----
-                const acctTotal = data.accounts.reduce((s, a) => s + (a.balance || 0), 0);
-                if (acctTotal > 0) setPort(acctTotal);
+                // Recalculate portfolio total from accounts if not explicitly provided
+                if (data.port === undefined) {
+                  const acctTotal = data.accounts.reduce((s, a) => s + (a.balance || 0), 0);
+                  if (acctTotal > 0) setPort(acctTotal);
+                }
 
-                // ---- 5. Fix mortgage start date format (add "-01" if missing) ----
+                // Fix mortgage start date format (add "-01" if missing)
                 if (data.mortStart && !data.mortStart.includes("-01")) {
                   data.mortStart = data.mortStart + "-01";
                 }
 
-                // ---- 6. Update ALL assumptions fields (including missing ones) ----
-                const keys = [
-                  "name", "dob", "stateOfResidence", "employerStartDate", "useJointRmdTable", "cashRealReturn",
-                  "filingStatus", "reGrowthRate",
-                  "abReliability", "abGrowth", "ssCola", "preRetireEq", "postRetireEq",
-                  "hcShockAge", "hcProb", "hcMin", "hcMax", "accounts",
-                  "mortBalance", "mortRate", "mortStart", "mortTerm", "mortExtra", "mortPI",
-                  "housingType", "annualRent", "carveouts", "rothConversionTarget", "properties","checkpoints","earlyRetireTarget",
-                ];
-                keys.forEach(k => {
-                  if (data[k] !== undefined) updateAssumption(k, data[k]);
-                });
+                // Ensure properties is an array
+                if (!Array.isArray(data.properties)) data.properties = BLANK_PROFILE.properties;
 
-                // ---- 7. Switch to user mode and mark stale ----
+                // Ensure carveouts is an array
+                if (!Array.isArray(data.carveouts)) data.carveouts = [];
+
+                // Ensure checkpoints is an array
+                if (!Array.isArray(data.checkpoints)) data.checkpoints = [];
+
+                // ---- 3. FULL REPLACEMENT of assumptions state ----
+                setAssumptions(prev => ({
+                  ...prev,
+                  ...data,
+                  // Ensure these are never undefined
+                  name: data.name || "",
+                  dob: data.dob || "",
+                  stateOfResidence: data.stateOfResidence || "NJ",
+                  filingStatus: data.filingStatus || "mfj",
+                  twoHousehold: data.twoHousehold ?? true,
+                  portfolioGoal: data.portfolioGoal ?? 3_200_000,
+                  earlyRetireTarget: data.earlyRetireTarget ?? 3_500_000,
+                  accounts: data.accounts,
+                  properties: data.properties,
+                  checkpoints: data.checkpoints,
+                  carveouts: data.carveouts,
+                }));
+
+                // ---- 4. Switch to user mode and mark stale ----
                 setMode("user");
                 setStale(true);
                 alert(`✅ Profile loaded${data.name ? ` for ${data.name}` : ""}. Press ▶ Run Monte Carlo to update.`);
@@ -6544,11 +6559,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   Bloomberg [-15 / +20%]
                 </div>
                 <div>
-                  🛡️ <span style={
-                                    { color: "#fbbf24" }
-                                 }>Guyton Klinger
-                      </span>{" "} Floor: {fmtM(params.gkFloor)} 
-                  · Ceiling {fmtM(params.gkCeiling)}
+                  <span style={{ color: "#fbbf24" }}>{getStrategyLabel(withdrawalStrategy)}</span>{" "}
+                  {withdrawalStrategy === "gk" && <>Floor: {fmtM(params.gkFloor)} · Ceiling {fmtM(params.gkCeiling)}</>}
+                  {withdrawalStrategy === "fixed" && <>Rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}%</>}
+                  {withdrawalStrategy === "vanguard" && <>Cap: {params.vanguardCap * 100}% · Floor: {params.vanguardFloor * 100}%</>}
                 </div>
                 <div>
                   🏖 <span style={{ color: "#059669" }}>Rental:</span> 80%
@@ -6663,9 +6677,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 accent="#0ea5e9"
               />
               <Toggle
-                val={twoHousehold}
-                onChange={setTwoHousehold}
-                label="🏠🌴 Two households · Spouse 1 Out / Spouse 2 In State"
+                val={assumptions.twoHousehold}
+                onChange={(v) => updateAssumption("twoHousehold", v)}
+                label="🏠🌴 Two households · Spouse 1 Out of State/ Spouse 2 In State"
                 accent="#a78bfa"
               />
               <div className="sb-card">
@@ -6745,7 +6759,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
 
             <div className="flag-i">
               🛡 GK active · WR {swr}% ·{" "}
-              {twoHousehold ? "Both households" : "Solo"} · Rental 80%
+              {assumptions.twoHousehold ? "Both households" : "Solo"} · Rental 80%
               reliable · Healthcare shocks modeled
             </div>
             {stale && (
@@ -6931,12 +6945,17 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 );
               })()}
             <div className="gk-bar">
-              <strong style={{ color: "#5eead4" }}>GK Guardrails:</strong> Floor{" "}
-              {fmtM(params.gkFloor)} (
-              {twoHousehold ? "both households" : (assumptions.name || "solo")}) · Ceiling{" "}
-              {fmtM(params.gkCeiling)} · Initial WR {swr}%. Rental modeled at
-              80% reliability. Healthcare shocks 3.5%/yr from age 72. As Bill
-              Perkins says — spend in the right life phase. 🌴
+              <strong style={{ color: "#5eead4" }}>{getStrategyLabel(withdrawalStrategy)} Guardrails:</strong>{" "}
+                  {withdrawalStrategy === "gk" ? (
+                    <>Floor {fmtM(params.gkFloor)} ({assumptions.twoHousehold ? "both" : "solo"}) · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}%.</>
+                  ) : withdrawalStrategy === "fixed" ? (
+                    <>Withdrawal rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
+                  ) : withdrawalStrategy === "vanguard" ? (
+                    <>Cap: {params.vanguardCap * 100}% · Floor: {params.vanguardFloor * 100}%.</>
+                  ) : (
+                    <>Dynamic spending based on portfolio performance.</>
+                  )}{" "}
+                  Rental modeled at {params.abReliability}% reliability. Healthcare shocks {params.hcProb}%/yr from age {params.hcShockAge}. As Bill Perkins says — spend in the right life phase. 🌴
             </div>
             <div className="tabs">
               {TABS.map(([k, l]) => (
@@ -7081,6 +7100,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                           ssAge: ssAge,
                           ssb: ssb,
                           ab: ab,
+                          withdrawalStrategy: withdrawalStrategy,  
                     }}
                     onChange={(k, v) => {
                       updateAssumption(k, v);
