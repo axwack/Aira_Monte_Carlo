@@ -5976,7 +5976,9 @@ export default function AiRAForecaster() {
     []
   );
 
-
+  useEffect(() => {
+    emailjs.init(process.env.REACT_APP_EMAILJS_USER_ID);
+  }, []);
 
   const currentAge = useMemo(() => {
     try {
@@ -6166,6 +6168,40 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
 
   const needsMC = ["montecarlo", "networth", "fan"];
   const hasMC = !!r90;
+
+  /* handleSendFeedback: Collects feedback type and message, then sends it via EmailJS. Validates input and provides user feedback on success or failure. */
+  const handleSendFeedback = async () => {
+
+      if (!feedbackType) {
+        alert("Please select a feedback type.");
+        return;
+      }
+
+      const serviceId = process.env.REACT_APP_EMAILJS_SERVICE_ID;
+      const templateId = process.env.REACT_APP_EMAILJS_TEMPLATE_ID;
+
+      const templateParams = {
+        type: feedbackType,
+        message: feedbackText,
+        timestamp: new Date().toISOString(),
+      };
+           console.log('EmailJS Debug: Template Params:', templateParams);
+
+      try {
+            const response = await emailjs.send(serviceId, templateId, templateParams);
+            console.log('EmailJS Debug: SUCCESS!', response.status, response.text);
+            alert('Thank you for your feedback! 🙏');
+            // ... reset form ...
+          } catch (error) {
+            // Log the FULL error object for maximum detail
+            console.error('EmailJS Debug: FAILED.', error);
+            // Often the most useful info is here:
+            if (error.text) {
+                console.error('EmailJS Error Details:', error.text);
+            }
+            alert(`Oops! Something went wrong. Check the console for details. (Status: ${error.status})`);
+          }
+  };
 
   return (
     <>
@@ -6407,25 +6443,21 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       Cancel
                     </button>
                     <button
-                      onClick={() => {
-                        if (!feedbackType) { alert("Please select a feedback type"); return; }
-                        const payload = { type: feedbackType, message: feedbackText, timestamp: new Date().toISOString(), appVersion: "6.1" };
-                        const existing = JSON.parse(localStorage.getItem("aira_feedback") || "[]");
-                        existing.push(payload);
-                        localStorage.setItem("aira_feedback", JSON.stringify(existing));
-                        alert("Thanks for your feedback! \ud83d\ude4f");
-                        setFeedbackType(null);
-                        setFeedbackText("");
-                        setShowFeedback(false);
-                      }}
-                      style={{
-                        padding: "5px 16px", borderRadius: 6,
-                        border: "none", background: "linear-gradient(135deg,#7c3aed,#a78bfa)",
-                        color: "white", fontSize: 11, fontWeight: 600,
-                        cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
-                      }}>
-                      Send
-                    </button>
+                          onClick={handleSendFeedback}
+                          style={{
+                            padding: "5px 16px",
+                            borderRadius: 6,
+                            border: "none",
+                            background: "linear-gradient(135deg,#7c3aed,#a78bfa)",
+                            color: "white",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            fontFamily: "'DM Sans',sans-serif",
+                          }}
+                        >
+                          Send
+                        </button>
                   </div>
                 </div>
               )}
