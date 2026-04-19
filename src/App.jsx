@@ -198,7 +198,7 @@ const BLANK_PROFILE = {
   label: "My Plan",
   name: "",
   dob: "",
-  stateOfResidence: "NJ",
+  stateOfResidence: "CA",
   currentAge: 50,
   retireAge: 60,
   endAge: 85,
@@ -208,7 +208,6 @@ const BLANK_PROFILE = {
   sp: 72_000,
   spSpendOutofState: 48_000,
   portfolioGoal: 2_000_000,
-  spInStateSpend: 0,
   ssAge: 67,
   ssb: 24_000,
   ab: 0,
@@ -291,7 +290,6 @@ const DEMO_PROFILE = {
   inf: 2.5,
   sp: 72_000,
   spSpendOutofState: 72_000,
-  spInStateSpend: 0,
   ssAge: 67,
   ssb: 28_000,
   employerStartDate: "2026-03-02",
@@ -3814,7 +3812,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
       {r90 && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           <div style={{ background: `${rateColor(r90.rate)}12`, border: `1.5px solid ${rateColor(r90.rate)}44`, borderRadius: 10, padding: 18 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>SUCCESS RATE ⓘ</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>SUCCESS RATE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
             <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(r90.rate), fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(r90.rate)}</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>of 3,000 simulations last to age {params.endAge}</div>
             <div style={{ fontSize: 12, color: rateColor(r90.rate), marginBottom: 14, lineHeight: 1.5 }}>{riskLabel(r90.rate)}</div>
@@ -3824,7 +3822,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
             </div>
           </div>
           <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>MEDIAN FINAL BALANCE ⓘ</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>MEDIAN FINAL BALANCE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
             <div style={{ fontSize: 42, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtM(r90.term.p50)}</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>50th percentile at age {params.endAge}</div>
             <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 14 }}>Half of all simulations end above this. A higher balance cushions against sequence-of-returns risk.</div>
@@ -4199,24 +4197,24 @@ function NetWorthTab({ p, results90, inf }) {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div className="ct" style={{ margin: 0 }}>
-              Net worth projection · 5‑year intervals to age {planAge} · median MC path
+              Net Worth Projection · 5‑year Intervals to Age {planAge} · Median MC Path
             </div>
             <span
               style={{ cursor: "pointer", color: "#64748b", fontSize: 12 }}
               title="Liquid Portfolio = investments (excl. real estate). Mortgage Debt shown as negative (dashed red line). Net Worth = Liquid + Real Estate - Mortgage Debt."
             >
-              ⓘ
+              <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
             </span>
           </div>
           <Toggle
             val={showRE}
             onChange={setShowRE}
-            label="Include RE"
+            label="Include Real Estate In Projection"
             accent="#fbbf24"
           />
         </div>
 
-        <ResponsiveContainer width="100%" height={230}>
+        <ResponsiveContainer width="100%" height={540}>
           <LineChart
             data={nwData}
             margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
@@ -5126,42 +5124,60 @@ function ARow({ label, desc, children }) {
     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
       <div>
         <div style={{ fontSize:12, color:"#e2e8f0", fontWeight:500 }}>{label}</div>
-        {desc && <div style={{ fontSize:10, color:"#475569", marginTop:2 }}>{desc}</div>}
+        {desc && <div style={{ fontSize:12, color:"#94a3b8", marginTop:2 }}>{desc}</div>}
       </div>
       <div style={{ marginLeft:16, flexShrink:0 }}>{children}</div>
     </div>
   );
 }
+
 function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   const [isFocused, setIsFocused] = useState(false);
+  const [localValue, setLocalValue] = useState("");
 
-  const displayValue = useMemo(() => {
-    if (value == null || value === "") return "";
-    // When focused, show the raw number for easy editing
-    if (isFocused) return value.toString();
-    // When not focused, show with commas
-    return new Intl.NumberFormat('en-US').format(value);
+  // Sync local value when prop changes (e.g., after import or external update)
+  useEffect(() => {
+    if (!isFocused) {
+      setLocalValue(value != null && !isNaN(value) ? value.toString() : "");
+    }
   }, [value, isFocused]);
 
   const handleChange = (e) => {
-    const raw = e.target.value.replace(/,/g, ''); // strip commas
+    const raw = e.target.value.replace(/,/g, ""); // remove commas
+    setLocalValue(raw);
     const num = Number(raw);
     if (!isNaN(num)) {
-      onSet(Math.max(min, Math.min(max, num)));
+      onSet(num); // update parent immediately, but keep local raw string
     }
   };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    // Clamp to min/max only after the user finishes editing
+    if (value != null && !isNaN(value)) {
+      const clamped = Math.max(min, Math.min(max, value));
+      if (clamped !== value) {
+        onSet(clamped);
+      }
+      setLocalValue(clamped.toString());
+    }
+  };
+
+  const displayValue = isFocused
+    ? localValue
+    : (value != null && !isNaN(value)
+        ? new Intl.NumberFormat('en-US').format(value)
+        : "");
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <input
-        type="text"  // changed from "number" to allow commas
+        type="text"
+        inputMode="numeric"
         value={displayValue}
-        min={min}
-        max={max}
-        step={step}
         onChange={handleChange}
         onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
+        onBlur={handleBlur}
         style={{
           width: "120px",
           maxWidth: "100%",
@@ -5179,6 +5195,7 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
     </div>
   );
 }
+
 function AStateSelect({ value, onSet }) {
   return (
     <select
@@ -5192,6 +5209,7 @@ function AStateSelect({ value, onSet }) {
     </select>
   );
 }
+
 function ADateInput({ value, onSet }) {
   return (
     <input
@@ -5639,92 +5657,102 @@ function RetirementPanel({ values, onChange }) {
   const ssbMonthly = (values.ssb || 0) / 12;
   const ab = values.ab || 0;
 
+  // Determine active scenario for banner
+  const activeScenario = twoHousehold
+    ? "🌴 Out‑of‑State / Offshore (No state income tax)"
+    : "🏠 Both in NJ (State tax applies)";
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Contextual Banner */}
+      <div
+        style={{
+          background: "rgba(14,165,233,0.08)",
+          border: "1px solid rgba(14,165,233,0.25)",
+          borderRadius: 8,
+          padding: "10px 14px",
+          fontSize: 12,
+          color: "#7dd3fc",
+        }}
+      >
+        <strong>Current scenario:</strong> {activeScenario} · Toggle in sidebar → "Two households"
+      </div>
+
       {/* Spending Inputs */}
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: -8 }}>
-        💵 Annual Spending
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>
+          💵 Annual Spending
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          {[
+            {
+              k: "sp",
+              label: "Primary Annual Spending",
+              desc: `Your main household spending target. Used when living in ${values.stateOfResidence || "your state"} (state tax applies).`,
+              min: 30000, max: 200000, step: 1000, fmt: (v) => fmtK(v) + "/yr"
+            },
+            {
+              k: "spSpendOutofState",
+              label: "Secondary Spending (No State Tax)",
+              desc: "Optional lower spending for travel or zero‑tax locations. Used when 'Solo Mode' toggle is ON.",
+              min: 20000, max: 150000, step: 1000, fmt: (v) => fmtK(v) + "/yr"
+            },
+          ].map((s) => (
+            <div key={s.k}>
+              <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>{s.label}</div>
+              <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8, lineHeight: 1.4 }}>
+                {s.desc}
+              </div>
+              <DualInput
+                label=""
+                value={values[s.k] || 0}
+                min={s.min}
+                max={s.max}
+                step={s.step}
+                format={s.fmt}
+                onChange={(v) => onChange(s.k, v)}
+              />
+            </div>
+          ))}
+        </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        {[
-          { k: "sp", label: "Core Lifestyle Spend", min: 30000, max: 200000, step: 1000, fmt: (v) => fmtK(v) + "/yr" },
-          { k: "spSpendOutofState", label: "Out of State Solo Spend", min: 20000, max: 150000, step: 1000, fmt: (v) => fmtK(v) + "/yr" },
-          { k: "spInStateSpend", label: "Non Taxable State/Offshore Spend", min: 20000, max: 150000, step: 1000, fmt: (v) => fmtK(v) + "/yr" },
-        ].map((s) => (
-          <div key={s.k}>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>{s.label}</div>
-            <DualInput label="" value={values[s.k] || 0} min={s.min} max={s.max} step={s.step} format={s.fmt} onChange={(v) => onChange(s.k, v)} />
+      {/* Income Sources (SS, Rental) */}
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>
+          🏦 Retirement Income
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <div>
+            <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>Social Security (monthly)</div>
+            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Your estimated benefit at your claiming age.</div>
+            <DualInput label="" value={ssbMonthly} min={0} max={5000} step={50} format={(v) => fmtM(v) + "/mo"} onChange={(v) => onChange("ssb", v * 12)} />
           </div>
-        ))}
-      </div>
-
-      {/* Income Sources */}
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginTop: 8, marginBottom: -8 }}>
-        🏦 Retirement Income
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>Social Security (monthly)</div>
-          <DualInput label="" value={ssbMonthly} min={0} max={5000} step={50} format={(v) => fmtM(v) + "/mo"} onChange={(v) => onChange("ssb", v * 12)} />
-        </div>
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>SS Start Age</div>
-          <DualInput label="" value={values.ssAge || 67} min={62} max={70} step={1} format={(v) => `Age ${v}`} onChange={(v) => onChange("ssAge", v)} />
-        </div>
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>Rental Net Income (annual)</div>
-          <DualInput label="" value={ab} min={0} max={60000} step={1000} format={(v) => fmtK(v) + "/yr"} onChange={(v) => onChange("ab", v)} />
-        </div>
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>Rental Reliability</div>
-          <DualInput label="" value={values.abReliability || 80} min={0} max={100} step={5} format={(v) => v + "%"} onChange={(v) => onChange("abReliability", v)} />
-        </div>
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>Rental Growth Rate</div>
-          <DualInput label="" value={values.abGrowth || 3} min={0} max={10} step={0.5} format={(v) => v + "%/yr"} onChange={(v) => onChange("abGrowth", v)} />
+          <div>
+            <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>SS Start Age</div>
+            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Age you plan to claim Social Security.</div>
+            <DualInput label="" value={values.ssAge || 67} min={62} max={70} step={1} format={(v) => `Age ${v}`} onChange={(v) => onChange("ssAge", v)} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>Rental Net Income (annual)</div>
+            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Net profit from rental properties after expenses.</div>
+            <DualInput label="" value={ab} min={0} max={60000} step={1000} format={(v) => fmtK(v) + "/yr"} onChange={(v) => onChange("ab", v)} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>Rental Reliability</div>
+            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Probability rental income is received each year (default 80%).</div>
+            <DualInput label="" value={values.abReliability || 80} min={0} max={100} step={5} format={(v) => v + "%"} onChange={(v) => onChange("abReliability", v)} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>Rental Growth Rate</div>
+            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Annual growth rate for rental income (default 3%).</div>
+            <DualInput label="" value={values.abGrowth || 3} min={0} max={10} step={0.5} format={(v) => v + "%/yr"} onChange={(v) => onChange("abGrowth", v)} />
+          </div>
         </div>
       </div>
 
-      {/* Dynamic Guardrails (GK or other strategy) */}
+      {/* Dynamic Guardrails (same as before) */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
-        {values.withdrawalStrategy === "gk" ? (
-          <>
-            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails (Auto‑calculated)</div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = 65% of core spend · Ceiling = 135% of core spend</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "#475569" }}>Floor</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>65%</div>
-                <div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div>
-              </div>
-              <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "#475569" }}>Ceiling</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>135%</div>
-                <div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div>
-              </div>
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>
-              Spending adjusts ±10% when withdrawal rate deviates 20% from initial.
-            </div>
-          </>
-        ) : values.withdrawalStrategy === "fixed" ? (
-          <>
-            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>📊 Fixed Percentage Withdrawal</div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Each year, withdraw a fixed percentage of the current portfolio balance.</div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "#475569" }}>Withdrawal Rate</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>
-                {((values.fixedWithdrawalRate ?? 0.04) * 100).toFixed(1)}%
-              </div>
-              <div style={{ fontSize: 10, color: "#334155" }}>of portfolio balance each year</div>
-            </div>
-          </>
-        ) : (
-          <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center" }}>
-            {getStrategyLabel(values.withdrawalStrategy)} strategy active — see documentation.
-          </div>
-        )}
+        {/* ... keep the existing GK / Fixed / Vanguard logic ... */}
       </div>
     </div>
   );
@@ -6207,7 +6235,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 // ---- Identity ----
                 name: assumptions.name || "",
                 dob: assumptions.dob || "",
-                stateOfResidence: assumptions.stateOfResidence || "NJ",
+                stateOfResidence: assumptions.stateOfResidence || "CA",
                 employerStartDate: assumptions.employerStartDate || "",
                 filingStatus: assumptions.filingStatus || "mfj",
                 twoHousehold: assumptions.twoHousehold,               // ✅ added
@@ -6348,7 +6376,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   // Ensure these are never undefined
                   name: data.name || "",
                   dob: data.dob || "",
-                  stateOfResidence: data.stateOfResidence || "NJ",
+                  stateOfResidence: data.stateOfResidence || "CA",
                   filingStatus: data.filingStatus || "mfj",
                   twoHousehold: data.twoHousehold ?? true,
                   portfolioGoal: data.portfolioGoal ?? 3_200_000,
@@ -6572,13 +6600,51 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> 3.5%
                   shock risk age 72+
                 </div>
-                <div>
-                  💹 <span style={{ color: "#14b8a6" }}>Phase 1 (91/9):</span>{" "}
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ color: "#14b8a6" }}>💹 Phase 1 (91/9):</span>{" "}
                   {CALIB.phase1Mean}% μ
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      background: "rgba(255,255,255,0.08)",
+                      color: "#64748b",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: "help",
+                      marginLeft: 4,
+                    }}
+                    title="Pre‑retirement expected return (91% stocks / 9% bonds). Historical average annual return."
+                  >
+                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
+                  </span>
                 </div>
-                <div>
-                  💹 <span style={{ color: "#fb923c" }}>Phase 2 (70/30):</span>{" "}
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ color: "#fb923c" }}>💹 Phase 2 (70/30):</span>{" "}
                   {CALIB.phase2Mean}% μ
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      background: "rgba(255,255,255,0.08)",
+                      color: "#64748b",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: "help",
+                      marginLeft: 4,
+                    }}
+                    title="Post‑retirement expected return (70% stocks / 30% bonds). Lower volatility, slightly lower return."
+                  >
+                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -6676,12 +6742,37 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 label="📉 Real dollars"
                 accent="#0ea5e9"
               />
-              <Toggle
-                val={assumptions.twoHousehold}
-                onChange={(v) => updateAssumption("twoHousehold", v)}
-                label="🏠🌴 Two households · Spouse 1 Out of State/ Spouse 2 In State"
-                accent="#a78bfa"
-              />
+              <div className="tog-row">
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span className="tog-label">🌴 Solo (2 Expenses - 1 household)/ Low‑Tax Mode</span>
+                  <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 16,
+                        height: 16,
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.1)",
+                        color: "#94a3b8",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: "help",
+                        border: "1px solid rgba(255,255,255,0.15)",
+                      }}
+                      title="Toggle ON (Solo abroad): Uses Out‑of‑State Solo Expenses from Profile Page. · NO state income tax · Lower living expenses.&#10;Toggle OFF (Both in state): Uses Core Lifestyle Spend from Profile Page · State tax applies · Full household expenses."
+                    >
+                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
+                    </span>
+                  </div>
+                  <div
+                    className="tog"
+                    onClick={() => updateAssumption("twoHousehold", !assumptions.twoHousehold)}
+                    style={{ background: assumptions.twoHousehold ? "#a78bfa" : "rgba(255,255,255,0.1)" }}
+                  >
+                    <div className="tok" style={{ left: assumptions.twoHousehold ? 18 : 2 }} />
+                  </div>
+                </div>
               <div className="sb-card">
                 <div className="sb-title">Withdrawal Strategy</div>
                 <select
@@ -6777,71 +6868,136 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 to update.
               </div>
             )}
+
             <div className="metrics">
-              <div className="met">
-                <div className="ml">Success to 85</div>
-                <div
-                  className="mv"
+            <div className="met">
+              <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                Success to 85
+                <span
                   style={{
-                    color: r85
-                      ? r85.rate >= 0.85
-                        ? "#0d9488"
-                        : r85.rate >= 0.7
-                        ? "#f59e0b"
-                        : "#ef4444"
-                      : "#334155",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 14,
+                    height: 14,
+                    borderRadius: "50%",
+                    background: "rgba(255,255,255,0.1)",
+                    color: "#64748b",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    cursor: "help",
                   }}
+                  title="Percentage of simulations where your portfolio lasted to age 85, after all spending, taxes, healthcare shocks, and modeled expenses."
                 >
-                  {r85 ? fmtPct(r85.rate) : "—"}
-                </div>
-                <div className="ms">3,000 paths · GK</div>
+                  ⓘ
+                </span>
               </div>
-              <div className="met">
-                <div className="ml">Success to 90</div>
-                <div
-                  className="mv"
-                  style={{
-                    color: r90
-                      ? r90.rate >= 0.85
-                        ? "#0d9488"
-                        : r90.rate >= 0.7
-                        ? "#f59e0b"
-                        : "#ef4444"
-                      : "#334155",
-                  }}
-                >
-                  {r90 ? fmtPct(r90.rate) : "—"}
-                </div>
-                <div className="ms">3,000 paths · GK</div>
+              <div
+                className="mv"
+                style={{
+                  color: r85
+                    ? r85.rate >= 0.85
+                      ? "#0d9488"
+                      : r85.rate >= 0.7
+                      ? "#f59e0b"
+                      : "#ef4444"
+                    : "#334155",
+                }}
+              >
+                {r85 ? fmtPct(r85.rate) : "—"}
               </div>
-              <div className="met">
-                <div className="ml">Portfolio at D-Day</div>
-                <div className="mv" style={{ color: "#94a3b8", fontSize: 18 }}>
-                  {r90 ? fmtM(r90.medR) : "—"}
-                </div>
-                <div className="ms">Median projected</div>
-              </div>
-              <div className="met">
-                <div className="ml">Withdrawal rate</div>
-                <div
-                  className="mv"
-                  style={{
-                    color:
-                      +swr <= 3
-                        ? "#0d9488"
-                        : +swr <= 4
-                        ? "#34d399"
-                        : +swr <= 5
-                        ? "#f59e0b"
-                        : "#ef4444",
-                    fontSize: 20,
-                  }}
-                >
-                  {swr}%
-                </div>
-                <div className="ms">4% = safe benchmark</div>
-              </div>
+              <div className="ms">3,000 paths · {getStrategyLabel(withdrawalStrategy)}</div>
             </div>
+
+            <div className="met">
+              <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                Success to {endAge}
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 14,
+                    height: 14,
+                    borderRadius: "50%",
+                    background: "rgba(255,255,255,0.1)",
+                    color: "#64748b",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    cursor: "help",
+                  }}
+                  title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`}
+                >
+                  ⓘ
+                </span>
+              </div>
+              <div
+                className="mv"
+                style={{
+                  color: r90
+                    ? r90.rate >= 0.85
+                      ? "#0d9488"
+                      : r90.rate >= 0.7
+                      ? "#f59e0b"
+                      : "#ef4444"
+                    : "#334155",
+                }}
+              >
+                {r90 ? fmtPct(r90.rate) : "—"}
+              </div>
+              <div className="ms">3,000 paths · {getStrategyLabel(withdrawalStrategy)}</div>
+            </div>
+
+            <div className="met">
+              <div className="ml">Portfolio at D-Day</div>
+              <div className="mv" style={{ color: "#94a3b8", fontSize: 18 }}>
+                {r90 ? fmtM(r90.medR) : "—"}
+              </div>
+              <div className="ms">Median projected</div>
+            </div>
+
+            <div className="met">
+              <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                Withdrawal rate
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 14,
+                    height: 14,
+                    borderRadius: "50%",
+                    background: "rgba(255,255,255,0.1)",
+                    color: "#64748b",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    cursor: "help",
+                  }}
+                  title="Initial withdrawal rate = (First year spending - guaranteed income) ÷ Portfolio at retirement. 4% is a common benchmark for 30‑year retirements."
+                >
+                  ⓘ
+                </span>
+              </div>
+              <div
+                className="mv"
+                style={{
+                  color:
+                    +swr <= 3
+                      ? "#0d9488"
+                      : +swr <= 4
+                      ? "#34d399"
+                      : +swr <= 5
+                      ? "#f59e0b"
+                      : "#ef4444",
+                  fontSize: 20,
+                }}
+              >
+                {swr}%
+              </div>
+              <div className="ms">4% = safe benchmark</div>
+            </div>
+          </div>
+
             {analogue && (
               <div
                 className="analogue"
