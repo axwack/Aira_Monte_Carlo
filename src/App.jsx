@@ -190,6 +190,22 @@ const getStrategyLabel = (strategy) => {
   return labels[strategy] || strategy;
 };
 
+const getStrategyDescription = (strategy) => {
+  const descriptions = {
+    gk: "Guyton‑Klinger guardrails — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.",
+    fixed: "Fixed Percentage Withdrawal — you withdraw a constant percentage of your portfolio each year, adjusting automatically with market movements.",
+    vanguard: "Vanguard Dynamic Spending — spending adjusts within a ceiling and floor based on market performance and inflation.",
+    risk: "Risk‑Based Guardrails — spending adjusts based on the current withdrawal rate relative to a safe threshold.",
+    kitces: "Kitces Ratcheting — spending increases when the portfolio grows beyond a threshold, but never decreases in real terms.",
+    vpw: "Variable Percentage Withdrawal (VPW) — spending is recalculated each year based on remaining portfolio and life expectancy.",
+    cape: "CAPE‑Based Withdrawal — uses the Shiller CAPE ratio to determine sustainable withdrawal rates.",
+    endowment: "Endowment Model — smooths spending by blending inflation adjustments with a percentage of portfolio.",
+    one_n: "1/N Rule — divides remaining portfolio by years left to create a spending plan.",
+    ninety_five_rule: "95% Rule — spending can only decrease to 95% of last year's amount, otherwise tracks inflation."
+  };
+  return descriptions[strategy] || descriptions.gk;
+};
+
 /* ════ PROFILES ════ */
 /* Personal data lives in AiRA_Profile.json — never hardcoded here */
 /* Use Export button to save your data. Use Import to load it back. */
@@ -462,20 +478,24 @@ function calcYearTax(
     (conversionAmount || 0);
   const totalIncome = taxableSS + otherIncome;
   const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - 2026));
+
   // Standard deduction: MFJ $32,200 / Single $16,100 (2026 est.), inflation-adjusted forward
   let stdDeduction = Math.round((isMFJ ? 32200 : 16100) * inflationFactor);
+
   // Additional deduction for age 65+: MFJ adds $3,300, Single adds $1,650
   if (age >= 65) stdDeduction += Math.round((isMFJ ? 3300 : 1650) * inflationFactor);
   const taxableIncome = Math.max(0, totalIncome - stdDeduction);
+
   // Select federal brackets by filing status
   const rawBrackets = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
   const fedBrackets = idxB(rawBrackets, inflationFactor);
   const fedTax = progTax(taxableIncome, fedBrackets);
   let stateTax = 0;
 
+
   if (!isTwoHousehold) {
-    const njBrackets = idxB(NJ_BRACKETS_2026, inflationFactor);
-    stateTax = progTax(taxableIncome, njBrackets);
+    const stateRate = STATE_TAX_RATES[stateOfResidence] || 0.05; // default 5% if state not found
+    stateTax = Math.round(taxableIncome * stateRate);
   }
       const magi = totalIncome;
       const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
@@ -3582,7 +3602,7 @@ function ScenariosTab({
   );
 }
 
-function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob ,onSetBaselineFromCheckpoint}) {
+function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob ,onSetBaselineFromCheckpoint, withdrawalStrategy }) {
   const [showInputs, setShowInputs] = useState(false);
   const [showHow, setShowHow] = useState(false);
   const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
@@ -3626,6 +3646,19 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
       ))}
     </div>
   );
+
+  const strategyHowItWorks = {
+  gk: "Guyton‑Klinger guardrails — Every year, if the current withdrawal rate exceeds 120% of the initial rate, spending cuts 10% (never below floor). If it falls below 80%, spending increases 10% (never above ceiling).",
+  fixed: "Fixed Percentage — You withdraw a constant percentage of the current portfolio each year, automatically adjusting with market value.",
+  vanguard: "Vanguard Dynamic Spending — Spending is adjusted based on a ceiling and floor relative to the initial withdrawal rate, with inflation smoothing.",
+  risk: "Risk‑Based Guardrails — Spending is reduced if the withdrawal rate exceeds a safe threshold, and increased if it falls below.",
+  kitces: "Kitces Ratcheting — Spending increases when the portfolio grows 50% above its starting value, but never decreases in real terms.",
+  vpw: "Variable Percentage Withdrawal (VPW) — Spending is recalculated annually based on remaining portfolio and life expectancy.",
+  cape: "CAPE‑Based — Withdrawal rate is determined by the Shiller CAPE ratio to reflect market valuation.",
+  endowment: "Endowment Model — Spending blends a percentage of portfolio with prior year spending (smoothed).",
+  one_n: "1/N Rule — Each year, divide the remaining portfolio by the number of years left in the plan.",
+  ninety_five_rule: "95% Rule — Spending can drop to 95% of last year's amount during downturns, otherwise tracks inflation."
+};
 
   const startEdit = (cp) => {
     setEditingId(cp.id);
@@ -3675,7 +3708,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
           A Monte Carlo simulation tests your retirement plan against <strong style={{ color: "#e2e8f0" }}>3,000 different market scenarios</strong> using randomized annual returns drawn from 99 years of actual S&P 500 history. Instead of assuming a single fixed growth rate, it models the real-world uncertainty of markets — some years boom, some years crash — and tells you how often your savings last through retirement. <strong style={{ color: "#5eead4" }}>A success rate above 85% is generally considered a solid plan.</strong>
         </div>
         <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-          AiRA also applies <strong style={{ color: "#fbbf24" }}>Guyton-Klinger guardrails</strong> — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.
+          AiRA also applies <strong style={{ color: "#fbbf24" }}>{getStrategyDescription(withdrawalStrategy)}</strong> — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.
         </div>
       </div>
 
@@ -3719,7 +3752,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each of 3,000 paths independently draws a random S&P 500 year and a random bond year, blended by glide path weight. Contributions are added annually. The result is a unique portfolio value at retirement for each path.</div>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>2. Retirement spending</div>Each path draws fresh random returns year by year. Spending follows the Blanchett smile curve. SS and Rental income offset draws. Rental fails 20% of years randomly. Healthcare shocks hit 3.5% of years after age 72.</div>
-            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>3. Guyton-Klinger guardrails</div>Every year, if the current withdrawal rate exceeds 120% of the initial rate, spending cuts 10% (never below floor). If it falls below 80%, spending increases 10% (never above ceiling). This mimics real retiree behavior.</div>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>3. {getStrategyLabel(withdrawalStrategy)} {withdrawalStrategy === "gk" ? "guardrails" : "strategy"}</div>{strategyHowItWorks[withdrawalStrategy] || strategyHowItWorks.gk}</div>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>4. Survival check</div>A path "succeeds" if the portfolio balance stays above $0 through the target age. The success rate is the percentage of paths that survive. The fan chart shows the 10th–90th percentile spread of all outcomes.</div>
           </div>
         )}
@@ -7169,6 +7202,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       onDeleteCheckpoint={(id) => updateAssumption("checkpoints", assumptions.checkpoints.filter(c => c.id !== id))}
                       earlyRetireTarget={assumptions.earlyRetireTarget}
                       dob={assumptions.dob}
+                      withdrawalStrategy={withdrawalStrategy}
                       onSetBaselineFromCheckpoint={(value) => {
                         setPort(value);
                         const currentTotal = port;
