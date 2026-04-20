@@ -2046,50 +2046,30 @@ function importProfile(onLoad) {
     reader.onload = (ev) => {
       try {
         const parsed = JSON.parse(ev.target.result);
-        // Migrate old account fields to new accounts array
-        if (parsed.solo401k !== undefined && !parsed.accounts) {
-          parsed.accounts = [
-            ...(parsed.solo401k ? [{ id: "m1", category: "pretax", name: "Solo 401k", balance: parsed.solo401k }] : []),
-            ...(parsed.alpha401k ? [{ id: "m2", category: "pretax", name: "Alpha 401k", balance: parsed.alpha401k }] : []),
-            ...(parsed.rothFid ? [{ id: "m3", category: "roth", name: "Roth Fidelity", balance: parsed.rothFid }] : []),
-            ...(parsed.rothVgd ? [{ id: "m4", category: "roth", name: "Roth Vanguard", balance: parsed.rothVgd }] : []),
-            ...(parsed.hsaBal ? [{ id: "m5", category: "hsa", name: "HSA", balance: parsed.hsaBal }] : []),
-            ...(parsed.taxable ? [{ id: "m6", category: "taxable", name: "Taxable", balance: parsed.taxable }] : []),
-          ];
-          if (parsed.accounts.length === 0) {
-            parsed.accounts = BLANK_PROFILE.accounts;
-          }
-          delete parsed.solo401k;
-          delete parsed.alpha401k;
-          delete parsed.rothFid;
-          delete parsed.rothVgd;
-          delete parsed.hsaBal;
-          delete parsed.taxable;
-        }
+        
         // Ensure accounts is always a valid array
         if (!Array.isArray(parsed.accounts)) {
           parsed.accounts = BLANK_PROFILE.accounts;
         }
-        // Migrate old rePrimaryResidencce fields to properties array
-        if (parsed.rePrimaryResidencce !== undefined && !parsed.properties) {
-          parsed.properties = [
-            { id:"p1", label:"Primary Residence", value: parsed.rePrimaryResidencce||0, mortgage: parsed.mortBalance||0, income:0 },
-            { id:"p2", label:"Rental Unit 1",     value: parsed.reRentalUnit1||0,       mortgage:0, income:0 },
-            { id:"p3", label:"Rental Unit 2",     value: parsed.reRentalUnit2||0,       mortgage:0, income:0 },
-          ].filter((p,i) => p.value > 0 || i === 0);
-          delete parsed.rePrimaryResidencce;
-          delete parsed.reRentalUnit1;
-          delete parsed.reRentalUnit2;
-        }
+        
+        // Ensure properties is always a valid array
         if (!Array.isArray(parsed.properties)) {
           parsed.properties = BLANK_PROFILE.properties;
         }
+        
+        // Ensure checkpoints is always an array
+        if (!Array.isArray(parsed.checkpoints)) {
+          parsed.checkpoints = [];
+        }
+        
+        // Fix date format if needed
         if (parsed.dob && !/^\d{4}-\d{2}-\d{2}$/.test(parsed.dob)) {
           const d = new Date(parsed.dob);
           if (!isNaN(d.getTime())) {
             parsed.dob = d.toISOString().slice(0, 10);
           }
         }
+        
         onLoad(parsed);
       } catch {
         alert("Invalid profile file — must be a valid AiRA JSON export.");
@@ -2755,7 +2735,9 @@ function RothLadder({ params }) {
           Domicile: {domLabel}
         </span>
         <span style={{ color: "#475569" }}>
-          · {isNoTaxState ? "🌴 Two households toggle ON" : "🏠 Both in NJ"}
+          · {isNoTaxState
+            ? "🌴 Solo mode (lower spend, no state tax)"
+            : `🏠 Both in ${params.stateOfResidence || "your state"} (full spend, state tax applies)`}
         </span>
       </div>
       <div
@@ -6778,7 +6760,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span className="tog-label">🌴 Solo (2 Expenses - 1 household)/ Low‑Tax Mode</span>
+                  <span className="tog-label">🌴 Solo Mode - No State Tax Income Tax Applied</span>
                   <span
                       style={{
                         display: "inline-flex",
@@ -6883,9 +6865,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               )}  
 
             <div className="flag-i">
-              🛡 GK active · WR {swr}% ·{" "}
-              {assumptions.twoHousehold ? "Both households" : "Solo"} · Rental 80%
-              reliable · Healthcare shocks modeled
+              🛡 {getStrategyLabel(withdrawalStrategy)} active · WR {swr}% ·{" "}
+              {assumptions.twoHousehold ? "Family/Household Spending" : "/Solo Out of State Expenses"} · Rental{" "}
+              {assumptions.abReliability || 80}% reliable · Healthcare shocks modeled
             </div>
             {stale && (
               <div
@@ -7096,7 +7078,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 );
               })()}
             <div className="gk-bar">
-              <strong style={{ color: "#5eead4" }}>{getStrategyLabel(withdrawalStrategy)} Guardrails:</strong>{" "}
+              <strong style={{ color: "#5eead4" }}>{getStrategyLabel(withdrawalStrategy)} Strategy:</strong>{" "}
                   {withdrawalStrategy === "gk" ? (
                     <>Floor {fmtM(params.gkFloor)} ({assumptions.twoHousehold ? "both" : "solo"}) · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}%.</>
                   ) : withdrawalStrategy === "fixed" ? (
