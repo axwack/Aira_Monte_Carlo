@@ -6955,11 +6955,13 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               )}  
 
             <div className="flag-i">
-              🛡 {getStrategyLabel(assumptions.withdrawalStrategy)} active · WR {swr}% ·{" "}
-                  {assumptions.withdrawalStrategy === "fixed" && (
-                    <>Fixed Rate: {assumptions.fixedWithdrawalRate || 4.0}% · </>
-                  )}
-            </div>
+                🛡 {getStrategyLabel(assumptions.withdrawalStrategy)} active · WR {swr}% ·{" "}
+                {assumptions.withdrawalStrategy === "fixed" && (
+                  <>Fixed Rate: {assumptions.fixedWithdrawalRate || 4.0}% · </>
+                )}
+                {assumptions.twoHousehold ? "Solo (lower spend, no state tax)" : "Both households (full spend, state tax)"} · Rental{" "}
+                {assumptions.abReliability || 80}% reliable · Healthcare shocks modeled
+              </div>
             {stale && (
               <div
                 style={{
