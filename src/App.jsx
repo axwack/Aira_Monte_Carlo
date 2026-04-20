@@ -2327,10 +2327,10 @@ function IncomeMap({ p, inf }) {
   return (
     <div className="chart-card">
       <div className="ct">
-        Annual income coverage · {p.smile ? "Smile" : "Flat"} spending · Rental
-        80% reliability modeled
-      </div>
-      <ResponsiveContainer width="100%" height={250}>
+          Annual Income Coverage · {p.smile ? "Smile" : "Flat"} spending · Rental{" "}
+          {p.abReliability || 80}% reliability modeled
+        </div>
+      <ResponsiveContainer width="100%" height={540}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid
             strokeDasharray="2 4"
@@ -2339,11 +2339,11 @@ function IncomeMap({ p, inf }) {
           <XAxis
             dataKey="age"
             stroke="#1e3a5f"
-            tick={{ fill: "#475569", fontSize: 9 }}
+            tick={{ fill: "#71a8f7", fontSize: 11 }}
           />
           <YAxis
             stroke="#1e3a5f"
-            tick={{ fill: "#475569", fontSize: 11}}
+            tick={{ fill: "#71a8f7", fontSize: 11}}
             tickFormatter={(v) => fmtM(v)}
             width={58}
           />
@@ -2351,12 +2351,12 @@ function IncomeMap({ p, inf }) {
           <Legend
             wrapperStyle={{ fontSize: 10, color: "#64748b", paddingTop: 6 }}
           />
-          <Bar dataKey="Portfolio Draw" stackId="a" fill="#0d9488cc" />
+          <Bar dataKey="Portfolio Draw" stackId="a" fill="#a9d1acee" />
           <Bar dataKey="Social Security" stackId="a" fill="#7c3aedcc" />
           <Bar
             dataKey="Rental Net"
             stackId="a"
-            fill="#059669cc"
+            fill="#295ff1cc"
             radius={[2, 2, 0, 0]}
           />
         </BarChart>
@@ -6904,133 +6904,94 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             )}
 
             <div className="metrics">
-            <div className="met">
-              <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                Success to 85
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 14,
-                    height: 14,
-                    borderRadius: "50%",
-                    background: "rgba(255,255,255,0.1)",
-                    color: "#64748b",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    cursor: "help",
-                  }}
-                  title="Percentage of simulations where your portfolio lasted to age 85, after all spending, taxes, healthcare shocks, and modeled expenses."
-                >
-                  ⓘ
-                </span>
-              </div>
-              <div
-                className="mv"
-                style={{
-                  color: r85
-                    ? r85.rate >= 0.85
-                      ? "#0d9488"
-                      : r85.rate >= 0.7
-                      ? "#f59e0b"
-                      : "#ef4444"
-                    : "#334155",
-                }}
-              >
-                {r85 ? fmtPct(r85.rate) : "—"}
-              </div>
-              <div className="ms">3,000 paths · {getStrategyLabel(withdrawalStrategy)}</div>
-            </div>
+                <div className="met">
+                  <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    Success to {endAge}
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.1)",
+                        color: "#64748b",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        cursor: "help",
+                      }}
+                      title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`}
+                    >
+                      ⓘ
+                    </span>
+                  </div>
+                  <div
+                    className="mv"
+                    style={{
+                      color: r90
+                        ? r90.rate >= 0.85
+                          ? "#0d9488"
+                          : r90.rate >= 0.7
+                          ? "#f59e0b"
+                          : "#ef4444"
+                        : "#334155",
+                    }}
+                  >
+                    {r90 ? fmtPct(r90.rate) : "—"}
+                  </div>
+                  <div className="ms">3,000 paths · {getStrategyLabel(withdrawalStrategy)}</div>
+                </div>
 
-            <div className="met">
-              <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                Success to {endAge}
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 14,
-                    height: 14,
-                    borderRadius: "50%",
-                    background: "rgba(255,255,255,0.1)",
-                    color: "#64748b",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    cursor: "help",
-                  }}
-                  title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`}
-                >
-                  ⓘ
-                </span>
-              </div>
-              <div
-                className="mv"
-                style={{
-                  color: r90
-                    ? r90.rate >= 0.85
-                      ? "#0d9488"
-                      : r90.rate >= 0.7
-                      ? "#f59e0b"
-                      : "#ef4444"
-                    : "#334155",
-                }}
-              >
-                {r90 ? fmtPct(r90.rate) : "—"}
-              </div>
-              <div className="ms">3,000 paths · {getStrategyLabel(withdrawalStrategy)}</div>
-            </div>
+                <div className="met">
+                  <div className="ml">Portfolio at D-Day</div>
+                  <div className="mv" style={{ color: "#94a3b8", fontSize: 18 }}>
+                    {r90 ? fmtM(r90.medR) : "—"}
+                  </div>
+                  <div className="ms">Median projected</div>
+                </div>
 
-            <div className="met">
-              <div className="ml">Portfolio at D-Day</div>
-              <div className="mv" style={{ color: "#94a3b8", fontSize: 18 }}>
-                {r90 ? fmtM(r90.medR) : "—"}
+                <div className="met">
+                  <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    Withdrawal rate
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.1)",
+                        color: "#64748b",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        cursor: "help",
+                      }}
+                      title="Initial withdrawal rate = (First year spending - guaranteed income) ÷ Portfolio at retirement. 4% is a common benchmark for 30‑year retirements."
+                    >
+                      ⓘ
+                    </span>
+                  </div>
+                  <div
+                    className="mv"
+                    style={{
+                      color:
+                        +swr <= 3
+                          ? "#0d9488"
+                          : +swr <= 4
+                          ? "#34d399"
+                          : +swr <= 5
+                          ? "#f59e0b"
+                          : "#ef4444",
+                      fontSize: 20,
+                    }}
+                  >
+                    {swr}%
+                  </div>
+                  <div className="ms">4% = safe benchmark</div>
+                </div>
               </div>
-              <div className="ms">Median projected</div>
-            </div>
-
-            <div className="met">
-              <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                Withdrawal rate
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 14,
-                    height: 14,
-                    borderRadius: "50%",
-                    background: "rgba(255,255,255,0.1)",
-                    color: "#64748b",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    cursor: "help",
-                  }}
-                  title="Initial withdrawal rate = (First year spending - guaranteed income) ÷ Portfolio at retirement. 4% is a common benchmark for 30‑year retirements."
-                >
-                  ⓘ
-                </span>
-              </div>
-              <div
-                className="mv"
-                style={{
-                  color:
-                    +swr <= 3
-                      ? "#0d9488"
-                      : +swr <= 4
-                      ? "#34d399"
-                      : +swr <= 5
-                      ? "#f59e0b"
-                      : "#ef4444",
-                  fontSize: 20,
-                }}
-              >
-                {swr}%
-              </div>
-              <div className="ms">4% = safe benchmark</div>
-            </div>
-          </div>
 
             {analogue && (
               <div
