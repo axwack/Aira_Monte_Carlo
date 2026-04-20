@@ -6682,77 +6682,77 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               </div>
             </div>
             <div className="sb-card">
-              <div className="sb-title">MC Engine — {APP_VERSION}</div>
-              <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
-                <div>
-                  📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P
-                  bootstrap [-30 / +30%]
+                <div className="sb-title">MC Engine — {APP_VERSION}</div>
+                <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
+                  <div>
+                    📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P bootstrap [-30 / +30%]
+                  </div>
+                  <div>
+                    📊 <span style={{ color: "#a78bfa" }}>Bonds:</span> 50yr Bloomberg [-15 / +20%]
+                  </div>
+                  <div>
+                    <span style={{ color: "#fbbf24" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
+                    {(() => {
+                      const s = assumptions.withdrawalStrategy;
+                      if (s === "gk") return `Floor: ${fmtM(params.gkFloor)} · Ceiling ${fmtM(params.gkCeiling)}`;
+                      if (s === "fixed") return `Rate: ${((params.fixedWithdrawalRate || 0.04) * 100).toFixed(1)}%`;
+                      if (s === "vanguard") return `Cap: ${(params.vanguardCap || 0.05) * 100}% · Floor: ${(params.vanguardFloor || -0.025) * 100}%`;
+                      return "";
+                    })()}
+                  </div>
+                  <div>
+                    🏖 <span style={{ color: "#059669" }}>Rental:</span> {assumptions.abReliability || 80}% reliability per year
+                  </div>
+                  <div>
+                    🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ color: "#14b8a6" }}>💹 Phase 1 (91/9):</span>{" "}
+                    {CALIB.phase1Mean}% μ
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.08)",
+                        color: "#64748b",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        cursor: "help",
+                        marginLeft: 4,
+                      }}
+                      title="Pre‑retirement expected return (91% stocks / 9% bonds). Historical average annual return."
+                    >
+                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ color: "#fb923c" }}>💹 Phase 2 (70/30):</span>{" "}
+                    {CALIB.phase2Mean}% μ
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.08)",
+                        color: "#64748b",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        cursor: "help",
+                        marginLeft: 4,
+                      }}
+                      title="Post‑retirement expected return (70% stocks / 30% bonds). Lower volatility, slightly lower return."
+                    >
+                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  📊 <span style={{ color: "#a78bfa" }}>Bonds:</span> 50yr
-                  Bloomberg [-15 / +20%]
-                </div>
-                <div>
-                  <span style={{ color: "#fbbf24" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
-                  {assumptions.withdrawalStrategy === "gk" && <>Floor: {fmtM(<param name="" value="" />.gkFloor)} · Ceiling {fmtM(params.gkCeiling)}</>}
-                  {assumptions.withdrawalStrategy === "fixed" && <>Rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}%</>}
-                  {assumptions.withdrawalStrategy === "vanguard" && <>Cap: {params.vanguardCap * 100}% · Floor: {params.vanguardFloor * 100}%</>}
-                </div>
-                <div>
-                  🏖 <span style={{ color: "#059669" }}>Rental:</span> 80%
-                  reliability per year
-                </div>
-                <div>
-                  🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> 3.5%
-                  shock risk age 72+
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#14b8a6" }}>💹 Phase 1 (91/9):</span>{" "}
-                  {CALIB.phase1Mean}% μ
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.08)",
-                      color: "#64748b",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: "help",
-                      marginLeft: 4,
-                    }}
-                    title="Pre‑retirement expected return (91% stocks / 9% bonds). Historical average annual return."
-                  >
-                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
-                  </span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#fb923c" }}>💹 Phase 2 (70/30):</span>{" "}
-                  {CALIB.phase2Mean}% μ
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.08)",
-                      color: "#64748b",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: "help",
-                      marginLeft: 4,
-                    }}
-                    title="Post‑retirement expected return (70% stocks / 30% bonds). Lower volatility, slightly lower return."
-                  >
-                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
-                  </span>
-                </div>
-              </div>
             </div>
             <div className="sb-card">
               <div className="sb-title">Portfolio</div>
