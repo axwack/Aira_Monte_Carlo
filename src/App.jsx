@@ -467,7 +467,8 @@ function calcYearTax(
   conversionAmount,
   isTwoHousehold,
   inflationRate,
-  filingStatus = "mfj"
+  filingStatus = "mfj",
+  stateOfResidence = "CA"
 ) {
   const isMFJ = filingStatus !== "single";
   const taxableSS = ssIncome * 0.85;
@@ -494,7 +495,7 @@ function calcYearTax(
 
 
   if (!isTwoHousehold) {
-    const stateRate = STATE_TAX_RATES[stateOfResidence] || 0.05; // default 5% if state not found
+    const stateRate = STATE_TAX_RATES[stateOfResidence] ?? 0.05; // default 5% if state not in table
     stateTax = Math.round(taxableIncome * stateRate);
   }
       const magi = totalIncome;
@@ -757,7 +758,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       // Tax calculation
       const yr = 2026 + (age - p.currentAge);
       const filingStatus = p.filingStatus || "mfj";
-      const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY, filingStatus);
+      const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY, filingStatus, p.stateOfResidence || "CA");
       const totalTax = taxResult.totalTax;
       const totalWithdrawalNeeded = totalNeed + totalTax;
 
@@ -1001,7 +1002,7 @@ function simulateDeterministic(p, inf) {
       : 0;
     const need = Math.max(0, sp - ss - ab);
 
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj");
+    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -1168,7 +1169,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
     const ab = p.useAb ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20))) : 0;
     const need = Math.max(0, sp - ss - ab);
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj");
+    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -7405,7 +7406,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
    • Stale results detection (amber Re-run button)
 
 ════════════════════════════════════════════════════════════════ */
-export { runMC, mortgageSchedule };
+export { runMC, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost };
 /*Disclaimer and Terms of Use
 Last Updated: April 11, 2026
 
