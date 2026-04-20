@@ -174,7 +174,7 @@ const STATE_TAX_RATES = {
   "VA": 0.0575, "WA": 0, "WV": 0.0512, "WI": 0.0753, "WY": 0,
 };
 
-const getStrategyLabel = (strategy) => {
+export const getStrategyLabel = (strategy) => {
   const labels = {
     gk: "Guyton‑Klinger",
     fixed: "Fixed Percentage",
@@ -190,7 +190,7 @@ const getStrategyLabel = (strategy) => {
   return labels[strategy] || strategy;
 };
 
-const getStrategyDescription = (strategy) => {
+export const getStrategyDescription = (strategy) => {
   const descriptions = {
     gk: "Guyton‑Klinger guardrails — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.",
     fixed: "Fixed Percentage Withdrawal — you withdraw a constant percentage of your portfolio each year, adjusting automatically with market movements.",
@@ -210,7 +210,7 @@ const getStrategyDescription = (strategy) => {
 /* Personal data lives in AiRA_Profile.json — never hardcoded here */
 /* Use Export button to save your data. Use Import to load it back. */
 
-const BLANK_PROFILE = {
+export const BLANK_PROFILE = {
   label: "My Plan",
   name: "",
   dob: "",
@@ -273,6 +273,7 @@ const BLANK_PROFILE = {
   ssCola: 2.4,
   preRetireEq: 91,
   postRetireEq: 70,
+  fixedWithdrawalRate: 4.0, 
   hcShockAge: 72,
   hcProb: 3.5,
   hcMin: 70_000,
@@ -286,6 +287,7 @@ const DEMO_PROFILE = {
   label: "Demo Mode",
   name: "Alex",
   dob: "1974-06-15",
+  fixedWithdrawalRate: 4.0, 
   // NEW:
   filingStatus: "mfj",          // "mfj" | "single"
   reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
@@ -2270,16 +2272,6 @@ function PeopleViz({ rate }) {
       >
         100% doesn't exist. As Morgan Housel says — room for error IS the plan.
       </div>
-    
-    <div style={{ display: "flex", gap: 20, marginTop: 10, justifyContent: "center" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <div style={{ width: 20, height: 2, background: "#fbbf24", borderTop: "2px dashed #fbbf24" }} />
-        <span style={{ color: "#fbbf24", fontSize: 12, fontWeight: 600 }}>Reassess ${(portfolioGoal / 1e6).toFixed(1)}M</span>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <div style={{ width: 20, height: 2, background: "#34d399", borderTop: "2px dashed #34d399" }} />
-        <span style={{ color: "#34d399", fontSize: 12, fontWeight: 600 }}>Trigger ${(earlyRetireTarget / 1e6).toFixed(1)}M</span>
-      </div></div>
     </div>
   );
 }
@@ -5478,8 +5470,8 @@ function AssumptionsPanel({ values, onChange }) {
             textTransform: "uppercase",
             letterSpacing: "0.1em",
             marginBottom: 12,
-          }}
-        >
+          }}>
+            {/* ──Montecarlo Parameters ── */}
           Monte Carlo Model Parameters
         </div>
          <ARow label="Target Portfolio Value for Early Retirement" desc="This number is a hypothetical value you have set that 'If you hit this number, would you retire?'. This is where you are in the monte carlo curve. You can view this as a line on the Monte Carlo simulation.">
@@ -5503,7 +5495,20 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Post-retirement equity weight" desc="Equity % after retirement age (default 70%)">
           <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} suffix="%" />
         </ARow>
+        <ARow label="Fixed Withdrawal Rate" desc="Annual percentage of portfolio to withdraw when using 'Fixed %' strategy (default 4%). If the dropdown  on the Withdrawal strategy on the 
+        panel is selected to 'Fixed %', AiRA will withdraw this percentage of the portfolio value each year, adjusted for inflation. This is a common rule-of-thumb strategy for sustainable withdrawals in retirement." >
+          <ANumInput 
+            value={values.fixedWithdrawalRate} 
+            onSet={(v) => onChange("fixedWithdrawalRate", v)} 
+            min={2} 
+            max={10} 
+            step={0.1} 
+            suffix="%" 
+          />
+        </ARow>
       </div>
+
+      {/* ── Healthcare Shock Model ── */}
       <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
         <div style={{ fontSize:11, fontWeight:700, color:"#f87171", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
           Healthcare Shock Model
@@ -5676,7 +5681,9 @@ function RetirementPanel({ values, onChange }) {
   // Determine active scenario for banner
   const activeScenario = twoHousehold
     ? "🌴 Out‑of‑State / Offshore (No state income tax)"
-    : "🏠 Both in NJ (State tax applies)";
+    : `🏠 Both in ${values.stateOfResidence || "your state"} (State tax applies)`;
+
+  const strategy = values.withdrawalStrategy || "gk";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -5691,15 +5698,15 @@ function RetirementPanel({ values, onChange }) {
           color: "#7dd3fc",
         }}
       >
-        <strong>Current scenario:</strong> {activeScenario} · Toggle in sidebar → "Two households"
+        <strong>Current scenario:</strong> {activeScenario} · Toggle in sidebar → "Solo / Low‑Tax Mode"
       </div>
 
       {/* Spending Inputs */}
       <div>
         <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>
           💵 Annual Spending
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
           {[
             {
               k: "sp",
@@ -5732,6 +5739,7 @@ function RetirementPanel({ values, onChange }) {
           ))}
         </div>
       </div>
+
       {/* Income Sources (SS, Rental) */}
       <div>
         <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>
@@ -5766,9 +5774,87 @@ function RetirementPanel({ values, onChange }) {
         </div>
       </div>
 
-      {/* Dynamic Guardrails (same as before) */}
+      {/* Dynamic Guardrails Section */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
-        {/* ... keep the existing GK / Fixed / Vanguard logic ... */}
+        {strategy === "gk" && (
+          <>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>
+              🛡️ Guyton‑Klinger Guardrails (Auto‑calculated)
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>
+              Floor = 65% of core spend · Ceiling = 135% of core spend
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>65%</div>
+                <div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div>
+              </div>
+              <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Ceiling</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>135%</div>
+                <div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>
+              Spending adjusts ±10% when withdrawal rate deviates 20% from initial.
+            </div>
+          </>
+        )}
+
+        {strategy === "fixed" && (
+          <>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>
+              📊 Fixed Percentage Withdrawal
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>
+              Each year, withdraw a fixed percentage of the current portfolio balance.
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 11, color: "#475569" }}>Withdrawal Rate</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>
+                {values.fixedWithdrawalRate || 4.0}%
+              </div>
+              <div style={{ fontSize: 10, color: "#334155" }}>of portfolio balance each year</div>
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>
+              Spending will fluctuate with portfolio value.
+            </div>
+          </>
+        )}
+
+        {strategy === "vanguard" && (
+          <>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>
+              📈 Vanguard Dynamic Spending
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>
+              Adjusts spending based on a ceiling and floor relative to the initial withdrawal rate.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "#475569" }}>Ceiling</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>
+                  {((values.vanguardCap || 0.05) * 100).toFixed(1)}%
+                </div>
+              </div>
+              <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "#475569" }}>Floor</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>
+                  {((values.vanguardFloor || -0.025) * 100).toFixed(1)}%
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {!["gk", "fixed", "vanguard"].includes(strategy) && (
+          <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center" }}>
+            {getStrategyLabel(strategy)} strategy active — see documentation for details.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -5966,6 +6052,7 @@ export default function AiRAForecaster() {
     hcMin:         BLANK_PROFILE.hcMin,
     hcMax:         BLANK_PROFILE.hcMax,
     withdrawalStrategy: BLANK_PROFILE.withdrawalStrategy,
+    fixedWithdrawalRate: BLANK_PROFILE.fixedWithdrawalRate,
     
     // Income (also blank by default)
     ab:  BLANK_PROFILE.ab,
@@ -5990,6 +6077,7 @@ export default function AiRAForecaster() {
     portfolioGoal: BLANK_PROFILE.portfolioGoal,
     twoHousehold: BLANK_PROFILE.twoHousehold,
   });
+
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
     []
@@ -6045,7 +6133,7 @@ export default function AiRAForecaster() {
     setTax(p.tax);
     setUseAb(p.useAb);
     setReal(p.real);
-    setTwoHousehold(true);
+    updateAssumption("twoHousehold", true);
     if (p.accounts) updateAssumption("accounts", p.accounts);
     if (p.mortBalance !== undefined) updateAssumption("mortBalance", p.mortBalance);
     if (p.mortRate !== undefined) updateAssumption("mortRate", p.mortRate);
@@ -6106,12 +6194,11 @@ export default function AiRAForecaster() {
         carveouts: assumptions.carveouts || [],
         rothConversionTarget: assumptions.rothConversionTarget || "off",
         taxFunding: assumptions.taxFunding || "from_taxable",
-        withdrawalStrategy: withdrawalStrategy,
-        fixedWithdrawalRate: 0.04,
         vanguardInitialRate: 0.04,
         vanguardCap: 0.05,
         vanguardFloor: -0.025,
         safeWithdrawalRate: 0.04,
+        fixedWithdrawalRate: (assumptions.fixedWithdrawalRate || 4.0) / 100,
       }),
       [
         prof,
@@ -6208,7 +6295,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             const response = await emailjs.send(serviceId, templateId, templateParams);
             console.log('EmailJS Debug: SUCCESS!', response.status, response.text);
             alert('Thank you for your feedback! 🙏');
-            // ... reset form ...
+            setFeedbackType(null);
+            setFeedbackText('');
+            setShowFeedback(false);
+
           } catch (error) {
             // Log the FULL error object for maximum detail
             console.error('EmailJS Debug: FAILED.', error);
@@ -6603,10 +6693,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   Bloomberg [-15 / +20%]
                 </div>
                 <div>
-                  <span style={{ color: "#fbbf24" }}>{getStrategyLabel(withdrawalStrategy)}</span>{" "}
-                  {withdrawalStrategy === "gk" && <>Floor: {fmtM(params.gkFloor)} · Ceiling {fmtM(params.gkCeiling)}</>}
-                  {withdrawalStrategy === "fixed" && <>Rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}%</>}
-                  {withdrawalStrategy === "vanguard" && <>Cap: {params.vanguardCap * 100}% · Floor: {params.vanguardFloor * 100}%</>}
+                  <span style={{ color: "#fbbf24" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
+                  {assumptions.withdrawalStrategy === "gk" && <>Floor: {fmtM(<param name="" value="" />.gkFloor)} · Ceiling {fmtM(params.gkCeiling)}</>}
+                  {assumptions.withdrawalStrategy === "fixed" && <>Rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}%</>}
+                  {assumptions.withdrawalStrategy === "vanguard" && <>Cap: {params.vanguardCap * 100}% · Floor: {params.vanguardFloor * 100}%</>}
                 </div>
                 <div>
                   🏖 <span style={{ color: "#059669" }}>Rental:</span> 80%
@@ -6792,8 +6882,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               <div className="sb-card">
                 <div className="sb-title">Withdrawal Strategy</div>
                 <select
-                  value={withdrawalStrategy}
-                  onChange={(e) => setWithdrawalStrategy(e.target.value)}
+                  value={assumptions.withdrawalStrategy}
+                  onChange={(e) => updateAssumption("withdrawalStrategy", e.target.value)}
                   style={{
                     width: "100%",
                     background: "#0d1b2a",
@@ -6865,9 +6955,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               )}  
 
             <div className="flag-i">
-              🛡 {getStrategyLabel(withdrawalStrategy)} active · WR {swr}% ·{" "}
-              {assumptions.twoHousehold ? "Family/Household Spending" : "/Solo Out of State Expenses"} · Rental{" "}
-              {assumptions.abReliability || 80}% reliable · Healthcare shocks modeled
+              🛡 {getStrategyLabel(assumptions.withdrawalStrategy)} active · WR {swr}% ·{" "}
+                  {assumptions.withdrawalStrategy === "fixed" && (
+                    <>Fixed Rate: {assumptions.fixedWithdrawalRate || 4.0}% · </>
+                  )}
             </div>
             {stale && (
               <div
@@ -7078,16 +7169,17 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 );
               })()}
             <div className="gk-bar">
-              <strong style={{ color: "#5eead4" }}>{getStrategyLabel(withdrawalStrategy)} Strategy:</strong>{" "}
-                  {withdrawalStrategy === "gk" ? (
+              <strong style={{ color: "#5eead4" }}>{getStrategyLabel(assumptions.withdrawalStrategy)} Strategy:</strong>{" "}
+                 {assumptions.withdrawalStrategy === "gk" ? (
                     <>Floor {fmtM(params.gkFloor)} ({assumptions.twoHousehold ? "both" : "solo"}) · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}%.</>
-                  ) : withdrawalStrategy === "fixed" ? (
+                  ) : assumptions.withdrawalStrategy === "fixed" ? (
                     <>Withdrawal rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
-                  ) : withdrawalStrategy === "vanguard" ? (
+                  ) : assumptions.withdrawalStrategy === "vanguard" ? (
                     <>Cap: {params.vanguardCap * 100}% · Floor: {params.vanguardFloor * 100}%.</>
                   ) : (
                     <>Dynamic spending based on portfolio performance.</>
-                  )}{" "}
+                  )}
+                  {" "}
                   Rental modeled at {params.abReliability}% reliability. Healthcare shocks {params.hcProb}%/yr from age {params.hcShockAge}. As Bill Perkins says — spend in the right life phase. 🌴
             </div>
             <div className="tabs">
@@ -7146,7 +7238,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       onDeleteCheckpoint={(id) => updateAssumption("checkpoints", assumptions.checkpoints.filter(c => c.id !== id))}
                       earlyRetireTarget={assumptions.earlyRetireTarget}
                       dob={assumptions.dob}
-                      withdrawalStrategy={withdrawalStrategy}
+                      withdrawalStrategy={assumptions.withdrawalStrategy}
                       onSetBaselineFromCheckpoint={(value) => {
                         setPort(value);
                         const currentTotal = port;
@@ -7199,7 +7291,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       SmileChart={SmileChart}
                       portfolioGoal={assumptions.portfolioGoal}
                       earlyRetireTarget={assumptions.earlyRetireTarget}
-                      withdrawalStrategy={withdrawalStrategy}
+                      withdrawalStrategy={assumptions.withdrawalStrategy}
                       checkpoints={assumptions.checkpoints}            // new
                       earlyRetireTarget={assumptions.earlyRetireTarget} // new
                       dob={assumptions.dob}   
@@ -7234,7 +7326,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                           ssAge: ssAge,
                           ssb: ssb,
                           ab: ab,
-                          withdrawalStrategy: withdrawalStrategy,  
+                          withdrawalStrategy: assumptions.withdrawalStrategy,  
                     }}
                     onChange={(k, v) => {
                       updateAssumption(k, v);
