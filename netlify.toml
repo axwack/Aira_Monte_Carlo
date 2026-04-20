@@ -8,17 +8,10 @@
   GENERATE_SOURCEMAP       = "false"
   CI                       = "false"
   NETLIFY_NEXT_PLUGIN_SKIP = "true"
+  
 
 # Serve the SPA for all routes
 [[redirects]]
   from   = "/*"
   to     = "/index.html"
   status = 200
-
-  [[plugins]]
-package = "netlify-plugin-js-obfuscator"
-  [plugins.inputs]
-  # Preserve common array and object methods
-  reservedNames = ["push", "pop", "shift", "unshift", "map", "filter", "reduce", "forEach", "concat", "slice", "splice", "indexOf", "includes"]
-  # Optionally preserve specific variable names if you know them
-  # reservedStrings = ["path", "results"]
