@@ -5975,11 +5975,13 @@ function RetirementPanel({ values, onChange }) {
           🏦 Retirement Income
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          {/*
           <div>
             <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>Social Security (monthly)</div>
             <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Your estimated benefit at your claiming age.</div>
             <DualInput label="" value={ssbMonthly} min={0} max={5000} step={50} format={(v) => fmtM(v) + "/mo"} onChange={(v) => onChange("ssb", v * 12)} />
           </div>
+          */}
           <div>
             <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>SS Start Age</div>
             <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Age you plan to claim Social Security.</div>
@@ -7034,15 +7036,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 format={(v) => "Age " + v}
                 onChange={(v) => updateAssumption("ssAge", v)}
                 />
-              <Slider
-                label="SS benefit"
-                value={ssb}
-                min={0}
-                max={50000}
-                step={500}
-                format={(v) => fmtK(v) + "/yr"}
-                onChange={setSsb}
-              />
               <Slider
                 label="Rental net"
                 value={ab}
