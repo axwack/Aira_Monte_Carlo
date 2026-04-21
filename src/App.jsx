@@ -58,6 +58,7 @@
  * ============================================================ */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import emailjs from '@emailjs/browser';
+import { ApiKeyInput } from "./AI-analysis";
 import {
   ComposedChart,
   Area,
@@ -5351,6 +5352,9 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
         <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in Net Worth projection">
           <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
+        </ARow>
+        <ARow label="Anthropic API Key" desc="Your own key for AI analysis (Aira chat, health score, narrative). Stored only in this browser — never sent to any server.">
+          <ApiKeyInput />
         </ARow>
       <Toggle
         val={values.useJointRmdTable}
