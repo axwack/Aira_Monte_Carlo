@@ -156,7 +156,7 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "9.3.0";
-export const BUILD_TAG = "Substantial changes. Added a fixed withdrawal value for the assumptions panel. Test suite included and hardcodes gone";
+export const BUILD_TAG = "Added AI stub code. Substantial changes and almost prod ready";
 export const BUILD_TIME = "2026-04-20 21:45 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -344,6 +344,7 @@ export const BLANK_PROFILE = {
   checkpoints: [],          // each: { id, date, value, note }
   earlyRetireTarget: 2_000_000,
   withdrawalStrategy: "gk",
+  geminiApiKey: "",
 };
 
 const DEMO_PROFILE = {
@@ -412,6 +413,7 @@ const DEMO_PROFILE = {
   hcMax: 130_000,
   checkpoints: [],          // each: { id, date, value, note }
   earlyRetireTarget: 3500000,
+  geminiApiKey: "",
 }
 
 const PROFILES = { user: BLANK_PROFILE, demo: DEMO_PROFILE };
@@ -4637,31 +4639,58 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   const [loadingAI, setLoadingAI] = useState(false);
 
   const runAIAnalysis = async () => {
-    setLoadingAI(true);
-    setAiAnalysis('');
-    try {
-      const res = await fetch('/.netlify/functions/ai-analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          successRate: r90?.rate,
-          withdrawalRate: (params.sp / params.port) * 100,
-          portfolioGoal: assumptions.portfolioGoal
-        })
-      });
-      const data = await res.json();
-      if (data.analysis) {
-        setAiAnalysis(data.analysis);
-      } else {
-        setAiAnalysis('AI analysis failed. Please try again.');
-      }
-    } catch (err) {
-      console.error(err);
-      setAiAnalysis('AI analysis failed. Please try again.');
-    } finally {
-      setLoadingAI(false);
+    const apiKey = assumptions.geminiApiKey;
+    if (!apiKey) {
+      alert('Please enter your Gemini API key in the Profile → Assumptions tab.');
+      return;
     }
-  };
+
+  setLoadingAI(true);
+  setAiAnalysis('');
+
+  const successRate = r90?.rate ? (r90.rate * 100).toFixed(1) : 'N/A';
+  const withdrawalRate = params?.sp && params?.port ? ((params.sp / params.port) * 100).toFixed(1) : 'N/A';
+  const portfolioGoal = assumptions.portfolioGoal ? (assumptions.portfolioGoal / 1_000_000).toFixed(1) : '3.2';
+
+  const prompt = `You are AiRA, an AI retirement planning assistant. Analyze the following retirement plan and provide a complete, well-formed paragraph (4-6 sentences) with one specific recommendation. Do not stop mid-sentence. Be conversational and reference the numbers provided.
+
+                Plan Summary:
+                - Success Rate (Monte Carlo): ${successRate}% to age ${params.endAge || 90}
+                - Current Portfolio: $${(params.port / 1_000_000).toFixed(2)}M
+                - Target Portfolio: $${portfolioGoal}M
+                - Annual Spending: $${(params.sp / 1000).toFixed(0)}K
+                - Withdrawal Rate: ${withdrawalRate}%
+                - Withdrawal Strategy: ${getStrategyLabel(assumptions.withdrawalStrategy)}
+                - State of Residence: ${assumptions.stateOfResidence || 'CA'}
+
+                Begin your response with "I am AiRA. I have analyzed your plan." and then provide the analysis.`;
+
+   try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-goog-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
+      }),
+    });
+
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(data.error.message);
+    }
+    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response from Gemini.';
+    setAiAnalysis(aiText);
+  } catch (err) {
+    console.error('Gemini API error:', err);
+    setAiAnalysis('AI analysis failed. Please check your API key and try again.');
+  } finally {
+    setLoadingAI(false);
+  }
+};
 
   if (!params || !r90) {
     return (
@@ -5446,31 +5475,16 @@ function AssumptionsPanel({ values, onChange }) {
     ab,
     ssb,
   } = values;
+
   const derivedAge = dob
     ? Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 3600 * 1000))
     : "—";
 
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 10,
-          padding: 16,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: "#0ea5e9",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            marginBottom: 12,
-          }}
-        >
+      {/* PERSONAL PROFILE CARD */}
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#0ea5e9", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
           Personal Profile
         </div>
         <ARow
@@ -5519,24 +5533,38 @@ function AssumptionsPanel({ values, onChange }) {
           <select
             value={values.filingStatus || "mfj"}
             onChange={(e) => onChange("filingStatus", e.target.value)}
-            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
+            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
           >
             <option value="mfj">Married Filing Jointly (MFJ)</option>
             <option value="single">Single</option>
           </select>
         </ARow>
+        
         <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in Net Worth projection">
           <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
         </ARow>
-      <Toggle
-        val={values.useJointRmdTable}
-        onChange={(v) => onChange("useJointRmdTable", v)}
-        label="👥 Use Joint & Last Survivor RMD Table (spouse >10 yrs younger)"
-        accent="#a78bfa"
-      />
+        
+        <Toggle
+          val={values.useJointRmdTable}
+          onChange={(v) => onChange("useJointRmdTable", v)}
+          label="👥 Use Joint & Last Survivor RMD Table (spouse >10 yrs younger)"
+          accent="#a78bfa"
+        />
+        
+        {/* --- GEMINI API KEY INPUT (already placed correctly) --- */}
+        <ARow label="Gemini API Key" desc="Bring your own free key from Google AI Studio to unlock AI analysis.">
+          <input
+            type="password"
+            value={values.geminiApiKey || ''}
+            onChange={(e) => onChange('geminiApiKey', e.target.value)}
+            placeholder="AIza..."
+            style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
+          />
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#60a5fa", marginLeft: 8 }}>Get free key →</a>
+        </ARow>
       </div>
 
-      {/* ── Expense Model ── */}
+      {/* EXPENSE MODEL CARD */}
       <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
         <div style={{ fontSize:11, fontWeight:700, color:"#f59e0b", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
           Expense Model
@@ -5544,7 +5572,6 @@ function AssumptionsPanel({ values, onChange }) {
         <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
           Separate housing &amp; fixed obligations from core lifestyle spend. The MC engine adds each carveout to the portfolio draw automatically.
         </div>
-
         <ARow label="Housing type" desc="Own = mortgage P&I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
           <select
             value={values.housingType || "own"}
@@ -5556,14 +5583,11 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="none">None / already in spend</option>
           </select>
         </ARow>
-
         {(values.housingType || "own") === "rent" && (
           <ARow label="Annual rent" desc="Today's dollars — inflated each year in simulation">
             <ANumInput value={values.annualRent} onSet={(v) => onChange("annualRent", v)} min={0} max={60000} step={500} suffix="/yr" />
           </ARow>
         )}
-
-        {/* Carveouts */}
         <div style={{ marginTop:12 }}>
           <div style={{ fontSize:11, color:"#94a3b8", fontWeight:600, marginBottom:8 }}>
             Fixed Obligations (car loans, HOA, etc.)
@@ -5622,7 +5646,7 @@ function AssumptionsPanel({ values, onChange }) {
         </div>
       </div>
 
-      {/* ── Roth Conversion Strategy ── */}
+      {/* ROTH CONVERSION CARD */}
       <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
         <div style={{ fontSize:11, fontWeight:700, color:"#a78bfa", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
           Roth Conversion Strategy
@@ -5660,6 +5684,7 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
       </div>
 
+      {/* MONTE CARLO PARAMETERS CARD */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -5676,16 +5701,16 @@ function AssumptionsPanel({ values, onChange }) {
             textTransform: "uppercase",
             letterSpacing: "0.1em",
             marginBottom: 12,
-          }}>
-            {/* ──Montecarlo Parameters ── */}
+          }}
+        >
           Monte Carlo Model Parameters
         </div>
-         <ARow label="Target Portfolio Value for Early Retirement" desc="This number is a hypothetical value you have set that 'If you hit this number, would you retire?'. This is where you are in the monte carlo curve. You can view this as a line on the Monte Carlo simulation.">
+        <ARow label="Target Portfolio Value for Early Retirement" desc="This number is a hypothetical value you have set that 'If you hit this number, would you retire?'. This is where you are in the monte carlo curve. You can view this as a line on the Monte Carlo simulation.">
           <ANumInput value={values.earlyRetireTarget} onSet={(v) => onChange("earlyRetireTarget", v)} min={500_000} max={10_000_000} step={50_000} prefix="$" />
         </ARow>
-        <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is your internal Portfolio Goal and where if you hit this number before you have accomplished your retirement goal. It's your minimal goal and anything aboive this numnber is extra beyond what is your ultimate goal. (default $3.2M)">
-            <ANumInput value={values.portfolioGoal} onSet={(v) => onChange("portfolioGoal", v)}  min={500_000}  max={10_000_000} step={50_000}  prefix="$" />
-          </ARow>
+        <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is your internal Portfolio Goal and where if you hit this number before you have accomplished your retirement goal. It's your minimal goal and anything above this number is extra beyond what is your ultimate goal. (default $3.2M)">
+          <ANumInput value={values.portfolioGoal} onSet={(v) => onChange("portfolioGoal", v)} min={500_000} max={10_000_000} step={50_000} prefix="$" />
+        </ARow>
         <ARow label="Rental reliability" desc="Probability Rental income arrives in any given year (default 80%)">
           <ANumInput value={values.abReliability} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
         </ARow>
@@ -5701,20 +5726,19 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Post-retirement equity weight" desc="Equity % after retirement age (default 70%)">
           <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} suffix="%" />
         </ARow>
-        <ARow label="Fixed Withdrawal Rate" desc="Annual percentage of portfolio to withdraw when using 'Fixed %' strategy (default 4%). If the dropdown  on the Withdrawal strategy on the 
-        panel is selected to 'Fixed %', AiRA will withdraw this percentage of the portfolio value each year, adjusted for inflation. This is a common rule-of-thumb strategy for sustainable withdrawals in retirement." >
-          <ANumInput 
-            value={values.fixedWithdrawalRate} 
-            onSet={(v) => onChange("fixedWithdrawalRate", v)} 
-            min={2} 
-            max={10} 
-            step={0.1} 
-            suffix="%" 
+        <ARow label="Fixed Withdrawal Rate" desc="Annual percentage of portfolio to withdraw when using 'Fixed %' strategy (default 4%).">
+          <ANumInput
+            value={values.fixedWithdrawalRate}
+            onSet={(v) => onChange("fixedWithdrawalRate", v)}
+            min={2}
+            max={10}
+            step={0.1}
+            suffix="%"
           />
         </ARow>
       </div>
 
-      {/* ── Healthcare Shock Model ── */}
+      {/* HEALTHCARE SHOCK CARD */}
       <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
         <div style={{ fontSize:11, fontWeight:700, color:"#f87171", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
           Healthcare Shock Model
@@ -5743,8 +5767,7 @@ function AssumptionsPanel({ values, onChange }) {
           textAlign: "right",
         }}
       >
-        Changes take effect on next Monte Carlo run · These replace all
-        hardcoded simulation values
+        Changes take effect on next Monte Carlo run · These replace all hardcoded simulation values
       </div>
     </div>
   );
@@ -6230,7 +6253,6 @@ export default function AiRAForecaster() {
   const [retAge, setRetAge] = useState(prof.retireAge);
   const [endAge, setEndAge] = useState(prof.endAge);
   const [sp, setSp] = useState(prof.sp);
-  const [ssAge, setSsAge] = useState(prof.ssAge);
   const [ssb, setSsb] = useState(prof.ssb);
   const [ab, setAb] = useState(prof.ab);
   const [smile, setSmile] = useState(prof.smile);
@@ -6259,7 +6281,7 @@ export default function AiRAForecaster() {
     hcMax:         BLANK_PROFILE.hcMax,
     withdrawalStrategy: BLANK_PROFILE.withdrawalStrategy,
     fixedWithdrawalRate: BLANK_PROFILE.fixedWithdrawalRate,
-    
+    ssAge: BLANK_PROFILE.ssAge,
     // Income (also blank by default)
     ab:  BLANK_PROFILE.ab,
     ssb: BLANK_PROFILE.ssb,
@@ -6282,6 +6304,7 @@ export default function AiRAForecaster() {
     earlyRetireTarget: BLANK_PROFILE.earlyRetireTarget,
     portfolioGoal: BLANK_PROFILE.portfolioGoal,
     twoHousehold: BLANK_PROFILE.twoHousehold,
+    geminiApiKey:  BLANK_PROFILE.geminiApiKey,
   });
 
   const updateAssumption = useCallback(
@@ -6332,7 +6355,7 @@ export default function AiRAForecaster() {
     setRetAge(p.retireAge);
     setEndAge(p.endAge);
     setSp(p.sp);
-    setSsAge(p.ssAge);
+    updateAssumption("ssAge", p.ssAge);
     setSsb(p.ssb);
     setAb(p.ab);
     setSmile(p.smile);
@@ -6350,6 +6373,7 @@ export default function AiRAForecaster() {
     setR90(null);
     setStress(null);
     setStale(false);
+    updateAssumption("ssAge", p.ssAge);
   }, [updateAssumption]);
 
   const params = useMemo(
@@ -6362,7 +6386,6 @@ export default function AiRAForecaster() {
         contrib,
         inf,
         sp: assumptions.twoHousehold ? sp : prof.spSpendOutofState,
-        ssAge,
         ssb,
         ab,
         useAb,
@@ -6405,6 +6428,7 @@ export default function AiRAForecaster() {
         vanguardFloor: -0.025,
         safeWithdrawalRate: 0.04,
         fixedWithdrawalRate: (assumptions.fixedWithdrawalRate || 4.0) / 100,
+        ssAge: assumptions.ssAge,
       }),
       [
         prof,
@@ -6414,7 +6438,6 @@ export default function AiRAForecaster() {
         contrib,
         inf,
         sp,
-        ssAge,
         ssb,
         ab,
         useAb,
@@ -6562,7 +6585,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 sp: sp,
                 spSpendOutofState: prof.spSpendOutofState || 48000,
                 spInStateSpend: prof.spInStateSpend || 0,
-                ssAge: ssAge,
+                ssAge: assumptions.ssAge,
                 ssb: ssb,
                 ab: ab,
                 useAb: useAb,
@@ -6635,7 +6658,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   if (data.contrib !== undefined) setContrib(data.contrib);
                   if (data.inf !== undefined) setInf(data.inf);
                   if (data.sp !== undefined) setSp(data.sp);
-                  if (data.ssAge !== undefined) setSsAge(data.ssAge);
+                  if (data.ssAge !== undefined) updateAssumption("ssAge", data.ssAge);
                   if (data.ssb !== undefined) setSsb(data.ssb);
                   if (data.ab !== undefined) setAb(data.ab);
                   if (data.useAb !== undefined) setUseAb(data.useAb);
@@ -7002,14 +7025,15 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 onChange={setSp}
               />
               <Slider
+                key={`ssAge-${assumptions.ssAge}`}
                 label="SS start age"
-                value={ssAge}
+                value={assumptions.ssAge}
                 min={62}
                 max={70}
                 step={1}
                 format={(v) => "Age " + v}
-                onChange={setSsAge}
-              />
+                onChange={(v) => updateAssumption("ssAge", v)}
+                />
               <Slider
                 label="SS benefit"
                 value={ssb}
@@ -7420,7 +7444,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   <FanChart
                         pcts={r90.pcts}
                         retireAge={retAge}
-                        ssAge={ssAge}
+                        ssAge={asassumptions.ssAge}
                         rmdAge={rmdAge}
                         inf={inf}
                         useReal={real}
@@ -7466,7 +7490,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       <FanChart
                         pcts={r90.pcts}
                         retireAge={retAge}
-                        ssAge={ssAge}
+                        ssAge={assumptions.ssAge}
                         rmdAge={rmdAge}
                         inf={inf}
                         useReal={real}
@@ -7487,7 +7511,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       fmtPct={fmtPct}  
                       stress={stress}
                       retireAge={retAge}           // ✅ Add this
-                      ssAge={ssAge}             // ✅ Add this
+                      ssAge={assumptions.ssAge}             // ✅ Add this
                       rmdAge={rmdAge}
                       inf={inf}                 // ✅ Add this
                       real={real}               // ✅ Add this
@@ -7531,7 +7555,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                           port: port,
                           contrib: contrib,
                           sp: sp,
-                          ssAge: ssAge,
+                          ssAge: assumptions.ssAge,
                           ssb: ssb,
                           ab: ab,
                           withdrawalStrategy: assumptions.withdrawalStrategy,  
@@ -7544,7 +7568,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       if (k === "port") setPort(v);
                       if (k === "contrib") setContrib(v);
                       if (k === "sp") setSp(v);
-                      if (k === "ssAge") setSsAge(v);
+                      if (k === "ssAge") updateAssumption("ssAge", v);
                       if (k === "ssb") setSsb(v);
                       if (k === "ab") setAb(v);
                     }}
