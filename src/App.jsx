@@ -80,6 +80,42 @@ alternative commercial licensing terms are available.
 Please contact [Your Email Address] for proprietary licensing options 
 including distribution rights and royalty arrangements.
 ---------------------------------------------------------------------
+
+/*Disclaimer and Terms of Use
+Last Updated: April 11, 2026
+
+1. Not Financial Advice
+The Aira Freedom Financial application (the "App") is provided as a financial modeling and educational tool for informational purposes only. 
+It does not constitute professional financial, investment, tax, or legal advice.  The developers of this app  are not acting as your financial advisor, fiduciary, or broker through the provision of this App.
+
+All simulations, including Monte Carlo analyses and withdrawal strategies, are based on historical data and mathematical projections. 
+Past performance is not indicative of future results. Financial markets are inherently volatile, and there is no guarantee that the assumptions used in the App will materialize.
+
+2. "Use at Your Own Risk" & Accuracy
+While the logic and methodologies used in this tool are utilized by the developer 
+for personal planning, they are provided "as is" and "as available." 
+We make no warranties, express or implied, regarding the accuracy, completeness, or reliability of the calculations. 
+Financial planning involves complex variables that may not be fully captured by this software. 
+You are solely responsible for verifying any output from the App with a qualified professional before making any financial decisions.
+
+3. Limitation of Liability and Indemnification
+By using this App, you agree to assume full responsibility for any financial decisions or "critical errors" made based on its output.
+
+To the maximum extent permitted by law, you agree to indemnify, defend, and 
+hold harmless the developers of this app, and any affiliates 
+from and against any and all claims, losses, damages, liabilities, and expenses (including legal fees) arising from:
+
+Your use or misuse of the App.
+
+Any errors, omissions, or inaccuracies in the data or results generated.
+
+Any financial loss, loss of profit, or "sequence of returns" failures resulting from reliance on the App.
+
+4. User Responsibility
+You acknowledge that financial planning is highly individualized. 
+The "spending smiles," guardrails, or projections provided by Aira may not be suitable for your specific financial situation, risk tolerance, or time horizon.  Use at  your own risk and always
+consult your fiduciary, CPA or tax accountant. 
+
  * ============================================================ */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import emailjs from '@emailjs/browser';
@@ -7507,38 +7543,3 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
 
 ════════════════════════════════════════════════════════════════ */
 export { runMC, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost };
-/*Disclaimer and Terms of Use
-Last Updated: April 11, 2026
-
-1. Not Financial Advice
-The Aira Freedom Financial application (the "App") is provided as a financial modeling and educational tool for informational purposes only. 
-It does not constitute professional financial, investment, tax, or legal advice.  The developers of this app  are not acting as your financial advisor, fiduciary, or broker through the provision of this App.
-
-All simulations, including Monte Carlo analyses and withdrawal strategies, are based on historical data and mathematical projections. 
-Past performance is not indicative of future results. Financial markets are inherently volatile, and there is no guarantee that the assumptions used in the App will materialize.
-
-2. "Use at Your Own Risk" & Accuracy
-While the logic and methodologies used in this tool are utilized by the developer 
-for personal planning, they are provided "as is" and "as available." 
-We make no warranties, express or implied, regarding the accuracy, completeness, or reliability of the calculations. 
-Financial planning involves complex variables that may not be fully captured by this software. 
-You are solely responsible for verifying any output from the App with a qualified professional before making any financial decisions.
-
-3. Limitation of Liability and Indemnification
-By using this App, you agree to assume full responsibility for any financial decisions or "critical errors" made based on its output.
-
-To the maximum extent permitted by law, you agree to indemnify, defend, and 
-hold harmless the developers of this app, and any affiliates 
-from and against any and all claims, losses, damages, liabilities, and expenses (including legal fees) arising from:
-
-Your use or misuse of the App.
-
-Any errors, omissions, or inaccuracies in the data or results generated.
-
-Any financial loss, loss of profit, or "sequence of returns" failures resulting from reliance on the App.
-
-4. User Responsibility
-You acknowledge that financial planning is highly individualized. 
-The "spending smiles," guardrails, or projections provided by Aira may not be suitable for your specific financial situation, risk tolerance, or time horizon.  Use at  your own risk and always
-consult your fiduciary, CPA or tax accountant. 
-*/
