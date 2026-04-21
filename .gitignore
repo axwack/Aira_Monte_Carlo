@@ -5,3 +5,5 @@ main*
 *.json
 *-workspace
 Requirements.md
+# Local Netlify folder
+.netlify
