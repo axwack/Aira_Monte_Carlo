@@ -1,7 +1,7 @@
 /* ============================================================
  *  AiRA Monte Carlo · App.jsx
  *  BUILD TAG : Added new Fanchart for actual versus forecasted
- *  BUILD TIME: 2026-04-18 21:45 UTC
+
  *  NOTES     : Roth conversion plan diagnostics.
  *              - Each year's row now carries capReason (why
  *                the target bracket was capped) and a per-
@@ -55,6 +55,31 @@
  *  If the browser console shows an older BUILD TAG than this,
  *  you are running a stale build — rebuild with `npm run build`
  *  and hard-refresh the page (Ctrl/Cmd-Shift-R).
+ * 
+ * 
+ *AiRA Freedom Financial
+Copyright (C) 2026 [Vincent Lee]
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published
+by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+---------------------------------------------------------------------
+ADDITIONAL TERMS (Dual Licensing):
+If the terms of the AGPL v3 are incompatible with your use of the software, 
+alternative commercial licensing terms are available. 
+Please contact [Your Email Address] for proprietary licensing options 
+including distribution rights and royalty arrangements.
+---------------------------------------------------------------------
  * ============================================================ */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import emailjs from '@emailjs/browser';
@@ -94,9 +119,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "9.2.3";
-export const BUILD_TAG = "Fan Chart Forecast with Dynamic RMD Reference Line and Target Retirement number to measure against MC paths";
-export const BUILD_TIME = "2026-04-18 21:45 UTC";
+const APP_VERSION = "9.3.0";
+export const BUILD_TAG = "Substantial changes. Added a fixed withdrawal value for the assumptions panel. Test suite included and hardcodes gone";
+export const BUILD_TIME = "2026-04-20 21:45 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1371,10 +1396,15 @@ function buildRothExplorer(params = {}) {
         f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
       const fB = idxB(fedBase, f),
         nB = idxB(NJ_BRACKETS_2026, f);
+      
       const stdD = Math.round(stdDedBase * f) + (age >= 65 ? Math.round(stdDedAgeBonus * f) : 0);
+      const b10t = fB.find((b) => b.rate === 0.10)?.hi || Math.round((isMFJ ? 24800 : 12400) * f);
       const b12t = fB.find((b) => b.rate === 0.12)?.hi || Math.round((isMFJ ? 100800 : 50400) * f);
       const b22t = fB.find((b) => b.rate === 0.22)?.hi || Math.round((isMFJ ? 211400 : 105700) * f);
       const b24t = fB.find((b) => b.rate === 0.24)?.hi || Math.round((isMFJ ? 403550 : 201800) * f);
+      const b32t = fB.find((b) => b.rate === 0.32)?.hi || Math.round((isMFJ ? 512450 : 256225) * f);
+      const b35t = fB.find((b) => b.rate === 0.35)?.hi || Math.round((isMFJ ? 768700 : 384350) * f);
+      const b37t = Infinity; // top bracket has no ceiling
 
       const totalPort = pT + ro;
       if (age > retireAge && totalPort > 0) {
@@ -1417,18 +1447,22 @@ function buildRothExplorer(params = {}) {
         age < rmdAge &&
         pT > 0
       ) {
-        let targetTop;
-        if (rothMode === "fill_12") { targetTop = b12t; capReason = "mode 12%"; }
+       let targetTop;
+        if (rothMode === "fill_10") { targetTop = b10t; capReason = "mode 10%"; }
+        else if (rothMode === "fill_12") { targetTop = b12t; capReason = "mode 12%"; }
         else if (rothMode === "fill_22") { targetTop = b22t; capReason = "mode 22%"; }
         else if (rothMode === "fill_24") { targetTop = b24t; capReason = "mode 24%"; }
+        else if (rothMode === "fill_32") { targetTop = b32t; capReason = "mode 32%"; }
+        else if (rothMode === "fill_35") { targetTop = b35t; capReason = "mode 35%"; }
+        else if (rothMode === "fill_37") { targetTop = b37t; capReason = "mode 37%"; }
         else if (rothMode === "irmaa_safe") {
           const irmaaTop = irmaaCeiling(yr) + stdD;
           if (irmaaTop < b22t) { targetTop = irmaaTop; capReason = "IRMAA ceiling"; }
           else { targetTop = b22t; capReason = "mode 22%"; }
         } else { targetTop = b22t; capReason = "mode 22%"; }
 
-        // IRMAA lookback guard: ages 60-65 — cap at 22%
-        if (age >= 60 && age <= 65 && rothMode === "fill_24" && b22t < targetTop) {
+        // IRMAA lookback guard: ages 60-65 — cap at 22% for aggressive brackets
+        if (age >= 60 && age <= 65 && ["fill_24","fill_32","fill_35","fill_37"].includes(rothMode) && b22t < targetTop) {
           targetTop = b22t; capReason = "IRMAA lookback (age 60-65)";
         }
         // FAFSA/CSS guard: through 2029 — cap at 12%
@@ -1439,14 +1473,16 @@ function buildRothExplorer(params = {}) {
         if (yr > 2029 && yr <= 2033 && b22t < targetTop) {
           targetTop = b22t; capReason = "CSS Profile (2030-33)";
         }
-        // 24% permitted from age 66 until the year before RMDs begin
-        if (rothMode === "fill_24" && (age < 66 || age >= rmdAge) && b22t < targetTop) {
-          targetTop = b22t; capReason = "24% gated (age 66+ only)";
+        // 24%+ only permitted from age 66 until the year before RMDs begin
+        if (["fill_24","fill_32","fill_35","fill_37"].includes(rothMode) && (age < 66 || age >= rmdAge) && b22t < targetTop) {
+          targetTop = b22t; capReason = "24%+ gated (age 66+ only)";
         }
         const room = Math.max(0, targetTop - txBC);
+
         // Hard cap: never convert more than $250K in a single year
         const preCap = Math.min(room, Math.max(0, pT));
         conv = Math.round(Math.min(preCap, 250_000));
+
         if (preCap > 250_000) capReason = "$250K annual cap";
         else if (pT < room) capReason = "pretax exhausted";
       }
@@ -1528,7 +1564,7 @@ function buildRothExplorer(params = {}) {
   }
 
   const opt = runScenario(true),
-    cur = runScenario(false);
+  cur = runScenario(false);
   const convRows = opt.rows.filter((r) => r.conv > 0);
   const taxD = opt.cTax - cur.cTax;
   const estD = (cur.rows[cur.rows.length - 1]?.nw || 0) - (opt.rows[opt.rows.length - 1]?.nw || 0);
@@ -2368,7 +2404,7 @@ function SmileChart({ p, inf }) {
         Retirement Smile · Go-go 115% → Slow-go 85% → Healthcare tail 90% ·
         Blanchett/Morningstar
       </div>
-      <ResponsiveContainer width="100%" height={230}>
+      <ResponsiveContainer width="100%" height={540}>
         <LineChart
           data={data}
           margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
@@ -2459,25 +2495,34 @@ function RothLadder({ params }) {
     rmdAge,
     filingStatus,
   } = ex;
+
   const domLabel = isNoTaxState
     ? "No Tax State Move or Out of Country"
     : `${params.stateOfResidence} Domicile (with tax) · CA/NY/Washington worst-case`;
   const domColor = isNoTaxState ? "#34d399" : "#fb923c";
+  
   const modeLabels = {
-    fill_12: "Fill 12%",
-    fill_22: "Fill 22%",
-    fill_24: "Fill 24%",
-    irmaa_safe: "IRMAA-Safe",
+      fill_10: "Fill 10%",
+      fill_12: "Fill 12%",
+      fill_22: "Fill 22%",
+      fill_24: "Fill 24%",
+      fill_32: "Fill 32%",
+      fill_35: "Fill 35%",
+      fill_37: "Fill 37%",
+      irmaa_safe: "IRMAA-Safe",
   };
-  const modeDescs = {
-    fill_12:
-      "Conservative — stay in 12% bracket. Lowest tax, slowest conversion.",
-    fill_22: "Moderate — fill to top of 22%. IRMAA-safe. AiRA default.",
-    fill_24:
-      "Aggressive — fill to 24%. ⚠️ IRMAA risk at 65 (2-yr lookback). Faster conversion.",
-    irmaa_safe:
-      "Dynamic — fills 22% normally, auto-throttles near IRMAA threshold.",
-  };
+
+const modeDescs = {
+    fill_10: "Ultra‑conservative — stay in 10% bracket. Minimal tax, slowest conversion.",
+    fill_12: "Conservative — stay in 12% bracket. Low tax, slower conversion.",
+    fill_22: "Moderate — fill to top of 22%. IRMAA‑safe. AiRA default.",
+    fill_24: "Aggressive — fill to 24%. ⚠️ IRMAA risk at 65 (2‑yr lookback).",
+    fill_32: "Very aggressive — fill to 32%. 🚨 IRMAA and NIIT implications.",
+    fill_35: "High income — fill to 35%. Only for large conversions.",
+    fill_37: "Maximum — fill to 37%. Rarely optimal; consult CPA.",
+    irmaa_safe: "Dynamic — fills 22% normally, auto‑throttles near IRMAA threshold.",
+};
+
   const InputsPanel = () => (
     <div
       style={{
@@ -2687,31 +2732,45 @@ function RothLadder({ params }) {
           Bracket Fill Strategy
         </div>
         <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-          {Object.entries(modeLabels).map(([k, v]) => (
-            <button
-              key={k}
-              onClick={() => setRothMode(k)}
-              style={{
-                padding: "4px 10px",
-                borderRadius: 6,
-                cursor: "pointer",
-                fontSize: 10,
-                fontFamily: "inherit",
-                fontWeight: 600,
-                border:
-                  rothMode === k
-                    ? "1px solid #0d9488"
-                    : "1px solid rgba(255,255,255,0.1)",
-                background:
-                  rothMode === k ? "rgba(13,148,136,0.15)" : "transparent",
-                color: rothMode === k ? "#5eead4" : "#64748b",
-                transition: "all 0.15s",
-              }}
-            >
-              {v}
-              {k === "fill_24" ? " ⚠️" : ""}
-            </button>
-          ))}
+
+          {Object.entries(modeLabels).map(([k, v]) => {
+            const isHigh = ["fill_32","fill_35","fill_37"].includes(k);
+            const isCaution = k === "fill_24";
+            const isSafe = ["fill_10","fill_12"].includes(k);
+            const isDefault = k === "fill_22";
+            
+            let bgColor = "transparent";
+            let textColor = "#64748b";
+            let borderColor = "rgba(255,255,255,0.1)";
+            
+            if (rothMode === k) {
+              if (isHigh) { bgColor = "rgba(239,68,68,0.15)"; textColor = "#f87171"; borderColor = "#ef4444"; }
+              else if (isCaution) { bgColor = "rgba(245,158,11,0.15)"; textColor = "#fbbf24"; borderColor = "#f59e0b"; }
+              else if (isSafe) { bgColor = "rgba(16,185,129,0.15)"; textColor = "#34d399"; borderColor = "#10b981"; }
+              else { bgColor = "rgba(13,148,136,0.15)"; textColor = "#5eead4"; borderColor = "#0d9488"; }
+            }
+            
+            return (
+              <button
+                key={k}
+                onClick={() => setRothMode(k)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontSize: 10,
+                  fontFamily: "inherit",
+                  fontWeight: 600,
+                  border: `1px solid ${borderColor}`,
+                  background: bgColor,
+                  color: textColor,
+                  transition: "all 0.15s",
+                }}
+              >
+                {v}
+              </button>
+            );
+          })}
         </div>
         <div style={{ fontSize: 10, color: "#64748b", fontStyle: "italic" }}>
           {modeDescs[rothMode]}
@@ -3454,11 +3513,11 @@ function ScenariosTab({
   const [scenarioSubTab, setScenarioSubTab] = useState("stress");
 
   const SCENARIO_SUBTABS = [
-    ["stress", "🔶 Stress"],
-    ["withdrawal", "💸 Withdrawal Analysis"],
-    ["roth", "🔄 Roth"],
-    ["buckets", "🪣 Buckets"],
-    ["smile", "🙂 Smile"],
+    ["stress", "🔶 STRESS TEST"],
+    ["withdrawal", "💸 WITHDRAWAL ANALYSIS"],
+    ["roth", "🔄 ROTH"],
+    ["buckets", "🪣 BUCKETS"],
+    ["smile", "🙂 SMILE"],
   ];
 
   return (
@@ -3478,7 +3537,7 @@ function ScenariosTab({
             onClick={() => setScenarioSubTab(key)}
             style={{
               padding: "5px 12px",
-              fontSize: 11,
+              fontSize: 13,
               borderRadius: 6,
               border: "none",
               cursor: "pointer",
@@ -5435,9 +5494,13 @@ function AssumptionsPanel({ values, onChange }) {
             style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
           >
             <option value="off">Off — no conversions</option>
-            <option value="12">Fill to top of 12% bracket</option>
-            <option value="22">Fill to top of 22% bracket</option>
-            <option value="24">Fill to top of 24% bracket</option>
+            <option value="fill_10">Fill to top of 10% bracket</option>
+            <option value="fill_12">Fill to top of 12% bracket</option>
+            <option value="fill_22">Fill to top of 22% bracket</option>
+            <option value="fill_24">Fill to top of 24% bracket</option>
+            <option value="fill_32">Fill to top of 32% bracket</option>
+            <option value="fill_35">Fill to top of 35% bracket</option>
+            <option value="37">Fill to top of 37% bracket</option>
             <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
           </select>
         </ARow>
