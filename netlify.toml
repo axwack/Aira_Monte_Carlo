@@ -1,6 +1,7 @@
 [build]
   command   = "npm run build"
   publish   = "build"
+  functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION             = "18"
@@ -9,6 +10,9 @@
   CI                       = "false"
   NETLIFY_NEXT_PLUGIN_SKIP = "true"
   
+
+[functions]
+  node_bundler = "esbuild"
 
 # Serve the SPA for all routes
 [[redirects]]
