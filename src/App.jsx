@@ -235,6 +235,8 @@ const STATE_TAX_RATES = {
   "VA": 0.0575, "WA": 0, "WV": 0.0512, "WI": 0.0753, "WY": 0,
 };
 
+
+
 export const getStrategyLabel = (strategy) => {
   const labels = {
     gk: "Guyton‑Klinger",
@@ -1363,6 +1365,7 @@ function buildRothExplorer(params = {}) {
     ab,
     useAb,
     inf,
+    endAge = 90, 
     port,
     twoHousehold,
     rothMode = "fill_22",           // keep default for mode only
@@ -1427,7 +1430,7 @@ function buildRothExplorer(params = {}) {
     const initDraw0 = Math.max(0, baseSp - ss0 - ab0);
     const initWR = totalPort0 > 0 ? initDraw0 / totalPort0 : 0.04;
 
-    for (let age = retireAge; age <= 90; age++) {
+    for (let age = retireAge; age <= endAge; age++) {
       const yr = retireYear + (age - retireAge),
         f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
       const fB = idxB(fedBase, f),
@@ -2529,6 +2532,7 @@ function RothLadder({ params }) {
     isNoTaxState,
     retireYear,
     rmdAge,
+    endAge,
     filingStatus,
   } = ex;
 
@@ -2876,7 +2880,7 @@ const modeDescs = {
               Conversion Plan · Ages {convRows[0]?.age}–
               {convRows[convRows.length - 1]?.age} · {domLabel}
             </div>
-            <ResponsiveContainer width="100%" height={180}>
+            <ResponsiveContainer width="100%" height={340}>
               <BarChart
                 data={barData}
                 margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
@@ -3031,7 +3035,7 @@ const modeDescs = {
             <div className="ct">
               Projected Account Balances · Pre-Tax vs Roth
             </div>
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={340}>
               <BarChart
                 data={opt.rows.filter((_, i) => i % 2 === 0)}
                 margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
@@ -3066,14 +3070,14 @@ const modeDescs = {
           <div
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
           >
-            <div className="met">
-              <div className="ml">Savings at Age 90 — Without</div>
+          <div className="met">
+              <div className="ml">Savings at Age {params.endAge || 90} — Without</div>
               <div className="mv" style={{ color: "#94a3b8", fontSize: 16 }}>
                 {fmtM(cur.rows[cur.rows.length - 1]?.nw || 0)}
               </div>
             </div>
             <div className="met">
-              <div className="ml">Savings at Age 90 — With Conversions</div>
+              <div className="ml">Savings at Age {params.endAge || 90} — With Conversions</div>
               <div className="mv" style={{ color: "#5eead4", fontSize: 16 }}>
                 {fmtM(opt.rows[opt.rows.length - 1]?.nw || 0)}
               </div>
@@ -3111,7 +3115,7 @@ const modeDescs = {
                   </div>
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={160}>
+              <ResponsiveContainer width="100%" height={340}>
                 <BarChart
                   data={rmdYears.filter((_, i) => i % 2 === 0)}
                   margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
@@ -3369,7 +3373,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
           📈 Deterministic Schedule – {strategyLabel} · Median historical returns
           ({CALIB.phase1Mean}% pre‑62 / {CALIB.phase2Mean}% after) · Inflation {inf}%
         </div>
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={540}>
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
             <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 10 }} />
@@ -3445,7 +3449,7 @@ function BucketsTab({ params = {} }) {
       pct: bucketPcts[0],
       color: "#0ea5e9",
       purpose:
-        "Living expenses 3-5yr runway. GK floor mechanism. NEVER dual-purpose.",
+        "Living expenses 3-5yr runway.  NEVER dual-purpose.",
       holdings: "Cash · Money market · Short-term Treasuries",
       locked: `Draws begin at retirement (age ${retireAge})`,
     },
@@ -3474,7 +3478,7 @@ function BucketsTab({ params = {} }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="chart-card">
         <div className="ct">
-          3-Bucket strategy · Section 0.G · GK guardrails govern all draws
+          3-Bucket Strategy · Section 0.G ·
         </div>
         {buckets.map((b) => (
           <div
@@ -3495,12 +3499,12 @@ function BucketsTab({ params = {} }) {
                 marginBottom: 6,
               }}
             >
-              <div style={{ fontSize: 13, fontWeight: 600, color: b.color }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: b.color }}>
                 {b.name}
               </div>
               <div
                 style={{
-                  fontSize: 11,
+                  fontSize: 15,
                   color: b.color,
                   fontFamily: "'DM Mono',monospace",
                 }}
@@ -3508,13 +3512,13 @@ function BucketsTab({ params = {} }) {
                 {b.target} · {b.pct}%
               </div>
             </div>
-            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4 }}>
+            <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>
               {b.purpose}
             </div>
-            <div style={{ fontSize: 10, color: "#475569" }}>
+            <div style={{ fontSize: 12, color: "#475569" }}>
               <span style={{ color: b.color }}>Holdings:</span> {b.holdings}
             </div>
-            <div style={{ fontSize: 10, color: "#334155", marginTop: 3 }}>
+            <div style={{ fontSize: 11, color: "#334155", marginTop: 3 }}>
               🔒 {b.locked}
             </div>
           </div>
@@ -3938,15 +3942,26 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
             </div>
           </div>
           <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>MODEL ASSUMPTIONS</div>
-            {[["3,000 randomized return sequences", "#5eead4"], ["99yr S&P 500 + 50yr Bloomberg Agg bootstrap", "#5eead4"], ["Separate equity & bond draws each year", "#5eead4"], ["Rental income fails 20% of years randomly", "#fbbf24"], ["Healthcare shocks 3.5%/yr from age 72", "#fbbf24"], ["Guyton-Klinger guardrails each path", "#a78bfa"], ["Blanchett smile spending (not flat)", "#a78bfa"], ["SS COLA 2.4%/yr · Rental growth 3%/yr", "#94a3b8"], [params.tax ? "Tax drag modeled (pre/post SS/RMD)" : "Tax drag OFF", "#94a3b8"], ["Glide path: 91/9 → 70/30 at age 62", "#94a3b8"]].map(([text, color]) => (
-              <div key={text} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 7, fontSize: 11 }}>
-                <div style={{ width: 5, height: 5, borderRadius: "50%", background: color, marginTop: 5, flexShrink: 0 }} />
-                <span style={{ color: "#64748b", lineHeight: 1.4 }}>{text}</span>
-              </div>
+  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>MODEL ASSUMPTIONS</div>
+              {[
+                ["3,000 randomized return sequences", "#5eead4"],
+                ["99yr S&P 500 + 50yr Bloomberg Agg bootstrap", "#5eead4"],
+                ["Separate equity & bond draws each year", "#5eead4"],
+                [`Rental income fails ${100 - (params.abReliability || 80)}% of years randomly`, "#fbbf24"],
+                [`Healthcare shocks ${params.hcProb || 3.5}%/yr from age ${params.hcShockAge || 72}`, "#fbbf24"],
+                [`${getStrategyLabel(withdrawalStrategy)} each path`, "#a78bfa"],
+                ["Blanchett smile spending (not flat)", "#a78bfa"],
+                [`SS COLA ${params.ssCola || 2.4}%/yr · Rental growth ${params.abGrowth || 3}%/yr`, "#94a3b8"],
+                [params.tax ? "Tax drag modeled (pre/post SS/RMD)" : "Tax drag OFF", "#94a3b8"],
+                [`Glide path: ${params.preRetireEq || 91}/${100 - (params.preRetireEq || 91)} → ${params.postRetireEq || 70}/${100 - (params.postRetireEq || 70)} at age 62`, "#94a3b8"],
+              ].map(([text, color]) => (
+                <div key={text} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 7, fontSize: 11 }}>
+                  <div style={{ width: 5, height: 5, borderRadius: "50%", background: color, marginTop: 5, flexShrink: 0 }} />
+                  <span style={{ color: "#64748b", lineHeight: 1.4 }}>{text}</span>
+                </div>
             ))}
+            </div>
           </div>
-        </div>
       )}
     </div>
   );
@@ -4618,11 +4633,41 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     Math.floor((new Date(`${retireYear}-03-15`) - new Date()) / 86400000)
   );
 
+  const [aiAnalysis, setAiAnalysis] = useState('');
+  const [loadingAI, setLoadingAI] = useState(false);
+
+  const runAIAnalysis = async () => {
+    setLoadingAI(true);
+    setAiAnalysis('');
+    try {
+      const res = await fetch('/.netlify/functions/ai-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          successRate: r90?.rate,
+          withdrawalRate: (params.sp / params.port) * 100,
+          portfolioGoal: assumptions.portfolioGoal
+        })
+      });
+      const data = await res.json();
+      if (data.analysis) {
+        setAiAnalysis(data.analysis);
+      } else {
+        setAiAnalysis('AI analysis failed. Please try again.');
+      }
+    } catch (err) {
+      console.error(err);
+      setAiAnalysis('AI analysis failed. Please try again.');
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
   if (!params || !r90) {
     return (
-      <div className="chart-card" style={{ textAlign:"center", padding:"40px 20px" }}>
-        <div style={{ fontSize:14, color:"#94a3b8", marginBottom:8 }}>🎲 Monte Carlo not run yet</div>
-        <div style={{ fontSize:12, color:"#64748b" }}>Press ▶ Run Monte Carlo to generate your personalized action plan.</div>
+      <div className="chart-card" style={{ textAlign: "center", padding: "40px 20px" }}>
+        <div style={{ fontSize: 14, color: "#94a3b8", marginBottom: 8 }}>🎲 Monte Carlo not run yet</div>
+        <div style={{ fontSize: 12, color: "#64748b" }}>Press ▶ Run Monte Carlo to generate your personalized action plan.</div>
       </div>
     );
   }
@@ -4634,37 +4679,99 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   });
 
   const colors = {
-    red:    { bg:"rgba(239,68,68,0.08)",   border:"rgba(239,68,68,0.25)",   label:"#f87171", badge:"🔴 Critical" },
-    yellow: { bg:"rgba(245,158,11,0.08)",  border:"rgba(245,158,11,0.25)",  label:"#fbbf24", badge:"🟡 Important" },
-    green:  { bg:"rgba(16,185,129,0.08)",  border:"rgba(16,185,129,0.25)",  label:"#34d399", badge:"🟢 On Track" },
+    red:    { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.25)",   label: "#f87171", badge: "🔴 Critical" },
+    yellow: { bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.25)",  label: "#fbbf24", badge: "🟡 Important" },
+    green:  { bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.25)",  label: "#34d399", badge: "🟢 On Track" },
   };
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* AI Analysis Button */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+        <button
+          onClick={runAIAnalysis}
+          disabled={loadingAI}
+          style={{
+            padding: "8px 18px",
+            borderRadius: 8,
+            border: "none",
+            background: loadingAI
+              ? "rgba(255,255,255,0.05)"
+              : "linear-gradient(135deg, #7c3aed, #a78bfa)",
+            color: "white",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: loadingAI ? "not-allowed" : "pointer",
+            fontFamily: "'Inter', sans-serif",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            boxShadow: loadingAI ? "none" : "0 2px 8px rgba(124,58,237,0.3)",
+            transition: "all 0.2s",
+          }}
+        >
+          {loadingAI ? "Analyzing..." : "🤖 Run AI Analysis"}
+        </button>
+        {loadingAI && (
+          <span style={{ color: "#a78bfa", fontSize: 12 }}>Thinking...</span>
+        )}
+      </div>
+
+      {/* AI Response Card */}
+      {aiAnalysis && (
+        <div
+          style={{
+            background: "rgba(124,58,237,0.06)",
+            border: "1px solid rgba(124,58,237,0.25)",
+            borderRadius: 10,
+            padding: "16px 18px",
+            marginBottom: 8,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa", marginBottom: 8 }}>
+            🤖 AI Insights
+          </div>
+          <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+            {aiAnalysis}
+          </div>
+        </div>
+      )}
+
+      {/* Existing Action Cards */}
       {dynActions.map((a, i) => {
         const c = colors[a.priority];
         return (
-          <div key={i} style={{ background:c.bg, border:`1px solid ${c.border}`,
-            borderRadius:9, padding:"11px 15px",
-            display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase",
-                letterSpacing:"0.08em", color:c.label, marginBottom:3 }}>
+          <div
+            key={i}
+            style={{
+              background: c.bg,
+              border: `1px solid ${c.border}`,
+              borderRadius: 9,
+              padding: "11px 15px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start"
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: c.label, marginBottom: 3 }}>
                 {c.badge} · {a.category}
               </div>
-              <div style={{ fontSize:13, fontWeight:600, color:"#f1f5f9", marginBottom:2 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
                 {a.action}
               </div>
-              <div style={{ fontSize:11, color:"#64748b" }}>{a.reason}</div>
+              <div style={{ fontSize: 11, color: "#64748b" }}>{a.reason}</div>
             </div>
-            <div style={{ fontSize:11, color:"#475569", whiteSpace:"nowrap",
-              marginLeft:16, paddingTop:2 }}>⏱ {a.deadline}</div>
+            <div style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap", marginLeft: 16, paddingTop: 2 }}>
+              ⏱ {a.deadline}
+            </div>
           </div>
         );
       })}
     </div>
   );
 }
+
 function ProfileWizard({ values, onChange }) {
   const [step, setStep] = useState(0);
   const [saveStatus, setSaveStatus] = useState("");
