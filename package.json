@@ -5,6 +5,7 @@
   "keywords": [],
   "main": "src/index.tsx",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
     "@emailjs/browser": "^4.4.1",
     "@vercel/analytics": "^2.0.1",
     "ajv": "^8.12.0",
