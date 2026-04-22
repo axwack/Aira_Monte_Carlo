@@ -129,25 +129,11 @@ const CALIB = {
 };
 
 const JOINT_RMD_TABLE = {
-  // Format: [ownerAge]: { [spouseAge]: divisor }
-  73: { 64: 25.3 },
-  74: { 65: 24.6 },
-  75: { 66: 24.0 },
-  76: { 67: 23.4 },
-  77: { 68: 22.8 },
-  78: { 69: 22.3 },
-  79: { 70: 21.8 },
-  80: { 71: 21.3 },
-  81: { 72: 20.9 },
-  82: { 73: 20.5 },
-  83: { 74: 20.1 },
-  84: { 75: 19.7 },
-  85: { 76: 19.3 },
-  86: { 77: 19.0 },
-  87: { 78: 18.7 },
-  88: { 79: 18.4 },
-  89: { 80: 18.1 },
-  90: { 81: 17.8 },
+  // Joint & Last Survivor — assumes spouse is 10 years younger (IRS Pub 590-B Table II excerpt)
+  73: 25.3, 74: 24.6, 75: 24.0, 76: 23.4, 77: 22.8,
+  78: 22.3, 79: 21.8, 80: 21.3, 81: 20.9, 82: 20.5,
+  83: 20.1, 84: 19.7, 85: 19.3, 86: 19.0, 87: 18.7,
+  88: 18.4, 89: 18.1, 90: 17.8,
 };
 
 const STATE_TAX_RATES = {
@@ -459,7 +445,9 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   
   // User settings for cash return and RMD table
   const cashRealReturn = (p.cashRealReturn ?? 1.0) / 100;
-  const useJointTable = p.useJointRmdTable ?? false;
+  // Single filers have no spouse — never use Joint table regardless of toggle
+  const useJointTable = (p.useJointRmdTable ?? false) && p.filingStatus !== "single";
+  const UNIFORM_TABLE = RMD_DIV;
 
   // Pre-compute annual mortgage P&I obligation (constant across all paths)
   let mortAnnualPI = 0, mortPayoffYr = 0;
@@ -468,15 +456,6 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     mortAnnualPI = ms.pmt * 12;
     mortPayoffYr = ms.payoffYr;
   }
-
-  // Simplified Joint & Last Survivor table (assumes spouse is 10 years younger)
-  const JOINT_RMD_TABLE = {
-    73: 25.3, 74: 24.6, 75: 24.0, 76: 23.4, 77: 22.8,
-    78: 22.3, 79: 21.8, 80: 21.3, 81: 20.9, 82: 20.5,
-    83: 20.1, 84: 19.7, 85: 19.3, 86: 19.0, 87: 18.7,
-    88: 18.4, 89: 18.1, 90: 17.8,
-  };
-  const UNIFORM_TABLE = RMD_DIV;
 
   for (let i = 0; i < N; i++) {
     // Initialize buckets from p.accounts for this path
@@ -529,9 +508,8 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       
       // ========== WITHDRAWAL STRATEGY ==========
       if (y === 0) {
-         if (withdrawalStrategy === "fixed") {
-          // Pure fixed %: draw = rate × port. No GK clamp — that defeats the purpose.
-          sp = totalPort * fixedRate;
+        if (withdrawalStrategy === "fixed") {
+          sp = totalPort * (p.fixedWithdrawalRate ?? 0.04);
         }
         // All other strategies: year-0 sp stays at p.sp (target spend)
       } else {
@@ -5433,14 +5411,14 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
           <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
         </ARow>
-        <ARow label="Federal Filing Status" desc="MFJ doubles standard deduction ($32,200) and uses wider brackets. Single uses $16,100 deduction and narrower brackets.">
+        <ARow label="Federal Filing Status" desc="Your marital status for federal taxes only — unrelated to the Solo Mode state-tax toggle. MFJ (married): $32,200 std deduction, wider brackets. Single (unmarried): $16,100 deduction, narrower brackets.">
           <select
             value={values.filingStatus || "mfj"}
             onChange={(e) => onChange("filingStatus", e.target.value)}
             style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
           >
             <option value="mfj">Married Filing Jointly (MFJ)</option>
-            <option value="single">Single</option>
+            <option value="single">Single (unmarried)</option>
           </select>
         </ARow>
 
@@ -5448,12 +5426,14 @@ function AssumptionsPanel({ values, onChange }) {
           <CleanNumberInput value={values.reGrowthRate} onChange={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} />
         </ARow>
 
-        <Toggle
-          val={values.useJointRmdTable}
-          onChange={(v) => onChange("useJointRmdTable", v)}
-          label="👥 Use Joint & Last Survivor RMD Table (spouse >10 yrs younger)"
-          accent="#a78bfa"
-        />
+        {(values.filingStatus || "mfj") !== "single" && (
+          <Toggle
+            val={values.useJointRmdTable}
+            onChange={(v) => onChange("useJointRmdTable", v)}
+            label="👥 Use Joint & Last Survivor RMD Table (spouse >10 yrs younger)"
+            accent="#a78bfa"
+          />
+        )}
 
         {/* --- GEMINI API KEY INPUT --- */}
         <ARow label="Gemini API Key" desc="Bring your own free key from Google AI Studio to unlock AI analysis.">
