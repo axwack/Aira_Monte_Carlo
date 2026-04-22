@@ -504,3 +504,139 @@ describe("runMC — Monte Carlo integration", () => {
     expect(gkMedian).not.toBe(fixedMedian);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// User scenario validation — $266K portfolio, SS $1,400/mo, Single filer
+//
+// Numbers given:
+//   Portfolio:        $266,000 (all pre-tax IRA)
+//   SS benefit:       $1,400/mo = $16,800/yr (starts at 67)
+//   Annual spending:  $72,000/yr  ← spending TARGET, not what Fixed % delivers
+//   401k contrib:     $200/yr  ← NOTE: very low; likely a typo for $2,400 or $20,000/yr
+//   HSA:              $10/mo = $120/yr
+//   Employer match:   1.5% of 401k contrib
+//   Filing status:    Single
+//   No other income
+//
+// ─── IMPORTANT: How Fixed % success rate works ───────────────────────────────
+// Fixed % strategy draws exactly (rate × portfolio) each year. Because you
+// always take a percentage of what remains, the portfolio approaches zero
+// asymptotically but almost never hits $0. That means the MC "success rate"
+// (portfolio survives to end age) will be HIGH (near 100%) even on a tiny
+// portfolio. High success rate ≠ adequate income.
+//
+// The real concern is SPENDING ADEQUACY:
+//   Portfolio draw:  0.04 × $266K = $10,640/yr
+//   Social Security: $16,800/yr (starts at 67)
+//   Total income:    ~$27,440/yr vs $72,000 spending target
+//   Annual gap:      ~$44,560/yr — user will have to spend less or work longer
+//
+// For a $72K lifestyle with Fixed 4%, the user needs ~$1.38M in the portfolio
+// ($72K - $16.8K SS = $55.2K needed from portfolio → $55.2K / 0.04 = $1.38M).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const USER_PROFILE = {
+  currentAge:      55,   // assumed — adjust to match real age
+  retireAge:       65,
+  endAge:          90,
+  port:        266_000,
+  contrib:         200,  // $200/yr as given (likely should be $2,400 or $20,000 — see test below)
+  hsaMonthly:       10,  // $10/mo = $120/yr
+  employerMatch:   1.5,  // 1.5% of 401k contribution
+  inf:             2.5,
+  sp:           72_000,  // spending target (not what Fixed % will deliver)
+  ssAge:            67,
+  ssb:          16_800,  // $1,400/mo × 12
+  ssCola:          2.4,
+  ab:                0,
+  useAb:         false,
+  tax:              22,
+  smile:         false,
+  preRetireEq:      91,
+  postRetireEq:     70,
+  gkFloor:      46_800,
+  gkCeiling:    97_200,
+  withdrawalStrategy:  "fixed",
+  fixedWithdrawalRate: 0.04,
+  cashRealReturn:  1.0,
+  useJointRmdTable: false,
+  twoHousehold:  false,
+  filingStatus: "single",
+  stateOfResidence: "FL",  // no state tax — isolates federal math
+  accounts: [
+    { id: "u1", category: "pretax", name: "IRA", balance: 266_000 },
+  ],
+};
+
+describe("User scenario — $266K portfolio, single filer, Fixed 4%", () => {
+
+  test("Fixed % simulation runs without error and returns valid rate", () => {
+    // This was broken before (ReferenceError at y=0). Now it must complete cleanly.
+    const profile = { ...USER_PROFILE, currentAge: 65, retireAge: 65 };
+    const r = runMC(profile, 90, 500, 42, true);
+    expect(r.rate).toBeGreaterThanOrEqual(0);
+    expect(r.rate).toBeLessThanOrEqual(1);
+    expect(r.pcts).toHaveLength(26); // 90 - 65 + 1 years including retirement year
+    expect(r.pcts.every(p => isFinite(p.p50))).toBe(true); // no NaN in any percentile
+  });
+
+  test("Fixed 4%: success rate is HIGH (portfolio never hits $0) — but income is inadequate", () => {
+    // Because sp = 4% × remaining portfolio each year, the portfolio shrinks slowly
+    // but mathematically never depletes. Expect high success rate (> 70%).
+    // This does NOT mean the plan is adequate — it means the engine won't show depletion.
+    const profile = { ...USER_PROFILE, currentAge: 65, retireAge: 65 };
+    const r = runMC(profile, 90, 1000, 42, true);
+    expect(r.rate).toBeGreaterThan(0.70);
+    // The median terminal portfolio should be well below the starting $266K
+    expect(r.term.p50).toBeLessThan(266_000);
+  });
+
+  test("GK strategy on same portfolio WILL show low success rate (underfunded)", () => {
+    // Guyton-Klinger tries to deliver the full $72K spending target each year.
+    // $72K spend - $16.8K SS = $55.2K needed from a $266K portfolio = 20.8% WR.
+    // That is 5× the safe withdrawal rate. GK will deplete the portfolio rapidly.
+    // Expect success rate well below 50%.
+    const profile = { ...USER_PROFILE, currentAge: 65, retireAge: 65, withdrawalStrategy: "gk" };
+    const r = runMC(profile, 90, 1000, 42, true);
+    expect(r.rate).toBeLessThan(0.40);
+  });
+
+  test("portfolio required for $72K spend at Fixed 4% with $16.8K SS = ~$1.38M", () => {
+    // ($72K spend - $16.8K SS) / 0.04 = $1.38M needed
+    const needed = (72_000 - 16_800) / 0.04;
+    expect(needed).toBeCloseTo(1_380_000, -3); // within $1K
+  });
+
+  test("Single filer pays more federal tax than MFJ on same income", () => {
+    const age = 68, yr = 2026, infl = 0.025;
+    const draw = 10_640, ss = 16_800;
+    const single = calcYearTax(age, yr, draw, ss, 0, 0, 0, false, infl, "single", "FL");
+    const mfj    = calcYearTax(age, yr, draw, ss, 0, 0, 0, false, infl, "mfj",    "FL");
+    expect(single.fedTax).toBeGreaterThanOrEqual(mfj.fedTax);
+  });
+
+  test("Single filer: Joint RMD table ignored even when toggle is on", () => {
+    const base = { ...USER_PROFILE, currentAge: 65, retireAge: 65 };
+    const withToggle    = runMC({ ...base, useJointRmdTable: true  }, 90, 200, 42, true);
+    const withoutToggle = runMC({ ...base, useJointRmdTable: false }, 90, 200, 42, true);
+    // Identical results — joint table is suppressed for single filers
+    expect(withToggle.rate).toBeCloseTo(withoutToggle.rate, 2);
+  });
+
+  test("$20K/yr contrib gives materially larger portfolio at retirement than $200/yr", () => {
+    // $200/yr × 10 years ≈ ~$2,400 added (negligible)
+    // $20,000/yr × 10 years ≈ ~$279K added at 7% growth (material)
+    const low  = runMC({ ...USER_PROFILE, contrib:    200 }, 90, 500, 42, true);
+    const high = runMC({ ...USER_PROFILE, contrib: 20_000 }, 90, 500, 42, true);
+    // Higher contributions → larger portfolio at retirement → higher terminal median
+    expect(high.term.p50).toBeGreaterThan(low.term.p50);
+  });
+
+  test("SS starting at 67 vs 65: delaying SS lowers success slightly (2-year income gap)", () => {
+    const base = { ...USER_PROFILE, currentAge: 65, retireAge: 65 };
+    const ssAt65 = runMC({ ...base, ssAge: 65 }, 90, 500, 42, true);
+    const ssAt67 = runMC({ ...base, ssAge: 67 }, 90, 500, 42, true);
+    // Earlier SS is slightly better (more income sooner)
+    expect(ssAt65.rate).toBeGreaterThanOrEqual(ssAt67.rate);
+  });
+});
