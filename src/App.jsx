@@ -83,8 +83,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.0";
-export const BUILD_TAG = "Got rid if demo mode. Added AI features and fixed minor bugs";
+const APP_VERSION = "1.0.1";
+export const BUILD_TAG = "Fixes for Withdrawal on fixed withdrawal and married stateus";
 export const BUILD_TIME = "2026-04-2121:45 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -4142,7 +4142,7 @@ function NetWorthTab({ p, results90, inf }) {
     
     // Build ages dynamically: from current age to plan end age, step 5
     const maxChartAge = p.endAge;
-    const step = 5;
+    const step = 1;
     const ages = [];
     for (let age = p.currentAge; age <= maxChartAge; age += step) {
       ages.push(age);
