@@ -5147,95 +5147,32 @@ function SavingsPanel({ values, onChange }) {
 }
 
 function AboutYouPanel({ values, onChange }) {
-  // Local state for the date string to prevent focus loss while typing
-  const [localDob, setLocalDob] = useState(values.dob || "");
-
-  // Sync local state when parent dob changes externally (e.g., import, reload)
-  useEffect(() => {
-    setLocalDob(values.dob || "");
-  }, [values.dob]);
-
-  const derivedAge = useMemo(() => {
-    if (!values.dob) return null;
-    try {
-      const dobDate = new Date(values.dob);
-      if (isNaN(dobDate.getTime())) return null;
-      const today = new Date();
-      let age = today.getFullYear() - dobDate.getFullYear();
-      const m = today.getMonth() - dobDate.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) age--;
-      return age;
-    } catch {
-      return null;
-    }
-  }, [values.dob]);
+  const derivedAge = values.dob
+    ? (() => {
+        try {
+          const dobDate = new Date(values.dob);
+          if (isNaN(dobDate.getTime())) return null;
+          const today = new Date();
+          let age = today.getFullYear() - dobDate.getFullYear();
+          const m = today.getMonth() - dobDate.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) age--;
+          return age;
+        } catch { return null; }
+      })()
+    : null;
 
   const currentAgeForCalc = derivedAge ?? values.currentAge;
   const yearsToRetire = Math.max(0, values.retireAge - currentAgeForCalc);
   const yearsInRetire = Math.max(0, values.endAge - values.retireAge);
   const totalHorizon = yearsToRetire + yearsInRetire;
 
-  const handleDobChange = (e) => {
-    // Allow free typing; only update local state
-    setLocalDob(e.target.value);
-  };
-
-  const handleDobBlur = () => {
-    const trimmed = localDob.trim();
-    if (trimmed === "") {
-      onChange("dob", "");
-      return;
-    }
-    // Validate as YYYY-MM-DD
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      onChange("dob", trimmed);
-    } else {
-      // Attempt to parse and format
-      const parsed = new Date(trimmed);
-      if (!isNaN(parsed.getTime())) {
-        const formatted = parsed.toISOString().slice(0, 10);
-        onChange("dob", formatted);
-        setLocalDob(formatted);
-      } else {
-        // Invalid – revert to previous valid value
-        setLocalDob(values.dob || "");
-      }
-    }
-  };
-
-
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
-          PERSONAL INFO
+      {derivedAge !== null && (
+        <div style={{ fontSize: 12, color: "#475569" }}>
+          Age <strong style={{ color: "#e2e8f0" }}>{derivedAge}</strong> · Date of birth is set in <em>Assumptions → Model Parameters</em>.
         </div>
-        <WFieldRow
-          label="Date of Birth"
-          helper={derivedAge !== null ? `Current age: ${derivedAge} (calculated)` : "Enter your date of birth (YYYY-MM-DD)."}
-        >
-          <input
-            type="text"
-            placeholder="YYYY-MM-DD"
-            value={localDob}
-            onChange={handleDobChange}
-            onBlur={handleDobBlur}
-            style={{
-              width: "140px",
-              background: "#0d1b2a",
-              border: "1px solid #1e3a5f",
-              color: "#e2e8f0",
-              borderRadius: 6,
-              padding: "4px 8px",
-              fontSize: 12,
-              fontFamily: "'DM Mono',monospace",
-              textAlign: "right",
-            }}
-          />
-        </WFieldRow>
-      </div>
-
+      )}
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
           RETIREMENT TIMELINE
