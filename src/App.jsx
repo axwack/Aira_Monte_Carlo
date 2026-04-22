@@ -6198,7 +6198,7 @@ export default function AiRAForecaster() {
               AiRA <span className="logo-sub">Freedom Financial</span>
             </div>
             <div style={{ fontSize: 12, color: "#6e8099" }}>
-              v{APP_VERSION} · Property cards · Dynamic action plan · Premium AI layer · GK dynamic · CSS/FAFSA guards
+              v{APP_VERSION} · A Simple DiYer's Guide to Retirement Planning with an AI‑Powered Financial Forecaster built for the modern retiree. 
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
