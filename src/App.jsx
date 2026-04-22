@@ -5001,6 +5001,24 @@ function ProfileWizard({ values, onChange }) {
   );
 }
 
+/* ── Stable module-level FieldRow for all ProfileWizard panels ─────────────
+   Defined OUTSIDE panel components so the reference never changes between
+   renders — prevents React from unmounting/remounting inputs on each keystroke.
+*/
+function WFieldRow({ label, helper, children }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#e2e8f0", marginBottom: 2 }}>{label}</div>
+        {helper && <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{helper}</div>}
+      </div>
+      <div style={{ marginLeft: 16, minWidth: 130, textAlign: "right" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function SavingsPanel({ values, onChange }) {
   const GOAL = values.earlyRetireTarget || 1_000_000;
   const accounts = values.accounts || BLANK_PROFILE.accounts;
@@ -5047,17 +5065,7 @@ function SavingsPanel({ values, onChange }) {
     updateAccounts(newAccounts);
   };
 
-  const FieldRow = ({ label, helper, children }) => (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "#e2e8f0", marginBottom: 2 }}>{label}</div>
-        {helper && <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{helper}</div>}
-      </div>
-      <div style={{ marginLeft: 16, minWidth: 130, textAlign: "right" }}>
-        {children}
-      </div>
-    </div>
-  );
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -5103,9 +5111,9 @@ function SavingsPanel({ values, onChange }) {
       })}
 
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
-        <FieldRow label="🎯 Target Portfolio for Early Retirement" helper={`Goal: ${fmtM(GOAL)}`}>
+        <WFieldRow label="🎯 Target Portfolio for Early Retirement" helper={`Goal: ${fmtM(GOAL)}`}>
           <ANumInput value={values.earlyRetireTarget || 0} onSet={(v) => onChange("earlyRetireTarget", v)} min={0} max={10_000_000} step={50_000} />
-        </FieldRow>
+        </WFieldRow>
         <div style={{ marginTop: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
             <span style={{ fontSize: 12, color: "#e2e8f0" }}>Progress</span>
@@ -5195,17 +5203,7 @@ function AboutYouPanel({ values, onChange }) {
     }
   };
 
-  const FieldRow = ({ label, helper, children }) => (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "#e2e8f0", marginBottom: 2 }}>{label}</div>
-        {helper && <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{helper}</div>}
-      </div>
-      <div style={{ marginLeft: 16, minWidth: 130, textAlign: "right" }}>
-        {children}
-      </div>
-    </div>
-  );
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -5213,7 +5211,7 @@ function AboutYouPanel({ values, onChange }) {
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
           PERSONAL INFO
         </div>
-        <FieldRow
+        <WFieldRow
           label="Date of Birth"
           helper={derivedAge !== null ? `Current age: ${derivedAge} (calculated)` : "Enter your date of birth (YYYY-MM-DD)."}
         >
@@ -5235,19 +5233,19 @@ function AboutYouPanel({ values, onChange }) {
               textAlign: "right",
             }}
           />
-        </FieldRow>
+        </WFieldRow>
       </div>
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
           RETIREMENT TIMELINE
         </div>
-        <FieldRow label="Retirement Age" helper="Age at which you plan to retire (D‑Day).">
+        <WFieldRow label="Retirement Age" helper="Age at which you plan to retire (D‑Day).">
           <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={50} max={75} step={1} />
-        </FieldRow>
-        <FieldRow label="Planning Horizon" helper="Age through which you want the plan to last.">
+        </WFieldRow>
+        <WFieldRow label="Planning Horizon" helper="Age through which you want the plan to last.">
           <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={75} max={100} step={1} />
-        </FieldRow>
+        </WFieldRow>
       </div>
 
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
@@ -5749,17 +5747,7 @@ function ContribPanel({ values, onChange }) {
   const matchAmount = Math.round((annual401k * employerMatch) / 100);
   const totalSavings = annual401k + hsaAnnual + matchAmount;
 
-  const FieldRow = ({ label, helper, children }) => (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "#e2e8f0", marginBottom: 2 }}>{label}</div>
-        {helper && <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{helper}</div>}
-      </div>
-      <div style={{ marginLeft: 16, minWidth: 130, textAlign: "right" }}>
-        {children}
-      </div>
-    </div>
-  );
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -5767,15 +5755,15 @@ function ContribPanel({ values, onChange }) {
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
           ANNUAL CONTRIBUTIONS
         </div>
-        <FieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
+        <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
-        </FieldRow>
-        <FieldRow label="HSA Monthly Contribution" helper="Family limit $8,550 + $1,000 catch‑up (2026).">
+        </WFieldRow>
+        <WFieldRow label="HSA Monthly Contribution" helper="Family limit $8,550 + $1,000 catch‑up (2026).">
           <ANumInput value={hsaMonthly} onSet={(v) => onChange("hsaMonthly", v)} min={0} max={1_000} step={50} suffix="/mo" />
-        </FieldRow>
-        <FieldRow label="Employer Match (%)" helper="Percentage of your 401(k) contribution matched.">
+        </WFieldRow>
+        <WFieldRow label="Employer Match (%)" helper="Percentage of your 401(k) contribution matched.">
           <ANumInput value={employerMatch} onSet={(v) => onChange("employerMatch", v)} min={0} max={10} step={0.5} suffix="%" />
-        </FieldRow>
+        </WFieldRow>
       </div>
 
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
@@ -5817,17 +5805,7 @@ const RetirementPanel = React.memo(function RetirementPanel({ values, onChange }
     ? "🌴 Out‑of‑State / Offshore (No state income tax)"
     : `🏠 Both in ${values.stateOfResidence || "your state"} (State tax applies)`;
 
-  const FieldRow = ({ label, helper, children }) => (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "#e2e8f0", marginBottom: 2 }}>{label}</div>
-        {helper && <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{helper}</div>}
-      </div>
-      <div style={{ marginLeft: 16, minWidth: 130, textAlign: "right" }}>
-        {children}
-      </div>
-    </div>
-  );
+
 
   const spRef = useRef(null);
   const spOutRef = useRef(null);
@@ -5892,41 +5870,41 @@ const RetirementPanel = React.memo(function RetirementPanel({ values, onChange }
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
-        <FieldRow label="Primary Annual Spending" helper="Our main household spending target. Used when living in NJ (state tax applies).">
+        <WFieldRow label="Primary Annual Spending" helper="Our main household spending target. Used when living in NJ (state tax applies).">
           <input ref={spRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format(values.sp || 0)} style={inputStyle} />
           <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/yr</span>
-        </FieldRow>
-        <FieldRow label="Secondary Spending (No State Tax)" helper="Optional lower spending for travel or zero‑tax locations. Used when 'Solo Mode' toggle is ON.">
+        </WFieldRow>
+        <WFieldRow label="Secondary Spending (No State Tax)" helper="Optional lower spending for travel or zero‑tax locations. Used when 'Solo Mode' toggle is ON.">
           <input ref={spOutRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format(values.spSpendOutofState || 0)} style={inputStyle} />
           <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/yr</span>
-        </FieldRow>
+        </WFieldRow>
       </div>
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SOCIAL SECURITY</div>
-        <FieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age.">
+        <WFieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age.">
           <input ref={ssMonthlyRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format((values.ssb || 0) / 12)} style={inputStyle} />
           <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/mo</span>
-        </FieldRow>
-        <FieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
+        </WFieldRow>
+        <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
           <input ref={ssAgeRef} type="text" inputMode="numeric" defaultValue={values.ssAge || 67} style={inputStyle} />
-        </FieldRow>
+        </WFieldRow>
       </div>
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>RENTAL INCOME</div>
-        <FieldRow label="Rental Net Income (annual)" helper="Net profit from rental properties after expenses.">
+        <WFieldRow label="Rental Net Income (annual)" helper="Net profit from rental properties after expenses.">
           <input ref={abRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format(values.ab || 0)} style={inputStyle} />
           <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/yr</span>
-        </FieldRow>
-        <FieldRow label="Rental Growth Rate" helper="Annual growth rate for rental income (default 3%).">
+        </WFieldRow>
+        <WFieldRow label="Rental Growth Rate" helper="Annual growth rate for rental income (default 3%).">
           <input ref={abGrowthRef} type="text" inputMode="numeric" defaultValue={values.abGrowth || 3} style={inputStyle} />
           <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>%</span>
-        </FieldRow>
-        <FieldRow label="Rental Reliability" helper="Probability rental income is received each year (default 80%).">
+        </WFieldRow>
+        <WFieldRow label="Rental Reliability" helper="Probability rental income is received each year (default 80%).">
           <input ref={abReliabilityRef} type="text" inputMode="numeric" defaultValue={values.abReliability || 80} style={inputStyle} />
           <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>%</span>
-        </FieldRow>
+        </WFieldRow>
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
