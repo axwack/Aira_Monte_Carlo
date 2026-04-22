@@ -59,24 +59,10 @@ The "spending smiles," guardrails, or projections provided by Aira may not be su
 consult your fiduciary, CPA or tax accountant. 
 
  * ============================================================ */
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+
 import emailjs from '@emailjs/browser';
-import {
-  ComposedChart,
-  Area,
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-  ReferenceDot,
-  Legend,
-} from "recharts";
+import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
 
 if (typeof document !== "undefined") {
   const link = document.createElement("link");
@@ -543,15 +529,19 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       
       // ========== WITHDRAWAL STRATEGY ==========
       if (y === 0) {
-        // First year: use target spend (p.sp)
+         if (withdrawalStrategy === "fixed") {
+          // Pure fixed %: draw = rate × port. No GK clamp — that defeats the purpose.
+          sp = totalPort * fixedRate;
+        }
+        // All other strategies: year-0 sp stays at p.sp (target spend)
       } else {
         if (withdrawalStrategy === "gk") {
           sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
         }
         else if (withdrawalStrategy === "fixed") {
           const fixedRate = p.fixedWithdrawalRate ?? 0.04;
-          let newSp = totalPort * fixedRate;
-          sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
+          
+          sp = totalPort * fixedRate;
         }
         else if (withdrawalStrategy === "vanguard") {
           const initialRate = p.vanguardInitialRate ?? 0.04;
@@ -679,7 +669,10 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * inflY) : 0);
       }, 0);
 
-      const need = Math.max(0, sp - ss - ab) + housingCost + carveoutCost;
+      const need =
+        withdrawalStrategy === "fixed"
+          ? sp + housingCost + carveoutCost
+          : Math.max(0, sp - ss - ab) + housingCost + carveoutCost;
 
       // RMD calculation
       let rmd = 0;
@@ -900,13 +893,22 @@ function simulateDeterministic(p, inf) {
     const adjCeiling = gkCeiling * cumInfl;
 
     // ========== WITHDRAWAL STRATEGY (mirrors runMC) ==========
+    if (y === 0 && strategy === "fixed") {
+      sp = port * (p.fixedWithdrawalRate ?? 0.04);
+    }
+
     if (y > 0 && port > 0) {
       if (strategy === "gk") {
         sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
-      } else if (strategy === "fixed") {
+      } 
+
+      else if (strategy === "fixed") {
+        // Pure fixed %: draw = rate × port. SS/AB are additive. No GK clamp.
         const fixedRate = p.fixedWithdrawalRate ?? 0.04;
-        sp = Math.max(adjFloor, Math.min(adjCeiling, port * fixedRate));
-      } else if (strategy === "vanguard") {
+        sp = port * fixedRate;
+      } 
+
+      else if (strategy === "vanguard") {
         const initialRate = p.vanguardInitialRate ?? 0.04;
         const cap = p.vanguardCap ?? 0.05;
         const floorRate = p.vanguardFloor ?? -0.025;
@@ -939,7 +941,7 @@ function simulateDeterministic(p, inf) {
     const ab = p.useAb
       ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20)))
       : 0;
-    const need = Math.max(0, sp - ss - ab);
+    const need = strategy === "fixed" ? sp : Math.max(0, sp - ss - ab);
 
     const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
@@ -1007,16 +1009,19 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
     // Apply withdrawal strategy (deterministic version)
     if (y === 0) {
-      // first year: use target spend
+       if (withdrawalStrategy === "fixed") {
+        sp = port * (p.fixedWithdrawalRate ?? 0.04);
+      }
+      // All other strategies: year-0 sp stays at p.sp (target spend)
     } else {
       if (withdrawalStrategy === "gk") {
         // Use existing GK function with deterministic return
         sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
       }
       else if (withdrawalStrategy === "fixed") {
+        // Pure fixed %: draw = rate × port. No GK clamp.
         const fixedRate = p.fixedWithdrawalRate ?? 0.04;
-        let newSp = port * fixedRate;
-        sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
+        sp = port * fixedRate;
       }
       else if (withdrawalStrategy === "vanguard") {
         const initialRate = p.vanguardInitialRate ?? 0.04;
@@ -1107,7 +1112,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
     const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
     const ab = p.useAb ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20))) : 0;
-    const need = Math.max(0, sp - ss - ab);
+    const need = withdrawalStrategy === "fixed" ? sp : Math.max(0, sp - ss - ab);
     const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
@@ -1932,7 +1937,7 @@ function Slider({ label, value, min, max, step, format, onChange }) {
   );
 }
 
-/* ════ DUAL INPUT — text box + slider auto-sync ════ */
+/* ════ Helper UI Functions ════ */
 function DualInput({ label, value, min, max, step, format, onChange }) {
   return (
     <div style={{ marginBottom: 8 }}>
@@ -1948,6 +1953,64 @@ function DualInput({ label, value, min, max, step, format, onChange }) {
       </div>
       <Slider label="" value={value} min={min} max={max} step={step} format={format} onChange={onChange} />
     </div>
+  );
+}
+
+function CleanNumberInput({ value, onChange, min, max, step = 1, style = {} }) {
+  const [localValue, setLocalValue] = useState("");
+
+  // Sync with external value changes (e.g., from sidebar sliders)
+  useEffect(() => {
+    if (value != null && !isNaN(value)) {
+      setLocalValue(value.toString());
+    }
+  }, [value]);
+
+  const handleChange = (e) => {
+    const raw = e.target.value.replace(/,/g, "");
+    setLocalValue(raw);
+    const num = Number(raw);
+    if (!isNaN(num)) {
+      // Update parent immediately so sliders and other UI stay in sync
+      onChange(num);
+    }
+  };
+
+  const handleBlur = () => {
+    let num = Number(localValue.replace(/,/g, ""));
+    if (isNaN(num)) num = min || 0;
+    const clamped = Math.max(min || 0, Math.min(max || Infinity, num));
+    if (clamped !== num) {
+      onChange(clamped);
+      setLocalValue(clamped.toString());
+    }
+  };
+
+  const displayValue = localValue
+    ? new Intl.NumberFormat("en-US").format(Number(localValue.replace(/,/g, "")))
+    : "";
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={displayValue}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      style={{
+        width: "120px",
+        maxWidth: "100%",
+        background: "#0d1b2a",
+        border: "1px solid #1e3a5f",
+        color: "#e2e8f0",
+        borderRadius: 6,
+        padding: "4px 8px",
+        fontSize: 12,
+        fontFamily: "'DM Mono',monospace",
+        textAlign: "right",
+        ...style,
+      }}
+    />
   );
 }
 
@@ -4708,6 +4771,11 @@ function ProfileWizard({ values, onChange }) {
     }
   })();
 
+  // Stable callback for RetirementPanel
+  const handleRetirementChange = useCallback((key, value) => {
+    onChange(key, value);
+  }, [onChange]);
+
   const STEPS = [
     { label: "Assumptions", icon: "⚙️", sub: "Model parameters" },
     { label: "About You", icon: "👤", sub: `${values.currentAge} yrs old` },
@@ -4721,15 +4789,12 @@ function ProfileWizard({ values, onChange }) {
     <AboutYouPanel values={values} onChange={onChange} />,
     <SavingsPanel values={values} onChange={onChange} />,
     <ContribPanel values={values} onChange={onChange} />,
-    <RetirementPanel values={values} onChange={onChange} />,
+    <RetirementPanel values={values} onChange={handleRetirementChange} />,
   ];
 
-  // Safety: clamp step if it somehow becomes invalid
   useEffect(() => {
-    if (step >= STEPS.length) {
-      setStep(STEPS.length - 1);
-    }
-  }, [step, STEPS.length]);
+    if (step >= STEPS.length) setStep(STEPS.length - 1);
+  }, [step]);
 
   const goNext = () => setStep((s) => Math.min(STEPS.length - 1, s + 1));
   const goPrev = () => setStep((s) => Math.max(0, s - 1));
@@ -4750,11 +4815,8 @@ function ProfileWizard({ values, onChange }) {
         flexShrink: 0,
       }}
     >
-      {/* LEFT SIDEBAR */}
-      <div
-        className="wizard-sidebar"
-        style={{ borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}
-      >
+      {/* LEFT SIDEBAR – unchanged */}
+      <div className="wizard-sidebar" style={{ borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}>
         {STEPS.map((s, i) => (
           <div
             key={i}
@@ -4777,20 +4839,13 @@ function ProfileWizard({ values, onChange }) {
                 height: 11,
                 borderRadius: "50%",
                 flexShrink: 0,
-                background:
-                  i < step ? "#0d9488" : i === step ? "#14b8a6" : "rgba(255,255,255,0.1)",
+                background: i < step ? "#0d9488" : i === step ? "#14b8a6" : "rgba(255,255,255,0.1)",
                 border: `2px solid ${i <= step ? "#0d9488" : "rgba(255,255,255,0.15)"}`,
                 boxShadow: i === step ? "0 0 8px #0d948866" : "none",
               }}
             />
             <div>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: i === step ? "#e2e8f0" : "#64748b",
-                }}
-              >
+              <div style={{ fontSize: 12, fontWeight: 600, color: i === step ? "#e2e8f0" : "#64748b" }}>
                 {s.icon} {s.label}
               </div>
               <div style={{ fontSize: 14, color: "#4174bd" }}>{s.sub}</div>
@@ -4801,7 +4856,7 @@ function ProfileWizard({ values, onChange }) {
 
       {/* RIGHT PANEL */}
       <div className="wizard-panel" style={{ padding: 24 }}>
-        {/* Save bar */}
+        {/* Save bar – unchanged */}
         <div
           style={{
             display: "flex",
@@ -4817,19 +4872,13 @@ function ProfileWizard({ values, onChange }) {
           }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4" }}>
-              Profile Save
-            </div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4" }}>Profile Save</div>
             <div style={{ fontSize: 10, color: "#64748b" }}>
-              {savedMeta
-                ? `Last saved to this browser: ${savedMeta}`
-                : "No saved profile in this browser yet"}
+              {savedMeta ? `Last saved to this browser: ${savedMeta}` : "No saved profile in this browser yet"}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {saveStatus && (
-              <span style={{ fontSize: 11, color: "#5eead4" }}>{saveStatus}</span>
-            )}
+            {saveStatus && <span style={{ fontSize: 11, color: "#5eead4" }}>{saveStatus}</span>}
             <button
               onClick={handleReload}
               disabled={!savedMeta}
@@ -4865,7 +4914,7 @@ function ProfileWizard({ values, onChange }) {
           </div>
         </div>
 
-        {/* Mobile step selector */}
+        {/* Mobile step selector – unchanged */}
         <div className="wizard-mobile-steps" style={{ marginBottom: 16 }}>
           <select
             value={step}
@@ -4899,7 +4948,7 @@ function ProfileWizard({ values, onChange }) {
         {/* Panel content */}
         {currentPanel}
 
-        {/* Navigation */}
+        {/* Navigation – unchanged */}
         <div
           style={{
             display: "flex",
@@ -4927,9 +4976,7 @@ function ProfileWizard({ values, onChange }) {
             ← Previous
           </button>
 
-          <div style={{ fontSize: 11, color: "#334155" }}>
-            {step + 1} / {STEPS.length}
-          </div>
+          <div style={{ fontSize: 11, color: "#334155" }}>{step + 1} / {STEPS.length}</div>
 
           <button
             onClick={goNext}
@@ -4938,9 +4985,7 @@ function ProfileWizard({ values, onChange }) {
               padding: "7px 18px",
               borderRadius: 7,
               border: "none",
-              background: step === STEPS.length - 1
-                ? "rgba(255,255,255,0.05)"
-                : "linear-gradient(135deg,#0d9488,#14b8a6)",
+              background: step === STEPS.length - 1 ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#0d9488,#14b8a6)",
               color: step === STEPS.length - 1 ? "#334155" : "white",
               cursor: step === STEPS.length - 1 ? "not-allowed" : "pointer",
               fontSize: 12,
@@ -4957,8 +5002,7 @@ function ProfileWizard({ values, onChange }) {
 }
 
 function SavingsPanel({ values, onChange }) {
-  const GOAL = values.earlyRetireTarget || 1_000_000; // Default goal for progress bar (can be adjusted or made dynamic)  
-
+  const GOAL = values.earlyRetireTarget || 1_000_000;
   const accounts = values.accounts || BLANK_PROFILE.accounts;
 
   const CATEGORIES = [
@@ -5003,90 +5047,91 @@ function SavingsPanel({ values, onChange }) {
     updateAccounts(newAccounts);
   };
 
+  const FieldRow = ({ label, helper, children }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#e2e8f0", marginBottom: 2 }}>{label}</div>
+        {helper && <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{helper}</div>}
+      </div>
+      <div style={{ marginLeft: 16, minWidth: 130, textAlign: "right" }}>
+        {children}
+      </div>
+    </div>
+  );
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {CATEGORIES.map(cat => {
         const catAccounts = accounts.filter(a => a.category === cat.key);
         return (
-          <div key={cat.key} style={{
-            background:"rgba(255,255,255,0.02)", borderRadius:8,
-            borderLeft:`3px solid ${cat.color}`, padding:"8px 12px",
-          }}>
-            <div style={{ fontSize:11, color:cat.color, fontWeight:600, marginBottom:6, fontFamily:"'DM Sans',sans-serif" }}>
-              {cat.label}
-            </div>
+          <div key={cat.key} style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, borderLeft: `3px solid ${cat.color}`, padding: "8px 12px" }}>
+            <div style={{ fontSize: 11, color: cat.color, fontWeight: 600, marginBottom: 8 }}>{cat.label}</div>
             {catAccounts.map(acct => (
-              <div key={acct.id} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+              <div key={acct.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                 <input
-                  type="text" value={acct.name}
+                  type="text"
+                  value={acct.name}
                   onChange={e => handleName(acct.id, e.target.value)}
-                  style={{
-                    width:100, fontSize:11, color:"#e2e8f0", background:"transparent",
-                    border:"1px solid rgba(255,255,255,0.06)", borderRadius:4, padding:"2px 6px",
-                    fontFamily:"'DM Sans',sans-serif", outline:"none",
-                  }}
-                  onFocus={e => { e.target.style.borderColor = cat.color + "66"; }}
-                  onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.06)"; }}
+                  style={{ width: 100, fontSize: 11, color: "#e2e8f0", background: "transparent", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "2px 6px", fontFamily: "'DM Sans',sans-serif", outline: "none" }}
+                  onFocus={e => e.target.style.borderColor = cat.color + "66"}
+                  onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.06)"}
                 />
-                <div style={{ flex:1 }}>
-                  <DualInput label="" value={acct.balance} min={0} max={5_000_000} step={5_000}
-                    format={v => fmtM(v)} onChange={v => handleBalance(acct.id, v)} />
+                <div style={{ flex: 1 }}>
+                  <ANumInput value={acct.balance || 0} onSet={(v) => handleBalance(acct.id, v)} min={0} max={5_000_000} step={5000} />
                 </div>
                 <button
                   onClick={() => removeAccount(acct.id, acct.category)}
-                  title={catAccounts.length <= 1 ? "Cannot remove last account in category" : "Remove account"}
-                  style={{
-                    background:"transparent", border:"none", color:"#64748b", cursor: catAccounts.length <= 1 ? "not-allowed" : "pointer",
-                    fontSize:14, lineHeight:1, padding:"2px 4px", opacity: catAccounts.length <= 1 ? 0.2 : 0.4,
-                    transition:"opacity 0.15s, color 0.15s",
-                  }}
-                  onMouseEnter={e => { if (catAccounts.length > 1) { e.target.style.opacity = 1; e.target.style.color = "#f87171"; } }}
-                  onMouseLeave={e => { e.target.style.opacity = catAccounts.length <= 1 ? 0.2 : 0.4; e.target.style.color = "#64748b"; }}
-                >x</button>
+                  disabled={catAccounts.length <= 1}
+                  style={{ background: "transparent", border: "none", color: catAccounts.length <= 1 ? "#334155" : "#64748b", cursor: catAccounts.length <= 1 ? "not-allowed" : "pointer", fontSize: 14, padding: "2px 4px", opacity: catAccounts.length <= 1 ? 0.3 : 0.5 }}
+                  onMouseEnter={e => { if (catAccounts.length > 1) { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#f87171"; } }}
+                  onMouseLeave={e => { e.currentTarget.style.opacity = catAccounts.length <= 1 ? 0.3 : 0.5; e.currentTarget.style.color = "#64748b"; }}
+                >
+                  ✕
+                </button>
               </div>
             ))}
-            <button onClick={() => addAccount(cat.key)} style={{
-              background:"transparent", border:`1px dashed ${cat.color}33`, borderRadius:4,
-              color:cat.color, fontSize:11, padding:"2px 8px", cursor:"pointer", opacity:0.6,
-              marginTop:2, transition:"opacity 0.15s",
-            }}
-            onMouseEnter={e => { e.target.style.opacity = 1; }}
-            onMouseLeave={e => { e.target.style.opacity = 0.6; }}
-            >+ Add</button>
+            <button
+              onClick={() => addAccount(cat.key)}
+              style={{ background: "transparent", border: `1px dashed ${cat.color}33`, borderRadius: 4, color: cat.color, fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.6, marginTop: 2 }}
+              onMouseEnter={e => e.currentTarget.style.opacity = 1}
+              onMouseLeave={e => e.currentTarget.style.opacity = 0.6}
+            >
+              + Add
+            </button>
           </div>
         );
       })}
 
-      {/* Auto-total summary */}
-      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
-          <span style={{ fontSize:12, color:"#e2e8f0" }}>🎯 {fmtM(values.earlyRetireTarget)} Goal Progress</span>
-          <span style={{ fontSize:14, fontWeight:700, color:"#5eead4", fontFamily:"'DM Mono',monospace" }}>
-            {percentToGoal.toFixed(1)}%
-          </span>
-        </div>
-        <div style={{ height:10, background:"rgba(255,255,255,0.1)", borderRadius:5, overflow:"hidden" }}>
-          <div style={{ width:`${percentToGoal}%`, height:"100%",
-            background:"linear-gradient(90deg,#0d9488,#14b8a6)", borderRadius:5, transition:"width 0.3s" }} />
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, marginTop:12 }}>
-          {[
-            { label:"Pre-Tax", val:catSum("pretax"),  color:"#0ea5e9" },
-            { label:"Roth",    val:catSum("roth"),     color:"#a78bfa" },
-            { label:"Taxable", val:catSum("taxable"),  color:"#fbbf24" },
-            { label:"HSA",     val:catSum("hsa"),      color:"#34d399" },
-            { label:"Cash",    val:catSum("cash"),     color:"#94a3b8" },
-          ].map(s => (
-            <div key={s.label} style={{ textAlign:"center" }}>
-              <div style={{ fontSize:10, color:"#475569" }}>{s.label}</div>
-              <div style={{ fontSize:12, fontWeight:700, color:s.color, fontFamily:"'DM Mono',monospace" }}>{fmtM(s.val)}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:11, color:"#64748b" }}>
-          <span>Total: <strong style={{ color:"#e2e8f0" }}>{fmtM(autoTotal)}</strong></span>
-          <span>Remaining: <strong style={{ color:"#f87171" }}>{fmtM(remaining)}</strong></span>
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+        <FieldRow label="🎯 Target Portfolio for Early Retirement" helper={`Goal: ${fmtM(GOAL)}`}>
+          <ANumInput value={values.earlyRetireTarget || 0} onSet={(v) => onChange("earlyRetireTarget", v)} min={0} max={10_000_000} step={50_000} />
+        </FieldRow>
+        <div style={{ marginTop: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span style={{ fontSize: 12, color: "#e2e8f0" }}>Progress</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>{percentToGoal.toFixed(1)}%</span>
+          </div>
+          <div style={{ height: 10, background: "rgba(255,255,255,0.1)", borderRadius: 5, overflow: "hidden" }}>
+            <div style={{ width: `${percentToGoal}%`, height: "100%", background: "linear-gradient(90deg,#0d9488,#14b8a6)", borderRadius: 5 }} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6, marginTop: 12 }}>
+            {[
+              { label: "Pre-Tax", val: catSum("pretax"),  color: "#0ea5e9" },
+              { label: "Roth",    val: catSum("roth"),     color: "#a78bfa" },
+              { label: "Taxable", val: catSum("taxable"),  color: "#fbbf24" },
+              { label: "HSA",     val: catSum("hsa"),      color: "#34d399" },
+              { label: "Cash",    val: catSum("cash"),     color: "#94a3b8" },
+            ].map(s => (
+              <div key={s.label} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: "#475569" }}>{s.label}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: s.color, fontFamily: "'DM Mono',monospace" }}>{fmtM(s.val)}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 11, color: "#64748b" }}>
+            <span>Total: <strong style={{ color: "#e2e8f0" }}>{fmtM(autoTotal)}</strong></span>
+            <span>Remaining: <strong style={{ color: "#f87171" }}>{fmtM(remaining)}</strong></span>
+          </div>
         </div>
       </div>
     </div>
@@ -5094,17 +5139,13 @@ function SavingsPanel({ values, onChange }) {
 }
 
 function AboutYouPanel({ values, onChange }) {
-  const formatDateForInput = (dateStr) => {
-    if (!dateStr) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-    try {
-      const d = new Date(dateStr);
-      if (!isNaN(d.getTime())) {
-        return d.toISOString().slice(0, 10);
-      }
-    } catch(e) {}
-    return "";
-  };
+  // Local state for the date string to prevent focus loss while typing
+  const [localDob, setLocalDob] = useState(values.dob || "");
+
+  // Sync local state when parent dob changes externally (e.g., import, reload)
+  useEffect(() => {
+    setLocalDob(values.dob || "");
+  }, [values.dob]);
 
   const derivedAge = useMemo(() => {
     if (!values.dob) return null;
@@ -5126,94 +5167,98 @@ function AboutYouPanel({ values, onChange }) {
   const yearsInRetire = Math.max(0, values.endAge - values.retireAge);
   const totalHorizon = yearsToRetire + yearsInRetire;
 
+  const handleDobChange = (e) => {
+    // Allow free typing; only update local state
+    setLocalDob(e.target.value);
+  };
+
+  const handleDobBlur = () => {
+    const trimmed = localDob.trim();
+    if (trimmed === "") {
+      onChange("dob", "");
+      return;
+    }
+    // Validate as YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      onChange("dob", trimmed);
+    } else {
+      // Attempt to parse and format
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) {
+        const formatted = parsed.toISOString().slice(0, 10);
+        onChange("dob", formatted);
+        setLocalDob(formatted);
+      } else {
+        // Invalid – revert to previous valid value
+        setLocalDob(values.dob || "");
+      }
+    }
+  };
+
+  const FieldRow = ({ label, helper, children }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#e2e8f0", marginBottom: 2 }}>{label}</div>
+        {helper && <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{helper}</div>}
+      </div>
+      <div style={{ marginLeft: 16, minWidth: 130, textAlign: "right" }}>
+        {children}
+      </div>
+    </div>
+  );
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* DOB Input */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
-        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4 }}>
-          Date of Birth
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
+          PERSONAL INFO
         </div>
-        <input
-          type="date"
-          value={formatDateForInput(values.dob)}
-          onChange={(e) => onChange("dob", e.target.value)}
-          style={{
-            width: "100%",
-            maxWidth: "200px",
-            background: "#0d1b2a",
-            border: "1px solid #1e3a5f",
-            color: "#e2e8f0",
-            borderRadius: 6,
-            padding: "6px 10px",
-            fontSize: 12,
-            fontFamily: "'DM Mono',monospace",
-          }}
-        />
-        {derivedAge !== null && (
-          <div style={{ fontSize: 10, color: "#5eead4", marginTop: 4 }}>
-            Current age: <strong>{derivedAge}</strong> (calculated)
-          </div>
-        )}
-        {derivedAge === null && values.dob && (
-          <div style={{ fontSize: 10, color: "#f87171", marginTop: 4 }}>
-            Invalid date format. Use YYYY-MM-DD.
-          </div>
-        )}
+        <FieldRow
+          label="Date of Birth"
+          helper={derivedAge !== null ? `Current age: ${derivedAge} (calculated)` : "Enter your date of birth (YYYY-MM-DD)."}
+        >
+          <input
+            type="text"
+            placeholder="YYYY-MM-DD"
+            value={localDob}
+            onChange={handleDobChange}
+            onBlur={handleDobBlur}
+            style={{
+              width: "140px",
+              background: "#0d1b2a",
+              border: "1px solid #1e3a5f",
+              color: "#e2e8f0",
+              borderRadius: 6,
+              padding: "4px 8px",
+              fontSize: 12,
+              fontFamily: "'DM Mono',monospace",
+              textAlign: "right",
+            }}
+          />
+        </FieldRow>
       </div>
 
-      {/* Retirement Age */}
-      <DualInput
-        label="Retirement Age"
-        value={values.retireAge}
-        min={50}
-        max={75}
-        step={1}
-        format={(v) => `${v} yrs`}
-        onChange={(v) => onChange("retireAge", v)}
-      />
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
+          RETIREMENT TIMELINE
+        </div>
+        <FieldRow label="Retirement Age" helper="Age at which you plan to retire (D‑Day).">
+          <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={50} max={75} step={1} />
+        </FieldRow>
+        <FieldRow label="Planning Horizon" helper="Age through which you want the plan to last.">
+          <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={75} max={100} step={1} />
+        </FieldRow>
+      </div>
 
-      {/* Planning Horizon */}
-      <DualInput
-        label="Planning Horizon"
-        value={values.endAge}
-        min={75}
-        max={100}
-        step={1}
-        format={(v) => `to age ${v}`}
-        onChange={(v) => onChange("endAge", v)}
-      />
-
-      {/* Summary row */}
-      <div
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 8,
-          padding: "12px 16px",
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
-          gap: 12,
-          marginTop: 4,
-        }}
-      >
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
         {[
           { label: "Years to retirement", val: yearsToRetire, color: "#14b8a6" },
           { label: "Years in retirement", val: yearsInRetire, color: "#a78bfa" },
           { label: "Total horizon", val: `${totalHorizon} yrs`, color: "#e2e8f0" },
         ].map((m) => (
           <div key={m.label}>
-            <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>
-              {m.label}
-            </div>
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: 700,
-                color: m.color,
-                fontFamily: "'DM Mono',monospace",
-                lineHeight: 1.2,
-              }}
-            >
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>{m.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: m.color, fontFamily: "'DM Mono',monospace", lineHeight: 1.2 }}>
               {m.val}
             </div>
           </div>
@@ -5238,6 +5283,62 @@ function ARow({ label, desc, children }) {
     </div>
   );
 }
+
+const StableInput = React.memo(
+  ({ initialValue, onCommit, min, max, transform = (v) => v, suffix = "", style }) => {
+    const inputRef = useRef(null);
+    const isFocusedRef = useRef(false);
+    const initialValueRef = useRef(initialValue);
+
+    // Format number with commas
+    const format = (num) => new Intl.NumberFormat().format(num);
+
+    // Initialize on mount and when initialValue changes externally (and not focused)
+    useEffect(() => {
+      if (!isFocusedRef.current && inputRef.current) {
+        inputRef.current.value = format(initialValue);
+        initialValueRef.current = initialValue;
+      }
+    }, [initialValue]);
+
+    const handleBlur = () => {
+      isFocusedRef.current = false;
+      const raw = inputRef.current.value.replace(/,/g, "");
+      let num = parseFloat(raw);
+      if (isNaN(num)) {
+        inputRef.current.value = format(initialValueRef.current);
+        return;
+      }
+      num = Math.min(max, Math.max(min, num));
+      const final = transform(num);
+      onCommit(final);
+      inputRef.current.value = format(final);
+    };
+
+    const handleFocus = () => {
+      isFocusedRef.current = true;
+    };
+
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode="numeric"
+          defaultValue={format(initialValue)}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          style={style}
+        />
+        {suffix && <span style={{ fontSize: 11, color: "#475569" }}>{suffix}</span>}
+      </div>
+    );
+  },
+  // Custom comparison: never re-render due to prop changes; the DOM handles everything.
+  () => true
+);
+
+StableInput.displayName = "StableInput";
 
 function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   const [isFocused, setIsFocused] = useState(false);
@@ -5366,7 +5467,7 @@ function AssumptionsPanel({ values, onChange }) {
             value={values.name || ""}
             placeholder="Full Name"
             onChange={(e) => onChange("name", e.target.value)}
-            style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
+            style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
           />
         </ARow>
         <ARow
@@ -5377,24 +5478,27 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
         <ARow
           label="State of Residence at Retirement"
-          desc="State where RMD taxes will be applied. Use the Two Household toggle for out-of-country scenarios.">
+          desc="State where RMD taxes will be applied. Use the Two Household toggle for out-of-country scenarios."
+        >
           <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
         </ARow>
 
+        {/* ✅ Fixed: Rental net income now uses the correct field "ab" */}
         <ARow
           label="Rental net income / yr"
           desc="Net after expenses · Always use net, never gross"
         >
-          <ANumInput value={values.ab} onSet={(v) => onChange("ab", v)} min={0} max={100000} step={1000} suffix="/yr" />
+          <CleanNumberInput value={values.ab} onChange={(v) => onChange("ab", v)} min={0} max={100000} step={1000} />
         </ARow>
+        {/* ✅ Fixed: Social Security Benefit now uses the correct field "ssb" */}
         <ARow
           label="Social Security Benefit"
           desc="Monthly benefit at your SS start age"
         >
-          <ANumInput value={values.ssb} onSet={(v) => onChange("ssb", v)} min={0} max={5000} step={100} suffix="/mo" />
+          <CleanNumberInput value={values.ssb} onChange={(v) => onChange("ssb", v)} min={0} max={5000} step={100} />
         </ARow>
         <ARow label="Cash real return" desc="Annual real return on cash/savings (e.g., HYSA)">
-          <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} suffix="%" />
+          <CleanNumberInput value={values.cashRealReturn} onChange={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} />
         </ARow>
         <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
           <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
@@ -5409,19 +5513,19 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="single">Single</option>
           </select>
         </ARow>
-        
+
         <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in Net Worth projection">
-          <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
+          <CleanNumberInput value={values.reGrowthRate} onChange={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} />
         </ARow>
-        
+
         <Toggle
           val={values.useJointRmdTable}
           onChange={(v) => onChange("useJointRmdTable", v)}
           label="👥 Use Joint & Last Survivor RMD Table (spouse >10 yrs younger)"
           accent="#a78bfa"
         />
-        
-        {/* --- GEMINI API KEY INPUT (already placed correctly) --- */}
+
+        {/* --- GEMINI API KEY INPUT --- */}
         <ARow label="Gemini API Key" desc="Bring your own free key from Google AI Studio to unlock AI analysis.">
           <input
             type="password"
@@ -5435,18 +5539,18 @@ function AssumptionsPanel({ values, onChange }) {
       </div>
 
       {/* EXPENSE MODEL CARD */}
-      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
-        <div style={{ fontSize:11, fontWeight:700, color:"#f59e0b", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
           Expense Model
         </div>
-        <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
+        <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
           Separate housing &amp; fixed obligations from core lifestyle spend. The MC engine adds each carveout to the portfolio draw automatically.
         </div>
         <ARow label="Housing type" desc="Own = mortgage P&I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
           <select
             value={values.housingType || "own"}
             onChange={(e) => onChange("housingType", e.target.value)}
-            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
+            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
           >
             <option value="own">Own (mortgage)</option>
             <option value="rent">Rent</option>
@@ -5455,25 +5559,26 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
         {(values.housingType || "own") === "rent" && (
           <ARow label="Annual rent" desc="Today's dollars — inflated each year in simulation">
-            <ANumInput value={values.annualRent} onSet={(v) => onChange("annualRent", v)} min={0} max={60000} step={500} suffix="/yr" />
+            {/* ✅ Fixed: Now correctly uses annualRent field */}
+            <CleanNumberInput value={values.annualRent} onChange={(v) => onChange("annualRent", v)} min={0} max={60000} step={500} />
           </ARow>
         )}
-        <div style={{ marginTop:12 }}>
-          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:600, marginBottom:8 }}>
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, marginBottom: 8 }}>
             Fixed Obligations (car loans, HOA, etc.)
           </div>
           {(values.carveouts || []).map((c, idx) => (
-            <div key={c.id} style={{ display:"grid", gridTemplateColumns:"1fr 90px 80px 28px", gap:6, marginBottom:6, alignItems:"center" }}>
+            <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 80px 28px", gap: 6, marginBottom: 6, alignItems: "center" }}>
               <input
                 type="text"
                 value={c.label}
                 placeholder="Label"
                 onChange={(e) => {
-                  const updated = [...(values.carveouts||[])];
+                  const updated = [...(values.carveouts || [])];
                   updated[idx] = { ...c, label: e.target.value };
                   onChange("carveouts", updated);
                 }}
-                style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
+                style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
               />
               <input
                 type="number"
@@ -5482,11 +5587,11 @@ function AssumptionsPanel({ values, onChange }) {
                 step={100}
                 placeholder="$/yr"
                 onChange={(e) => {
-                  const updated = [...(values.carveouts||[])];
+                  const updated = [...(values.carveouts || [])];
                   updated[idx] = { ...c, annual: Number(e.target.value) };
                   onChange("carveouts", updated);
                 }}
-                style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"right" }}
+                style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
               />
               <input
                 type="number"
@@ -5496,39 +5601,39 @@ function AssumptionsPanel({ values, onChange }) {
                 step={1}
                 placeholder="End yr"
                 onChange={(e) => {
-                  const updated = [...(values.carveouts||[])];
+                  const updated = [...(values.carveouts || [])];
                   updated[idx] = { ...c, endYear: Number(e.target.value) };
                   onChange("carveouts", updated);
                 }}
-                style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"right" }}
+                style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
               />
               <button
-                onClick={() => onChange("carveouts", (values.carveouts||[]).filter((_,i) => i !== idx))}
-                style={{ background:"rgba(239,68,68,0.15)", border:"1px solid rgba(239,68,68,0.3)", color:"#f87171", borderRadius:5, cursor:"pointer", fontSize:13, padding:"2px 6px" }}
+                onClick={() => onChange("carveouts", (values.carveouts || []).filter((_, i) => i !== idx))}
+                style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 13, padding: "2px 6px" }}
               >×</button>
             </div>
           ))}
-          <div style={{ fontSize:9, color:"#334155", marginBottom:6 }}>Label · $/yr · End year (calendar year when obligation ends)</div>
+          <div style={{ fontSize: 9, color: "#334155", marginBottom: 6 }}>Label · $/yr · End year (calendar year when obligation ends)</div>
           <button
-            onClick={() => onChange("carveouts", [...(values.carveouts||[]), { id: Date.now().toString(), label:"", annual:0, endYear: new Date().getFullYear() + 5 }])}
-            style={{ fontSize:11, background:"rgba(14,165,233,0.1)", border:"1px solid rgba(14,165,233,0.25)", color:"#38bdf8", borderRadius:6, padding:"5px 12px", cursor:"pointer" }}
+            onClick={() => onChange("carveouts", [...(values.carveouts || []), { id: Date.now().toString(), label: "", annual: 0, endYear: new Date().getFullYear() + 5 }])}
+            style={{ fontSize: 11, background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.25)", color: "#38bdf8", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}
           >+ Add obligation</button>
         </div>
       </div>
 
       {/* ROTH CONVERSION CARD */}
-      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
-        <div style={{ fontSize:11, fontWeight:700, color:"#a78bfa", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
           Roth Conversion Strategy
         </div>
-        <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
+        <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
           After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
         </div>
         <ARow label="Bracket-fill target" desc="AiRA converts pretax → Roth up to this bracket ceiling each year (off = no conversions)">
           <select
             value={values.rothConversionTarget || "off"}
             onChange={(e) => onChange("rothConversionTarget", e.target.value)}
-            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
+            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
           >
             <option value="off">Off — no conversions</option>
             <option value="fill_10">Fill to top of 10% bracket</option>
@@ -5545,7 +5650,7 @@ function AssumptionsPanel({ values, onChange }) {
           <select
             value={values.taxFunding || "from_taxable"}
             onChange={(e) => onChange("taxFunding", e.target.value)}
-            style={{ background:"#0a1628", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, cursor:"pointer" }}
+            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
           >
             <option value="outside_cash">Outside cash (assumes unlimited)</option>
             <option value="from_taxable">From taxable / HSA / cash bucket</option>
@@ -5576,57 +5681,50 @@ function AssumptionsPanel({ values, onChange }) {
           Monte Carlo Model Parameters
         </div>
         <ARow label="Target Portfolio Value for Early Retirement" desc="This number is a hypothetical value you have set that 'If you hit this number, would you retire?'. This is where you are in the monte carlo curve. You can view this as a line on the Monte Carlo simulation.">
-          <ANumInput value={values.earlyRetireTarget} onSet={(v) => onChange("earlyRetireTarget", v)} min={500_000} max={10_000_000} step={50_000} prefix="$" />
+          <CleanNumberInput value={values.earlyRetireTarget} onChange={(v) => onChange("earlyRetireTarget", v)} min={0} max={10000000} step={50000} />
         </ARow>
         <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is your internal Portfolio Goal and where if you hit this number before you have accomplished your retirement goal. It's your minimal goal and anything above this number is extra beyond what is your ultimate goal. (default $3.2M)">
-          <ANumInput value={values.portfolioGoal} onSet={(v) => onChange("portfolioGoal", v)} min={500_000} max={10_000_000} step={50_000} prefix="$" />
+          <CleanNumberInput value={values.portfolioGoal} onChange={(v) => onChange("portfolioGoal", v)} min={0} max={10000000} step={50000} />
         </ARow>
         <ARow label="Rental reliability" desc="Probability Rental income arrives in any given year (default 80%)">
-          <ANumInput value={values.abReliability} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
+          <CleanNumberInput value={values.abReliability} onChange={(v) => onChange("abReliability", v)} min={0} max={100} step={5} />
         </ARow>
         <ARow label="Rental income growth / yr" desc="Annual growth rate for Rental income (default 3%)">
-          <ANumInput value={values.abGrowth} onSet={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} suffix="%" />
+          <CleanNumberInput value={values.abGrowth} onChange={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} />
         </ARow>
         <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
-          <ANumInput value={values.ssCola} onSet={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} suffix="%" />
+          <CleanNumberInput value={values.ssCola} onChange={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} />
         </ARow>
         <ARow label="Pre-retirement equity weight" desc="Equity % before retirement age (default 91%)">
-          <ANumInput value={values.preRetireEq} onSet={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} suffix="%" />
+          <CleanNumberInput value={values.preRetireEq} onChange={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} />
         </ARow>
         <ARow label="Post-retirement equity weight" desc="Equity % after retirement age (default 70%)">
-          <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} suffix="%" />
+          <CleanNumberInput value={values.postRetireEq} onChange={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} />
         </ARow>
         <ARow label="Fixed Withdrawal Rate" desc="Annual percentage of portfolio to withdraw when using 'Fixed %' strategy (default 4%).">
-          <ANumInput
-            value={values.fixedWithdrawalRate}
-            onSet={(v) => onChange("fixedWithdrawalRate", v)}
-            min={2}
-            max={10}
-            step={0.1}
-            suffix="%"
-          />
+          <CleanNumberInput value={values.fixedWithdrawalRate} onChange={(v) => onChange("fixedWithdrawalRate", v)} min={2} max={10} step={0.1} />
         </ARow>
       </div>
 
       {/* HEALTHCARE SHOCK CARD */}
-      <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:16 }}>
-        <div style={{ fontSize:11, fontWeight:700, color:"#f87171", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
           Healthcare Shock Model
         </div>
-        <div style={{ fontSize:11, color:"#475569", marginBottom:12 }}>
+        <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
           In each simulation year after the shock age, there is a random probability of a large one-time healthcare cost.
         </div>
         <ARow label="Shock start age" desc="Age after which annual healthcare shocks can occur (default 72)">
-          <ANumInput value={values.hcShockAge} onSet={(v) => onChange("hcShockAge", v)} min={60} max={85} step={1} suffix="yrs" />
+          <CleanNumberInput value={values.hcShockAge} onChange={(v) => onChange("hcShockAge", v)} min={60} max={85} step={1} />
         </ARow>
         <ARow label="Annual shock probability" desc="Chance of a shock in any given year (default 3.5%)">
-          <ANumInput value={values.hcProb} onSet={(v) => onChange("hcProb", v)} min={0} max={20} step={0.5} suffix="%" />
+          <CleanNumberInput value={values.hcProb} onChange={(v) => onChange("hcProb", v)} min={0} max={20} step={0.5} />
         </ARow>
         <ARow label="Shock cost — minimum" desc="Low end of randomized healthcare shock cost (default $70K)">
-          <ANumInput value={values.hcMin} onSet={(v) => onChange("hcMin", v)} min={0} max={200000} step={5000} suffix="$" />
+          <CleanNumberInput value={values.hcMin} onChange={(v) => onChange("hcMin", v)} min={0} max={200000} step={5000} />
         </ARow>
         <ARow label="Shock cost — maximum" desc="High end of randomized healthcare shock cost (default $130K)">
-          <ANumInput value={values.hcMax} onSet={(v) => onChange("hcMax", v)} min={0} max={500000} step={5000} suffix="$" />
+          <CleanNumberInput value={values.hcMax} onChange={(v) => onChange("hcMax", v)} min={0} max={500000} step={5000} />
         </ARow>
       </div>
       <div
@@ -5645,321 +5743,250 @@ function AssumptionsPanel({ values, onChange }) {
 
 function ContribPanel({ values, onChange }) {
   const annual401k = values.contrib || 0;
-  const hsaAnnual = (values.hsaMonthly || 795.83) * 12;
-  const employerMatch = values.employerMatch || 4.5;
-  const matchAmount = (annual401k * employerMatch) / 100;
+  const hsaMonthly = values.hsaMonthly || 0;
+  const employerMatch = values.employerMatch || 0;
+  const hsaAnnual = hsaMonthly * 12;
+  const matchAmount = Math.round((annual401k * employerMatch) / 100);
   const totalSavings = annual401k + hsaAnnual + matchAmount;
 
+  const FieldRow = ({ label, helper, children }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#e2e8f0", marginBottom: 2 }}>{label}</div>
+        {helper && <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{helper}</div>}
+      </div>
+      <div style={{ marginLeft: 16, minWidth: 130, textAlign: "right" }}>
+        {children}
+      </div>
+    </div>
+  );
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-            401(k) Annual Contribution
-          </div>
-          <DualInput
-            label=""
-            value={annual401k}
-            min={0}
-            max={80_000}
-            step={500}
-            format={(v) => fmtK(v) + "/yr"}
-            onChange={(v) => onChange("contrib", v)}
-          />
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
+          ANNUAL CONTRIBUTIONS
         </div>
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-            HSA Monthly Contribution
-          </div>
-          <DualInput
-            label=""
-            value={values.hsaMonthly || 795.83}
-            min={0}
-            max={1000}
-            step={50}
-            format={(v) => fmtM(v) + "/mo"}
-            onChange={(v) => onChange("hsaMonthly", v)}
-          />
-        </div>
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-            Employer Match (%)
-          </div>
-          <DualInput
-            label=""
-            value={employerMatch}
-            min={0}
-            max={10}
-            step={0.5}
-            format={(v) => v.toFixed(1) + "%"}
-            onChange={(v) => onChange("employerMatch", v)}
-          />
-        </div>
+        <FieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
+          <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
+        </FieldRow>
+        <FieldRow label="HSA Monthly Contribution" helper="Family limit $8,550 + $1,000 catch‑up (2026).">
+          <ANumInput value={hsaMonthly} onSet={(v) => onChange("hsaMonthly", v)} min={0} max={1_000} step={50} suffix="/mo" />
+        </FieldRow>
+        <FieldRow label="Employer Match (%)" helper="Percentage of your 401(k) contribution matched.">
+          <ANumInput value={employerMatch} onSet={(v) => onChange("employerMatch", v)} min={0} max={10} step={0.5} suffix="%" />
+        </FieldRow>
       </div>
 
-      {/* Summary */}
-      <div
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 10,
-          padding: 18,
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
-          gap: 16,
-        }}
-      >
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
         {[
           { label: "401(k) Contribution", val: annual401k, color: "#0ea5e9" },
           { label: "Employer Match", val: matchAmount, color: "#34d399" },
           { label: "HSA Contribution", val: hsaAnnual, color: "#a78bfa" },
         ].map((m) => (
           <div key={m.label}>
-            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
-              {m.label}
-            </div>
-            <div
-              style={{
-                fontSize: 20,
-                fontWeight: 700,
-                color: m.color,
-                fontFamily: "'DM Mono',monospace",
-                lineHeight: 1,
-              }}
-            >
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>{m.label}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: m.color, fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>
               {fmtK(m.val)}
             </div>
           </div>
         ))}
       </div>
 
-      <div
-        style={{
-          background: "linear-gradient(135deg, #0d948818, #14b8a618)",
-          border: "1px solid #0d948844",
-          borderRadius: 10,
-          padding: 18,
-          textAlign: "center",
-        }}
-      >
-        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
-          💰 Total Annual Savings Rate
-        </div>
-        <div
-          style={{
-            fontSize: 36,
-            fontWeight: 900,
-            color: "#14b8a6",
-            fontFamily: "'DM Mono',monospace",
-            lineHeight: 1,
-          }}
-        >
+      <div style={{ background: "linear-gradient(135deg, #0d948818, #14b8a618)", border: "1px solid #0d948844", borderRadius: 10, padding: 18, textAlign: "center" }}>
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>💰 Total Annual Savings Rate</div>
+        <div style={{ fontSize: 36, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>
           {fmtK(totalSavings)}
-          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>
-            /yr
-          </span>
+          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>/yr</span>
         </div>
-        <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-          Including employer match and HSA
-        </div>
+        <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Including employer match and HSA</div>
       </div>
     </div>
   );
 }
 
-function RetirementPanel({ values, onChange }) {
-  const spend = values.sp || 100_000;
+const RetirementPanel = React.memo(function RetirementPanel({ values, onChange }) {
+  const spend = values.sp || 100000;
   const twoHousehold = values.twoHousehold ?? true;
   const baseSpend = twoHousehold ? spend : (values.spSpendOutofState || spend);
   const floor = Math.round(baseSpend * 0.65);
   const ceiling = Math.round(baseSpend * 1.35);
+  const strategy = values.withdrawalStrategy || "gk";
 
-  const ssbMonthly = (values.ssb || 0) / 12;
-  const ab = values.ab || 0;
-
-  // Determine active scenario for banner
   const activeScenario = twoHousehold
     ? "🌴 Out‑of‑State / Offshore (No state income tax)"
     : `🏠 Both in ${values.stateOfResidence || "your state"} (State tax applies)`;
 
-  const strategy = values.withdrawalStrategy || "gk";
+  const FieldRow = ({ label, helper, children }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#e2e8f0", marginBottom: 2 }}>{label}</div>
+        {helper && <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{helper}</div>}
+      </div>
+      <div style={{ marginLeft: 16, minWidth: 130, textAlign: "right" }}>
+        {children}
+      </div>
+    </div>
+  );
+
+  const spRef = useRef(null);
+  const spOutRef = useRef(null);
+  const ssMonthlyRef = useRef(null);
+  const ssAgeRef = useRef(null);
+  const abRef = useRef(null);
+  const abGrowthRef = useRef(null);
+  const abReliabilityRef = useRef(null);
+
+  useEffect(() => {
+    if (spRef.current) spRef.current.value = new Intl.NumberFormat().format(values.sp || 0);
+    if (spOutRef.current) spOutRef.current.value = new Intl.NumberFormat().format(values.spSpendOutofState || 0);
+    if (ssMonthlyRef.current) ssMonthlyRef.current.value = new Intl.NumberFormat().format((values.ssb || 0) / 12);
+    if (ssAgeRef.current) ssAgeRef.current.value = values.ssAge || 67;
+    if (abRef.current) abRef.current.value = new Intl.NumberFormat().format(values.ab || 0);
+    if (abGrowthRef.current) abGrowthRef.current.value = values.abGrowth || 3;
+    if (abReliabilityRef.current) abReliabilityRef.current.value = values.abReliability || 80;
+  }, [values]);
+
+  const handleSaveAll = () => {
+    const getNumber = (ref, min, max) => {
+      const raw = ref.current.value.replace(/,/g, "");
+      let num = parseFloat(raw);
+      if (isNaN(num)) return null;
+      return Math.min(max, Math.max(min, num));
+    };
+
+    const newSp = getNumber(spRef, 30000, 200000);
+    const newSpOut = getNumber(spOutRef, 20000, 150000);
+    const newSSMonthly = getNumber(ssMonthlyRef, 0, 5000);
+    const newSSAge = getNumber(ssAgeRef, 62, 70);
+    const newAb = getNumber(abRef, 0, 60000);
+    const newAbGrowth = getNumber(abGrowthRef, 0, 10);
+    const newAbReliability = getNumber(abReliabilityRef, 0, 100);
+
+    if (newSp !== null) onChange("sp", newSp);
+    if (newSpOut !== null) onChange("spSpendOutofState", newSpOut);
+    if (newSSMonthly !== null) onChange("ssb", Math.round(newSSMonthly * 12));
+    if (newSSAge !== null) onChange("ssAge", newSSAge);
+    if (newAb !== null) onChange("ab", newAb);
+    if (newAbGrowth !== null) onChange("abGrowth", newAbGrowth);
+    if (newAbReliability !== null) onChange("abReliability", newAbReliability);
+  };
+
+  const inputStyle = {
+    width: "120px",
+    background: "#0d1b2a",
+    border: "1px solid #1e3a5f",
+    color: "#e2e8f0",
+    borderRadius: 6,
+    padding: "4px 8px",
+    fontSize: 12,
+    fontFamily: "'DM Mono',monospace",
+    textAlign: "right",
+  };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Contextual Banner */}
-      <div
-        style={{
-          background: "rgba(14,165,233,0.08)",
-          border: "1px solid rgba(14,165,233,0.25)",
-          borderRadius: 8,
-          padding: "10px 14px",
-          fontSize: 12,
-          color: "#7dd3fc",
-        }}
-      >
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#7dd3fc" }}>
         <strong>Current scenario:</strong> {activeScenario} · Toggle in sidebar → "Solo / Low‑Tax Mode"
       </div>
 
-      {/* Spending Inputs */}
       <div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>
-          💵 Annual Spending
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-          {[
-            {
-              k: "sp",
-              label: "Primary Annual Spending",
-              desc: `Your main household spending target. Used when living in ${values.stateOfResidence || "your state"} (state tax applies).`,
-              min: 30000, max: 200000, step: 1000, fmt: (v) => fmtK(v) + "/yr"
-            },
-            {
-              k: "spSpendOutofState",
-              label: "Secondary Spending (No State Tax)",
-              desc: "Optional lower spending for travel or zero‑tax locations. Used when 'Solo Mode' toggle is ON.",
-              min: 20000, max: 150000, step: 1000, fmt: (v) => fmtK(v) + "/yr"
-            },
-          ].map((s) => (
-            <div key={s.k}>
-              <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>{s.label}</div>
-              <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8, lineHeight: 1.4 }}>
-                {s.desc}
-              </div>
-              <DualInput
-                label=""
-                value={values[s.k] || 0}
-                min={s.min}
-                max={s.max}
-                step={s.step}
-                format={s.fmt}
-                onChange={(v) => onChange(s.k, v)}
-              />
-            </div>
-          ))}
-        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
+        <FieldRow label="Primary Annual Spending" helper="Our main household spending target. Used when living in NJ (state tax applies).">
+          <input ref={spRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format(values.sp || 0)} style={inputStyle} />
+          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/yr</span>
+        </FieldRow>
+        <FieldRow label="Secondary Spending (No State Tax)" helper="Optional lower spending for travel or zero‑tax locations. Used when 'Solo Mode' toggle is ON.">
+          <input ref={spOutRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format(values.spSpendOutofState || 0)} style={inputStyle} />
+          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/yr</span>
+        </FieldRow>
       </div>
 
-      {/* Income Sources (SS, Rental) */}
       <div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>
-          🏦 Retirement Income
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-          {/*
-          <div>
-            <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>Social Security (monthly)</div>
-            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Your estimated benefit at your claiming age.</div>
-            <DualInput label="" value={ssbMonthly} min={0} max={5000} step={50} format={(v) => fmtM(v) + "/mo"} onChange={(v) => onChange("ssb", v * 12)} />
-          </div>
-          */}
-          <div>
-            <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>SS Start Age</div>
-            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Age you plan to claim Social Security.</div>
-            <DualInput label="" value={values.ssAge || 67} min={62} max={70} step={1} format={(v) => `Age ${v}`} onChange={(v) => onChange("ssAge", v)} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>Rental Net Income (annual)</div>
-            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Net profit from rental properties after expenses.</div>
-            <DualInput label="" value={ab} min={0} max={60000} step={1000} format={(v) => fmtK(v) + "/yr"} onChange={(v) => onChange("ab", v)} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>Rental Reliability</div>
-            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Probability rental income is received each year (default 80%).</div>
-            <DualInput label="" value={values.abReliability || 80} min={0} max={100} step={5} format={(v) => v + "%"} onChange={(v) => onChange("abReliability", v)} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, color: "#e2e8f0", marginBottom: 4 }}>Rental Growth Rate</div>
-            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8 }}>Annual growth rate for rental income (default 3%).</div>
-            <DualInput label="" value={values.abGrowth || 3} min={0} max={10} step={0.5} format={(v) => v + "%/yr"} onChange={(v) => onChange("abGrowth", v)} />
-          </div>
-        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SOCIAL SECURITY</div>
+        <FieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age.">
+          <input ref={ssMonthlyRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format((values.ssb || 0) / 12)} style={inputStyle} />
+          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/mo</span>
+        </FieldRow>
+        <FieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
+          <input ref={ssAgeRef} type="text" inputMode="numeric" defaultValue={values.ssAge || 67} style={inputStyle} />
+        </FieldRow>
       </div>
 
-      {/* Dynamic Guardrails Section */}
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>RENTAL INCOME</div>
+        <FieldRow label="Rental Net Income (annual)" helper="Net profit from rental properties after expenses.">
+          <input ref={abRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format(values.ab || 0)} style={inputStyle} />
+          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/yr</span>
+        </FieldRow>
+        <FieldRow label="Rental Growth Rate" helper="Annual growth rate for rental income (default 3%).">
+          <input ref={abGrowthRef} type="text" inputMode="numeric" defaultValue={values.abGrowth || 3} style={inputStyle} />
+          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>%</span>
+        </FieldRow>
+        <FieldRow label="Rental Reliability" helper="Probability rental income is received each year (default 80%).">
+          <input ref={abReliabilityRef} type="text" inputMode="numeric" defaultValue={values.abReliability || 80} style={inputStyle} />
+          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>%</span>
+        </FieldRow>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button
+          onClick={handleSaveAll}
+          style={{
+            padding: "8px 20px",
+            background: "linear-gradient(135deg, #0d9488, #14b8a6)",
+            border: "none",
+            borderRadius: 7,
+            color: "white",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          💾 Apply Changes
+        </button>
+      </div>
+
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
         {strategy === "gk" && (
           <>
-            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>
-              🛡️ Guyton‑Klinger Guardrails (Auto‑calculated)
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>
-              Floor = 65% of core spend · Ceiling = 135% of core spend
-            </div>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails (Auto‑calculated)</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = 65% of core spend · Ceiling = 135% of core spend</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>65%</div>
-                <div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div>
-              </div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>65%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div></div>
               <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Ceiling</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>135%</div>
-                <div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div>
-              </div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>135%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div></div>
             </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>
-              Spending adjusts ±10% when withdrawal rate deviates 20% from initial.
-            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>Spending adjusts ±10% when withdrawal rate deviates 20% from initial.</div>
           </>
         )}
-
         {strategy === "fixed" && (
           <>
-            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>
-              📊 Fixed Percentage Withdrawal
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>
-              Each year, withdraw a fixed percentage of the current portfolio balance.
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "#475569" }}>Withdrawal Rate</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>
-                {values.fixedWithdrawalRate || 4.0}%
-              </div>
-              <div style={{ fontSize: 10, color: "#334155" }}>of portfolio balance each year</div>
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>
-              Spending will fluctuate with portfolio value.
-            </div>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>📊 Fixed Percentage Withdrawal</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Each year, withdraw a fixed percentage of the current portfolio balance.</div>
+            <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569" }}>Withdrawal Rate</div><div style={{ fontSize: 32, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>{values.fixedWithdrawalRate || 4.0}%</div><div style={{ fontSize: 10, color: "#334155" }}>of portfolio balance each year</div></div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>Spending will fluctuate with portfolio value.</div>
           </>
         )}
-
         {strategy === "vanguard" && (
           <>
-            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>
-              📈 Vanguard Dynamic Spending
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>
-              Adjusts spending based on a ceiling and floor relative to the initial withdrawal rate.
-            </div>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>📈 Vanguard Dynamic Spending</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Adjusts spending based on a ceiling and floor relative to the initial withdrawal rate.</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "#475569" }}>Ceiling</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>
-                  {((values.vanguardCap || 0.05) * 100).toFixed(1)}%
-                </div>
-              </div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569" }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>{((values.vanguardCap || 0.05) * 100).toFixed(1)}%</div></div>
               <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "#475569" }}>Floor</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>
-                  {((values.vanguardFloor || -0.025) * 100).toFixed(1)}%
-                </div>
-              </div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569" }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>{((values.vanguardFloor || -0.025) * 100).toFixed(1)}%</div></div>
             </div>
           </>
         )}
-
         {!["gk", "fixed", "vanguard"].includes(strategy) && (
-          <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center" }}>
-            {getStrategyLabel(strategy)} strategy active — see documentation for details.
-          </div>
+          <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center" }}>{getStrategyLabel(strategy)} strategy active — see documentation for details.</div>
         )}
       </div>
     </div>
   );
-}
+});
 
 function IncomePanel({ values, onChange }) {
   // Convert annual ssb to monthly for display
@@ -6930,7 +6957,7 @@ export default function AiRAForecaster() {
                 background: stale ? "linear-gradient(135deg,#b45309,#d97706)" : undefined,
               }}
             >
-              {running ? "Running 6,000 paths..." : stale ? "⚠ Inputs changed — Re-run" : "▶ Run Monte Carlo"}
+              {running ? "Running 3,000 paths..." : stale ? "⚠ Inputs changed — Re-run" : "▶ Run Monte Carlo"}
             </button>
           </div>
 
