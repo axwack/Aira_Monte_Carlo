@@ -4771,11 +4771,6 @@ function ProfileWizard({ values, onChange }) {
     }
   })();
 
-  // Stable callback for RetirementPanel
-  const handleRetirementChange = useCallback((key, value) => {
-    onChange(key, value);
-  }, [onChange]);
-
   const STEPS = [
     { label: "Assumptions", icon: "⚙️", sub: "Model parameters" },
     { label: "About You", icon: "👤", sub: `${values.currentAge} yrs old` },
@@ -4789,7 +4784,7 @@ function ProfileWizard({ values, onChange }) {
     <AboutYouPanel values={values} onChange={onChange} />,
     <SavingsPanel values={values} onChange={onChange} />,
     <ContribPanel values={values} onChange={onChange} />,
-    <RetirementPanel values={values} onChange={handleRetirementChange} />,
+    <RetirementPanel values={values} onChange={onChange} />,
   ];
 
   useEffect(() => {
@@ -5730,7 +5725,7 @@ function ContribPanel({ values, onChange }) {
   );
 }
 
-const RetirementPanel = React.memo(function RetirementPanel({ values, onChange }) {
+function RetirementPanel({ values, onChange }) {
   const spend = values.sp || 100000;
   const twoHousehold = values.twoHousehold ?? true;
   const baseSpend = twoHousehold ? spend : (values.spSpendOutofState || spend);
@@ -5742,63 +5737,6 @@ const RetirementPanel = React.memo(function RetirementPanel({ values, onChange }
     ? "🌴 Out‑of‑State / Offshore (No state income tax)"
     : `🏠 Both in ${values.stateOfResidence || "your state"} (State tax applies)`;
 
-
-
-  const spRef = useRef(null);
-  const spOutRef = useRef(null);
-  const ssMonthlyRef = useRef(null);
-  const ssAgeRef = useRef(null);
-  const abRef = useRef(null);
-  const abGrowthRef = useRef(null);
-  const abReliabilityRef = useRef(null);
-
-  useEffect(() => {
-    if (spRef.current) spRef.current.value = new Intl.NumberFormat().format(values.sp || 0);
-    if (spOutRef.current) spOutRef.current.value = new Intl.NumberFormat().format(values.spSpendOutofState || 0);
-    if (ssMonthlyRef.current) ssMonthlyRef.current.value = new Intl.NumberFormat().format((values.ssb || 0) / 12);
-    if (ssAgeRef.current) ssAgeRef.current.value = values.ssAge || 67;
-    if (abRef.current) abRef.current.value = new Intl.NumberFormat().format(values.ab || 0);
-    if (abGrowthRef.current) abGrowthRef.current.value = values.abGrowth || 3;
-    if (abReliabilityRef.current) abReliabilityRef.current.value = values.abReliability || 80;
-  }, [values]);
-
-  const handleSaveAll = () => {
-    const getNumber = (ref, min, max) => {
-      const raw = ref.current.value.replace(/,/g, "");
-      let num = parseFloat(raw);
-      if (isNaN(num)) return null;
-      return Math.min(max, Math.max(min, num));
-    };
-
-    const newSp = getNumber(spRef, 30000, 200000);
-    const newSpOut = getNumber(spOutRef, 20000, 150000);
-    const newSSMonthly = getNumber(ssMonthlyRef, 0, 5000);
-    const newSSAge = getNumber(ssAgeRef, 62, 70);
-    const newAb = getNumber(abRef, 0, 60000);
-    const newAbGrowth = getNumber(abGrowthRef, 0, 10);
-    const newAbReliability = getNumber(abReliabilityRef, 0, 100);
-
-    if (newSp !== null) onChange("sp", newSp);
-    if (newSpOut !== null) onChange("spSpendOutofState", newSpOut);
-    if (newSSMonthly !== null) onChange("ssb", Math.round(newSSMonthly * 12));
-    if (newSSAge !== null) onChange("ssAge", newSSAge);
-    if (newAb !== null) onChange("ab", newAb);
-    if (newAbGrowth !== null) onChange("abGrowth", newAbGrowth);
-    if (newAbReliability !== null) onChange("abReliability", newAbReliability);
-  };
-
-  const inputStyle = {
-    width: "120px",
-    background: "#0d1b2a",
-    border: "1px solid #1e3a5f",
-    color: "#e2e8f0",
-    borderRadius: 6,
-    padding: "4px 8px",
-    fontSize: 12,
-    fontFamily: "'DM Mono',monospace",
-    textAlign: "right",
-  };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#7dd3fc" }}>
@@ -5808,59 +5746,34 @@ const RetirementPanel = React.memo(function RetirementPanel({ values, onChange }
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
         <WFieldRow label="Primary Annual Spending" helper="Our main household spending target. Used when living in NJ (state tax applies).">
-          <input ref={spRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format(values.sp || 0)} style={inputStyle} />
-          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/yr</span>
+          <ANumInput value={values.sp || 0} onSet={(v) => onChange("sp", v)} min={0} max={500000} step={1000} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="Secondary Spending (No State Tax)" helper="Optional lower spending for travel or zero‑tax locations. Used when 'Solo Mode' toggle is ON.">
-          <input ref={spOutRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format(values.spSpendOutofState || 0)} style={inputStyle} />
-          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/yr</span>
+          <ANumInput value={values.spSpendOutofState || 0} onSet={(v) => onChange("spSpendOutofState", v)} min={0} max={500000} step={1000} suffix="/yr" />
         </WFieldRow>
       </div>
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SOCIAL SECURITY</div>
         <WFieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age.">
-          <input ref={ssMonthlyRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format((values.ssb || 0) / 12)} style={inputStyle} />
-          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/mo</span>
+          <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={5000} step={50} suffix="/mo" />
         </WFieldRow>
         <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
-          <input ref={ssAgeRef} type="text" inputMode="numeric" defaultValue={values.ssAge || 67} style={inputStyle} />
+          <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={62} max={70} step={1} />
         </WFieldRow>
       </div>
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>RENTAL INCOME</div>
         <WFieldRow label="Rental Net Income (annual)" helper="Net profit from rental properties after expenses.">
-          <input ref={abRef} type="text" inputMode="numeric" defaultValue={new Intl.NumberFormat().format(values.ab || 0)} style={inputStyle} />
-          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>/yr</span>
+          <ANumInput value={values.ab || 0} onSet={(v) => onChange("ab", v)} min={0} max={200000} step={1000} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="Rental Growth Rate" helper="Annual growth rate for rental income (default 3%).">
-          <input ref={abGrowthRef} type="text" inputMode="numeric" defaultValue={values.abGrowth || 3} style={inputStyle} />
-          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>%</span>
+          <ANumInput value={values.abGrowth || 3} onSet={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} suffix="%" />
         </WFieldRow>
         <WFieldRow label="Rental Reliability" helper="Probability rental income is received each year (default 80%).">
-          <input ref={abReliabilityRef} type="text" inputMode="numeric" defaultValue={values.abReliability || 80} style={inputStyle} />
-          <span style={{ fontSize: 11, color: "#475569", marginLeft: 4 }}>%</span>
+          <ANumInput value={values.abReliability || 80} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
         </WFieldRow>
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <button
-          onClick={handleSaveAll}
-          style={{
-            padding: "8px 20px",
-            background: "linear-gradient(135deg, #0d9488, #14b8a6)",
-            border: "none",
-            borderRadius: 7,
-            color: "white",
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          💾 Apply Changes
-        </button>
       </div>
 
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
@@ -5901,7 +5814,7 @@ const RetirementPanel = React.memo(function RetirementPanel({ values, onChange }
       </div>
     </div>
   );
-});
+}
 
 function IncomePanel({ values, onChange }) {
   // Convert annual ssb to monthly for display
