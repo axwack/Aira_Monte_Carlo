@@ -1,62 +1,4 @@
-/* ============================================================
- *  AiRA Monte Carlo · App.jsx
- *  BUILD TAG : Added new Fanchart for actual versus forecasted
-
- *  NOTES     : Roth conversion plan diagnostics.
- *              - Each year's row now carries capReason (why
- *                the target bracket was capped) and a per-
- *                bracket breakdown of the conversion dollars.
- *              - Conversion Plan bar chart is now STACKED by
- *                federal bracket: you can see how much of the
- *                year's conversion lands in 10/12/22/24/32/
- *                35/37 bracket segments (explains why fill_22
- *                vs fill_24 can look identical when FAFSA /
- *                CSS / IRMAA-lookback / age<66 guards bind).
- *              - Added "Cap" column to the conversion plan
- *                table — orange text when a guard binds,
- *                grey when the chosen mode is the binding
- *                constraint. Hover for full reason.
- *  roth-fix-12: FanChart top margin so labels aren't clipped.
- *  roth-fix-11: FanChart RMD reference line is now dynamic.
- *              Was hardcoded at x={73}. Now threaded via
- *              rmdAge prop from the root (computed via
- *              getRmdStartAge from BLANK_PROFILE.dob +
- *              BLANK_PROFILE.rmdStartAge override). Passed to
- *              all three FanChart call sites (Portfolio fan
- *              tab, MCTab below the results, Stress scenario).
- *  roth-fix-10 notes below ──────────────────────────────────
- *              Removed hardcoded personal info across the app.
- *              - Golden-year banner: dropped "Danielle graduates"
- *                reference; now uses generic pre-SS framing.
- *              - BucketsTab: dollar targets now computed from
- *                params.port × pct; holdings replaced with
- *                asset-class descriptions; lock dates derive
- *                from retireAge.
- *              - MCTab Withdrawal Phase cards: SS amount/age,
- *                COLA, rental net, SS gap, healthcare age+prob,
- *                shock range, mortgage payoff all from params.
- *              - MCTab Market & Statistical cards: glide-path
- *                phases, horizon, rental reliability from params.
- *              - RothLadder Assumptions: SS start and Portfolio
- *                lines no longer fall back to my personal
- *                defaults; pre-tax % now computed from accounts.
- *  Branch history:
- *    roth-fix-10: strip hardcoded PII across MCTab, RothLadder,
- *                 BucketsTab, and Golden-year banner.
- *    roth-fix-9: Roth chart reacts to DOB / rmdStartAge edits.
- *    roth-fix-8: dynamic MCTab input cards (no hardcoded names).
- *    roth-fix-7: merge Full Name + hide-Next-on-step-6.
- *    roth-fix-6: Full Name input + filename sanitization.
- *    roth-fix-5: wizard-level save bar + version sync to 9.2.1.
- *    roth-fix-4: in-panel Save button + localStorage persistence.
- *    roth-fix-3: <Row> → <ARow> fix in AssumptionsPanel.
- *    roth-fix-2: build stamp header + console log.
- *    roth-fix-1 (ba1bb89): FED_BRACKETS_2026 bug + SECURE 2.0 RMD age.
- *  If the browser console shows an older BUILD TAG than this,
- *  you are running a stale build — rebuild with `npm run build`
- *  and hard-refresh the page (Ctrl/Cmd-Shift-R).
- * 
- * 
+/*
  *AiRA Freedom Financial
 Copyright (C) 2026 [Vincent Lee]
 
@@ -7341,6 +7283,7 @@ export default function AiRAForecaster() {
               }}
             >
               AiRA Freedom Financial v{APP_VERSION} · This is not financial advice. Seek a professional fiduciary, CPA, or tax accountant. Use at your own risk. See full disclaimer in code.
+              This applications is open source and covered on the GNU Affero General Public License v3.0.{" "}  
               <br />
               "The best financial plan is the one you can stick with." — Morgan Housel
             </div>
@@ -7351,80 +7294,4 @@ export default function AiRAForecaster() {
   );
 }
 
-
-
-/* ════════════════════════════════════════════════════════════════
-   VERSION LOG
-   ════════════════════════════════════════════════════════════════
-
-   v9.2 — April 13, 2026 (Claude / this session)
-   ─────────────────────────────────────────────
-   • Property cards in MortgageTab — editable label, gross value,
-     mortgage balance, annual income, net equity per property
-   • First property auto-wires to primary mortgage calculator
-   • Add/remove properties (2 default, max 5)
-   • BLANK_PROFILE: replaced rePrimaryResidencce/reRentalUnit* with
-     properties[] array
-   • importProfile: migration converts old re* fields automatically
-   • NetWorthTab: reTotal + reEquity now derived from properties[]
-   • params useMemo: properties[] flows to all downstream tabs
-   • exportProfile: properties[] included in JSON export
-   • Expanded static rules engine in generateActions (35+ rules)
-   • Premium AI analysis layer (credit code + Vercel proxy)
-   • Dynamic AI payload with narrative + structured data
-   • AI returns {diagnosis, actions} — diagnosis shown as header card
-   • packageJson import replaced with hardcoded APP_VERSION = "9.2"
-
-   v9.1 — April 13, 2026 (AiRA-DS + Claude Code + Gemini)
-   ────────────────────────────────────────────────────────
-   • ProfileWizard 6-step guided setup
-   • Import/Export profile JSON
-   • generateActions() dynamic rules engine
-   • ActionPlanTab reads live MC results
-   • Multiple withdrawal strategies: GK, Fixed 4%, Vanguard,
-     Risk-based, Kitces
-   • simulateDeterministic + simulateDeterministicWithStrategy
-   • useJointRmdTable flag + JOINT_RMD_TABLE
-   • guytonKlingerWithdrawal extracted as standalone function
-   • calcYearTax function
-   • GK floor/ceiling dynamic: sp × 0.65 / sp × 1.35
-   • DualInput component (text + slider sync)
-   • Feedback thumbs widget
-   • APP_VERSION from package.json
-   • ScenariosTab with sub-tabs
-   • Assumptions tab → ProfileWizard panels
-
-   v9.0-ds — April 8, 2026 (AiRA-DS)
-   ────────────────────────────────────
-   • DS variant — 5,375 lines
-   • Account breakdown by category (pretax/roth/taxable/hsa/cash)
-   • SavingsPanel with add/remove accounts
-   • AssumptionsPanel with model parameter inputs
-   • DOB-driven dynamic currentAge and DDAY_dynamic
-   • useCountdown accepts dday param
-   • Assumptions state (abReliability, hcProb, ssCola etc.)
-
-   v8.0 — April 13, 2026 (Claude)
-   ────────────────────────────────
-   • Assumptions tab (standalone, pre-wizard)
-   • MC engine: all hardcoded rates replaced with p.* params
-   • currentAge derived live from DOB
-   • DDAY_dynamic computed from DOB + retireAge
-   • AssumptionsTab with Personal Profile + Model Parameters +
-     Healthcare Shock sections
-
-   v5.1 — April 2026 (Claude)
-   ───────────────────────────
-   • 6 MC engine bugs fixed
-   • initWR uses net portfolio draw (not gross spend)
-   • Airbnb modeled at 80% annual reliability
-   • Healthcare shocks 3.5%/yr age 72+
-   • GK floor/ceiling hardcoded (pre-dynamic)
-   • twoHousehold toggle wired to sp and gkFloor
-   • 11 tabs: Fan, Stress, Income, Roth, Buckets, Smile,
-     Monte Carlo, Scenarios, Mortgage, Net Worth, Action Plan
-   • 26-people visualization inline in headline panel
-   • Stale results detection (amber Re-run button)
-
-════════════════════════════════════════════════════════════════ */
 export { runMC, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost };
