@@ -20,8 +20,8 @@
  *  roth-fix-11: FanChart RMD reference line is now dynamic.
  *              Was hardcoded at x={73}. Now threaded via
  *              rmdAge prop from the root (computed via
- *              getRmdStartAge from assumptions.dob +
- *              assumptions.rmdStartAge override). Passed to
+ *              getRmdStartAge from BLANK_PROFILE.dob +
+ *              BLANK_PROFILE.rmdStartAge override). Passed to
  *              all three FanChart call sites (Portfolio fan
  *              tab, MCTab below the results, Stress scenario).
  *  roth-fix-10 notes below ──────────────────────────────────
@@ -155,9 +155,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "9.3.0";
-export const BUILD_TAG = "Added AI stub code. Substantial changes and almost prod ready";
-export const BUILD_TIME = "2026-04-20 21:45 UTC";
+const APP_VERSION = "1.0.0";
+export const BUILD_TAG = "Got rid if demo mode. Added AI features and fixed minor bugs";
+export const BUILD_TIME = "2026-04-2121:45 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -277,7 +277,7 @@ export const BLANK_PROFILE = {
   label: "My Plan",
   name: "",
   dob: "",
-  stateOfResidence: "CA",
+  stateOfResidence: "",
   currentAge: 50,
   retireAge: 60,
   endAge: 85,
@@ -347,76 +347,6 @@ export const BLANK_PROFILE = {
   geminiApiKey: "",
 };
 
-const DEMO_PROFILE = {
-  label: "Demo Mode",
-  name: "Alex",
-  dob: "1974-06-15",
-  fixedWithdrawalRate: 4.0, 
-  // NEW:
-  filingStatus: "mfj",          // "mfj" | "single"
-  reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
-  useJointRmdTable: false,      // default: use Uniform Lifetime table
-  cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
-  housingType: "own",
-  withdrawalStrategy: "gk",
-  annualRent: 0,
-  portfolioGoal: 3_200_000,
-  carveouts: [],
-  rothConversionTarget: "off",
-  currentAge: 51,
-  retireAge: 62,
-  stateOfResidence: "NJ",
-  endAge: 88,
-  port: 1_000_000,
-  contrib: 24_000,
-  inf: 2.5,
-  sp: 72_000,
-  spSpendOutofState: 72_000,
-  ssAge: 67,
-  ssb: 28_000,
-  employerStartDate: "2026-03-02",
-  ab: 0,
-  useAb: false,
-  smile: true,
-  tax: true,
-  real: true,
-  twoHousehold: false,
-  gkFloor: 48_000,
-  gkFloorSpendOutofState: 48_000,
-  gkTarget: 72_000,
-  gkCeiling: 100_000,
-  mortBalance: 200_000,
-  mortRate: 7.0,
-  mortStart: "2022-01",
-  mortTerm: 30,
-  mortExtra: 0,
-  mortPI: 1330,
-  properties: [
-    { id:"p1", label:"Primary Residence", value:600_000, mortgage:200_000, income:0 },
-    { id:"p2", label:"Rental Unit",        value:0,       mortgage:0,       income:0 },
-  ],
-  accounts: [
-    { id: "d1", category: "pretax", name: "Solo 401k", balance: 750_000 },
-    { id: "d2", category: "roth", name: "Roth IRA", balance: 150_000 },
-    { id: "d3", category: "taxable", name: "Taxable", balance: 50_000 },
-    { id: "d4", category: "hsa", name: "HSA", balance: 50_000 },
-    { id: "d5", category: "cash", name: "Savings", balance: 0 },
-  ],
-  abReliability: 80,
-  abGrowth: 3.0,
-  ssCola: 2.4,
-  preRetireEq: 91,
-  postRetireEq: 70,
-  hcShockAge: 72,
-  hcProb: 3.5,
-  hcMin: 70_000,
-  hcMax: 130_000,
-  checkpoints: [],          // each: { id, date, value, note }
-  earlyRetireTarget: 3500000,
-  geminiApiKey: "",
-}
-
-const PROFILES = { user: BLANK_PROFILE, demo: DEMO_PROFILE };
 const ANALOGUES = [
   {
     min: 95,
@@ -1623,18 +1553,18 @@ function buildRothExplorer(params = {}) {
 
 function buildRothLadder(params = {}) {
   const ex = buildRothExplorer(params);
-    return ex.convRows.map((r) => ({
-      yr: r.yr,
-      age: r.age,
-      label: r.label,
-      otherInc: r.abn,
-      conv: r.conv,
-      fedTax: r.fedT,
-      stateNJ: r.stT,
-      effFL: r.conv > 0 ? ((r.fedT / r.conv) * 100).toFixed(1) : "0.0",
-      effNJ: r.conv > 0 ? (((r.fedT + r.stT) / r.conv) * 100).toFixed(1) : "0.0",
-      netRoth: Math.round(r.conv - r.fedT - (params.twoHousehold ? 0 : r.stT)),
-    }));
+  return ex.convRows.map((r) => ({
+    yr: r.yr,
+    age: r.age,
+    label: r.label,
+    otherInc: r.abn,
+    conv: r.conv,
+    fedTax: r.fedT,
+    stateTax: r.stT,                              // renamed from stateNJ
+    effFed: r.conv > 0 ? ((r.fedT / r.conv) * 100).toFixed(1) : "0.0",   // was effFL
+    effTotal: r.conv > 0 ? (((r.fedT + r.stT) / r.conv) * 100).toFixed(1) : "0.0", // was effNJ
+    netRoth: Math.round(r.conv - r.fedT - (params.twoHousehold ? 0 : r.stT)),
+  }));
 }
 
 /* ════ MORTGAGE MATH ════ */
@@ -1821,7 +1751,6 @@ const CSS = `
   .mbtn { padding:5px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.12); cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:#94a3b8; }
   .mbtn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
   .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
-  .mbtn.demo-on { background:linear-gradient(135deg,#7c3aed,#4f46e5); border-color:transparent; color:white; }
   .layout { display:grid; grid-template-columns:268px 1fr; height:calc(100vh - 56px); overflow:hidden; }
   .sidebar { border-right:1px solid rgba(255,255,255,0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
   .sb-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:13px; }
@@ -2067,17 +1996,12 @@ function DualInput({ label, value, min, max, step, format, onChange }) {
     <div style={{ marginBottom: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <span style={{ fontSize: 12, color: "#94a3b8" }}>{label}</span>
-        <input
-          type="number"
+        <ANumInput
           value={value}
-          min={min} max={max} step={step}
-          onChange={e => {
-            const v = Math.max(min, Math.min(max, Number(e.target.value)));
-            if (!isNaN(v)) onChange(v);
-          }}
-          style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f",
-            color: "#5eead4", borderRadius: 5, padding: "3px 8px",
-            fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
+          onSet={onChange}
+          min={min}
+          max={max}
+          step={step}
         />
       </div>
       <Slider label="" value={value} min={min} max={max} step={step} format={format} onChange={onChange} />
@@ -2108,16 +2032,17 @@ function exportProfile(values, name = "AiRA_Profile") {
   const blob = new Blob([JSON.stringify(values, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
-  a.download = `${name}_${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+    a.href = url;
+    a.download = `${name}_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 function importProfile(onLoad) {
   const input = document.createElement("input");
   input.type = "file";
   input.accept = ".json";
+
   input.onchange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -2498,6 +2423,7 @@ function SmileChart({ p, inf }) {
 }
 
 function RothLadder({ params }) {
+  
   const [showInputs, setShowInputs] = useState(false);
   const [view, setView] = useState("optimized");
   const [rothMode, setRothMode] = useState("fill_22");
@@ -2538,9 +2464,10 @@ function RothLadder({ params }) {
     filingStatus,
   } = ex;
 
-  const domLabel = isNoTaxState
-    ? "No Tax State Move or Out of Country"
-    : `${params.stateOfResidence} Domicile (with tax) · CA/NY/Washington worst-case`;
+const state = params.stateOfResidence || "NJ";   // fallback to your actual state
+const domLabel = isNoTaxState
+  ? "No Tax State Move or Out of Country"
+  : `${state} Domicile (with tax) · CA/NY/Washington worst-case`;
   const domColor = isNoTaxState ? "#34d399" : "#fb923c";
   
   const modeLabels = {
@@ -3917,7 +3844,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
       </div>
 
       {/* Results panel */}
-      {!r90 && <div style={{ textAlign: "center", padding: "20px", color: "#475569", fontSize: 13 }}>{running ? "Running 6,000 paths..." : "Run Monte Carlo from the sidebar to see results here."}</div>}
+      {!r90 && <div style={{ textAlign: "center", padding: "20px", color: "#475569", fontSize: 13 }}>{running ? "Running 3,000 paths..." : "Run Monte Carlo from the sidebar to see results here."}</div>}
       {r90 && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           <div style={{ background: `${rateColor(r90.rate)}12`, border: `1.5px solid ${rateColor(r90.rate)}44`, borderRadius: 10, padding: 18 }}>
@@ -4425,7 +4352,7 @@ function generateActions({
   const actions = [];
   const swr = (params.sp / params.port) * 100;
   const isNoTaxState = params.twoHousehold;
-  const _accts = assumptions.accounts || [];
+  const _accts = BLANK_PROFILE.accounts || [];
   const preTaxTotal = _accts.filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
   const _rothTotal = _accts.filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
   const rothPct = params.port > 0 ? _rothTotal / params.port : 0;
@@ -4517,7 +4444,7 @@ function generateActions({
       deadline: "Pre-retirement",
     });
   }
-  const _hsaBal = (assumptions.accounts || []).filter(a => a.category === "hsa").reduce((s, a) => s + (a.balance || 0), 0);
+  const _hsaBal = (BLANK_PROFILE.accounts || []).filter(a => a.category === "hsa").reduce((s, a) => s + (a.balance || 0), 0);
   if (_hsaBal < 50000) {
     actions.push({
       priority: "yellow",
@@ -4554,7 +4481,7 @@ function generateActions({
       deadline: "Before retirement",
     });
   }
-  const taxableBrok = assumptions.taxableBrok|| 0;
+  const taxableBrok = BLANK_PROFILE.taxableBrok|| 0;
   if (taxableBrok < 50000) {
     actions.push({
       priority: "yellow",
@@ -4639,7 +4566,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   const [loadingAI, setLoadingAI] = useState(false);
 
   const runAIAnalysis = async () => {
-    const apiKey = assumptions.geminiApiKey;
+    const apiKey = BLANK_PROFILE.geminiApiKey;
     if (!apiKey) {
       alert('Please enter your Gemini API key in the Profile → Assumptions tab.');
       return;
@@ -4650,7 +4577,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
 
   const successRate = r90?.rate ? (r90.rate * 100).toFixed(1) : 'N/A';
   const withdrawalRate = params?.sp && params?.port ? ((params.sp / params.port) * 100).toFixed(1) : 'N/A';
-  const portfolioGoal = assumptions.portfolioGoal ? (assumptions.portfolioGoal / 1_000_000).toFixed(1) : '3.2';
+  const portfolioGoal = BLANK_PROFILE.portfolioGoal ? (BLANK_PROFILE.portfolioGoal / 1_000_000).toFixed(1) : '3.2';
 
   const prompt = `You are AiRA, an AI retirement planning assistant. Analyze the following retirement plan and provide a complete, well-formed paragraph (4-6 sentences) with one specific recommendation. Do not stop mid-sentence. Be conversational and reference the numbers provided.
 
@@ -4660,8 +4587,8 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
                 - Target Portfolio: $${portfolioGoal}M
                 - Annual Spending: $${(params.sp / 1000).toFixed(0)}K
                 - Withdrawal Rate: ${withdrawalRate}%
-                - Withdrawal Strategy: ${getStrategyLabel(assumptions.withdrawalStrategy)}
-                - State of Residence: ${assumptions.stateOfResidence || 'CA'}
+                - Withdrawal Strategy: ${getStrategyLabel(BLANK_PROFILE.withdrawalStrategy)}
+                - State of Residence: ${BLANK_PROFILE.stateOfResidence || 'CA'}
 
                 Begin your response with "I am AiRA. I have analyzed your plan." and then provide the analysis.`;
 
@@ -5386,7 +5313,8 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
     setLocalValue(raw);
     const num = Number(raw);
     if (!isNaN(num)) {
-      onSet(num); // update parent immediately, but keep local raw string
+      // Only clamp on blur, not during typing
+      onSet(num);
     }
   };
 
@@ -6236,7 +6164,6 @@ function formatDate(dateString) {
 }
 
 export default function AiRAForecaster() {
-  const [mode, setMode] = useState("user");
   const [activeTab, setTab] = useState("networth");
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
@@ -6248,65 +6175,36 @@ export default function AiRAForecaster() {
   const [feedbackText, setFeedbackText] = useState("");
   const isFirst = useRef(true);
 
-  const prof = PROFILES[mode];
-  const [port, setPort] = useState(prof.port);
-  const [contrib, setContrib] = useState(prof.contrib);
-  const [inf, setInf] = useState(prof.inf);
-  const [retAge, setRetAge] = useState(prof.retireAge);
-  const [endAge, setEndAge] = useState(prof.endAge);
-  const [sp, setSp] = useState(prof.sp);
-  const [ssb, setSsb] = useState(prof.ssb);
-  const [ab, setAb] = useState(prof.ab);
-  const [smile, setSmile] = useState(prof.smile);
-  const [tax, setTax] = useState(prof.tax);
-  const [useAb, setUseAb] = useState(prof.useAb);
-  const [real, setReal] = useState(prof.real);
-  const [withdrawalStrategy, setWithdrawalStrategy] = useState("gk"); // "gk", "fixed", "vanguard", "risk", "kitces"
+  // Slider states – initialized from BLANK_PROFILE
+  const [port, setPort] = useState(BLANK_PROFILE.port);
+  const [contrib, setContrib] = useState(BLANK_PROFILE.contrib);
+  const [inf, setInf] = useState(BLANK_PROFILE.inf);
+  const [retAge, setRetAge] = useState(BLANK_PROFILE.retireAge);
+  const [endAge, setEndAge] = useState(BLANK_PROFILE.endAge);
+  const [sp, setSp] = useState(BLANK_PROFILE.sp);
+  const [ssb, setSsb] = useState(BLANK_PROFILE.ssb);
+  const [ab, setAb] = useState(BLANK_PROFILE.ab);
+  const [smile, setSmile] = useState(BLANK_PROFILE.smile);
+  const [tax, setTax] = useState(BLANK_PROFILE.tax);
+  const [useAb, setUseAb] = useState(BLANK_PROFILE.useAb);
+  const [real, setReal] = useState(BLANK_PROFILE.real);
+  const [withdrawalStrategy, setWithdrawalStrategy] = useState(BLANK_PROFILE.withdrawalStrategy || "gk");
 
-  const [assumptions, setAssumptions] = useState({
-    // Personal — blank by default, loaded from JSON
-    name: BLANK_PROFILE.name,
-    dob:  BLANK_PROFILE.dob,
-    stateOfResidence: BLANK_PROFILE.stateOfResidence,
-    employerStartDate: BLANK_PROFILE.employerStartDate,
-    // Account breakdown
-    accounts: BLANK_PROFILE.accounts,
-    // MC model parameters
-    abReliability: BLANK_PROFILE.abReliability,
-    abGrowth:      BLANK_PROFILE.abGrowth,
-    ssCola:        BLANK_PROFILE.ssCola,
-    preRetireEq:   BLANK_PROFILE.preRetireEq,
-    postRetireEq:  BLANK_PROFILE.postRetireEq,
-    hcShockAge:    BLANK_PROFILE.hcShockAge,
-    hcProb:        BLANK_PROFILE.hcProb,
-    hcMin:         BLANK_PROFILE.hcMin,
-    hcMax:         BLANK_PROFILE.hcMax,
-    withdrawalStrategy: BLANK_PROFILE.withdrawalStrategy,
-    fixedWithdrawalRate: BLANK_PROFILE.fixedWithdrawalRate,
-    ssAge: BLANK_PROFILE.ssAge,
-    // Income (also blank by default)
-    ab:  BLANK_PROFILE.ab,
-    ssb: BLANK_PROFILE.ssb,
-    useJointRmdTable: BLANK_PROFILE.useJointRmdTable,
-    cashRealReturn: BLANK_PROFILE.cashRealReturn,
-    // Mortgage
-    mortBalance: BLANK_PROFILE.mortBalance,
-    mortRate: BLANK_PROFILE.mortRate,
-    mortStart: BLANK_PROFILE.mortStart,
-    mortTerm: BLANK_PROFILE.mortTerm,
-    mortExtra: BLANK_PROFILE.mortExtra,
-    mortPI: BLANK_PROFILE.mortPI,
-    properties: BLANK_PROFILE.properties,
-    // Expense model
-    housingType: BLANK_PROFILE.housingType,
-    annualRent: BLANK_PROFILE.annualRent,
-    carveouts: BLANK_PROFILE.carveouts,
-    rothConversionTarget: BLANK_PROFILE.rothConversionTarget,
-    checkpoints: BLANK_PROFILE.checkpoints,
-    earlyRetireTarget: BLANK_PROFILE.earlyRetireTarget,
-    portfolioGoal: BLANK_PROFILE.portfolioGoal,
-    twoHousehold: BLANK_PROFILE.twoHousehold,
-    geminiApiKey:  BLANK_PROFILE.geminiApiKey,
+  // Assumptions state – all user data lives here
+  const [assumptions, setAssumptions] = useState(() => {
+    // Try to load saved profile on initialization
+    const saved = loadProfileFromLocal();
+    if (saved) {
+      return {
+        ...BLANK_PROFILE,
+        ...saved,
+        accounts: saved.accounts || BLANK_PROFILE.accounts,
+        properties: saved.properties || BLANK_PROFILE.properties,
+        checkpoints: saved.checkpoints || BLANK_PROFILE.checkpoints,
+        carveouts: saved.carveouts || BLANK_PROFILE.carveouts,
+      };
+    }
+    return { ...BLANK_PROFILE };
   });
 
   const updateAssumption = useCallback(
@@ -6318,15 +6216,38 @@ export default function AiRAForecaster() {
     emailjs.init(process.env.REACT_APP_EMAILJS_USER_ID);
   }, []);
 
+  // Auto‑load saved profile on mount (already handled in useState initializer, but sync sliders)
+  useEffect(() => {
+    const saved = loadProfileFromLocal();
+    if (!saved) return;
+
+    if (saved.retireAge !== undefined) setRetAge(saved.retireAge);
+    if (saved.endAge !== undefined) setEndAge(saved.endAge);
+    if (saved.port !== undefined) setPort(saved.port);
+    if (saved.contrib !== undefined) setContrib(saved.contrib);
+    if (saved.inf !== undefined) setInf(saved.inf);
+    if (saved.sp !== undefined) setSp(saved.sp);
+    if (saved.ssb !== undefined) setSsb(saved.ssb);
+    if (saved.ab !== undefined) setAb(saved.ab);
+    if (saved.useAb !== undefined) setUseAb(saved.useAb);
+    if (saved.smile !== undefined) setSmile(saved.smile);
+    if (saved.tax !== undefined) setTax(saved.tax);
+    if (saved.real !== undefined) setReal(saved.real);
+    if (saved.withdrawalStrategy !== undefined) setWithdrawalStrategy(saved.withdrawalStrategy);
+
+    setStale(true);
+  }, []);
+
+  // Derived values from assumptions
   const currentAge = useMemo(() => {
     try {
       const d = new Date(assumptions.dob);
-      if (isNaN(d)) return prof.currentAge;
+      if (isNaN(d)) return BLANK_PROFILE.currentAge;
       return Math.floor((new Date() - d) / (365.25 * 24 * 3600 * 1000));
     } catch {
-      return prof.currentAge;
+      return BLANK_PROFILE.currentAge;
     }
-  }, [assumptions.dob, prof.currentAge]);
+  }, [assumptions.dob]);
 
   const rmdAge = useMemo(() => {
     const override = assumptions.rmdStartAge;
@@ -6347,123 +6268,84 @@ export default function AiRAForecaster() {
   const days = Math.max(0, Math.floor((DDAY_dynamic - new Date()) / 86400000));
   const countdown = useCountdown(DDAY_dynamic, assumptions.employerStartDate);
 
-  const switchMode = useCallback((m) => {
-    setMode(m);
-    const p = PROFILES[m];
-    const acctTotal = (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0);
-    setPort(acctTotal > 0 ? acctTotal : p.port);
-    setContrib(p.contrib);
-    setInf(p.inf);
-    setRetAge(p.retireAge);
-    setEndAge(p.endAge);
-    setSp(p.sp);
-    updateAssumption("ssAge", p.ssAge);
-    setSsb(p.ssb);
-    setAb(p.ab);
-    setSmile(p.smile);
-    setTax(p.tax);
-    setUseAb(p.useAb);
-    setReal(p.real);
-    updateAssumption("twoHousehold", true);
-    if (p.accounts) updateAssumption("accounts", p.accounts);
-    if (p.mortBalance !== undefined) updateAssumption("mortBalance", p.mortBalance);
-    if (p.mortRate !== undefined) updateAssumption("mortRate", p.mortRate);
-    if (p.mortStart) updateAssumption("mortStart", p.mortStart);
-    if (p.mortTerm) updateAssumption("mortTerm", p.mortTerm);
-    if (p.mortExtra !== undefined) updateAssumption("mortExtra", p.mortExtra);
-    setR85(null);
-    setR90(null);
-    setStress(null);
-    setStale(false);
-    updateAssumption("ssAge", p.ssAge);
-  }, [updateAssumption]);
-
+  // Main params object for simulations – uses assumptions, NOT BLANK_PROFILE
   const params = useMemo(
-      () => ({
-        dob: assumptions.dob || "",
-        rmdStartAge: assumptions.rmdStartAge,
-        retireAge: retAge,
-        endAge,
-        port,
-        contrib,
-        inf,
-        sp: assumptions.twoHousehold ? sp : prof.spSpendOutofState,
-        ssb,
-        ab,
-        useAb,
-        smile,
-        tax,
-        real,
-        // GK dynamic — derived from spending needs
-        gkFloor: Math.round((assumptions.twoHousehold ? sp : (prof.spSpendOutofState || sp)) * 0.65),
-        gkCeiling: Math.round((assumptions.twoHousehold ? sp : (prof.spSpendOutofState || sp)) * 1.35),
-        mortBalance: assumptions.mortBalance || 0,
-        mortRate: assumptions.mortRate || 6.5,
-        mortStart: assumptions.mortStart || "2020-01",
-        mortTerm: assumptions.mortTerm || 30,
-        mortExtra: assumptions.mortExtra || 0,
-        rePrimaryResidencce: prof.rePrimaryResidencce,
-        reRentalUnit1: prof.reRentalUnit1,
-        reRentalUnit2: prof.reRentalUnit2,
-        twoHousehold: assumptions.twoHousehold,           // ✅ reference from assumptions
-        currentAge,
-        abReliability: assumptions.abReliability,
-        abGrowth: assumptions.abGrowth,
-        ssCola: assumptions.ssCola,
-        preRetireEq: assumptions.preRetireEq,
-        postRetireEq: assumptions.postRetireEq,
-        hcShockAge: assumptions.hcShockAge,
-        hcProb: assumptions.hcProb,
-        hcMin: assumptions.hcMin,
-        hcMax: assumptions.hcMax,
-        accounts: assumptions.accounts,
-        properties: assumptions.properties || BLANK_PROFILE.properties,
-        filingStatus: assumptions.filingStatus || "mfj",
-        reGrowthRate: assumptions.reGrowthRate ?? 3.0,
-        housingType: assumptions.housingType || "own",
-        annualRent: assumptions.annualRent || 0,
-        carveouts: assumptions.carveouts || [],
-        rothConversionTarget: assumptions.rothConversionTarget || "off",
-        taxFunding: assumptions.taxFunding || "from_taxable",
-        vanguardInitialRate: 0.04,
-        vanguardCap: 0.05,
-        vanguardFloor: -0.025,
-        safeWithdrawalRate: 0.04,
-        fixedWithdrawalRate: (assumptions.fixedWithdrawalRate || 4.0) / 100,
-        ssAge: assumptions.ssAge,
-      }),
-      [
-        prof,
-        retAge,
-        endAge,
-        port,
-        contrib,
-        inf,
-        sp,
-        ssb,
-        ab,
-        useAb,
-        smile,
-        tax,
-        real,
-        assumptions,                // ✅ only assumptions is needed now
-        currentAge,
-        withdrawalStrategy,
-      ]
-    );  
+    () => ({
+      dob: assumptions.dob || "",
+      rmdStartAge: assumptions.rmdStartAge,
+      currentAge,
+      retireAge: retAge,
+      endAge,
+      ssAge: assumptions.ssAge,
+      port,
+      contrib,
+      accounts: assumptions.accounts,
+      sp: assumptions.twoHousehold ? sp : (assumptions.spSpendOutofState || sp),
+      spSpendOutofState: assumptions.spSpendOutofState,
+      gkFloor: Math.round((assumptions.twoHousehold ? sp : (assumptions.spSpendOutofState || sp)) * 0.65),
+      gkCeiling: Math.round((assumptions.twoHousehold ? sp : (assumptions.spSpendOutofState || sp)) * 1.35),
+      ssb,
+      ab,
+      useAb,
+      abReliability: assumptions.abReliability,
+      abGrowth: assumptions.abGrowth,
+      ssCola: assumptions.ssCola,
+      inf,
+      smile,
+      tax,
+      real,
+      filingStatus: assumptions.filingStatus || "mfj",
+      stateOfResidence: assumptions.stateOfResidence,
+      twoHousehold: assumptions.twoHousehold,
+      mortBalance: assumptions.mortBalance || 0,
+      mortRate: assumptions.mortRate || 6.5,
+      mortStart: assumptions.mortStart || "2020-01",
+      mortTerm: assumptions.mortTerm || 30,
+      mortExtra: assumptions.mortExtra || 0,
+      properties: assumptions.properties || [],
+      reGrowthRate: assumptions.reGrowthRate ?? 3.0,
+      housingType: assumptions.housingType || "own",
+      annualRent: assumptions.annualRent || 0,
+      carveouts: assumptions.carveouts || [],
+      rothConversionTarget: assumptions.rothConversionTarget || "off",
+      taxFunding: assumptions.taxFunding || "from_taxable",
+      preRetireEq: assumptions.preRetireEq,
+      postRetireEq: assumptions.postRetireEq,
+      hcShockAge: assumptions.hcShockAge,
+      hcProb: assumptions.hcProb,
+      hcMin: assumptions.hcMin,
+      hcMax: assumptions.hcMax,
+      cashRealReturn: assumptions.cashRealReturn ?? 1.0,
+      useJointRmdTable: assumptions.useJointRmdTable || false,
+      withdrawalStrategy: assumptions.withdrawalStrategy,
+      fixedWithdrawalRate: (assumptions.fixedWithdrawalRate || 4.0) / 100,
+      vanguardInitialRate: 0.04,
+      vanguardCap: 0.05,
+      vanguardFloor: -0.025,
+      safeWithdrawalRate: 0.04,
+      checkpoints: assumptions.checkpoints || [],
+      earlyRetireTarget: assumptions.earlyRetireTarget,
+      portfolioGoal: assumptions.portfolioGoal,
+    }),
+    [
+      retAge, endAge, port, contrib, inf, sp, ssb, ab, useAb, smile, tax, real,
+      assumptions, currentAge,
+    ]
+  );
 
   const mortgageSched = useMemo(
-  () => mortgageSchedule(
-    assumptions.mortBalance || 0,
-    assumptions.mortRate || 6.5,
-    assumptions.mortStart || "2020-01",
-    assumptions.mortTerm || 30,
-    assumptions.mortExtra || 0
-  ),
-  [assumptions.mortBalance, assumptions.mortRate, assumptions.mortStart, assumptions.mortTerm, assumptions.mortExtra]
-);
+    () =>
+      mortgageSchedule(
+        assumptions.mortBalance || 0,
+        assumptions.mortRate || 6.5,
+        assumptions.mortStart || "2020-01",
+        assumptions.mortTerm || 30,
+        assumptions.mortExtra || 0
+      ),
+    [assumptions.mortBalance, assumptions.mortRate, assumptions.mortStart, assumptions.mortTerm, assumptions.mortExtra]
+  );
 
-const mortgagePayoffYear = mortgageSched.payoffYr;
+  const mortgagePayoffYear = mortgageSched.payoffYr;
 
   useEffect(() => {
     if (isFirst.current) {
@@ -6492,55 +6374,43 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   const analogue = r90 ? getAnalogue(r90.rate) : null;
 
   const TABS = [
-    ["networth",   "📊 Net Worth"],
+    ["networth", "📊 Net Worth"],
     ["montecarlo", "🎲 Forecast"],
-    ["scenarios",  "🎯 Scenarios"],
-    ["income",     "💵 Income"],
-    ["mortgage",   "🏠 Mortgage"],
+    ["scenarios", "🎯 Scenarios"],
+    ["income", "💵 Income"],
+    ["mortgage", "🏠 Mortgage"],
     ["actionplan", "✅ Action Plan"],
-    ["assumptions","👤 Profile"],
+    ["assumptions", "👤 Profile"],
   ];
 
   const needsMC = ["montecarlo", "networth", "fan"];
   const hasMC = !!r90;
 
-  /* handleSendFeedback: Collects feedback type and message, then sends it via EmailJS. Validates input and provides user feedback on success or failure. */
   const handleSendFeedback = async () => {
-
-      if (!feedbackType) {
-        alert("Please select a feedback type.");
-        return;
-      }
-
-      const serviceId = process.env.REACT_APP_EMAILJS_SERVICE_ID;
-      const templateId = process.env.REACT_APP_EMAILJS_TEMPLATE_ID;
-
-      const templateParams = {
-        type: feedbackType,
-        message: feedbackText,
-        timestamp: new Date().toISOString(),
-      };
-           console.log('EmailJS Debug: Template Params:', templateParams);
-
-      try {
-            const response = await emailjs.send(serviceId, templateId, templateParams);
-            console.log('EmailJS Debug: SUCCESS!', response.status, response.text);
-            alert('Thank you for your feedback! 🙏');
-            setFeedbackType(null);
-            setFeedbackText('');
-            setShowFeedback(false);
-
-          } catch (error) {
-            // Log the FULL error object for maximum detail
-            console.error('EmailJS Debug: FAILED.', error);
-            // Often the most useful info is here:
-            if (error.text) {
-                console.error('EmailJS Error Details:', error.text);
-            }
-            alert(`Oops! Something went wrong. Check the console for details. (Status: ${error.status})`);
-          }
+    if (!feedbackType) {
+      alert("Please select a feedback type.");
+      return;
+    }
+    const serviceId = process.env.REACT_APP_EMAILJS_SERVICE_ID;
+    const templateId = process.env.REACT_APP_EMAILJS_TEMPLATE_ID;
+    const templateParams = {
+      type: feedbackType,
+      message: feedbackText,
+      timestamp: new Date().toISOString(),
+    };
+    try {
+      await emailjs.send(serviceId, templateId, templateParams);
+      alert("Thank you for your feedback! 🙏");
+      setFeedbackType(null);
+      setFeedbackText("");
+      setShowFeedback(false);
+    } catch (error) {
+      console.error("EmailJS Error:", error);
+      alert("Oops! Something went wrong. Check the console for details.");
+    }
   };
 
+  // --- RENDER ---
   return (
     <>
       <style>{CSS}</style>
@@ -6555,105 +6425,82 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-            {Object.entries(PROFILES).map(([k, v]) => (
-              <button
-                key={k}
-                className={`mbtn ${
-                  mode === k ? (k === "demo" ? "demo-on" : "on") : ""
-                }`}
-                onClick={() => switchMode(k)}
-              >
-                {k === "demo" ? "🎬 Demo" : "👤 My Plan"}
-              </button>
-            ))}
-            <div style={{ width:1, height:20, background:"rgba(255,255,255,0.1)", margin:"0 4px" }} />
-            <button className="mbtn" title="Export profile to JSON"
-              onClick={() => exportProfile({
-                // ---- Identity ----
-                name: assumptions.name || "",
-                dob: assumptions.dob || "",
-                stateOfResidence: assumptions.stateOfResidence || "CA",
-                employerStartDate: assumptions.employerStartDate || "",
-                filingStatus: assumptions.filingStatus || "mfj",
-                twoHousehold: assumptions.twoHousehold,               // ✅ added
-
-                // ---- Core Retirement ----
-                retireAge: retAge,
-                endAge: endAge,
-                currentAge: currentAge,                                // derived, but save for reference
-                port: port,
-                contrib: contrib,
-                inf: inf,
-                sp: sp,
-                spSpendOutofState: prof.spSpendOutofState || 48000,
-                spInStateSpend: prof.spInStateSpend || 0,
-                ssAge: assumptions.ssAge,
-                ssb: ssb,
-                ab: ab,
-                useAb: useAb,
-                smile: smile,
-                tax: tax,
-                real: real,
-
-                // ---- GK Guardrails (calculated, but save for reference) ----
-                gkFloor: params.gkFloor,
-                gkCeiling: params.gkCeiling,
-                withdrawalStrategy: withdrawalStrategy,
-
-                // ---- Targets ----
-                portfolioGoal: assumptions.portfolioGoal,              // ✅ added
-                earlyRetireTarget: assumptions.earlyRetireTarget,
-
-                // ---- Mortgage ----
-                mortBalance: assumptions.mortBalance || 0,
-                mortRate: assumptions.mortRate || 6.5,
-                mortStart: assumptions.mortStart || "2020-01",
-                mortTerm: assumptions.mortTerm || 30,
-                mortExtra: assumptions.mortExtra || 0,
-                mortPI: assumptions.mortPI || 0,
-
-                // ---- Real Estate ----
-                properties: assumptions.properties || BLANK_PROFILE.properties,
-                reGrowthRate: assumptions.reGrowthRate ?? 3.0,
-
-                // ---- Accounts ----
-                accounts: assumptions.accounts || BLANK_PROFILE.accounts,
-
-                // ---- Expense Model ----
-                housingType: assumptions.housingType || "own",
-                annualRent: assumptions.annualRent || 0,
-                carveouts: assumptions.carveouts || [],
-                rothConversionTarget: assumptions.rothConversionTarget || "off",
-                taxFunding: assumptions.taxFunding || "from_taxable",
-
-                // ---- Monte Carlo Parameters ----
-                abReliability: assumptions.abReliability,
-                abGrowth: assumptions.abGrowth,
-                ssCola: assumptions.ssCola,
-                preRetireEq: assumptions.preRetireEq,
-                postRetireEq: assumptions.postRetireEq,
-                hcShockAge: assumptions.hcShockAge,
-                hcProb: assumptions.hcProb,
-                hcMin: assumptions.hcMin,
-                hcMax: assumptions.hcMax,
-                cashRealReturn: assumptions.cashRealReturn ?? 1.0,
-                useJointRmdTable: assumptions.useJointRmdTable || false,
-
-                // ---- Checkpoints ----
-                checkpoints: assumptions.checkpoints || [],
-
-                // ---- Meta ----
-                exportedAt: new Date().toISOString(),
-                appVersion: APP_VERSION,
-              }, assumptions.name
-                  ? `AiRA_Profile_${assumptions.name.trim().replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "AiRA_Profile"}`
-                  : "AiRA_Profile")}
+            <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
+            <button
+              className="mbtn"
+              title="Export profile to JSON"
+              onClick={() =>
+                exportProfile(
+                  {
+                    name: assumptions.name || "",
+                    dob: assumptions.dob || "",
+                    stateOfResidence: assumptions.stateOfResidence || "CA",
+                    employerStartDate: assumptions.employerStartDate || "",
+                    filingStatus: assumptions.filingStatus || "mfj",
+                    twoHousehold: assumptions.twoHousehold,
+                    retireAge: retAge,
+                    endAge: endAge,
+                    currentAge: currentAge,
+                    port: port,
+                    contrib: contrib,
+                    inf: inf,
+                    sp: sp,
+                    spSpendOutofState: assumptions.spSpendOutofState || 48000,
+                    spInStateSpend: assumptions.spInStateSpend || 0,
+                    ssAge: assumptions.ssAge,
+                    ssb: ssb,
+                    ab: ab,
+                    useAb: useAb,
+                    smile: smile,
+                    tax: tax,
+                    real: real,
+                    gkFloor: params.gkFloor,
+                    gkCeiling: params.gkCeiling,
+                    withdrawalStrategy: assumptions.withdrawalStrategy,
+                    portfolioGoal: assumptions.portfolioGoal,
+                    earlyRetireTarget: assumptions.earlyRetireTarget,
+                    mortBalance: assumptions.mortBalance || 0,
+                    mortRate: assumptions.mortRate || 6.5,
+                    mortStart: assumptions.mortStart || "2020-01",
+                    mortTerm: assumptions.mortTerm || 30,
+                    mortExtra: assumptions.mortExtra || 0,
+                    mortPI: assumptions.mortPI || 0,
+                    properties: assumptions.properties || [],
+                    reGrowthRate: assumptions.reGrowthRate ?? 3.0,
+                    accounts: assumptions.accounts || [],
+                    housingType: assumptions.housingType || "own",
+                    annualRent: assumptions.annualRent || 0,
+                    carveouts: assumptions.carveouts || [],
+                    rothConversionTarget: assumptions.rothConversionTarget || "off",
+                    taxFunding: assumptions.taxFunding || "from_taxable",
+                    abReliability: assumptions.abReliability,
+                    abGrowth: assumptions.abGrowth,
+                    ssCola: assumptions.ssCola,
+                    preRetireEq: assumptions.preRetireEq,
+                    postRetireEq: assumptions.postRetireEq,
+                    hcShockAge: assumptions.hcShockAge,
+                    hcProb: assumptions.hcProb,
+                    hcMin: assumptions.hcMin,
+                    hcMax: assumptions.hcMax,
+                    cashRealReturn: assumptions.cashRealReturn ?? 1.0,
+                    useJointRmdTable: assumptions.useJointRmdTable || false,
+                    checkpoints: assumptions.checkpoints || [],
+                    exportedAt: new Date().toISOString(),
+                    appVersion: APP_VERSION,
+                  },
+                  assumptions.name
+                    ? `AiRA_Profile_${assumptions.name.trim().replace(/[^A-Za-z0-9_-]+/g, "_")}`
+                    : "AiRA_Profile"
+                )
+              }
             >
               ⬇ Export
             </button>
-            <button className="mbtn" title="Import profile from JSON"
-                onClick={() => importProfile((data) => {
-                  // ---- 1. Update main sliders ----
+            <button
+              className="mbtn"
+              title="Import profile from JSON"
+              onClick={() =>
+                importProfile((data) => {
                   if (data.retireAge !== undefined) setRetAge(data.retireAge);
                   if (data.endAge !== undefined) setEndAge(data.endAge);
                   if (data.port !== undefined) setPort(data.port);
@@ -6664,74 +6511,63 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   if (data.ssb !== undefined) setSsb(data.ssb);
                   if (data.ab !== undefined) setAb(data.ab);
                   if (data.useAb !== undefined) setUseAb(data.useAb);
-                if (data.smile !== undefined) setSmile(data.smile);
-                if (data.tax !== undefined) setTax(data.tax);
-                if (data.real !== undefined) setReal(data.real);
-                if (data.withdrawalStrategy !== undefined) setWithdrawalStrategy(data.withdrawalStrategy);
+                  if (data.smile !== undefined) setSmile(data.smile);
+                  if (data.tax !== undefined) setTax(data.tax);
+                  if (data.real !== undefined) setReal(data.real);
+                  if (data.withdrawalStrategy !== undefined) setWithdrawalStrategy(data.withdrawalStrategy);
 
-                // ---- 2. Migrate old account fields if necessary ----
-                if (data.solo401k !== undefined && !data.accounts) {
-                  data.accounts = [
-                    ...(data.solo401k ? [{ id: "m1", category: "pretax", name: "Solo 401k", balance: data.solo401k }] : []),
-                    ...(data.alpha401k ? [{ id: "m2", category: "pretax", name: "Alpha 401k", balance: data.alpha401k }] : []),
-                    ...(data.rothFid ? [{ id: "m3", category: "roth", name: "Roth Fidelity", balance: data.rothFid }] : []),
-                    ...(data.rothVgd ? [{ id: "m4", category: "roth", name: "Roth Vanguard", balance: data.rothVgd }] : []),
-                    ...(data.hsaBal ? [{ id: "m5", category: "hsa", name: "HSA", balance: data.hsaBal }] : []),
-                    ...(data.taxable ? [{ id: "m6", category: "taxable", name: "Taxable", balance: data.taxable }] : []),
-                  ];
-                  delete data.solo401k; delete data.alpha401k; delete data.rothFid;
-                  delete data.rothVgd; delete data.hsaBal; delete data.taxable;
-                }
+                  // Migrate old account fields if needed
+                  if (data.solo401k !== undefined && !data.accounts) {
+                    data.accounts = [
+                      ...(data.solo401k ? [{ id: "m1", category: "pretax", name: "Solo 401k", balance: data.solo401k }] : []),
+                      ...(data.alpha401k ? [{ id: "m2", category: "pretax", name: "Alpha 401k", balance: data.alpha401k }] : []),
+                      ...(data.rothFid ? [{ id: "m3", category: "roth", name: "Roth Fidelity", balance: data.rothFid }] : []),
+                      ...(data.rothVgd ? [{ id: "m4", category: "roth", name: "Roth Vanguard", balance: data.rothVgd }] : []),
+                      ...(data.hsaBal ? [{ id: "m5", category: "hsa", name: "HSA", balance: data.hsaBal }] : []),
+                      ...(data.taxable ? [{ id: "m6", category: "taxable", name: "Taxable", balance: data.taxable }] : []),
+                    ];
+                    delete data.solo401k;
+                    delete data.alpha401k;
+                    delete data.rothFid;
+                    delete data.rothVgd;
+                    delete data.hsaBal;
+                    delete data.taxable;
+                  }
+                  if (!Array.isArray(data.accounts)) data.accounts = BLANK_PROFILE.accounts;
+                  if (data.port === undefined) {
+                    const acctTotal = data.accounts.reduce((s, a) => s + (a.balance || 0), 0);
+                    if (acctTotal > 0) setPort(acctTotal);
+                  }
+                  if (data.mortStart && !data.mortStart.includes("-01")) data.mortStart = data.mortStart + "-01";
+                  if (!Array.isArray(data.properties)) data.properties = BLANK_PROFILE.properties;
+                  if (!Array.isArray(data.carveouts)) data.carveouts = [];
+                  if (!Array.isArray(data.checkpoints)) data.checkpoints = [];
 
-                // Ensure accounts is always an array
-                if (!Array.isArray(data.accounts)) data.accounts = BLANK_PROFILE.accounts;
+                  setAssumptions((prev) => ({
+                    ...prev,
+                    ...data,
+                    name: data.name || "",
+                    dob: data.dob || "",
+                    stateOfResidence: data.stateOfResidence || "CA",
+                    filingStatus: data.filingStatus || "mfj",
+                    twoHousehold: data.twoHousehold ?? true,
+                    portfolioGoal: data.portfolioGoal ?? 3_200_000,
+                    earlyRetireTarget: data.earlyRetireTarget ?? 3_500_000,
+                    accounts: data.accounts,
+                    properties: data.properties,
+                    checkpoints: data.checkpoints,
+                    carveouts: data.carveouts,
+                  }));
 
-                // Recalculate portfolio total from accounts if not explicitly provided
-                if (data.port === undefined) {
-                  const acctTotal = data.accounts.reduce((s, a) => s + (a.balance || 0), 0);
-                  if (acctTotal > 0) setPort(acctTotal);
-                }
-
-                // Fix mortgage start date format (add "-01" if missing)
-                if (data.mortStart && !data.mortStart.includes("-01")) {
-                  data.mortStart = data.mortStart + "-01";
-                }
-
-                // Ensure properties is an array
-                if (!Array.isArray(data.properties)) data.properties = BLANK_PROFILE.properties;
-
-                // Ensure carveouts is an array
-                if (!Array.isArray(data.carveouts)) data.carveouts = [];
-
-                // Ensure checkpoints is an array
-                if (!Array.isArray(data.checkpoints)) data.checkpoints = [];
-
-                // ---- 3. FULL REPLACEMENT of assumptions state ----
-                setAssumptions(prev => ({
-                  ...prev,
-                  ...data,
-                  // Ensure these are never undefined
-                  name: data.name || "",
-                  dob: data.dob || "",
-                  stateOfResidence: data.stateOfResidence || "CA",
-                  filingStatus: data.filingStatus || "mfj",
-                  twoHousehold: data.twoHousehold ?? true,
-                  portfolioGoal: data.portfolioGoal ?? 3_200_000,
-                  earlyRetireTarget: data.earlyRetireTarget ?? 3_500_000,
-                  accounts: data.accounts,
-                  properties: data.properties,
-                  checkpoints: data.checkpoints,
-                  carveouts: data.carveouts,
-                }));
-
-                // ---- 4. Switch to user mode and mark stale ----
-                setMode("user");
-                setStale(true);
-                alert(`✅ Profile loaded${data.name ? ` for ${data.name}` : ""}. Press ▶ Run Monte Carlo to update.`);
-              })}>
+                  setStale(true);
+                  alert(`✅ Profile loaded${data.name ? ` for ${data.name}` : ""}. Press ▶ Run Monte Carlo to update.`);
+                })
+              }
+            >
               ⬆ Import
             </button>
-            <a href="https://buymeacoffee.com/axwacki"
+            <a
+              href="https://buymeacoffee.com/axwacki"
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -6750,36 +6586,50 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 cursor: "pointer",
                 transition: "all 0.2s",
               }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,193,7,0.18)"}
-              onMouseLeave={e => e.currentTarget.style.background = "rgba(255,193,7,0.08)"}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,193,7,0.18)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,193,7,0.08)")}
             >
               ☕ Buy me a coffee
             </a>
-            {/* Feedback widget */}
             <div style={{ position: "relative", display: "inline-flex" }}>
               <button
-                onClick={() => setShowFeedback(prev => !prev)}
+                onClick={() => setShowFeedback((prev) => !prev)}
                 style={{
-                  display: "flex", alignItems: "center", gap: 5,
-                  padding: "5px 13px", borderRadius: 7,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "5px 13px",
+                  borderRadius: 7,
                   border: "1px solid rgba(139,92,246,0.4)",
                   background: "rgba(139,92,246,0.08)",
-                  color: "#a78bfa", fontSize: 11,
-                  fontFamily: "'DM Sans',sans-serif", fontWeight: 600,
-                  cursor: "pointer", transition: "all 0.2s",
+                  color: "#a78bfa",
+                  fontSize: 11,
+                  fontFamily: "'DM Sans',sans-serif",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "all 0.2s",
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.18)"}
-                onMouseLeave={e => e.currentTarget.style.background = "rgba(139,92,246,0.08)"}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(139,92,246,0.18)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(139,92,246,0.08)")}
               >
                 💬 Feedback
               </button>
               {showFeedback && (
-                <div style={{
-                  position: "absolute", top: "100%", right: 0, marginTop: 6,
-                  background: "#0f2138", border: "1px solid #1e3a5f", borderRadius: 10,
-                  padding: 14, width: 280, zIndex: 999,
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                }}>
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: 6,
+                    background: "#0f2138",
+                    border: "1px solid #1e3a5f",
+                    borderRadius: 10,
+                    padding: 14,
+                    width: 280,
+                    zIndex: 999,
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                  }}
+                >
                   <div style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 600, marginBottom: 10 }}>
                     How's AiRA working for you?
                   </div>
@@ -6789,80 +6639,90 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       { emoji: "💡", label: "Idea", type: "suggestion" },
                       { emoji: "🐛", label: "Bug", type: "bug" },
                       { emoji: "👎", label: "Issue", type: "issue" },
-                    ].map(fb => (
-                      <button key={fb.type}
+                    ].map((fb) => (
+                      <button
+                        key={fb.type}
                         onClick={() => setFeedbackType(fb.type)}
                         style={{
-                          flex: 1, padding: "6px 4px", borderRadius: 6, cursor: "pointer",
+                          flex: 1,
+                          padding: "6px 4px",
+                          borderRadius: 6,
+                          cursor: "pointer",
                           border: feedbackType === fb.type ? "1px solid #a78bfa" : "1px solid rgba(255,255,255,0.08)",
                           background: feedbackType === fb.type ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.03)",
                           transition: "all 0.15s",
-                        }}>
+                        }}
+                      >
                         <div style={{ fontSize: 18 }}>{fb.emoji}</div>
-                        <div style={{ fontSize: 9, color: feedbackType === fb.type ? "#a78bfa" : "#64748b", marginTop: 2 }}>{fb.label}</div>
+                        <div style={{ fontSize: 9, color: feedbackType === fb.type ? "#a78bfa" : "#64748b", marginTop: 2 }}>
+                          {fb.label}
+                        </div>
                       </button>
                     ))}
                   </div>
                   <textarea
                     value={feedbackText}
-                    onChange={e => setFeedbackText(e.target.value)}
+                    onChange={(e) => setFeedbackText(e.target.value)}
                     placeholder="Tell us more (optional)..."
                     rows={3}
                     style={{
-                      width: "100%", background: "#0a1628", border: "1px solid #1e3a5f",
-                      color: "#e2e8f0", borderRadius: 6, padding: "8px 10px",
-                      fontSize: 11, fontFamily: "'DM Sans',sans-serif",
-                      resize: "vertical", outline: "none", boxSizing: "border-box",
+                      width: "100%",
+                      background: "#0a1628",
+                      border: "1px solid #1e3a5f",
+                      color: "#e2e8f0",
+                      borderRadius: 6,
+                      padding: "8px 10px",
+                      fontSize: 11,
+                      fontFamily: "'DM Sans',sans-serif",
+                      resize: "vertical",
+                      outline: "none",
+                      boxSizing: "border-box",
                     }}
-                    onFocus={e => e.target.style.borderColor = "#a78bfa"}
-                    onBlur={e => e.target.style.borderColor = "#1e3a5f"}
+                    onFocus={(e) => (e.target.style.borderColor = "#a78bfa")}
+                    onBlur={(e) => (e.target.style.borderColor = "#1e3a5f")}
                   />
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-                    <button onClick={() => setShowFeedback(false)}
-                      style={{ background: "transparent", border: "none", color: "#475569", fontSize: 11, cursor: "pointer" }}>
+                    <button
+                      onClick={() => setShowFeedback(false)}
+                      style={{ background: "transparent", border: "none", color: "#475569", fontSize: 11, cursor: "pointer" }}
+                    >
                       Cancel
                     </button>
                     <button
-                          onClick={handleSendFeedback}
-                          style={{
-                            padding: "5px 16px",
-                            borderRadius: 6,
-                            border: "none",
-                            background: "linear-gradient(135deg,#7c3aed,#a78bfa)",
-                            color: "white",
-                            fontSize: 11,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            fontFamily: "'DM Sans',sans-serif",
-                          }}
-                        >
-                          Send
-                        </button>
+                      onClick={handleSendFeedback}
+                      style={{
+                        padding: "5px 16px",
+                        borderRadius: 6,
+                        border: "none",
+                        background: "linear-gradient(135deg,#7c3aed,#a78bfa)",
+                        color: "white",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        fontFamily: "'DM Sans',sans-serif",
+                      }}
+                    >
+                      Send
+                    </button>
                   </div>
                 </div>
               )}
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div
-              style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color: "#14b8a6",
-                fontFamily: "'DM Mono',monospace",
-              }}
-            >
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#14b8a6", fontFamily: "'DM Mono',monospace" }}>
               {days.toLocaleString()}
             </div>
-            <div
-              style={{ fontSize: 9, color: "#334155" }}
-            >{`days · ${DDAY_dynamic.toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}`}</div>
+            <div style={{ fontSize: 9, color: "#334155" }}>
+              {`days · ${DDAY_dynamic.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}`}
+            </div>
           </div>
         </div>
+
         <div className="layout">
           <div className="sidebar">
             <div className="sb-card">
@@ -6881,110 +6741,113 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 ))}
               </div>
               <div className="progress-bar">
-                <div
-                  className="progress-fill"
-                  style={{ width: `${countdown.pct}%` }}
-                />
+                <div className="progress-fill" style={{ width: `${countdown.pct}%` }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#334155", marginTop: 3 }}>
+                <span>{formatDate(assumptions.employerStartDate)} (Start date)</span>
+                <span style={{ color: "#5eead4", fontWeight: 600 }}>{countdown.pct}%</span>
               </div>
               <div
                 style={{
+                  marginTop: 10,
+                  paddingTop: 10,
+                  borderTop: "1px solid rgba(255,255,255,0.06)",
                   display: "flex",
                   justifyContent: "space-between",
-                  fontSize: 9,
-                  color: "#334155",
-                  marginTop: 3,
+                  alignItems: "baseline",
                 }}
               >
-               <span>{formatDate(assumptions.employerStartDate)} (Start date)</span>
-                <span style={{ color: "#5eead4", fontWeight: 600 }}>
-                  {countdown.pct}%
+                <span style={{ fontSize: 10, color: "#64748b" }}>Total Portfolio</span>
+                <span
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 700,
+                    color: "#5eead4",
+                    fontFamily: "'DM Mono',monospace",
+                    letterSpacing: "-0.5px",
+                  }}
+                >
+                  {fmtM(port)}
                 </span>
               </div>
-              <div style={{
-                    marginTop: 10, paddingTop: 10,
-                    borderTop: "1px solid rgba(255,255,255,0.06)",
-                    display: "flex", justifyContent: "space-between", alignItems: "baseline",
-                  }}>
-                    <span style={{ fontSize: 10, color: "#64748b" }}>Total Portfolio</span>
-                    <span style={{
-                      fontSize: 18, fontWeight: 700, color: "#5eead4",
-                      fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px",
-                    }}>{fmtM(port)}</span>
+            </div>
+
+            <div className="sb-card">
+              <div className="sb-title">MC Engine — {APP_VERSION}</div>
+              <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
+                <div>
+                  📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P bootstrap [-30 / +30%]
+                </div>
+                <div>
+                  📊 <span style={{ color: "#a78bfa" }}>Bonds:</span> 50yr Bloomberg [-15 / +20%]
+                </div>
+                <div>
+                  <span style={{ color: "#fbbf24" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
+                  {(() => {
+                    const s = assumptions.withdrawalStrategy;
+                    if (s === "gk") return `Floor: ${fmtM(params.gkFloor)} · Ceiling ${fmtM(params.gkCeiling)}`;
+                    if (s === "fixed") return `Rate: ${((params.fixedWithdrawalRate || 0.04) * 100).toFixed(1)}%`;
+                    if (s === "vanguard") return `Cap: ${(params.vanguardCap || 0.05) * 100}% · Floor: ${(params.vanguardFloor || -0.025) * 100}%`;
+                    return "";
+                  })()}
+                </div>
+                <div>
+                  🏖 <span style={{ color: "#059669" }}>Rental:</span> {assumptions.abReliability || 80}% reliability per year
+                </div>
+                <div>
+                  🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ color: "#14b8a6" }}>💹 Phase 1 (91/9):</span> {CALIB.phase1Mean}% μ
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      background: "rgba(255,255,255,0.08)",
+                      color: "#64748b",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: "help",
+                      marginLeft: 4,
+                    }}
+                    title="Pre‑retirement expected return (91% stocks / 9% bonds). Historical average annual return."
+                  >
+                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
+                      ℹ️
+                    </span>
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ color: "#fb923c" }}>💹 Phase 2 (70/30):</span> {CALIB.phase2Mean}% μ
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      background: "rgba(255,255,255,0.08)",
+                      color: "#64748b",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: "help",
+                      marginLeft: 4,
+                    }}
+                    title="Post‑retirement expected return (70% stocks / 30% bonds). Lower volatility, slightly lower return."
+                  >
+                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
+                      ℹ️
+                    </span>
+                  </span>
+                </div>
               </div>
             </div>
-            <div className="sb-card">
-                <div className="sb-title">MC Engine — {APP_VERSION}</div>
-                <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
-                  <div>
-                    📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P bootstrap [-30 / +30%]
-                  </div>
-                  <div>
-                    📊 <span style={{ color: "#a78bfa" }}>Bonds:</span> 50yr Bloomberg [-15 / +20%]
-                  </div>
-                  <div>
-                    <span style={{ color: "#fbbf24" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
-                    {(() => {
-                      const s = assumptions.withdrawalStrategy;
-                      if (s === "gk") return `Floor: ${fmtM(params.gkFloor)} · Ceiling ${fmtM(params.gkCeiling)}`;
-                      if (s === "fixed") return `Rate: ${((params.fixedWithdrawalRate || 0.04) * 100).toFixed(1)}%`;
-                      if (s === "vanguard") return `Cap: ${(params.vanguardCap || 0.05) * 100}% · Floor: ${(params.vanguardFloor || -0.025) * 100}%`;
-                      return "";
-                    })()}
-                  </div>
-                  <div>
-                    🏖 <span style={{ color: "#059669" }}>Rental:</span> {assumptions.abReliability || 80}% reliability per year
-                  </div>
-                  <div>
-                    🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ color: "#14b8a6" }}>💹 Phase 1 (91/9):</span>{" "}
-                    {CALIB.phase1Mean}% μ
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 14,
-                        height: 14,
-                        borderRadius: "50%",
-                        background: "rgba(255,255,255,0.08)",
-                        color: "#64748b",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        cursor: "help",
-                        marginLeft: 4,
-                      }}
-                      title="Pre‑retirement expected return (91% stocks / 9% bonds). Historical average annual return."
-                    >
-                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ color: "#fb923c" }}>💹 Phase 2 (70/30):</span>{" "}
-                    {CALIB.phase2Mean}% μ
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 14,
-                        height: 14,
-                        borderRadius: "50%",
-                        background: "rgba(255,255,255,0.08)",
-                        color: "#64748b",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        cursor: "help",
-                        marginLeft: 4,
-                      }}
-                      title="Post‑retirement expected return (70% stocks / 30% bonds). Lower volatility, slightly lower return."
-                    >
-                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
-                    </span>
-                  </div>
-                </div>
-            </div>
+
             <div className="sb-card">
               <div className="sb-title">Portfolio</div>
               <Slider
@@ -6997,6 +6860,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 onChange={setContrib}
               />
             </div>
+
             <div className="sb-card">
               <div className="sb-title">Retirement</div>
               <Slider
@@ -7035,7 +6899,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 step={1}
                 format={(v) => "Age " + v}
                 onChange={(v) => updateAssumption("ssAge", v)}
-                />
+              />
               <Slider
                 label="Rental net"
                 value={ab}
@@ -7046,62 +6910,46 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 onChange={setAb}
               />
             </div>
+
             <div className="sb-card">
               <div className="sb-title">Options</div>
-              <Toggle
-                val={smile}
-                onChange={setSmile}
-                label="🙂 Smile spending"
-              />
-              <Toggle
-                val={tax}
-                onChange={setTax}
-                label="🏛 Tax drag"
-                accent="#d97706"
-              />
-              <Toggle
-                val={useAb}
-                onChange={setUseAb}
-                label="🏖 Rental income"
-                accent="#059669"
-              />
-              <Toggle
-                val={real}
-                onChange={setReal}
-                label="📉 Real dollars"
-                accent="#0ea5e9"
-              />
+              <Toggle val={smile} onChange={setSmile} label="🙂 Smile spending" />
+              <Toggle val={tax} onChange={setTax} label="🏛 Tax drag" accent="#d97706" />
+              <Toggle val={useAb} onChange={setUseAb} label="🏖 Rental income" accent="#059669" />
+              <Toggle val={real} onChange={setReal} label="📉 Real dollars" accent="#0ea5e9" />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <span className="tog-label">🌴 Solo Mode - No State Tax Income Tax Applied</span>
                   <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 16,
-                        height: 16,
-                        borderRadius: "50%",
-                        background: "rgba(255,255,255,0.1)",
-                        color: "#94a3b8",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        cursor: "help",
-                        border: "1px solid rgba(255,255,255,0.15)",
-                      }}
-                      title="Toggle ON (Solo abroad): Uses Out‑of‑State Solo Expenses from Profile Page. · NO state income tax · Lower living expenses.&#10;Toggle OFF (Both in state): Uses Core Lifestyle Spend from Profile Page · State tax applies · Full household expenses."
-                    >
-                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
-                    </span>
-                  </div>
-                  <div
-                    className="tog"
-                    onClick={() => updateAssumption("twoHousehold", !assumptions.twoHousehold)}
-                    style={{ background: assumptions.twoHousehold ? "#a78bfa" : "rgba(255,255,255,0.1)" }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 16,
+                      height: 16,
+                      borderRadius: "50%",
+                      background: "rgba(255,255,255,0.1)",
+                      color: "#94a3b8",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: "help",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                    }}
+                    title="Toggle ON (Solo abroad): Uses Out‑of‑State Solo Expenses from Profile Page. · NO state income tax · Lower living expenses.&#10;Toggle OFF (Both in state): Uses Core Lifestyle Spend from Profile Page · State tax applies · Full household expenses."
                   >
-                    <div className="tok" style={{ left: assumptions.twoHousehold ? 18 : 2 }} />
-                  </div>
+                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
+                      ℹ️
+                    </span>
+                  </span>
                 </div>
+                <div
+                  className="tog"
+                  onClick={() => updateAssumption("twoHousehold", !assumptions.twoHousehold)}
+                  style={{ background: assumptions.twoHousehold ? "#a78bfa" : "rgba(255,255,255,0.1)" }}
+                >
+                  <div className="tok" style={{ left: assumptions.twoHousehold ? 18 : 2 }} />
+                </div>
+              </div>
               <div className="sb-card">
                 <div className="sb-title">Withdrawal Strategy</div>
                 <select
@@ -7131,60 +6979,36 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 </select>
               </div>
             </div>
+
             <button
               className="run-btn"
               onClick={runSimulation}
               disabled={running}
               style={{
-                background: stale
-                  ? "linear-gradient(135deg,#b45309,#d97706)"
-                  : undefined,
+                background: stale ? "linear-gradient(135deg,#b45309,#d97706)" : undefined,
               }}
             >
-              {running
-                ? "Running 6,000 paths..."
-                : stale
-                ? "⚠ Inputs changed — Re-run"
-                : "▶ Run Monte Carlo"}
+              {running ? "Running 6,000 paths..." : stale ? "⚠ Inputs changed — Re-run" : "▶ Run Monte Carlo"}
             </button>
-            
           </div>
+
           <div className="main">
-            {mode === "user" && !assumptions.dob && (
-              <div style={{ background:"rgba(14,165,233,0.1)", border:"2px solid rgba(14,165,233,0.3)", borderRadius:9, padding:"12px 16px" }}>
-                <div style={{ fontSize:13, fontWeight:700, color:"#38bdf8" }}>📂 No profile loaded</div>
-                <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Click ⬆ Import in the header to load your AiRA_Profile.json, or go to 👤 Profile tab to enter data manually, then Export to save it.</div>
+            {!assumptions.dob && (
+              <div style={{ background: "rgba(14,165,233,0.1)", border: "2px solid rgba(14,165,233,0.3)", borderRadius: 9, padding: "12px 16px" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#38bdf8" }}>📂 No profile loaded</div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
+                  Click ⬆ Import in the header to load your AiRA_Profile.json, or go to 👤 Profile tab to enter data manually, then Export to save it.
+                </div>
               </div>
             )}
 
-            {mode === "demo" && (
-                <div style={{
-                  background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
-                  borderRadius: 8,
-                  padding: "8px 16px",
-                  marginBottom: 12,
-                  textAlign: "center",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  color: "white",
-                  boxShadow: "0 2px 8px rgba(124,58,237,0.3)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                }}>
-                  <span>🎬</span> DEMO MODE – Data is for illustration only <span>🎬</span>
-                </div>
-              )}  
-
             <div className="flag-i">
-                🛡 {getStrategyLabel(assumptions.withdrawalStrategy)} active · WR {swr}% ·{" "}
-                {assumptions.withdrawalStrategy === "fixed" && (
-                  <>Fixed Rate: {assumptions.fixedWithdrawalRate || 4.0}% · </>
-                )}
-                {assumptions.twoHousehold ? "Solo (lower spend, no state tax)" : "Both households (full spend, state tax)"} · Rental{" "}
-                {assumptions.abReliability || 80}% reliable · Healthcare shocks modeled
-              </div>
+              🛡 {getStrategyLabel(assumptions.withdrawalStrategy)} active · WR {swr}% ·{" "}
+              {assumptions.withdrawalStrategy === "fixed" && <>Fixed Rate: {assumptions.fixedWithdrawalRate || 4.0}% · </>}
+              {assumptions.twoHousehold ? "Solo (lower spend, no state tax)" : "Both households (full spend, state tax)"} · Rental{" "}
+              {assumptions.abReliability || 80}% reliable · Healthcare shocks modeled
+            </div>
+
             {stale && (
               <div
                 style={{
@@ -7196,117 +7020,94 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   color: "#fbbf24",
                 }}
               >
-                ⚠ Inputs changed — success rates below are stale. Press Re-run
-                to update.
+                ⚠ Inputs changed — success rates below are stale. Press Re-run to update.
               </div>
             )}
 
             <div className="metrics">
-                <div className="met">
-                  <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    Success to {endAge}
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 14,
-                        height: 14,
-                        borderRadius: "50%",
-                        background: "rgba(255,255,255,0.1)",
-                        color: "#64748b",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        cursor: "help",
-                      }}
-                      title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`}
-                    >
-                      ⓘ
-                    </span>
-                  </div>
-                  <div
-                    className="mv"
+              <div className="met">
+                <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  Success to {endAge}
+                  <span
                     style={{
-                      color: r90
-                        ? r90.rate >= 0.85
-                          ? "#0d9488"
-                          : r90.rate >= 0.7
-                          ? "#f59e0b"
-                          : "#ef4444"
-                        : "#334155",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      background: "rgba(255,255,255,0.1)",
+                      color: "#64748b",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: "help",
                     }}
+                    title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`}
                   >
-                    {r90 ? fmtPct(r90.rate) : "—"}
-                  </div>
-                  <div className="ms">3,000 paths · {getStrategyLabel(withdrawalStrategy)}</div>
+                    ⓘ
+                  </span>
                 </div>
-
-                <div className="met">
-                  <div className="ml">Portfolio at D-Day</div>
-                  <div className="mv" style={{ color: "#94a3b8", fontSize: 18 }}>
-                    {r90 ? fmtM(r90.medR) : "—"}
-                  </div>
-                  <div className="ms">Median projected</div>
+                <div
+                  className="mv"
+                  style={{
+                    color: r90 ? (r90.rate >= 0.85 ? "#0d9488" : r90.rate >= 0.7 ? "#f59e0b" : "#ef4444") : "#334155",
+                  }}
+                >
+                  {r90 ? fmtPct(r90.rate) : "—"}
                 </div>
-
-                <div className="met">
-                  <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    Withdrawal rate
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 14,
-                        height: 14,
-                        borderRadius: "50%",
-                        background: "rgba(255,255,255,0.1)",
-                        color: "#64748b",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        cursor: "help",
-                      }}
-                      title="Initial withdrawal rate = (First year spending - guaranteed income) ÷ Portfolio at retirement. 4% is a common benchmark for 30‑year retirements."
-                    >
-                      ⓘ
-                    </span>
-                  </div>
-                  <div
-                    className="mv"
-                    style={{
-                      color:
-                        +swr <= 3
-                          ? "#0d9488"
-                          : +swr <= 4
-                          ? "#34d399"
-                          : +swr <= 5
-                          ? "#f59e0b"
-                          : "#ef4444",
-                      fontSize: 20,
-                    }}
-                  >
-                    {swr}%
-                  </div>
-                  <div className="ms">4% = safe benchmark</div>
-                </div>
+                <div className="ms">3,000 paths · {getStrategyLabel(withdrawalStrategy)}</div>
               </div>
+              <div className="met">
+                <div className="ml">Portfolio at D-Day</div>
+                <div className="mv" style={{ color: "#94a3b8", fontSize: 18 }}>
+                  {r90 ? fmtM(r90.medR) : "—"}
+                </div>
+                <div className="ms">Median projected</div>
+              </div>
+              <div className="met">
+                <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  Withdrawal rate
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      background: "rgba(255,255,255,0.1)",
+                      color: "#64748b",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: "help",
+                    }}
+                    title="Initial withdrawal rate = (First year spending - guaranteed income) ÷ Portfolio at retirement. 4% is a common benchmark for 30‑year retirements."
+                  >
+                    ⓘ
+                  </span>
+                </div>
+                <div
+                  className="mv"
+                  style={{
+                    color: +swr <= 3 ? "#0d9488" : +swr <= 4 ? "#34d399" : +swr <= 5 ? "#f59e0b" : "#ef4444",
+                    fontSize: 20,
+                  }}
+                >
+                  {swr}%
+                </div>
+                <div className="ms">4% = safe benchmark</div>
+              </div>
+            </div>
 
             {analogue && (
-              <div
-                className="analogue"
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
+              <div className="analogue" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>
-                  {analogue.emoji} "{analogue.text}." — {fmtPct(r90.rate)} to
-                  age {endAge}.
+                  {analogue.emoji} "{analogue.text}." — {fmtPct(r90.rate)} to age {endAge}.
                 </span>
-                <SectorBadge age={prof.currentAge} />
+                <SectorBadge age={currentAge} />
               </div>
             )}
+
             {r90 &&
               (() => {
                 const success = Math.round(r90.rate * 26);
@@ -7320,23 +7121,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       padding: "12px 16px",
                     }}
                   >
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "#64748b",
-                        marginBottom: 8,
-                      }}
-                    >
+                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
                       If 26 people had your exact plan — age {endAge} horizon
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 4,
-                        marginBottom: 8,
-                      }}
-                    >
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
                       {Array.from({ length: 26 }, (_, i) => (
                         <div
                           key={i}
@@ -7351,73 +7139,48 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         />
                       ))}
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ fontSize: 12, color: "#94a3b8" }}>
-                        <span style={{ color: "#0d9488", fontWeight: 700 }}>
-                          {success}
-                        </span>{" "}
-                        make it to {endAge}.{" "}
+                        <span style={{ color: "#0d9488", fontWeight: 700 }}>{success}</span> make it to {endAge}.{" "}
                         {fail > 0 && (
                           <>
-                            {" "}
-                            <span style={{ color: "#ef4444", fontWeight: 700 }}>
-                              {fail}
-                            </span>{" "}
-                            run out.
+                            <span style={{ color: "#ef4444", fontWeight: 700 }}>{fail}</span> run out.
                           </>
                         )}
-                        {fail === 0 && (
-                          <span style={{ color: "#34d399" }}>
-                            {" "}
-                            Everyone makes it.
-                          </span>
-                        )}
+                        {fail === 0 && <span style={{ color: "#34d399" }}> Everyone makes it.</span>}
                       </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#334155",
-                          fontStyle: "italic",
-                        }}
-                      >
-                        100% doesn't exist — room for error IS the plan. —
-                        Morgan Housel
+                      <div style={{ fontSize: 11, color: "#334155", fontStyle: "italic" }}>
+                        100% doesn't exist — room for error IS the plan. — Morgan Housel
                       </div>
                     </div>
                   </div>
                 );
               })()}
+
             <div className="gk-bar">
               <strong style={{ color: "#5eead4" }}>{getStrategyLabel(assumptions.withdrawalStrategy)} Strategy:</strong>{" "}
-                 {assumptions.withdrawalStrategy === "gk" ? (
-                    <>Floor {fmtM(params.gkFloor)} ({assumptions.twoHousehold ? "both" : "solo"}) · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}%.</>
-                  ) : assumptions.withdrawalStrategy === "fixed" ? (
-                    <>Withdrawal rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
-                  ) : assumptions.withdrawalStrategy === "vanguard" ? (
-                    <>Cap: {params.vanguardCap * 100}% · Floor: {params.vanguardFloor * 100}%.</>
-                  ) : (
-                    <>Dynamic spending based on portfolio performance.</>
-                  )}
-                  {" "}
-                  Rental modeled at {params.abReliability}% reliability. Healthcare shocks {params.hcProb}%/yr from age {params.hcShockAge}. As Bill Perkins says — spend in the right life phase. 🌴
+              {assumptions.withdrawalStrategy === "gk" ? (
+                <>
+                  Floor {fmtM(params.gkFloor)} ({assumptions.twoHousehold ? "both" : "solo"}) · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}%.
+                </>
+              ) : assumptions.withdrawalStrategy === "fixed" ? (
+                <>Withdrawal rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
+              ) : assumptions.withdrawalStrategy === "vanguard" ? (
+                <>Cap: {params.vanguardCap * 100}% · Floor: {params.vanguardFloor * 100}%.</>
+              ) : (
+                <>Dynamic spending based on portfolio performance.</>
+              )}{" "}
+              Rental modeled at {params.abReliability}% reliability. Healthcare shocks {params.hcProb}%/yr from age {params.hcShockAge}. As Bill Perkins says — spend in the right life phase. 🌴
             </div>
+
             <div className="tabs">
               {TABS.map(([k, l]) => (
-                <button
-                  key={k}
-                  className={`tab ${activeTab === k ? "on" : ""}`}
-                  onClick={() => setTab(k)}
-                >
+                <button key={k} className={`tab ${activeTab === k ? "on" : ""}`} onClick={() => setTab(k)}>
                   {l}
                 </button>
               ))}
             </div>
+
             {needsMC.includes(activeTab) && !hasMC ? (
               <div
                 className="chart-card"
@@ -7435,21 +7198,22 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               <>
                 {activeTab === "fan" && r90 && (
                   <FanChart
-                        pcts={r90.pcts}
-                        retireAge={retAge}
-                        ssAge={asassumptions.ssAge}
-                        rmdAge={rmdAge}
-                        inf={inf}
-                        useReal={real}
-                        title={`Portfolio fan · age ${endAge} · 3,000 paths`}
-                        checkpoints={assumptions.checkpoints}           // new
-                        earlyRetireTarget={assumptions.earlyRetireTarget} // new
-                        dob={assumptions.dob}                           // needed to compute age from checkpoint date
-                      />
+                    pcts={r90.pcts}
+                    retireAge={retAge}
+                    ssAge={assumptions.ssAge}
+                    rmdAge={rmdAge}
+                    inf={inf}
+                    useReal={real}
+                    title={`Portfolio fan · age ${endAge} · 3,000 paths`}
+                    checkpoints={assumptions.checkpoints}
+                    earlyRetireTarget={assumptions.earlyRetireTarget}
+                    dob={assumptions.dob}
+                    portfolioGoal={assumptions.portfolioGoal}
+                  />
                 )}
                 {activeTab === "montecarlo" && (
                   <>
-                   <MCTab
+                    <MCTab
                       params={params}
                       r85={r85}
                       r90={r90}
@@ -7460,8 +7224,12 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       portfolioGoal={assumptions.portfolioGoal}
                       earlyRetireTarget={assumptions.earlyRetireTarget}
                       onUpdateCheckpoints={(newCheckpoints) => updateAssumption("checkpoints", newCheckpoints)}
-                      onDeleteCheckpoint={(id) => updateAssumption("checkpoints", assumptions.checkpoints.filter(c => c.id !== id))}
-                      earlyRetireTarget={assumptions.earlyRetireTarget}
+                      onDeleteCheckpoint={(id) =>
+                        updateAssumption(
+                          "checkpoints",
+                          assumptions.checkpoints.filter((c) => c.id !== id)
+                        )
+                      }
                       dob={assumptions.dob}
                       withdrawalStrategy={assumptions.withdrawalStrategy}
                       onSetBaselineFromCheckpoint={(value) => {
@@ -7469,9 +7237,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         const currentTotal = port;
                         if (currentTotal > 0) {
                           const scale = value / currentTotal;
-                          const scaledAccounts = assumptions.accounts.map(acc => ({
+                          const scaledAccounts = assumptions.accounts.map((acc) => ({
                             ...acc,
-                            balance: Math.round((acc.balance || 0) * scale)
+                            balance: Math.round((acc.balance || 0) * scale),
                           }));
                           updateAssumption("accounts", scaledAccounts);
                         }
@@ -7488,74 +7256,67 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         inf={inf}
                         useReal={real}
                         title={`Portfolio fan · age ${endAge} · 3,000 paths`}
-                        checkpoints={assumptions.checkpoints}                 // ✅ add this
-                        earlyRetireTarget={assumptions.earlyRetireTarget}     // ✅ add this
-                        dob={assumptions.dob}                                 // ✅ needed for checkpoint age calculation
-                        portfolioGoal={assumptions.portfolioGoal}
+                        checkpoints={assumptions.checkpoints}
                         earlyRetireTarget={assumptions.earlyRetireTarget}
+                        dob={assumptions.dob}
+                        portfolioGoal={assumptions.portfolioGoal}
                       />
                     )}
                   </>
                 )}
                 {activeTab === "scenarios" && (
                   <ScenariosTab
-                      baseParams={params}
-                      r90={r90}
-                      fmtPct={fmtPct}  
-                      stress={stress}
-                      retireAge={retAge}           // ✅ Add this
-                      ssAge={assumptions.ssAge}             // ✅ Add this
-                      rmdAge={rmdAge}
-                      inf={inf}                 // ✅ Add this
-                      real={real}               // ✅ Add this
-                      FanChart={FanChart}
-                      SEQ_2000_2012={SEQ_2000_2012}
-                      DeterministicWithdrawalView={DeterministicWithdrawalView}
-                      RothLadder={RothLadder}
-                      BucketsTab={BucketsTab}
-                      SmileChart={SmileChart}
-                      portfolioGoal={assumptions.portfolioGoal}
-                      earlyRetireTarget={assumptions.earlyRetireTarget}
-                      withdrawalStrategy={assumptions.withdrawalStrategy}
-                      checkpoints={assumptions.checkpoints}            // new
-                      earlyRetireTarget={assumptions.earlyRetireTarget} // new
-                      dob={assumptions.dob}   
-                    />
+                    baseParams={params}
+                    r90={r90}
+                    fmtPct={fmtPct}
+                    stress={stress}
+                    retireAge={retAge}
+                    ssAge={assumptions.ssAge}
+                    rmdAge={rmdAge}
+                    inf={inf}
+                    real={real}
+                    FanChart={FanChart}
+                    SEQ_2000_2012={SEQ_2000_2012}
+                    DeterministicWithdrawalView={DeterministicWithdrawalView}
+                    RothLadder={RothLadder}
+                    BucketsTab={BucketsTab}
+                    SmileChart={SmileChart}
+                    portfolioGoal={assumptions.portfolioGoal}
+                    earlyRetireTarget={assumptions.earlyRetireTarget}
+                    withdrawalStrategy={assumptions.withdrawalStrategy}
+                    checkpoints={assumptions.checkpoints}
+                    dob={assumptions.dob}
+                  />
                 )}
                 {activeTab === "income" && <IncomeMap p={params} inf={inf} />}
-                {activeTab === "mortgage" && (
-                  <MortgageTab values={assumptions} onChange={updateAssumption} />
-                )}
-                {activeTab === "networth" && (
-                  <NetWorthTab p={params} results90={r90} inf={inf} />
-                )}
+                {activeTab === "mortgage" && <MortgageTab values={assumptions} onChange={updateAssumption} />}
+                {activeTab === "networth" && <NetWorthTab p={params} results90={r90} inf={inf} />}
                 {activeTab === "actionplan" && (
-                    <ActionPlanTab
-                      params={params}
-                      r90={r90}
-                      r85={r85}
-                      assumptions={assumptions}
-                      mortgagePayoffYear={mortgagePayoffYear}
-                    />
-                  )}
+                  <ActionPlanTab
+                    params={params}
+                    r90={r90}
+                    r85={r85}
+                    assumptions={assumptions}
+                    mortgagePayoffYear={mortgagePayoffYear}
+                  />
+                )}
                 {activeTab === "assumptions" && (
                   <ProfileWizard
                     values={{
-                          ...assumptions,
-                          currentAge: currentAge,
-                          retireAge: retAge,
-                          endAge: endAge,
-                          port: port,
-                          contrib: contrib,
-                          sp: sp,
-                          ssAge: assumptions.ssAge,
-                          ssb: ssb,
-                          ab: ab,
-                          withdrawalStrategy: assumptions.withdrawalStrategy,  
+                      ...assumptions,
+                      currentAge: currentAge,
+                      retireAge: retAge,
+                      endAge: endAge,
+                      port: port,
+                      contrib: contrib,
+                      sp: sp,
+                      ssAge: assumptions.ssAge,
+                      ssb: ssb,
+                      ab: ab,
+                      withdrawalStrategy: assumptions.withdrawalStrategy,
                     }}
                     onChange={(k, v) => {
                       updateAssumption(k, v);
-                      // also wire to main sliders
                       if (k === "retireAge") setRetAge(v);
                       if (k === "endAge") setEndAge(v);
                       if (k === "port") setPort(v);
@@ -7569,6 +7330,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 )}
               </>
             )}
+
             <div
               style={{
                 fontSize: 9,
@@ -7615,7 +7377,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
 
    v9.1 — April 13, 2026 (AiRA-DS + Claude Code + Gemini)
    ────────────────────────────────────────────────────────
-   • BLANK_PROFILE + DEMO_PROFILE — no personal data hardcoded
    • ProfileWizard 6-step guided setup
    • Import/Export profile JSON
    • generateActions() dynamic rules engine
