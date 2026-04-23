@@ -5950,6 +5950,7 @@ export default function AiRAForecaster() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackType, setFeedbackType] = useState(null);
   const [feedbackText, setFeedbackText] = useState("");
+  const [showTerms, setShowTerms] = useState(false);
   const isFirst = useRef(true);
 
   // Slider states – initialized from BLANK_PROFILE
@@ -7117,16 +7118,168 @@ export default function AiRAForecaster() {
                 lineHeight: 1.6,
               }}
             >
-              AiRA Freedom Financial v{APP_VERSION} · This is not financial advice. Seek a professional fiduciary, CPA, or tax accountant. Use at your own risk. See full disclaimer in code.
-              This applications is open source and covered on the GNU Affero General Public License v3.0.{" "}  
+              AiRA Freedom Financial v{APP_VERSION} · This is not financial advice. Seek a professional fiduciary, CPA, or tax accountant. Use at your own risk.
+              This application is open source and covered under the GNU Affero General Public License v3.0.{" "}
               <br />
               "The best financial plan is the one you can stick with." — Morgan Housel
+              <br />
+              <button
+                onClick={() => setShowTerms(true)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#2563eb",
+                  cursor: "pointer",
+                  fontSize: 9,
+                  textDecoration: "underline",
+                  padding: "2px 0",
+                }}
+              >
+                Terms of Service &amp; Disclaimer
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* ── Terms of Service Modal ── */}
+      {showTerms && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setShowTerms(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: 10,
+              maxWidth: 680,
+              width: "100%",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              padding: "28px 32px",
+              boxShadow: "0 8px 40px rgba(0,0,0,0.28)",
+              fontFamily: "system-ui, sans-serif",
+              color: "#1e293b",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#1e3a5f" }}>Terms of Service</h2>
+              <button
+                onClick={() => setShowTerms(false)}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  fontSize: 22, lineHeight: 1, color: "#64748b", padding: "0 4px",
+                }}
+                aria-label="Close"
+              >×</button>
+            </div>
+            <p style={{ fontSize: 11, color: "#64748b", marginTop: 0 }}>Last updated: February 22, 2026</p>
+
+            <section style={{ marginBottom: 18 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>1. Agreement to Terms</h3>
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                By accessing and using the MECO Planning application, you accept and agree to be bound by the terms and
+                provision of this agreement. If you do not agree to abide by the above, please do not use this service.
+              </p>
+            </section>
+
+            <section style={{ marginBottom: 18 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>2. Disclaimer of Warranties</h3>
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                The MECO Planning application is provided on an "AS IS" and "AS AVAILABLE" basis. MECO Planning makes no
+                representations or warranties of any kind, express or implied, as to the operation of the application or the
+                information, content, or materials included on the application. To the fullest extent permissible by applicable
+                law, MECO Planning disclaims all warranties, express or implied, including but not limited to implied warranties
+                of merchantability, fitness for a particular purpose, and non-infringement.
+              </p>
+            </section>
+
+            <section style={{ marginBottom: 18 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>3. Limitation of Liability</h3>
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                In no event shall MECO Planning, its directors, employees, agents, or suppliers be liable for any damages
+                (including, without limitation, lost profits, savings, or data; business interruption; or any other special,
+                indirect, incidental, or consequential damages) arising out of or in connection with the use, inability to use,
+                or results of the use of the application, even if MECO Planning has been advised of the possibility of such damages.
+              </p>
+            </section>
+
+            <section style={{ marginBottom: 18 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#d97706", marginBottom: 6 }}>4. Not Financial Advice</h3>
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                The MECO Planning application provides calculations and projections for <strong>educational and informational
+                purposes only</strong>. The application does not provide professional investment, tax, or financial advice. All
+                calculations are estimates based on the information you provide and are subject to change. You should not rely
+                solely on the calculations provided by MECO Planning for making financial decisions. Always consult with
+                qualified professionals such as financial advisors, tax advisors, or mortgage professionals before making
+                important financial decisions.
+              </p>
+            </section>
+
+            <section style={{ marginBottom: 18 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>5. Accuracy of Information</h3>
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                While we strive to ensure the accuracy of calculations, MECO Planning makes no guarantee regarding the accuracy
+                or completeness of the results. Market conditions, interest rates, inflation, and other factors may vary from
+                the assumptions used in the calculator. Historical performance does not guarantee future results.
+              </p>
+            </section>
+
+            <section style={{ marginBottom: 18 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>6. User Responsibilities</h3>
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                You are responsible for ensuring that all information you input into the calculator is accurate and current.
+                You are also responsible for protecting the confidentiality of your personal financial information.
+              </p>
+            </section>
+
+            <section style={{ marginBottom: 18 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>7. Modifications to Terms</h3>
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                MECO Planning reserves the right to modify these terms and conditions at any time. Your continued use of the
+                application following the posting of revised terms means that you accept and agree to the changes.
+              </p>
+            </section>
+
+            <section style={{ marginBottom: 18 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>8. Governing Law</h3>
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                These terms and conditions are governed by and construed in accordance with the laws of the United States, and
+                you irrevocably submit to the exclusive jurisdiction of the courts in that location.
+              </p>
+            </section>
+
+            <section style={{ marginBottom: 24 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>9. Indemnification</h3>
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                You agree to indemnify and hold harmless MECO Planning from any and all claims, damages, losses, or expenses
+                arising out of your use of the application or violation of these Terms of Service.
+              </p>
+            </section>
+
+            <div style={{ textAlign: "center" }}>
+              <button
+                onClick={() => setShowTerms(false)}
+                style={{
+                  background: "#1e3a5f", color: "#fff", border: "none",
+                  borderRadius: 6, padding: "8px 28px", fontSize: 13,
+                  fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
-export { runMC, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost };
+export { runMC, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy };
