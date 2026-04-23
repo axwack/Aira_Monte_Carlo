@@ -5397,12 +5397,6 @@ function AssumptionsPanel({ values, onChange }) {
         >
           <CleanNumberInput value={values.ab} onChange={(v) => onChange("ab", v)} min={0} max={100000} step={1000} />
         </ARow>
-        <ARow
-          label="Social Security Benefit"
-          desc="Monthly benefit at your SS start age (stored as annual internally)"
-        >
-          <CleanNumberInput value={Math.round((values.ssb || 0) / 12)} onChange={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={5000} step={50} />
-        </ARow>
         <ARow label="Cash real return" desc="Annual real return on cash/savings (e.g., HYSA)">
           <CleanNumberInput value={values.cashRealReturn} onChange={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} />
         </ARow>
