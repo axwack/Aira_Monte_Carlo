@@ -6201,6 +6201,11 @@ export default function AiRAForecaster() {
             <div style={{ fontSize: 12, color: "#6e8099" }}>
               v{APP_VERSION} · A Simple DiYer's Guide to Retirement Planning with an AI‑Powered Financial Forecaster built for the modern retiree. 
             </div>
+            {assumptions.name && (
+                <div style={{ fontSize: 11, color: "#5eead4", marginTop: 2 }}>
+                  📋 {assumptions.name}
+                </div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
