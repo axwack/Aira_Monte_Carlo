@@ -121,12 +121,12 @@ const SEQ_2000_2012 = [
   0.151, 0.021, 0.16,
 ];
 
-const CALIB = {
-  phase1Mean: 9.68,
-  phase1Std: 13.65,
-  phase2Mean: 8.93,
-  phase2Std: 10.35,
-};
+const SP500_MEAN = SP500.reduce((s, v) => s + v, 0) / SP500.length;
+const BONDS_MEAN = BONDS.reduce((s, v) => s + v, 0) / BONDS.length;
+function expectedReturn(eqPct) {
+  const w = (eqPct ?? 91) / 100;
+  return parseFloat((w * SP500_MEAN * 100 + (1 - w) * BONDS_MEAN * 100).toFixed(2));
+}
 
 const JOINT_RMD_TABLE = {
   // Joint & Last Survivor — assumes spouse is 10 years younger (IRS Pub 590-B Table II excerpt)
@@ -844,7 +844,7 @@ function simulateDeterministic(p, inf) {
 
   // Accumulation phase — deterministic median return
   for (let y = 0; y < accYrs; y++) {
-    const ret = CALIB.phase1Mean / 100;
+    const ret = expectedReturn(p.preRetireEq ?? 91) / 100;
     port = port * (1 + ret) + p.contrib;
   }
 
@@ -864,7 +864,7 @@ function simulateDeterministic(p, inf) {
   for (let y = 0; y < retYrs; y++) {
     const age = p.retireAge + y;
     const yr = 2026 + (age - p.currentAge);
-    const ret = age < 62 ? CALIB.phase1Mean / 100 : CALIB.phase2Mean / 100;
+    const ret = age < 62 ? expectedReturn(p.preRetireEq ?? 91) / 100 : expectedReturn(p.postRetireEq ?? 70) / 100;
     const inflY = inf / 100;
     const cumInfl = Math.pow(1 + inflY, y);
     const adjFloor = gkFloor * cumInfl;
@@ -960,7 +960,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
   // Accumulation using median returns
   for (let y = 0; y < accYrs; y++) {
-    const ret = CALIB.phase1Mean / 100;
+    const ret = expectedReturn(p.preRetireEq ?? 91) / 100;
     port = port * (1 + ret) + p.contrib;
   }
 
@@ -979,7 +979,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   for (let y = 0; y < retYrs; y++) {
     const age = p.retireAge + y;
     const yr = 2026 + (age - p.currentAge);
-    const ret = age < 62 ? CALIB.phase1Mean / 100 : CALIB.phase2Mean / 100;
+    const ret = age < 62 ? expectedReturn(p.preRetireEq ?? 91) / 100 : expectedReturn(p.postRetireEq ?? 70) / 100;
     const inflY = inf / 100;
     const cumInfl = Math.pow(1 + inflY, y);
     const adjFloor = gkFloor * cumInfl;
@@ -3283,7 +3283,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
       <div className="chart-card">
         <div className="ct">
           📈 Deterministic Schedule – {strategyLabel} · Median historical returns
-          ({CALIB.phase1Mean}% pre‑62 / {CALIB.phase2Mean}% after) · Inflation {inf}%
+          ({expectedReturn(p.preRetireEq ?? 91).toFixed(2)}% pre‑62 / {expectedReturn(p.postRetireEq ?? 70).toFixed(2)}% after) · Inflation {inf}%
         </div>
         <ResponsiveContainer width="100%" height={540}>
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -6530,6 +6530,11 @@ export default function AiRAForecaster() {
                 <span>{formatDate(assumptions.employerStartDate)} (Start date)</span>
                 <span style={{ color: "#5eead4", fontWeight: 600 }}>{countdown.pct}%</span>
               </div>
+              {assumptions.name && (
+                <div style={{ fontSize: 13, color: "#5eead4", textAlign: "right", marginTop: 8, fontWeight: 600, letterSpacing: "0.01em" }}>
+                  📋 {assumptions.name}
+                </div>
+              )}
               <div
                 style={{
                   marginTop: 10,
@@ -6581,7 +6586,7 @@ export default function AiRAForecaster() {
                   🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#14b8a6" }}>💹 Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {CALIB.phase1Mean}% μ
+                  <span style={{ color: "#14b8a6" }}>💹 Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(2)}% μ
                   <span
                     style={{
                       display: "inline-flex",
@@ -6605,7 +6610,7 @@ export default function AiRAForecaster() {
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#fb923c" }}>💹 Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {CALIB.phase2Mean}% μ
+                  <span style={{ color: "#fb923c" }}>💹 Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(2)}% μ
                   <span
                     style={{
                       display: "inline-flex",
