@@ -1376,12 +1376,10 @@ function buildRothExplorer(params = {}) {
         }
         const room = Math.max(0, targetTop - txBC);
 
-        // Hard cap: never convert more than $250K in a single year
         const preCap = Math.min(room, Math.max(0, pT));
-        conv = Math.round(Math.min(preCap, 250_000));
+        conv = Math.round(preCap);
 
-        if (preCap > 250_000) capReason = "$250K annual cap";
-        else if (pT < room) capReason = "pretax exhausted";
+        if (pT < room) capReason = "pretax exhausted";
       }
 
       const totInc = incBC + conv,
