@@ -83,8 +83,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.1";
-export const BUILD_TAG = "Fixes for Withdrawal on fixed withdrawal and married stateus";
+const APP_VERSION = "1.0.2";
+export const BUILD_TAG = "Changes for Social Security and Tax Brackets with ROTH";
 export const BUILD_TIME = "2026-04-2121:45 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -5757,11 +5757,11 @@ function RetirementPanel({ values, onChange }) {
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SOCIAL SECURITY</div>
-        <WFieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age.">
+        <WFieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age. (Per Month)">
           <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={5000} step={50} suffix="/mo" />
         </WFieldRow>
         <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
-          <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={62} max={70} step={1} />
+          <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={62} max={70} step={1} suffix=" yrs"/>
         </WFieldRow>
       </div>
 
