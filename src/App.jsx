@@ -4549,7 +4549,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   const [loadingAI, setLoadingAI] = useState(false);
 
   const runAIAnalysis = async () => {
-    const apiKey = BLANK_PROFILE.geminiApiKey;
+    const apiKey = assumptions.geminiApiKey;
     if (!apiKey) {
       alert('Please enter your Gemini API key in the Profile → Assumptions tab.');
       return;
@@ -4628,8 +4628,8 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
       {/* AI Analysis Button */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
         <button
-          onClick={runAIAnalysis}
-          disabled={loadingAI}
+          onClick={""}
+          disabled={"true"}
           style={{
             padding: "8px 18px",
             borderRadius: 8,
@@ -4649,7 +4649,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
             transition: "all 0.2s",
           }}
         >
-          {loadingAI ? "Analyzing..." : "🤖 Run AI Analysis"}
+          {loadingAI ? "Analyzing..." : "🤖 Run AI Analysis {Stay Tuned}"}
         </button>
         {loadingAI && (
           <span style={{ color: "#a78bfa", fontSize: 12 }}>Thinking...</span>
@@ -6491,7 +6491,7 @@ export default function AiRAForecaster() {
             <div style={{ fontSize: 18, fontWeight: 700, color: "#14b8a6", fontFamily: "'DM Mono',monospace" }}>
               {days.toLocaleString()}
             </div>
-            <div style={{ fontSize: 9, color: "#334155" }}>
+            <div style={{ fontSize: 11, color: "#475569" }}>
               {`days · ${DDAY_dynamic.toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",
@@ -6526,7 +6526,7 @@ export default function AiRAForecaster() {
                 <span style={{ color: "#5eead4", fontWeight: 600 }}>{countdown.pct}%</span>
               </div>
               {assumptions.name && (
-                <div style={{ fontSize: 13, color: "#5eead4", textAlign: "right", marginTop: 8, fontWeight: 600, letterSpacing: "0.01em" }}>
+                <div style={{ fontSize: 18, color: "#5eead4", textAlign: "right", marginTop: 8, fontWeight: 600, letterSpacing: "0.01em" }}>
                   📋 {assumptions.name}
                 </div>
               )}
@@ -6554,7 +6554,6 @@ export default function AiRAForecaster() {
                 </span>
               </div>
             </div>
-
             <div className="sb-card">
               <div className="sb-title">MC Engine — {APP_VERSION}</div>
               <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
@@ -7116,8 +7115,8 @@ export default function AiRAForecaster() {
 
             <div
               style={{
-                fontSize: 9,
-                color: "#1e3a5f",
+                fontSize: 11,
+                color: "#bacee9",
                 textAlign: "center",
                 paddingTop: 4,
                 lineHeight: 1.6,
@@ -7189,7 +7188,7 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>1. Agreement to Terms</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                By accessing and using the MECO Planning application, you accept and agree to be bound by the terms and
+                By accessing and using the AirA Financial application, you accept and agree to be bound by the terms and
                 provision of this agreement. If you do not agree to abide by the above, please do not use this service.
               </p>
             </section>
@@ -7197,10 +7196,10 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>2. Disclaimer of Warranties</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                The MECO Planning application is provided on an "AS IS" and "AS AVAILABLE" basis. MECO Planning makes no
+                The AirA Financial application is provided on an "AS IS" and "AS AVAILABLE" basis. AirA Financial makes no
                 representations or warranties of any kind, express or implied, as to the operation of the application or the
                 information, content, or materials included on the application. To the fullest extent permissible by applicable
-                law, MECO Planning disclaims all warranties, express or implied, including but not limited to implied warranties
+                law, AirA Financial disclaims all warranties, express or implied, including but not limited to implied warranties
                 of merchantability, fitness for a particular purpose, and non-infringement.
               </p>
             </section>
@@ -7208,20 +7207,20 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>3. Limitation of Liability</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                In no event shall MECO Planning, its directors, employees, agents, or suppliers be liable for any damages
+                In no event shall AirA Financial, its directors, employees, agents, or suppliers be liable for any damages
                 (including, without limitation, lost profits, savings, or data; business interruption; or any other special,
                 indirect, incidental, or consequential damages) arising out of or in connection with the use, inability to use,
-                or results of the use of the application, even if MECO Planning has been advised of the possibility of such damages.
+                or results of the use of the application, even if AirA Financial has been advised of the possibility of such damages.
               </p>
             </section>
 
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#d97706", marginBottom: 6 }}>4. Not Financial Advice</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                The MECO Planning application provides calculations and projections for <strong>educational and informational
+                The AirA Financial application provides calculations and projections for <strong>educational and informational
                 purposes only</strong>. The application does not provide professional investment, tax, or financial advice. All
                 calculations are estimates based on the information you provide and are subject to change. You should not rely
-                solely on the calculations provided by MECO Planning for making financial decisions. Always consult with
+                solely on the calculations provided by AirA Financial for making financial decisions. Always consult with
                 qualified professionals such as financial advisors, tax advisors, or mortgage professionals before making
                 important financial decisions.
               </p>
@@ -7230,7 +7229,7 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>5. Accuracy of Information</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                While we strive to ensure the accuracy of calculations, MECO Planning makes no guarantee regarding the accuracy
+                While we strive to ensure the accuracy of calculations, AirA Financial makes no guarantee regarding the accuracy
                 or completeness of the results. Market conditions, interest rates, inflation, and other factors may vary from
                 the assumptions used in the calculator. Historical performance does not guarantee future results.
               </p>
@@ -7247,7 +7246,7 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>7. Modifications to Terms</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                MECO Planning reserves the right to modify these terms and conditions at any time. Your continued use of the
+                AirA Financial reserves the right to modify these terms and conditions at any time. Your continued use of the
                 application following the posting of revised terms means that you accept and agree to the changes.
               </p>
             </section>
@@ -7263,7 +7262,7 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 24 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>9. Indemnification</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                You agree to indemnify and hold harmless MECO Planning from any and all claims, damages, losses, or expenses
+                You agree to indemnify and hold harmless AirA Financial from any and all claims, damages, losses, or expenses
                 arising out of your use of the application or violation of these Terms of Service.
               </p>
             </section>
