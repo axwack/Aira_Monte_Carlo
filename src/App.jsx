@@ -236,6 +236,7 @@ export const BLANK_PROFILE = {
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
   carveouts: [],                // [{id, label, annual, endYear}] fixed obligations (car, HOA, etc.)
   rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
+  fafsaGuard: false,            // cap Roth conversions for college-age child households
   // Account breakdown (feeds port total)
   accounts: [
     { id: "1", category: "pretax", name: "401(k)", balance: 0 },
@@ -1231,6 +1232,7 @@ function buildRothExplorer(params = {}) {
     birthYear,
     rmdStartAge,
     taxFunding = "from_taxable",
+    fafsaGuard = false,
   } = params;
 
   // Safeguard: if critical numbers are missing, return empty or throw a helpful error
@@ -1360,6 +1362,13 @@ function buildRothExplorer(params = {}) {
         // IRMAA lookback guard: ages 60-65 — cap at 22% for aggressive brackets
         if (age >= 60 && age <= 65 && ["fill_24","fill_32","fill_35","fill_37"].includes(rothMode) && b22t < targetTop) {
           targetTop = b22t; capReason = "IRMAA lookback (age 60–65)";
+        }
+        // FAFSA/CSS college-aid guards (opt-in for households with college-age children)
+        if (fafsaGuard && yr <= 2029 && b12t < targetTop) {
+          targetTop = b12t; capReason = "FAFSA guard (≤2029)";
+        }
+        if (fafsaGuard && yr > 2029 && yr <= 2033 && b22t < targetTop) {
+          targetTop = b22t; capReason = "CSS Profile guard (2030–33)";
         }
         const room = Math.max(0, targetTop - txBC);
 
@@ -5544,6 +5553,12 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
           </select>
         </ARow>
+        <Toggle
+          val={values.fafsaGuard ?? false}
+          onChange={(v) => onChange("fafsaGuard", v)}
+          label="🎓 Apply FAFSA/CSS college-aid guards (caps conversions at 12% through 2029, 22% through 2033)"
+          accent="#f59e0b"
+        />
         <ARow label="Tax funding source" desc="How conversion taxes are paid. 'Outside cash' is most favorable (full conversion grows tax-free). 'From taxable' debits your taxable/HSA/cash buckets. 'From conversion' shrinks the Roth transfer by the tax owed.">
           <select
             value={values.taxFunding || "from_taxable"}
@@ -6075,6 +6090,7 @@ export default function AiRAForecaster() {
       carveouts: assumptions.carveouts || [],
       rothConversionTarget: assumptions.rothConversionTarget || "off",
       taxFunding: assumptions.taxFunding || "from_taxable",
+      fafsaGuard: assumptions.fafsaGuard || false,
       preRetireEq: assumptions.preRetireEq,
       postRetireEq: assumptions.postRetireEq,
       hcShockAge: assumptions.hcShockAge,
@@ -6239,6 +6255,7 @@ export default function AiRAForecaster() {
                     carveouts: assumptions.carveouts || [],
                     rothConversionTarget: assumptions.rothConversionTarget || "off",
                     taxFunding: assumptions.taxFunding || "from_taxable",
+                    fafsaGuard: assumptions.fafsaGuard || false,
                     abReliability: assumptions.abReliability,
                     abGrowth: assumptions.abGrowth,
                     ssCola: assumptions.ssCola,
