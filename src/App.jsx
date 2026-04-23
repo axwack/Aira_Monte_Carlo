@@ -1359,19 +1359,7 @@ function buildRothExplorer(params = {}) {
 
         // IRMAA lookback guard: ages 60-65 — cap at 22% for aggressive brackets
         if (age >= 60 && age <= 65 && ["fill_24","fill_32","fill_35","fill_37"].includes(rothMode) && b22t < targetTop) {
-          targetTop = b22t; capReason = "IRMAA lookback (age 60-65)";
-        }
-        // FAFSA/CSS guard: through 2029 — cap at 12%
-        if (yr <= 2029 && b12t < targetTop) {
-          targetTop = b12t; capReason = "FAFSA (≤2029)";
-        }
-        // CSS Profile guard: 2030-2033 — cap at 22%
-        if (yr > 2029 && yr <= 2033 && b22t < targetTop) {
-          targetTop = b22t; capReason = "CSS Profile (2030-33)";
-        }
-        // 24%+ only permitted from age 66 until the year before RMDs begin
-        if (["fill_24","fill_32","fill_35","fill_37"].includes(rothMode) && (age < 66 || age >= rmdAge) && b22t < targetTop) {
-          targetTop = b22t; capReason = "24%+ gated (age 66+ only)";
+          targetTop = b22t; capReason = "IRMAA lookback (age 60–65)";
         }
         const room = Math.max(0, targetTop - txBC);
 
@@ -1449,7 +1437,7 @@ function buildRothExplorer(params = {}) {
         pT: Math.round(pT), ro: Math.round(ro), nw: Math.round(pT + ro),
         label,
         bracketUsed: conv > 0
-          ? txInc <= b12t ? "12%" : txInc <= b22t ? "22%" : txInc <= b24t ? "24%" : "32%"
+          ? txInc <= b12t ? "12%" : txInc <= b22t ? "22%" : txInc <= b24t ? "24%" : txInc <= b32t ? "32%" : txInc <= b35t ? "35%" : "37%"
           : "-",
         capReason,
         ...convByBr,
