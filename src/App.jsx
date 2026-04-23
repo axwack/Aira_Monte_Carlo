@@ -4560,7 +4560,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
 
   const successRate = r90?.rate ? (r90.rate * 100).toFixed(1) : 'N/A';
   const withdrawalRate = params?.sp && params?.port ? ((params.sp / params.port) * 100).toFixed(1) : 'N/A';
-  const portfolioGoal = BLANK_PROFILE.portfolioGoal ? (BLANK_PROFILE.portfolioGoal / 1_000_000).toFixed(1) : '3.2';
+  const portfolioGoal = assumptions.portfolioGoal ? (assumptions.portfolioGoal / 1_000_000).toFixed(1) : '3.2';
 
   const prompt = `You are AiRA, an AI retirement planning assistant. Analyze the following retirement plan and provide a complete, well-formed paragraph (4-6 sentences) with one specific recommendation. Do not stop mid-sentence. Be conversational and reference the numbers provided.
 
@@ -4570,8 +4570,8 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
                 - Target Portfolio: $${portfolioGoal}M
                 - Annual Spending: $${(params.sp / 1000).toFixed(0)}K
                 - Withdrawal Rate: ${withdrawalRate}%
-                - Withdrawal Strategy: ${getStrategyLabel(BLANK_PROFILE.withdrawalStrategy)}
-                - State of Residence: ${BLANK_PROFILE.stateOfResidence || 'CA'}
+                - Withdrawal Strategy: ${getStrategyLabel(assumptions.withdrawalStrategy)}
+                - State of Residence: ${assumptions.stateOfResidence || 'FL'}
 
                 Begin your response with "I am AiRA. I have analyzed your plan." and then provide the analysis.`;
 
