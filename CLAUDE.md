@@ -39,6 +39,7 @@ breakdowns, and Roth conversion explorer.
   weighted mean of historical SP500/BONDS arrays, NOT hardcoded. Never
   reintroduce hardcoded CALIB means.
 
+
 ## Code Conventions
 
 - **Single file**: `src/App.jsx` (~7,100 lines). Financial functions at top,
@@ -87,6 +88,7 @@ breakdowns, and Roth conversion explorer.
 - Hardcoding any return/inflation/tax constant that should be derived.
 - Committing code that hasn't run through `npm test`.
 - Hardcoding of values where it should be calculated by the functions that generate output is to be avoided at all costs.
+- Never code anything that is specific to my instance or circumnstances. Code should be written in a genericc manner with no hardcoding or specifics to one person's retirement data
 
 ## Planned Features
 
