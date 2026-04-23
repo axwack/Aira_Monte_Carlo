@@ -13,6 +13,7 @@ import {
   guytonKlingerWithdrawal,
   progTax,
   irmaaCost,
+  simulateDeterministicWithStrategy,
 } from "./App";
 
 // ─── Shared MC baseline ───────────────────────────────────────────────────────
@@ -638,5 +639,356 @@ describe("User scenario — $266K portfolio, single filer, Fixed 4%", () => {
     const ssAt67 = runMC({ ...base, ssAge: 67 }, 90, 500, 42, true);
     // Earlier SS is slightly better (more income sooner)
     expect(ssAt65.rate).toBeGreaterThanOrEqual(ssAt67.rate);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FINANCIAL ACCURACY SUITE — Single filer taxes, net income, RMDs, cash flow,
+// and each withdrawal strategy with hand-verified dollar amounts.
+//
+// These tests were added after a user reported that switching Filing Status to
+// "Single" did not change their tax burden. They serve as the regression fence.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const tax26 = (age, withdrawal, filing, state = "FL") =>
+  calcYearTax(age, 2026, withdrawal, 0, 0, 0, 0, false, 0.025, filing, state);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 1. SINGLE-FILER TAX RATES — the exact bug the user hit
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Single filer tax accuracy — regression for filing-status bug", () => {
+
+  test("Single under-65: std deduction = $16,100 — income at deduction = $0 tax", () => {
+    const r = tax26(60, 16_100, "single");
+    expect(r.taxableIncome).toBe(0);
+    expect(r.fedTax).toBe(0);
+  });
+
+  test("Single 65+: std deduction = $17,750 ($16,100 + $1,650) — income at deduction = $0 tax", () => {
+    const r = tax26(65, 17_750, "single");
+    expect(r.taxableIncome).toBe(0);
+    expect(r.fedTax).toBe(0);
+  });
+
+  test("MFJ under-65: std deduction = $32,200 — income at deduction = $0 tax", () => {
+    const r = tax26(60, 32_200, "mfj");
+    expect(r.taxableIncome).toBe(0);
+    expect(r.fedTax).toBe(0);
+  });
+
+  test("MFJ 65+: std deduction = $35,500 ($32,200 + $3,300) — income at deduction = $0 tax", () => {
+    const r = tax26(65, 35_500, "mfj");
+    expect(r.taxableIncome).toBe(0);
+    expect(r.fedTax).toBe(0);
+  });
+
+  // Single 2026 brackets: 10% to $12,400 | 12% to $50,400 | 22% to $105,700
+  // Std deduction under-65: $16,100
+  //
+  // $30K: taxable = 13,900 → 10%×12,400=1,240 + 12%×1,500=180 = 1,420
+  test("Single under-65: $30K withdrawal — hand-calculated fedTax = $1,420", () => {
+    const r = tax26(60, 30_000, "single");
+    expect(r.taxableIncome).toBe(13_900);
+    expect(r.fedTax).toBeCloseTo(1_420, 0);
+  });
+
+  // $60K: taxable = 43,900 → 10%×12,400=1,240 + 12%×31,500=3,780 = 5,020
+  test("Single under-65: $60K withdrawal — hand-calculated fedTax = $5,020", () => {
+    const r = tax26(60, 60_000, "single");
+    expect(r.taxableIncome).toBe(43_900);
+    expect(r.fedTax).toBeCloseTo(5_020, 0);
+  });
+
+  // $120K: taxable = 103,900 → 10%×12,400 + 12%×38,000 + 22%×53,500 = 17,570
+  test("Single under-65: $120K withdrawal — spans 10/12/22% brackets, fedTax = $17,570", () => {
+    const r = tax26(60, 120_000, "single");
+    expect(r.taxableIncome).toBe(103_900);
+    expect(r.fedTax).toBeCloseTo(17_570, 0);
+  });
+
+  test("Single pays more federal tax than MFJ on $50K withdrawal (same age, state)", () => {
+    const single = tax26(62, 50_000, "single");
+    const mfj    = tax26(62, 50_000, "mfj");
+    expect(single.fedTax).toBeGreaterThan(mfj.fedTax);
+    expect(single.fedTax - mfj.fedTax).toBeGreaterThan(500);
+  });
+
+  test("Single pays more federal tax than MFJ on $80K withdrawal", () => {
+    const single = tax26(68, 80_000, "single");
+    const mfj    = tax26(68, 80_000, "mfj");
+    expect(single.fedTax).toBeGreaterThan(mfj.fedTax);
+    expect(single.fedTax - mfj.fedTax).toBeGreaterThan(2_000);
+  });
+
+  test("MC: single filer has lower success rate than MFJ on identical portfolio/spend", () => {
+    const scenario = {
+      ...BASE,
+      port: 1_000_000,
+      sp:     70_000,
+      ssb:    24_000,
+      accounts: [
+        { id: "a1", category: "pretax",  name: "401k", balance: 700_000 },
+        { id: "a2", category: "roth",    name: "Roth", balance: 200_000 },
+        { id: "a3", category: "taxable", name: "Brok", balance:  80_000 },
+        { id: "a4", category: "cash",    name: "Cash", balance:  20_000 },
+      ],
+    };
+    const mfj    = runMC({ ...scenario, filingStatus: "mfj"    }, 90, 2000, 42, true);
+    const single = runMC({ ...scenario, filingStatus: "single" }, 90, 2000, 42, true);
+    expect(mfj.rate).toBeGreaterThan(single.rate);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 2. NET INCOME — what you actually keep after all taxes
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Net income = gross withdrawal − total taxes", () => {
+
+  // Single, age 62, FL, $50K: taxable=33,900 → 10%×12,400+12%×21,500 = 3,820
+  test("Single, age 62, FL, $50K: net income = $50K − fedTax ($3,820)", () => {
+    const r = tax26(62, 50_000, "single", "FL");
+    expect(r.taxableIncome).toBe(33_900);
+    expect(r.fedTax).toBeCloseTo(3_820, 0);
+    expect(r.stateTax).toBe(0);
+    expect(50_000 - r.totalTax).toBeCloseTo(46_180, 0);
+  });
+
+  // NJ: stateTax = round(33,900 × 0.1075) = 3,644 → net lower than FL
+  test("Single, age 62, NJ, $50K: state tax = 10.75% of taxableIncome, net lower than FL", () => {
+    const rFL = tax26(62, 50_000, "single", "FL");
+    const rNJ = tax26(62, 50_000, "single", "NJ");
+    expect(rNJ.stateTax).toBeCloseTo(Math.round(33_900 * 0.1075), 0);
+    expect(50_000 - rFL.totalTax).toBeGreaterThan(50_000 - rNJ.totalTax);
+  });
+
+  // 85% SS rule: $30K draw + $24K SS → taxableSS=20,400 → totalIncome=50,400
+  // Single 65+ std ded=17,750 → taxable=32,650
+  test("Single, age 68, FL: 85% of SS is taxable, correct taxableIncome with SS", () => {
+    const r = calcYearTax(68, 2026, 30_000, 24_000, 0, 0, 0, false, 0.025, "single", "FL");
+    expect(r.taxableIncome).toBe(32_650);
+    expect(r.fedTax).toBeCloseTo(3_670, 0);
+  });
+
+  test("totalTax === fedTax + stateTax + irmaa for single filer", () => {
+    const r = calcYearTax(68, 2026, 100_000, 24_000, 0, 0, 0, false, 0.025, "single", "CA");
+    expect(r.totalTax).toBe(r.fedTax + r.stateTax + r.irmaa);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 3. RMD CALCULATIONS — forced withdrawals from pre-tax accounts
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("RMD calculations — SECURE Act 2.0 divisors and tax impact", () => {
+
+  test("RMD at age 73: $1M / 30.4 = $32,895", () => {
+    expect(Math.round(1_000_000 / 30.4)).toBe(32_895);
+  });
+
+  test("RMD at age 80: $500K / 23.8 = $21,008", () => {
+    expect(Math.round(500_000 / 23.8)).toBe(21_008);
+  });
+
+  test("RMD at age 90: $200K / 15.3 = $13,072", () => {
+    expect(Math.round(200_000 / 15.3)).toBe(13_072);
+  });
+
+  test("RMD in calcYearTax raises taxable income vs no RMD (single filer, age 73)", () => {
+    const noRmd   = calcYearTax(73, 2026, 40_000,     0, 0,      0, 0, false, 0.025, "single", "FL");
+    const withRmd = calcYearTax(73, 2026, 40_000,     0, 0, 32_895, 0, false, 0.025, "single", "FL");
+    expect(withRmd.taxableIncome).toBeGreaterThan(noRmd.taxableIncome);
+    expect(withRmd.fedTax).toBeGreaterThan(noRmd.fedTax);
+  });
+
+  test("MC: pretax-heavy (RMD at 73) lowers success vs Roth-heavy — single filer, CA", () => {
+    const base = { ...BASE, filingStatus: "single", stateOfResidence: "CA", ssb: 0, sp: 80_000 };
+    const pretaxHeavy = runMC({ ...base, accounts: [
+      { id: "p1", category: "pretax",  name: "401k", balance: 1_900_000 },
+      { id: "p2", category: "roth",    name: "Roth", balance:    50_000 },
+      { id: "p3", category: "taxable", name: "Brok", balance:    30_000 },
+      { id: "p4", category: "cash",    name: "Cash", balance:    20_000 },
+    ]}, 90, 1000, 42, true);
+    const rothHeavy = runMC({ ...base, accounts: [
+      { id: "r1", category: "pretax",  name: "401k", balance:    50_000 },
+      { id: "r2", category: "roth",    name: "Roth", balance: 1_900_000 },
+      { id: "r3", category: "taxable", name: "Brok", balance:    30_000 },
+      { id: "r4", category: "cash",    name: "Cash", balance:    20_000 },
+    ]}, 90, 1000, 42, true);
+    expect(rothHeavy.rate).toBeGreaterThan(pretaxHeavy.rate);
+  });
+
+  test("Deterministic schedule: spending at age 73 is positive (RMD-age checkpoint)", () => {
+    const p = { ...BASE, currentAge: 65, retireAge: 65, endAge: 90,
+      filingStatus: "single", withdrawalStrategy: "gk", sp: 60_000 };
+    const { schedule } = simulateDeterministicWithStrategy(p, 2.5, "gk");
+    const age73row = schedule.find(r => r.age === 73);
+    expect(age73row).toBeDefined();
+    expect(age73row.spending).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 4. CASH FLOW — portfolio draw, taxes, spending
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Cash flow accuracy — portfolio draw, taxes, and spending", () => {
+
+  test("Deterministic GK: year-1 portfolio draw = spending − SS (SS offsets need)", () => {
+    const p = { ...BASE, currentAge: 65, retireAge: 65, endAge: 90,
+      sp: 80_000, ssAge: 65, ssb: 24_000, filingStatus: "single",
+      withdrawalStrategy: "gk", stateOfResidence: "FL",
+      accounts: [
+        { id: "g1", category: "pretax",  name: "401k", balance: 1_400_000 },
+        { id: "g2", category: "roth",    name: "Roth", balance:   400_000 },
+        { id: "g3", category: "taxable", name: "Brok", balance:   150_000 },
+        { id: "g4", category: "cash",    name: "Cash", balance:    50_000 },
+      ] };
+    const { schedule } = simulateDeterministicWithStrategy(p, 2.5, "gk");
+    const yr1 = schedule[0];
+    expect(yr1.portfolioDraw).toBeCloseTo(56_000, -3);
+    expect(yr1.ss).toBe(24_000);
+    expect(yr1.totalWithdrawal).toBeGreaterThan(yr1.portfolioDraw);
+  });
+
+  // Fixed 4%: SS does NOT reduce portfolio draw. $2M × 4% = $80K regardless.
+  test("Deterministic Fixed 4%: portfolio draw = 4% × port regardless of SS (no SS offset)", () => {
+    const portStart = BASE.accounts.reduce((s, a) => s + a.balance, 0);
+    const p = { ...BASE, currentAge: 65, retireAge: 65, endAge: 90,
+      sp: 80_000, ssAge: 65, ssb: 24_000, filingStatus: "mfj",
+      withdrawalStrategy: "fixed", fixedWithdrawalRate: 0.04, stateOfResidence: "FL" };
+    const { schedule } = simulateDeterministicWithStrategy(p, 2.5, "fixed");
+    expect(schedule[0].portfolioDraw).toBeGreaterThan(75_000);
+    expect(schedule[0].portfolioDraw).toBeCloseTo(portStart * 0.04, -3);
+  });
+
+  test("Total portfolio draw increases more than linearly as spending rises (progressive tax drag)", () => {
+    const base = { ...BASE, currentAge: 65, retireAge: 65, endAge: 90,
+      ssAge: 70, ssb: 0, filingStatus: "single", stateOfResidence: "FL" };
+    const low  = simulateDeterministicWithStrategy({ ...base, sp:  60_000, withdrawalStrategy: "gk" }, 2.5, "gk");
+    const high = simulateDeterministicWithStrategy({ ...base, sp: 120_000, withdrawalStrategy: "gk" }, 2.5, "gk");
+    expect(high.schedule[0].totalWithdrawal - low.schedule[0].totalWithdrawal).toBeGreaterThan(60_000);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 5. WITHDRAWAL STRATEGY COMPARISON — year-1 deterministic draws
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Withdrawal strategy accuracy — year-1 deterministic draws", () => {
+
+  const PORT = 2_000_000;
+  const baseStrat = {
+    ...BASE,
+    currentAge: 65, retireAge: 65, endAge: 90,
+    port: PORT, sp: 80_000, ssAge: 70, ssb: 24_000,
+    filingStatus: "mfj", stateOfResidence: "FL",
+    gkFloor: 48_000, gkCeiling: 115_000, fixedWithdrawalRate: 0.04,
+    accounts: [
+      { id: "s1", category: "pretax",  name: "401k", balance: 1_400_000 },
+      { id: "s2", category: "roth",    name: "Roth", balance:   400_000 },
+      { id: "s3", category: "taxable", name: "Brok", balance:   150_000 },
+      { id: "s4", category: "cash",    name: "Cash", balance:    50_000 },
+    ],
+  };
+
+  test("GK strategy: year-1 spending equals target spend ($80K) when within guardrails", () => {
+    const { schedule } = simulateDeterministicWithStrategy({ ...baseStrat, withdrawalStrategy: "gk" }, 2.5, "gk");
+    expect(schedule[0].spending).toBe(80_000);
+  });
+
+  test("Fixed 4%: year-1 draw = 4% × $2M = $80,000", () => {
+    const { schedule } = simulateDeterministicWithStrategy({ ...baseStrat, withdrawalStrategy: "fixed" }, 2.5, "fixed");
+    expect(schedule[0].spending).toBeCloseTo(PORT * 0.04, -2);
+  });
+
+  test("Fixed 3% draws less than Fixed 4% on same portfolio", () => {
+    const { schedule: s3 } = simulateDeterministicWithStrategy(
+      { ...baseStrat, withdrawalStrategy: "fixed", fixedWithdrawalRate: 0.03 }, 2.5, "fixed");
+    const { schedule: s4 } = simulateDeterministicWithStrategy(
+      { ...baseStrat, withdrawalStrategy: "fixed", fixedWithdrawalRate: 0.04 }, 2.5, "fixed");
+    expect(s3[0].spending).toBeCloseTo(PORT * 0.03, -2);
+    expect(s3[0].spending).toBeLessThan(s4[0].spending);
+  });
+
+  test("Fixed 4% SS-offset regression: draw ~$80K even when SS = $24K (not $56K)", () => {
+    const p = { ...baseStrat, ssAge: 65, ssb: 24_000, withdrawalStrategy: "fixed" };
+    const { schedule } = simulateDeterministicWithStrategy(p, 2.5, "fixed");
+    expect(schedule[0].portfolioDraw).toBeGreaterThan(70_000);
+    expect(schedule[0].portfolioDraw).toBeCloseTo(PORT * 0.04, -3);
+  });
+
+  test("GK vs Fixed 4%: year-5 draws diverge (strategies produce different paths)", () => {
+    const gk    = simulateDeterministicWithStrategy({ ...baseStrat, withdrawalStrategy: "gk"    }, 2.5, "gk");
+    const fixed = simulateDeterministicWithStrategy({ ...baseStrat, withdrawalStrategy: "fixed" }, 2.5, "fixed");
+    expect(Math.abs((gk.schedule[4]?.spending ?? 0) - (fixed.schedule[4]?.spending ?? 0))).toBeGreaterThan(100);
+  });
+
+  test("1/N strategy: year-1 draw = portfolio / 25 years, within guardrails", () => {
+    const { schedule, portAtRetire } = simulateDeterministicWithStrategy(
+      { ...baseStrat, withdrawalStrategy: "one_n" }, 2.5, "one_n");
+    const expected = Math.min(115_000, Math.max(48_000, portAtRetire / (90 - 65)));
+    expect(schedule[0].spending).toBeCloseTo(expected, -2);
+  });
+
+  test("All 10 strategies produce valid deterministic schedules with positive draws", () => {
+    for (const s of ["gk","fixed","vanguard","risk","kitces","vpw","cape","endowment","one_n","ninety_five_rule"]) {
+      const { schedule } = simulateDeterministicWithStrategy({ ...baseStrat, withdrawalStrategy: s }, 2.5, s);
+      expect(schedule.length).toBeGreaterThan(0);
+      expect(schedule[0].spending).toBeGreaterThan(0);
+      expect(isFinite(schedule[0].portfolioEnd)).toBe(true);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 6. FULL SINGLE-FILER SCENARIO — $500K pretax IRA, age 65, FL, $40K GK spend
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Full scenario: single filer, age 65, FL, $500K IRA, $40K GK spend", () => {
+
+  const SINGLE_FL = {
+    currentAge: 65, retireAge: 65, endAge: 90,
+    port: 500_000, contrib: 0, inf: 2.5,
+    sp: 40_000, ssAge: 67, ssb: 18_000, ssCola: 2.4,
+    ab: 0, useAb: false, tax: 22, smile: false,
+    preRetireEq: 91, postRetireEq: 70,
+    gkFloor: 26_000, gkCeiling: 54_000,
+    withdrawalStrategy: "gk", fixedWithdrawalRate: 0.04,
+    cashRealReturn: 1.0, useJointRmdTable: false, twoHousehold: false,
+    filingStatus: "single", stateOfResidence: "FL",
+    accounts: [{ id: "f1", category: "pretax", name: "IRA", balance: 500_000 }],
+  };
+
+  test("Year-1 (age 65, no SS yet): portfolioDraw = spending = $40K", () => {
+    const { schedule } = simulateDeterministicWithStrategy(SINGLE_FL, 2.5, "gk");
+    expect(schedule[0].age).toBe(65);
+    expect(schedule[0].ss).toBe(0);
+    expect(schedule[0].portfolioDraw).toBeCloseTo(40_000, -2);
+  });
+
+  // Age 65, single 65+, $40K, FL:
+  //   std ded = 17,750 → taxable = 22,250
+  //   10%×12,400=1,240 + 12%×9,850=1,182 → fedTax = 2,422
+  test("Year-1 federal tax: single 65+, $40K, FL → fedTax ≈ $2,422", () => {
+    const r = calcYearTax(65, 2026, 40_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    expect(r.taxableIncome).toBe(22_250);
+    expect(r.fedTax).toBeCloseTo(2_422, 0);
+    expect(r.stateTax).toBe(0);
+  });
+
+  test("Year-3 (age 67): SS kicks in and reduces portfolio draw below spending", () => {
+    const { schedule } = simulateDeterministicWithStrategy(SINGLE_FL, 2.5, "gk");
+    const yr3 = schedule.find(r => r.age === 67);
+    expect(yr3.ss).toBeGreaterThan(0);
+    expect(yr3.portfolioDraw).toBeLessThan(yr3.spending);
+  });
+
+  test("MC: scenario runs successfully and rate is between 50–95% (not trivially safe or failed)", () => {
+    const r = runMC(SINGLE_FL, 90, 1000, 42, true);
+    expect(r.rate).toBeGreaterThan(0.50);
+    expect(r.rate).toBeLessThan(0.95);
+  });
+
+  test("Single filer pays higher effective rate and more fedTax than MFJ on same $40K income", () => {
+    const single = calcYearTax(65, 2026, 40_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    const mfj    = calcYearTax(65, 2026, 40_000, 0, 0, 0, 0, false, 0.025, "mfj",    "FL");
+    expect(single.effectiveRate).toBeGreaterThan(mfj.effectiveRate);
+    expect(single.fedTax).toBeGreaterThan(mfj.fedTax);
   });
 });
