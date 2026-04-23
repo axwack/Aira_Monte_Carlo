@@ -86,3 +86,32 @@ breakdowns, and Roth conversion explorer.
   controls + deterministic + stochastic parity.
 - Hardcoding any return/inflation/tax constant that should be derived.
 - Committing code that hasn't run through `npm test`.
+- Hardcoding of values where it should be calculated by the functions that generate output is to be avoided at all costs.
+
+## Planned Features
+
+### Per-bucket withdrawal schedule (tax-optimal drawdown playbook)
+
+**Purpose**: Give the user an actionable year-by-year plan showing which bucket
+(cash / taxable / pretax / Roth) to draw from, not just an aggregate
+`portfolioDraw` number.
+
+**Approach**:
+- Extend `simulateDeterministicWithStrategy` schedule rows with per-bucket
+  fields: `fromCash`, `fromTaxable`, `fromPretax`, `fromRoth`, `rmd`.
+- Implement waterfall drawdown order: (1) forced RMDs first, (2) cash, (3)
+  taxable, (4) pretax up to a bracket-fill target (12% or 22% MFJ), (5) Roth
+  last. Default the bracket target to top of 12% but expose as a param.
+- Mirror the same logic in `runMC` so MC success rate reflects the optimal
+  order (currently the waterfall is simplified).
+- UI: new stacked-bar chart in `DeterministicWithdrawalView` showing bucket
+  mix per year; table columns for each source; hover shows tax bracket used.
+
+**Keep separate from Monte Carlo view** — MC answers "will I run out?",
+this schedule answers "what do I do this year?". Do not overlay them.
+
+**Tests required**:
+- Waterfall order: cash first, then taxable, then pretax, then Roth.
+- RMD takes priority over discretionary pretax draws at age 73+.
+- Bracket-fill: pretax draw stops at top of 12% bracket when user sets that target.
+- Sum invariant: `fromCash + fromTaxable + fromPretax + fromRoth === portfolioDraw`.
