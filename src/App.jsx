@@ -6576,7 +6576,7 @@ export default function AiRAForecaster() {
                   🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#14b8a6" }}>💹 Phase 1 (91/9):</span> {CALIB.phase1Mean}% μ
+                  <span style={{ color: "#14b8a6" }}>💹 Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {CALIB.phase1Mean}% μ
                   <span
                     style={{
                       display: "inline-flex",
@@ -6592,7 +6592,7 @@ export default function AiRAForecaster() {
                       cursor: "help",
                       marginLeft: 4,
                     }}
-                    title="Pre‑retirement expected return (91% stocks / 9% bonds). Historical average annual return."
+                    title={`Pre‑retirement expected return (${assumptions.preRetireEq ?? 91}% stocks / ${100 - (assumptions.preRetireEq ?? 91)}% bonds). Historical average annual return.`}
                   >
                     <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
                       ℹ️
@@ -6600,7 +6600,7 @@ export default function AiRAForecaster() {
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#fb923c" }}>💹 Phase 2 (70/30):</span> {CALIB.phase2Mean}% μ
+                  <span style={{ color: "#fb923c" }}>💹 Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {CALIB.phase2Mean}% μ
                   <span
                     style={{
                       display: "inline-flex",
@@ -6616,7 +6616,7 @@ export default function AiRAForecaster() {
                       cursor: "help",
                       marginLeft: 4,
                     }}
-                    title="Post‑retirement expected return (70% stocks / 30% bonds). Lower volatility, slightly lower return."
+                    title={`Post‑retirement expected return (${assumptions.postRetireEq ?? 70}% stocks / ${100 - (assumptions.postRetireEq ?? 70)}% bonds). Lower volatility, slightly lower return.`}
                   >
                     <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
                       ℹ️
