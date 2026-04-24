@@ -4131,7 +4131,7 @@ function MortgageTab({ values, onChange }) {
 }
 
 function NetWorthTab({ p, results90, inf }) {
-  const [showRE, setShowRE] = useState(false);
+  const [showRE, setShowRE] = useState(true);
   const props    = p.properties || [];
   const reTotal   = props.reduce((s, pr) => s + (pr.value||0), 0);
   const reMortgs  = props.reduce((s, pr) => s + (pr.mortgage||0), 0);
@@ -4183,12 +4183,11 @@ function NetWorthTab({ p, results90, inf }) {
         port = results90.pcts[pctIndex]?.p50 || 0;
       }
 
-      // Net Worth always includes RE equity so it matches the sidebar
+      // Net Worth includes RE equity (growing at reGrowthRate minus amortized mortgage)
       const reEquityNow = Math.round(reTotal * reGrow) - mortBal;
       return {
         age,
         "Liquid Portfolio": port,
-        "Mortgage Debt": -mortBal,
         "Real Estate": re,
         "Net Worth": port + (showRE ? reEquityNow : 0),
       };
@@ -4255,7 +4254,7 @@ function NetWorthTab({ p, results90, inf }) {
             </div>
             <span
               style={{ cursor: "pointer", color: "#64748b", fontSize: 12 }}
-              title="Liquid Portfolio = investments (excl. real estate). Mortgage Debt shown as negative (dashed red line). Net Worth = Liquid + Real Estate - Mortgage Debt."
+              title="Liquid Portfolio = investments (excl. real estate). Real Estate shown at your growth rate (dotted yellow). Net Worth = Liquid + Real Estate − Mortgage (when RE enabled)."
             >
               <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span>
             </span>
@@ -4282,7 +4281,7 @@ function NetWorthTab({ p, results90, inf }) {
             <YAxis
               stroke="#1e3a5f"
               tick={{ fill: "#475569", fontSize: 9 }}
-              tickFormatter={(v) => v < 0 ? "" : fmtM(v)}
+              tickFormatter={fmtM}
               width={54}
             />
             <Tooltip content={<Tip />} />
@@ -4305,14 +4304,6 @@ function NetWorthTab({ p, results90, inf }) {
             )}
             <Line
               type="monotone"
-              dataKey="Mortgage Debt"
-              stroke="#f87171"
-              strokeWidth={1.5}
-              strokeDasharray="4 3"
-              dot={false}
-            />
-            <Line
-              type="monotone"
               dataKey="Net Worth"
               stroke="#10b981"
               strokeWidth={2}
@@ -4324,8 +4315,7 @@ function NetWorthTab({ p, results90, inf }) {
         {/* Legend */}
         <div className="leg" style={{ marginTop: 8, justifyContent: "center" }}>
           <div className="li"><div className="ll" style={{ background: "#0ea5e9" }} />Liquid Portfolio</div>
-          <div className="li"><div className="ll" style={{ background: "#f87171", borderTop: "1px dashed #f87171", height: 2 }} />Mortgage Debt (dashed)</div>
-          {showRE && <div className="li"><div className="ll" style={{ background: "#fbbf24" }} />Real Estate</div>}
+          {showRE && <div className="li"><div className="ll" style={{ background: "#fbbf24", borderTop: "2px dashed #fbbf24", height: 0 }} />Real Estate (dotted)</div>}
           <div className="li"><div className="ll" style={{ background: "#10b981" }} />Net Worth</div>
         </div>
 
