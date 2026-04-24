@@ -1744,8 +1744,20 @@ const CSS = `
     .hdr { padding:8px 12px; gap:6px; flex-wrap:wrap; }
     .logo-sub { display:none; }
     .mbtn { padding:4px 9px; font-size:10px; }
+    .mobile-sidebar-toggle { display:inline-flex !important; }
     .layout { grid-template-columns:1fr; height:auto; overflow:visible; }
-    .sidebar { border-right:none; border-bottom:1px solid rgba(255,255,255,0.06); max-height:220px; overflow-y:auto; min-height:unset; padding:10px; flex-direction:row; flex-wrap:wrap; gap:8px; }
+    .sidebar {
+      display:none;
+      border-right:none;
+      border-bottom:1px solid rgba(255,255,255,0.06);
+      max-height:70vh;
+      overflow-y:auto;
+      min-height:unset;
+      padding:12px;
+      flex-direction:column;
+      gap:10px;
+    }
+    .sidebar.mobile-open { display:flex; }
     .sb-card { padding:10px; }
     .main { padding:10px; overflow-y:visible; min-height:unset; }
     .main > * { flex-shrink:0; }
@@ -5973,6 +5985,7 @@ export default function AiRAForecaster() {
   const [feedbackType, setFeedbackType] = useState(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [showTerms, setShowTerms] = useState(false);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const isFirst = useRef(true);
 
   // Slider states – initialized from BLANK_PROFILE
@@ -6228,6 +6241,14 @@ export default function AiRAForecaster() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+            <button
+              className="mbtn mobile-sidebar-toggle"
+              onClick={() => setShowMobileSidebar(v => !v)}
+              title="Toggle controls panel"
+              style={{ display: "none" }}
+            >
+              {showMobileSidebar ? "✕ Close" : "⚙ Controls"}
+            </button>
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
             <button
               className="mbtn"
@@ -6530,7 +6551,7 @@ export default function AiRAForecaster() {
         </div>
 
         <div className="layout">
-          <div className="sidebar">
+          <div className={`sidebar${showMobileSidebar ? " mobile-open" : ""}`}>
             <div className="sb-card">
               <div className="sb-title">D-Day Countdown</div>
               <div className="countdown-grid">
