@@ -6589,7 +6589,7 @@ export default function AiRAForecaster() {
                   alignItems: "baseline",
                 }}
               >
-                <span style={{ fontSize: 10, color: "#64748b" }}>Total Portfolio</span>
+                <span style={{ fontSize: 10, color: "#64748b" }}>Liquid Portfolio</span>
                 <span
                   style={{
                     fontSize: 18,
@@ -6602,6 +6602,21 @@ export default function AiRAForecaster() {
                   {fmtM(port)}
                 </span>
               </div>
+              {(() => {
+                const props = assumptions.properties || [];
+                const propValue = props.reduce((s, p) => s + (p.value || 0), 0);
+                const propDebt  = props.reduce((s, p) => s + (p.mortgage || 0), 0);
+                const netWorth  = port + propValue - propDebt;
+                if (propValue === 0) return null;
+                return (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 6 }}>
+                    <span style={{ fontSize: 10, color: "#64748b" }}>Net Worth <span style={{ color: "#334155" }}>(+RE equity)</span></span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#a78bfa", fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px" }}>
+                      {fmtM(netWorth)}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
             <div className="sb-card">
               <div className="sb-title">MC Engine — {APP_VERSION}</div>
