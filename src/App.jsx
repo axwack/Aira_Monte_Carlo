@@ -1570,6 +1570,7 @@ const fmtM = (v) =>
     ? `$${Math.round(v / 1e3)}K`
     : `$${Math.round(v)}`;
 const fmtK = (v) => `$${Math.round(v / 1e3)}K`;
+const fmtDollar = (v) => `$${Math.round(v).toLocaleString()}`;
 const fmtPct = (v) => `${(v * 100).toFixed(1)}%`;
 function getAnalogue(rate) {
   const pct = rate * 100;
@@ -3349,13 +3350,13 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
                 {schedule.map((s) => (
                   <tr key={s.age}>
                     <td style={{ textAlign: "left" }}>{s.age}</td><td>{s.yr}</td>
-                    <td style={{ color: "#fbbf24" }}>{fmtM(s.spending)}</td>
-                    <td>{fmtM(s.ss)}</td><td>{fmtM(s.airbnb)}</td><td>{fmtM(s.portfolioDraw)}</td>
-                    <td style={{ color: "#f87171" }}>{fmtM(s.fedTax)}</td>
-                    <td style={{ color: "#fb923c" }}>{fmtM(s.stateTax)}</td>
-                    <td style={{ color: "#a78bfa" }}>{fmtM(s.irmaa)}</td>
-                    <td style={{ color: "#94a3b8" }}>{fmtM(s.totalWithdrawal)}</td>
-                    <td style={{ color: "#14b8a6", fontWeight: 600 }}>{fmtM(s.portfolioEnd)}</td>
+                    <td style={{ color: "#fbbf24" }}>{fmtDollar(s.spending)}</td>
+                    <td>{fmtDollar(s.ss)}</td><td>{fmtDollar(s.airbnb)}</td><td>{fmtDollar(s.portfolioDraw)}</td>
+                    <td style={{ color: "#f87171" }}>{fmtDollar(s.fedTax)}</td>
+                    <td style={{ color: "#fb923c" }}>{fmtDollar(s.stateTax)}</td>
+                    <td style={{ color: "#a78bfa" }}>{fmtDollar(s.irmaa)}</td>
+                    <td style={{ color: "#94a3b8" }}>{fmtDollar(s.totalWithdrawal)}</td>
+                    <td style={{ color: "#14b8a6", fontWeight: 600 }}>{fmtDollar(s.portfolioEnd)}</td>
                   </tr>
                 ))}
               </tbody>
