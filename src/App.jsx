@@ -4150,37 +4150,50 @@ function NetWorthTab({ p, results90, inf }) {
 
   const nwData = useMemo(() => {
     if (!results90) return [];
-    
-    // Build ages dynamically: from current age to plan end age, step 5
-    const maxChartAge = p.endAge;
+
+    const currentYear = new Date().getFullYear();
     const step = 1;
     const ages = [];
-    for (let age = p.currentAge; age <= maxChartAge; age += step) {
-      ages.push(age);
-    }
-    
+    for (let age = p.currentAge; age <= p.endAge; age += step) ages.push(age);
+
+    const preRetireGrowthRate = expectedReturn(p.preRetireEq ?? 91) / 100;
+
     return ages.map((age, idx) => {
-      const yr = new Date().getFullYear() + idx * step;
-      // Map age to closest index in results90.pcts (which goes to age 90)
-      const pctIndex = Math.min(
-        Math.max(0, age - p.retireAge),
-        results90.pcts.length - 1
-      );
-      const port = results90.pcts[pctIndex]?.p50 || 0;
-      const mortEntry = mortSched.years.find((y) => y.yr === yr);
-      const mortBal = mortEntry ? mortEntry.bal : 0;
-      const yearsFromNow = yr - new Date().getFullYear();
+      const yr = currentYear + idx;
+      const yearsFromNow = idx;
       const reGrow = Math.pow(1 + (p.reGrowthRate ?? 3.0) / 100, yearsFromNow);
       const re = showRE ? Math.round(reTotal * reGrow) : 0;
+
+      // Amortize ALL property mortgages: use mortgage schedule for primary,
+      // treat other properties' mortgages as fixed (no amortization data available).
+      const mortEntry = mortSched.years.find((y) => y.yr === yr);
+      const primaryMortBal = mortEntry ? mortEntry.bal : 0;
+      const otherMortBal = props.slice(1).reduce((s, pr) => s + (pr.mortgage || 0), 0);
+      const mortBal = primaryMortBal + otherMortBal;
+
+      let port;
+      if (age <= p.currentAge) {
+        port = p.port;
+      } else if (age < p.retireAge) {
+        // Accumulation: grow current portfolio at expected pre-retirement return
+        port = Math.round(p.port * Math.pow(1 + preRetireGrowthRate, age - p.currentAge));
+      } else {
+        // Retirement: use MC p50 path
+        const pctIndex = Math.min(age - p.retireAge, results90.pcts.length - 1);
+        port = results90.pcts[pctIndex]?.p50 || 0;
+      }
+
+      // Net Worth always includes RE equity so it matches the sidebar
+      const reEquityNow = Math.round(reTotal * reGrow) - mortBal;
       return {
         age,
         "Liquid Portfolio": port,
         "Mortgage Debt": -mortBal,
         "Real Estate": re,
-        "Net Worth": port + re - mortBal,
+        "Net Worth": port + (showRE ? reEquityNow : 0),
       };
     });
-  }, [p, results90, showRE, mortSched, reTotal]);
+  }, [p, results90, showRE, mortSched, reTotal, props]);
 
   // Peak liquid portfolio (median) – from full MC horizon (age 90) – optional note
   const peakPort = results90
@@ -4269,7 +4282,7 @@ function NetWorthTab({ p, results90, inf }) {
             <YAxis
               stroke="#1e3a5f"
               tick={{ fill: "#475569", fontSize: 9 }}
-              tickFormatter={(v) => fmtM(v)}
+              tickFormatter={(v) => v < 0 ? "" : fmtM(v)}
               width={54}
             />
             <Tooltip content={<Tip />} />
