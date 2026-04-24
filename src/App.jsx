@@ -5057,9 +5057,7 @@ function SavingsPanel({ values, onChange }) {
     onChange("accounts", newAccounts);
   };
 
-  const removeAccount = (id, cat) => {
-    const catAccounts = accounts.filter(a => a.category === cat);
-    if (catAccounts.length <= 1) return;
+  const removeAccount = (id) => {
     const newAccounts = accounts.filter(a => a.id !== id);
     updateAccounts(newAccounts);
   };
@@ -5087,11 +5085,10 @@ function SavingsPanel({ values, onChange }) {
                   <ANumInput value={acct.balance || 0} onSet={(v) => handleBalance(acct.id, v)} min={0} max={5_000_000} step={5000} />
                 </div>
                 <button
-                  onClick={() => removeAccount(acct.id, acct.category)}
-                  disabled={catAccounts.length <= 1}
-                  style={{ background: "transparent", border: "none", color: catAccounts.length <= 1 ? "#334155" : "#64748b", cursor: catAccounts.length <= 1 ? "not-allowed" : "pointer", fontSize: 14, padding: "2px 4px", opacity: catAccounts.length <= 1 ? 0.3 : 0.5 }}
-                  onMouseEnter={e => { if (catAccounts.length > 1) { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#f87171"; } }}
-                  onMouseLeave={e => { e.currentTarget.style.opacity = catAccounts.length <= 1 ? 0.3 : 0.5; e.currentTarget.style.color = "#64748b"; }}
+                  onClick={() => removeAccount(acct.id)}
+                  style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14, padding: "2px 4px", opacity: 0.5 }}
+                  onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#f87171"; }}
+                  onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#64748b"; }}
                 >
                   ✕
                 </button>
