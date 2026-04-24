@@ -2080,6 +2080,7 @@ function importProfile(onLoad) {
 
 function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal }) {
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
+  const [showTargets, setShowTargets] = useState(true);
 
   // Safe maxY calculation with fallback
   const maxY = useMemo(() => {
@@ -2091,9 +2092,33 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
 
   return (
     <div className="chart-card">
-      <div className="ct">
-        {title} · {useReal ? "Real $" : "Nominal $"}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+        <div className="ct" style={{ margin: 0 }}>
+          {title} · {useReal ? "Real $" : "Nominal $"}
+        </div>
+        <Toggle
+          val={showTargets}
+          onChange={setShowTargets}
+          label="Show targets"
+          accent="#f59e0b"
+        />
       </div>
+      {showTargets && (
+        <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+          <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 3 }}>🎯 Reassess — ${(portfolioGoal/1e6).toFixed(1)}M</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
+              Your minimum acceptable goal. When the median MC path crosses this line, your plan is already viable — anything above is upside. Use it as a "stop worrying" threshold: if you hit this before your planned retirement date, it's worth reassessing whether you can retire sooner or spend more.
+            </div>
+          </div>
+          <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#8b5cf6", marginBottom: 3 }}>🚀 Trigger — ${(earlyRetireTarget/1e6).toFixed(1)}M</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
+              Your early-exit number. If the portfolio hits this level at any point before D-Day, it's a pre-set signal to pull the trigger on early retirement — regardless of your original timeline. Think of it as a permission slip: the math says you're done, even if the calendar doesn't.
+            </div>
+          </div>
+        </div>
+      )}
       <ResponsiveContainer width="100%" height={640}>
         <ComposedChart
           data={data}
@@ -2174,8 +2199,8 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             );
           })}
 
-          {/* Target horizontal lines (placed last so they appear on top) */}
-          <ReferenceLine
+          {/* Target horizontal lines (toggled via showTargets) */}
+          {showTargets && <ReferenceLine
             y={portfolioGoal}
             stroke="#f59e0b"
             strokeWidth={2.5}
@@ -2188,10 +2213,10 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
               position: "right",
               style: { background: "#f59e0b", padding: "4px 8px", borderRadius: 4, boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }
             }}
-          />
-          <ReferenceLine
+          />}
+          {showTargets && <ReferenceLine
             y={earlyRetireTarget}
-            stroke="#8b5cf6"   // purple-blue as you chose
+            stroke="#8b5cf6"
             strokeWidth={2.5}
             strokeDasharray="0"
             label={{
@@ -2202,7 +2227,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
               position: "right",
               style: { background: "#8b5cf6", padding: "4px 8px", borderRadius: 4, boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }
             }}
-          />
+          />}
         </ComposedChart>
       </ResponsiveContainer>
 
@@ -2214,8 +2239,10 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           { c: "#14b8a6", l: "Median" },
           { c: "#fbbf24", l: "25th" },
           { c: "#f87171", l: "10th" },
-          { c: "#f59e0b", l: `🎯 Reassess $${(portfolioGoal / 1e6).toFixed(1)}M` },
-          { c: "#8b5cf6", l: `🚀 Trigger $${(earlyRetireTarget / 1e6).toFixed(1)}M` },
+          ...(showTargets ? [
+            { c: "#f59e0b", l: `🎯 Reassess $${(portfolioGoal / 1e6).toFixed(1)}M` },
+            { c: "#8b5cf6", l: `🚀 Trigger $${(earlyRetireTarget / 1e6).toFixed(1)}M` },
+          ] : []),
         ].map((i) => (
           <div key={i.l} className="li">
             <div className="ll" style={{ background: i.c }} />
