@@ -5755,7 +5755,7 @@ function ContribPanel({ values, onChange }) {
 function RetirementPanel({ values, onChange }) {
   const spend = values.sp || 100000;
   const twoHousehold = values.twoHousehold ?? true;
-  const baseSpend = twoHousehold ? spend : (values.spSpendOutofState || spend);
+  const baseSpend = twoHousehold ? (values.spSpendOutofState || spend) : spend;
   const floor = Math.round(baseSpend * 0.65);
   const ceiling = Math.round(baseSpend * 1.35);
   const strategy = values.withdrawalStrategy || "gk";
@@ -6105,12 +6105,12 @@ export default function AiRAForecaster() {
       port,
       contrib,
       accounts: assumptions.accounts,
-      sp: assumptions.twoHousehold ? sp : (assumptions.spSpendOutofState || sp),
+      sp: assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp,
       spSpendOutofState: assumptions.spSpendOutofState,
-      gkFloor: Math.round((assumptions.twoHousehold ? sp : (assumptions.spSpendOutofState || sp)) * 0.65),
-      gkCeiling: Math.round((assumptions.twoHousehold ? sp : (assumptions.spSpendOutofState || sp)) * 1.35),
+      gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 0.65),
+      gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 1.35),
       ssb,
-      ab,
+      ab: (useAb ? ab : 0) + ((assumptions.properties || []).reduce((s, pr) => s + (pr.income || 0), 0)),
       useAb,
       abReliability: assumptions.abReliability,
       abGrowth: assumptions.abGrowth,
