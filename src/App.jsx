@@ -83,8 +83,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.2";
-export const BUILD_TAG = "Changes for Social Security and Tax Brackets with ROTH";
+const APP_VERSION = "1.0.3";
+export const BUILD_TAG = "Fix three income/spending bugs (mortgage, rental income, spSpendOutofState)";
 export const BUILD_TIME = "2026-04-2121:45 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
