@@ -1,6 +1,6 @@
 [View on GitHub](https://github.com/axwack/Aira_Monte_Carlo)
 
-# AiRA Forecaster
+# AiRA Financial Freedom - Retirement Forecaster and Planner
 
 **AI Retirement Assessment — Dedicated to AERA**
 
