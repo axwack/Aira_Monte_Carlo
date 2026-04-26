@@ -199,7 +199,7 @@ export const BLANK_PROFILE = {
   contrib: 20,
   inf: 2.5,
   sp: 10_000,
-  spSpendOutofState: 1_000,
+  spSpendOutofState: 0,
   portfolioGoal: 1_000_000,
   ssAge: 67,
   ssb: 24_000,
@@ -1814,6 +1814,150 @@ function Toggle({ val, onChange, label, accent = "#0d9488" }) {
         <div className="tok" style={{ left: val ? 18 : 2 }} />
       </div>
     </div>
+  );
+}
+
+// ─── About entries: add new objects here to appear in the About modal ───────
+const ABOUT_ENTRIES = [
+  {
+    id: "solo-mode",
+    icon: "🌴",
+    title: "Solo Mode",
+    body: "Switches the simulation to your out-of-state spending budget and removes state income tax. Toggle OFF = primary spending + state tax. Toggle ON = out-of-state spending + no state tax. The total portfolio withdrawal math (GK guardrails, Fixed %, etc.) is identical either way — only the spending target and state tax change. Set your out-of-state budget in Profile → Spending. If left at $0 it falls back to your primary spending.",
+  },
+  {
+    id: "fixed-strategy",
+    icon: "📌",
+    title: "Fixed % Withdrawal",
+    body: "Withdraws a constant percentage of the portfolio each year (default 4%). Your portfolio draw = rate × portfolio. Social Security and rental income are additive on top — they do NOT reduce the portfolio draw. This differs from all other strategies (GK, Vanguard, etc.) where guaranteed income reduces how much you need to pull from the portfolio.",
+  },
+  {
+    id: "gk-strategy",
+    icon: "🛡",
+    title: "Guyton-Klinger Guardrails",
+    body: "Your spending adapts based on portfolio performance. If your current withdrawal rate climbs above 120% of the initial rate, spending cuts 10% (never below the floor). If it falls below 80%, spending rises 10% (never above the ceiling). The floor is 65% and ceiling is 135% of your target spending. This strategy avoids running out of money in bad markets while still letting you spend more in good ones.",
+  },
+  {
+    id: "property-income",
+    icon: "🏠",
+    title: "Property Rental Income",
+    body: "Income entered in each property's 'Income' field automatically flows into all simulations as rental income. It grows at your Rental Growth Rate and is always included (not gated by the Rental Income toggle, which controls your separately-entered Airbnb/other income). In the withdrawal table the 'Rental' column shows the combined total of both sources.",
+  },
+  {
+    id: "reassess-trigger",
+    icon: "🎯",
+    title: "Reassess & Trigger Lines",
+    body: "Two portfolio milestone lines on the MC fan chart. Reassess (amber) is your minimum viable retirement number — when the median path crosses it, your plan works mathematically. Trigger (purple) is your early-exit number — a pre-set signal to retire immediately, even ahead of schedule, if the portfolio reaches this level. Trigger should be higher than Reassess. Toggle them off to declutter the chart.",
+  },
+  {
+    id: "ss-storage",
+    icon: "🧾",
+    title: "Social Security Input",
+    body: "SS benefit is always stored as an annual amount internally. The input field shows and accepts monthly dollars — enter what you expect to receive per month, and the app multiplies by 12. If your stored JSON shows a small number (e.g. 2742) and you expected ~$2,742/month, the annual value should be 32,904. You can correct this in Profile → Retirement Plan.",
+  },
+];
+
+function AboutButton() {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 13px",
+          borderRadius:7, border:"1px solid rgba(96,165,250,0.35)",
+          background:"rgba(96,165,250,0.08)", color:"#60a5fa",
+          fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}
+        onMouseEnter={e => e.currentTarget.style.background = "rgba(96,165,250,0.18)"}
+        onMouseLeave={e => e.currentTarget.style.background = "rgba(96,165,250,0.08)"}
+      >
+        📖 About
+      </button>
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", zIndex:9999,
+            display:"flex", alignItems:"flex-start", justifyContent:"center",
+            padding:"40px 16px", overflowY:"auto" }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background:"#0f1729", border:"1px solid rgba(96,165,250,0.2)",
+              borderRadius:14, padding:28, maxWidth:580, width:"100%",
+              boxShadow:"0 24px 60px rgba(0,0,0,0.7)" }}
+          >
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+              <div>
+                <div style={{ fontSize:17, fontWeight:700, color:"#e2e8f0" }}>AiRA Freedom Financial</div>
+                <div style={{ fontSize:11, color:"#475569", marginTop:2 }}>How the key features work</div>
+              </div>
+              <button onClick={() => setOpen(false)}
+                style={{ background:"transparent", border:"none", color:"#64748b",
+                  cursor:"pointer", fontSize:20, lineHeight:1 }}>✕</button>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+              {ABOUT_ENTRIES.map(e => (
+                <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
+                  border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"14px 16px" }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
+                    {e.icon} {e.title}
+                  </div>
+                  <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.65 }}>{e.body}</div>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setOpen(false)}
+              style={{ marginTop:20, width:"100%", background:"rgba(96,165,250,0.1)",
+                border:"1px solid rgba(96,165,250,0.3)", borderRadius:8, padding:"9px 0",
+                color:"#60a5fa", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function InfoModal({ title, children, accent = "#60a5fa" }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <span
+        onClick={() => setOpen(true)}
+        style={{ display:"inline-flex", alignItems:"center", justifyContent:"center",
+          width:16, height:16, borderRadius:"50%", background:"rgba(255,255,255,0.08)",
+          border:`1px solid ${accent}44`, color:accent, fontSize:10, fontWeight:700,
+          cursor:"pointer", flexShrink:0 }}
+        title="Click for more info"
+      >?</span>
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:9999,
+            display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background:"#0f1729", border:`1px solid ${accent}44`, borderRadius:12,
+              padding:28, maxWidth:480, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.6)" }}
+          >
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <div style={{ fontSize:15, fontWeight:700, color:accent }}>{title}</div>
+              <button onClick={() => setOpen(false)}
+                style={{ background:"transparent", border:"none", color:"#64748b",
+                  cursor:"pointer", fontSize:18, lineHeight:1 }}>✕</button>
+            </div>
+            <div style={{ fontSize:13, color:"#94a3b8", lineHeight:1.7 }}>{children}</div>
+            <button onClick={() => setOpen(false)}
+              style={{ marginTop:20, width:"100%", background:accent+"22",
+                border:`1px solid ${accent}44`, borderRadius:8, padding:"8px 0",
+                color:accent, fontSize:13, fontWeight:600, cursor:"pointer" }}>
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -6427,6 +6571,7 @@ export default function AiRAForecaster() {
             >
               ☕ Buy me a coffee
             </a>
+            <AboutButton />
             <div style={{ position: "relative", display: "inline-flex" }}>
               <button
                 onClick={() => setShowFeedback((prev) => !prev)}
@@ -6758,29 +6903,15 @@ export default function AiRAForecaster() {
               <Toggle val={useAb} onChange={setUseAb} label="🏖 Rental income" accent="#059669" />
               <Toggle val={real} onChange={setReal} label="📉 Real dollars" accent="#0ea5e9" />
               <div className="tog-row">
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span className="tog-label">🌴 Solo Mode - No State Tax Income Tax Applied</span>
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 16,
-                      height: 16,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.1)",
-                      color: "#94a3b8",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: "help",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                    }}
-                    title="Toggle ON (Solo abroad): Uses Out‑of‑State Solo Expenses from Profile Page. · NO state income tax · Lower living expenses.&#10;Toggle OFF (Both in state): Uses Core Lifestyle Spend from Profile Page · State tax applies · Full household expenses."
-                  >
-                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
-                      ℹ️
-                    </span>
-                  </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span className="tog-label">🌴 Solo Mode</span>
+                  <InfoModal title="🌴 Solo Mode — How It Works" accent="#a78bfa">
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> Solo Mode switches the simulation to your out-of-state spending budget and removes state income tax from the calculation.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF (default):</strong> Uses your <em>Primary Annual Spending</em> with full state income tax. This is your normal at-home scenario.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON:</strong> Uses your <em>Out-of-State Spending</em> budget with no state income tax. Useful if you plan to spend time abroad or in a no-tax state.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Portfolio withdrawals:</strong> The total amount withdrawn from your portfolio is the same math either way — GK guardrails, Fixed %, and all other strategies apply normally. The only differences are the spending target and whether state tax is applied.</p>
+                    <p style={{ margin:0 }}><strong style={{ color:"#e2e8f0" }}>Set it up:</strong> In your Profile → Spending, set <em>Primary Annual Spending</em> for your at-home budget and <em>Out-of-State Spending</em> for your travel/abroad budget. If Out-of-State Spending is left at $0, it falls back to your primary spending.</p>
+                  </InfoModal>
                 </div>
                 <div
                   className="tog"
