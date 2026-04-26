@@ -52,6 +52,23 @@ npm run dev
 ### Roadmap
 Roadmap captured (Feature 4): live success rate shift — re-run MC from actual current portfolio value so the headline success % reflects reality, not plan-day projections. That's the big one for adaptive planning
 
+What you're describing is very much grounded in science — it's called adaptive distribution planning (Kitces writes about it extensively). The core idea:
+
+    Your MC simulation at retirement gives you a probability distribution of futures. As time passes, your actual portfolio performance is a data point that narrows which percentile path you're on. You can then re-run the simulation from today's actual values to get a live success rate.
+
+Concretely, what we'd build:
+
+- "You Are Here" dot — a marker at (currentAge, currentPortfolio) on the chart. Immediately tells you whether you're above/below median
+- Pre-retirement accumulation line — single deterministic path from current age to retire age (current portfolio × expected return + contributions each year). * Checkpoints before retirement plot against this line instead of the fan
+- Percentile readout — for any checkpoint or the current dot, interpolate between the p10/p25/p50/p75/p90 bands to say "you are at approximately the 63rd percentile" — not just green/yellow/red
+- Live success rate shift — re-run the MC from your actual current portfolio (not the projected one) so the headline % reflects reality, not your plan-day assumptions
+
+The deterministic pre-retirement path is straightforward:
+
+port[y] = port[y-1] × (1 + expectedReturn) + annualContrib
+
+Same formula the existing simulateDeterministic already uses for accumulation — just expose it as a chart line.
+
 ### DISCLAIMER
 
 AiRA Forecaster is a financial modelling and educational tool. It does not constitute professional financial, investment, tax, or legal advice. All simulations are based on historical data and mathematical projections. Past performance is not indicative of future results. Use at your own risk and consult a qualified financial advisor, CPA, or tax professional before making any financial decisions.
