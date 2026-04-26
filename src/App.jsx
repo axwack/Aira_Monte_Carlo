@@ -2281,6 +2281,10 @@ function importProfile(onLoad) {
         // Ensure properties is always a valid array
         if (!Array.isArray(parsed.properties)) {
           parsed.properties = BLANK_PROFILE.properties;
+        } else {
+          parsed.properties = parsed.properties.map((p, i) =>
+            p.id ? { ...p, id: String(p.id) } : { ...p, id: "p" + (i + 1) }
+          );
         }
         
         // Ensure checkpoints is always an array and all entries have string IDs
@@ -6695,7 +6699,13 @@ export default function AiRAForecaster() {
                     if (acctTotal > 0) setPort(acctTotal);
                   }
                   if (data.mortStart && !data.mortStart.includes("-01")) data.mortStart = data.mortStart + "-01";
-                  if (!Array.isArray(data.properties)) data.properties = BLANK_PROFILE.properties;
+                  if (!Array.isArray(data.properties)) {
+                    data.properties = BLANK_PROFILE.properties;
+                  } else {
+                    data.properties = data.properties.map((p, i) =>
+                      p.id ? { ...p, id: String(p.id) } : { ...p, id: "p" + (i + 1) }
+                    );
+                  }
                   if (!Array.isArray(data.carveouts)) data.carveouts = [];
                   if (!Array.isArray(data.checkpoints)) {
                     data.checkpoints = [];
