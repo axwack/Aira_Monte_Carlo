@@ -61,6 +61,7 @@ consult your fiduciary, CPA or tax accountant.
  * ============================================================ */
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import ReactDOM from "react-dom";
+import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -84,9 +85,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.3";
-export const BUILD_TAG = "Fix three income/spending bugs (mortgage, rental income, spSpendOutofState)";
-export const BUILD_TIME = "2026-04-2121:45 UTC";
+const APP_VERSION = "1.0.3.2";
+export const BUILD_TAG = "Restructure About modal: tabbed bio/product/features with grouped How It Works";
+export const BUILD_TIME = "2026-04-26 12:00 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1823,78 +1824,6 @@ function Toggle({ val, onChange, label, accent = "#0d9488" }) {
 // No component changes needed: just update the objects and arrays.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const ABOUT_ME = {
-  name:    "Your Name",
-  tagline: "Investor · Builder · Freedom Seeker",
-  // 2–4 sentences. Plain text, no JSX.
-  bio: "I built AiRA because I couldn't find a retirement planner that spoke the language of a real DIY investor — one that accounts for rental income, Roth conversions, sequence-of-returns risk, and the nuance of spending less abroad. This tool is the one I wished existed when I started planning my own exit. I share everything I learn about financial independence and early retirement on my channel — subscribe if you want the unfiltered version.",
-  // Leave any link blank ("") to hide it.
-  links: [
-    { icon: "▶️", label: "YouTube Channel",  url: "https://youtube.com/@yourchannel" },
-    { icon: "🐦", label: "Twitter / X",       url: "" },
-    { icon: "💼", label: "LinkedIn",          url: "" },
-    { icon: "📧", label: "Email me",          url: "mailto:you@example.com" },
-    { icon: "☕", label: "Buy me a coffee",   url: "https://buymeacoffee.com/yourpage" },
-  ],
-};
-
-const ABOUT_PRODUCT = {
-  name:    "AiRA Freedom Financial",
-  version: APP_VERSION,
-  tagline: "A DIY retirement planner built for the modern retiree.",
-  description: "AiRA runs 3,000 stochastic Monte Carlo paths using 99 years of S&P 500 data and 50 years of bond returns, layered with real historical inflation. Every dollar on screen is traceable to a formula — no magic numbers, no black boxes. It models 10 withdrawal strategies, Roth conversion optimization, IRMAA cliffs, RMDs, rental income reliability, healthcare shocks, and a Blanchett spending smile. The deterministic schedule and MC engine are kept in sync so your year-by-year plan always matches the probabilistic output.",
-  // Add bullet points for key capabilities
-  bullets: [
-    "3,000-path Monte Carlo with bootstrap historical returns",
-    "10 withdrawal strategies (GK, Fixed %, VPW, CAPE, Endowment, and more)",
-    "Roth conversion explorer with bracket-fill optimization",
-    "Property rental income, IRMAA, RMDs, and healthcare shock modeling",
-    "Deterministic year-by-year withdrawal schedule",
-    "Solo Mode for out-of-state / abroad spending scenarios",
-    "Export / import JSON profiles — your data stays local",
-  ],
-};
-
-// Add new feature explanations here — one object per feature.
-const ABOUT_FEATURES = [
-  {
-    id: "solo-mode",
-    icon: "🌴",
-    title: "Solo Mode",
-    body: "Switches the simulation to your out-of-state spending budget and removes state income tax. Toggle OFF = primary spending + state tax. Toggle ON = out-of-state spending + no state tax. The total portfolio withdrawal math (GK guardrails, Fixed %, etc.) is identical either way — only the spending target and whether state tax is applied changes. Set your out-of-state budget in Profile → Spending. If left at $0 it falls back to your primary spending.",
-  },
-  {
-    id: "fixed-strategy",
-    icon: "📌",
-    title: "Fixed % Withdrawal",
-    body: "Withdraws a constant percentage of the portfolio each year (default 4%). Portfolio draw = rate × portfolio. Social Security and rental income are additive on top — they do NOT reduce the draw. This differs from GK, Vanguard, and all other strategies where guaranteed income offsets how much you pull from the portfolio.",
-  },
-  {
-    id: "gk-strategy",
-    icon: "🛡",
-    title: "Guyton-Klinger Guardrails",
-    body: "Your spending adapts based on portfolio performance. If the withdrawal rate climbs above 120% of the initial rate, spending cuts 10% (never below the floor). If it falls below 80%, spending rises 10% (never above the ceiling). Floor = 65% and ceiling = 135% of your target spending. Protects against sequence-of-returns risk while letting you spend more in good markets.",
-  },
-  {
-    id: "property-income",
-    icon: "🏠",
-    title: "Property Rental Income",
-    body: "Income entered in each property's Income field flows automatically into all simulations. It grows at your Rental Growth Rate and is always included regardless of the Rental Income toggle (which controls separately-entered Airbnb / short-term income). The Rental column in the withdrawal table shows both sources combined.",
-  },
-  {
-    id: "reassess-trigger",
-    icon: "🎯",
-    title: "Reassess & Trigger Lines",
-    body: "Two milestone lines on the MC fan chart. Reassess (amber) is your minimum viable number — when the median path crosses it, the plan works mathematically. Trigger (purple) is your early-exit permission slip — a pre-set number where you retire immediately regardless of your original timeline. Set Trigger higher than Reassess. Toggle them off to declutter the chart.",
-  },
-  {
-    id: "ss-storage",
-    icon: "🧾",
-    title: "Social Security Input",
-    body: "SS is stored as an annual amount internally. The input field shows and accepts monthly dollars — enter your expected monthly benefit and the app stores it as annual (×12). If your exported JSON shows a low number like 2742 but you expected $2,742/month, correct it in Profile → Retirement Plan by entering 2742 in the monthly field.",
-  },
-];
-
 function AboutButton() {
   const [open, setOpen] = React.useState(false);
   const [tab, setTab] = React.useState(0);
@@ -1927,7 +1856,7 @@ function AboutButton() {
             <div style={{ fontSize:18, fontWeight:800, color:"#e2e8f0", letterSpacing:"-0.3px" }}>
               {ABOUT_PRODUCT.name}
             </div>
-            <div style={{ fontSize:11, color:"#475569", marginTop:3 }}>v{ABOUT_PRODUCT.version}</div>
+            <div style={{ fontSize:11, color:"#475569", marginTop:3 }}>v{APP_VERSION}</div>
           </div>
           <button onClick={() => setOpen(false)}
             style={{ background:"transparent", border:"none", color:"#64748b",
@@ -1995,16 +1924,54 @@ function AboutButton() {
 
         {/* Tab 2 — How It Works */}
         {tab === 2 && (
-          <div style={{ display:"flex", flexDirection:"column", gap:13 }}>
-            {ABOUT_FEATURES.map(e => (
-              <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
-                border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"14px 16px" }}>
-                <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:7 }}>
-                  {e.icon} {e.title}
-                </div>
-                <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}>{e.body}</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
+            {ABOUT_PRODUCT.intro && (
+              <p style={{ fontSize:13, color:"#94a3b8", lineHeight:1.75,
+                margin:0, padding:"12px 14px", background:"rgba(96,165,250,0.06)",
+                border:"1px solid rgba(96,165,250,0.15)", borderRadius:9 }}>
+                {ABOUT_PRODUCT.intro}
+              </p>
+            )}
+            {(() => {
+              const groups = [...new Set(ABOUT_FEATURES.map(e => e.group).filter(Boolean))];
+              const ungrouped = ABOUT_FEATURES.filter(e => !e.group);
+              return (
+                <>
+                  {groups.map(g => (
+                    <div key={g}>
+                      <div style={{ fontSize:10, fontWeight:700, color:"#475569", letterSpacing:"1px",
+                        textTransform:"uppercase", marginBottom:9 }}>{g}</div>
+                      <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
+                        {ABOUT_FEATURES.filter(e => e.group === g).map(e => (
+                          <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
+                            border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"13px 15px" }}>
+                            <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
+                              {e.icon} {e.title}
+                            </div>
+                            <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}>{e.body}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {ungrouped.map(e => (
+                    <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
+                      border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"13px 15px" }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
+                        {e.icon} {e.title}
+                      </div>
+                      <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}>{e.body}</div>
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
+            {/* placeholder entries rendered here — remove when not empty */}
+            {ABOUT_FEATURES.length === 0 && (
+              <div style={{ fontSize:12, color:"#475569", textAlign:"center", padding:24 }}>
+                No entries yet. Add items to ABOUT_FEATURES in src/about.js.
               </div>
-            ))}
+            )}
           </div>
         )}
 
