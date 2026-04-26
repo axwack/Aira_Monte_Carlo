@@ -60,6 +60,7 @@ consult your fiduciary, CPA or tax accountant.
 
  * ============================================================ */
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import ReactDOM from "react-dom";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -1859,6 +1860,49 @@ const ABOUT_ENTRIES = [
 
 function AboutButton() {
   const [open, setOpen] = React.useState(false);
+  const overlay = open ? ReactDOM.createPortal(
+    <div
+      onClick={() => setOpen(false)}
+      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", zIndex:99999,
+        display:"flex", alignItems:"flex-start", justifyContent:"center",
+        padding:"40px 16px", overflowY:"auto" }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background:"#0f1729", border:"1px solid rgba(96,165,250,0.2)",
+          borderRadius:14, padding:28, maxWidth:580, width:"100%",
+          boxShadow:"0 24px 60px rgba(0,0,0,0.7)", marginBottom:40 }}
+      >
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+          <div>
+            <div style={{ fontSize:17, fontWeight:700, color:"#e2e8f0" }}>AiRA Freedom Financial</div>
+            <div style={{ fontSize:11, color:"#475569", marginTop:2 }}>How the key features work</div>
+          </div>
+          <button onClick={() => setOpen(false)}
+            style={{ background:"transparent", border:"none", color:"#64748b",
+              cursor:"pointer", fontSize:20, lineHeight:1 }}>✕</button>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+          {ABOUT_ENTRIES.map(e => (
+            <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
+              border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"14px 16px" }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
+                {e.icon} {e.title}
+              </div>
+              <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.65 }}>{e.body}</div>
+            </div>
+          ))}
+        </div>
+        <button onClick={() => setOpen(false)}
+          style={{ marginTop:20, width:"100%", background:"rgba(96,165,250,0.1)",
+            border:"1px solid rgba(96,165,250,0.3)", borderRadius:8, padding:"9px 0",
+            color:"#60a5fa", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+          Close
+        </button>
+      </div>
+    </div>,
+    document.body
+  ) : null;
   return (
     <>
       <button
@@ -1872,54 +1916,41 @@ function AboutButton() {
       >
         📖 About
       </button>
-      {open && (
-        <div
-          onClick={() => setOpen(false)}
-          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", zIndex:9999,
-            display:"flex", alignItems:"flex-start", justifyContent:"center",
-            padding:"40px 16px", overflowY:"auto" }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ background:"#0f1729", border:"1px solid rgba(96,165,250,0.2)",
-              borderRadius:14, padding:28, maxWidth:580, width:"100%",
-              boxShadow:"0 24px 60px rgba(0,0,0,0.7)" }}
-          >
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-              <div>
-                <div style={{ fontSize:17, fontWeight:700, color:"#e2e8f0" }}>AiRA Freedom Financial</div>
-                <div style={{ fontSize:11, color:"#475569", marginTop:2 }}>How the key features work</div>
-              </div>
-              <button onClick={() => setOpen(false)}
-                style={{ background:"transparent", border:"none", color:"#64748b",
-                  cursor:"pointer", fontSize:20, lineHeight:1 }}>✕</button>
-            </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-              {ABOUT_ENTRIES.map(e => (
-                <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
-                  border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"14px 16px" }}>
-                  <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
-                    {e.icon} {e.title}
-                  </div>
-                  <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.65 }}>{e.body}</div>
-                </div>
-              ))}
-            </div>
-            <button onClick={() => setOpen(false)}
-              style={{ marginTop:20, width:"100%", background:"rgba(96,165,250,0.1)",
-                border:"1px solid rgba(96,165,250,0.3)", borderRadius:8, padding:"9px 0",
-                color:"#60a5fa", fontSize:13, fontWeight:600, cursor:"pointer" }}>
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+      {overlay}
     </>
   );
 }
 
 function InfoModal({ title, children, accent = "#60a5fa" }) {
   const [open, setOpen] = React.useState(false);
+  const overlay = open ? ReactDOM.createPortal(
+    <div
+      onClick={() => setOpen(false)}
+      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:99999,
+        display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background:"#0f1729", border:`1px solid ${accent}44`, borderRadius:12,
+          padding:28, maxWidth:480, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.6)" }}
+      >
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+          <div style={{ fontSize:15, fontWeight:700, color:accent }}>{title}</div>
+          <button onClick={() => setOpen(false)}
+            style={{ background:"transparent", border:"none", color:"#64748b",
+              cursor:"pointer", fontSize:18, lineHeight:1 }}>✕</button>
+        </div>
+        <div style={{ fontSize:13, color:"#94a3b8", lineHeight:1.7 }}>{children}</div>
+        <button onClick={() => setOpen(false)}
+          style={{ marginTop:20, width:"100%", background:accent+"22",
+            border:`1px solid ${accent}44`, borderRadius:8, padding:"8px 0",
+            color:accent, fontSize:13, fontWeight:600, cursor:"pointer" }}>
+          Got it
+        </button>
+      </div>
+    </div>,
+    document.body
+  ) : null;
   return (
     <>
       <span
@@ -1930,33 +1961,7 @@ function InfoModal({ title, children, accent = "#60a5fa" }) {
           cursor:"pointer", flexShrink:0 }}
         title="Click for more info"
       >?</span>
-      {open && (
-        <div
-          onClick={() => setOpen(false)}
-          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:9999,
-            display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ background:"#0f1729", border:`1px solid ${accent}44`, borderRadius:12,
-              padding:28, maxWidth:480, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.6)" }}
-          >
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-              <div style={{ fontSize:15, fontWeight:700, color:accent }}>{title}</div>
-              <button onClick={() => setOpen(false)}
-                style={{ background:"transparent", border:"none", color:"#64748b",
-                  cursor:"pointer", fontSize:18, lineHeight:1 }}>✕</button>
-            </div>
-            <div style={{ fontSize:13, color:"#94a3b8", lineHeight:1.7 }}>{children}</div>
-            <button onClick={() => setOpen(false)}
-              style={{ marginTop:20, width:"100%", background:accent+"22",
-                border:`1px solid ${accent}44`, borderRadius:8, padding:"8px 0",
-                color:accent, fontSize:13, fontWeight:600, cursor:"pointer" }}>
-              Got it
-            </button>
-          </div>
-        </div>
-      )}
+      {overlay}
     </>
   );
 }
