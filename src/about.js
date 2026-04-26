@@ -95,4 +95,15 @@ export const ABOUT_FEATURES = [
     title: "Reassess & Trigger Lines",
     body:  "Two milestone lines on the MC fan chart. Reassess (amber) is your minimum viable number — when the median path crosses it, the plan works mathematically. Trigger (purple) is your early-exit permission slip — a pre-set number where you retire immediately regardless of your original timeline. Set Trigger higher than Reassess. Toggle them off to declutter the chart.",
   },
-];
+    {
+    id:    "checkpoints",
+    group: "Reading the Charts",
+    icon:  "🎯",
+    title: "What are Checkpoints?",
+    body:  `Checkpoints let you compare your actual portfolio against AiRA's Monte Carlo projections over time. Add a date and portfolio value, and the app instantly shows whether you're ahead, on track, or behind relative to thousands of simulated paths.<br/><br/>
+          Each checkpoint is color‑coded:<br/>
+          • <span style="color:#10b981;">Green</span> – at or above the median forecast<br/>
+          • <span style="color:#fbbf24;">Yellow</span> – between the 25th and 50th percentile<br/>
+          • <span style="color:#ef4444;">Red</span> – below the 25th percentile<br/><br/>
+          This isn't just a status check. It's the foundation of adaptive distribution planning, a framework championed by financial planner Michael Kitces. Instead of blindly following a withdrawal plan made years ago, you adjust based on how your portfolio is actually performing. If you're in the green, you might spend a little more. In the red, you tighten up. Over time, checkpoints build a living history of your financial journey, turning a static retirement plan into a responsive roadmap. You're not guessing whether you're still on track—you're measuring it, one checkpoint at a time.`,
+     },]

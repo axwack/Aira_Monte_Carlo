@@ -1948,7 +1948,7 @@ function AboutButton() {
                             <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
                               {e.icon} {e.title}
                             </div>
-                            {/* The line below is now self-closing — note the /> at the end */}
+                            {/* dangerousHTML – self‑closing with backslash */}
                             <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}
                                 dangerouslySetInnerHTML={{ __html: e.body }} />
                           </div>
@@ -1962,13 +1962,14 @@ function AboutButton() {
                       <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
                         {e.icon} {e.title}
                       </div>
-                      <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}>{e.body}</div>
+                      {/* dangerousHTML for ungrouped entries as well */}
+                      <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}
+                          dangerouslySetInnerHTML={{ __html: e.body }} />
                     </div>
                   ))}
                 </>
               );
             })()}
-            {/* placeholder entries rendered here — remove when not empty */}
             {ABOUT_FEATURES.length === 0 && (
               <div style={{ fontSize:12, color:"#475569", textAlign:"center", padding:24 }}>
                 No entries yet. Add items to ABOUT_FEATURES in src/about.js.
