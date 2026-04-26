@@ -2281,6 +2281,10 @@ function importProfile(onLoad) {
         // Ensure properties is always a valid array
         if (!Array.isArray(parsed.properties)) {
           parsed.properties = BLANK_PROFILE.properties;
+        } else {
+            parsed.properties = parsed.properties.map((p, i) =>
+              p.id ? { ...p, id: String(p.id) } : { ...p, id: "p" + (i + 1) }
+            );
         }
         
         // Ensure checkpoints is always an array and all entries have string IDs
@@ -5534,62 +5538,6 @@ function ARow({ label, desc, children }) {
   );
 }
 
-const StableInput = React.memo(
-  ({ initialValue, onCommit, min, max, transform = (v) => v, suffix = "", style }) => {
-    const inputRef = useRef(null);
-    const isFocusedRef = useRef(false);
-    const initialValueRef = useRef(initialValue);
-
-    // Format number with commas
-    const format = (num) => new Intl.NumberFormat().format(num);
-
-    // Initialize on mount and when initialValue changes externally (and not focused)
-    useEffect(() => {
-      if (!isFocusedRef.current && inputRef.current) {
-        inputRef.current.value = format(initialValue);
-        initialValueRef.current = initialValue;
-      }
-    }, [initialValue]);
-
-    const handleBlur = () => {
-      isFocusedRef.current = false;
-      const raw = inputRef.current.value.replace(/,/g, "");
-      let num = parseFloat(raw);
-      if (isNaN(num)) {
-        inputRef.current.value = format(initialValueRef.current);
-        return;
-      }
-      num = Math.min(max, Math.max(min, num));
-      const final = transform(num);
-      onCommit(final);
-      inputRef.current.value = format(final);
-    };
-
-    const handleFocus = () => {
-      isFocusedRef.current = true;
-    };
-
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <input
-          ref={inputRef}
-          type="text"
-          inputMode="numeric"
-          defaultValue={format(initialValue)}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          style={style}
-        />
-        {suffix && <span style={{ fontSize: 11, color: "#475569" }}>{suffix}</span>}
-      </div>
-    );
-  },
-  // Custom comparison: never re-render due to prop changes; the DOM handles everything.
-  () => true
-);
-
-StableInput.displayName = "StableInput";
-
 function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   const [isFocused, setIsFocused] = useState(false);
   const [localValue, setLocalValue] = useState("");
@@ -5934,7 +5882,7 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
       </div>
 
-      {/* MONTE CARLO PARAMETERS CARD */}
+      {/* MONTE CARLO MODEL PARAMETERS CARD */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -5960,12 +5908,6 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
         <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is your internal Portfolio Goal and where if you hit this number before you have accomplished your retirement goal. It's your minimal goal and anything above this number is extra beyond what is your ultimate goal. (default $3.2M)">
           <CleanNumberInput value={values.portfolioGoal} onChange={(v) => onChange("portfolioGoal", v)} min={0} max={10000000} step={50000} />
-        </ARow>
-        <ARow label="Rental reliability" desc="Probability Rental income arrives in any given year (default 80%)">
-          <CleanNumberInput value={values.abReliability} onChange={(v) => onChange("abReliability", v)} min={0} max={100} step={5} />
-        </ARow>
-        <ARow label="Rental income growth / yr" desc="Annual growth rate for Rental income (default 3%)">
-          <CleanNumberInput value={values.abGrowth} onChange={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} />
         </ARow>
         <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
           <CleanNumberInput value={values.ssCola} onChange={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} />
@@ -6118,6 +6060,9 @@ function RetirementPanel({ values, onChange }) {
         </WFieldRow>
         <WFieldRow label="Rental Reliability" helper="Probability rental income is received each year (default 80%).">
           <ANumInput value={values.abReliability || 80} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
+        </WFieldRow>
+         <WFieldRow label="Rental Income Ends (year)" helper="Year when rental income is expected to end.">
+          <ANumInput value={values.abEndYear || 80} onSet={(v) => onChange("abEndYear", v)} min={0} max={100} step={5} suffix="%" />
         </WFieldRow>
       </div>
 
@@ -6695,7 +6640,14 @@ export default function AiRAForecaster() {
                     if (acctTotal > 0) setPort(acctTotal);
                   }
                   if (data.mortStart && !data.mortStart.includes("-01")) data.mortStart = data.mortStart + "-01";
-                  if (!Array.isArray(data.properties)) data.properties = BLANK_PROFILE.properties;
+                 
+                  if (!Array.isArray(data.properties)){
+                     data.properties = BLANK_PROFILE.properties;
+                  } else {
+                      data.properties = data.properties.map((p, i) =>
+                      p.id ? { ...p, id: String(p.id) } : { ...p, id: "p" + (i + 1) }
+                 );
+}
                   if (!Array.isArray(data.carveouts)) data.carveouts = [];
                   if (!Array.isArray(data.checkpoints)) {
                     data.checkpoints = [];
