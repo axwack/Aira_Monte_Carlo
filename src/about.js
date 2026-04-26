@@ -11,9 +11,7 @@ export const ABOUT_ME = {
   // Set url: "" to hide a link entirely.
   links: [
     { icon: "▶️", label: "YouTube Channel",  url: "https://youtube.com/@vincentplansfreedom" },
-    { icon: "🐦", label: "Twitter / X",       url: "" },
-    { icon: "💼", label: "LinkedIn",           url: "" },
-    { icon: "📧", label: "Email me",           url: "mailto:tiredtoretire@gmail.com" },
+    { icon: "🐦", label: "Instagram",       url: "https://www.instagram.com/tiredtoretire/" },
     { icon: "☕", label: "Buy me a coffee",    url: "https://buymeacoffee.com/vincentplansfreedom" },
   ],
 };
