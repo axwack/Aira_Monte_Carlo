@@ -49,6 +49,9 @@ npm install
 npm run dev
 ```
 
+### Roadmap
+Roadmap captured (Feature 4): live success rate shift — re-run MC from actual current portfolio value so the headline success % reflects reality, not plan-day projections. That's the big one for adaptive planning
+
 ### DISCLAIMER
 
 AiRA Forecaster is a financial modelling and educational tool. It does not constitute professional financial, investment, tax, or legal advice. All simulations are based on historical data and mathematical projections. Past performance is not indicative of future results. Use at your own risk and consult a qualified financial advisor, CPA, or tax professional before making any financial decisions.
