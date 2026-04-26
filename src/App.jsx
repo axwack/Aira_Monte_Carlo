@@ -1882,7 +1882,7 @@ function AboutButton() {
             </p>
             <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
               {ABOUT_ME.links.filter(l => l.url).map(l => (
-                <a key={l.label} href={l.url} target="_blank" rel="noreferrer"
+                <a key={l.label} href={l.url} target={l.url.startsWith("mailto:") ? "_self" : "_blank"} rel="noreferrer"
                   style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
                     background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)",
                     borderRadius:9, color:"#e2e8f0", fontSize:13, fontWeight:600,
