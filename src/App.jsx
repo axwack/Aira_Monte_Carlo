@@ -2303,17 +2303,54 @@ function importProfile(onLoad) {
   input.click();
 }
 
-function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal }) {
-  const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
+function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, preRetireEq }) {
   const [showTargets, setShowTargets] = useState(true);
 
-  // Safe maxY calculation with fallback
+  const rawData = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
+
+  // Deterministic accumulation path: current portfolio → retirement
+  const accumData = useMemo(() => {
+    if (!currentPort || currentAge == null || currentAge >= retireAge) return [];
+    const ret = expectedReturn(preRetireEq ?? 91) / 100;
+    let p = currentPort;
+    const pts = [];
+    for (let age = currentAge; age <= retireAge; age++) {
+      pts.push({ age, accum: p });
+      p = Math.round(p * (1 + ret) + (contrib || 0));
+    }
+    return pts;
+  }, [currentPort, currentAge, retireAge, contrib, preRetireEq]);
+
+  // Merge accumulation into chart data so XAxis spans both phases
+  const data = useMemo(() => {
+    if (accumData.length === 0) return rawData;
+    const preRetire = accumData.slice(0, -1).map(d => ({ age: d.age, accum: d.accum }));
+    const atRetire = rawData[0] ? { ...rawData[0], accum: accumData[accumData.length - 1].accum } : null;
+    return [...preRetire, ...(atRetire ? [atRetire] : []), ...rawData.slice(atRetire ? 1 : 0)];
+  }, [accumData, rawData]);
+
+  // Interpolate which percentile a value falls at within the fan bands
+  const calcPercentile = (value, row) => {
+    if (!row || !row.p10 || !row.p90) return null;
+    const { p10, p25, p50, p75, p90 } = row;
+    if (value <= p10) return "≤10th";
+    if (value <= p25) return `~${Math.round(10 + (value - p10) / (p25 - p10) * 15)}th`;
+    if (value <= p50) return `~${Math.round(25 + (value - p25) / (p50 - p25) * 25)}th`;
+    if (value <= p75) return `~${Math.round(50 + (value - p50) / (p75 - p50) * 25)}th`;
+    if (value <= p90) return `~${Math.round(75 + (value - p75) / (p90 - p75) * 15)}th`;
+    return "≥90th";
+  };
+
+  // "You Are Here" percentile (only meaningful if already in retirement)
+  const nowPct = currentAge >= retireAge
+    ? calcPercentile(currentPort, pcts.find(d => d.age === currentAge))
+    : null;
+
   const maxY = useMemo(() => {
     if (!data || data.length === 0) return 5_000_000;
-    const maxPortfolio = Math.max(...data.map(d => Math.max(d.p90 || 0, d.p75 || 0, d.p50 || 0)));
-    const result = Math.max(maxPortfolio, portfolioGoal || 0, earlyRetireTarget || 0) * 1.05;
-    return result;
-  }, [data, portfolioGoal, earlyRetireTarget]);
+    const maxPortfolio = Math.max(...data.map(d => Math.max(d.p90 || 0, d.p75 || 0, d.p50 || 0, d.accum || 0)));
+    return Math.max(maxPortfolio, portfolioGoal || 0, earlyRetireTarget || 0, currentPort || 0) * 1.05;
+  }, [data, portfolioGoal, earlyRetireTarget, currentPort]);
 
   return (
     <div className="chart-card">
@@ -2388,7 +2425,22 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           <Line type="monotone" dataKey="p25" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 3" name="25th" />
           <Line type="monotone" dataKey="p10" stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="3 3" name="10th" />
 
-          {/* Checkpoint dots */}
+          {/* Deterministic accumulation path (pre-retirement) */}
+          {accumData.length > 0 && (
+            <Line type="monotone" dataKey="accum" stroke="#60a5fa" strokeWidth={2}
+              strokeDasharray="6 3" dot={false} name="Expected path" connectNulls={false} />
+          )}
+
+          {/* You Are Here */}
+          {currentAge != null && currentPort != null && (
+            <ReferenceDot
+              x={currentAge} y={currentPort} r={7}
+              fill="#60a5fa" stroke="#0f1729" strokeWidth={2}
+              label={{ value: nowPct ? `▶ Now · ${nowPct} %ile` : "▶ Now", fill: "#60a5fa", fontSize: 10, position: "top" }}
+            />
+          )}
+
+          {/* Checkpoint dots — color + percentile label */}
           {checkpoints && checkpoints.map((cp) => {
             if (!dob || !cp.date) return null;
             const birth = new Date(dob);
@@ -2400,26 +2452,35 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
             if (monthDay < birthMonthDay) age--;
 
-            const p50AtAge = pcts.find(d => d.age === age)?.p50;
-            const p25AtAge = pcts.find(d => d.age === age)?.p25;
-
+            const isPreRetire = age < retireAge;
             let color = "#64748b";
-            if (p50AtAge !== undefined && p25AtAge !== undefined) {
-              if (cp.value >= p50AtAge) color = "#10b981";      // green – ahead
-              else if (cp.value <= p25AtAge) color = "#ef4444"; // red – behind
-              else color = "#fbbf24";                           // yellow – on track
+            let pctLabel = "";
+
+            if (isPreRetire) {
+              const accumAtAge = accumData.find(d => d.age === age)?.accum;
+              if (accumAtAge) {
+                const ratio = cp.value / accumAtAge;
+                if (ratio >= 1)    { color = "#10b981"; pctLabel = `+${Math.round((ratio - 1) * 100)}%`; }
+                else if (ratio >= 0.85) { color = "#fbbf24"; pctLabel = `${Math.round((ratio - 1) * 100)}%`; }
+                else               { color = "#ef4444"; pctLabel = `${Math.round((ratio - 1) * 100)}%`; }
+              }
+            } else {
+              const fanRow = pcts.find(d => d.age === age);
+              if (fanRow) {
+                if (cp.value >= fanRow.p50)      color = "#10b981";
+                else if (cp.value <= fanRow.p25) color = "#ef4444";
+                else                             color = "#fbbf24";
+                pctLabel = calcPercentile(cp.value, fanRow) || "";
+              }
             }
 
+            const labelText = [cp.note, pctLabel].filter(Boolean).join(" · ");
             return (
               <ReferenceDot
                 key={cp.id}
-                x={age}
-                y={cp.value}
-                r={5}
-                fill={color}
-                stroke="#fff"
-                strokeWidth={1.5}
-                label={{ value: cp.note || "●", fill: color, fontSize: 9, position: "top" }}
+                x={age} y={cp.value} r={5}
+                fill={color} stroke="#fff" strokeWidth={1.5}
+                label={{ value: labelText || "●", fill: color, fontSize: 9, position: "top" }}
               />
             );
           })}
@@ -2459,11 +2520,12 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
       {/* Unified Legend */}
       <div className="leg">
         {[
-          { c: "#5eead4", l: "90th" },
-          { c: "#0d9488", l: "75th" },
+          ...(accumData.length > 0 ? [{ c: "#60a5fa", l: "Expected path" }] : []),
+          { c: "#5eead4", l: "90th %ile" },
+          { c: "#0d9488", l: "75th %ile" },
           { c: "#14b8a6", l: "Median" },
-          { c: "#fbbf24", l: "25th" },
-          { c: "#f87171", l: "10th" },
+          { c: "#fbbf24", l: "25th %ile" },
+          { c: "#f87171", l: "10th %ile" },
           ...(showTargets ? [
             { c: "#f59e0b", l: `🎯 Reassess $${(portfolioGoal / 1e6).toFixed(1)}M` },
             { c: "#8b5cf6", l: `🚀 Trigger $${(earlyRetireTarget / 1e6).toFixed(1)}M` },
@@ -7275,6 +7337,10 @@ export default function AiRAForecaster() {
                     earlyRetireTarget={assumptions.earlyRetireTarget}
                     dob={assumptions.dob}
                     portfolioGoal={assumptions.portfolioGoal}
+                    currentAge={assumptions.currentAge}
+                    currentPort={params.port}
+                    contrib={params.contrib}
+                    preRetireEq={params.preRetireEq ?? 91}
                   />
                 )}
                 {activeTab === "montecarlo" && (
@@ -7326,6 +7392,10 @@ export default function AiRAForecaster() {
                         earlyRetireTarget={assumptions.earlyRetireTarget}
                         dob={assumptions.dob}
                         portfolioGoal={assumptions.portfolioGoal}
+                        currentAge={assumptions.currentAge}
+                        currentPort={params.port}
+                        contrib={params.contrib}
+                        preRetireEq={params.preRetireEq ?? 91}
                       />
                     )}
                   </>
