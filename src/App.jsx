@@ -1818,84 +1818,199 @@ function Toggle({ val, onChange, label, accent = "#0d9488" }) {
   );
 }
 
-// ─── About entries: add new objects here to appear in the About modal ───────
-const ABOUT_ENTRIES = [
+// ═══════════════════════════════════════════════════════════════════════════
+// ABOUT PAGE CONTENT — edit everything below this line freely.
+// No component changes needed: just update the objects and arrays.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ABOUT_ME = {
+  name:    "Your Name",
+  tagline: "Investor · Builder · Freedom Seeker",
+  // 2–4 sentences. Plain text, no JSX.
+  bio: "I built AiRA because I couldn't find a retirement planner that spoke the language of a real DIY investor — one that accounts for rental income, Roth conversions, sequence-of-returns risk, and the nuance of spending less abroad. This tool is the one I wished existed when I started planning my own exit. I share everything I learn about financial independence and early retirement on my channel — subscribe if you want the unfiltered version.",
+  // Leave any link blank ("") to hide it.
+  links: [
+    { icon: "▶️", label: "YouTube Channel",  url: "https://youtube.com/@yourchannel" },
+    { icon: "🐦", label: "Twitter / X",       url: "" },
+    { icon: "💼", label: "LinkedIn",          url: "" },
+    { icon: "📧", label: "Email me",          url: "mailto:you@example.com" },
+    { icon: "☕", label: "Buy me a coffee",   url: "https://buymeacoffee.com/yourpage" },
+  ],
+};
+
+const ABOUT_PRODUCT = {
+  name:    "AiRA Freedom Financial",
+  version: APP_VERSION,
+  tagline: "A DIY retirement planner built for the modern retiree.",
+  description: "AiRA runs 3,000 stochastic Monte Carlo paths using 99 years of S&P 500 data and 50 years of bond returns, layered with real historical inflation. Every dollar on screen is traceable to a formula — no magic numbers, no black boxes. It models 10 withdrawal strategies, Roth conversion optimization, IRMAA cliffs, RMDs, rental income reliability, healthcare shocks, and a Blanchett spending smile. The deterministic schedule and MC engine are kept in sync so your year-by-year plan always matches the probabilistic output.",
+  // Add bullet points for key capabilities
+  bullets: [
+    "3,000-path Monte Carlo with bootstrap historical returns",
+    "10 withdrawal strategies (GK, Fixed %, VPW, CAPE, Endowment, and more)",
+    "Roth conversion explorer with bracket-fill optimization",
+    "Property rental income, IRMAA, RMDs, and healthcare shock modeling",
+    "Deterministic year-by-year withdrawal schedule",
+    "Solo Mode for out-of-state / abroad spending scenarios",
+    "Export / import JSON profiles — your data stays local",
+  ],
+};
+
+// Add new feature explanations here — one object per feature.
+const ABOUT_FEATURES = [
   {
     id: "solo-mode",
     icon: "🌴",
     title: "Solo Mode",
-    body: "Switches the simulation to your out-of-state spending budget and removes state income tax. Toggle OFF = primary spending + state tax. Toggle ON = out-of-state spending + no state tax. The total portfolio withdrawal math (GK guardrails, Fixed %, etc.) is identical either way — only the spending target and state tax change. Set your out-of-state budget in Profile → Spending. If left at $0 it falls back to your primary spending.",
+    body: "Switches the simulation to your out-of-state spending budget and removes state income tax. Toggle OFF = primary spending + state tax. Toggle ON = out-of-state spending + no state tax. The total portfolio withdrawal math (GK guardrails, Fixed %, etc.) is identical either way — only the spending target and whether state tax is applied changes. Set your out-of-state budget in Profile → Spending. If left at $0 it falls back to your primary spending.",
   },
   {
     id: "fixed-strategy",
     icon: "📌",
     title: "Fixed % Withdrawal",
-    body: "Withdraws a constant percentage of the portfolio each year (default 4%). Your portfolio draw = rate × portfolio. Social Security and rental income are additive on top — they do NOT reduce the portfolio draw. This differs from all other strategies (GK, Vanguard, etc.) where guaranteed income reduces how much you need to pull from the portfolio.",
+    body: "Withdraws a constant percentage of the portfolio each year (default 4%). Portfolio draw = rate × portfolio. Social Security and rental income are additive on top — they do NOT reduce the draw. This differs from GK, Vanguard, and all other strategies where guaranteed income offsets how much you pull from the portfolio.",
   },
   {
     id: "gk-strategy",
     icon: "🛡",
     title: "Guyton-Klinger Guardrails",
-    body: "Your spending adapts based on portfolio performance. If your current withdrawal rate climbs above 120% of the initial rate, spending cuts 10% (never below the floor). If it falls below 80%, spending rises 10% (never above the ceiling). The floor is 65% and ceiling is 135% of your target spending. This strategy avoids running out of money in bad markets while still letting you spend more in good ones.",
+    body: "Your spending adapts based on portfolio performance. If the withdrawal rate climbs above 120% of the initial rate, spending cuts 10% (never below the floor). If it falls below 80%, spending rises 10% (never above the ceiling). Floor = 65% and ceiling = 135% of your target spending. Protects against sequence-of-returns risk while letting you spend more in good markets.",
   },
   {
     id: "property-income",
     icon: "🏠",
     title: "Property Rental Income",
-    body: "Income entered in each property's 'Income' field automatically flows into all simulations as rental income. It grows at your Rental Growth Rate and is always included (not gated by the Rental Income toggle, which controls your separately-entered Airbnb/other income). In the withdrawal table the 'Rental' column shows the combined total of both sources.",
+    body: "Income entered in each property's Income field flows automatically into all simulations. It grows at your Rental Growth Rate and is always included regardless of the Rental Income toggle (which controls separately-entered Airbnb / short-term income). The Rental column in the withdrawal table shows both sources combined.",
   },
   {
     id: "reassess-trigger",
     icon: "🎯",
     title: "Reassess & Trigger Lines",
-    body: "Two portfolio milestone lines on the MC fan chart. Reassess (amber) is your minimum viable retirement number — when the median path crosses it, your plan works mathematically. Trigger (purple) is your early-exit number — a pre-set signal to retire immediately, even ahead of schedule, if the portfolio reaches this level. Trigger should be higher than Reassess. Toggle them off to declutter the chart.",
+    body: "Two milestone lines on the MC fan chart. Reassess (amber) is your minimum viable number — when the median path crosses it, the plan works mathematically. Trigger (purple) is your early-exit permission slip — a pre-set number where you retire immediately regardless of your original timeline. Set Trigger higher than Reassess. Toggle them off to declutter the chart.",
   },
   {
     id: "ss-storage",
     icon: "🧾",
     title: "Social Security Input",
-    body: "SS benefit is always stored as an annual amount internally. The input field shows and accepts monthly dollars — enter what you expect to receive per month, and the app multiplies by 12. If your stored JSON shows a small number (e.g. 2742) and you expected ~$2,742/month, the annual value should be 32,904. You can correct this in Profile → Retirement Plan.",
+    body: "SS is stored as an annual amount internally. The input field shows and accepts monthly dollars — enter your expected monthly benefit and the app stores it as annual (×12). If your exported JSON shows a low number like 2742 but you expected $2,742/month, correct it in Profile → Retirement Plan by entering 2742 in the monthly field.",
   },
 ];
 
 function AboutButton() {
   const [open, setOpen] = React.useState(false);
+  const [tab, setTab] = React.useState(0);
+  const TABS = ["👤 About Me", "📦 The App", "📖 How It Works"];
+
+  const tabBtn = (i) => ({
+    flex:1, padding:"7px 4px", fontSize:11, fontWeight: tab===i ? 700 : 500,
+    background: tab===i ? "rgba(96,165,250,0.18)" : "transparent",
+    color: tab===i ? "#60a5fa" : "#64748b",
+    border:"none", borderBottom: tab===i ? "2px solid #60a5fa" : "2px solid transparent",
+    cursor:"pointer", transition:"all 0.15s",
+  });
+
   const overlay = open ? ReactDOM.createPortal(
     <div
       onClick={() => setOpen(false)}
-      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", zIndex:99999,
+      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.70)", zIndex:99999,
         display:"flex", alignItems:"flex-start", justifyContent:"center",
-        padding:"40px 16px", overflowY:"auto" }}
+        padding:"40px 16px 60px", overflowY:"auto" }}
     >
       <div
         onClick={e => e.stopPropagation()}
         style={{ background:"#0f1729", border:"1px solid rgba(96,165,250,0.2)",
-          borderRadius:14, padding:28, maxWidth:580, width:"100%",
-          boxShadow:"0 24px 60px rgba(0,0,0,0.7)", marginBottom:40 }}
+          borderRadius:14, padding:"24px 28px 28px", maxWidth:600, width:"100%",
+          boxShadow:"0 24px 60px rgba(0,0,0,0.8)" }}
       >
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        {/* Header */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:18 }}>
           <div>
-            <div style={{ fontSize:17, fontWeight:700, color:"#e2e8f0" }}>AiRA Freedom Financial</div>
-            <div style={{ fontSize:11, color:"#475569", marginTop:2 }}>How the key features work</div>
+            <div style={{ fontSize:18, fontWeight:800, color:"#e2e8f0", letterSpacing:"-0.3px" }}>
+              {ABOUT_PRODUCT.name}
+            </div>
+            <div style={{ fontSize:11, color:"#475569", marginTop:3 }}>v{ABOUT_PRODUCT.version}</div>
           </div>
           <button onClick={() => setOpen(false)}
             style={{ background:"transparent", border:"none", color:"#64748b",
-              cursor:"pointer", fontSize:20, lineHeight:1 }}>✕</button>
+              cursor:"pointer", fontSize:22, lineHeight:1, padding:"0 2px" }}>✕</button>
         </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-          {ABOUT_ENTRIES.map(e => (
-            <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
-              border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"14px 16px" }}>
-              <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
-                {e.icon} {e.title}
-              </div>
-              <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.65 }}>{e.body}</div>
-            </div>
+
+        {/* Tab bar */}
+        <div style={{ display:"flex", borderBottom:"1px solid rgba(255,255,255,0.08)", marginBottom:22 }}>
+          {TABS.map((t, i) => (
+            <button key={i} style={tabBtn(i)} onClick={() => setTab(i)}>{t}</button>
           ))}
         </div>
+
+        {/* Tab 0 — About Me */}
+        {tab === 0 && (
+          <div>
+            <div style={{ fontSize:16, fontWeight:700, color:"#e2e8f0" }}>{ABOUT_ME.name}</div>
+            <div style={{ fontSize:11, color:"#60a5fa", marginTop:3, marginBottom:14, letterSpacing:"0.5px" }}>
+              {ABOUT_ME.tagline}
+            </div>
+            <p style={{ fontSize:13, color:"#94a3b8", lineHeight:1.75, margin:"0 0 20px" }}>
+              {ABOUT_ME.bio}
+            </p>
+            <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
+              {ABOUT_ME.links.filter(l => l.url).map(l => (
+                <a key={l.label} href={l.url} target="_blank" rel="noreferrer"
+                  style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
+                    background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)",
+                    borderRadius:9, color:"#e2e8f0", fontSize:13, fontWeight:600,
+                    textDecoration:"none", transition:"background 0.15s" }}
+                  onMouseEnter={e => e.currentTarget.style.background="rgba(96,165,250,0.12)"}
+                  onMouseLeave={e => e.currentTarget.style.background="rgba(255,255,255,0.04)"}
+                >
+                  <span style={{ fontSize:18 }}>{l.icon}</span>
+                  <span>{l.label}</span>
+                  <span style={{ marginLeft:"auto", color:"#475569", fontSize:11 }}>↗</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 1 — The App */}
+        {tab === 1 && (
+          <div>
+            <div style={{ fontSize:13, color:"#60a5fa", fontWeight:600, marginBottom:10 }}>
+              {ABOUT_PRODUCT.tagline}
+            </div>
+            <p style={{ fontSize:13, color:"#94a3b8", lineHeight:1.75, margin:"0 0 18px" }}>
+              {ABOUT_PRODUCT.description}
+            </p>
+            <div style={{ fontSize:12, fontWeight:700, color:"#cbd5e1", marginBottom:10, letterSpacing:"0.5px", textTransform:"uppercase" }}>
+              Key Capabilities
+            </div>
+            <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:8 }}>
+              {ABOUT_PRODUCT.bullets.map((b, i) => (
+                <li key={i} style={{ display:"flex", gap:10, fontSize:13, color:"#94a3b8" }}>
+                  <span style={{ color:"#60a5fa", fontWeight:700, flexShrink:0 }}>✓</span>
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Tab 2 — How It Works */}
+        {tab === 2 && (
+          <div style={{ display:"flex", flexDirection:"column", gap:13 }}>
+            {ABOUT_FEATURES.map(e => (
+              <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
+                border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"14px 16px" }}>
+                <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:7 }}>
+                  {e.icon} {e.title}
+                </div>
+                <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}>{e.body}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <button onClick={() => setOpen(false)}
-          style={{ marginTop:20, width:"100%", background:"rgba(96,165,250,0.1)",
-            border:"1px solid rgba(96,165,250,0.3)", borderRadius:8, padding:"9px 0",
+          style={{ marginTop:22, width:"100%", background:"rgba(96,165,250,0.08)",
+            border:"1px solid rgba(96,165,250,0.25)", borderRadius:8, padding:"9px 0",
             color:"#60a5fa", fontSize:13, fontWeight:600, cursor:"pointer" }}>
           Close
         </button>
@@ -1903,10 +2018,11 @@ function AboutButton() {
     </div>,
     document.body
   ) : null;
+
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => { setTab(0); setOpen(true); }}
         style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 13px",
           borderRadius:7, border:"1px solid rgba(96,165,250,0.35)",
           background:"rgba(96,165,250,0.08)", color:"#60a5fa",
