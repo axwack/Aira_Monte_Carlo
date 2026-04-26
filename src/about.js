@@ -4,17 +4,17 @@
 // ─────────────────────────────────────────────────────────────
 
 export const ABOUT_ME = {
-  name:    "Your Name",
+  name:    "TiredToRetire.com/AiRA",
   tagline: "Investor · Builder · Freedom Seeker",
   // 2–4 sentences. Plain text only.
   bio: "I built AiRA because I couldn't find a retirement planner that spoke the language of a real DIY investor — one that accounts for rental income, Roth conversions, sequence-of-returns risk, and the nuance of spending less abroad. This tool is the one I wished existed when I started planning my own exit. I share everything I learn about financial independence and early retirement on my channel — subscribe if you want the unfiltered version.",
   // Set url: "" to hide a link entirely.
   links: [
-    { icon: "▶️", label: "YouTube Channel",  url: "https://youtube.com/@yourchannel" },
+    { icon: "▶️", label: "YouTube Channel",  url: "https://youtube.com/@vincentplansfreedom" },
     { icon: "🐦", label: "Twitter / X",       url: "" },
     { icon: "💼", label: "LinkedIn",           url: "" },
-    { icon: "📧", label: "Email me",           url: "mailto:you@example.com" },
-    { icon: "☕", label: "Buy me a coffee",    url: "https://buymeacoffee.com/yourpage" },
+    { icon: "📧", label: "Email me",           url: "mailto:tiredtoretire@gmail.com" },
+    { icon: "☕", label: "Buy me a coffee",    url: "https://buymeacoffee.com/vincentplansfreedom" },
   ],
 };
 
