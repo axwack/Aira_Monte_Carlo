@@ -6788,7 +6788,7 @@ export default function AiRAForecaster() {
                     border: "1px solid #1e3a5f",
                     borderRadius: 10,
                     padding: 14,
-                    width: 280,
+                    width: 300,
                     zIndex: 999,
                     boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
                   }}
