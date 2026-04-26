@@ -2361,7 +2361,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
         <Toggle
           val={showTargets}
           onChange={setShowTargets}
-          label="Show targets"
+          label="Show milestones"
           accent="#f59e0b"
         />
       </div>
@@ -2426,13 +2426,13 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           <Line type="monotone" dataKey="p10" stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="3 3" name="10th" />
 
           {/* Deterministic accumulation path (pre-retirement) */}
-          {accumData.length > 0 && (
+          {showTargets && accumData.length > 0 && (
             <Line type="monotone" dataKey="accum" stroke="#60a5fa" strokeWidth={2}
               strokeDasharray="6 3" dot={false} name="Expected path" connectNulls={false} />
           )}
 
           {/* You Are Here */}
-          {currentAge != null && currentPort != null && (
+          {showTargets && currentAge != null && currentPort != null && (
             <ReferenceDot
               x={currentAge} y={currentPort} r={7}
               fill="#60a5fa" stroke="#0f1729" strokeWidth={2}
@@ -2453,6 +2453,8 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             if (monthDay < birthMonthDay) age--;
 
             const isPreRetire = age < retireAge;
+            if (isPreRetire && !showTargets) return null;
+
             let color = "#64748b";
             let pctLabel = "";
 
@@ -2460,9 +2462,9 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
               const accumAtAge = accumData.find(d => d.age === age)?.accum;
               if (accumAtAge) {
                 const ratio = cp.value / accumAtAge;
-                if (ratio >= 1)    { color = "#10b981"; pctLabel = `+${Math.round((ratio - 1) * 100)}%`; }
+                if (ratio >= 1)         { color = "#10b981"; pctLabel = `+${Math.round((ratio - 1) * 100)}%`; }
                 else if (ratio >= 0.85) { color = "#fbbf24"; pctLabel = `${Math.round((ratio - 1) * 100)}%`; }
-                else               { color = "#ef4444"; pctLabel = `${Math.round((ratio - 1) * 100)}%`; }
+                else                    { color = "#ef4444"; pctLabel = `${Math.round((ratio - 1) * 100)}%`; }
               }
             } else {
               const fanRow = pcts.find(d => d.age === age);
@@ -2520,7 +2522,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
       {/* Unified Legend */}
       <div className="leg">
         {[
-          ...(accumData.length > 0 ? [{ c: "#60a5fa", l: "Expected path" }] : []),
+          ...(showTargets && accumData.length > 0 ? [{ c: "#60a5fa", l: "Expected path" }] : []),
           { c: "#5eead4", l: "90th %ile" },
           { c: "#0d9488", l: "75th %ile" },
           { c: "#14b8a6", l: "Median" },
