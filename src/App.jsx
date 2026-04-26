@@ -2283,9 +2283,13 @@ function importProfile(onLoad) {
           parsed.properties = BLANK_PROFILE.properties;
         }
         
-        // Ensure checkpoints is always an array
+        // Ensure checkpoints is always an array and all entries have string IDs
         if (!Array.isArray(parsed.checkpoints)) {
           parsed.checkpoints = [];
+        } else {
+          parsed.checkpoints = parsed.checkpoints.map(cp =>
+            cp.id != null ? { ...cp, id: String(cp.id) } : { ...cp, id: Date.now().toString() + Math.random() }
+          );
         }
         
         // Fix date format if needed
@@ -6311,6 +6315,8 @@ export default function AiRAForecaster() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackType, setFeedbackType] = useState(null);
   const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackName, setFeedbackName] = useState("");
+  const [feedbackEmail, setFeedbackEmail] = useState("");
   const [showTerms, setShowTerms] = useState(false);
   const isFirst = useRef(true);
 
@@ -6539,6 +6545,8 @@ export default function AiRAForecaster() {
     const templateParams = {
       type: feedbackType,
       message: feedbackText,
+      from_name: feedbackName || "Anonymous",
+      from_email: feedbackEmail || "not provided",
       timestamp: new Date().toISOString(),
     };
     try {
@@ -6546,6 +6554,8 @@ export default function AiRAForecaster() {
       alert("Thank you for your feedback! 🙏");
       setFeedbackType(null);
       setFeedbackText("");
+      setFeedbackName("");
+      setFeedbackEmail("");
       setShowFeedback(false);
     } catch (error) {
       console.error("EmailJS Error:", error);
@@ -6687,7 +6697,13 @@ export default function AiRAForecaster() {
                   if (data.mortStart && !data.mortStart.includes("-01")) data.mortStart = data.mortStart + "-01";
                   if (!Array.isArray(data.properties)) data.properties = BLANK_PROFILE.properties;
                   if (!Array.isArray(data.carveouts)) data.carveouts = [];
-                  if (!Array.isArray(data.checkpoints)) data.checkpoints = [];
+                  if (!Array.isArray(data.checkpoints)) {
+                    data.checkpoints = [];
+                  } else {
+                    data.checkpoints = data.checkpoints.map(cp =>
+                      cp.id != null ? { ...cp, id: String(cp.id) } : { ...cp, id: Date.now().toString() + Math.random() }
+                    );
+                  }
 
                   setAssumptions((prev) => ({
                     ...prev,
@@ -6828,6 +6844,28 @@ export default function AiRAForecaster() {
                     onFocus={(e) => (e.target.style.borderColor = "#a78bfa")}
                     onBlur={(e) => (e.target.style.borderColor = "#1e3a5f")}
                   />
+                  {/* Optional contact fields */}
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    {[
+                      { val: feedbackName, set: setFeedbackName, placeholder: "Name (optional)" },
+                      { val: feedbackEmail, set: setFeedbackEmail, placeholder: "Email (optional)" },
+                    ].map(({ val, set, placeholder }) => (
+                      <input
+                        key={placeholder}
+                        type="text"
+                        value={val}
+                        onChange={e => set(e.target.value)}
+                        placeholder={placeholder}
+                        style={{
+                          flex: 1, background: "#0a1628", border: "1px solid #1e3a5f",
+                          color: "#e2e8f0", borderRadius: 6, padding: "6px 8px",
+                          fontSize: 11, fontFamily: "'DM Sans',sans-serif", outline: "none",
+                        }}
+                        onFocus={e => e.target.style.borderColor = "#a78bfa"}
+                        onBlur={e => e.target.style.borderColor = "#1e3a5f"}
+                      />
+                    ))}
+                  </div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
                     <button
                       onClick={() => setShowFeedback(false)}
