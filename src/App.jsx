@@ -496,7 +496,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     let startingPort = portAtRetire; // for Kitces ratcheting
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-    const ab0 = p.useAb ? p.ab : 0;
+    const ab0 = (p.useAb ? p.ab : 0) + (p.propIncome || 0);
     const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
@@ -508,7 +508,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
       const adjFloor = gkFloor * cumInfl;
       const adjCeiling = gkCeiling * cumInfl;
-      
+
       // ========== WITHDRAWAL STRATEGY ==========
       if (y === 0) {
         if (withdrawalStrategy === "fixed") {
@@ -521,7 +521,6 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         }
         else if (withdrawalStrategy === "fixed") {
           const fixedRate = p.fixedWithdrawalRate ?? 0.04;
-          
           sp = totalPort * fixedRate;
         }
         else if (withdrawalStrategy === "vanguard") {
@@ -633,7 +632,9 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       // Income from SS and rental/AB
       const ss = age >= p.ssAge ? p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y) : 0;
       const abReliable = rand() < (p.abReliability || 80)/100;
-      const ab = p.useAb && abReliable ? p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20)) : 0;
+      const growthFactor = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
+      const ab = (p.useAb && abReliable ? p.ab * growthFactor : 0)
+               + Math.round((p.propIncome || 0) * growthFactor);
 
       // Housing cost (own = mortgage P&I while active, rent = inflation-adjusted rent, none = 0)
       const calYear = 2026 + (age - p.currentAge);
@@ -777,7 +778,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
     let lastReturn = 0;
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-    const ab0 = p.useAb ? p.ab : 0;
+    const ab0 = (p.useAb ? p.ab : 0) + (p.propIncome || 0);
     const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
@@ -797,9 +798,10 @@ function runStress(p, endAge, N = 2000, seed = 99) {
       lastReturn = r;
 
       const ss = age >= p.ssAge ? p.ssb * Math.pow(1.024, y) : 0;
-      const ab = p.useAb && rand() < (p.abReliability || 80) / 100
-        ? p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20))
-        : 0;
+      const stressGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
+      const ab = (p.useAb && rand() < (p.abReliability || 80) / 100
+        ? p.ab * stressGrowth : 0)
+        + Math.round((p.propIncome || 0) * stressGrowth);
       const td = taxDragRate(age, p.ssAge, p.tax, p.filingStatus);
       const hShock = age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100
         ? (p.hcMin || 70_000) + rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000))
@@ -856,7 +858,7 @@ function simulateDeterministic(p, inf) {
   const gkFloor = p.gkFloor || 48_000;
   const gkCeiling = p.gkCeiling || 115_000;
   const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-  const ab0 = p.useAb ? p.ab : 0;
+  const ab0 = (p.useAb ? p.ab : 0) + (p.propIncome || 0);
   const initDraw = Math.max(0, p.sp - ss0 - ab0);
   const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
@@ -919,9 +921,9 @@ function simulateDeterministic(p, inf) {
     const ss = age >= p.ssAge
       ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y))
       : 0;
-    const ab = p.useAb
-      ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20)))
-      : 0;
+    const detGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
+    const ab = (p.useAb ? Math.round(p.ab * detGrowth) : 0)
+             + Math.round((p.propIncome || 0) * detGrowth);
     const need = strategy === "fixed" ? sp : Math.max(0, sp - ss - ab);
 
     const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
@@ -971,7 +973,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   const gkFloor = p.gkFloor || 48_000;
   const gkCeiling = p.gkCeiling || 115_000;
   const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-  const ab0 = p.useAb ? p.ab : 0;
+  const ab0 = (p.useAb ? p.ab : 0) + (p.propIncome || 0);
   const initDraw = Math.max(0, p.sp - ss0 - ab0);
   const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
@@ -1092,7 +1094,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     lastReturn = ret;
 
     const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
-    const ab = p.useAb ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20))) : 0;
+    const dwsGrowth = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
+    const ab = (p.useAb ? Math.round(p.ab * dwsGrowth) : 0)
+             + Math.round((p.propIncome || 0) * dwsGrowth);
     const need = withdrawalStrategy === "fixed" ? sp : Math.max(0, sp - ss - ab);
     const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
@@ -2294,9 +2298,9 @@ function IncomeMap({ p, inf }) {
     return Array.from({ length: yrs }, (_, i) => {
       const age = p.retireAge + i;
       const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1.024, i)) : 0;
-      const ab = p.useAb
-        ? Math.round(p.ab * Math.pow(1.03, Math.min(i, 20)))
-        : 0;
+      const incGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(i, 20));
+      const ab = (p.useAb ? Math.round(p.ab * incGrowth) : 0)
+               + Math.round((p.propIncome || 0) * incGrowth);
       let sp = p.sp;
       for (let j = 1; j <= i; j++)
         sp *= p.smile ? 1 + smileMult(p.retireAge + j) * 0.03 : 1 + inf / 100;
@@ -3345,7 +3349,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
         {showTable && (
           <div style={{ overflowX: "auto" }}>
             <table className="nw-table" style={{ fontSize: 11 }}>
-              <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>SS</th><th>Airbnb</th><th>Portfolio Draw</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
+              <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>SS</th><th>Rental</th><th>Portfolio Draw</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
               <tbody>
                 {schedule.map((s) => (
                   <tr key={s.age}>
@@ -6110,7 +6114,8 @@ export default function AiRAForecaster() {
       gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 0.65),
       gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 1.35),
       ssb,
-      ab: (useAb ? ab : 0) + ((assumptions.properties || []).reduce((s, pr) => s + (pr.income || 0), 0)),
+      ab: useAb ? (ab || 0) : 0,
+      propIncome: (assumptions.properties || []).reduce((s, pr) => s + (pr.income || 0), 0),
       useAb,
       abReliability: assumptions.abReliability,
       abGrowth: assumptions.abGrowth,
