@@ -6748,19 +6748,26 @@ export default function AiRAForecaster() {
                   alignItems: "baseline",
                 }}
               >
-                <span style={{ fontSize: 10, color: "#64748b" }}>Total Portfolio</span>
-                <span
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 700,
-                    color: "#5eead4",
-                    fontFamily: "'DM Mono',monospace",
-                    letterSpacing: "-0.5px",
-                  }}
-                >
+                <span style={{ fontSize: 10, color: "#64748b" }}>Liquid Portfolio</span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px" }}>
                   {fmtM(port)}
                 </span>
               </div>
+              {(() => {
+                const props = assumptions.properties || [];
+                const propValue = props.reduce((s, pr) => s + (pr.value || 0), 0);
+                const propDebt  = props.reduce((s, pr) => s + (pr.mortgage || 0), 0);
+                const netWorth  = port + propValue - propDebt;
+                if (propValue === 0) return null;
+                return (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 6 }}>
+                    <span style={{ fontSize: 10, color: "#64748b" }}>Net Worth <span style={{ color: "#334155" }}>(+RE equity)</span></span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#a78bfa", fontFamily: "'DM Mono',monospace" }}>
+                      {fmtM(netWorth)}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
             <div className="sb-card">
               <div className="sb-title">MC Engine — {APP_VERSION}</div>
@@ -6981,7 +6988,7 @@ export default function AiRAForecaster() {
             <div className="flag-i">
               🛡 {getStrategyLabel(assumptions.withdrawalStrategy)} active · WR {swr}% ·{" "}
               {assumptions.withdrawalStrategy === "fixed" && <>Fixed Rate: {assumptions.fixedWithdrawalRate || 4.0}% · </>}
-              {assumptions.twoHousehold ? "Solo (lower spend, no state tax)" : "Both households (full spend, state tax)"} · Rental{" "}
+              {assumptions.twoHousehold ? "Solo abroad (out-of-state spend, no state tax)" : "Normal mode (primary spend, state tax)"} · Rental{" "}
               {assumptions.abReliability || 80}% reliable · Healthcare shocks modeled
             </div>
 
@@ -7137,7 +7144,7 @@ export default function AiRAForecaster() {
               <strong style={{ color: "#5eead4" }}>{getStrategyLabel(assumptions.withdrawalStrategy)} Strategy:</strong>{" "}
               {assumptions.withdrawalStrategy === "gk" ? (
                 <>
-                  Floor {fmtM(params.gkFloor)} ({assumptions.twoHousehold ? "both" : "solo"}) · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}%.
+                  Floor {fmtM(params.gkFloor)} ({assumptions.twoHousehold ? "solo" : "both"}) · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}%.
                 </>
               ) : assumptions.withdrawalStrategy === "fixed" ? (
                 <>Withdrawal rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
