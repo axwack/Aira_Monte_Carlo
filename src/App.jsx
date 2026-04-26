@@ -2321,13 +2321,14 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     return pts;
   }, [currentPort, currentAge, retireAge, contrib, preRetireEq]);
 
-  // Merge accumulation into chart data so XAxis spans both phases
+  // Merge accumulation into chart data so XAxis spans both phases.
+  // When toggle is OFF, revert to retirement-only range (rawData).
   const data = useMemo(() => {
-    if (accumData.length === 0) return rawData;
+    if (!showTargets || accumData.length === 0) return rawData;
     const preRetire = accumData.slice(0, -1).map(d => ({ age: d.age, accum: d.accum }));
     const atRetire = rawData[0] ? { ...rawData[0], accum: accumData[accumData.length - 1].accum } : null;
     return [...preRetire, ...(atRetire ? [atRetire] : []), ...rawData.slice(atRetire ? 1 : 0)];
-  }, [accumData, rawData]);
+  }, [accumData, rawData, showTargets]);
 
   // Interpolate which percentile a value falls at within the fan bands
   const calcPercentile = (value, row) => {
@@ -2440,52 +2441,62 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             />
           )}
 
-          {/* Checkpoint dots — color + percentile label */}
-          {checkpoints && checkpoints.map((cp) => {
-            if (!dob || !cp.date) return null;
-            const birth = new Date(dob);
-            const checkDate = new Date(cp.date);
-            if (isNaN(birth) || isNaN(checkDate)) return null;
+          {/* Checkpoint dots — color + percentile label, one label per age */}
+          {(() => {
+            if (!checkpoints || !dob) return null;
+            const labeledAges = new Set();
+            return checkpoints.map((cp) => {
+              if (!cp.date) return null;
+              const birth = new Date(dob);
+              const checkDate = new Date(cp.date);
+              if (isNaN(birth) || isNaN(checkDate)) return null;
 
-            let age = checkDate.getFullYear() - birth.getFullYear();
-            const monthDay = `${checkDate.getMonth()}-${checkDate.getDate()}`;
-            const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
-            if (monthDay < birthMonthDay) age--;
+              let age = checkDate.getFullYear() - birth.getFullYear();
+              const monthDay = `${checkDate.getMonth()}-${checkDate.getDate()}`;
+              const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
+              if (monthDay < birthMonthDay) age--;
 
-            const isPreRetire = age < retireAge;
-            if (isPreRetire && !showTargets) return null;
+              const isPreRetire = age < retireAge;
+              if (isPreRetire && !showTargets) return null;
 
-            let color = "#64748b";
-            let pctLabel = "";
+              let color = "#64748b";
+              let pctLabel = "";
 
-            if (isPreRetire) {
-              const accumAtAge = accumData.find(d => d.age === age)?.accum;
-              if (accumAtAge) {
-                const ratio = cp.value / accumAtAge;
-                if (ratio >= 1)         { color = "#10b981"; pctLabel = `+${Math.round((ratio - 1) * 100)}%`; }
-                else if (ratio >= 0.85) { color = "#fbbf24"; pctLabel = `${Math.round((ratio - 1) * 100)}%`; }
-                else                    { color = "#ef4444"; pctLabel = `${Math.round((ratio - 1) * 100)}%`; }
+              if (isPreRetire) {
+                const accumAtAge = accumData.find(d => d.age === age)?.accum;
+                if (accumAtAge) {
+                  const ratio = cp.value / accumAtAge;
+                  if (ratio >= 1)         { color = "#10b981"; pctLabel = `+${Math.round((ratio - 1) * 100)}%`; }
+                  else if (ratio >= 0.85) { color = "#fbbf24"; pctLabel = `${Math.round((ratio - 1) * 100)}%`; }
+                  else                    { color = "#ef4444"; pctLabel = `${Math.round((ratio - 1) * 100)}%`; }
+                }
+              } else {
+                const fanRow = pcts.find(d => d.age === age);
+                if (fanRow) {
+                  if (cp.value >= fanRow.p50)      color = "#10b981";
+                  else if (cp.value <= fanRow.p25) color = "#ef4444";
+                  else                             color = "#fbbf24";
+                  pctLabel = calcPercentile(cp.value, fanRow) || "";
+                }
               }
-            } else {
-              const fanRow = pcts.find(d => d.age === age);
-              if (fanRow) {
-                if (cp.value >= fanRow.p50)      color = "#10b981";
-                else if (cp.value <= fanRow.p25) color = "#ef4444";
-                else                             color = "#fbbf24";
-                pctLabel = calcPercentile(cp.value, fanRow) || "";
-              }
-            }
 
-            const labelText = [cp.note, pctLabel].filter(Boolean).join(" · ");
-            return (
-              <ReferenceDot
-                key={cp.id}
-                x={age} y={cp.value} r={5}
-                fill={color} stroke="#fff" strokeWidth={1.5}
-                label={{ value: labelText || "●", fill: color, fontSize: 9, position: "top" }}
-              />
-            );
-          })}
+              // Only the first checkpoint at each age gets a text label
+              const showLabel = !labeledAges.has(age);
+              if (showLabel) labeledAges.add(age);
+              const labelText = showLabel
+                ? ([cp.note, pctLabel].filter(Boolean).join(" · ") || "●")
+                : "";
+
+              return (
+                <ReferenceDot
+                  key={cp.id}
+                  x={age} y={cp.value} r={5}
+                  fill={color} stroke="#fff" strokeWidth={1.5}
+                  label={showLabel ? { value: labelText, fill: color, fontSize: 9, position: "top" } : undefined}
+                />
+              );
+            });
+          })()}
 
           {/* Target horizontal lines (toggled via showTargets) */}
           {showTargets && <ReferenceLine
@@ -7361,7 +7372,7 @@ export default function AiRAForecaster() {
                       onDeleteCheckpoint={(id) =>
                         updateAssumption(
                           "checkpoints",
-                          assumptions.checkpoints.filter((c) => c.id !== id)
+                          (assumptions.checkpoints || []).filter((c) => String(c.id) !== String(id))
                         )
                       }
                       dob={assumptions.dob}
