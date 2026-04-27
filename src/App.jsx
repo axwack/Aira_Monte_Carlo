@@ -2437,6 +2437,11 @@ function importProfile(onLoad) {
           );
         }
         
+        // Ensure otherIncomes is always a valid array
+        if (!Array.isArray(parsed.otherIncomes)) {
+          parsed.otherIncomes = [];
+        }
+
         // Fix date format if needed
         if (parsed.dob && !/^\d{4}-\d{2}-\d{2}$/.test(parsed.dob)) {
           const d = new Date(parsed.dob);
@@ -6155,6 +6160,110 @@ function ContribPanel({ values, onChange }) {
   );
 }
 
+function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
+  const [focused, setFocused] = useState(false);
+  const blurTimer = useRef(null);
+  const nameRef = useRef(null);
+
+  useEffect(() => {
+    if (autoFocus && nameRef.current) nameRef.current.focus();
+  }, [autoFocus]);
+
+  const onFocusCard = () => { clearTimeout(blurTimer.current); setFocused(true); };
+  const onBlurCard = () => { blurTimer.current = setTimeout(() => setFocused(false), 150); };
+
+  const upd = (patch) => onChange({ ...inc, ...patch });
+
+  return (
+    <div
+      onFocus={onFocusCard}
+      onBlur={onBlurCard}
+      style={{
+        background: focused ? "rgba(14,165,233,0.05)" : "rgba(255,255,255,0.02)",
+        border: `1px solid ${focused ? "rgba(14,165,233,0.4)" : "rgba(255,255,255,0.07)"}`,
+        borderRadius: 8,
+        padding: "8px 12px",
+        marginBottom: 8,
+        transition: "border-color 0.15s, background 0.15s",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: focused ? 8 : 0 }}>
+        <input
+          ref={nameRef}
+          type="text"
+          value={inc.name}
+          placeholder="Income source name"
+          onChange={(e) => upd({ name: e.target.value })}
+          onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+          style={{
+            flex: 1,
+            fontSize: 12,
+            fontWeight: 600,
+            color: "#e2e8f0",
+            background: "transparent",
+            border: "none",
+            borderBottom: `1px solid ${focused ? "rgba(14,165,233,0.4)" : "rgba(255,255,255,0.1)"}`,
+            outline: "none",
+            padding: "2px 0",
+            fontFamily: "'DM Sans',sans-serif",
+            transition: "border-color 0.15s",
+          }}
+        />
+        {!focused && (
+          <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap" }}>
+            {inc.annual ? `$${(inc.annual / 1000).toFixed(0)}K/yr` : ""}
+            {inc.startYear ? ` · ${inc.startYear}` : ""}
+            {inc.endYear ? `–${inc.endYear}` : inc.startYear ? "+" : ""}
+          </span>
+        )}
+        <button
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onRemove}
+          style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14, padding: "2px 4px", opacity: 0.5 }}
+          onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#f87171"; }}
+          onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#64748b"; }}
+        >✕</button>
+      </div>
+      {focused && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 70px 70px auto", gap: 6, alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Annual ($)</div>
+            <ANumInput value={inc.annual || 0} onSet={(v) => upd({ annual: v })} min={0} max={500000} step={1000} suffix="/yr" />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Start yr</div>
+            <input type="number" value={inc.startYear || ""} min={2025} max={2100}
+              onChange={(e) => upd({ startYear: e.target.value ? Number(e.target.value) : null })}
+              style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>End yr</div>
+            <input type="number" value={inc.endYear || ""} min={2025} max={2100}
+              onChange={(e) => upd({ endYear: e.target.value ? Number(e.target.value) : null })}
+              placeholder="∞"
+              style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Growth %</div>
+            <ANumInput value={inc.growthRate || 0} onSet={(v) => upd({ growthRate: v })} min={0} max={20} step={0.5} suffix="%" />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Cap yrs</div>
+            <input type="number" value={inc.growthCapYears || ""} min={1} max={50}
+              onChange={(e) => upd({ growthCapYears: e.target.value ? Number(e.target.value) : null })}
+              placeholder="∞"
+              style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, paddingTop: 14 }}>
+            <Toggle val={inc.taxable} onChange={(v) => upd({ taxable: v })} accent="#0ea5e9" />
+            <span style={{ fontSize: 10, color: "#64748b" }}>Taxable</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RetirementPanel({ values, onChange }) {
   const spend = values.sp || 100000;
   const twoHousehold = values.twoHousehold ?? true;
@@ -6210,60 +6319,22 @@ function RetirementPanel({ values, onChange }) {
       </div>
 
       <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>OTHER INCOME (pension, royalties, part-time…)</div>
-        {(values.otherIncomes || []).map((inc) => (
-          <div key={inc.id} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 14, marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <input
-                type="text"
-                value={inc.name}
-                placeholder="Source name"
-                onChange={(e) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, name: e.target.value } : x))}
-                style={{ background: "transparent", border: "none", borderBottom: "1px solid rgba(255,255,255,0.15)", color: "#e2e8f0", fontSize: 13, fontWeight: 600, width: 200, outline: "none", fontFamily: "'DM Sans',sans-serif" }}
-              />
-              <button
-                onClick={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
-                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 6, cursor: "pointer", fontSize: 12, padding: "2px 8px" }}
-              >✕ Remove</button>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>Annual ($)</div>
-                <ANumInput value={inc.annual || 0} onSet={(v) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, annual: v } : x))} min={0} max={500000} step={1000} suffix="/yr" />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>Start year</div>
-                <input type="number" value={inc.startYear || ""} min={2025} max={2100}
-                  onChange={(e) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, startYear: e.target.value ? Number(e.target.value) : null } : x))}
-                  style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>End year (blank = forever)</div>
-                <input type="number" value={inc.endYear || ""} min={2025} max={2100}
-                  onChange={(e) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, endYear: e.target.value ? Number(e.target.value) : null } : x))}
-                  style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>Growth %/yr</div>
-                <ANumInput value={inc.growthRate || 0} onSet={(v) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, growthRate: v } : x))} min={0} max={20} step={0.5} suffix="%" />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>Growth cap (yrs)</div>
-                <input type="number" value={inc.growthCapYears || ""} min={1} max={50}
-                  onChange={(e) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, growthCapYears: e.target.value ? Number(e.target.value) : null } : x))}
-                  style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 18 }}>
-                <Toggle val={inc.taxable} onChange={(v) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, taxable: v } : x))} accent="#0ea5e9" />
-                <span style={{ fontSize: 11, color: "#64748b" }}>Taxable</span>
-              </div>
-            </div>
-          </div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 10, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>OTHER INCOME (pension, royalties, part-time…)</div>
+        {(values.otherIncomes || []).map((inc, idx) => (
+          <OtherIncomeCard
+            key={inc.id}
+            inc={inc}
+            autoFocus={idx === (values.otherIncomes || []).length - 1 && !inc.annual}
+            onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
+            onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
+          />
         ))}
         <button
-          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "New source", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthRate: 0, growthCapYears: null, taxable: true }])}
-          style={{ background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.25)", color: "#38bdf8", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 12 }}
-        >+ Add Income Source</button>
+          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthRate: 0, growthCapYears: null, taxable: true }])}
+          style={{ background: "transparent", border: "1px dashed rgba(14,165,233,0.35)", borderRadius: 4, color: "#38bdf8", fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.7, marginTop: 2 }}
+          onMouseEnter={e => e.currentTarget.style.opacity = 1}
+          onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
+        >+ Add income source</button>
       </div>
 
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
@@ -6492,6 +6563,7 @@ export default function AiRAForecaster() {
         properties: saved.properties || BLANK_PROFILE.properties,
         checkpoints: saved.checkpoints || BLANK_PROFILE.checkpoints,
         carveouts: saved.carveouts || BLANK_PROFILE.carveouts,
+        otherIncomes: saved.otherIncomes || BLANK_PROFILE.otherIncomes,
       };
     }
     return { ...BLANK_PROFILE };
