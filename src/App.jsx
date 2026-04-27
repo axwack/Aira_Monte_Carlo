@@ -362,6 +362,7 @@ export const BLANK_PROFILE = {
   ],
   // MC assumptions
   abReliability: 80,
+  otherIncomes: [],   // [{ id, name, annual, startYear, endYear, growthRate, growthCapYears, taxable }]
   abGrowth: 3.0,
   ssCola: 2.4,
   preRetireEq: 91,
@@ -568,6 +569,24 @@ function getBracketCeiling(target, filingStatus, inflFactor) {
   return Math.round((ceilings[target] ?? ceilings["22"]) * inflFactor);
 }
 
+function computeOtherIncome(otherIncomes, calYear) {
+  let total = 0, totalTaxable = 0;
+  if (!otherIncomes?.length) return { total, totalTaxable };
+  for (const inc of otherIncomes) {
+    const start = inc.startYear || 2026;
+    const end = inc.endYear || Infinity;
+    if (calYear >= start && calYear <= end) {
+      const yearsElapsed = calYear - start;
+      const cap = inc.growthCapYears ?? Infinity;
+      const growth = Math.pow(1 + (inc.growthRate || 0) / 100, Math.min(yearsElapsed, cap));
+      const amt = (inc.annual || 0) * growth;
+      total += amt;
+      if (inc.taxable) totalTaxable += amt;
+    }
+  }
+  return { total, totalTaxable };
+}
+
 function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
@@ -767,10 +786,11 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * inflY) : 0);
       }, 0);
 
+      const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, calYear);
       let need =
         withdrawalStrategy === "fixed"
-          ? sp + housingCost + carveoutCost
-          : Math.max(0, sp - ss - effectiveAb) + housingCost + carveoutCost;
+          ? sp + housingCost + carveoutCost - otherIncTotal
+          : Math.max(0, sp - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost;
 
       // ---- NaN guards ----
       if (isNaN(sp)) sp = p.sp || 0;
@@ -794,7 +814,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       const yr = 2026 + (age - p.currentAge);
       const filingStatus = p.filingStatus || "mfj";
       const taxResult = calcYearTax(
-        age, yr, totalNeed, ss, effectiveAb, rmd, 0,
+        age, yr, totalNeed, ss, effectiveAb + otherIncTaxable, rmd, 0,
         p.twoHousehold || false, inflY, filingStatus, p.stateOfResidence || "CA"
       );
       const totalTax = taxResult.totalTax;
@@ -933,7 +953,8 @@ function runStress(p, endAge, N = 2000, seed = 99) {
       const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 : (abReliable ? totalRental : 0);
       const td = taxDragRate(age, p.ssAge, p.tax, p.filingStatus);
       const hShock = age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100  ? (p.hcMin || 70_000) + rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000)): 0;
-      const draw = Math.max(0, sp - ss - effectiveAb) * (1 + td) + hShock;   // <-- use effectiveAb
+      const { total: otherIncStress } = computeOtherIncome(p.otherIncomes, calYear);
+      const draw = Math.max(0, sp - ss - effectiveAb - otherIncStress) * (1 + td) + hShock;   // <-- use effectiveAb
     
       if (isNaN(sp)) sp = p.sp || 0;
       if (isNaN(port)) port = 0;
@@ -1052,8 +1073,9 @@ function simulateDeterministic(p, inf) {
     const detGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
     const propIncome = Math.round((p.propIncome || 0) * detGrowth);
     const effectiveAb = (p.abEndYear && yr > p.abEndYear) ? 0 : propIncome;
-    const need = strategy === "fixed" ? sp : Math.max(0, sp - ss - effectiveAb);
-    const taxResult = calcYearTax(age, yr, need, ss, effectiveAb, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+    const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, yr);
+    const need = strategy === "fixed" ? Math.max(0, sp - otherIncTotal) : Math.max(0, sp - ss - effectiveAb - otherIncTotal);
+    const taxResult = calcYearTax(age, yr, need, ss, effectiveAb + otherIncTaxable, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -1066,7 +1088,7 @@ function simulateDeterministic(p, inf) {
     schedule.push({
       age, yr,
       spending: Math.round(sp),
-      ss, Rental: effectiveAb,
+      ss, Rental: effectiveAb, OtherIncome: Math.round(otherIncTotal),
       portfolioDraw: Math.round(need),
       fedTax: taxResult.fedTax,
       stateTax: taxResult.stateTax,
@@ -1221,16 +1243,17 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const dwsGrowth = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
     const propIncome = Math.round((p.propIncome || 0) * dwsGrowth);
     const effectiveAb = (p.abEndYear && yr > p.abEndYear) ? 0 : propIncome;
+    const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, yr);
 
-    const need = withdrawalStrategy === "fixed" ? sp : Math.max(0, sp - ss - effectiveAb);
-    const taxResult = calcYearTax(age, yr, need, ss, effectiveAb, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+    const need = withdrawalStrategy === "fixed" ? Math.max(0, sp - otherIncTotal) : Math.max(0, sp - ss - effectiveAb - otherIncTotal);
+    const taxResult = calcYearTax(age, yr, need, ss, effectiveAb + otherIncTaxable, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
     schedule.push({
       age, yr,
       spending: Math.round(sp),
-      ss, Rental: effectiveAb,
+      ss, Rental: effectiveAb, OtherIncome: Math.round(otherIncTotal),
       portfolioDraw: Math.round(need),
       fedTax: taxResult.fedTax,
       stateTax: taxResult.stateTax,
@@ -2744,14 +2767,16 @@ function IncomeMap({ p, inf }) {
       if (p.abEndYear && calYear > p.abEndYear) {
         rental = 0;
       }
+      const { total: otherInc } = computeOtherIncome(p.otherIncomes, calYear);
       let sp = p.sp;
       for (let j = 1; j <= i; j++)
         sp *= p.smile ? 1 + smileMult(p.retireAge + j) * 0.03 : 1 + inf / 100;
       return {
         age,
-        "Portfolio Draw": Math.max(0, Math.round(sp) - ss - rental),
+        "Portfolio Draw": Math.max(0, Math.round(sp) - ss - rental - otherInc),
         "Social Security": ss,
         "Rental Net": rental,
+        "Other Income": Math.round(otherInc),
       };
     });
   }, [p, inf]);
@@ -2784,12 +2809,8 @@ function IncomeMap({ p, inf }) {
           />
           <Bar dataKey="Portfolio Draw" stackId="a" fill="#a9d1acee" />
           <Bar dataKey="Social Security" stackId="a" fill="#7c3aedcc" />
-          <Bar
-            dataKey="Rental Net"
-            stackId="a"
-            fill="#295ff1cc"
-            radius={[2, 2, 0, 0]}
-          />
+          <Bar dataKey="Rental Net" stackId="a" fill="#295ff1cc" />
+          <Bar dataKey="Other Income" stackId="a" fill="#eab308cc" radius={[2, 2, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
       <div className="flag-w" style={{ marginTop: 8, fontSize: 10 }}>
@@ -3792,13 +3813,13 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
         {showTable && (
           <div style={{ overflowX: "auto" }}>
             <table className="nw-table" style={{ fontSize: 11 }}>
-              <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>SS</th><th>Rental</th><th>Portfolio Draw</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
+              <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>SS</th><th>Rental</th><th>Other Inc</th><th>Portfolio Draw</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
               <tbody>
                 {schedule.map((s) => (
                   <tr key={s.age}>
                     <td style={{ textAlign: "left" }}>{s.age}</td><td>{s.yr}</td>
                     <td style={{ color: "#fbbf24" }}>{fmtDollar(s.spending)}</td>
-                    <td>{fmtDollar(s.ss)}</td><td>{fmtDollar(s.Rental)}</td><td>{fmtDollar(s.portfolioDraw)}</td>
+                    <td>{fmtDollar(s.ss)}</td><td>{fmtDollar(s.Rental)}</td><td style={{ color: "#eab308" }}>{fmtDollar(s.OtherIncome)}</td><td>{fmtDollar(s.portfolioDraw)}</td>
                     <td style={{ color: "#f87171" }}>{fmtDollar(s.fedTax)}</td>
                     <td style={{ color: "#fb923c" }}>{fmtDollar(s.stateTax)}</td>
                     <td style={{ color: "#a78bfa" }}>{fmtDollar(s.irmaa)}</td>
@@ -6186,6 +6207,63 @@ function RetirementPanel({ values, onChange }) {
         </WFieldRow>
       </div>
 
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>OTHER INCOME (pension, royalties, part-time…)</div>
+        {(values.otherIncomes || []).map((inc) => (
+          <div key={inc.id} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <input
+                type="text"
+                value={inc.name}
+                placeholder="Source name"
+                onChange={(e) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, name: e.target.value } : x))}
+                style={{ background: "transparent", border: "none", borderBottom: "1px solid rgba(255,255,255,0.15)", color: "#e2e8f0", fontSize: 13, fontWeight: 600, width: 200, outline: "none", fontFamily: "'DM Sans',sans-serif" }}
+              />
+              <button
+                onClick={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
+                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 6, cursor: "pointer", fontSize: 12, padding: "2px 8px" }}
+              >✕ Remove</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>Annual ($)</div>
+                <ANumInput value={inc.annual || 0} onSet={(v) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, annual: v } : x))} min={0} max={500000} step={1000} suffix="/yr" />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>Start year</div>
+                <input type="number" value={inc.startYear || ""} min={2025} max={2100}
+                  onChange={(e) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, startYear: e.target.value ? Number(e.target.value) : null } : x))}
+                  style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>End year (blank = forever)</div>
+                <input type="number" value={inc.endYear || ""} min={2025} max={2100}
+                  onChange={(e) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, endYear: e.target.value ? Number(e.target.value) : null } : x))}
+                  style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>Growth %/yr</div>
+                <ANumInput value={inc.growthRate || 0} onSet={(v) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, growthRate: v } : x))} min={0} max={20} step={0.5} suffix="%" />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>Growth cap (yrs)</div>
+                <input type="number" value={inc.growthCapYears || ""} min={1} max={50}
+                  onChange={(e) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, growthCapYears: e.target.value ? Number(e.target.value) : null } : x))}
+                  style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 18 }}>
+                <Toggle val={inc.taxable} onChange={(v) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? { ...x, taxable: v } : x))} accent="#0ea5e9" />
+                <span style={{ fontSize: 11, color: "#64748b" }}>Taxable</span>
+              </div>
+            </div>
+          </div>
+        ))}
+        <button
+          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "New source", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthRate: 0, growthCapYears: null, taxable: true }])}
+          style={{ background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.25)", color: "#38bdf8", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 12 }}
+        >+ Add Income Source</button>
+      </div>
+
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
         {strategy === "gk" && (
           <>
@@ -6544,6 +6622,7 @@ export default function AiRAForecaster() {
       earlyRetireTarget: assumptions.earlyRetireTarget,
       portfolioGoal: assumptions.portfolioGoal,
       abEndYear: assumptions.abEndYear ?? null,   // rental income stops after this year
+      otherIncomes: assumptions.otherIncomes || [],
     }),
     [
       retAge, endAge, port, contrib, inf, sp, ssb, ab, useAb, smile, tax, real,
