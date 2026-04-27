@@ -2197,6 +2197,7 @@ function Slider({ label, value, min, max, step, format, onChange }) {
   const trackRef = useRef(null);
   const handleClick = useCallback(
     (e) => {
+      if (!trackRef.current) return;
       const rect = trackRef.current.getBoundingClientRect();
       const ratio = Math.max(
         0,
@@ -2211,6 +2212,7 @@ function Slider({ label, value, min, max, step, format, onChange }) {
     (e) => {
       e.preventDefault();
       const move = (ev) => {
+        if (!trackRef.current) return;
         const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
         const rect = trackRef.current.getBoundingClientRect();
         const ratio = Math.max(
