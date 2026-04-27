@@ -138,18 +138,129 @@ const JOINT_RMD_TABLE = {
   88: 18.4, 89: 18.1, 90: 17.8,
 };
 
-const STATE_TAX_RATES = {
-  "AL": 0.050, "AK": 0, "AZ": 0.025, "AR": 0.039, "CA": 0.133,
-  "CO": 0.044, "CT": 0.069, "DE": 0.066, "FL": 0, "GA": 0.055,
-  "HI": 0.110, "ID": 0.058, "IL": 0.0495, "IN": 0.0305, "IA": 0.06,
-  "KS": 0.057, "KY": 0.04, "LA": 0.0425, "ME": 0.0715, "MD": 0.0575,
-  "MA": 0.09, "MI": 0.0425, "MN": 0.0985, "MS": 0.05, "MO": 0.048,
-  "MT": 0.059, "NE": 0.0584, "NV": 0, "NH": 0, "NJ": 0.1075,
-  "NM": 0.059, "NY": 0.109, "NC": 0.045, "ND": 0.025, "OH": 0.035,
-  "OK": 0.0475, "OR": 0.099, "PA": 0.0307, "RI": 0.0599, "SC": 0.064,
-  "SD": 0, "TN": 0, "TX": 0, "UT": 0.0465, "VT": 0.0875,
-  "VA": 0.0575, "WA": 0, "WV": 0.0512, "WI": 0.0753, "WY": 0,
+// Progressive state income tax brackets (2025). null = no state income tax.
+// Brackets are inflation-indexed in calcYearTax / buildRothExplorer via idxB().
+const STATE_BRACKETS = {
+  AL: { single: [{lo:0,hi:500,rate:.02},{lo:500,hi:3000,rate:.04},{lo:3000,hi:Infinity,rate:.05}],
+         mfj:   [{lo:0,hi:1000,rate:.02},{lo:1000,hi:6000,rate:.04},{lo:6000,hi:Infinity,rate:.05}] },
+  AK: null,
+  AZ: { single: [{lo:0,hi:Infinity,rate:.025}], mfj: [{lo:0,hi:Infinity,rate:.025}] },
+  AR: { single: [{lo:0,hi:4500,rate:.02},{lo:4500,hi:Infinity,rate:.039}],
+         mfj:   [{lo:0,hi:4500,rate:.02},{lo:4500,hi:Infinity,rate:.039}] },
+  CA: {
+    single: [{lo:0,hi:10756,rate:.01},{lo:10756,hi:25499,rate:.02},{lo:25499,hi:40245,rate:.04},{lo:40245,hi:55866,rate:.06},{lo:55866,hi:70606,rate:.08},{lo:70606,hi:360659,rate:.093},{lo:360659,hi:432787,rate:.103},{lo:432787,hi:721314,rate:.113},{lo:721314,hi:1000000,rate:.123},{lo:1000000,hi:Infinity,rate:.133}],
+    mfj:    [{lo:0,hi:21512,rate:.01},{lo:21512,hi:50998,rate:.02},{lo:50998,hi:80490,rate:.04},{lo:80490,hi:111732,rate:.06},{lo:111732,hi:141732,rate:.08},{lo:141732,hi:721318,rate:.093},{lo:721318,hi:865574,rate:.103},{lo:865574,hi:1000000,rate:.113},{lo:1000000,hi:1442628,rate:.123},{lo:1442628,hi:Infinity,rate:.133}],
+  },
+  CO: { single: [{lo:0,hi:Infinity,rate:.044}], mfj: [{lo:0,hi:Infinity,rate:.044}] },
+  CT: {
+    single: [{lo:0,hi:10000,rate:.02},{lo:10000,hi:50000,rate:.045},{lo:50000,hi:100000,rate:.055},{lo:100000,hi:200000,rate:.06},{lo:200000,hi:250000,rate:.065},{lo:250000,hi:500000,rate:.069},{lo:500000,hi:Infinity,rate:.0699}],
+    mfj:    [{lo:0,hi:20000,rate:.02},{lo:20000,hi:100000,rate:.045},{lo:100000,hi:200000,rate:.055},{lo:200000,hi:400000,rate:.06},{lo:400000,hi:500000,rate:.065},{lo:500000,hi:1000000,rate:.069},{lo:1000000,hi:Infinity,rate:.0699}],
+  },
+  DE: { single: [{lo:0,hi:2000,rate:0},{lo:2000,hi:5000,rate:.022},{lo:5000,hi:10000,rate:.039},{lo:10000,hi:20000,rate:.048},{lo:20000,hi:25000,rate:.052},{lo:25000,hi:60000,rate:.0555},{lo:60000,hi:Infinity,rate:.066}],
+         mfj:   [{lo:0,hi:2000,rate:0},{lo:2000,hi:5000,rate:.022},{lo:5000,hi:10000,rate:.039},{lo:10000,hi:20000,rate:.048},{lo:20000,hi:25000,rate:.052},{lo:25000,hi:60000,rate:.0555},{lo:60000,hi:Infinity,rate:.066}] },
+  FL: null,
+  GA: { single: [{lo:0,hi:Infinity,rate:.0539}], mfj: [{lo:0,hi:Infinity,rate:.0539}] },
+  HI: {
+    single: [{lo:0,hi:9600,rate:.014},{lo:9600,hi:14400,rate:.032},{lo:14400,hi:19200,rate:.055},{lo:19200,hi:24000,rate:.064},{lo:24000,hi:36000,rate:.068},{lo:36000,hi:48000,rate:.072},{lo:48000,hi:125000,rate:.076},{lo:125000,hi:175000,rate:.079},{lo:175000,hi:225000,rate:.0825},{lo:225000,hi:275000,rate:.09},{lo:275000,hi:325000,rate:.10},{lo:325000,hi:Infinity,rate:.11}],
+    mfj:    [{lo:0,hi:19200,rate:.014},{lo:19200,hi:28800,rate:.032},{lo:28800,hi:38400,rate:.055},{lo:38400,hi:48000,rate:.064},{lo:48000,hi:72000,rate:.068},{lo:72000,hi:96000,rate:.072},{lo:96000,hi:250000,rate:.076},{lo:250000,hi:350000,rate:.079},{lo:350000,hi:450000,rate:.0825},{lo:450000,hi:550000,rate:.09},{lo:550000,hi:650000,rate:.10},{lo:650000,hi:Infinity,rate:.11}],
+  },
+  ID: { single: [{lo:0,hi:4673,rate:0},{lo:4673,hi:Infinity,rate:.05695}],
+         mfj:   [{lo:0,hi:9346,rate:0},{lo:9346,hi:Infinity,rate:.05695}] },
+  IL: { single: [{lo:0,hi:Infinity,rate:.0495}], mfj: [{lo:0,hi:Infinity,rate:.0495}] },
+  IN: { single: [{lo:0,hi:Infinity,rate:.03}],   mfj: [{lo:0,hi:Infinity,rate:.03}] },
+  IA: { single: [{lo:0,hi:Infinity,rate:.038}],   mfj: [{lo:0,hi:Infinity,rate:.038}] },
+  KS: { single: [{lo:0,hi:23000,rate:.052},{lo:23000,hi:Infinity,rate:.0558}],
+         mfj:   [{lo:0,hi:46000,rate:.052},{lo:46000,hi:Infinity,rate:.0558}] },
+  KY: { single: [{lo:0,hi:Infinity,rate:.04}], mfj: [{lo:0,hi:Infinity,rate:.04}] },
+  LA: { single: [{lo:0,hi:Infinity,rate:.03}], mfj: [{lo:0,hi:Infinity,rate:.03}] },
+  ME: {
+    single: [{lo:0,hi:26800,rate:.058},{lo:26800,hi:63450,rate:.0675},{lo:63450,hi:Infinity,rate:.0715}],
+    mfj:    [{lo:0,hi:53600,rate:.058},{lo:53600,hi:126900,rate:.0675},{lo:126900,hi:Infinity,rate:.0715}],
+  },
+  MD: {
+    single: [{lo:0,hi:1000,rate:.02},{lo:1000,hi:2000,rate:.03},{lo:2000,hi:3000,rate:.04},{lo:3000,hi:100000,rate:.0475},{lo:100000,hi:125000,rate:.05},{lo:125000,hi:150000,rate:.0525},{lo:150000,hi:250000,rate:.055},{lo:250000,hi:Infinity,rate:.0575}],
+    mfj:    [{lo:0,hi:1000,rate:.02},{lo:1000,hi:2000,rate:.03},{lo:2000,hi:3000,rate:.04},{lo:3000,hi:150000,rate:.0475},{lo:150000,hi:175000,rate:.05},{lo:175000,hi:225000,rate:.0525},{lo:225000,hi:300000,rate:.055},{lo:300000,hi:Infinity,rate:.0575}],
+  },
+  MA: { single: [{lo:0,hi:1083150,rate:.05},{lo:1083150,hi:Infinity,rate:.09}],
+         mfj:   [{lo:0,hi:1083150,rate:.05},{lo:1083150,hi:Infinity,rate:.09}] },
+  MI: { single: [{lo:0,hi:Infinity,rate:.0425}], mfj: [{lo:0,hi:Infinity,rate:.0425}] },
+  MN: {
+    single: [{lo:0,hi:32570,rate:.0535},{lo:32570,hi:106990,rate:.068},{lo:106990,hi:198630,rate:.0785},{lo:198630,hi:Infinity,rate:.0985}],
+    mfj:    [{lo:0,hi:47620,rate:.0535},{lo:47620,hi:189180,rate:.068},{lo:189180,hi:330410,rate:.0785},{lo:330410,hi:Infinity,rate:.0985}],
+  },
+  MS: { single: [{lo:0,hi:10000,rate:0},{lo:10000,hi:Infinity,rate:.044}],
+         mfj:   [{lo:0,hi:10000,rate:0},{lo:10000,hi:Infinity,rate:.044}] },
+  MO: {
+    single: [{lo:0,hi:1313,rate:0},{lo:1313,hi:2626,rate:.02},{lo:2626,hi:3939,rate:.025},{lo:3939,hi:5252,rate:.03},{lo:5252,hi:6565,rate:.035},{lo:6565,hi:7878,rate:.04},{lo:7878,hi:9191,rate:.045},{lo:9191,hi:Infinity,rate:.047}],
+    mfj:    [{lo:0,hi:1313,rate:0},{lo:1313,hi:2626,rate:.015},{lo:2626,hi:3939,rate:.025},{lo:3939,hi:5252,rate:.03},{lo:5252,hi:6565,rate:.035},{lo:6565,hi:7878,rate:.04},{lo:7878,hi:9191,rate:.045},{lo:9191,hi:Infinity,rate:.047}],
+  },
+  MT: { single: [{lo:0,hi:21100,rate:.047},{lo:21100,hi:Infinity,rate:.059}],
+         mfj:   [{lo:0,hi:42200,rate:.047},{lo:42200,hi:Infinity,rate:.059}] },
+  NE: {
+    single: [{lo:0,hi:4030,rate:.0246},{lo:4030,hi:24120,rate:.0351},{lo:24120,hi:38870,rate:.0501},{lo:38870,hi:Infinity,rate:.052}],
+    mfj:    [{lo:0,hi:8040,rate:.0246},{lo:8040,hi:48250,rate:.0351},{lo:48250,hi:77730,rate:.0501},{lo:77730,hi:Infinity,rate:.052}],
+  },
+  NV: null,
+  NH: null,
+  NJ: {
+    single: [{lo:0,hi:20000,rate:.014},{lo:20000,hi:35000,rate:.0175},{lo:35000,hi:40000,rate:.035},{lo:40000,hi:75000,rate:.05525},{lo:75000,hi:500000,rate:.0637},{lo:500000,hi:1000000,rate:.0897},{lo:1000000,hi:Infinity,rate:.1075}],
+    mfj:    [{lo:0,hi:20000,rate:.014},{lo:20000,hi:50000,rate:.0175},{lo:50000,hi:70000,rate:.0245},{lo:70000,hi:80000,rate:.035},{lo:80000,hi:150000,rate:.05525},{lo:150000,hi:500000,rate:.0637},{lo:500000,hi:1000000,rate:.0897},{lo:1000000,hi:Infinity,rate:.1075}],
+  },
+  NM: {
+    single: [{lo:0,hi:5500,rate:.015},{lo:5500,hi:16500,rate:.032},{lo:16500,hi:33500,rate:.043},{lo:33500,hi:66500,rate:.047},{lo:66500,hi:210000,rate:.049},{lo:210000,hi:Infinity,rate:.059}],
+    mfj:    [{lo:0,hi:8000,rate:.015},{lo:8000,hi:25000,rate:.032},{lo:25000,hi:50000,rate:.043},{lo:50000,hi:100000,rate:.047},{lo:100000,hi:315500,rate:.049},{lo:315500,hi:Infinity,rate:.059}],
+  },
+  NY: {
+    single: [{lo:0,hi:8500,rate:.04},{lo:8500,hi:11700,rate:.045},{lo:11700,hi:13900,rate:.0525},{lo:13900,hi:80650,rate:.055},{lo:80650,hi:215400,rate:.06},{lo:215400,hi:1077550,rate:.0685},{lo:1077550,hi:5000000,rate:.0965},{lo:5000000,hi:25000000,rate:.103},{lo:25000000,hi:Infinity,rate:.109}],
+    mfj:    [{lo:0,hi:17150,rate:.04},{lo:17150,hi:23600,rate:.045},{lo:23600,hi:27900,rate:.0525},{lo:27900,hi:161550,rate:.055},{lo:161550,hi:323200,rate:.06},{lo:323200,hi:2155350,rate:.0685},{lo:2155350,hi:5000000,rate:.0965},{lo:5000000,hi:25000000,rate:.103},{lo:25000000,hi:Infinity,rate:.109}],
+  },
+  NC: { single: [{lo:0,hi:Infinity,rate:.0425}], mfj: [{lo:0,hi:Infinity,rate:.0425}] },
+  ND: {
+    single: [{lo:0,hi:48475,rate:0},{lo:48475,hi:244825,rate:.0195},{lo:244825,hi:Infinity,rate:.025}],
+    mfj:    [{lo:0,hi:80975,rate:0},{lo:80975,hi:298075,rate:.0195},{lo:298075,hi:Infinity,rate:.025}],
+  },
+  OH: { single: [{lo:0,hi:26050,rate:0},{lo:26050,hi:Infinity,rate:.0275}],
+         mfj:   [{lo:0,hi:26050,rate:0},{lo:26050,hi:Infinity,rate:.0275}] },
+  OK: {
+    single: [{lo:0,hi:1000,rate:.0025},{lo:1000,hi:2500,rate:.0075},{lo:2500,hi:3750,rate:.0175},{lo:3750,hi:4900,rate:.0275},{lo:4900,hi:7200,rate:.0375},{lo:7200,hi:Infinity,rate:.0475}],
+    mfj:    [{lo:0,hi:2000,rate:.0025},{lo:2000,hi:5000,rate:.0075},{lo:5000,hi:7500,rate:.0175},{lo:7500,hi:9800,rate:.0275},{lo:9800,hi:14400,rate:.0375},{lo:14400,hi:Infinity,rate:.0475}],
+  },
+  OR: {
+    single: [{lo:0,hi:4400,rate:.0475},{lo:4400,hi:11050,rate:.0675},{lo:11050,hi:125000,rate:.0875},{lo:125000,hi:Infinity,rate:.099}],
+    mfj:    [{lo:0,hi:8800,rate:.0475},{lo:8800,hi:22100,rate:.0675},{lo:22100,hi:250000,rate:.0875},{lo:250000,hi:Infinity,rate:.099}],
+  },
+  PA: { single: [{lo:0,hi:Infinity,rate:.0307}], mfj: [{lo:0,hi:Infinity,rate:.0307}] },
+  RI: { single: [{lo:0,hi:79900,rate:.0375},{lo:79900,hi:181650,rate:.0475},{lo:181650,hi:Infinity,rate:.0599}],
+         mfj:   [{lo:0,hi:79900,rate:.0375},{lo:79900,hi:181650,rate:.0475},{lo:181650,hi:Infinity,rate:.0599}] },
+  SC: { single: [{lo:0,hi:3560,rate:0},{lo:3560,hi:17830,rate:.03},{lo:17830,hi:Infinity,rate:.062}],
+         mfj:   [{lo:0,hi:3560,rate:0},{lo:3560,hi:17830,rate:.03},{lo:17830,hi:Infinity,rate:.062}] },
+  SD: null,
+  TN: null,
+  TX: null,
+  UT: { single: [{lo:0,hi:Infinity,rate:.0455}], mfj: [{lo:0,hi:Infinity,rate:.0455}] },
+  VT: {
+    single: [{lo:0,hi:47900,rate:.0335},{lo:47900,hi:116000,rate:.066},{lo:116000,hi:242000,rate:.076},{lo:242000,hi:Infinity,rate:.0875}],
+    mfj:    [{lo:0,hi:79950,rate:.0335},{lo:79950,hi:193300,rate:.066},{lo:193300,hi:294600,rate:.076},{lo:294600,hi:Infinity,rate:.0875}],
+  },
+  VA: { single: [{lo:0,hi:3000,rate:.02},{lo:3000,hi:5000,rate:.03},{lo:5000,hi:17000,rate:.05},{lo:17000,hi:Infinity,rate:.0575}],
+         mfj:   [{lo:0,hi:3000,rate:.02},{lo:3000,hi:5000,rate:.03},{lo:5000,hi:17000,rate:.05},{lo:17000,hi:Infinity,rate:.0575}] },
+  WA: null,
+  WV: { single: [{lo:0,hi:10000,rate:.0222},{lo:10000,hi:25000,rate:.0296},{lo:25000,hi:40000,rate:.0333},{lo:40000,hi:60000,rate:.0444},{lo:60000,hi:Infinity,rate:.0482}],
+         mfj:   [{lo:0,hi:10000,rate:.0222},{lo:10000,hi:25000,rate:.0296},{lo:25000,hi:40000,rate:.0333},{lo:40000,hi:60000,rate:.0444},{lo:60000,hi:Infinity,rate:.0482}] },
+  WI: {
+    single: [{lo:0,hi:14680,rate:.035},{lo:14680,hi:29370,rate:.044},{lo:29370,hi:323290,rate:.053},{lo:323290,hi:Infinity,rate:.0765}],
+    mfj:    [{lo:0,hi:19580,rate:.035},{lo:19580,hi:39150,rate:.044},{lo:39150,hi:431060,rate:.053},{lo:431060,hi:Infinity,rate:.0765}],
+  },
+  WY: null,
+  DC: { single: [{lo:0,hi:10000,rate:.04},{lo:10000,hi:40000,rate:.06},{lo:40000,hi:60000,rate:.065},{lo:60000,hi:250000,rate:.085},{lo:250000,hi:500000,rate:.0925},{lo:500000,hi:1000000,rate:.0975},{lo:1000000,hi:Infinity,rate:.1075}],
+         mfj:   [{lo:0,hi:10000,rate:.04},{lo:10000,hi:40000,rate:.06},{lo:40000,hi:60000,rate:.065},{lo:60000,hi:250000,rate:.085},{lo:250000,hi:500000,rate:.0925},{lo:500000,hi:1000000,rate:.0975},{lo:1000000,hi:Infinity,rate:.1075}] },
 };
+
+function getStateBrackets(state, isMFJ) {
+  const entry = STATE_BRACKETS[state];
+  if (!entry) return null; // no state income tax
+  return isMFJ ? entry.mfj : entry.single;
+}
 
 
 
@@ -411,8 +522,8 @@ function calcYearTax(
 
 
   if (!isTwoHousehold) {
-    const stateRate = STATE_TAX_RATES[stateOfResidence] ?? 0.05; // default 5% if state not in table
-    stateTax = Math.round(taxableIncome * stateRate);
+    const stateBr = getStateBrackets(stateOfResidence, isMFJ);
+    if (stateBr) stateTax = Math.round(progTax(taxableIncome, idxB(stateBr, inflationFactor)));
   }
       const magi = totalIncome;
       const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
@@ -1138,15 +1249,6 @@ const FED_BRACKETS_2026_SINGLE = [
   { lo: 105700, hi: 201800, rate: 0.24 },
   { lo: 201800, hi: 256225, rate: 0.32 },
 ];
-const NJ_BRACKETS_2026 = [
-  { lo: 0, hi: 20000, rate: 0.014 },
-  { lo: 20000, hi: 35000, rate: 0.0175 },
-  { lo: 35000, hi: 40000, rate: 0.035 },
-  { lo: 40000, hi: 75000, rate: 0.05525 },
-  { lo: 75000, hi: 500000, rate: 0.0637 },
-  { lo: 500000, hi: 1000000, rate: 0.0897 },
-  { lo: 1000000, hi: Infinity, rate: 0.1075 },
-];
 const IRMAA_2026 = [
   { m: 218000, f: 0 },
   { m: 274000, f: 2160 },
@@ -1236,6 +1338,7 @@ function buildRothExplorer(params = {}) {
     twoHousehold,
     rothMode = "fill_22",           // keep default for mode only
     filingStatus = "mfj",
+    stateOfResidence = "NJ",
     dob,
     birthYear,
     rmdStartAge,
@@ -1260,9 +1363,10 @@ function buildRothExplorer(params = {}) {
     ? rmdStartAge
     : getRmdStartAge({ dob, birthYear, currentAge });
 
+  const stateBr0 = getStateBrackets(stateOfResidence, isMFJ);
   const infR = inf / 100,
     retireYear = ROTH_BASE_YEAR + (retireAge - currentAge),
-    isNoTaxState = twoHousehold;
+    isNoTaxState = twoHousehold || !stateBr0;
 
   const _pretaxSum = (params.accounts || []).filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
   const _rothSum = (params.accounts || []).filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
@@ -1302,8 +1406,8 @@ function buildRothExplorer(params = {}) {
     for (let age = retireAge; age <= endAge; age++) {
       const yr = retireYear + (age - retireAge),
         f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
-      const fB = idxB(fedBase, f),
-        nB = idxB(NJ_BRACKETS_2026, f);
+      const fB = idxB(fedBase, f);
+      const nB = stateBr0 ? idxB(stateBr0, f) : [];
       
       const stdD = Math.round(stdDedBase * f) + (age >= 65 ? Math.round(stdDedAgeBonus * f) : 0);
       const b10t = fB.find((b) => b.rate === 0.10)?.hi || Math.round((isMFJ ? 24800 : 12400) * f);
@@ -5667,9 +5771,12 @@ function AStateSelect({ value, onSet }) {
       onChange={(e) => onSet(e.target.value)}
       style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'DM Mono',monospace" }}
     >
-      {Object.entries(STATE_TAX_RATES).map(([state, rate]) => (
-        <option key={state} value={state}>{state} ({(rate * 100).toFixed(1)}%)</option>
-      ))}
+      {Object.entries(STATE_BRACKETS).map(([state, entry]) => {
+        const br = entry?.mfj ?? entry?.single;
+        const top = br ? br[br.length - 1].rate : 0;
+        const label = top === 0 ? "no tax" : `${(top * 100).toFixed(2).replace(/\.?0+$/, "")}%`;
+        return <option key={state} value={state}>{state} ({label})</option>;
+      })}
     </select>
   );
 }
