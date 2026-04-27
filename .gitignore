@@ -10,3 +10,5 @@ Requirements.md
 CLAUDE.md
 .env
 Archive
+/netlify
+.wrangler

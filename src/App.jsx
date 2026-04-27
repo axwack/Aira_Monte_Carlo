@@ -85,8 +85,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.3.2";
-export const BUILD_TAG = "Restructure About modal: tabbed bio/product/features with grouped How It Works";
+const APP_VERSION = "1.0.3.3";
+export const BUILD_TAG = "Retnal income has a termination date. Fixes also on the Withdrawal tables.";
 export const BUILD_TIME = "2026-04-26 12:00 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -467,23 +467,34 @@ function taxDragRate(age, ssAge, useTax, filingStatus = "mfj") {
   if (age < 73)    return single ? 0.115 : 0.090;
   return                  single ? 0.162 : 0.132;
 }
+
 function guytonKlingerWithdrawal(
-  portfolioValue,
-  initialWR,
-  lastWithdrawal,
-  lastReturn,
-  inflationRate,
-  floor,
-  ceiling
-) {
-  if (portfolioValue <= 0) return floor;
-  let w =
-    lastReturn >= 0 ? lastWithdrawal * (1 + inflationRate) : lastWithdrawal;
-  const currentWR = w / portfolioValue;
-  if (currentWR <= initialWR * 0.8) w *= 1.1;
-  else if (currentWR >= initialWR * 1.2) w *= 0.9;
-  return Math.max(floor, Math.min(ceiling, w));
+    portfolioValue,
+    initialWR,
+    lastWithdrawal,
+    lastReturn,
+    inflationRate,
+    floor,
+    ceiling
+  ) {
+    // NaN guards – fall back to safe values if any parameter is invalid
+    if (isNaN(portfolioValue) || portfolioValue <= 0) return floor || 0;
+    if (isNaN(lastWithdrawal)) lastWithdrawal = floor || 0;
+    if (isNaN(lastReturn)) lastReturn = 0;
+    if (isNaN(inflationRate)) inflationRate = 0.02;
+    if (isNaN(initialWR)) initialWR = 0.04;
+
+    let w =
+      lastReturn >= 0 ? lastWithdrawal * (1 + inflationRate) : lastWithdrawal;
+    const currentWR = portfolioValue !== 0 ? w / portfolioValue : 0;
+
+    if (currentWR <= initialWR * 0.8) w *= 1.1;
+    else if (currentWR >= initialWR * 1.2) w *= 0.9;
+
+    // Clamp to floor/ceiling (floor & ceiling themselves are always numbers)
+    return Math.max(floor || 0, Math.min(ceiling || Infinity, w));
 }
+
 function calcYearTax(
   age,
   yr,
@@ -497,6 +508,14 @@ function calcYearTax(
   filingStatus = "mfj",
   stateOfResidence = "CA"
 ) {
+  // Replace any NaN arguments with 0
+  withdrawalAmount = isNaN(withdrawalAmount) ? 0 : withdrawalAmount;
+  ssIncome = isNaN(ssIncome) ? 0 : ssIncome;
+  RentalIncome = isNaN(RentalIncome) ? 0 : RentalIncome;
+  rmdIncome = isNaN(rmdIncome) ? 0 : rmdIncome;
+  conversionAmount = isNaN(conversionAmount) ? 0 : conversionAmount;
+  inflationRate = isNaN(inflationRate) ? 0.025 : inflationRate;
+
   const isMFJ = filingStatus !== "single";
   const taxableSS = ssIncome * 0.85;
   const otherIncome =
@@ -519,7 +538,6 @@ function calcYearTax(
   const fedBrackets = idxB(rawBrackets, inflationFactor);
   const fedTax = progTax(taxableIncome, fedBrackets);
   let stateTax = 0;
-
 
   if (!isTwoHousehold) {
     const stateBr = getStateBrackets(stateOfResidence, isMFJ);
@@ -558,17 +576,22 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   const gkFloor = p.gkFloor || 48_000;
   const gkCeiling = p.gkCeiling || 115_000;
   const withdrawalStrategy = p.withdrawalStrategy || "gk";
-  
+
   // User settings for cash return and RMD table
   const cashRealReturn = (p.cashRealReturn ?? 1.0) / 100;
-  // Single filers have no spouse — never use Joint table regardless of toggle
   const useJointTable = (p.useJointRmdTable ?? false) && p.filingStatus !== "single";
   const UNIFORM_TABLE = RMD_DIV;
 
   // Pre-compute annual mortgage P&I obligation (constant across all paths)
   let mortAnnualPI = 0, mortPayoffYr = 0;
   if (p.mortBalance > 0) {
-    const ms = mortgageSchedule(p.mortBalance, p.mortRate || 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
+    const ms = mortgageSchedule(
+      p.mortBalance,
+      p.mortRate || 6.5,
+      p.mortStart || "2020-01",
+      p.mortTerm || 30,
+      p.mortExtra || 0
+    );
     mortAnnualPI = ms.pmt * 12;
     mortPayoffYr = ms.payoffYr;
   }
@@ -615,6 +638,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
 
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
+      const calYear = 2026 + (age - p.currentAge);
       const r = portReturn(age, rand, p.preRetireEq, p.postRetireEq);
       const inflY = bootstrapDraw(INFL, rand);
 
@@ -625,9 +649,9 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       // ========== WITHDRAWAL STRATEGY ==========
       if (y === 0) {
         if (withdrawalStrategy === "fixed") {
-          sp = totalPort * (p.fixedWithdrawalRate ?? 0.04);
+          const fixedRate = p.fixedWithdrawalRate ?? 0.04;
+          sp = totalPort * fixedRate;
         }
-        // All other strategies: year-0 sp stays at p.sp (target spend)
       } else {
         if (withdrawalStrategy === "gk") {
           sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
@@ -640,21 +664,20 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           const initialRate = p.vanguardInitialRate ?? 0.04;
           const cap = p.vanguardCap ?? 0.05;
           const floorRate = p.vanguardFloor ?? -0.025;
-          
+          const safeSp = isNaN(sp) ? p.sp : sp;   // guard
           if (y === 1) {
             const pctOfPort = totalPort * initialRate;
-            const inflationAdj = sp * (1 + inflY);
+            const inflationAdj = safeSp * (1 + inflY);
             let candidate = (inflationAdj + pctOfPort) / 2;
-            let change = (candidate / sp) - 1;
+            let change = (candidate / safeSp) - 1;
             let cappedChange = Math.max(floorRate, Math.min(cap, change));
-            sp = sp * (1 + cappedChange);
+            sp = safeSp * (1 + cappedChange);
           } else {
             const pctOfPort = totalPort * initialRate;
-            const dynamic = sp * (1 + inflY) * (1 + (r - inflY) * 0.5);
-            let candidate = dynamic;
-            let change = (candidate / sp) - 1;
+            const dynamic = safeSp * (1 + inflY) * (1 + (r - inflY) * 0.5);
+            let change = (dynamic / safeSp) - 1;
             let cappedChange = Math.max(floorRate, Math.min(cap, change));
-            sp = sp * (1 + cappedChange);
+            sp = safeSp * (1 + cappedChange);
           }
           sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
         }
@@ -678,39 +701,22 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
         }
         else if (withdrawalStrategy === "vpw") {
-          // Variable Percentage Withdrawal
-          const eqPct = age < 62 ? (p.preRetireEq || 91) : (p.postRetireEq || 70);
-          const r = 0.0376; // real return assumption for 60/40 (3.76%)
           const maxAge = 100;
           const n = Math.max(1, maxAge - age);
-          // VPW formula: rate = 1 / (1 + ((1 - (1+r)^(-n+1)) / r))   (capped at 10%)
-          let rate;
-          if (r === 0) {
-            rate = 1 / n;
-          } else {
-            const term = (1 - Math.pow(1 + r, -n + 1)) / r;
-            rate = 1 / (1 + term);
-          }
-          rate = Math.min(0.10, rate);
-          let newSp = totalPort * rate;
+          const rateVPW = (n <= 1) ? 1 : (0.0376) / (1 - Math.pow(1 + 0.0376, -n + 1)) + 0.0376;
+          const newSp = totalPort * Math.min(0.10, rateVPW);
           sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
         }
         else if (withdrawalStrategy === "cape") {
-          // CAPE-based withdrawal
-          const a = 0.015;   // base rate 1.5%
-          const b = 0.5;     // weight
-          const cape = 20;   // Shiller CAPE (historical average) – could be user param
-          const capeYield = 1 / cape;
-          const rate = a + b * capeYield;
-          let newSp = totalPort * rate;
+          const cape = 20;
+          const rateCAPE = 0.015 + 0.5 * (1 / cape);
+          const newSp = totalPort * rateCAPE;
           sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
         }
         else if (withdrawalStrategy === "endowment") {
-          // Yale Endowment model with 0.7 smoothing
           const smoothing = 0.7;
-          const spendRate = 0.05; // 5% spending rate
+          const spendRate = 0.05;
           if (y === 1) {
-            // First year: just percentage of portfolio
             sp = totalPort * spendRate;
           } else {
             const inflationAdj = sp * (1 + inflY);
@@ -720,15 +726,12 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
         }
         else if (withdrawalStrategy === "one_n") {
-          // 1/N rule: divide remaining portfolio by years left (to endAge)
           const yearsLeft = Math.max(1, p.endAge - age);
-          let newSp = totalPort / yearsLeft;
+          const newSp = totalPort / yearsLeft;
           sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
         }
         else if (withdrawalStrategy === "ninety_five_rule") {
-          // 95% rule: spending can only decrease to 95% of last year, otherwise inflate
           if (y === 1) {
-            // First year: target spend (p.sp)
             sp = p.sp;
           } else {
             const inflated = sp * (1 + inflY);
@@ -737,20 +740,20 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           }
           sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
         }
-
-
       }
       lastReturn = r;
 
       // Income from SS and rental/AB
-      const ss = age >= p.ssAge ? p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y) : 0;
-      const abReliable = rand() < (p.abReliability || 80)/100;
-      const growthFactor = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
-      const ab = (p.useAb && abReliable ? p.ab * growthFactor : 0)
-               + Math.round((p.propIncome || 0) * growthFactor);
+      const ss = age >= p.ssAge
+        ? p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y)
+        : 0;
+      const abReliable = rand() < (p.abReliability || 80) / 100;
+      const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
+      const totalRental = Math.round((p.propIncome || 0) * growthFactor);
+      const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 :
+        (abReliable ? totalRental : 0);
 
       // Housing cost (own = mortgage P&I while active, rent = inflation-adjusted rent, none = 0)
-      const calYear = 2026 + (age - p.currentAge);
       const housingType = p.housingType || "own";
       let housingCost = 0;
       if (housingType === "own") {
@@ -759,15 +762,20 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         housingCost = Math.round((p.annualRent || 0) * inflY);
       }
 
-      // Active fixed carveouts (car loans, HOA, etc.) — inflation-adjusted
+      // Active fixed carveouts
       const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
         return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * inflY) : 0);
       }, 0);
 
-      const need =
+      let need =
         withdrawalStrategy === "fixed"
           ? sp + housingCost + carveoutCost
-          : Math.max(0, sp - ss - ab) + housingCost + carveoutCost;
+          : Math.max(0, sp - ss - effectiveAb) + housingCost + carveoutCost;
+
+      // ---- NaN guards ----
+      if (isNaN(sp)) sp = p.sp || 0;
+      if (isNaN(need)) need = 0;
+      if (isNaN(totalPort)) totalPort = 0;
 
       // RMD calculation
       let rmd = 0;
@@ -785,7 +793,10 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       // Tax calculation
       const yr = 2026 + (age - p.currentAge);
       const filingStatus = p.filingStatus || "mfj";
-      const taxResult = calcYearTax(age, yr, totalNeed, ss, ab, rmd, 0, p.twoHousehold || false, inflY, filingStatus, p.stateOfResidence || "CA");
+      const taxResult = calcYearTax(
+        age, yr, totalNeed, ss, effectiveAb, rmd, 0,
+        p.twoHousehold || false, inflY, filingStatus, p.stateOfResidence || "CA"
+      );
       const totalTax = taxResult.totalTax;
       const totalWithdrawalNeeded = totalNeed + totalTax;
 
@@ -812,16 +823,19 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       pretax  = Math.max(0, pretax  - fromPretax - rmd);
       roth    = Math.max(0, roth    - fromRoth);
 
+      // NaN-proof buckets before growth (just in case)
+      cash    = isNaN(cash)    ? 0 : cash;
+      taxable = isNaN(taxable) ? 0 : taxable;
+      pretax  = isNaN(pretax)  ? 0 : pretax;
+      roth    = isNaN(roth)    ? 0 : roth;
+
       // Bracket-fill Roth conversion (after spending withdrawals, before growth)
       if (p.rothConversionTarget && p.rothConversionTarget !== "off" && pretax > 1000) {
         const inflFactor = Math.pow(1 + inflY, Math.max(0, yr - 2026));
         const bracketCeiling = getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor);
-        // Room = ceiling minus current taxable income (from spending + RMD)
         const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
         if (room > 500) {
-          // Convert up to room, capped at 40% of pretax to avoid over-converting
           const convAmt = Math.min(room, pretax * 0.4);
-          // Tax on conversion at the marginal rate, funded from pretax
           const convTax = Math.round(convAmt * (taxResult.marginalBracket || 0.22));
           const totalCost = convAmt + convTax;
           if (pretax >= totalCost) {
@@ -848,7 +862,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     results.push({ path, survived, exhaustAge, portAtRetire });
   }
 
-  // Aggregate results
+  // Aggregate results (unchanged)
   const pL = results[0].path.length;
   const pcts = [];
   for (let t = 0; t < pL; t++) {
@@ -872,6 +886,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     N,
   };
 }
+
 function runStress(p, endAge, N = 2000, seed = 99) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
@@ -897,6 +912,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
 
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
+      const calYear = 2026 + (age - p.currentAge);   // <-- calYear computed early
       const eqW = age < 62 ? (p.preRetireEq || 91) / 100 : (p.postRetireEq || 70) / 100;
       const eq = y < SEQ_2000_2012.length ? SEQ_2000_2012[y] : bootstrapDraw(SP500, rand);
       const r = eqW * eq + (1 - eqW) * bootstrapDraw(BONDS, rand);
@@ -912,14 +928,15 @@ function runStress(p, endAge, N = 2000, seed = 99) {
 
       const ss = age >= p.ssAge ? p.ssb * Math.pow(1.024, y) : 0;
       const stressGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
-      const ab = (p.useAb && rand() < (p.abReliability || 80) / 100
-        ? p.ab * stressGrowth : 0)
-        + Math.round((p.propIncome || 0) * stressGrowth);
+      const abReliable = rand() < (p.abReliability || 80) / 100;
+      const totalRental = Math.round((p.propIncome || 0) * stressGrowth);
+      const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 : (abReliable ? totalRental : 0);
       const td = taxDragRate(age, p.ssAge, p.tax, p.filingStatus);
-      const hShock = age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100
-        ? (p.hcMin || 70_000) + rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000))
-        : 0;
-      const draw = Math.max(0, sp - ss - ab) * (1 + td) + hShock;
+      const hShock = age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100  ? (p.hcMin || 70_000) + rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000)): 0;
+      const draw = Math.max(0, sp - ss - effectiveAb) * (1 + td) + hShock;   // <-- use effectiveAb
+    
+      if (isNaN(sp)) sp = p.sp || 0;
+      if (isNaN(port)) port = 0;
 
       port = port * (1 + r) - draw;
       if (port <= 0 && survived) {
@@ -931,6 +948,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
     results.push({ path, survived });
   }
 
+  // Aggregation (unchanged)
   const pL = results[0].path.length;
   const pcts = [];
   for (let t = 0; t < pL; t++) {
@@ -997,13 +1015,10 @@ function simulateDeterministic(p, inf) {
       if (strategy === "gk") {
         sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
       } 
-
       else if (strategy === "fixed") {
-        // Pure fixed %: draw = rate × port. SS/AB are additive. No GK clamp.
         const fixedRate = p.fixedWithdrawalRate ?? 0.04;
         sp = port * fixedRate;
       } 
-
       else if (strategy === "vanguard") {
         const initialRate = p.vanguardInitialRate ?? 0.04;
         const cap = p.vanguardCap ?? 0.05;
@@ -1018,9 +1033,11 @@ function simulateDeterministic(p, inf) {
       } else if (strategy === "risk") {
         const safeWR = p.safeWithdrawalRate ?? 0.04;
         const currentWR = sp / port;
-        if (currentWR > safeWR * 1.2) sp *= 0.9;
+        
+        if (currentWR > safeWR * 1.2) 
+          sp *= 0.9;
         else if (currentWR < safeWR * 0.8) sp *= 1.1;
-        sp = Math.max(adjFloor, Math.min(adjCeiling, sp * (1 + inflY)));
+          sp = Math.max(adjFloor, Math.min(adjCeiling, sp * (1 + inflY)));
       } else if (strategy === "kitces") {
         if (port >= startingPort * 1.5) {
           sp *= 1.10;
@@ -1031,15 +1048,12 @@ function simulateDeterministic(p, inf) {
     }
     lastReturn = ret;
 
-    const ss = age >= p.ssAge
-      ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y))
-      : 0;
+    const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y)): 0;
     const detGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
-    const ab = (p.useAb ? Math.round(p.ab * detGrowth) : 0)
-             + Math.round((p.propIncome || 0) * detGrowth);
-    const need = strategy === "fixed" ? sp : Math.max(0, sp - ss - ab);
-
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+    const propIncome = Math.round((p.propIncome || 0) * detGrowth);
+    const effectiveAb = (p.abEndYear && yr > p.abEndYear) ? 0 : propIncome;
+    const need = strategy === "fixed" ? sp : Math.max(0, sp - ss - effectiveAb);
+    const taxResult = calcYearTax(age, yr, need, ss, effectiveAb, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -1052,7 +1066,7 @@ function simulateDeterministic(p, inf) {
     schedule.push({
       age, yr,
       spending: Math.round(sp),
-      ss, Rental: ab,
+      ss, Rental: effectiveAb,
       portfolioDraw: Math.round(need),
       fedTax: taxResult.fedTax,
       stateTax: taxResult.stateTax,
@@ -1111,11 +1125,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       // All other strategies: year-0 sp stays at p.sp (target spend)
     } else {
       if (withdrawalStrategy === "gk") {
-        // Use existing GK function with deterministic return
         sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
       }
       else if (withdrawalStrategy === "fixed") {
-        // Pure fixed %: draw = rate × port. No GK clamp.
         const fixedRate = p.fixedWithdrawalRate ?? 0.04;
         sp = port * fixedRate;
       }
@@ -1157,7 +1169,6 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         sp = sp * (1 + inflY);
         sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
       }
-      // New strategies (deterministic)
       else if (withdrawalStrategy === "vpw") {
         const eqPct = age < 62 ? (p.preRetireEq || 91) : (p.postRetireEq || 70);
         const r = 0.0376;
@@ -1208,17 +1219,18 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
     const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
     const dwsGrowth = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
-    const ab = (p.useAb ? Math.round(p.ab * dwsGrowth) : 0)
-             + Math.round((p.propIncome || 0) * dwsGrowth);
-    const need = withdrawalStrategy === "fixed" ? sp : Math.max(0, sp - ss - ab);
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+    const propIncome = Math.round((p.propIncome || 0) * dwsGrowth);
+    const effectiveAb = (p.abEndYear && yr > p.abEndYear) ? 0 : propIncome;
+
+    const need = withdrawalStrategy === "fixed" ? sp : Math.max(0, sp - ss - effectiveAb);
+    const taxResult = calcYearTax(age, yr, need, ss, effectiveAb, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
     schedule.push({
       age, yr,
       spending: Math.round(sp),
-      ss, airbnb: ab,
+      ss, Rental: effectiveAb,
       portfolioDraw: Math.round(need),
       fedTax: taxResult.fedTax,
       stateTax: taxResult.stateTax,
@@ -2386,9 +2398,9 @@ function importProfile(onLoad) {
         if (!Array.isArray(parsed.properties)) {
           parsed.properties = BLANK_PROFILE.properties;
         } else {
-          parsed.properties = parsed.properties.map((p, i) =>
-            p.id ? { ...p, id: String(p.id) } : { ...p, id: "p" + (i + 1) }
-          );
+            parsed.properties = parsed.properties.map((p, i) =>
+              p.id ? { ...p, id: String(p.id) } : { ...p, id: "p" + (i + 1) }
+            );
         }
         
         // Ensure checkpoints is always an array and all entries have string IDs
@@ -2719,18 +2731,27 @@ function IncomeMap({ p, inf }) {
     const yrs = Math.min(26, p.endAge - p.retireAge);
     return Array.from({ length: yrs }, (_, i) => {
       const age = p.retireAge + i;
+      const calYear = 2026 + (age - p.currentAge);
       const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1.024, i)) : 0;
       const incGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(i, 20));
-      const ab = (p.useAb ? Math.round(p.ab * incGrowth) : 0)
-               + Math.round((p.propIncome || 0) * incGrowth);
+      // Total property income (only source of rental income now)
+      let rental = Math.round((p.propIncome || 0) * incGrowth);
+      // Apply reliability
+      if (p.useAb) {
+        rental = 0; // If the toggle is off, rental is zero. Actually here we need a more nuanced approach. For the chart, it'll just show the expected value, so we can keep it as is.
+      }
+      // Apply end year
+      if (p.abEndYear && calYear > p.abEndYear) {
+        rental = 0;
+      }
       let sp = p.sp;
       for (let j = 1; j <= i; j++)
         sp *= p.smile ? 1 + smileMult(p.retireAge + j) * 0.03 : 1 + inf / 100;
       return {
         age,
-        "Portfolio Draw": Math.max(0, Math.round(sp) - ss - ab),
+        "Portfolio Draw": Math.max(0, Math.round(sp) - ss - rental),
         "Social Security": ss,
-        "Rental Net": ab,
+        "Rental Net": rental,
       };
     });
   }, [p, inf]);
@@ -3777,7 +3798,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
                   <tr key={s.age}>
                     <td style={{ textAlign: "left" }}>{s.age}</td><td>{s.yr}</td>
                     <td style={{ color: "#fbbf24" }}>{fmtDollar(s.spending)}</td>
-                    <td>{fmtDollar(s.ss)}</td><td>{fmtDollar(s.airbnb)}</td><td>{fmtDollar(s.portfolioDraw)}</td>
+                    <td>{fmtDollar(s.ss)}</td><td>{fmtDollar(s.Rental)}</td><td>{fmtDollar(s.portfolioDraw)}</td>
                     <td style={{ color: "#f87171" }}>{fmtDollar(s.fedTax)}</td>
                     <td style={{ color: "#fb923c" }}>{fmtDollar(s.stateTax)}</td>
                     <td style={{ color: "#a78bfa" }}>{fmtDollar(s.irmaa)}</td>
@@ -4444,17 +4465,17 @@ function MortgageTab({ values, onChange }) {
                 <div>
                   <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Gross value</div>
                   <DualInput label="" value={prop.value||0} min={0} max={5_000_000} step={5_000}
-                    format={v=>fmtM(v)} onChange={v=>updateProp(prop.id,"value",v)}/>
+                    format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"value",v)}/>
                 </div>
                 <div>
                   <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Mortgage balance</div>
                   <DualInput label="" value={prop.mortgage||0} min={0} max={3_000_000} step={1_000}
-                    format={v=>fmtM(v)} onChange={v=>updateProp(prop.id,"mortgage",v)}/>
+                    format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"mortgage",v)}/>
                 </div>
                 <div>
                   <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Annual income (opt)</div>
                   <DualInput label="" value={prop.income||0} min={0} max={200_000} step={1_000}
-                    format={v=>fmtK(v)+"/yr"} onChange={v=>updateProp(prop.id,"income",v)}/>
+                    format={v=>`$${Math.round(v).toLocaleString()}/yr`} onChange={v=>updateProp(prop.id,"income",v)}/>
                 </div>
               </div>
 
@@ -4559,10 +4580,10 @@ function MortgageTab({ values, onChange }) {
             {sched.years.slice(0,10).map(r => (
               <tr key={r.yr}>
                 <td style={{ textAlign:"left", fontFamily:"'DM Sans',sans-serif" }}>{r.yr}</td>
-                <td>{fmtM(r.pPaid)}</td>
-                <td style={{ color:"#f87171" }}>{fmtM(r.iPaid)}</td>
-                <td style={{ color:"#34d399" }}>{fmtM(r.ePaid)}</td>
-                <td style={{ color:"#0ea5e9" }}>{fmtM(r.bal)}</td>
+                <td>{fmtDollar(r.pPaid)}</td>
+                <td style={{ color:"#f87171" }}>{fmtDollar(r.iPaid)}</td>
+                <td style={{ color:"#34d399" }}>{fmtDollar(r.ePaid)}</td>
+                <td style={{ color:"#0ea5e9" }}>{fmtDollar(r.bal)}</td>
               </tr>
             ))}
           </tbody>
@@ -5642,62 +5663,6 @@ function ARow({ label, desc, children }) {
   );
 }
 
-const StableInput = React.memo(
-  ({ initialValue, onCommit, min, max, transform = (v) => v, suffix = "", style }) => {
-    const inputRef = useRef(null);
-    const isFocusedRef = useRef(false);
-    const initialValueRef = useRef(initialValue);
-
-    // Format number with commas
-    const format = (num) => new Intl.NumberFormat().format(num);
-
-    // Initialize on mount and when initialValue changes externally (and not focused)
-    useEffect(() => {
-      if (!isFocusedRef.current && inputRef.current) {
-        inputRef.current.value = format(initialValue);
-        initialValueRef.current = initialValue;
-      }
-    }, [initialValue]);
-
-    const handleBlur = () => {
-      isFocusedRef.current = false;
-      const raw = inputRef.current.value.replace(/,/g, "");
-      let num = parseFloat(raw);
-      if (isNaN(num)) {
-        inputRef.current.value = format(initialValueRef.current);
-        return;
-      }
-      num = Math.min(max, Math.max(min, num));
-      const final = transform(num);
-      onCommit(final);
-      inputRef.current.value = format(final);
-    };
-
-    const handleFocus = () => {
-      isFocusedRef.current = true;
-    };
-
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <input
-          ref={inputRef}
-          type="text"
-          inputMode="numeric"
-          defaultValue={format(initialValue)}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          style={style}
-        />
-        {suffix && <span style={{ fontSize: 11, color: "#475569" }}>{suffix}</span>}
-      </div>
-    );
-  },
-  // Custom comparison: never re-render due to prop changes; the DOM handles everything.
-  () => true
-);
-
-StableInput.displayName = "StableInput";
-
 function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   const [isFocused, setIsFocused] = useState(false);
   const [localValue, setLocalValue] = useState("");
@@ -5842,14 +5807,6 @@ function AssumptionsPanel({ values, onChange }) {
           desc="State where RMD taxes will be applied. Use the Two Household toggle for out-of-country scenarios."
         >
           <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
-        </ARow>
-
-        {/* ✅ Fixed: Rental net income now uses the correct field "ab" */}
-        <ARow
-          label="Rental net income / yr"
-          desc="Net after expenses · Always use net, never gross"
-        >
-          <CleanNumberInput value={values.ab} onChange={(v) => onChange("ab", v)} min={0} max={100000} step={1000} />
         </ARow>
         <ARow label="Cash real return" desc="Annual real return on cash/savings (e.g., HYSA)">
           <CleanNumberInput value={values.cashRealReturn} onChange={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} />
@@ -6045,7 +6002,7 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
       </div>
 
-      {/* MONTE CARLO PARAMETERS CARD */}
+      {/* MONTE CARLO MODEL PARAMETERS CARD */}
       <div
         style={{
           background: "rgba(255,255,255,0.03)",
@@ -6071,12 +6028,6 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
         <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is your internal Portfolio Goal and where if you hit this number before you have accomplished your retirement goal. It's your minimal goal and anything above this number is extra beyond what is your ultimate goal. (default $3.2M)">
           <CleanNumberInput value={values.portfolioGoal} onChange={(v) => onChange("portfolioGoal", v)} min={0} max={10000000} step={50000} />
-        </ARow>
-        <ARow label="Rental reliability" desc="Probability Rental income arrives in any given year (default 80%)">
-          <CleanNumberInput value={values.abReliability} onChange={(v) => onChange("abReliability", v)} min={0} max={100} step={5} />
-        </ARow>
-        <ARow label="Rental income growth / yr" desc="Annual growth rate for Rental income (default 3%)">
-          <CleanNumberInput value={values.abGrowth} onChange={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} />
         </ARow>
         <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
           <CleanNumberInput value={values.ssCola} onChange={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} />
@@ -6221,14 +6172,17 @@ function RetirementPanel({ values, onChange }) {
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>RENTAL INCOME</div>
-        <WFieldRow label="Rental Net Income (annual)" helper="Net profit from rental properties after expenses.">
-          <ANumInput value={values.ab || 0} onSet={(v) => onChange("ab", v)} min={0} max={200000} step={1000} suffix="/yr" />
-        </WFieldRow>
         <WFieldRow label="Rental Growth Rate" helper="Annual growth rate for rental income (default 3%).">
           <ANumInput value={values.abGrowth || 3} onSet={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} suffix="%" />
         </WFieldRow>
         <WFieldRow label="Rental Reliability" helper="Probability rental income is received each year (default 80%).">
           <ANumInput value={values.abReliability || 80} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
+        </WFieldRow>
+         <WFieldRow label="Rental Income Ends (year)" helper="Year when rental income is expected to end.">
+          <input type="number" value={values.abEndYear || ''} min={2026} max={2100} step={1} onChange={(e) => onChange("abEndYear", Number(e.target.value))} style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0",
+            borderRadius:6, padding:"6px 8px", fontSize:12, fontFamily:"'DM Mono',monospace",
+            width:80, textAlign:"right" }}
+            /> year
         </WFieldRow>
       </div>
 
@@ -6541,8 +6495,11 @@ export default function AiRAForecaster() {
       gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 0.65),
       gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 1.35),
       ssb,
-      ab: useAb ? (ab || 0) : 0,
-      propIncome: (assumptions.properties || []).reduce((s, pr) => s + (pr.income || 0), 0),
+      ab: 0,
+      propIncome: (() => {
+         const raw = (assumptions.properties || []).reduce((s, pr) => s + (Number(pr.income) || 0), 0);
+          return isNaN(raw) ? 0 : raw;
+        })(),
       useAb,
       abReliability: assumptions.abReliability,
       abGrowth: assumptions.abGrowth,
@@ -6586,6 +6543,7 @@ export default function AiRAForecaster() {
       checkpoints: assumptions.checkpoints || [],
       earlyRetireTarget: assumptions.earlyRetireTarget,
       portfolioGoal: assumptions.portfolioGoal,
+      abEndYear: assumptions.abEndYear ?? null,   // rental income stops after this year
     }),
     [
       retAge, endAge, port, contrib, inf, sp, ssb, ab, useAb, smile, tax, real,
@@ -6615,7 +6573,7 @@ export default function AiRAForecaster() {
     if (r85 || r90) setStale(true);
   }, [params]);
 
-  const swr = ((params.sp / port) * 100).toFixed(1);
+  const swr = (port > 0 ? (params.sp / port) * 100 : 0).toFixed(1);
 
   const runSimulation = useCallback(() => {
     setRunning(true);
@@ -6806,13 +6764,14 @@ export default function AiRAForecaster() {
                     if (acctTotal > 0) setPort(acctTotal);
                   }
                   if (data.mortStart && !data.mortStart.includes("-01")) data.mortStart = data.mortStart + "-01";
-                  if (!Array.isArray(data.properties)) {
-                    data.properties = BLANK_PROFILE.properties;
+                 
+                  if (!Array.isArray(data.properties)){
+                     data.properties = BLANK_PROFILE.properties;
                   } else {
-                    data.properties = data.properties.map((p, i) =>
+                      data.properties = data.properties.map((p, i) =>
                       p.id ? { ...p, id: String(p.id) } : { ...p, id: "p" + (i + 1) }
-                    );
-                  }
+                 );
+}
                   if (!Array.isArray(data.carveouts)) data.carveouts = [];
                   if (!Array.isArray(data.checkpoints)) {
                     data.checkpoints = [];
@@ -7213,22 +7172,12 @@ export default function AiRAForecaster() {
                 format={(v) => "Age " + v}
                 onChange={(v) => updateAssumption("ssAge", v)}
               />
-              <Slider
-                label="Rental net"
-                value={ab}
-                min={0}
-                max={50000}
-                step={1000}
-                format={(v) => fmtK(v) + "/yr"}
-                onChange={setAb}
-              />
             </div>
 
             <div className="sb-card">
               <div className="sb-title">Options</div>
               <Toggle val={smile} onChange={setSmile} label="🙂 Smile spending" />
               <Toggle val={tax} onChange={setTax} label="🏛 Tax drag" accent="#d97706" />
-              <Toggle val={useAb} onChange={setUseAb} label="🏖 Rental income" accent="#059669" />
               <Toggle val={real} onChange={setReal} label="📉 Real dollars" accent="#0ea5e9" />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
