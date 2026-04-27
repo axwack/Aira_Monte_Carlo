@@ -85,9 +85,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.3.3";
-export const BUILD_TAG = "Retnal income has a termination date. Fixes also on the Withdrawal tables.";
-export const BUILD_TIME = "2026-04-26 12:00 UTC";
+const APP_VERSION = "1.0.4.0";
+export const BUILD_TAG = "Progressive state tax brackets for all 50 states + DC; Roth explorer no longer hardcoded to NJ.";
+export const BUILD_TIME = "2026-04-27 12:00 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
