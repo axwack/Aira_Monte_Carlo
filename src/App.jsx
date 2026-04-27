@@ -85,8 +85,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.3.2";
-export const BUILD_TAG = "Restructure About modal: tabbed bio/product/features with grouped How It Works";
+const APP_VERSION = "1.0.3.3";
+export const BUILD_TAG = "Retnal income has a termination date. Fixes also on the Withdrawal tables.";
 export const BUILD_TIME = "2026-04-26 12:00 UTC";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
