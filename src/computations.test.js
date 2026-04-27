@@ -215,10 +215,11 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
     expect(r.stateTax).toBe(0);
   });
 
-  test("California state tax = 13.3% of taxable income", () => {
+  test("California state tax uses progressive brackets for MFJ", () => {
     const r = calcYearTax(60, 2026, 60_000, 0, 0, 0, 0, false, 0.025, "mfj", "CA");
-    // taxableIncome = 27800; stateTax = round(27800 * 0.133) = 3697
-    expect(r.stateTax).toBe(Math.round(27_800 * 0.133));
+    // taxableIncome = 27800 (60000 - 32200 MFJ std ded)
+    // CA MFJ progressive brackets → 341 (far below top 13.3% bracket)
+    expect(r.stateTax).toBe(341);
   });
 
   test("twoHousehold = true skips state tax entirely", () => {
@@ -753,11 +754,11 @@ describe("Net income = gross withdrawal − total taxes", () => {
     expect(50_000 - r.totalTax).toBeCloseTo(46_180, 0);
   });
 
-  // NJ: stateTax = round(33,900 × 0.1075) = 3,644 → net lower than FL
-  test("Single, age 62, NJ, $50K: state tax = 10.75% of taxableIncome, net lower than FL", () => {
+  // NJ progressive brackets on $33,900 taxable → 523 (much lower than old flat 10.75%)
+  test("Single, age 62, NJ, $50K: NJ progressive state tax, net lower than FL", () => {
     const rFL = tax26(62, 50_000, "single", "FL");
     const rNJ = tax26(62, 50_000, "single", "NJ");
-    expect(rNJ.stateTax).toBeCloseTo(Math.round(33_900 * 0.1075), 0);
+    expect(rNJ.stateTax).toBeCloseTo(523, 0);
     expect(50_000 - rFL.totalTax).toBeGreaterThan(50_000 - rNJ.totalTax);
   });
 
