@@ -85,9 +85,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.4.0";
-export const BUILD_TAG = "Progressive state tax brackets for all 50 states + DC; Roth explorer no longer hardcoded to NJ.";
-export const BUILD_TIME = "2026-04-27 12:00 UTC";
+const APP_VERSION = "1.0.5";
+export const BUILD_TAG = "Added Other Incomes feature. Json export and import. Updated state tax brackets to 2025.";
+export const BUILD_TIME = "2026-04-27 9:50am EST";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -6862,6 +6862,7 @@ export default function AiRAForecaster() {
                     hcMax: assumptions.hcMax,
                     cashRealReturn: assumptions.cashRealReturn ?? 1.0,
                     useJointRmdTable: assumptions.useJointRmdTable || false,
+                    otherIncomes: assumptions.otherIncomes || [],   // <-- correct field name
                     checkpoints: assumptions.checkpoints || [],
                     exportedAt: new Date().toISOString(),
                     appVersion: APP_VERSION,
@@ -6904,6 +6905,7 @@ export default function AiRAForecaster() {
                       ...(data.hsaBal ? [{ id: "m5", category: "hsa", name: "HSA", balance: data.hsaBal }] : []),
                       ...(data.taxable ? [{ id: "m6", category: "taxable", name: "Taxable", balance: data.taxable }] : []),
                     ];
+
                     delete data.solo401k;
                     delete data.alpha401k;
                     delete data.rothFid;
@@ -6924,14 +6926,25 @@ export default function AiRAForecaster() {
                       data.properties = data.properties.map((p, i) =>
                       p.id ? { ...p, id: String(p.id) } : { ...p, id: "p" + (i + 1) }
                  );
-}
+                }
+                // --Carveouts and checkpoints should always be arrays, and checkpoints should have string IDs for React keys--
                   if (!Array.isArray(data.carveouts)) data.carveouts = [];
+                // --- Checkpoints migration ---
                   if (!Array.isArray(data.checkpoints)) {
                     data.checkpoints = [];
                   } else {
                     data.checkpoints = data.checkpoints.map(cp =>
                       cp.id != null ? { ...cp, id: String(cp.id) } : { ...cp, id: Date.now().toString() + Math.random() }
                     );
+                  }
+
+                  // Migrate old "otherInc" field to "otherIncomes"
+                  if (data.otherInc && !data.otherIncomes) {
+                    data.otherIncomes = data.otherInc;
+                  }
+                  // Ensure otherIncomes is always an array
+                  if (!Array.isArray(data.otherIncomes)) {
+                    data.otherIncomes = [];
                   }
 
                   setAssumptions((prev) => ({
@@ -6948,6 +6961,7 @@ export default function AiRAForecaster() {
                     properties: data.properties,
                     checkpoints: data.checkpoints,
                     carveouts: data.carveouts,
+                    otherIncomes: data.otherIncomes, 
                   }));
 
                   setStale(true);
