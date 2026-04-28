@@ -843,10 +843,10 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   }
 
   // Aggregate results
-  const pL = results[0].path.length;
   const pcts = [];
-  for (let t = 0; t < pL; t++) {
-    const vals = results.map(r => r.path[t]).sort((a, b) => a - b);
+  for (let t = 0; t <= retYrs; t++) {
+    // Use ?? 0 so exhausted paths count as $0, not undefined
+    const vals = results.map(r => r.path[t] ?? 0).sort((a, b) => a - b);
     const q = pct => vals[Math.floor(pct * (vals.length - 1))];
     pcts.push({
       age: p.retireAge + t,
