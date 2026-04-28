@@ -2510,6 +2510,7 @@ function computeSurvivalCurve(startAge, endAge, sex = "blended") {
 
 function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, preRetireEq, sex }) {
   const [showTargets, setShowTargets] = useState(true);
+  const [showMortality, setShowMortality] = useState(true);
 
   const rawData = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
 
@@ -2593,13 +2594,25 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
         <div className="ct" style={{ margin: 0 }}>
           {title} · {useReal ? "Real $" : "Nominal $"}
         </div>
-        <Toggle
-          val={showTargets}
-          onChange={setShowTargets}
-          label="Show milestones"
-          accent="#f59e0b"
-        />
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Toggle val={showMortality} onChange={setShowMortality} label="Mortality" accent="#ef4444" />
+          <Toggle val={showTargets} onChange={setShowTargets} label="Milestones" accent="#f59e0b" />
+        </div>
       </div>
+      {showMortality && medianDeathAge && (
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 8, padding: "6px 10px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="rgba(239,68,68,0.6)" strokeWidth="1.5" strokeDasharray="5 3"/></svg>
+            <span style={{ fontSize: 11, color: "rgba(239,68,68,0.8)", fontWeight: 600 }}>P(alive) — right axis</span>
+          </div>
+          <span style={{ fontSize: 11, color: "#64748b" }}>
+            SSA {sex === "male" ? "male" : sex === "female" ? "female" : "blended"} survival probability by age.
+            50% of people your age have died by <strong style={{ color: "#e2e8f0" }}>age {medianDeathAge}</strong>
+            {q25DeathAge ? <>, 75% by <strong style={{ color: "#e2e8f0" }}>age {q25DeathAge}</strong></> : ""}.
+            For most retirees, dying before going broke is far more likely than running out of money.
+          </span>
+        </div>
+      )}
       {showTargets && (
         <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
           <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
@@ -2647,15 +2660,17 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             tickFormatter={(v) => fmtM(v)}
             domain={[0, maxY]}
           />
-          <YAxis
-            yAxisId="mort"
-            orientation="right"
-            stroke="rgba(239,68,68,0.3)"
-            tick={{ fill: "rgba(239,68,68,0.5)", fontSize: 10 }}
-            tickFormatter={(v) => `${Math.round(v * 100)}%`}
-            domain={[0, 1]}
-            tickCount={6}
-          />
+          {showMortality && (
+            <YAxis
+              yAxisId="mort"
+              orientation="right"
+              stroke="rgba(239,68,68,0.3)"
+              tick={{ fill: "rgba(239,68,68,0.5)", fontSize: 10 }}
+              tickFormatter={(v) => `${Math.round(v * 100)}%`}
+              domain={[0, 1]}
+              tickCount={6}
+            />
+          )}
           <Tooltip content={<Tip />} />
           
           {/* Vertical reference lines (D-Day, SS, RMD) */}
@@ -2664,11 +2679,11 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           <ReferenceLine yAxisId="port" x={rmdAge} stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "#34d399", fontSize: 10, position: "top" }} />
 
           {/* Mortality reference lines */}
-          {medianDeathAge && (
+          {showMortality && medianDeathAge && (
             <ReferenceLine yAxisId="port" x={medianDeathAge} stroke="rgba(239,68,68,0.5)" strokeWidth={1} strokeDasharray="3 3"
               label={{ value: "50% alive", fill: "rgba(239,68,68,0.7)", fontSize: 9, position: "insideTopRight" }} />
           )}
-          {q25DeathAge && (
+          {showMortality && q25DeathAge && (
             <ReferenceLine yAxisId="port" x={q25DeathAge} stroke="rgba(239,68,68,0.3)" strokeWidth={1} strokeDasharray="2 4"
               label={{ value: "25% alive", fill: "rgba(239,68,68,0.5)", fontSize: 9, position: "insideTopRight" }} />
           )}
@@ -2681,8 +2696,10 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           <Line yAxisId="port" type="monotone" dataKey="p10" stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="3 3" name="10th" />
 
           {/* Survival probability curve (right axis, red dashed) */}
-          <Line yAxisId="mort" type="monotone" dataKey="survival" stroke="rgba(239,68,68,0.6)"
-            strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="P(alive)" connectNulls />
+          {showMortality && (
+            <Line yAxisId="mort" type="monotone" dataKey="survival" stroke="rgba(239,68,68,0.6)"
+              strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="P(alive)" connectNulls />
+          )}
 
           {/* Deterministic accumulation path (pre-retirement) */}
           {showTargets && accumData.length > 0 && (
