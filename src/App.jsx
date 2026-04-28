@@ -86,7 +86,7 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "1.0.5";
-export const BUILD_TAG = "Added Other Incomes feature. Json export and import. Updated state tax brackets to 2025.";
+export const BUILD_TAG = "SSA Mortality figures";
 export const BUILD_TIME = "2026-04-27 9:50am EST";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
