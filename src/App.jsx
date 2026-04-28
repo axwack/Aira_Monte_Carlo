@@ -5547,12 +5547,14 @@ function ProfileWizard({ values, onChange }) {
             style={{
               padding: "7px 18px",
               borderRadius: 7,
-              border: "1px solid rgba(255,255,255,0.1)",
-              background: "transparent",
-              color: step === 0 ? "#334155" : "#94a3b8",
+              border: "none",
+              background: step === 0 ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#0d9488,#14b8a6)",
+              color: step === 0 ? "#334155" : "white",
               cursor: step === 0 ? "not-allowed" : "pointer",
               fontSize: 12,
               fontFamily: "inherit",
+              fontWeight: 600,
+              opacity: step === 0 ? 0.4 : 1,
             }}
           >
             ← Previous
@@ -5573,6 +5575,7 @@ function ProfileWizard({ values, onChange }) {
               fontSize: 12,
               fontFamily: "inherit",
               fontWeight: 600,
+              opacity: step === STEPS.length - 1 ? 0.4 : 1,
             }}
           >
             Next →
