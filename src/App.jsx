@@ -86,7 +86,7 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "1.0.5";
-export const BUILD_TAG = "Added Other Incomes feature. Json export and import. Updated state tax brackets to 2025.";
+export const BUILD_TAG = "SSA Mortality figures";
 export const BUILD_TIME = "2026-04-27 9:50am EST";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -304,6 +304,7 @@ export const BLANK_PROFILE = {
   label: "My Plan",
   name: "",
   dob: "",
+  sex: "blended",              // "male" | "female" | "blended"
   stateOfResidence: "",
   currentAge: 50,
   retireAge: 60,
@@ -2460,8 +2461,56 @@ function importProfile(onLoad) {
   input.click();
 }
 
-function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, preRetireEq }) {
+// SSA 2022 Period Life Table — annual death probability qx by single age
+// Source: https://www.ssa.gov/oact/STATS/table4c6.html
+// Index 0 = age 50, index 50 = age 100
+const SSA_QX_MALE = [
+  0.00520,0.00568,0.00619,0.00674,0.00733, // 50-54
+  0.00796,0.00865,0.00940,0.01022,0.01112, // 55-59
+  0.01213,0.01324,0.01446,0.01580,0.01729, // 60-64
+  0.01892,0.02069,0.02263,0.02475,0.02706, // 65-69
+  0.02960,0.03239,0.03548,0.03890,0.04267, // 70-74
+  0.04685,0.05149,0.05661,0.06224,0.06840, // 75-79
+  0.07514,0.08250,0.09054,0.09930,0.10882, // 80-84
+  0.11915,0.13033,0.14237,0.15527,0.16903, // 85-89
+  0.18359,0.19878,0.21432,0.22962,0.24419, // 90-94
+  0.25855,0.27357,0.28997,0.30826,0.32870, // 95-99
+  0.35148,                                  // 100
+];
+const SSA_QX_FEMALE = [
+  0.00280,0.00304,0.00330,0.00359,0.00390, // 50-54
+  0.00425,0.00463,0.00507,0.00556,0.00612, // 55-59
+  0.00675,0.00746,0.00824,0.00909,0.01003, // 60-64
+  0.01107,0.01222,0.01349,0.01490,0.01646, // 65-69
+  0.01819,0.02012,0.02228,0.02469,0.02739, // 70-74
+  0.03044,0.03388,0.03774,0.04205,0.04683, // 75-79
+  0.05211,0.05793,0.06433,0.07134,0.07900, // 80-84
+  0.08733,0.09637,0.10613,0.11664,0.12795, // 85-89
+  0.14011,0.15315,0.16711,0.18203,0.19792, // 90-94
+  0.21476,0.23238,0.25058,0.26894,0.28700, // 95-99
+  0.30462,                                  // 100
+];
+
+function computeSurvivalCurve(startAge, endAge, sex = "blended") {
+  const maleQx   = SSA_QX_MALE;
+  const femaleQx = SSA_QX_FEMALE;
+  const curve = [];
+  let survM = 1, survF = 1;
+  for (let age = startAge; age <= Math.min(endAge, 100); age++) {
+    const i = Math.min(age - 50, 50);
+    if (i >= 0) {
+      survM *= (1 - (maleQx[i]   || 0));
+      survF *= (1 - (femaleQx[i] || 0));
+    }
+    const surv = sex === "male" ? survM : sex === "female" ? survF : (survM + survF) / 2;
+    curve.push({ age, survival: Math.max(0, surv) });
+  }
+  return curve;
+}
+
+function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, preRetireEq, sex }) {
   const [showTargets, setShowTargets] = useState(true);
+  const [showMortality, setShowMortality] = useState(true);
 
   const rawData = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
 
@@ -2510,19 +2559,60 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     return Math.max(maxPortfolio, portfolioGoal || 0, earlyRetireTarget || 0, currentPort || 0) * 1.05;
   }, [data, portfolioGoal, earlyRetireTarget, currentPort]);
 
+  // Mortality overlay — survival probability merged into chart data
+  const mortalityData = useMemo(() => {
+    if (!currentAge) return [];
+    return computeSurvivalCurve(currentAge, Math.max(...(data.map(d => d.age).filter(Boolean)), 100), sex || "blended");
+  }, [currentAge, data, sex]);
+
+  const mortByAge = useMemo(() => {
+    const m = {};
+    mortalityData.forEach(d => { m[d.age] = d.survival; });
+    return m;
+  }, [mortalityData]);
+
+  // Median death age (50% survival) for the reference line
+  const medianDeathAge = useMemo(() => {
+    const pt = mortalityData.find(d => d.survival <= 0.5);
+    return pt ? pt.age : null;
+  }, [mortalityData]);
+
+  const q25DeathAge = useMemo(() => {
+    const pt = mortalityData.find(d => d.survival <= 0.25);
+    return pt ? pt.age : null;
+  }, [mortalityData]);
+
+  // Merge survival into chart data for the secondary axis
+  const dataWithMortality = useMemo(() =>
+    data.map(d => ({ ...d, survival: mortByAge[d.age] ?? null })),
+    [data, mortByAge]
+  );
+
   return (
     <div className="chart-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
         <div className="ct" style={{ margin: 0 }}>
           {title} · {useReal ? "Real $" : "Nominal $"}
         </div>
-        <Toggle
-          val={showTargets}
-          onChange={setShowTargets}
-          label="Show milestones"
-          accent="#f59e0b"
-        />
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Toggle val={showMortality} onChange={setShowMortality} label="Mortality" accent="#ef4444" />
+          <Toggle val={showTargets} onChange={setShowTargets} label="Milestones" accent="#f59e0b" />
+        </div>
       </div>
+      {showMortality && medianDeathAge && (
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 8, padding: "6px 10px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="rgba(239,68,68,0.6)" strokeWidth="1.5" strokeDasharray="5 3"/></svg>
+            <span style={{ fontSize: 11, color: "rgba(239,68,68,0.8)", fontWeight: 600 }}>P(alive) — right axis</span>
+          </div>
+          <span style={{ fontSize: 11, color: "#64748b" }}>
+            SSA {sex === "male" ? "male" : sex === "female" ? "female" : "blended"} survival probability by age.
+            50% of people your age have died by <strong style={{ color: "#e2e8f0" }}>age {medianDeathAge}</strong>
+            {q25DeathAge ? <>, 75% by <strong style={{ color: "#e2e8f0" }}>age {q25DeathAge}</strong></> : ""}.
+            For most retirees, dying before going broke is far more likely than running out of money.
+          </span>
+        </div>
+      )}
       {showTargets && (
         <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
           <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
@@ -2541,8 +2631,8 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
       )}
       <ResponsiveContainer width="100%" height={640}>
         <ComposedChart
-          data={data}
-          margin={{ top: 28, right: 8, left: 0, bottom: 0 }}
+          data={dataWithMortality}
+          margin={{ top: 28, right: 48, left: 0, bottom: 0 }}
         >
           <defs>
             <linearGradient id="g90v5" x1="0" y1="0" x2="0" y2="1">
@@ -2564,34 +2654,63 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             tick={{ fill: "#475569", fontSize: 11 }}
           />
           <YAxis
+            yAxisId="port"
             stroke="#1e3a5f"
             tick={{ fill: "#475569", fontSize: 11 }}
             tickFormatter={(v) => fmtM(v)}
             domain={[0, maxY]}
           />
+          {showMortality && (
+            <YAxis
+              yAxisId="mort"
+              orientation="right"
+              stroke="rgba(239,68,68,0.3)"
+              tick={{ fill: "rgba(239,68,68,0.5)", fontSize: 10 }}
+              tickFormatter={(v) => `${Math.round(v * 100)}%`}
+              domain={[0, 1]}
+              tickCount={6}
+            />
+          )}
           <Tooltip content={<Tip />} />
           
           {/* Vertical reference lines (D-Day, SS, RMD) */}
-          <ReferenceLine x={retireAge} stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day", fill: "#fbbf24", fontSize: 10, position: "top" }} />
-          <ReferenceLine x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: 10, position: "top" }} />
-          <ReferenceLine x={rmdAge} stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "#34d399", fontSize: 10, position: "top" }} />
+          <ReferenceLine yAxisId="port" x={retireAge} stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day", fill: "#fbbf24", fontSize: 10, position: "top" }} />
+          <ReferenceLine yAxisId="port" x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: 10, position: "top" }} />
+          <ReferenceLine yAxisId="port" x={rmdAge} stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "#34d399", fontSize: 10, position: "top" }} />
+
+          {/* Mortality reference lines */}
+          {showMortality && medianDeathAge && (
+            <ReferenceLine yAxisId="port" x={medianDeathAge} stroke="rgba(239,68,68,0.5)" strokeWidth={1} strokeDasharray="3 3"
+              label={{ value: "50% alive", fill: "rgba(239,68,68,0.7)", fontSize: 9, position: "insideTopRight" }} />
+          )}
+          {showMortality && q25DeathAge && (
+            <ReferenceLine yAxisId="port" x={q25DeathAge} stroke="rgba(239,68,68,0.3)" strokeWidth={1} strokeDasharray="2 4"
+              label={{ value: "25% alive", fill: "rgba(239,68,68,0.5)", fontSize: 9, position: "insideTopRight" }} />
+          )}
 
           {/* Fan areas and percentile lines */}
-          <Area type="monotone" dataKey="p90" stroke="#5eead4" strokeWidth={1} strokeDasharray="4 2" fill="url(#g90v5)" dot={false} name="90th" legendType="none" />
-          <Area type="monotone" dataKey="p75" stroke="#0d9488" strokeWidth={1} strokeDasharray="3 2" fill="url(#g75v5)" dot={false} name="75th" legendType="none" />
-          <Line type="monotone" dataKey="p50" stroke="#14b8a6" strokeWidth={2.5} dot={false} name="Median" />
-          <Line type="monotone" dataKey="p25" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 3" name="25th" />
-          <Line type="monotone" dataKey="p10" stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="3 3" name="10th" />
+          <Area yAxisId="port" type="monotone" dataKey="p90" stroke="#5eead4" strokeWidth={1} strokeDasharray="4 2" fill="url(#g90v5)" dot={false} name="90th" legendType="none" />
+          <Area yAxisId="port" type="monotone" dataKey="p75" stroke="#0d9488" strokeWidth={1} strokeDasharray="3 2" fill="url(#g75v5)" dot={false} name="75th" legendType="none" />
+          <Line yAxisId="port" type="monotone" dataKey="p50" stroke="#14b8a6" strokeWidth={2.5} dot={false} name="Median" />
+          <Line yAxisId="port" type="monotone" dataKey="p25" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 3" name="25th" />
+          <Line yAxisId="port" type="monotone" dataKey="p10" stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="3 3" name="10th" />
+
+          {/* Survival probability curve (right axis, red dashed) */}
+          {showMortality && (
+            <Line yAxisId="mort" type="monotone" dataKey="survival" stroke="rgba(239,68,68,0.6)"
+              strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="P(alive)" connectNulls />
+          )}
 
           {/* Deterministic accumulation path (pre-retirement) */}
           {showTargets && accumData.length > 0 && (
-            <Line type="monotone" dataKey="accum" stroke="#60a5fa" strokeWidth={2}
+            <Line yAxisId="port" type="monotone" dataKey="accum" stroke="#60a5fa" strokeWidth={2}
               strokeDasharray="6 3" dot={false} name="Expected path" connectNulls={false} />
           )}
 
           {/* You Are Here */}
           {showTargets && currentAge != null && currentPort != null && (
             <ReferenceDot
+              yAxisId="port"
               x={currentAge} y={currentPort} r={7}
               fill="#60a5fa" stroke="#0f1729" strokeWidth={2}
               label={{ value: nowPct ? `▶ Now · ${nowPct} %ile` : "▶ Now", fill: "#60a5fa", fontSize: 10, position: "top" }}
@@ -2646,6 +2765,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
 
               return (
                 <ReferenceDot
+                  yAxisId="port"
                   key={cp.id}
                   x={age} y={cp.value} r={5}
                   fill={color} stroke="#fff" strokeWidth={1.5}
@@ -2657,6 +2777,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
 
           {/* Target horizontal lines (toggled via showTargets) */}
           {showTargets && <ReferenceLine
+            yAxisId="port"
             y={portfolioGoal}
             stroke="#f59e0b"
             strokeWidth={2.5}
@@ -2671,6 +2792,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             }}
           />}
           {showTargets && <ReferenceLine
+            yAxisId="port"
             y={earlyRetireTarget}
             stroke="#8b5cf6"
             strokeWidth={2.5}
@@ -3958,10 +4080,11 @@ function ScenariosTab({
   BucketsTab,
   SmileChart,
   withdrawalStrategy,   // ✅ only once
-  checkpoints,           // new
-  earlyRetireTarget,     // new
-  portfolioGoal,           // new
-  dob, 
+  checkpoints,
+  earlyRetireTarget,
+  portfolioGoal,
+  dob,
+  sex,
 }) {
 
   const [scenarioSubTab, setScenarioSubTab] = useState("stress");
@@ -4022,6 +4145,7 @@ function ScenariosTab({
             portfolioGoal={portfolioGoal}
             earlyRetireTarget={earlyRetireTarget}
             dob={dob}
+            sex={sex}
           />
           <div
             style={{
@@ -4090,7 +4214,7 @@ function ScenariosTab({
   );
 }
 
-function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob ,onSetBaselineFromCheckpoint, withdrawalStrategy }) {
+function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy }) {
   const [showInputs, setShowInputs] = useState(false);
   const [showHow, setShowHow] = useState(false);
   const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
@@ -5440,12 +5564,14 @@ function ProfileWizard({ values, onChange }) {
             style={{
               padding: "7px 18px",
               borderRadius: 7,
-              border: "1px solid rgba(255,255,255,0.1)",
-              background: "transparent",
-              color: step === 0 ? "#334155" : "#94a3b8",
+              border: "none",
+              background: step === 0 ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#0d9488,#14b8a6)",
+              color: step === 0 ? "#334155" : "white",
               cursor: step === 0 ? "not-allowed" : "pointer",
               fontSize: 12,
               fontFamily: "inherit",
+              fontWeight: 600,
+              opacity: step === 0 ? 0.4 : 1,
             }}
           >
             ← Previous
@@ -5466,6 +5592,7 @@ function ProfileWizard({ values, onChange }) {
               fontSize: 12,
               fontFamily: "inherit",
               fontWeight: 600,
+              opacity: step === STEPS.length - 1 ? 0.4 : 1,
             }}
           >
             Next →
@@ -5654,6 +5781,17 @@ function AboutYouPanel({ values, onChange }) {
         </WFieldRow>
         <WFieldRow label="Planning Horizon" helper="Age through which you want the plan to last.">
           <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={75} max={100} step={1} />
+        </WFieldRow>
+        <WFieldRow label="Sex" helper="Used for SSA mortality overlay on the fan chart (male/female life expectancy tables, or blended average).">
+          <select
+            value={values.sex || "blended"}
+            onChange={(e) => onChange("sex", e.target.value)}
+            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
+          >
+            <option value="blended">Blended (avg)</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+          </select>
         </WFieldRow>
       </div>
 
@@ -6807,63 +6945,21 @@ export default function AiRAForecaster() {
               onClick={() =>
                 exportProfile(
                   {
-                    name: assumptions.name || "",
-                    dob: assumptions.dob || "",
-                    stateOfResidence: assumptions.stateOfResidence || "CA",
-                    employerStartDate: assumptions.employerStartDate || "",
-                    filingStatus: assumptions.filingStatus || "mfj",
-                    twoHousehold: assumptions.twoHousehold,
+                    // Spread all assumptions fields so nothing is ever silently omitted
+                    ...assumptions,
+                    // Override with the separate state variables — these are the live source of truth
                     retireAge: retAge,
-                    endAge: endAge,
-                    currentAge: currentAge,
-                    port: port,
-                    contrib: contrib,
-                    inf: inf,
-                    sp: sp,
-                    spSpendOutofState: assumptions.spSpendOutofState || 48000,
-                    spInStateSpend: assumptions.spInStateSpend || 0,
-                    ssAge: assumptions.ssAge,
-                    ssb: ssb,
-                    ab: ab,
-                    useAb: useAb,
-                    smile: smile,
-                    tax: tax,
-                    real: real,
-                    gkFloor: params.gkFloor,
-                    gkCeiling: params.gkCeiling,
-                    withdrawalStrategy: assumptions.withdrawalStrategy,
-                    portfolioGoal: assumptions.portfolioGoal,
-                    earlyRetireTarget: assumptions.earlyRetireTarget,
-                    mortBalance: assumptions.mortBalance || 0,
-                    mortRate: assumptions.mortRate || 6.5,
-                    mortStart: assumptions.mortStart || "2020-01",
-                    mortTerm: assumptions.mortTerm || 30,
-                    mortExtra: assumptions.mortExtra || 0,
-                    mortPI: assumptions.mortPI || 0,
-                    properties: assumptions.properties || [],
-                    reGrowthRate: assumptions.reGrowthRate ?? 3.0,
-                    accounts: assumptions.accounts || [],
-                    housingType: assumptions.housingType || "own",
-                    annualRent: assumptions.annualRent || 0,
-                    carveouts: assumptions.carveouts || [],
-                    rothConversionTarget: assumptions.rothConversionTarget || "off",
-                    taxFunding: assumptions.taxFunding || "from_taxable",
-                    fafsaGuard: assumptions.fafsaGuard || false,
-                    fafsaEndYear: assumptions.fafsaEndYear || null,
-                    cssEndYear: assumptions.cssEndYear || null,
-                    abReliability: assumptions.abReliability,
-                    abGrowth: assumptions.abGrowth,
-                    ssCola: assumptions.ssCola,
-                    preRetireEq: assumptions.preRetireEq,
-                    postRetireEq: assumptions.postRetireEq,
-                    hcShockAge: assumptions.hcShockAge,
-                    hcProb: assumptions.hcProb,
-                    hcMin: assumptions.hcMin,
-                    hcMax: assumptions.hcMax,
-                    cashRealReturn: assumptions.cashRealReturn ?? 1.0,
-                    useJointRmdTable: assumptions.useJointRmdTable || false,
-                    otherIncomes: assumptions.otherIncomes || [],   // <-- correct field name
-                    checkpoints: assumptions.checkpoints || [],
+                    endAge,
+                    port,
+                    contrib,
+                    inf,
+                    sp,
+                    ssb,
+                    ab,
+                    useAb,
+                    smile,
+                    tax,
+                    real,
                     exportedAt: new Date().toISOString(),
                     appVersion: APP_VERSION,
                   },
@@ -6929,7 +7025,7 @@ export default function AiRAForecaster() {
                 }
                 // --Carveouts and checkpoints should always be arrays, and checkpoints should have string IDs for React keys--
                   if (!Array.isArray(data.carveouts)) data.carveouts = [];
-                // --- Checkpoints migration ---
+                  if (!Array.isArray(data.otherIncomes)) data.otherIncomes = [];
                   if (!Array.isArray(data.checkpoints)) {
                     data.checkpoints = [];
                   } else {
@@ -7628,6 +7724,7 @@ export default function AiRAForecaster() {
                     currentPort={params.port}
                     contrib={params.contrib}
                     preRetireEq={params.preRetireEq ?? 91}
+                    sex={assumptions.sex}
                   />
                 )}
                 {activeTab === "montecarlo" && (
@@ -7650,6 +7747,7 @@ export default function AiRAForecaster() {
                         )
                       }
                       dob={assumptions.dob}
+                      sex={assumptions.sex}
                       withdrawalStrategy={assumptions.withdrawalStrategy}
                       onSetBaselineFromCheckpoint={(value) => {
                         setPort(value);
@@ -7683,6 +7781,7 @@ export default function AiRAForecaster() {
                         currentPort={params.port}
                         contrib={params.contrib}
                         preRetireEq={params.preRetireEq ?? 91}
+                        sex={assumptions.sex}
                       />
                     )}
                   </>
@@ -7709,6 +7808,7 @@ export default function AiRAForecaster() {
                     withdrawalStrategy={assumptions.withdrawalStrategy}
                     checkpoints={assumptions.checkpoints}
                     dob={assumptions.dob}
+                    sex={assumptions.sex}
                   />
                 )}
                 {activeTab === "income" && <IncomeMap p={params} inf={inf} />}
