@@ -1780,11 +1780,11 @@ const CSS = `
   .mbtn { padding:5px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.12); cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:#94a3b8; }
   .mbtn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
   .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
-  .layout { display:grid; grid-template-columns:268px 1fr; height:calc(100vh - 56px); overflow:hidden; }
+  .layout { display:grid; grid-template-columns:300px 1fr; height:calc(100vh - 56px); overflow:hidden; }
   .sidebar { border-right:1px solid rgba(255,255,255,0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
   .sb-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:13px; }
   .sb-title { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.12em; margin-bottom:12px; }
-  .sl-row { display:grid; grid-template-columns:108px 1fr 66px; align-items:center; gap:8px; margin-bottom:13px; }
+  .sl-row { display:grid; grid-template-columns:84px 1fr 58px; align-items:center; gap:8px; margin-bottom:13px; }
   .sl-label { font-size:12px; color:#cbd5e1; font-weight:500; }
   .sl-val { font-size:12px; font-weight:700; text-align:right; color:#f1f5f9; font-family:'JetBrains Mono',monospace; }
   input[type=range] { display:none; }
@@ -6654,6 +6654,23 @@ export default function AiRAForecaster() {
                 >
                   {fmtM(port)}
                 </span>
+              </div>
+            </div>
+
+            <div className="sb-card">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  { label: "Retirement monthly income", value: Math.round(sp / 12), color: "#e2e8f0" },
+                  { label: "Safe spending target", value: Math.round(port * 0.04 / 12), color: "#4ade80" },
+                ].map(({ label, value, color }) => (
+                  <div key={label}>
+                    <div style={{ fontSize: 9, color: "#64748b", marginBottom: 4, lineHeight: 1.3 }}>{label}</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px" }}>
+                      ${value.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: 9, color: "#334155", marginTop: 1 }}>per month</div>
+                  </div>
+                ))}
               </div>
             </div>
 
