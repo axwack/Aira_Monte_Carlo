@@ -16,7 +16,7 @@
     "react-is": "19.2.4",
     "react-scripts": "^5.0.0",
     "recharts": "3.8.0",
-    "wrangler": "^4.85.0"
+    "wrangler": "^4.86.0"
   },
   "devDependencies": {
     "@types/react": "19.0.0",
