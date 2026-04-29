@@ -1060,7 +1060,8 @@ function simulateDeterministic(p, inf) {
     const ab = p.useAb
       ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20)))
       : 0;
-    const need = Math.max(0, sp - ss - ab);
+    const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
+    const need = Math.max(0, sp - ss - ab - otherIncTotal);
 
     const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
@@ -1075,7 +1076,7 @@ function simulateDeterministic(p, inf) {
     schedule.push({
       age, yr,
       spending: Math.round(sp),
-      ss, Rental: effectiveAb, OtherIncome: Math.round(otherIncTotal),
+      ss, Rental: ab, OtherIncome: Math.round(otherIncTotal),
       portfolioDraw: Math.round(need),
       fedTax: taxResult.fedTax,
       stateTax: taxResult.stateTax,
@@ -1226,7 +1227,8 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
     const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
     const ab = p.useAb ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20))) : 0;
-    const need = Math.max(0, sp - ss - ab);
+    const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
+    const need = Math.max(0, sp - ss - ab - otherIncTotal);
     const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
@@ -1234,7 +1236,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     schedule.push({
       age, yr,
       spending: Math.round(sp),
-      ss, Rental: effectiveAb, OtherIncome: Math.round(otherIncTotal),
+      ss, Rental: ab, OtherIncome: Math.round(otherIncTotal),
       portfolioDraw: Math.round(need),
       fedTax: taxResult.fedTax,
       stateTax: taxResult.stateTax,
