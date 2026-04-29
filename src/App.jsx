@@ -4819,6 +4819,13 @@ function NetWorthTab({ p, results90, inf }) {
           </div>
           <div className="ms">NOT in liquid total</div>
         </div>
+        <div className="met">
+          <div className="ml">Safe spending target</div>
+          <div className="mv" style={{ color: "#4ade80", fontSize: 18 }}>
+            ${Math.round(p.port * 0.04 / 12).toLocaleString()}
+          </div>
+          <div className="ms">4% rule · per month</div>
+        </div>
       </div>
 
       <div className="chart-card">
@@ -7286,23 +7293,6 @@ export default function AiRAForecaster() {
                 );
               })()}
             </div>
-            <div className="sb-card">
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                {[
-                  { label: "Retirement monthly income", value: Math.round(sp / 12), color: "#e2e8f0" },
-                  { label: "Safe spending target", value: Math.round(port * 0.04 / 12), color: "#4ade80" },
-                ].map(({ label, value, color }) => (
-                  <div key={label}>
-                    <div style={{ fontSize: 9, color: "#64748b", marginBottom: 4, lineHeight: 1.3 }}>{label}</div>
-                    <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px" }}>
-                      ${value.toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: 9, color: "#334155", marginTop: 1 }}>per month</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             <div className="sb-card">
               <div className="sb-title">MC Engine — {APP_VERSION}</div>
               <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
