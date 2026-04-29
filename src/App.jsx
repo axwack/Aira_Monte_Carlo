@@ -883,11 +883,16 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     results.push({ path, survived, exhaustAge, portAtRetire });
   }
 
+<<<<<<< HEAD
   // Aggregate results (unchanged)
   const pL = results[0].path.length;
+=======
+  // Aggregate results
+>>>>>>> 69c76dddc26c56901789e4412839a2692e72af95
   const pcts = [];
-  for (let t = 0; t < pL; t++) {
-    const vals = results.map(r => r.path[t]).sort((a, b) => a - b);
+  for (let t = 0; t <= retYrs; t++) {
+    // Use ?? 0 so exhausted paths count as $0, not undefined
+    const vals = results.map(r => r.path[t] ?? 0).sort((a, b) => a - b);
     const q = pct => vals[Math.floor(pct * (vals.length - 1))];
     pcts.push({
       age: p.retireAge + t,
