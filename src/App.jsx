@@ -785,7 +785,8 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * inflY) : 0);
       }, 0);
 
-      const need = Math.max(0, sp - ss - effectiveAb) + housingCost + carveoutCost;
+      const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, calYear);
+      const need = Math.max(0, sp - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost;
 
       // RMD calculation
       let rmd = 0;
