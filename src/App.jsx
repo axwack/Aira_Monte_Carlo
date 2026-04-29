@@ -85,9 +85,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.5";
-export const BUILD_TAG = "SSA Mortality figures";
-export const BUILD_TIME = "2026-04-27 9:50am EST";
+const APP_VERSION = "1.0.5.1";
+export const BUILD_TAG = "Fixed a bug where an exhausted MC was shooting off the charts. ";
+export const BUILD_TIME = "2026-04-28 9:50am EST";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -883,12 +883,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     results.push({ path, survived, exhaustAge, portAtRetire });
   }
 
-<<<<<<< HEAD
-  // Aggregate results (unchanged)
-  const pL = results[0].path.length;
-=======
   // Aggregate results
->>>>>>> 69c76dddc26c56901789e4412839a2692e72af95
   const pcts = [];
   for (let t = 0; t <= retYrs; t++) {
     // Use ?? 0 so exhausted paths count as $0, not undefined
