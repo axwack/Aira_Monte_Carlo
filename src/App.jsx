@@ -85,9 +85,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.5.1";
-export const BUILD_TAG = "Fixed a bug where an exhausted MC was shooting off the charts. ";
-export const BUILD_TIME = "2026-04-28 9:50am EST";
+const APP_VERSION = "1.0.5.2";
+export const BUILD_TAG = "Fixed a bug where an exhausted MC was shooting off the charts. Added an income panel ";
+export const BUILD_TIME = "2026-04-28";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -7607,6 +7607,38 @@ export default function AiRAForecaster() {
                   {swr}%
                 </div>
                 <div className="ms">4% = safe benchmark</div>
+              </div>
+              <div className="met">
+                <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  Safe Spending Limit
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      background: "rgba(255,255,255,0.1)",
+                      color: "#64748b",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: "help",
+                    }}
+                    title=" The amount of Money that is Safe to Spend for Expenses. ">
+                    ⓘ
+                  </span>
+                </div>
+                <div
+                  className="mv"
+                  style={{
+                    color: "#fbbf24",
+                    fontSize: 20,
+                  }}
+                >
+                 ${(Math.round(params.sp / 12)).toLocaleString()}<span style={{ fontSize: 11 }}>/mo</span>
+                </div>
+                <div className="ms">Total cash needed to cover spending = Portfolio Draw + Rental Net</div>
               </div>
             </div>
 
