@@ -668,15 +668,13 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
 
       // ========== WITHDRAWAL STRATEGY ==========
       if (y === 0) {
-        if (withdrawalStrategy === "fixed") {
-          const fixedRate = p.fixedWithdrawalRate ?? 0.04;
-          sp = totalPort * fixedRate;
-        }
+        // First year: use target spend (p.sp)
       } else {
         if (withdrawalStrategy === "gk") {
           sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
         }
         else if (withdrawalStrategy === "fixed") {
+          // Pure fixed %: draw = rate × port. No GK clamp — that defeats the purpose.
           const fixedRate = p.fixedWithdrawalRate ?? 0.04;
           sp = totalPort * fixedRate;
         }
@@ -787,16 +785,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * inflY) : 0);
       }, 0);
 
-      const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, calYear);
-      let need =
-        withdrawalStrategy === "fixed"
-          ? sp + housingCost + carveoutCost - otherIncTotal
-          : Math.max(0, sp - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost;
-
-      // ---- NaN guards ----
-      if (isNaN(sp)) sp = p.sp || 0;
-      if (isNaN(need)) need = 0;
-      if (isNaN(totalPort)) totalPort = 0;
+      const need = Math.max(0, sp - ss - ab) + housingCost + carveoutCost;
 
       // RMD calculation
       let rmd = 0;
@@ -1029,19 +1018,13 @@ function simulateDeterministic(p, inf) {
     const adjCeiling = gkCeiling * cumInfl;
 
     // ========== WITHDRAWAL STRATEGY (mirrors runMC) ==========
-    if (y === 0 && strategy === "fixed") {
-      sp = port * (p.fixedWithdrawalRate ?? 0.04);
-    }
-
     if (y > 0 && port > 0) {
       if (strategy === "gk") {
         sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
-      } 
-      else if (strategy === "fixed") {
+      } else if (strategy === "fixed") {
         const fixedRate = p.fixedWithdrawalRate ?? 0.04;
-        sp = port * fixedRate;
-      } 
-      else if (strategy === "vanguard") {
+        sp = Math.max(adjFloor, Math.min(adjCeiling, port * fixedRate));
+      } else if (strategy === "vanguard") {
         const initialRate = p.vanguardInitialRate ?? 0.04;
         const cap = p.vanguardCap ?? 0.05;
         const floorRate = p.vanguardFloor ?? -0.025;
@@ -1070,13 +1053,15 @@ function simulateDeterministic(p, inf) {
     }
     lastReturn = ret;
 
-    const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y)): 0;
-    const detGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
-    const propIncome = Math.round((p.propIncome || 0) * detGrowth);
-    const effectiveAb = (p.abEndYear && yr > p.abEndYear) ? 0 : propIncome;
-    const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, yr);
-    const need = strategy === "fixed" ? Math.max(0, sp - otherIncTotal) : Math.max(0, sp - ss - effectiveAb - otherIncTotal);
-    const taxResult = calcYearTax(age, yr, need, ss, effectiveAb + otherIncTaxable, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+    const ss = age >= p.ssAge
+      ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y))
+      : 0;
+    const ab = p.useAb
+      ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20)))
+      : 0;
+    const need = Math.max(0, sp - ss - ab);
+
+    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -1142,15 +1127,13 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
     // Apply withdrawal strategy (deterministic version)
     if (y === 0) {
-       if (withdrawalStrategy === "fixed") {
-        sp = port * (p.fixedWithdrawalRate ?? 0.04);
-      }
-      // All other strategies: year-0 sp stays at p.sp (target spend)
+      // first year: use target spend
     } else {
       if (withdrawalStrategy === "gk") {
         sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
       }
       else if (withdrawalStrategy === "fixed") {
+        // Pure fixed %: draw = rate × port. No GK clamp.
         const fixedRate = p.fixedWithdrawalRate ?? 0.04;
         sp = port * fixedRate;
       }
@@ -1241,13 +1224,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     lastReturn = ret;
 
     const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
-    const dwsGrowth = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
-    const propIncome = Math.round((p.propIncome || 0) * dwsGrowth);
-    const effectiveAb = (p.abEndYear && yr > p.abEndYear) ? 0 : propIncome;
-    const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, yr);
-
-    const need = withdrawalStrategy === "fixed" ? Math.max(0, sp - otherIncTotal) : Math.max(0, sp - ss - effectiveAb - otherIncTotal);
-    const taxResult = calcYearTax(age, yr, need, ss, effectiveAb + otherIncTaxable, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+    const ab = p.useAb ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20))) : 0;
+    const need = Math.max(0, sp - ss - ab);
+    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
