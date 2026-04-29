@@ -4822,7 +4822,7 @@ function NetWorthTab({ p, results90, inf }) {
         <div className="met">
           <div className="ml">Safe spending target</div>
           <div className="mv" style={{ color: "#4ade80", fontSize: 18 }}>
-            ${Math.round(p.port * 0.04 / 12).toLocaleString()}
+            ${Math.round(((p.accounts||[]).reduce((s,a)=>s+(a.balance||0),0)||p.port||0) * 0.04 / 12).toLocaleString()}
           </div>
           <div className="ms">4% rule · per month</div>
         </div>
