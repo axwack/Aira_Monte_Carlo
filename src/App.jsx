@@ -1920,7 +1920,7 @@ const Tip = ({ active, payload, label }) => {
         .map((p, i) => (
           <div key={i} style={{ color: p.color, marginBottom: 1 }}>
             <span style={{ color: "#94a3b8" }}>{p.name}: </span>
-            {fmtM(p.value)}
+            {p.name === "P(alive)" ? `${Math.round(p.value * 100)}%` : fmtM(p.value)}
           </div>
         ))}
     </div>
@@ -2492,7 +2492,7 @@ function computeSurvivalCurve(startAge, endAge, sex = "blended") {
 
 function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, preRetireEq, sex }) {
   const [showTargets, setShowTargets] = useState(true);
-  const [showMortality, setShowMortality] = useState(true);
+  const [showMortality, setShowMortality] = useState(false);
 
   const rawData = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
 
