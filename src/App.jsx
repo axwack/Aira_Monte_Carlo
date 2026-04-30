@@ -4950,7 +4950,7 @@ function generateActions({
   const actions = [];
   const swr = (params.sp / params.port) * 100;
   const isNoTaxState = params.twoHousehold;
-  const _accts = BLANK_PROFILE.accounts || [];
+  const _accts = params.accounts || [];
   const preTaxTotal = _accts.filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
   const _rothTotal = _accts.filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
   const rothPct = params.port > 0 ? _rothTotal / params.port : 0;
@@ -5042,7 +5042,7 @@ function generateActions({
       deadline: "Pre-retirement",
     });
   }
-  const _hsaBal = (BLANK_PROFILE.accounts || []).filter(a => a.category === "hsa").reduce((s, a) => s + (a.balance || 0), 0);
+  const _hsaBal = (params.accounts || []).filter(a => a.category === "hsa").reduce((s, a) => s + (a.balance || 0), 0);
   if (_hsaBal < 50000) {
     actions.push({
       priority: "yellow",
@@ -5079,7 +5079,7 @@ function generateActions({
       deadline: "Before retirement",
     });
   }
-  const taxableBrok = BLANK_PROFILE.taxableBrok|| 0;
+  const taxableBrok = (params.accounts || []).filter(a => a.category === "taxable").reduce((s, a) => s + (a.balance || 0), 0);
   if (taxableBrok < 50000) {
     actions.push({
       priority: "yellow",
