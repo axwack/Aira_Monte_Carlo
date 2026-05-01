@@ -7508,13 +7508,6 @@ export default function AiRAForecaster() {
 
           <div className="main">
 
-            <div className="flag-i">
-              🛡 {getStrategyLabel(assumptions.withdrawalStrategy)} active · WR {swr}% ·{" "}
-              {assumptions.withdrawalStrategy === "fixed" && <>Fixed Rate: {assumptions.fixedWithdrawalRate || 4.0}% · </>}
-              {assumptions.twoHousehold ? "Solo abroad (out-of-state spend, no state tax)" : "Normal mode (primary spend, state tax)"} · Rental{" "}
-              {assumptions.abReliability || 80}% reliable · Healthcare shocks modeled
-            </div>
-
             {stale && (
               <div
                 style={{
