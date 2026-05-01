@@ -6648,8 +6648,15 @@ function formatDate(dateString) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+const LS_WELCOMED_KEY = "aira_welcomed_v1";
+
 export default function AiRAForecaster() {
-  const [activeTab, setTab] = useState("networth");
+  const [activeTab, setTab] = useState(() =>
+    loadProfileFromLocal() ? "networth" : "assumptions"
+  );
+  const [showWelcome, setShowWelcome] = useState(
+    () => !loadProfileFromLocal() && !localStorage.getItem(LS_WELCOMED_KEY)
+  );
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
   const [r85, setR85] = useState(null);
@@ -6695,6 +6702,11 @@ export default function AiRAForecaster() {
     }
     return { ...BLANK_PROFILE };
   });
+
+  const dismissWelcome = () => {
+    localStorage.setItem(LS_WELCOMED_KEY, "1");
+    setShowWelcome(false);
+  };
 
   const updateAssumption = useCallback(
     (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
@@ -7050,6 +7062,8 @@ export default function AiRAForecaster() {
                   }));
 
                   setStale(true);
+                  dismissWelcome();
+                  setTab("networth");
                   alert(`✅ Profile loaded${data.name ? ` for ${data.name}` : ""}. Press ▶ Run Monte Carlo to update.`);
                 })
               }
@@ -7845,6 +7859,40 @@ export default function AiRAForecaster() {
                   />
                 )}
                 {activeTab === "assumptions" && (
+                  <>
+                  {showWelcome && (
+                    <div style={{
+                      background: "linear-gradient(135deg, rgba(37,99,235,0.18), rgba(16,185,129,0.12))",
+                      border: "1px solid rgba(37,99,235,0.35)",
+                      borderRadius: 12,
+                      padding: "18px 22px",
+                      marginBottom: 18,
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 14,
+                    }}>
+                      <span style={{ fontSize: 28, lineHeight: 1 }}>👋</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: "#e2e8f0", marginBottom: 4 }}>
+                          Welcome to AiRA Freedom Financial
+                        </div>
+                        <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                          Fill in your profile below to get started, or use the <strong style={{ color: "#60a5fa" }}>⬆ Import</strong> button
+                          in the toolbar to load a saved profile. Once your data is entered, hit <strong style={{ color: "#34d399" }}>▶ Run Monte Carlo</strong> to
+                          see your retirement forecast.
+                        </div>
+                      </div>
+                      <button
+                        onClick={dismissWelcome}
+                        title="Dismiss"
+                        style={{
+                          background: "none", border: "none", color: "#64748b",
+                          cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 2px",
+                          flexShrink: 0,
+                        }}
+                      >×</button>
+                    </div>
+                  )}
                   <ProfileWizard
                     values={{
                       ...assumptions,
@@ -7871,6 +7919,7 @@ export default function AiRAForecaster() {
                       if (k === "ab") setAb(v);
                     }}
                   />
+                  </>
                 )}
               </>
             )}
