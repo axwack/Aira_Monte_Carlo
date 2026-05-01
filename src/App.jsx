@@ -7507,14 +7507,6 @@ export default function AiRAForecaster() {
           </div>
 
           <div className="main">
-            {!assumptions.dob && (
-              <div style={{ background: "rgba(14,165,233,0.1)", border: "2px solid rgba(14,165,233,0.3)", borderRadius: 9, padding: "12px 16px" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#38bdf8" }}>📂 No profile loaded</div>
-                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
-                  Click ⬆ Import in the header to load your AiRA_Profile.json, or go to 👤 Profile tab to enter data manually, then Export to save it.
-                </div>
-              </div>
-            )}
 
             <div className="flag-i">
               🛡 {getStrategyLabel(assumptions.withdrawalStrategy)} active · WR {swr}% ·{" "}
