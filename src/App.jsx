@@ -354,6 +354,7 @@ export const BLANK_PROFILE = {
   fafsaGuard: false,            // cap Roth conversions during college aid years
   fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window)
   cssEndYear: null,             // last year to cap at 22% (CSS Profile window)
+  cssBlockConversions: false,   // true = zero out ALL conversions during FAFSA/CSS years (CSS Profile schools)
   // Account breakdown (feeds port total)
   accounts: [
     { id: "1", category: "pretax", name: "401(k)", balance: 0 },
@@ -1367,6 +1368,7 @@ function buildRothExplorer(params = {}) {
     fafsaGuard = false,
     fafsaEndYear = null,
     cssEndYear = null,
+    cssBlockConversions = false,  // when true: zero out ALL conversions during FAFSA/CSS years
   } = params;
 
   // Safeguard: if critical numbers are missing, return empty or throw a helpful error
@@ -1499,11 +1501,14 @@ function buildRothExplorer(params = {}) {
           targetTop = b22t; capReason = "IRMAA lookback (age 60–65)";
         }
         // FAFSA/CSS college-aid guards (opt-in for households with college-age children)
-        if (fafsaGuard && fafsaEndYear && yr <= fafsaEndYear && b12t < targetTop) {
-          targetTop = b12t; capReason = `FAFSA guard (≤${fafsaEndYear})`;
-        }
-        if (fafsaGuard && cssEndYear && yr <= cssEndYear && (!fafsaEndYear || yr > fafsaEndYear) && b22t < targetTop) {
-          targetTop = b22t; capReason = `CSS Profile guard (≤${cssEndYear})`;
+        const inFafsaWindow = fafsaGuard && fafsaEndYear && yr <= fafsaEndYear;
+        const inCssWindow   = fafsaGuard && cssEndYear && yr <= cssEndYear && (!fafsaEndYear || yr > fafsaEndYear);
+        if (cssBlockConversions && (inFafsaWindow || inCssWindow)) {
+          // Hard block: any conversion this year increases parental income on CSS/FAFSA forms
+          targetTop = 0; capReason = inFafsaWindow ? `CSS block — FAFSA window (≤${fafsaEndYear})` : `CSS block — CSS window (≤${cssEndYear})`;
+        } else {
+          if (inFafsaWindow && b12t < targetTop) { targetTop = b12t; capReason = `FAFSA guard (≤${fafsaEndYear})`; }
+          if (inCssWindow  && b22t < targetTop) { targetTop = b22t; capReason = `CSS Profile guard (≤${cssEndYear})`; }
         }
         const room = Math.max(0, targetTop - txBC);
 
@@ -3059,6 +3064,7 @@ function RothLadder({ params }) {
       params?.fafsaGuard,
       params?.fafsaEndYear,
       params?.cssEndYear,
+      params?.cssBlockConversions,
       rothMode,
     ]
   );
@@ -6246,27 +6252,40 @@ function AssumptionsPanel({ values, onChange }) {
           accent="#f59e0b"
         />
         {(values.fafsaGuard ?? false) && (
-          <div style={{ display: "flex", gap: 16, marginTop: 6, marginLeft: 4 }}>
-            <ARow label="FAFSA cap through year" desc="Cap conversions at 12% bracket through this year (FAFSA uses 2-yr prior income)">
-              <input
-                type="number"
-                value={values.fafsaEndYear || ""}
-                onChange={(e) => onChange("fafsaEndYear", e.target.value ? parseInt(e.target.value) : null)}
-                placeholder="e.g. 2031"
-                min={2026} max={2060}
-                style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
-              />
-            </ARow>
-            <ARow label="CSS Profile cap through year" desc="Cap conversions at 22% bracket through this year (CSS Profile period)">
-              <input
-                type="number"
-                value={values.cssEndYear || ""}
-                onChange={(e) => onChange("cssEndYear", e.target.value ? parseInt(e.target.value) : null)}
-                placeholder="e.g. 2033"
-                min={2026} max={2060}
-                style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
-              />
-            </ARow>
+          <div style={{ marginTop: 6, marginLeft: 4 }}>
+            <div style={{ display: "flex", gap: 16, marginBottom: 8 }}>
+              <ARow label="FAFSA cap through year" desc="Cap conversions at 12% bracket through this year (FAFSA uses 2-yr prior income)">
+                <input
+                  type="number"
+                  value={values.fafsaEndYear || ""}
+                  onChange={(e) => onChange("fafsaEndYear", e.target.value ? parseInt(e.target.value) : null)}
+                  placeholder="e.g. 2031"
+                  min={2026} max={2060}
+                  style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
+                />
+              </ARow>
+              <ARow label="CSS Profile cap through year" desc="Cap conversions at 22% bracket through this year (CSS Profile period)">
+                <input
+                  type="number"
+                  value={values.cssEndYear || ""}
+                  onChange={(e) => onChange("cssEndYear", e.target.value ? parseInt(e.target.value) : null)}
+                  placeholder="e.g. 2033"
+                  min={2026} max={2060}
+                  style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
+                />
+              </ARow>
+            </div>
+            <Toggle
+              val={values.cssBlockConversions ?? false}
+              onChange={(v) => onChange("cssBlockConversions", v)}
+              label="🚫 Hard block: zero conversions during FAFSA/CSS years (CSS Profile schools count ALL parental income)"
+              accent="#ef4444"
+            />
+            {(values.cssBlockConversions ?? false) && (
+              <div style={{ fontSize: 11, color: "#f87171", marginTop: 4, marginLeft: 2 }}>
+                Roth conversions will be $0 in years covered by the FAFSA or CSS Profile windows above. Re-enable after your last child's last CSS year.
+              </div>
+            )}
           </div>
         )}
         <ARow label="Tax funding source" desc="How conversion taxes are paid. 'Outside cash' is most favorable (full conversion grows tax-free). 'From taxable' debits your taxable/HSA/cash buckets. 'From conversion' shrinks the Roth transfer by the tax owed.">
@@ -6942,6 +6961,7 @@ export default function AiRAForecaster() {
       fafsaGuard: assumptions.fafsaGuard || false,
       fafsaEndYear: assumptions.fafsaEndYear || null,
       cssEndYear: assumptions.cssEndYear || null,
+      cssBlockConversions: assumptions.cssBlockConversions || false,
       preRetireEq: assumptions.preRetireEq,
       postRetireEq: assumptions.postRetireEq,
       hcShockAge: assumptions.hcShockAge,
