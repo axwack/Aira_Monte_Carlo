@@ -3027,7 +3027,11 @@ function RothLadder({ params }) {
   
   const [showInputs, setShowInputs] = useState(false);
   const [view, setView] = useState("optimized");
-  const [rothMode, setRothMode] = useState("fill_22");
+  const [rothMode, setRothMode] = useState(
+    params?.rothConversionTarget && params.rothConversionTarget !== "off"
+      ? params.rothConversionTarget
+      : "fill_22"
+  );
   const ex = useMemo(
     () => buildRothExplorer({ ...(params ?? {}), rothMode }),
     [
@@ -3046,6 +3050,14 @@ function RothLadder({ params }) {
       params?.filingStatus,
       params?.rmdStartAge,
       params?.taxFunding,
+      params?.endAge,
+      params?.stateOfResidence,
+      params?.sp,
+      params?.gkFloor,
+      params?.gkCeiling,
+      params?.fafsaGuard,
+      params?.fafsaEndYear,
+      params?.cssEndYear,
       rothMode,
     ]
   );
@@ -3782,8 +3794,39 @@ const modeDescs = {
                 </div>
               </div>
             </div>
+            {(() => {
+              const optPreRmd = opt.rows.filter(r => r.age < rmdAge).reduce((s, r) => s + r.totT, 0);
+              const optPostRmd = opt.rows.filter(r => r.age >= rmdAge).reduce((s, r) => s + r.totT, 0);
+              const curPreRmd = cur.rows.filter(r => r.age < rmdAge).reduce((s, r) => s + r.totT, 0);
+              const curPostRmd = cur.rows.filter(r => r.age >= rmdAge).reduce((s, r) => s + r.totT, 0);
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10, fontSize: 11 }}>
+                  <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "7px 10px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ color: "#64748b", marginBottom: 4 }}>Pre-RMD tax (ages {params.retireAge}–{rmdAge - 1})</div>
+                    <div style={{ color: "#0d9488" }}>OPT: {fmtM(optPreRmd)}</div>
+                    <div style={{ color: "#94a3b8" }}>CUR: {fmtM(curPreRmd)}</div>
+                    <div style={{ color: optPreRmd > curPreRmd ? "#fb923c" : "#34d399", marginTop: 2 }}>
+                      {optPreRmd > curPreRmd ? `▲ +${fmtM(optPreRmd - curPreRmd)} conversion cost` : `▼ ${fmtM(curPreRmd - optPreRmd)} savings`}
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "7px 10px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ color: "#64748b", marginBottom: 4 }}>RMD-years tax (ages {rmdAge}–{params.endAge || 90})</div>
+                    <div style={{ color: "#0d9488" }}>OPT: {fmtM(optPostRmd)}</div>
+                    <div style={{ color: "#94a3b8" }}>CUR: {fmtM(curPostRmd)}</div>
+                    <div style={{ color: optPostRmd < curPostRmd ? "#34d399" : "#fb923c", marginTop: 2 }}>
+                      {optPostRmd < curPostRmd ? `▼ ${fmtM(curPostRmd - optPostRmd)} RMD savings` : `▲ +${fmtM(optPostRmd - curPostRmd)} extra`}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+            {taxD > 0 && (
+              <div style={{ fontSize: 11, color: "#fb923c", background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.2)", borderRadius: 6, padding: "8px 10px", marginBottom: 10 }}>
+                ⚠️ Conversion cost exceeds RMD savings at {modeLabels[rothMode] || rothMode}. For {params.stateOfResidence || "NJ"} residents, try <strong>Fill 12%</strong> — lower conversion taxes improve the tradeoff, especially in early retirement before Social Security begins.
+              </div>
+            )}
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
-              Year-by-year tax paid — red spike = conversion tax years, green relief = lower RMD taxes
+              Year-by-year tax paid — teal spikes = conversion tax years, lower bars after {rmdAge} = RMD relief
             </div>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart
