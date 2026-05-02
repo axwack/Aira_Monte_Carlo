@@ -349,6 +349,7 @@ export const BLANK_PROFILE = {
   housingType: "own",           // "own" | "rent" | "none"
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
   carveouts: [],                // [{id, label, annual, endYear}] fixed obligations (car, HOA, etc.)
+  rmdStartAge: null,            // null = auto (SECURE 2.0: 75 if born 1960+, 73 if 1951-1959, 72 earlier)
   rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
   fafsaGuard: false,            // cap Roth conversions during college aid years
   fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window)
@@ -3892,29 +3893,48 @@ const modeDescs = {
           <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
             <strong style={{ color: "#e2e8f0" }}>OPT</strong> = With Roth conversion ladder &nbsp;|&nbsp; <strong style={{ color: "#e2e8f0" }}>CUR</strong> = Without conversions &nbsp;|&nbsp; <span style={{ color: "#f87171" }}>Red numbers</span> = you're paying more tax that year by choice to pay less at {rmdAge}
           </div>
+          <div style={{ maxHeight: 480, overflowY: "auto" }}>
           <table className="roth-tbl">
             <thead>
               <tr>
                 <th>Year</th>
                 <th>Age</th>
-                <th>Optimal Rate</th>
-                <th>Current Rate</th>
-                <th>Optimal Tax</th>
-                <th>Current Tax</th>
-                <th>Optimal RMD</th>
-                <th>Current RMD</th>
+                <th>Milestone</th>
+                <th>Opt Rate</th>
+                <th>Cur Rate</th>
+                <th>Opt Tax</th>
+                <th>Cur Tax</th>
+                <th>Opt RMD</th>
+                <th>Cur RMD</th>
               </tr>
             </thead>
             <tbody>
               {opt.rows
-                .filter((r) => r.age >= 60 && r.age <= 90)
-                .filter((_, i) => i % 2 === 0 || i < 12)
+                .filter((r) => r.age >= (params.retireAge || 60) && r.age <= (params.endAge || 90))
                 .map((r) => {
                   const c = cur.rows.find((cr) => cr.yr === r.yr);
+                  const ms = r.age === rmdAge
+                    ? { label: "RMDs begin", color: "#f87171" }
+                    : r.age === ssAge
+                    ? { label: "SS starts", color: "#60a5fa" }
+                    : r.age === ssAge - 1
+                    ? { label: "Golden Year ★", color: "#fbbf24" }
+                    : r.age === (params.retireAge || 60)
+                    ? { label: "Retired", color: "#64748b" }
+                    : r.age === 66 && rothMode === "fill_24"
+                    ? { label: "24% opens", color: "#fb923c" }
+                    : null;
                   return (
-                    <tr key={r.yr} className={r.conv > 0 ? "gold" : ""}>
+                    <tr
+                      key={r.yr}
+                      className={r.conv > 0 ? "gold" : ""}
+                      style={ms ? { background: `${ms.color}10`, borderLeft: `2px solid ${ms.color}` } : {}}
+                    >
                       <td>{r.yr}</td>
                       <td style={{ color: "#94a3b8" }}>{r.age}</td>
+                      <td style={{ color: ms ? ms.color : "#334155", fontSize: 10, fontWeight: ms ? 700 : 400 }}>
+                        {ms ? ms.label : "—"}
+                      </td>
                       <td>{(r.effR * 100).toFixed(0)}%</td>
                       <td>{c ? (c.effR * 100).toFixed(0) : "0"}%</td>
                       <td style={{ color: "#f87171" }}>{fmtDollar(r.totT)}</td>
@@ -3931,15 +3951,16 @@ const modeDescs = {
                   );
                 })}
               <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.03)" }}>
-                <td colSpan={4} style={{ fontWeight: 700, color: "#e2e8f0", textAlign: "left" }}>Lifetime Totals</td>
+                <td colSpan={5} style={{ fontWeight: 700, color: "#e2e8f0", textAlign: "left" }}>Lifetime Totals</td>
                 <td style={{ color: "#f87171", fontWeight: 700 }}>{fmtM(opt.cTax)}</td>
                 <td style={{ color: "#94a3b8", fontWeight: 700 }}>{fmtM(cur.cTax)}</td>
                 <td colSpan={2} style={{ color: cur.cTax - opt.cTax > 0 ? "#34d399" : "#f87171", fontWeight: 700, textAlign: "left" }}>
-                  {cur.cTax - opt.cTax > 0 ? `✅ Lifetime savings: ${fmtM(cur.cTax - opt.cTax)}` : `⚠️ Net cost: ${fmtM(opt.cTax - cur.cTax)}`}
+                  {cur.cTax - opt.cTax > 0 ? `✅ Savings: ${fmtM(cur.cTax - opt.cTax)}` : `⚠️ Net cost: ${fmtM(opt.cTax - cur.cTax)}`}
                 </td>
               </tr>
             </tbody>
           </table>
+          </div>
         </div>
       )}
       <div
