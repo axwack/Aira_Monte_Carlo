@@ -3412,10 +3412,23 @@ const modeDescs = {
             : `🏠 Both in ${params.stateOfResidence || "your state"} (full spend, state tax applies)`}
         </span>
       </div>
+      {(() => {
+        const _cy = new Date().getFullYear();
+        const _pinned   = convRows.filter(r => r.capReason?.startsWith("manual") && r.yr >= _cy).length;
+        const _forecast = convRows.filter(r => !r.capReason?.startsWith("manual") && r.yr >= _cy).length;
+        const _past     = convRows.filter(r => r.yr < _cy).length;
+        return (
+          <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6, display: "flex", gap: 16, alignItems: "center" }}>
+            <span>📌 <strong style={{ color: "#fbbf24" }}>{_pinned} pinned</strong> — anchored to real income data</span>
+            <span>🔮 <strong style={{ color: "#5eead4" }}>{_forecast} forecasted</strong> — optimizer projection</span>
+            {_past > 0 && <span>📅 <strong style={{ color: "#475569" }}>{_past} past</strong> — historical</span>}
+          </div>
+        );
+      })()}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4,1fr)",
+          gridTemplateColumns: "repeat(5,1fr)",
           gap: 8,
         }}
       >
@@ -3425,6 +3438,15 @@ const modeDescs = {
             {convRows.length}
           </div>
           <div className="ms">during plan window</div>
+        </div>
+        <div className="met" style={{ border: convRows.filter(r => r.capReason?.startsWith("manual")).length > 0 ? "1px solid rgba(245,158,11,0.3)" : undefined }}>
+          <div className="ml">📌 Pinned / 🔮 Forecast</div>
+          <div className="mv" style={{ fontSize: 14 }}>
+            <span style={{ color: "#fbbf24" }}>{convRows.filter(r => r.capReason?.startsWith("manual") && r.yr >= new Date().getFullYear()).length}</span>
+            <span style={{ color: "#475569" }}> / </span>
+            <span style={{ color: "#5eead4" }}>{convRows.filter(r => !r.capReason?.startsWith("manual") && r.yr >= new Date().getFullYear()).length}</span>
+          </div>
+          <div className="ms">real anchor vs optimizer</div>
         </div>
         <div className="met">
           <div className="ml">Lifetime Tax Delta</div>
@@ -3728,68 +3750,73 @@ const modeDescs = {
                 <Bar dataKey="37%" stackId="br" fill="#991b1b" name="37%" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-            <table className="roth-tbl" style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 10, color: "#475569", margin: "8px 0 4px", display: "flex", gap: 14 }}>
+              <span>📌 <span style={{ color: "#fbbf24" }}>Amber</span> = pinned from Tax Room or manual entry</span>
+              <span>🔮 <span style={{ color: "#5eead4" }}>Default</span> = optimizer projection</span>
+              <span>📅 <span style={{ color: "#334155" }}>Gray</span> = historical (already past)</span>
+            </div>
+            <table className="roth-tbl" style={{ marginTop: 4 }}>
               <thead>
                 <tr>
                   <th>Year</th>
                   <th>Age</th>
                   <th>Label</th>
+                  <th>Source</th>
                   <th>Conversion</th>
                   <th>Fed Tax</th>
                   <th>State Tax</th>
                   <th>Bracket</th>
-                  <th title="Why conversion was capped this year">Cap</th>
                   <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg</th>
                   <th>Eff Rate</th>
                   <th>Net→Roth</th>
                 </tr>
               </thead>
               <tbody>
-                {convRows.map((r) => (
+                {convRows.map((r) => {
+                  const isPast   = r.yr < new Date().getFullYear();
+                  const isPinned = !isPast && r.capReason?.startsWith("manual");
+                  const rowBg = isPast
+                    ? "rgba(255,255,255,0.01)"
+                    : isPinned
+                    ? "rgba(245,158,11,0.07)"
+                    : undefined;
+                  const sourceLabel = isPast
+                    ? <span style={{ color: "#334155", fontSize: 9 }}>📅 Past</span>
+                    : isPinned
+                    ? <span style={{ color: "#fbbf24", fontWeight: 700, fontSize: 9 }}>📌 Pinned</span>
+                    : <span style={{ color: "#475569", fontSize: 9 }}>🔮 Forecast</span>;
+                  return (
                   <tr
                     key={r.yr}
                     className={r.label === "Golden Year ★" ? "gold" : ""}
+                    style={{ background: rowBg }}
                   >
-                    <td>{r.yr}</td>
-                    <td style={{ color: "#94a3b8" }}>{r.age}</td>
+                    <td style={{ color: isPast ? "#334155" : undefined }}>{r.yr}</td>
+                    <td style={{ color: isPast ? "#334155" : "#94a3b8" }}>{r.age}</td>
                     <td
                       style={{
-                        color: r.label.includes("Golden")
-                          ? "#fbbf24"
-                          : "#94a3b8",
+                        color: isPast ? "#334155" : r.label.includes("Golden") ? "#fbbf24" : "#94a3b8",
                         fontWeight: r.label.includes("Golden") ? 700 : 400,
                       }}
                     >
                       {r.label}
                     </td>
-                    <td style={{ color: "#e2e8f0" }}>{fmtDollar(r.conv)}</td>
-                    <td style={{ color: "#f87171" }}>{fmtDollar(r.fedT)}</td>
-                    <td style={{ color: isNoTaxState ? "#34d399" : "#fb923c" }}>
+                    <td>{sourceLabel}</td>
+                    <td style={{ color: isPast ? "#334155" : isPinned ? "#fbbf24" : "#e2e8f0", fontWeight: isPinned ? 700 : 400 }}>{fmtDollar(r.conv)}</td>
+                    <td style={{ color: isPast ? "#334155" : "#f87171" }}>{fmtDollar(r.fedT)}</td>
+                    <td style={{ color: isPast ? "#334155" : isNoTaxState ? "#34d399" : "#fb923c" }}>
                       {isNoTaxState ? "$0" : fmtDollar(r.stT)}
                     </td>
                     <td
                       style={{
-                        color:
-                          r.bracketUsed === "24%"
-                            ? "#fbbf24"
-                            : r.bracketUsed === "22%"
-                            ? "#5eead4"
-                            : "#94a3b8",
+                        color: isPast ? "#334155"
+                          : r.bracketUsed === "24%" ? "#fbbf24"
+                          : r.bracketUsed === "22%" ? "#5eead4"
+                          : "#94a3b8",
                         fontSize: 10,
                       }}
                     >
                       {r.bracketUsed}
-                    </td>
-                    <td
-                      style={{
-                        color: r.capReason && r.capReason.startsWith("mode")
-                          ? "#64748b"
-                          : "#fb923c",
-                        fontSize: 9,
-                      }}
-                      title={r.capReason || ""}
-                    >
-                      {r.capReason || "-"}
                     </td>
                     <td
                       style={{
@@ -3809,13 +3836,14 @@ const modeDescs = {
                     <td style={{ color: "#94a3b8" }}>
                       {(r.effR * 100).toFixed(1)}%
                     </td>
-                    <td style={{ color: "#14b8a6", fontWeight: 600 }}>
+                    <td style={{ color: isPast ? "#334155" : "#14b8a6", fontWeight: 600 }}>
                       {fmtDollar(r.conv - r.fedT - (isNoTaxState ? 0 : r.stT))}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 <tr style={{ borderTop: "1px solid rgba(255,255,255,0.12)" }}>
-                  <td style={{ fontWeight: 700 }} colSpan={3}>
+                  <td style={{ fontWeight: 700 }} colSpan={4}>
                     Total
                   </td>
                   <td style={{ fontWeight: 700 }}>{fmtM(opt.cConv)}</td>
@@ -3832,7 +3860,6 @@ const modeDescs = {
                       ? "$0"
                       : fmtM(convRows.reduce((s, r) => s + r.stT, 0))}
                   </td>
-                  <td>—</td>
                   <td>—</td>
                   <td>—</td>
                   <td>—</td>
