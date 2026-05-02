@@ -318,7 +318,7 @@ export const BLANK_PROFILE = {
   ssAge: 67,
   ssb: 24_000,
   ab: 0,
-  useAb: false,
+  useAb: true,
   smile: true,
   tax: true,
   real: true,
@@ -652,7 +652,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
     let startingPort = portAtRetire; // for Kitces ratcheting
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-    const ab0 = (p.useAb ? p.ab : 0) + (p.propIncome || 0);
+    const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
     const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
@@ -917,7 +917,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
     let lastReturn = 0;
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-    const ab0 = (p.useAb ? p.ab : 0) + (p.propIncome || 0);
+    const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
     const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
@@ -1001,7 +1001,7 @@ function simulateDeterministic(p, inf) {
   const gkFloor = p.gkFloor || 48_000;
   const gkCeiling = p.gkCeiling || 115_000;
   const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-  const ab0 = (p.useAb ? p.ab : 0) + (p.propIncome || 0);
+  const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const initDraw = Math.max(0, p.sp - ss0 - ab0);
   const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
@@ -1057,7 +1057,7 @@ function simulateDeterministic(p, inf) {
     const ss = age >= p.ssAge
       ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y))
       : 0;
-    const ab = p.useAb
+    const ab = p.ab > 0
       ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20)))
       : 0;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
@@ -1110,7 +1110,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   const gkFloor = p.gkFloor || 48_000;
   const gkCeiling = p.gkCeiling || 115_000;
   const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-  const ab0 = (p.useAb ? p.ab : 0) + (p.propIncome || 0);
+  const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const initDraw = Math.max(0, p.sp - ss0 - ab0);
   const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
@@ -1226,7 +1226,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     lastReturn = ret;
 
     const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
-    const ab = p.useAb ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20))) : 0;
+    const ab = p.ab > 0 ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20))) : 0;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
     const need = Math.max(0, sp - ss - ab - otherIncTotal);
     const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
@@ -1417,7 +1417,7 @@ function buildRothExplorer(params = {}) {
       lastReturn = gr;
     const totalPort0 = pretaxBal + rothBal;
     const ss0 = retireAge >= ssAge ? ssb : 0;
-    const ab0 = useAb ? ab : 0;
+    const ab0 = ab > 0 ? ab : 0;
     const initDraw0 = Math.max(0, baseSp - ss0 - ab0);
     const initWR = totalPort0 > 0 ? initDraw0 / totalPort0 : 0.04;
 
@@ -1451,7 +1451,7 @@ function buildRothExplorer(params = {}) {
 
       const ss = age >= ssAge ? Math.round(ssb * Math.pow(1.024, age - ssAge)) : 0;
       const ssT = Math.round(ss * 0.85);
-      const abn = useAb && age <= 80
+      const abn = ab > 0 && age <= 80
         ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
         : 0;
       const baseInc = ssT + abn;
@@ -2869,11 +2869,7 @@ function IncomeMap({ p, inf }) {
       const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1.024, i)) : 0;
       const incGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(i, 20));
       // Total property income (only source of rental income now)
-      let rental = Math.round((p.propIncome || 0) * incGrowth);
-      // Apply reliability
-      if (p.useAb) {
-        rental = 0; // If the toggle is off, rental is zero. Actually here we need a more nuanced approach. For the chart, it'll just show the expected value, so we can keep it as is.
-      }
+      let rental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * incGrowth);
       // Apply end year
       if (p.abEndYear && calYear > p.abEndYear) {
         rental = 0;
@@ -4323,7 +4319,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
               <div style={{ fontSize: 11, fontWeight: 600, color: "#a78bfa", marginBottom: 10 }}>WITHDRAWAL PHASE ({retPhase})</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <InputCard title="Living Expenses" rows={[["Base annual spend", fmtM(params.sp) + "/yr"], ["Inflation model", params.smile ? "Blanchett smile" : "Flat"], [`Go-go (${params.retireAge}–${Math.min(74, params.endAge)})`, "115% of base"], [`Slow-go (75–${Math.min(84, params.endAge)})`, "85% of base"]]} />
-                <InputCard title="Income Offsets" rows={[["Social Security", `$${(params.ssb || 0).toLocaleString()}/yr @ ${params.ssAge || "—"}`], ["SS COLA", `${params.ssCola ?? 2.4}%/yr`], [`Rental net (${params.abReliability ?? 80}% reliable)`, params.useAb ? `$${(params.ab || 0).toLocaleString()}/yr` : "Off"], ["SS gap", `Ages ${params.retireAge}–${(params.ssAge || params.retireAge) - 1}: $0`]]} />
+                <InputCard title="Income Offsets" rows={[["Social Security", `$${(params.ssb || 0).toLocaleString()}/yr @ ${params.ssAge || "—"}`], ["SS COLA", `${params.ssCola ?? 2.4}%/yr`], [`Rental net (${params.abReliability ?? 80}% reliable)`, params.ab > 0 ? `$${(params.ab || 0).toLocaleString()}/yr` : "Not set"], ["SS gap", `Ages ${params.retireAge}–${(params.ssAge || params.retireAge) - 1}: $0`]]} />
                 <InputCard title="Additional Costs" rows={[[`Healthcare (age ${params.hcShockAge ?? 72}+)`, `${params.hcProb ?? 3.5}% shock prob/yr`], ["Shock range", `${fmtK(params.hcMin ?? 70000)}–${fmtK(params.hcMax ?? 130000)}`], ["Mortgage annual", mortAnnual > 0 ? fmtM(mortAnnual) + "/yr" : "Paid off"], ["Mortgage payoff", mortPayoffAge > 0 ? "~" + mortPayoffAge : "—"]]} />
               </div>
             </div>
