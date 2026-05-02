@@ -353,6 +353,7 @@ export const BLANK_PROFILE = {
   fafsaGuard: false,            // cap Roth conversions during college aid years
   fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window)
   cssEndYear: null,             // last year to cap at 22% (CSS Profile window)
+  conversionOverrides: [],      // [{id, year, amount}] manual per-year conversion amounts
   // Account breakdown (feeds port total)
   accounts: [
     { id: "1", category: "pretax", name: "401(k)", balance: 0 },
@@ -1366,7 +1367,13 @@ function buildRothExplorer(params = {}) {
     fafsaGuard = false,
     fafsaEndYear = null,
     cssEndYear = null,
+    conversionOverrides = [],
   } = params;
+  // Build a fast year→amount lookup from the overrides array
+  const overrideMap = {};
+  for (const o of conversionOverrides) {
+    if (o.year && o.amount != null) overrideMap[Number(o.year)] = Number(o.amount);
+  }
 
   // Safeguard: if critical numbers are missing, return empty or throw a helpful error
   if (currentAge == null || retireAge == null || port == null) {
@@ -1479,37 +1486,41 @@ function buildRothExplorer(params = {}) {
         age < rmdAge &&
         pT > 0
       ) {
-       let targetTop;
-        if (rothMode === "fill_10") { targetTop = b10t; capReason = "mode 10%"; }
-        else if (rothMode === "fill_12") { targetTop = b12t; capReason = "mode 12%"; }
-        else if (rothMode === "fill_22") { targetTop = b22t; capReason = "mode 22%"; }
-        else if (rothMode === "fill_24") { targetTop = b24t; capReason = "mode 24%"; }
-        else if (rothMode === "fill_32") { targetTop = b32t; capReason = "mode 32%"; }
-        else if (rothMode === "fill_35") { targetTop = b35t; capReason = "mode 35%"; }
-        else if (rothMode === "fill_37") { targetTop = b37t; capReason = "mode 37%"; }
-        else if (rothMode === "irmaa_safe") {
-          const irmaaTop = irmaaCeiling(yr) + stdD;
-          if (irmaaTop < b22t) { targetTop = irmaaTop; capReason = "IRMAA ceiling"; }
-          else { targetTop = b22t; capReason = "mode 22%"; }
-        } else { targetTop = b22t; capReason = "mode 22%"; }
+        if (overrideMap[yr] !== undefined) {
+          // Manual override: use the user-specified amount (capped by available pretax)
+          conv = Math.round(Math.min(Math.max(0, overrideMap[yr]), pT));
+          capReason = overrideMap[yr] === 0 ? "manual $0" : "manual override";
+        } else {
+          let targetTop;
+          if (rothMode === "fill_10") { targetTop = b10t; capReason = "mode 10%"; }
+          else if (rothMode === "fill_12") { targetTop = b12t; capReason = "mode 12%"; }
+          else if (rothMode === "fill_22") { targetTop = b22t; capReason = "mode 22%"; }
+          else if (rothMode === "fill_24") { targetTop = b24t; capReason = "mode 24%"; }
+          else if (rothMode === "fill_32") { targetTop = b32t; capReason = "mode 32%"; }
+          else if (rothMode === "fill_35") { targetTop = b35t; capReason = "mode 35%"; }
+          else if (rothMode === "fill_37") { targetTop = b37t; capReason = "mode 37%"; }
+          else if (rothMode === "irmaa_safe") {
+            const irmaaTop = irmaaCeiling(yr) + stdD;
+            if (irmaaTop < b22t) { targetTop = irmaaTop; capReason = "IRMAA ceiling"; }
+            else { targetTop = b22t; capReason = "mode 22%"; }
+          } else { targetTop = b22t; capReason = "mode 22%"; }
 
-        // IRMAA lookback guard: ages 60-65 — cap at 22% for aggressive brackets
-        if (age >= 60 && age <= 65 && ["fill_24","fill_32","fill_35","fill_37"].includes(rothMode) && b22t < targetTop) {
-          targetTop = b22t; capReason = "IRMAA lookback (age 60–65)";
+          // IRMAA lookback guard: ages 60-65 — cap at 22% for aggressive brackets
+          if (age >= 60 && age <= 65 && ["fill_24","fill_32","fill_35","fill_37"].includes(rothMode) && b22t < targetTop) {
+            targetTop = b22t; capReason = "IRMAA lookback (age 60–65)";
+          }
+          // FAFSA/CSS college-aid guards — year values alone are the trigger (no toggle required)
+          if (fafsaEndYear && yr <= fafsaEndYear && b12t < targetTop) {
+            targetTop = b12t; capReason = `FAFSA guard (≤${fafsaEndYear})`;
+          }
+          if (cssEndYear && yr <= cssEndYear && (!fafsaEndYear || yr > fafsaEndYear) && b22t < targetTop) {
+            targetTop = b22t; capReason = `CSS Profile guard (≤${cssEndYear})`;
+          }
+          const room = Math.max(0, targetTop - txBC);
+          const preCap = Math.min(room, Math.max(0, pT));
+          conv = Math.round(preCap);
+          if (pT < room) capReason = "pretax exhausted";
         }
-        // FAFSA/CSS college-aid guards (opt-in for households with college-age children)
-        if (fafsaGuard && fafsaEndYear && yr <= fafsaEndYear && b12t < targetTop) {
-          targetTop = b12t; capReason = `FAFSA guard (≤${fafsaEndYear})`;
-        }
-        if (fafsaGuard && cssEndYear && yr <= cssEndYear && (!fafsaEndYear || yr > fafsaEndYear) && b22t < targetTop) {
-          targetTop = b22t; capReason = `CSS Profile guard (≤${cssEndYear})`;
-        }
-        const room = Math.max(0, targetTop - txBC);
-
-        const preCap = Math.min(room, Math.max(0, pT));
-        conv = Math.round(preCap);
-
-        if (pT < room) capReason = "pretax exhausted";
       }
 
       const totInc = incBC + conv,
@@ -3046,6 +3057,9 @@ function RothLadder({ params }) {
       params?.filingStatus,
       params?.rmdStartAge,
       params?.taxFunding,
+      params?.fafsaEndYear,
+      params?.cssEndYear,
+      params?.conversionOverrides,
       rothMode,
     ]
   );
@@ -6173,36 +6187,31 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
           </select>
         </ARow>
-        <Toggle
-          val={values.fafsaGuard ?? false}
-          onChange={(v) => onChange("fafsaGuard", v)}
-          label="🎓 Apply FAFSA/CSS college-aid guards (caps Roth conversions during your child's college years)"
-          accent="#f59e0b"
-        />
-        {(values.fafsaGuard ?? false) && (
-          <div style={{ display: "flex", gap: 16, marginTop: 6, marginLeft: 4 }}>
-            <ARow label="FAFSA cap through year" desc="Cap conversions at 12% bracket through this year (FAFSA uses 2-yr prior income)">
-              <input
-                type="number"
-                value={values.fafsaEndYear || ""}
-                onChange={(e) => onChange("fafsaEndYear", e.target.value ? parseInt(e.target.value) : null)}
-                placeholder="e.g. 2031"
-                min={2026} max={2060}
-                style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
-              />
-            </ARow>
-            <ARow label="CSS Profile cap through year" desc="Cap conversions at 22% bracket through this year (CSS Profile period)">
-              <input
-                type="number"
-                value={values.cssEndYear || ""}
-                onChange={(e) => onChange("cssEndYear", e.target.value ? parseInt(e.target.value) : null)}
-                placeholder="e.g. 2033"
-                min={2026} max={2060}
-                style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
-              />
-            </ARow>
-          </div>
-        )}
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, marginTop: 4 }}>
+          🎓 FAFSA / CSS College-Aid Protection — enter a year to cap Roth conversions during your child's college aid window. Leave blank to disable.
+        </div>
+        <div style={{ display: "flex", gap: 16, marginLeft: 4 }}>
+          <ARow label="FAFSA cap through year" desc="Cap conversions at 12% bracket through this year (FAFSA uses 2-yr prior income). Leave blank to skip.">
+            <input
+              type="number"
+              value={values.fafsaEndYear || ""}
+              onChange={(e) => onChange("fafsaEndYear", e.target.value ? parseInt(e.target.value) : null)}
+              placeholder="e.g. 2031"
+              min={2026} max={2060}
+              style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
+            />
+          </ARow>
+          <ARow label="CSS Profile cap through year" desc="Cap conversions at 22% bracket through this year (CSS Profile period). Leave blank to skip.">
+            <input
+              type="number"
+              value={values.cssEndYear || ""}
+              onChange={(e) => onChange("cssEndYear", e.target.value ? parseInt(e.target.value) : null)}
+              placeholder="e.g. 2033"
+              min={2026} max={2060}
+              style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
+            />
+          </ARow>
+        </div>
         <ARow label="Tax funding source" desc="How conversion taxes are paid. 'Outside cash' is most favorable (full conversion grows tax-free). 'From taxable' debits your taxable/HSA/cash buckets. 'From conversion' shrinks the Roth transfer by the tax owed.">
           <select
             value={values.taxFunding || "from_taxable"}
@@ -6214,6 +6223,69 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="from_conv">From the conversion (withhold)</option>
           </select>
         </ARow>
+
+        {/* Manual year-by-year conversion overrides */}
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#a78bfa", marginBottom: 4 }}>
+            📋 Manual Conversion Schedule
+          </div>
+          <div style={{ fontSize: 11, color: "#475569", marginBottom: 8 }}>
+            Pin specific years to exact dollar amounts. Leave a year out to let the bracket-fill optimizer decide. Enter $0 to force no conversion that year.
+          </div>
+          {(values.conversionOverrides || []).length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "80px 120px 28px", gap: "4px 8px", alignItems: "center", marginBottom: 4 }}>
+                <span style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>YEAR</span>
+                <span style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>AMOUNT ($)</span>
+                <span />
+              </div>
+              {(values.conversionOverrides || []).map((ov) => (
+                <div key={ov.id} style={{ display: "grid", gridTemplateColumns: "80px 120px 28px", gap: "4px 8px", alignItems: "center", marginBottom: 4 }}>
+                  <input
+                    type="number"
+                    value={ov.year || ""}
+                    onChange={(e) => {
+                      const updated = (values.conversionOverrides || []).map(o =>
+                        o.id === ov.id ? { ...o, year: e.target.value ? parseInt(e.target.value) : "" } : o
+                      );
+                      onChange("conversionOverrides", updated);
+                    }}
+                    placeholder="2031"
+                    min={2026} max={2070}
+                    style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
+                  />
+                  <input
+                    type="number"
+                    value={ov.amount === 0 ? "0" : (ov.amount || "")}
+                    onChange={(e) => {
+                      const updated = (values.conversionOverrides || []).map(o =>
+                        o.id === ov.id ? { ...o, amount: e.target.value !== "" ? parseInt(e.target.value) : "" } : o
+                      );
+                      onChange("conversionOverrides", updated);
+                    }}
+                    placeholder="60000"
+                    min={0} max={2000000} step={1000}
+                    style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
+                  />
+                  <button
+                    onClick={() => onChange("conversionOverrides", (values.conversionOverrides || []).filter(o => o.id !== ov.id))}
+                    style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "3px 6px" }}
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => onChange("conversionOverrides", [...(values.conversionOverrides || []), { id: Date.now().toString(), year: "", amount: "" }])}
+            style={{ fontSize: 11, background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.25)", color: "#a78bfa", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}
+          >+ Add year override</button>
+          {(values.conversionOverrides || []).length > 0 && (
+            <button
+              onClick={() => onChange("conversionOverrides", [])}
+              style={{ fontSize: 11, background: "transparent", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", borderRadius: 6, padding: "5px 12px", cursor: "pointer", marginLeft: 8 }}
+            >Clear all</button>
+          )}
+        </div>
       </div>
 
       {/* MONTE CARLO MODEL PARAMETERS CARD */}
@@ -6876,6 +6948,7 @@ export default function AiRAForecaster() {
       fafsaGuard: assumptions.fafsaGuard || false,
       fafsaEndYear: assumptions.fafsaEndYear || null,
       cssEndYear: assumptions.cssEndYear || null,
+      conversionOverrides: assumptions.conversionOverrides || [],
       preRetireEq: assumptions.preRetireEq,
       postRetireEq: assumptions.postRetireEq,
       hcShockAge: assumptions.hcShockAge,
