@@ -1928,6 +1928,20 @@ const Tip = ({ active, payload, label }) => {
     </div>
   );
 };
+const RateTip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="tip-box">
+      <div style={{ color: "#64748b", marginBottom: 3 }}>Age {label}</div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ color: p.color, marginBottom: 1 }}>
+          <span style={{ color: "#94a3b8" }}>{p.name}: </span>
+          {(p.value * 100).toFixed(1)}%
+        </div>
+      ))}
+    </div>
+  );
+};
 function Toggle({ val, onChange, label, accent = "#0d9488" }) {
   return (
     <div className="tog-row">
@@ -3691,10 +3705,15 @@ const modeDescs = {
       {view === "comparison" && (
         <>
           <div className="chart-card">
-            <div className="ct">Effective Federal Tax Rate · Year-by-Year</div>
-            <ResponsiveContainer width="100%" height={200}>
+            <div className="ct">Effective Tax Rate · Optimized vs Current Plan</div>
+            <ResponsiveContainer width="100%" height={220}>
               <LineChart
-                data={opt.rows.filter((_, i) => i % 2 === 0)}
+                data={opt.rows
+                  .filter((_, i) => i % 2 === 0)
+                  .map(r => {
+                    const c = cur.rows.find(cr => cr.yr === r.yr);
+                    return { age: r.age, "OPT Rate": r.effR, "CUR Rate": c ? c.effR : 0 };
+                  })}
                 margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
               >
                 <CartesianGrid
@@ -3712,13 +3731,21 @@ const modeDescs = {
                   tickFormatter={(v) => (v * 100).toFixed(0) + "%"}
                   width={36}
                 />
-                <Tooltip content={<Tip />} />
+                <Tooltip content={<RateTip />} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
                 <Line
                   type="monotone"
-                  dataKey="effR"
-                  name="Optimized Rate"
+                  dataKey="OPT Rate"
                   stroke="#0d9488"
                   strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="CUR Rate"
+                  stroke="#f87171"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
                   dot={false}
                 />
               </LineChart>
@@ -3755,6 +3782,29 @@ const modeDescs = {
                 </div>
               </div>
             </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
+              Year-by-year tax paid — red spike = conversion tax years, green relief = lower RMD taxes
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart
+                data={opt.rows
+                  .filter(r => r.age >= (params.retireAge || 60) && r.age <= 90)
+                  .filter((_, i) => i % 2 === 0 || i < 10)
+                  .map(r => {
+                    const c = cur.rows.find(cr => cr.yr === r.yr);
+                    return { age: r.age, "OPT Tax": r.totT, "CUR Tax": c ? c.totT : 0 };
+                  })}
+                margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} />
+                <YAxis stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} tickFormatter={v => fmtK(v)} width={46} />
+                <Tooltip content={<Tip />} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Bar dataKey="OPT Tax" fill="rgba(13,148,136,0.55)" radius={[2,2,0,0]} />
+                <Bar dataKey="CUR Tax" fill="rgba(239,68,68,0.4)" radius={[2,2,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
           <div className="chart-card">
             <div className="ct">IRMAA Fees · Medicare Premium Surcharges</div>
