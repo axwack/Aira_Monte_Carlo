@@ -767,7 +767,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         : 0;
       const abReliable = rand() < (p.abReliability || 80) / 100;
       const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
-      const totalRental = Math.round((p.propIncome || 0) * growthFactor);
+      const totalRental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * growthFactor);
       const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 :
         (abReliable ? totalRental : 0);
 
@@ -940,7 +940,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
       const ss = age >= p.ssAge ? p.ssb * Math.pow(1.024, y) : 0;
       const stressGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
       const abReliable = rand() < (p.abReliability || 80) / 100;
-      const totalRental = Math.round((p.propIncome || 0) * stressGrowth);
+      const totalRental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * stressGrowth);
       const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 : (abReliable ? totalRental : 0);
       const td = taxDragRate(age, p.ssAge, p.tax, p.filingStatus);
       const hShock = age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100  ? (p.hcMin || 70_000) + rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000)): 0;
