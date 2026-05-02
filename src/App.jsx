@@ -85,8 +85,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.6";
-export const BUILD_TAG = "Fixed rental income (ab) never reaching simulations: removed useAb gate (no UI toggle existed, defaulted false), fixed ab hardcoded to 0 in params object, fixed MC paths only counting propIncome not ab. All income sources now flow correctly through withdrawal schedule and Monte Carlo.";
+const APP_VERSION = "1.0.7";
+export const BUILD_TAG = "Roth engine fixes: outside_cash tax funding now deducts from taxable pool; RMD divisors at 75/76 corrected to IRS Pub 590-B Table II joint values; manual year-by-year conversion override schedule added; FAFSA/CSS guardrails trigger on year entry alone (no toggle); 3-scenario tab (state/no-tax state/no conv) added to Roth Ladder. BLANK_PROFILE kept clean — user-specific overrides belong in exported JSON only.";
 export const BUILD_TIME = "05-02-2026";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -353,11 +353,7 @@ export const BLANK_PROFILE = {
   fafsaGuard: false,            // cap Roth conversions during college aid years
   fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window)
   cssEndYear: null,             // last year to cap at 22% (CSS Profile window)
-  conversionOverrides: [        // [{id, year, amount}] manual per-year conversion amounts
-    { id: "co1", year: 2030, amount: 0 }, // still working — no conversion
-    { id: "co2", year: 2034, amount: 0 }, // SS starts — pause for IRMAA lookback
-    { id: "co3", year: 2035, amount: 0 }, // IRMAA guard year
-  ],
+  conversionOverrides: [],      // [{id, year, amount}] manual per-year conversion amounts — populated in user's exported JSON
   // Account breakdown (feeds port total)
   accounts: [
     { id: "1", category: "pretax", name: "401(k)", balance: 0 },
@@ -3075,9 +3071,9 @@ function RothLadder({ params }) {
     ]
   );
 
-  // FL scenario: same profile but no state tax (for 3-scenario comparison)
-  const exFl = useMemo(
-    () => buildRothExplorer({ ...(params ?? {}), rothMode, stateOfResidence: "FL", twoHousehold: false }),
+  // No-tax state scenario: same profile but state tax zeroed out (twoHousehold flag)
+  const exNoTax = useMemo(
+    () => buildRothExplorer({ ...(params ?? {}), rothMode, twoHousehold: true }),
     [
       params?.currentAge, params?.retireAge, params?.ssAge, params?.ab,
       params?.inf, params?.port, params?.useAb, params?.ssb, params?.accounts,
@@ -3940,42 +3936,43 @@ const modeDescs = {
         </div>
       )}
       {view === "scenarios" && (() => {
-        const njCur = cur;        // NJ, no conversions
-        const njOpt = opt;        // NJ, with conversions
-        const flOpt = exFl.opt;   // FL, with conversions
-        const allYears = njOpt.rows.filter(r => r.age >= (params.retireAge || 60));
-        const njSave = njCur.cTax - njOpt.cTax;
-        const flSave = njCur.cTax - flOpt.cTax;
+        const baseCur = cur;            // user's state, no conversions
+        const baseOpt = opt;            // user's state, with conversions
+        const noTaxOpt = exNoTax.opt;   // no-tax state, with conversions
+        const userState = params.stateOfResidence || "Your State";
+        const allYears = baseOpt.rows.filter(r => r.age >= (params.retireAge || 60));
+        const stSave = baseCur.cTax - baseOpt.cTax;
+        const ntSave = baseCur.cTax - noTaxOpt.cTax;
         return (
           <div className="chart-card" style={{ overflowX: "auto" }}>
-            <div className="ct">3-Scenario Comparison · NJ No Conv | NJ Conv | FL Conv</div>
+            <div className="ct">3-Scenario Comparison · {userState} No Conv | {userState} + Conv | No-Tax State + Conv</div>
             <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
-              <strong style={{ color: "#f87171" }}>NJ No Conv</strong> = stay in NJ, do nothing &nbsp;|&nbsp;
-              <strong style={{ color: "#5eead4" }}>NJ Conv</strong> = stay in NJ, execute ladder &nbsp;|&nbsp;
-              <strong style={{ color: "#34d399" }}>FL Conv</strong> = move to FL, execute ladder
+              <strong style={{ color: "#f87171" }}>{userState} No Conv</strong> = stay put, do nothing &nbsp;|&nbsp;
+              <strong style={{ color: "#5eead4" }}>{userState} + Conv</strong> = stay put, execute ladder &nbsp;|&nbsp;
+              <strong style={{ color: "#34d399" }}>No-Tax State + Conv</strong> = move to a no-income-tax state, execute ladder
             </div>
             <table className="roth-tbl">
               <thead>
                 <tr>
                   <th>Year</th>
                   <th>Age</th>
-                  <th style={{ color: "#f87171" }}>NJ — Conv</th>
-                  <th style={{ color: "#f87171" }}>NJ — Tax</th>
-                  <th style={{ color: "#f87171" }}>NJ — PreTax Bal</th>
-                  <th style={{ color: "#5eead4" }}>NJ+Conv — Conv</th>
-                  <th style={{ color: "#5eead4" }}>NJ+Conv — Tax</th>
-                  <th style={{ color: "#5eead4" }}>NJ+Conv — PreTax Bal</th>
-                  <th style={{ color: "#34d399" }}>FL+Conv — Conv</th>
-                  <th style={{ color: "#34d399" }}>FL+Conv — Tax</th>
-                  <th style={{ color: "#34d399" }}>FL+Conv — PreTax Bal</th>
+                  <th style={{ color: "#f87171" }}>No Conv — Conv</th>
+                  <th style={{ color: "#f87171" }}>No Conv — Tax</th>
+                  <th style={{ color: "#f87171" }}>No Conv — PreTax</th>
+                  <th style={{ color: "#5eead4" }}>{userState} Conv — Conv</th>
+                  <th style={{ color: "#5eead4" }}>{userState} Conv — Tax</th>
+                  <th style={{ color: "#5eead4" }}>{userState} Conv — PreTax</th>
+                  <th style={{ color: "#34d399" }}>No-Tax Conv — Conv</th>
+                  <th style={{ color: "#34d399" }}>No-Tax Conv — Tax</th>
+                  <th style={{ color: "#34d399" }}>No-Tax Conv — PreTax</th>
                 </tr>
               </thead>
               <tbody>
                 {allYears.map(r => {
-                  const nc = njCur.rows.find(x => x.yr === r.yr) || {};
-                  const no = njOpt.rows.find(x => x.yr === r.yr) || {};
-                  const fl = flOpt.rows.find(x => x.yr === r.yr) || {};
-                  const hasConv = no.conv > 0 || fl.conv > 0;
+                  const nc = baseCur.rows.find(x => x.yr === r.yr) || {};
+                  const bo = baseOpt.rows.find(x => x.yr === r.yr) || {};
+                  const nt = noTaxOpt.rows.find(x => x.yr === r.yr) || {};
+                  const hasConv = bo.conv > 0 || nt.conv > 0;
                   return (
                     <tr key={r.yr} style={{ background: hasConv ? "rgba(13,148,136,0.06)" : undefined }}>
                       <td>{r.yr}</td>
@@ -3983,26 +3980,26 @@ const modeDescs = {
                       <td style={{ color: "#f87171" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "-"}</td>
                       <td style={{ color: "#f87171" }}>{fmtDollar(nc.totT || 0)}</td>
                       <td style={{ color: "#94a3b8" }}>{fmtDollar(nc.pT || 0)}</td>
-                      <td style={{ color: "#5eead4", fontWeight: no.conv > 0 ? 600 : 400 }}>{no.conv > 0 ? fmtDollar(no.conv) : "-"}</td>
-                      <td style={{ color: "#5eead4" }}>{fmtDollar(no.totT || 0)}</td>
-                      <td style={{ color: "#94a3b8" }}>{fmtDollar(no.pT || 0)}</td>
-                      <td style={{ color: "#34d399", fontWeight: fl.conv > 0 ? 600 : 400 }}>{fl.conv > 0 ? fmtDollar(fl.conv) : "-"}</td>
-                      <td style={{ color: "#34d399" }}>{fmtDollar(fl.totT || 0)}</td>
-                      <td style={{ color: "#94a3b8" }}>{fmtDollar(fl.pT || 0)}</td>
+                      <td style={{ color: "#5eead4", fontWeight: bo.conv > 0 ? 600 : 400 }}>{bo.conv > 0 ? fmtDollar(bo.conv) : "-"}</td>
+                      <td style={{ color: "#5eead4" }}>{fmtDollar(bo.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8" }}>{fmtDollar(bo.pT || 0)}</td>
+                      <td style={{ color: "#34d399", fontWeight: nt.conv > 0 ? 600 : 400 }}>{nt.conv > 0 ? fmtDollar(nt.conv) : "-"}</td>
+                      <td style={{ color: "#34d399" }}>{fmtDollar(nt.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8" }}>{fmtDollar(nt.pT || 0)}</td>
                     </tr>
                   );
                 })}
                 <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.04)", fontWeight: 700 }}>
                   <td colSpan={2} style={{ color: "#e2e8f0" }}>Lifetime Totals</td>
                   <td style={{ color: "#f87171" }}>—</td>
-                  <td style={{ color: "#f87171" }}>{fmtM(njCur.cTax)}</td>
-                  <td style={{ color: "#94a3b8" }}>{fmtDollar(njCur.rows[njCur.rows.length-1]?.pT || 0)}</td>
-                  <td style={{ color: "#5eead4" }}>{fmtM(njOpt.cConv)}</td>
-                  <td style={{ color: njSave > 0 ? "#34d399" : "#f87171" }}>{fmtM(njOpt.cTax)} {njSave > 0 ? `(saves ${fmtM(njSave)})` : `(+${fmtM(-njSave)})`}</td>
-                  <td style={{ color: "#94a3b8" }}>{fmtDollar(njOpt.rows[njOpt.rows.length-1]?.pT || 0)}</td>
-                  <td style={{ color: "#34d399" }}>{fmtM(flOpt.cConv)}</td>
-                  <td style={{ color: flSave > 0 ? "#34d399" : "#f87171" }}>{fmtM(flOpt.cTax)} {flSave > 0 ? `(saves ${fmtM(flSave)})` : `(+${fmtM(-flSave)})`}</td>
-                  <td style={{ color: "#94a3b8" }}>{fmtDollar(flOpt.rows[flOpt.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#f87171" }}>{fmtM(baseCur.cTax)}</td>
+                  <td style={{ color: "#94a3b8" }}>{fmtDollar(baseCur.rows[baseCur.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#5eead4" }}>{fmtM(baseOpt.cConv)}</td>
+                  <td style={{ color: stSave > 0 ? "#34d399" : "#f87171" }}>{fmtM(baseOpt.cTax)} {stSave > 0 ? `(saves ${fmtM(stSave)})` : `(costs ${fmtM(-stSave)} more)`}</td>
+                  <td style={{ color: "#94a3b8" }}>{fmtDollar(baseOpt.rows[baseOpt.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#34d399" }}>{fmtM(noTaxOpt.cConv)}</td>
+                  <td style={{ color: ntSave > 0 ? "#34d399" : "#f87171" }}>{fmtM(noTaxOpt.cTax)} {ntSave > 0 ? `(saves ${fmtM(ntSave)})` : `(costs ${fmtM(-ntSave)} more)`}</td>
+                  <td style={{ color: "#94a3b8" }}>{fmtDollar(noTaxOpt.rows[noTaxOpt.rows.length-1]?.pT || 0)}</td>
                 </tr>
               </tbody>
             </table>
