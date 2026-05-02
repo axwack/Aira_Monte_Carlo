@@ -3796,6 +3796,9 @@ const modeDescs = {
       {view === "table" && (
         <div className="chart-card" style={{ overflowX: "auto" }}>
           <div className="ct">Year-by-Year Comparison Table</div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
+            <strong style={{ color: "#e2e8f0" }}>OPT</strong> = With Roth conversion ladder &nbsp;|&nbsp; <strong style={{ color: "#e2e8f0" }}>CUR</strong> = Without conversions &nbsp;|&nbsp; <span style={{ color: "#f87171" }}>Red numbers</span> = you're paying more tax that year by choice to pay less at {rmdAge}
+          </div>
           <table className="roth-tbl">
             <thead>
               <tr>
@@ -3834,6 +3837,14 @@ const modeDescs = {
                     </tr>
                   );
                 })}
+              <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.03)" }}>
+                <td colSpan={4} style={{ fontWeight: 700, color: "#e2e8f0", textAlign: "left" }}>Lifetime Totals</td>
+                <td style={{ color: "#f87171", fontWeight: 700 }}>{fmtM(opt.cTax)}</td>
+                <td style={{ color: "#94a3b8", fontWeight: 700 }}>{fmtM(cur.cTax)}</td>
+                <td colSpan={2} style={{ color: cur.cTax - opt.cTax > 0 ? "#34d399" : "#f87171", fontWeight: 700, textAlign: "left" }}>
+                  {cur.cTax - opt.cTax > 0 ? `✅ Lifetime savings: ${fmtM(cur.cTax - opt.cTax)}` : `⚠️ Net cost: ${fmtM(opt.cTax - cur.cTax)}`}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
