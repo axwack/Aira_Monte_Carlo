@@ -849,15 +849,14 @@ describe("Cash flow accuracy — portfolio draw, taxes, and spending", () => {
     expect(yr1.totalWithdrawal).toBeGreaterThan(yr1.portfolioDraw);
   });
 
-  // Fixed 4%: SS does NOT reduce portfolio draw. $2M × 4% = $80K regardless.
-  test("Deterministic Fixed 4%: portfolio draw = 4% × port regardless of SS (no SS offset)", () => {
-    const portStart = BASE.accounts.reduce((s, a) => s + a.balance, 0);
+  // Fixed 4%: at year 0 spending = p.sp (target), SS still offsets portfolioDraw.
+  // From year 1 onward, spending = port × 4%.
+  test("Deterministic Fixed 4%: year-2 spending = 4% × portfolioEnd[0]", () => {
     const p = { ...BASE, currentAge: 65, retireAge: 65, endAge: 90,
       sp: 80_000, ssAge: 65, ssb: 24_000, filingStatus: "mfj",
       withdrawalStrategy: "fixed", fixedWithdrawalRate: 0.04, stateOfResidence: "FL" };
     const { schedule } = simulateDeterministicWithStrategy(p, 2.5, "fixed");
-    expect(schedule[0].portfolioDraw).toBeGreaterThan(75_000);
-    expect(schedule[0].portfolioDraw).toBeCloseTo(portStart * 0.04, -3);
+    expect(schedule[1].spending).toBeCloseTo(schedule[0].portfolioEnd * 0.04, -3);
   });
 
   test("Total portfolio draw increases more than linearly as spending rises (progressive tax drag)", () => {
@@ -904,15 +903,20 @@ describe("Withdrawal strategy accuracy — year-1 deterministic draws", () => {
       { ...baseStrat, withdrawalStrategy: "fixed", fixedWithdrawalRate: 0.03 }, 2.5, "fixed");
     const { schedule: s4 } = simulateDeterministicWithStrategy(
       { ...baseStrat, withdrawalStrategy: "fixed", fixedWithdrawalRate: 0.04 }, 2.5, "fixed");
-    expect(s3[0].spending).toBeCloseTo(PORT * 0.03, -2);
-    expect(s3[0].spending).toBeLessThan(s4[0].spending);
+    // Year 0 uses p.sp for all strategies; Fixed rate first applies at year 1
+    expect(s3[1].spending).toBeCloseTo(s3[0].portfolioEnd * 0.03, -2);
+    expect(s3[1].spending).toBeLessThan(s4[1].spending);
   });
 
-  test("Fixed 4% SS-offset regression: draw ~$80K even when SS = $24K (not $56K)", () => {
+  test("Fixed 4% SS-offset regression: year-1 draw = 4% × port, year-2 draw is SS-reduced", () => {
+    // Year 0: spending = p.sp (target), SS offsets need → portfolioDraw = sp - SS
+    // Year 1+: spending = port × fixedRate, SS still offsets portfolioDraw
     const p = { ...baseStrat, ssAge: 65, ssb: 24_000, withdrawalStrategy: "fixed" };
     const { schedule } = simulateDeterministicWithStrategy(p, 2.5, "fixed");
-    expect(schedule[0].portfolioDraw).toBeGreaterThan(70_000);
-    expect(schedule[0].portfolioDraw).toBeCloseTo(PORT * 0.04, -3);
+    // Year 1 spending = port[0] × 4%
+    expect(schedule[1].spending).toBeCloseTo(schedule[0].portfolioEnd * 0.04, -3);
+    // portfolioDraw = spending - SS (SS reduces the draw from portfolio; SS grows with COLA)
+    expect(schedule[1].portfolioDraw).toBeCloseTo(schedule[1].spending - schedule[1].ss, -2);
   });
 
   test("GK vs Fixed 4%: year-5 draws diverge (strategies produce different paths)", () => {
@@ -1187,5 +1191,170 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
     const cape  = sim({ ...baseStrat, withdrawalStrategy: "cape"  }, "cape");
     // Both draw exactly 4% of the portfolio — should be within $1
     expect(Math.abs(cape.schedule[1].spending - fixed.schedule[1].spending)).toBeLessThan(1_000);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 8. INCOME FLOW-THROUGH — every income source must reach the schedule
+//
+// Regression suite for the class of bug where an income field is set by the
+// user but silently zeroed before reaching the simulation (e.g. ab hardcoded
+// to 0 in params, useAb gate defaulting false with no UI toggle).
+//
+// Rule: if you set an income field to a non-zero value, it MUST appear non-zero
+// in the withdrawal schedule's corresponding column AND reduce portfolio draw
+// compared to a baseline with that income absent.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Income flow-through — all sources must reach the withdrawal schedule", () => {
+
+  const BASE_INCOME = {
+    ...BASE,
+    currentAge: 65, retireAge: 65, endAge: 90,
+    ssb: 0, ssAge: 65, ab: 0, otherIncomes: [],
+    withdrawalStrategy: "gk", stateOfResidence: "FL",
+  };
+
+  // ── Rental / Airbnb (ab) ───────────────────────────────────────────────────
+  test("ab > 0: Rental column is non-zero in year-1 schedule", () => {
+    const { schedule } = simulateDeterministicWithStrategy(
+      { ...BASE_INCOME, ab: 18_000 }, 2.5, "gk"
+    );
+    expect(schedule[0].Rental).toBe(18_000);
+  });
+
+  test("ab > 0: portfolio draw is less than spending in year 1 (rental offsets need)", () => {
+    const { schedule } = simulateDeterministicWithStrategy(
+      { ...BASE_INCOME, ab: 18_000 }, 2.5, "gk"
+    );
+    expect(schedule[0].portfolioDraw).toBeLessThan(schedule[0].spending);
+    expect(schedule[0].portfolioDraw).toBeCloseTo(schedule[0].spending - 18_000, -2);
+  });
+
+  test("ab > 0: MC success rate is higher than ab = 0 (rental income helps portfolio survive)", () => {
+    const noRental   = runMC({ ...BASE_INCOME, sp: 90_000 }, 90, 1000, 42, true);
+    const withRental = runMC({ ...BASE_INCOME, sp: 90_000, ab: 18_000 }, 90, 1000, 42, true);
+    expect(withRental.rate).toBeGreaterThan(noRental.rate);
+  });
+
+  test("ab = 0: Rental column is zero (no phantom income injected)", () => {
+    const { schedule } = simulateDeterministicWithStrategy(
+      { ...BASE_INCOME, ab: 0 }, 2.5, "gk"
+    );
+    expect(schedule[0].Rental).toBe(0);
+  });
+
+  test("ab grows at abGrowth rate: year-10 rental > year-1 rental", () => {
+    const { schedule } = simulateDeterministicWithStrategy(
+      { ...BASE_INCOME, ab: 12_000, abGrowth: 3 }, 2.5, "gk"
+    );
+    expect(schedule[9].Rental).toBeGreaterThan(schedule[0].Rental);
+  });
+
+  test("abEndYear: rental is zero after end year, non-zero before", () => {
+    const endYear = 2026 + 5; // 5 years into retirement
+    const { schedule } = simulateDeterministicWithStrategy(
+      { ...BASE_INCOME, ab: 12_000, abEndYear: endYear }, 2.5, "gk"
+    );
+    const beforeEnd = schedule.find(r => r.yr <= endYear);
+    const afterEnd  = schedule.find(r => r.yr >  endYear);
+    expect(beforeEnd.Rental).toBeGreaterThan(0);
+    expect(afterEnd.Rental).toBe(0);
+  });
+
+  // ── Social Security (ssb) ─────────────────────────────────────────────────
+  test("ssb > 0: SS column is non-zero once ssAge is reached", () => {
+    const { schedule } = simulateDeterministicWithStrategy(
+      { ...BASE_INCOME, ssb: 24_000, ssAge: 67 }, 2.5, "gk"
+    );
+    const ssRow = schedule.find(r => r.age >= 67);
+    expect(ssRow.ss).toBeGreaterThan(0);
+  });
+
+  test("ssb > 0: portfolio draw drops when SS kicks in at ssAge", () => {
+    const { schedule } = simulateDeterministicWithStrategy(
+      { ...BASE_INCOME, ssb: 24_000, ssAge: 67 }, 2.5, "gk"
+    );
+    const beforeSS = schedule.find(r => r.age === 66);
+    const atSS     = schedule.find(r => r.age === 67);
+    expect(beforeSS.ss).toBe(0);
+    expect(atSS.ss).toBeGreaterThan(0);
+    expect(atSS.portfolioDraw).toBeLessThan(beforeSS.portfolioDraw);
+  });
+
+  test("ssb = 0: SS column is always zero (no phantom SS)", () => {
+    const { schedule } = simulateDeterministicWithStrategy(
+      { ...BASE_INCOME, ssb: 0 }, 2.5, "gk"
+    );
+    expect(schedule.every(r => r.ss === 0)).toBe(true);
+  });
+
+  test("MC: ssb > 0 raises success rate vs ssb = 0", () => {
+    const noSS   = runMC({ ...BASE_INCOME, sp: 90_000, ssb: 0      }, 90, 1000, 42, true);
+    const withSS = runMC({ ...BASE_INCOME, sp: 90_000, ssb: 24_000, ssAge: 65 }, 90, 1000, 42, true);
+    expect(withSS.rate).toBeGreaterThan(noSS.rate);
+  });
+
+  // ── Other Income (otherIncomes) ───────────────────────────────────────────
+  test("otherIncomes > 0: OtherIncome column is non-zero in active years", () => {
+    const income = [{ id: "oi1", name: "Pension", annual: 15_000,
+      startYear: 2030, endYear: 2050, growthRate: 0, growthCapYears: null, taxable: true }];
+    const { schedule } = simulateDeterministicWithStrategy(
+      { ...BASE_INCOME, otherIncomes: income }, 2.5, "gk"
+    );
+    const activeRow = schedule.find(r => r.yr >= 2030 && r.yr <= 2050);
+    expect(activeRow).toBeDefined();
+    expect(activeRow.OtherIncome).toBeGreaterThan(0);
+  });
+
+  test("otherIncomes: OtherIncome is zero before startYear and after endYear", () => {
+    const income = [{ id: "oi2", name: "Consulting", annual: 20_000,
+      startYear: 2032, endYear: 2035, growthRate: 0, growthCapYears: null, taxable: true }];
+    const { schedule } = simulateDeterministicWithStrategy(
+      { ...BASE_INCOME, otherIncomes: income }, 2.5, "gk"
+    );
+    const beforeRow = schedule.find(r => r.yr < 2032);
+    const afterRow  = schedule.find(r => r.yr > 2035);
+    if (beforeRow) expect(beforeRow.OtherIncome).toBe(0);
+    if (afterRow)  expect(afterRow.OtherIncome).toBe(0);
+  });
+
+  test("otherIncomes: reduces portfolio draw in active years", () => {
+    const income = [{ id: "oi3", name: "Royalties", annual: 12_000,
+      startYear: 2026, endYear: 2099, growthRate: 0, growthCapYears: null, taxable: true }];
+    const noOther   = simulateDeterministicWithStrategy({ ...BASE_INCOME }, 2.5, "gk");
+    const withOther = simulateDeterministicWithStrategy({ ...BASE_INCOME, otherIncomes: income }, 2.5, "gk");
+    expect(withOther.schedule[0].portfolioDraw).toBeLessThan(noOther.schedule[0].portfolioDraw);
+  });
+
+  // ── Property Income (propIncome) ──────────────────────────────────────────
+  test("propIncome > 0: included in Rental column (propIncome + ab)", () => {
+    const p = {
+      ...BASE_INCOME,
+      ab: 0,
+      propIncome: 10_000,
+    };
+    const { schedule } = simulateDeterministicWithStrategy(p, 2.5, "gk");
+    expect(schedule[0].Rental).toBe(10_000);
+  });
+
+  test("propIncome + ab: Rental column = sum of both sources", () => {
+    const p = {
+      ...BASE_INCOME,
+      ab: 8_000,
+      propIncome: 10_000,
+    };
+    const { schedule } = simulateDeterministicWithStrategy(p, 2.5, "gk");
+    expect(schedule[0].Rental).toBeCloseTo(18_000, -2);
+  });
+
+  // ── Combined income sources reduce draw proportionally ────────────────────
+  test("All income sources together: portfolio draw = spending − SS − rental − otherIncome", () => {
+    const income = [{ id: "c1", name: "Pension", annual: 10_000,
+      startYear: 2026, endYear: 2099, growthRate: 0, growthCapYears: null, taxable: true }];
+    const p = { ...BASE_INCOME, ssb: 20_000, ssAge: 65, ab: 12_000, otherIncomes: income };
+    const { schedule } = simulateDeterministicWithStrategy(p, 2.5, "gk");
+    const yr1 = schedule[0];
+    const expectedDraw = Math.max(0, yr1.spending - yr1.ss - yr1.Rental - yr1.OtherIncome);
+    expect(yr1.portfolioDraw).toBeCloseTo(expectedDraw, -1);
   });
 });

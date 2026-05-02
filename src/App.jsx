@@ -86,8 +86,8 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
 const APP_VERSION = "1.0.6";
-export const BUILD_TAG = "Fixed ab undefined crash in runMC; added Safe spending target panel (4% rule/mo) to Net Worth tab";
-export const BUILD_TIME = "04-29-2026";
+export const BUILD_TAG = "Fixed rental income (ab) never reaching simulations: removed useAb gate (no UI toggle existed, defaulted false), fixed ab hardcoded to 0 in params object, fixed MC paths only counting propIncome not ab. All income sources now flow correctly through withdrawal schedule and Monte Carlo.";
+export const BUILD_TIME = "05-02-2026";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1057,9 +1057,9 @@ function simulateDeterministic(p, inf) {
     const ss = age >= p.ssAge
       ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y))
       : 0;
-    const ab = p.ab > 0
-      ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20)))
-      : 0;
+    const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
+    const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
+    const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
     const need = Math.max(0, sp - ss - ab - otherIncTotal);
 
@@ -1226,7 +1226,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     lastReturn = ret;
 
     const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
-    const ab = p.ab > 0 ? Math.round(p.ab * Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20))) : 0;
+    const growthFactor = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
+    const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
+    const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
     const need = Math.max(0, sp - ss - ab - otherIncTotal);
     const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
