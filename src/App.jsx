@@ -3073,6 +3073,8 @@ function RothLadder({ params }) {
     rmdRed,
     isNoTaxState,
     retireYear,
+    retireAge,
+    ssAge,
     rmdAge,
     endAge,
     filingStatus,
