@@ -6782,7 +6782,7 @@ export default function AiRAForecaster() {
       gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 0.65),
       gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 1.35),
       ssb,
-      ab: 0,
+      ab,
       propIncome: (() => {
          const raw = (assumptions.properties || []).reduce((s, pr) => s + (Number(pr.income) || 0), 0);
           return isNaN(raw) ? 0 : raw;
