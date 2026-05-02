@@ -3042,10 +3042,21 @@ function SmileChart({ p, inf }) {
 }
 
 function RothLadder({ params }) {
-  
+
   const [showInputs, setShowInputs] = useState(false);
   const [view, setView] = useState("optimized");
   const [rothMode, setRothMode] = useState("fill_22");
+
+  // ── Current-Year Calculator state ──────────────────────────────────────
+  const currentCalYear = new Date().getFullYear() + 1; // plan for next year by default
+  const [cyYear,   setCyYear]   = useState(currentCalYear);
+  const [cyW2,     setCyW2]     = useState(0);
+  const [cySS,     setCySS]     = useState(0);
+  const [cyRental, setCyRental] = useState(0);
+  const [cyOther,  setCyOther]  = useState(0);
+  const [cySGOV,   setCySGOV]   = useState(0);
+  // ───────────────────────────────────────────────────────────────────────
+
   const ex = useMemo(
     () => buildRothExplorer({ ...(params ?? {}), rothMode }),
     [
@@ -3283,29 +3294,33 @@ const modeDescs = {
         }}
       >
         <div style={{ display: "flex", gap: 4 }}>
-          {["optimized", "comparison", "table", "scenarios"].map((v) => (
+          {["thisyear", "optimized", "comparison", "table", "scenarios"].map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
               style={{
                 padding: "4px 10px",
                 borderRadius: 6,
-                border: "1px solid rgba(255,255,255,0.1)",
+                border: v === "thisyear"
+                  ? (view === v ? "1px solid #f59e0b" : "1px solid rgba(245,158,11,0.3)")
+                  : "1px solid rgba(255,255,255,0.1)",
                 cursor: "pointer",
                 fontSize: 10,
                 fontFamily: "inherit",
                 fontWeight: 600,
-                background: view === v ? "rgba(13,148,136,0.2)" : "transparent",
-                color: view === v ? "#5eead4" : "#64748b",
+                background: view === v
+                  ? (v === "thisyear" ? "rgba(245,158,11,0.15)" : "rgba(13,148,136,0.2)")
+                  : "transparent",
+                color: view === v
+                  ? (v === "thisyear" ? "#fbbf24" : "#5eead4")
+                  : "#64748b",
               }}
             >
-              {v === "optimized"
-                ? "📊 Conversion Plan"
-                : v === "comparison"
-                ? "⚖️ Compare"
-                : v === "table"
-                ? "📋 Year-by-Year"
-                : "🗺️ 3-Scenario"}
+              {v === "thisyear"   ? "🎯 This Year"
+               : v === "optimized"  ? "📊 Conversion Plan"
+               : v === "comparison" ? "⚖️ Compare"
+               : v === "table"      ? "📋 Year-by-Year"
+               :                      "🗺️ 3-Scenario"}
             </button>
           ))}
         </div>
@@ -3439,6 +3454,201 @@ const modeDescs = {
           <div className="ms">optimized vs current</div>
         </div>
       </div>
+      {view === "thisyear" && (() => {
+        const isMFJ   = (params?.filingStatus || "mfj") !== "single";
+        const infRate = (params?.inf || 2.5) / 100;
+        const f       = Math.pow(1 + infRate, cyYear - 2026);
+        const fedBase = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
+        const fB      = idxB(fedBase, f);
+        const stdD    = Math.round((isMFJ ? 32200 : 16100) * f);
+        const b12t    = fB.find(b => b.rate === 0.12)?.hi ?? 0;
+        const b22t    = fB.find(b => b.rate === 0.22)?.hi ?? 0;
+        const b24t    = fB.find(b => b.rate === 0.24)?.hi ?? 0;
+
+        // SS provisional income → up to 85% taxable
+        const provisional = cyW2 + cyRental + cyOther + cySS * 0.5;
+        const ssThr85 = isMFJ ? 44000 : 34000;
+        const ssTaxable = provisional > ssThr85 ? Math.min(cySS * 0.85, cySS) : cySS * 0.5;
+        const grossInc  = cyW2 + ssTaxable + cyRental + cyOther;
+        const taxableBC = Math.max(0, grossInc - stdD);           // taxable before conversion
+        const fedTaxBC  = Math.round(progTax(taxableBC, fB));
+
+        // State tax on non-conversion income
+        const stateBr   = getStateBrackets(params?.stateOfResidence || "NJ", isMFJ);
+        const stTaxBC   = stateBr ? Math.round(progTax(taxableBC, stateBr)) : 0;
+
+        // Bracket headroom
+        const room12 = Math.max(0, b12t - taxableBC);
+        const room22 = Math.max(0, b22t - taxableBC);
+        const room24 = Math.max(0, b24t - taxableBC);
+
+        // Tax cost for converting the full room at each bracket
+        function convTax(convAmt) {
+          const fedInc = Math.round(progTax(taxableBC + convAmt, fB)) - fedTaxBC;
+          const stInc  = stateBr
+            ? Math.round(progTax(taxableBC + convAmt, stateBr)) - stTaxBC
+            : 0;
+          return { fedInc, stInc, total: fedInc + stInc };
+        }
+        const tax12 = convTax(room12);
+        const tax22 = convTax(room22);
+        const tax24 = convTax(room24);
+
+        // Recommended: fill 22%, capped by available SGOV cash
+        let recConv, recTax, recNote;
+        if (room22 === 0) {
+          recConv = 0; recTax = convTax(0); recNote = "Already above 22% bracket — no room";
+        } else if (cySGOV <= 0) {
+          recConv = room22; recTax = tax22; recNote = "Enter SGOV balance to check cash constraint";
+        } else if (tax22.total <= cySGOV) {
+          recConv = room22; recTax = tax22; recNote = "SGOV covers full 22% fill ✅";
+        } else {
+          // Scale down proportionally — linear approx within bracket
+          const ratio = cySGOV / tax22.total;
+          recConv = Math.round(room22 * ratio);
+          recTax  = convTax(recConv);
+          recNote = "SGOV limits conversion — increase cash to fill full bracket";
+        }
+
+        const inputStyle = {
+          width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f",
+          color: "#e2e8f0", borderRadius: 6, padding: "5px 8px", fontSize: 12,
+          fontFamily: "'DM Mono',monospace", textAlign: "right",
+        };
+        const rowSep = { borderBottom: "1px solid rgba(255,255,255,0.04)", padding: "5px 0" };
+        const fmtN = (n) => n === 0 ? "$0" : `$${Math.round(n).toLocaleString()}`;
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* ── Inputs ── */}
+            <div className="chart-card">
+              <div className="ct">🎯 Current Year Conversion Calculator</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 20px", fontSize: 12 }}>
+                <div>
+                  <div style={{ color: "#94a3b8", marginBottom: 6, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>Tax Year & Income</div>
+                  {[
+                    ["Tax Year",          cyYear,   setCyYear,   false, 2026, 2060],
+                    ["W-2 / SE Income",   cyW2,     setCyW2,     true],
+                    ["Social Security",   cySS,     setCySS,     true],
+                    ["Rental / Airbnb",   cyRental, setCyRental, true],
+                    ["Other Income",      cyOther,  setCyOther,  true],
+                  ].map(([lbl, val, setter, isDollar, mn, mx]) => (
+                    <div key={lbl} style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 8, alignItems: "center", ...rowSep }}>
+                      <span style={{ color: "#94a3b8" }}>{lbl}</span>
+                      <input
+                        type="number" value={val}
+                        onChange={e => setter(Number(e.target.value) || 0)}
+                        min={mn ?? 0} max={mx ?? 9999999} step={isDollar ? 1000 : 1}
+                        style={inputStyle}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{ color: "#94a3b8", marginBottom: 6, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>Cash Available for Taxes</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 8, alignItems: "center", ...rowSep }}>
+                    <span style={{ color: "#fbbf24" }}>SGOV / Cash for Taxes</span>
+                    <input
+                      type="number" value={cySGOV}
+                      onChange={e => setCySGOV(Number(e.target.value) || 0)}
+                      min={0} step={1000} style={{ ...inputStyle, borderColor: "#f59e0b" }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
+                    Filing: {isMFJ ? "Married Filing Jointly" : "Single"} ·{" "}
+                    State: {params?.stateOfResidence || "NJ"}{stateBr ? "" : " (no state tax)"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Income Breakdown ── */}
+            <div className="chart-card">
+              <div className="ct">Income Breakdown — Tax Year {cyYear}</div>
+              <table className="roth-tbl">
+                <tbody>
+                  {[
+                    ["W-2 / SE income",       fmtN(cyW2),       "#e2e8f0"],
+                    ["Social Security (taxable " + (provisional > ssThr85 ? "85%" : "50%") + ")", fmtN(ssTaxable), "#e2e8f0"],
+                    ["Rental / Airbnb net",   fmtN(cyRental),   "#e2e8f0"],
+                    ["Other income",          fmtN(cyOther),    "#e2e8f0"],
+                    ["Gross income",          fmtN(grossInc),   "#5eead4"],
+                    ["Standard deduction",    `(${fmtN(stdD)})`, "#f87171"],
+                    ["Taxable income before conversion", fmtN(taxableBC), "#fbbf24"],
+                  ].map(([lbl, val, col]) => (
+                    <tr key={lbl}>
+                      <td style={{ color: "#94a3b8" }}>{lbl}</td>
+                      <td style={{ color: col, textAlign: "right", fontFamily: "'DM Mono',monospace" }}>{val}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ── Bracket Headroom ── */}
+            <div className="chart-card">
+              <div className="ct">Bracket Headroom — {cyYear} (inflation-indexed)</div>
+              <table className="roth-tbl">
+                <thead>
+                  <tr>
+                    <th>Bracket</th>
+                    <th>Top of Bracket</th>
+                    <th>Headroom</th>
+                    <th>Fed Tax Cost</th>
+                    <th>State Tax Cost</th>
+                    <th>Total Tax Cost</th>
+                    <th>Eff Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ["12%", b12t, room12, tax12],
+                    ["22%", b22t, room22, tax22],
+                    ["24%", b24t, room24, tax24],
+                  ].map(([bracket, top, room, tax]) => (
+                    <tr key={bracket} style={{ background: bracket === "22%" ? "rgba(13,148,136,0.08)" : undefined }}>
+                      <td style={{ color: bracket === "22%" ? "#5eead4" : "#94a3b8", fontWeight: bracket === "22%" ? 700 : 400 }}>{bracket}</td>
+                      <td style={{ fontFamily: "'DM Mono',monospace" }}>{fmtN(top)}</td>
+                      <td style={{ color: room > 0 ? "#e2e8f0" : "#475569", fontFamily: "'DM Mono',monospace" }}>{fmtN(room)}</td>
+                      <td style={{ color: "#f87171", fontFamily: "'DM Mono',monospace" }}>{fmtN(tax.fedInc)}</td>
+                      <td style={{ color: stateBr ? "#fb923c" : "#34d399", fontFamily: "'DM Mono',monospace" }}>{fmtN(tax.stInc)}</td>
+                      <td style={{ color: "#f87171", fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmtN(tax.total)}</td>
+                      <td style={{ color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>
+                        {room > 0 ? ((tax.total / room) * 100).toFixed(1) + "%" : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ── Recommendation ── */}
+            <div className="chart-card" style={{ border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.05)" }}>
+              <div className="ct" style={{ color: "#fbbf24" }}>✅ Recommended Conversion — {cyYear}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div className="met" style={{ border: "1px solid rgba(245,158,11,0.3)" }}>
+                  <div className="ml">Convert This Amount</div>
+                  <div className="mv" style={{ color: "#fbbf24", fontSize: 22 }}>{fmtN(recConv)}</div>
+                  <div className="ms">pretax → Roth</div>
+                </div>
+                <div className="met" style={{ border: "1px solid rgba(248,113,113,0.3)" }}>
+                  <div className="ml">Total Tax Cost</div>
+                  <div className="mv" style={{ color: "#f87171", fontSize: 22 }}>{fmtN(recTax.total)}</div>
+                  <div className="ms">fed {fmtN(recTax.fedInc)} + state {fmtN(recTax.stInc)}</div>
+                </div>
+              </div>
+              <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
+                📋 Give this to your CPA: Convert {fmtN(recConv)} from pretax to Roth in {cyYear}.
+                Tax cost is {fmtN(recTax.total)} — fund from SGOV/cash outside the retirement accounts.
+              </div>
+              {recNote && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "#94a3b8" }}>{recNote}</div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {view === "optimized" && (
         <>
           <div className="chart-card">
