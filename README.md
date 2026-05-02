@@ -69,6 +69,40 @@ port[y] = port[y-1] × (1 + expectedReturn) + annualContrib
 
 Same formula the existing simulateDeterministic already uses for accumulation — just expose it as a chart line.
 
+---
+
+### 📋 Readiness Tab — Uncle John's 7-Step Retirement Readiness Check
+
+**Status:** Planned
+
+A new `📋 Readiness` tab alongside Net Worth, Forecast, Income, and Action Plan that scores the user against Uncle John's 7-step retirement framework using their actual profile data. Zero new inputs required — all data comes from the existing profile.
+
+**Seven step scorecards (Green ✅ / Yellow 🟡 / Red 🔴):**
+
+| Step | Profile Keys Used | Status Logic |
+|------|-------------------|--------------|
+| 1. Know Your Spending | `sp` | ✅ if `sp > 0`, 🔴 if zero |
+| 2. Three Buckets Mapped | `accounts` (pretax / roth / taxable) | ✅ if all three funded |
+| 3. RMD Window | `currentAge` | 🟡 approaching 59.5, ✅ if past |
+| 4. Work Style Decided | `retireAge` | ✅ if `<= 62`, 🟡 if `>= 65` |
+| 5. Debt Position | `mortBalance`, `port` | ✅ if `mortBalance < port * 0.15` |
+| 6. Social Security | `ssAge`, `ssb` | ✅ if both set |
+| 7. Life Designed | `twoHousehold` | ✅ if two-household model active |
+
+**Overall readiness score** displayed as X/7 at the bottom.
+
+**AI layer:** Each step card gets an "Explain This" button that sends the user's actual numbers to the Claude API for a personalized 3–4 sentence explanation — gated behind an API key in assumptions.
+
+**Source attribution:** Framework adapted from Uncle John Financials — youtu.be/jABYsMEoW20
+
+**Implementation notes:**
+- Add `["readiness", "📋 Readiness"]` to the `TABS` array in `App.jsx`
+- New `ReadinessTab({ p, results90 })` component — `p` is the params object
+- Bucket balances computed by filtering `p.accounts[]` by category (same pattern as line 5082)
+- No new state, no new computation beyond existing profile keys
+
+---
+
 ### DISCLAIMER
 
 AiRA Forecaster is a financial modelling and educational tool. It does not constitute professional financial, investment, tax, or legal advice. All simulations are based on historical data and mathematical projections. Past performance is not indicative of future results. Use at your own risk and consult a qualified financial advisor, CPA, or tax professional before making any financial decisions.
