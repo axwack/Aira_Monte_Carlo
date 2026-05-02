@@ -3316,7 +3316,7 @@ const modeDescs = {
                   : "#64748b",
               }}
             >
-              {v === "thisyear"   ? "🎯 This Year"
+              {v === "thisyear"   ? "💰 Tax Room"
                : v === "optimized"  ? "📊 Conversion Plan"
                : v === "comparison" ? "⚖️ Compare"
                : v === "table"      ? "📋 Year-by-Year"
@@ -3499,15 +3499,15 @@ const modeDescs = {
         if (room22 === 0) {
           recConv = 0; recTax = convTax(0); recNote = "Already above 22% bracket — no room";
         } else if (cySGOV <= 0) {
-          recConv = room22; recTax = tax22; recNote = "Enter SGOV balance to check cash constraint";
+          recConv = room22; recTax = tax22; recNote = "Enter Cash/Treasury/Short Term cash balance to check cash constraint";
         } else if (tax22.total <= cySGOV) {
-          recConv = room22; recTax = tax22; recNote = "SGOV covers full 22% fill ✅";
+          recConv = room22; recTax = tax22; recNote = "Cash/Treasury/Short Term cash covers full 22% fill ✅";
         } else {
           // Scale down proportionally — linear approx within bracket
           const ratio = cySGOV / tax22.total;
           recConv = Math.round(room22 * ratio);
           recTax  = convTax(recConv);
-          recNote = "SGOV limits conversion — increase cash to fill full bracket";
+          recNote = "Cash/Treasury/Short Term cash limits conversion — increase cash to fill full bracket";
         }
 
         const inputStyle = {
@@ -3523,6 +3523,10 @@ const modeDescs = {
             {/* ── Inputs ── */}
             <div className="chart-card">
               <div className="ct">🎯 Current Year Conversion Calculator</div>
+                <div style={{ fontSize: 11, color: "#64748b", fontStyle: "italic", marginBottom: 10 }}>
+                    Enter your expected income for {cyYear}, then see how much bracket room remains 
+                    for a Roth conversion. Give the recommended number to your CPA by December.
+                  </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 20px", fontSize: 12 }}>
                 <div>
                   <div style={{ color: "#94a3b8", marginBottom: 6, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>Tax Year & Income</div>
@@ -3547,7 +3551,7 @@ const modeDescs = {
                 <div>
                   <div style={{ color: "#94a3b8", marginBottom: 6, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>Cash Available for Taxes</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 8, alignItems: "center", ...rowSep }}>
-                    <span style={{ color: "#fbbf24" }}>SGOV / Cash for Taxes</span>
+                    <span style={{ color: "#fbbf24" }}>Cash/Treasury/Short Term cash for Taxes</span>
                     <input
                       type="number" value={cySGOV}
                       onChange={e => setCySGOV(Number(e.target.value) || 0)}
