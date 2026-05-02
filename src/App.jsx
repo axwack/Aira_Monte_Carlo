@@ -3068,7 +3068,7 @@ function RothLadder({ params }) {
 const state = params.stateOfResidence || "NJ";   // fallback to your actual state
 const domLabel = isNoTaxState
   ? "No Tax State Move or Out of Country"
-  : `${state} Domicile (with tax) · CA/NY/Washington worst-case`;
+  : `${state} Domicile (with tax)`;
   const domColor = isNoTaxState ? "#34d399" : "#fb923c";
   
   const modeLabels = {
@@ -3475,10 +3475,10 @@ const modeDescs = {
                     >
                       {r.label}
                     </td>
-                    <td style={{ color: "#e2e8f0" }}>{fmtM(r.conv)}</td>
-                    <td style={{ color: "#f87171" }}>{fmtM(r.fedT)}</td>
+                    <td style={{ color: "#e2e8f0" }}>{fmtDollar(r.conv)}</td>
+                    <td style={{ color: "#f87171" }}>{fmtDollar(r.fedT)}</td>
                     <td style={{ color: isNoTaxState ? "#34d399" : "#fb923c" }}>
-                      {isNoTaxState ? "$0" : fmtM(r.stT)}
+                      {isNoTaxState ? "$0" : fmtDollar(r.stT)}
                     </td>
                     <td
                       style={{
@@ -3523,7 +3523,7 @@ const modeDescs = {
                       {(r.effR * 100).toFixed(1)}%
                     </td>
                     <td style={{ color: "#14b8a6", fontWeight: 600 }}>
-                      {fmtM(r.conv - r.fedT - (isNoTaxState ? 0 : r.stT))}
+                      {fmtDollar(r.conv - r.fedT - (isNoTaxState ? 0 : r.stT))}
                     </td>
                   </tr>
                 ))}
@@ -3854,12 +3854,12 @@ const modeDescs = {
               <tr>
                 <th>Year</th>
                 <th>Age</th>
-                <th>Opt Rate</th>
-                <th>Cur Rate</th>
-                <th>Opt Tax</th>
-                <th>Cur Tax</th>
-                <th>Opt RMD</th>
-                <th>Cur RMD</th>
+                <th>Optimal Rate</th>
+                <th>Current Rate</th>
+                <th>Optimal Tax</th>
+                <th>Current Tax</th>
+                <th>Optimal RMD</th>
+                <th>Current RMD</th>
               </tr>
             </thead>
             <tbody>
@@ -3874,15 +3874,15 @@ const modeDescs = {
                       <td style={{ color: "#94a3b8" }}>{r.age}</td>
                       <td>{(r.effR * 100).toFixed(0)}%</td>
                       <td>{c ? (c.effR * 100).toFixed(0) : "0"}%</td>
-                      <td style={{ color: "#f87171" }}>{fmtM(r.totT)}</td>
+                      <td style={{ color: "#f87171" }}>{fmtDollar(r.totT)}</td>
                       <td style={{ color: "#94a3b8" }}>
-                        {c ? fmtM(c.totT) : "$0"}
+                        {c ? fmtDollar(c.totT) : "$0"}
                       </td>
                       <td style={{ color: "#34d399" }}>
-                        {r.rmd > 0 ? fmtM(r.rmd) : "-"}
+                        {r.rmd > 0 ? fmtDollar(r.rmd) : "-"}
                       </td>
                       <td style={{ color: "#f87171" }}>
-                        {c && c.rmd > 0 ? fmtM(c.rmd) : "-"}
+                        {c && c.rmd > 0 ? fmtDollar(c.rmd) : "-"}
                       </td>
                     </tr>
                   );
@@ -3978,22 +3978,22 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
       <div className="chart-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div className="ct">📋 Year‑by‑Year Schedule</div>
-          <button onClick={() => setShowTable(!showTable)} className="mbtn" style={{ fontSize: 10, padding: "3px 8px" }}>{showTable ? "Hide Table" : "Show Table"}</button>
+          <button onClick={() => setShowTable(!showTable)} className="mbtn" style={{ fontSize: 12, padding: "3px 8px" }}>{showTable ? "Hide Table" : "Show Table"}</button>
         </div>
         {showTable && (
           <div style={{ overflowX: "auto" }}>
-            <table className="nw-table" style={{ fontSize: 11 }}>
+            <table className="nw-table" style={{ fontSize: 12 }}>
               <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>SS</th><th>Rental</th><th>Other Inc</th><th>Portfolio Draw</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
               <tbody>
                 {schedule.map((s) => (
                   <tr key={s.age}>
                     <td style={{ textAlign: "left" }}>{s.age}</td><td>{s.yr}</td>
-                    <td style={{ color: "#fbbf24" }}>{fmtDollar(s.spending)}</td>
+                    <td style={{ color: "#fbbf24",fontSize: 16, fontWeight: 'bold'  }}>{fmtDollar(s.spending)}</td>
                     <td>{fmtDollar(s.ss)}</td><td>{fmtDollar(s.Rental)}</td><td style={{ color: "#eab308" }}>{fmtDollar(s.OtherIncome)}</td><td>{fmtDollar(s.portfolioDraw)}</td>
                     <td style={{ color: "#f87171" }}>{fmtDollar(s.fedTax)}</td>
                     <td style={{ color: "#fb923c" }}>{fmtDollar(s.stateTax)}</td>
                     <td style={{ color: "#a78bfa" }}>{fmtDollar(s.irmaa)}</td>
-                    <td style={{ color: "#94a3b8" }}>{fmtDollar(s.totalWithdrawal)}</td>
+                    <td style={{ color: "#8fcfa8",fontSize: 16, fontWeight: 'bold' }}>{fmtDollar(s.totalWithdrawal)}</td>
                     <td style={{ color: "#14b8a6", fontWeight: 600 }}>{fmtDollar(s.portfolioEnd)}</td>
                   </tr>
                 ))}
@@ -4002,7 +4002,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
           </div>
         )}
       </div>
-      <div className="flag-i" style={{ fontSize: 11 }}>
+      <div className="flag-i" style={{ fontSize: 12 }}>
         ℹ️ Deterministic (median) path – shows how the {strategyLabel} strategy would behave in a single "typical" sequence of returns. Actual outcomes will vary.
       </div>
     </>
