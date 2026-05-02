@@ -3732,7 +3732,7 @@ const modeDescs = {
                   .filter((_, i) => i % 2 === 0)
                   .map(r => {
                     const c = cur.rows.find(cr => cr.yr === r.yr);
-                    return { age: r.age, "OPT Rate": r.effR, "CUR Rate": c ? c.effR : 0 };
+                    return { age: r.age, "Optimal Rate": r.effR, "Current Rate": c ? c.effR : 0 };
                   })}
                 margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
               >
@@ -3755,14 +3755,14 @@ const modeDescs = {
                 <Legend wrapperStyle={{ fontSize: 10 }} />
                 <Line
                   type="monotone"
-                  dataKey="OPT Rate"
+                  dataKey="Optimal Rate"
                   stroke="#0d9488"
                   strokeWidth={2}
                   dot={false}
                 />
                 <Line
                   type="monotone"
-                  dataKey="CUR Rate"
+                  dataKey="Current Rate"
                   stroke="#f87171"
                   strokeWidth={1.5}
                   strokeDasharray="4 3"
@@ -3811,18 +3811,18 @@ const modeDescs = {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10, fontSize: 11 }}>
                   <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "7px 10px", border: "1px solid rgba(255,255,255,0.06)" }}>
                     <div style={{ color: "#64748b", marginBottom: 4 }}>Pre-RMD tax (ages {params.retireAge}–{rmdAge - 1})</div>
-                    <div style={{ color: "#0d9488" }}>OPT: {fmtM(optPreRmd)}</div>
-                    <div style={{ color: "#94a3b8" }}>CUR: {fmtM(curPreRmd)}</div>
+                    <div style={{ color: "#0d9488" }}>Optimal: {fmtDollar(optPreRmd)}</div>
+                    <div style={{ color: "#94a3b8" }}>Current: {fmtDollar(curPreRmd)}</div>
                     <div style={{ color: optPreRmd > curPreRmd ? "#fb923c" : "#34d399", marginTop: 2 }}>
-                      {optPreRmd > curPreRmd ? `▲ +${fmtM(optPreRmd - curPreRmd)} conversion cost` : `▼ ${fmtM(curPreRmd - optPreRmd)} savings`}
+                      {optPreRmd > curPreRmd ? `▲ +${fmtDollar(optPreRmd - curPreRmd)} conversion cost` : `▼ ${fmtDollar(curPreRmd - optPreRmd)} savings`}
                     </div>
                   </div>
                   <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "7px 10px", border: "1px solid rgba(255,255,255,0.06)" }}>
                     <div style={{ color: "#64748b", marginBottom: 4 }}>RMD-years tax (ages {rmdAge}–{params.endAge || 90})</div>
-                    <div style={{ color: "#0d9488" }}>OPT: {fmtM(optPostRmd)}</div>
-                    <div style={{ color: "#94a3b8" }}>CUR: {fmtM(curPostRmd)}</div>
+                    <div style={{ color: "#0d9488" }}>Optimal: {fmtDollar(optPostRmd)}</div>
+                    <div style={{ color: "#94a3b8" }}>Current: {fmtDollar(curPostRmd)}</div>
                     <div style={{ color: optPostRmd < curPostRmd ? "#34d399" : "#fb923c", marginTop: 2 }}>
-                      {optPostRmd < curPostRmd ? `▼ ${fmtM(curPostRmd - optPostRmd)} RMD savings` : `▲ +${fmtM(optPostRmd - curPostRmd)} extra`}
+                      {optPostRmd < curPostRmd ? `▼ ${fmtDollar(curPostRmd - optPostRmd)} RMD savings` : `▲ +${fmtDollar(optPostRmd - curPostRmd)} extra`}
                     </div>
                   </div>
                 </div>
@@ -3907,12 +3907,12 @@ const modeDescs = {
                 <th>Year</th>
                 <th>Age</th>
                 <th>Milestone</th>
-                <th>Opt Rate</th>
-                <th>Cur Rate</th>
-                <th>Opt Tax</th>
-                <th>Cur Tax</th>
-                <th>Opt RMD</th>
-                <th>Cur RMD</th>
+                <th>Optimal Rate</th>
+                <th>Current Rate</th>
+                <th>Optimal Tax</th>
+                <th>Current Tax</th>
+                <th>Optimal RMD</th>
+                <th>Current RMD</th>
               </tr>
             </thead>
             <tbody>
