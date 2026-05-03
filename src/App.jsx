@@ -3665,7 +3665,7 @@ const modeDescs = {
               </div>
               <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
                 📋 Give this to your CPA: Convert {fmtN(recConv)} from pretax to Roth in {cyYear}.
-                Tax cost is {fmtN(recTax.total)} — fund from SGOV/cash outside the retirement accounts.
+                Tax cost is {fmtN(recTax.total)} — fund from Taxable/Cash outside the retirement accounts.
               </div>
               {recNote && (
                 <div style={{ marginTop: 8, fontSize: 11, color: "#94a3b8" }}>{recNote}</div>
@@ -3700,7 +3700,7 @@ const modeDescs = {
                 <br /><br />
                 <strong style={{ color: "#94a3b8" }}>Lifetime Ladder (📊 Conversion Plan tab)</strong> projects conversions over every future year.
                 For years where you have not saved a real number, it uses the bracket-fill optimizer —
-                which does not know about your working income, SGOV balance, or IRMAA timing.
+                which does not know about your working income, Cash or Taxable/Brokerage balance, or IRMAA timing.
                 <br /><br />
                 <strong style={{ color: "#fbbf24" }}>Press "Save to Lifetime Ladder" above</strong> to anchor the current year to your real number.
                 The Ladder will then use the optimizer only for future years it does not have a pin for.
@@ -4514,12 +4514,12 @@ function ScenariosTab({
   onSaveConversionOverride,
 }) {
 
-  const [scenarioSubTab, setScenarioSubTab] = useState("stress");
+  const [scenarioSubTab, setScenarioSubTab] = useState("roth");
 
   const SCENARIO_SUBTABS = [
-    ["stress", "🔶 STRESS TEST"],
+    ["roth", "🔄 ROTH CONVERSIONS"],
     ["withdrawal", "💸 WITHDRAWAL ANALYSIS"],
-    ["roth", "🔄 ROTH"],
+    ["stress", "🔶 STRESS TEST"],
     ["buckets", "🪣 BUCKETS"],
     ["smile", "🙂 SMILE"],
   ];
@@ -6750,7 +6750,7 @@ function ContribPanel({ values, onChange }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
-          ANNUAL CONTRIBUTIONS
+          ANNUAL CONTRIBUTIONS - Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
         </div>
         <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
