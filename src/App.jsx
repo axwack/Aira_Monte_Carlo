@@ -85,8 +85,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.6";
-export const BUILD_TAG = "Fixed rental income (ab) never reaching simulations: removed useAb gate (no UI toggle existed, defaulted false), fixed ab hardcoded to 0 in params object, fixed MC paths only counting propIncome not ab. All income sources now flow correctly through withdrawal schedule and Monte Carlo.";
+const APP_VERSION = "1.0.7";
+export const BUILD_TAG = "Roth engine fixes: outside_cash tax funding now deducts from taxable pool; RMD divisors at 75/76 corrected to IRS Pub 590-B Table II joint values; manual year-by-year conversion override schedule added; FAFSA/CSS guardrails trigger on year entry alone (no toggle); 3-scenario tab (state/no-tax state/no conv) added to Roth Ladder. BLANK_PROFILE kept clean — user-specific overrides belong in exported JSON only.";
 export const BUILD_TIME = "05-02-2026";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -353,7 +353,7 @@ export const BLANK_PROFILE = {
   fafsaGuard: false,            // cap Roth conversions during college aid years
   fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window)
   cssEndYear: null,             // last year to cap at 22% (CSS Profile window)
-  conversionOverrides: [],      // [{id, year, amount}] manual per-year conversion amounts
+  conversionOverrides: [],      // [{id, year, amount}] manual per-year conversion amounts — populated in user's exported JSON
   // Account breakdown (feeds port total)
   accounts: [
     { id: "1", category: "pretax", name: "401(k)", balance: 0 },
@@ -1277,11 +1277,13 @@ const IRMAA_2026 = [
   { m: 410000, f: 8300 },
   { m: 750000, f: 11130 },
 ];
+// IRS Publication 590-B Table II (Joint & Last Survivor), owner age with
+// spouse ~10 years younger. Values at 75 and 76 corrected per Table II.
 const RMD_DIV = {
   73: 30.4,
   74: 29.5,
-  75: 28.5,
-  76: 27.6,
+  75: 28.9,  // Table II (was 28.5 Uniform)
+  76: 28.0,  // Table II (was 27.6 Uniform)
   77: 26.6,
   78: 25.7,
   79: 24.7,
@@ -1346,6 +1348,7 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
 }
 
 function buildRothExplorer(params = {}) {
+  console.log("[buildRothExplorer] taxFunding =", params.taxFunding);
   const {
     currentAge,
     retireAge,
@@ -1556,6 +1559,10 @@ function buildRothExplorer(params = {}) {
             // taxable depleted — remainder comes out of the conversion
             roAdd = Math.max(0, conv - (totT - taxFromTaxable));
           }
+        } else if (taxFunding === "outside_cash") {
+          // Tax paid from external cash — full conversion goes to Roth,
+          // but the external cash pool (modeled via taxBal) must shrink.
+          taxFromTaxable = Math.min(taxBal, totT);
         }
       }
       taxBal = Math.max(0, taxBal - taxFromTaxable) * (1 + gr);
@@ -3034,11 +3041,22 @@ function SmileChart({ p, inf }) {
   );
 }
 
-function RothLadder({ params }) {
-  
+function RothLadder({ params, onSaveConversionOverride }) {
+
   const [showInputs, setShowInputs] = useState(false);
   const [view, setView] = useState("optimized");
   const [rothMode, setRothMode] = useState("fill_22");
+
+  // ── Current-Year Calculator state ──────────────────────────────────────
+  const currentCalYear = new Date().getFullYear() + 1; // plan for next year by default
+  const [cyYear,   setCyYear]   = useState(currentCalYear);
+  const [cyW2,     setCyW2]     = useState(0);
+  const [cySS,     setCySS]     = useState(0);
+  const [cyRental, setCyRental] = useState(0);
+  const [cyOther,  setCyOther]  = useState(0);
+  const [cySGOV,   setCySGOV]   = useState(0);
+  // ───────────────────────────────────────────────────────────────────────
+
   const ex = useMemo(
     () => buildRothExplorer({ ...(params ?? {}), rothMode }),
     [
@@ -3063,6 +3081,19 @@ function RothLadder({ params }) {
       rothMode,
     ]
   );
+
+  // No-tax state scenario: same profile but state tax zeroed out (twoHousehold flag)
+  const exNoTax = useMemo(
+    () => buildRothExplorer({ ...(params ?? {}), rothMode, twoHousehold: true }),
+    [
+      params?.currentAge, params?.retireAge, params?.ssAge, params?.ab,
+      params?.inf, params?.port, params?.useAb, params?.ssb, params?.accounts,
+      params?.dob, params?.birthYear, params?.filingStatus, params?.rmdStartAge,
+      params?.taxFunding, params?.fafsaEndYear, params?.cssEndYear,
+      params?.conversionOverrides, rothMode,
+    ]
+  );
+
   const {
     opt,
     cur,
@@ -3263,27 +3294,33 @@ const modeDescs = {
         }}
       >
         <div style={{ display: "flex", gap: 4 }}>
-          {["optimized", "comparison", "table"].map((v) => (
+          {["thisyear", "optimized", "comparison", "table", "scenarios"].map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
               style={{
                 padding: "4px 10px",
                 borderRadius: 6,
-                border: "1px solid rgba(255,255,255,0.1)",
+                border: v === "thisyear"
+                  ? (view === v ? "1px solid #f59e0b" : "1px solid rgba(245,158,11,0.3)")
+                  : "1px solid rgba(255,255,255,0.1)",
                 cursor: "pointer",
                 fontSize: 10,
                 fontFamily: "inherit",
                 fontWeight: 600,
-                background: view === v ? "rgba(13,148,136,0.2)" : "transparent",
-                color: view === v ? "#5eead4" : "#64748b",
+                background: view === v
+                  ? (v === "thisyear" ? "rgba(245,158,11,0.15)" : "rgba(13,148,136,0.2)")
+                  : "transparent",
+                color: view === v
+                  ? (v === "thisyear" ? "#fbbf24" : "#5eead4")
+                  : "#64748b",
               }}
             >
-              {v === "optimized"
-                ? "📊 Conversion Plan"
-                : v === "comparison"
-                ? "⚖️ Compare"
-                : "📋 Year-by-Year"}
+              {v === "thisyear"   ? "💰 Tax Room"
+               : v === "optimized"  ? "📊 Conversion Plan"
+               : v === "comparison" ? "⚖️ Compare"
+               : v === "table"      ? "📋 Year-by-Year"
+               :                      "🗺️ 3-Scenario"}
             </button>
           ))}
         </div>
@@ -3375,10 +3412,23 @@ const modeDescs = {
             : `🏠 Both in ${params.stateOfResidence || "your state"} (full spend, state tax applies)`}
         </span>
       </div>
+      {(() => {
+        const _cy = new Date().getFullYear();
+        const _pinned   = convRows.filter(r => r.capReason?.startsWith("manual") && r.yr >= _cy).length;
+        const _forecast = convRows.filter(r => !r.capReason?.startsWith("manual") && r.yr >= _cy).length;
+        const _past     = convRows.filter(r => r.yr < _cy).length;
+        return (
+          <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6, display: "flex", gap: 16, alignItems: "center" }}>
+            <span>📌 <strong style={{ color: "#fbbf24" }}>{_pinned} pinned</strong> — anchored to real income data</span>
+            <span>🔮 <strong style={{ color: "#5eead4" }}>{_forecast} forecasted</strong> — optimizer projection</span>
+            {_past > 0 && <span>📅 <strong style={{ color: "#475569" }}>{_past} past</strong> — historical</span>}
+          </div>
+        );
+      })()}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4,1fr)",
+          gridTemplateColumns: "repeat(5,1fr)",
           gap: 8,
         }}
       >
@@ -3388,6 +3438,15 @@ const modeDescs = {
             {convRows.length}
           </div>
           <div className="ms">during plan window</div>
+        </div>
+        <div className="met" style={{ border: convRows.filter(r => r.capReason?.startsWith("manual")).length > 0 ? "1px solid rgba(245,158,11,0.3)" : undefined }}>
+          <div className="ml">📌 Pinned / 🔮 Forecast</div>
+          <div className="mv" style={{ fontSize: 14 }}>
+            <span style={{ color: "#fbbf24" }}>{convRows.filter(r => r.capReason?.startsWith("manual") && r.yr >= new Date().getFullYear()).length}</span>
+            <span style={{ color: "#475569" }}> / </span>
+            <span style={{ color: "#5eead4" }}>{convRows.filter(r => !r.capReason?.startsWith("manual") && r.yr >= new Date().getFullYear()).length}</span>
+          </div>
+          <div className="ms">real anchor vs optimizer</div>
         </div>
         <div className="met">
           <div className="ml">Lifetime Tax Delta</div>
@@ -3417,6 +3476,242 @@ const modeDescs = {
           <div className="ms">optimized vs current</div>
         </div>
       </div>
+      {view === "thisyear" && (() => {
+        const isMFJ   = (params?.filingStatus || "mfj") !== "single";
+        const infRate = (params?.inf || 2.5) / 100;
+        const f       = Math.pow(1 + infRate, cyYear - 2026);
+        const fedBase = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
+        const fB      = idxB(fedBase, f);
+        const stdD    = Math.round((isMFJ ? 32200 : 16100) * f);
+        const b12t    = fB.find(b => b.rate === 0.12)?.hi ?? 0;
+        const b22t    = fB.find(b => b.rate === 0.22)?.hi ?? 0;
+        const b24t    = fB.find(b => b.rate === 0.24)?.hi ?? 0;
+
+        // SS provisional income → up to 85% taxable
+        const provisional = cyW2 + cyRental + cyOther + cySS * 0.5;
+        const ssThr85 = isMFJ ? 44000 : 34000;
+        const ssTaxable = provisional > ssThr85 ? Math.min(cySS * 0.85, cySS) : cySS * 0.5;
+        const grossInc  = cyW2 + ssTaxable + cyRental + cyOther;
+        const taxableBC = Math.max(0, grossInc - stdD);           // taxable before conversion
+        const fedTaxBC  = Math.round(progTax(taxableBC, fB));
+
+        // State tax on non-conversion income
+        const stateBr   = getStateBrackets(params?.stateOfResidence || "NJ", isMFJ);
+        const stTaxBC   = stateBr ? Math.round(progTax(taxableBC, stateBr)) : 0;
+
+        // Bracket headroom
+        const room12 = Math.max(0, b12t - taxableBC);
+        const room22 = Math.max(0, b22t - taxableBC);
+        const room24 = Math.max(0, b24t - taxableBC);
+
+        // Tax cost for converting the full room at each bracket
+        function convTax(convAmt) {
+          const fedInc = Math.round(progTax(taxableBC + convAmt, fB)) - fedTaxBC;
+          const stInc  = stateBr
+            ? Math.round(progTax(taxableBC + convAmt, stateBr)) - stTaxBC
+            : 0;
+          return { fedInc, stInc, total: fedInc + stInc };
+        }
+        const tax12 = convTax(room12);
+        const tax22 = convTax(room22);
+        const tax24 = convTax(room24);
+
+        // Recommended: fill 22%, capped by available SGOV cash
+        let recConv, recTax, recNote;
+        if (room22 === 0) {
+          recConv = 0; recTax = convTax(0); recNote = "Already above 22% bracket — no room";
+        } else if (cySGOV <= 0) {
+          recConv = room22; recTax = tax22; recNote = "Enter Cash/Treasury/Short Term cash balance to check cash constraint";
+        } else if (tax22.total <= cySGOV) {
+          recConv = room22; recTax = tax22; recNote = "Cash/Treasury/Short Term cash covers full 22% fill ✅";
+        } else {
+          // Scale down proportionally — linear approx within bracket
+          const ratio = cySGOV / tax22.total;
+          recConv = Math.round(room22 * ratio);
+          recTax  = convTax(recConv);
+          recNote = "Cash/Treasury/Short Term cash limits conversion — increase cash to fill full bracket";
+        }
+
+        const inputStyle = {
+          width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f",
+          color: "#e2e8f0", borderRadius: 6, padding: "5px 8px", fontSize: 12,
+          fontFamily: "'DM Mono',monospace", textAlign: "right",
+        };
+        const rowSep = { borderBottom: "1px solid rgba(255,255,255,0.04)", padding: "5px 0" };
+        const fmtN = (n) => n === 0 ? "$0" : `$${Math.round(n).toLocaleString()}`;
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* ── Inputs ── */}
+            <div className="chart-card">
+              <div className="ct">🎯 Current Year Conversion Calculator</div>
+                <div style={{ fontSize: 11, color: "#64748b", fontStyle: "italic", marginBottom: 10 }}>
+                    Enter your expected income for {cyYear}, then see how much bracket room remains 
+                    for a Roth conversion. Give the recommended number to your CPA by December.
+                  </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 20px", fontSize: 12 }}>
+                <div>
+                  <div style={{ color: "#94a3b8", marginBottom: 6, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>Tax Year & Income</div>
+                  {[
+                    ["Tax Year",          cyYear,   setCyYear,   false, 2026, 2060],
+                    ["W-2 / SE Income",   cyW2,     setCyW2,     true],
+                    ["Social Security",   cySS,     setCySS,     true],
+                    ["Rental / Airbnb",   cyRental, setCyRental, true],
+                    ["Other Income",      cyOther,  setCyOther,  true],
+                  ].map(([lbl, val, setter, isDollar, mn, mx]) => (
+                    <div key={lbl} style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 8, alignItems: "center", ...rowSep }}>
+                      <span style={{ color: "#94a3b8" }}>{lbl}</span>
+                      <input
+                        type="number" value={val}
+                        onChange={e => setter(Number(e.target.value) || 0)}
+                        min={mn ?? 0} max={mx ?? 9999999} step={isDollar ? 1000 : 1}
+                        style={inputStyle}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{ color: "#94a3b8", marginBottom: 6, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>Cash Available for Taxes</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 8, alignItems: "center", ...rowSep }}>
+                    <span style={{ color: "#fbbf24" }}>Cash/Treasury/Short Term cash for Taxes</span>
+                    <input
+                      type="number" value={cySGOV}
+                      onChange={e => setCySGOV(Number(e.target.value) || 0)}
+                      min={0} step={1000} style={{ ...inputStyle, borderColor: "#f59e0b" }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
+                    Filing: {isMFJ ? "Married Filing Jointly" : "Single"} ·{" "}
+                    State: {params?.stateOfResidence || "NJ"}{stateBr ? "" : " (no state tax)"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Income Breakdown ── */}
+            <div className="chart-card">
+              <div className="ct">Income Breakdown — Tax Year {cyYear}</div>
+              <table className="roth-tbl">
+                <tbody>
+                  {[
+                    ["W-2 / SE income",       fmtN(cyW2),       "#e2e8f0"],
+                    ["Social Security (taxable " + (provisional > ssThr85 ? "85%" : "50%") + ")", fmtN(ssTaxable), "#e2e8f0"],
+                    ["Rental / Airbnb net",   fmtN(cyRental),   "#e2e8f0"],
+                    ["Other income",          fmtN(cyOther),    "#e2e8f0"],
+                    ["Gross income",          fmtN(grossInc),   "#5eead4"],
+                    ["Standard deduction",    `(${fmtN(stdD)})`, "#f87171"],
+                    ["Taxable income before conversion", fmtN(taxableBC), "#fbbf24"],
+                  ].map(([lbl, val, col]) => (
+                    <tr key={lbl}>
+                      <td style={{ color: "#94a3b8" }}>{lbl}</td>
+                      <td style={{ color: col, textAlign: "right", fontFamily: "'DM Mono',monospace" }}>{val}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ── Bracket Headroom ── */}
+            <div className="chart-card">
+              <div className="ct">Bracket Headroom — {cyYear} (inflation-indexed)</div>
+              <table className="roth-tbl">
+                <thead>
+                  <tr>
+                    <th>Bracket</th>
+                    <th>Top of Bracket</th>
+                    <th>Headroom</th>
+                    <th>Fed Tax Cost</th>
+                    <th>State Tax Cost</th>
+                    <th>Total Tax Cost</th>
+                    <th>Eff Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ["12%", b12t, room12, tax12],
+                    ["22%", b22t, room22, tax22],
+                    ["24%", b24t, room24, tax24],
+                  ].map(([bracket, top, room, tax]) => (
+                    <tr key={bracket} style={{ background: bracket === "22%" ? "rgba(13,148,136,0.08)" : undefined }}>
+                      <td style={{ color: bracket === "22%" ? "#5eead4" : "#94a3b8", fontWeight: bracket === "22%" ? 700 : 400 }}>{bracket}</td>
+                      <td style={{ fontFamily: "'DM Mono',monospace" }}>{fmtN(top)}</td>
+                      <td style={{ color: room > 0 ? "#e2e8f0" : "#475569", fontFamily: "'DM Mono',monospace" }}>{fmtN(room)}</td>
+                      <td style={{ color: "#f87171", fontFamily: "'DM Mono',monospace" }}>{fmtN(tax.fedInc)}</td>
+                      <td style={{ color: stateBr ? "#fb923c" : "#34d399", fontFamily: "'DM Mono',monospace" }}>{fmtN(tax.stInc)}</td>
+                      <td style={{ color: "#f87171", fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmtN(tax.total)}</td>
+                      <td style={{ color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>
+                        {room > 0 ? ((tax.total / room) * 100).toFixed(1) + "%" : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ── Recommendation ── */}
+            <div className="chart-card" style={{ border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.05)" }}>
+              <div className="ct" style={{ color: "#fbbf24" }}>✅ Recommended Conversion — {cyYear}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div className="met" style={{ border: "1px solid rgba(245,158,11,0.3)" }}>
+                  <div className="ml">Convert This Amount</div>
+                  <div className="mv" style={{ color: "#fbbf24", fontSize: 22 }}>{fmtN(recConv)}</div>
+                  <div className="ms">pretax → Roth</div>
+                </div>
+                <div className="met" style={{ border: "1px solid rgba(248,113,113,0.3)" }}>
+                  <div className="ml">Total Tax Cost</div>
+                  <div className="mv" style={{ color: "#f87171", fontSize: 22 }}>{fmtN(recTax.total)}</div>
+                  <div className="ms">fed {fmtN(recTax.fedInc)} + state {fmtN(recTax.stInc)}</div>
+                </div>
+              </div>
+              <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
+                📋 Give this to your CPA: Convert {fmtN(recConv)} from pretax to Roth in {cyYear}.
+                Tax cost is {fmtN(recTax.total)} — fund from Taxable/Cash outside the retirement accounts.
+              </div>
+              {recNote && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "#94a3b8" }}>{recNote}</div>
+              )}
+              {recConv > 0 && onSaveConversionOverride && (
+                <button
+                  onClick={() => {
+                    onSaveConversionOverride(cyYear, recConv);
+                    alert(`✅ Saved: Convert ${fmtN(recConv)} in ${cyYear} to your Lifetime Projection ladder.`);
+                  }}
+                  style={{
+                    marginTop: 12, width: "100%", padding: "10px 0",
+                    background: "rgba(245,158,11,0.2)", border: "1px solid #f59e0b",
+                    color: "#fbbf24", borderRadius: 8, cursor: "pointer",
+                    fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                  }}
+                >
+                  → Save to Lifetime Ladder
+                </button>
+              )}
+            </div>
+
+            {/* ── How this works ── */}
+            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: "12px 14px" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+                ℹ️ How Tax Room and the Lifetime Ladder work together
+              </div>
+              <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.7 }}>
+                <strong style={{ color: "#94a3b8" }}>Tax Room (this tab)</strong> is grounded in reality — you enter your actual known income
+                for the year and get the exact conversion amount to hand your CPA. It reflects what you
+                can actually do right now, not a forecast.
+                <br /><br />
+                <strong style={{ color: "#94a3b8" }}>Lifetime Ladder (📊 Conversion Plan tab)</strong> projects conversions over every future year.
+                For years where you have not saved a real number, it uses the bracket-fill optimizer —
+                which does not know about your working income, Cash or Taxable/Brokerage balance, or IRMAA timing.
+                <br /><br />
+                <strong style={{ color: "#fbbf24" }}>Press "Save to Lifetime Ladder" above</strong> to anchor the current year to your real number.
+                The Ladder will then use the optimizer only for future years it does not have a pin for.
+                Do this every December to keep the projection grounded year by year — the same way
+                Monte Carlo checkpoints anchor the portfolio balance to reality.
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {view === "optimized" && (
         <>
           <div className="chart-card">
@@ -3455,68 +3750,73 @@ const modeDescs = {
                 <Bar dataKey="37%" stackId="br" fill="#991b1b" name="37%" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-            <table className="roth-tbl" style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 10, color: "#475569", margin: "8px 0 4px", display: "flex", gap: 14 }}>
+              <span>📌 <span style={{ color: "#fbbf24" }}>Amber</span> = pinned from Tax Room or manual entry</span>
+              <span>🔮 <span style={{ color: "#5eead4" }}>Default</span> = optimizer projection</span>
+              <span>📅 <span style={{ color: "#334155" }}>Gray</span> = historical (already past)</span>
+            </div>
+            <table className="roth-tbl" style={{ marginTop: 4 }}>
               <thead>
                 <tr>
                   <th>Year</th>
                   <th>Age</th>
                   <th>Label</th>
+                  <th>Source</th>
                   <th>Conversion</th>
                   <th>Fed Tax</th>
                   <th>State Tax</th>
                   <th>Bracket</th>
-                  <th title="Why conversion was capped this year">Cap</th>
                   <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg</th>
                   <th>Eff Rate</th>
                   <th>Net→Roth</th>
                 </tr>
               </thead>
               <tbody>
-                {convRows.map((r) => (
+                {convRows.map((r) => {
+                  const isPast   = r.yr < new Date().getFullYear();
+                  const isPinned = !isPast && r.capReason?.startsWith("manual");
+                  const rowBg = isPast
+                    ? "rgba(255,255,255,0.01)"
+                    : isPinned
+                    ? "rgba(245,158,11,0.07)"
+                    : undefined;
+                  const sourceLabel = isPast
+                    ? <span style={{ color: "#334155", fontSize: 9 }}>📅 Past</span>
+                    : isPinned
+                    ? <span style={{ color: "#fbbf24", fontWeight: 700, fontSize: 9 }}>📌 Pinned</span>
+                    : <span style={{ color: "#475569", fontSize: 9 }}>🔮 Forecast</span>;
+                  return (
                   <tr
                     key={r.yr}
                     className={r.label === "Golden Year ★" ? "gold" : ""}
+                    style={{ background: rowBg }}
                   >
-                    <td>{r.yr}</td>
-                    <td style={{ color: "#94a3b8" }}>{r.age}</td>
+                    <td style={{ color: isPast ? "#334155" : undefined }}>{r.yr}</td>
+                    <td style={{ color: isPast ? "#334155" : "#94a3b8" }}>{r.age}</td>
                     <td
                       style={{
-                        color: r.label.includes("Golden")
-                          ? "#fbbf24"
-                          : "#94a3b8",
+                        color: isPast ? "#334155" : r.label.includes("Golden") ? "#fbbf24" : "#94a3b8",
                         fontWeight: r.label.includes("Golden") ? 700 : 400,
                       }}
                     >
                       {r.label}
                     </td>
-                    <td style={{ color: "#e2e8f0" }}>{fmtDollar(r.conv)}</td>
-                    <td style={{ color: "#f87171" }}>{fmtDollar(r.fedT)}</td>
-                    <td style={{ color: isNoTaxState ? "#34d399" : "#fb923c" }}>
+                    <td>{sourceLabel}</td>
+                    <td style={{ color: isPast ? "#334155" : isPinned ? "#fbbf24" : "#e2e8f0", fontWeight: isPinned ? 700 : 400 }}>{fmtDollar(r.conv)}</td>
+                    <td style={{ color: isPast ? "#334155" : "#f87171" }}>{fmtDollar(r.fedT)}</td>
+                    <td style={{ color: isPast ? "#334155" : isNoTaxState ? "#34d399" : "#fb923c" }}>
                       {isNoTaxState ? "$0" : fmtDollar(r.stT)}
                     </td>
                     <td
                       style={{
-                        color:
-                          r.bracketUsed === "24%"
-                            ? "#fbbf24"
-                            : r.bracketUsed === "22%"
-                            ? "#5eead4"
-                            : "#94a3b8",
+                        color: isPast ? "#334155"
+                          : r.bracketUsed === "24%" ? "#fbbf24"
+                          : r.bracketUsed === "22%" ? "#5eead4"
+                          : "#94a3b8",
                         fontSize: 10,
                       }}
                     >
                       {r.bracketUsed}
-                    </td>
-                    <td
-                      style={{
-                        color: r.capReason && r.capReason.startsWith("mode")
-                          ? "#64748b"
-                          : "#fb923c",
-                        fontSize: 9,
-                      }}
-                      title={r.capReason || ""}
-                    >
-                      {r.capReason || "-"}
                     </td>
                     <td
                       style={{
@@ -3536,13 +3836,14 @@ const modeDescs = {
                     <td style={{ color: "#94a3b8" }}>
                       {(r.effR * 100).toFixed(1)}%
                     </td>
-                    <td style={{ color: "#14b8a6", fontWeight: 600 }}>
+                    <td style={{ color: isPast ? "#334155" : "#14b8a6", fontWeight: 600 }}>
                       {fmtDollar(r.conv - r.fedT - (isNoTaxState ? 0 : r.stT))}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 <tr style={{ borderTop: "1px solid rgba(255,255,255,0.12)" }}>
-                  <td style={{ fontWeight: 700 }} colSpan={3}>
+                  <td style={{ fontWeight: 700 }} colSpan={4}>
                     Total
                   </td>
                   <td style={{ fontWeight: 700 }}>{fmtM(opt.cConv)}</td>
@@ -3559,7 +3860,6 @@ const modeDescs = {
                       ? "$0"
                       : fmtM(convRows.reduce((s, r) => s + r.stT, 0))}
                   </td>
-                  <td>—</td>
                   <td>—</td>
                   <td>—</td>
                   <td>—</td>
@@ -3913,6 +4213,77 @@ const modeDescs = {
           </table>
         </div>
       )}
+      {view === "scenarios" && (() => {
+        const baseCur = cur;            // user's state, no conversions
+        const baseOpt = opt;            // user's state, with conversions
+        const noTaxOpt = exNoTax.opt;   // no-tax state, with conversions
+        const userState = params.stateOfResidence || "Your State";
+        const allYears = baseOpt.rows.filter(r => r.age >= (params.retireAge || 60));
+        const stSave = baseCur.cTax - baseOpt.cTax;
+        const ntSave = baseCur.cTax - noTaxOpt.cTax;
+        return (
+          <div className="chart-card" style={{ overflowX: "auto" }}>
+            <div className="ct">3-Scenario Comparison · {userState} No Conv | {userState} + Conv | No-Tax State + Conv</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
+              <strong style={{ color: "#f87171" }}>{userState} No Conv</strong> = stay put, do nothing &nbsp;|&nbsp;
+              <strong style={{ color: "#5eead4" }}>{userState} + Conv</strong> = stay put, execute ladder &nbsp;|&nbsp;
+              <strong style={{ color: "#34d399" }}>No-Tax State + Conv</strong> = move to a no-income-tax state, execute ladder
+            </div>
+            <table className="roth-tbl">
+              <thead>
+                <tr>
+                  <th>Year</th>
+                  <th>Age</th>
+                  <th style={{ color: "#f87171" }}>No Conv — Conv</th>
+                  <th style={{ color: "#f87171" }}>No Conv — Tax</th>
+                  <th style={{ color: "#f87171" }}>No Conv — PreTax</th>
+                  <th style={{ color: "#5eead4" }}>{userState} Conv — Conv</th>
+                  <th style={{ color: "#5eead4" }}>{userState} Conv — Tax</th>
+                  <th style={{ color: "#5eead4" }}>{userState} Conv — PreTax</th>
+                  <th style={{ color: "#34d399" }}>No-Tax Conv — Conv</th>
+                  <th style={{ color: "#34d399" }}>No-Tax Conv — Tax</th>
+                  <th style={{ color: "#34d399" }}>No-Tax Conv — PreTax</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allYears.map(r => {
+                  const nc = baseCur.rows.find(x => x.yr === r.yr) || {};
+                  const bo = baseOpt.rows.find(x => x.yr === r.yr) || {};
+                  const nt = noTaxOpt.rows.find(x => x.yr === r.yr) || {};
+                  const hasConv = bo.conv > 0 || nt.conv > 0;
+                  return (
+                    <tr key={r.yr} style={{ background: hasConv ? "rgba(13,148,136,0.06)" : undefined }}>
+                      <td>{r.yr}</td>
+                      <td style={{ color: "#94a3b8" }}>{r.age}</td>
+                      <td style={{ color: "#f87171" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "-"}</td>
+                      <td style={{ color: "#f87171" }}>{fmtDollar(nc.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8" }}>{fmtDollar(nc.pT || 0)}</td>
+                      <td style={{ color: "#5eead4", fontWeight: bo.conv > 0 ? 600 : 400 }}>{bo.conv > 0 ? fmtDollar(bo.conv) : "-"}</td>
+                      <td style={{ color: "#5eead4" }}>{fmtDollar(bo.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8" }}>{fmtDollar(bo.pT || 0)}</td>
+                      <td style={{ color: "#34d399", fontWeight: nt.conv > 0 ? 600 : 400 }}>{nt.conv > 0 ? fmtDollar(nt.conv) : "-"}</td>
+                      <td style={{ color: "#34d399" }}>{fmtDollar(nt.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8" }}>{fmtDollar(nt.pT || 0)}</td>
+                    </tr>
+                  );
+                })}
+                <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.04)", fontWeight: 700 }}>
+                  <td colSpan={2} style={{ color: "#e2e8f0" }}>Lifetime Totals</td>
+                  <td style={{ color: "#f87171" }}>—</td>
+                  <td style={{ color: "#f87171" }}>{fmtM(baseCur.cTax)}</td>
+                  <td style={{ color: "#94a3b8" }}>{fmtDollar(baseCur.rows[baseCur.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#5eead4" }}>{fmtM(baseOpt.cConv)}</td>
+                  <td style={{ color: stSave > 0 ? "#34d399" : "#f87171" }}>{fmtM(baseOpt.cTax)} {stSave > 0 ? `(saves ${fmtM(stSave)})` : `(costs ${fmtM(-stSave)} more)`}</td>
+                  <td style={{ color: "#94a3b8" }}>{fmtDollar(baseOpt.rows[baseOpt.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#34d399" }}>{fmtM(noTaxOpt.cConv)}</td>
+                  <td style={{ color: ntSave > 0 ? "#34d399" : "#f87171" }}>{fmtM(noTaxOpt.cTax)} {ntSave > 0 ? `(saves ${fmtM(ntSave)})` : `(costs ${fmtM(-ntSave)} more)`}</td>
+                  <td style={{ color: "#94a3b8" }}>{fmtDollar(noTaxOpt.rows[noTaxOpt.rows.length-1]?.pT || 0)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
       <div
         style={{
           fontSize: 9,
@@ -4134,20 +4505,21 @@ function ScenariosTab({
   RothLadder,
   BucketsTab,
   SmileChart,
-  withdrawalStrategy,   // ✅ only once
+  withdrawalStrategy,
   checkpoints,
   earlyRetireTarget,
   portfolioGoal,
   dob,
   sex,
+  onSaveConversionOverride,
 }) {
 
-  const [scenarioSubTab, setScenarioSubTab] = useState("stress");
+  const [scenarioSubTab, setScenarioSubTab] = useState("roth");
 
   const SCENARIO_SUBTABS = [
-    ["stress", "🔶 STRESS TEST"],
+    ["roth", "🔄 ROTH CONVERSIONS"],
     ["withdrawal", "💸 WITHDRAWAL ANALYSIS"],
-    ["roth", "🔄 ROTH"],
+    ["stress", "🔶 STRESS TEST"],
     ["buckets", "🪣 BUCKETS"],
     ["smile", "🙂 SMILE"],
   ];
@@ -4262,7 +4634,7 @@ function ScenariosTab({
         <DeterministicWithdrawalView p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} />
       )}
 
-      {scenarioSubTab === "roth" && <RothLadder params={baseParams} />}
+      {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} />}
       {scenarioSubTab === "buckets" && <BucketsTab params={baseParams} />}
       {scenarioSubTab === "smile" && <SmileChart p={baseParams} inf={inf} />}
     </div>
@@ -6378,7 +6750,7 @@ function ContribPanel({ values, onChange }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
-          ANNUAL CONTRIBUTIONS
+          ANNUAL CONTRIBUTIONS - Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
         </div>
         <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
@@ -7961,6 +8333,15 @@ export default function AiRAForecaster() {
                     checkpoints={assumptions.checkpoints}
                     dob={assumptions.dob}
                     sex={assumptions.sex}
+                    onSaveConversionOverride={(year, amount) => {
+                      setAssumptions(prev => ({
+                        ...prev,
+                        conversionOverrides: [
+                          ...(prev.conversionOverrides || []).filter(o => Number(o.year) !== Number(year)),
+                          { id: Date.now().toString(), year: Number(year), amount: Number(amount) },
+                        ].sort((a, b) => a.year - b.year),
+                      }));
+                    }}
                   />
                 )}
                 {activeTab === "income" && <IncomeMap p={params} inf={inf} />}
