@@ -6664,16 +6664,15 @@ function AssumptionsPanel({ values, onChange }) {
                 <span style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>AMOUNT ($)</span>
                 <span />
               </div>
-              {(values.conversionOverrides || []).map((ov) => (
-                <div key={ov.id} style={{ display: "grid", gridTemplateColumns: "80px 120px 28px", gap: "4px 8px", alignItems: "center", marginBottom: 4 }}>
+              {(values.conversionOverrides || []).map((ov, i) => (
+                <div key={ov.id || i} style={{ display: "grid", gridTemplateColumns: "80px 120px 28px", gap: "4px 8px", alignItems: "center", marginBottom: 4 }}>
                   <input
                     type="number"
                     value={ov.year || ""}
                     onChange={(e) => {
-                      const updated = (values.conversionOverrides || []).map(o =>
-                        o.id === ov.id ? { ...o, year: e.target.value ? parseInt(e.target.value) : "" } : o
-                      );
-                      onChange("conversionOverrides", updated);
+                      const next = [...(values.conversionOverrides || [])];
+                      next[i] = { ...next[i], year: e.target.value ? parseInt(e.target.value) : "" };
+                      onChange("conversionOverrides", next);
                     }}
                     placeholder="2031"
                     min={2026} max={2070}
@@ -6683,17 +6682,16 @@ function AssumptionsPanel({ values, onChange }) {
                     type="number"
                     value={ov.amount === 0 ? "0" : (ov.amount || "")}
                     onChange={(e) => {
-                      const updated = (values.conversionOverrides || []).map(o =>
-                        o.id === ov.id ? { ...o, amount: e.target.value !== "" ? parseInt(e.target.value) : "" } : o
-                      );
-                      onChange("conversionOverrides", updated);
+                      const next = [...(values.conversionOverrides || [])];
+                      next[i] = { ...next[i], amount: e.target.value !== "" ? parseInt(e.target.value) : "" };
+                      onChange("conversionOverrides", next);
                     }}
                     placeholder="60000"
                     min={0} max={2000000} step={1000}
                     style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
                   />
                   <button
-                    onClick={() => onChange("conversionOverrides", (values.conversionOverrides || []).filter(o => o.id !== ov.id))}
+                    onClick={() => onChange("conversionOverrides", (values.conversionOverrides || []).filter((_, j) => j !== i))}
                     style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "3px 6px" }}
                   >×</button>
                 </div>
