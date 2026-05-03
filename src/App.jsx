@@ -1348,7 +1348,9 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
 }
 
 function buildRothExplorer(params = {}) {
-  console.log("[buildRothExplorer] taxFunding =", params.taxFunding);
+
+  //console.log("BuildExplorer params:", params);
+
   const {
     currentAge,
     retireAge,
@@ -1624,6 +1626,7 @@ function buildRothExplorer(params = {}) {
 }
 
 function buildRothLadder(params = {}) {
+  //console.log("BuildRothLadder params:", params);
   const ex = buildRothExplorer(params);
   return ex.convRows.map((r) => ({
     yr: r.yr,
@@ -7392,7 +7395,7 @@ export default function AiRAForecaster() {
     ["montecarlo", "🎲 Forecast"],
     ["scenarios", "🎯 Scenarios"],
     ["income", "💵 Income"],
-    ["mortgage", "🏠 Mortgage"],
+    ["mortgage", "🏠 Real Estate"],
     ["actionplan", "✅ Action Plan"],
     ["assumptions", "👤 Profile"],
   ];
