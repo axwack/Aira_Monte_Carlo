@@ -3734,6 +3734,10 @@ const modeDescs = {
                 The Ladder will then use the optimizer only for future years it does not have a pin for.
                 Do this every December to keep the projection grounded year by year — the same way
                 Monte Carlo checkpoints anchor the portfolio balance to reality.
+                <br /><br />
+                <strong style={{ color: "#94a3b8" }}>Tip — pre-retirement conversions:</strong> If you convert this year and retirement is still years away,
+                remember to reduce your Pre-Tax balance in the <em>Savings</em> tab to reflect what you'll
+                actually have at retirement. The Lifetime Ladder starts from whatever balance is entered there.
               </div>
             </div>
           </div>
@@ -6135,7 +6139,12 @@ function SavingsPanel({ values, onChange }) {
         const catAccounts = accounts.filter(a => a.category === cat.key);
         return (
           <div key={cat.key} style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, borderLeft: `3px solid ${cat.color}`, padding: "8px 12px" }}>
-            <div style={{ fontSize: 11, color: cat.color, fontWeight: 600, marginBottom: 8 }}>{cat.label}</div>
+            <div style={{ fontSize: 11, color: cat.color, fontWeight: 600, marginBottom: cat.key === "pretax" ? 2 : 8 }}>{cat.label}</div>
+            {cat.key === "pretax" && (
+              <div style={{ fontSize: 10, color: "#64748b", marginBottom: 8, lineHeight: 1.5 }}>
+                Enter your <em>current</em> balance. If you plan Roth conversions before retirement, this balance will decrease over time — the Lifetime Ladder projects from here forward.
+              </div>
+            )}
             {catAccounts.map(acct => (
               <div key={acct.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                 <input
