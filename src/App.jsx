@@ -354,6 +354,9 @@ export const BLANK_PROFILE = {
   fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window)
   cssEndYear: null,             // last year to cap at 22% (CSS Profile window)
   conversionOverrides: [],      // [{id, year, amount}] manual per-year conversion amounts — populated in user's exported JSON
+  collegeStartYear: 0,          // first year college costs reduce taxable cash available for conversion taxes
+  collegeEndYear: 0,            // last year college costs apply
+  collegeAnnualCost: 0,         // annual cash outflow for college (not a tax event, reduces taxable cash pool)
   // Account breakdown (feeds port total)
   accounts: [
     { id: "1", category: "pretax", name: "401(k)", balance: 0 },
@@ -1385,6 +1388,9 @@ function buildRothExplorer(params = {}) {
     fafsaEndYear = null,
     cssEndYear = null,
     conversionOverrides = [],
+    collegeStartYear = 0,
+    collegeEndYear = 0,
+    collegeAnnualCost = 0,
   } = params;
   // Build a fast year→amount lookup from the overrides array
   const overrideMap = {};
@@ -1481,8 +1487,9 @@ function buildRothExplorer(params = {}) {
       const abn = ab > 0 && age <= 80
         ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
         : 0;
-      const baseInc = ssT + abn;
       const portDraw = Math.max(0, sp - ss - abn);
+      // Pre-tax draws are ordinary income — must be in the bracket base before sizing conversion room
+      const pretaxDraw = Math.max(0, portDraw * 0.6);
 
       // RMD calculation — Uniform or Joint & Last Survivor table per profile setting
       let rmd = 0;
@@ -1492,7 +1499,7 @@ function buildRothExplorer(params = {}) {
           : (RMD_DIV[age] || 15.0);
         rmd = Math.round(pT / divisor);
       }
-      const incBC = baseInc + rmd;
+      const incBC = ssT + abn + rmd + pretaxDraw;
       const txBC = Math.max(0, incBC - stdD);
 
       let conv = 0;
@@ -1592,7 +1599,9 @@ function buildRothExplorer(params = {}) {
           }
         }
       }
-      taxBal = Math.max(0, taxBal - taxFromTaxable) * (1 + gr);
+      const collegeCash = (collegeAnnualCost > 0 && yr >= collegeStartYear && yr <= collegeEndYear)
+        ? collegeAnnualCost : 0;
+      taxBal = Math.max(0, taxBal - taxFromTaxable - collegeCash) * (1 + gr);
       pT = Math.max(0, pT - rmd - conv - Math.max(0, portDraw * 0.6)) * (1 + gr);
       ro = Math.max(0, ro + roAdd - Math.max(0, portDraw * 0.4)) * (1 + gr);
       lastReturn = gr;
