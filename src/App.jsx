@@ -3718,24 +3718,24 @@ const modeDescs = {
 
             {/* ── How this works ── */}
             <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: "12px 14px" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
                 ℹ️ How Tax Room and the Lifetime Ladder work together
               </div>
               <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.7 }}>
-                <strong style={{ color: "#94a3b8" }}>Tax Room (this tab)</strong> is grounded in reality — you enter your actual known income
+                <strong style={{ color: "#94a3b8",  fontSize:14}}>Tax Room (this tab) </strong> is grounded in reality — you enter your actual known income
                 for the year and get the exact conversion amount to hand your CPA. It reflects what you
                 can actually do right now, not a forecast.
                 <br /><br />
-                <strong style={{ color: "#94a3b8" }}>Lifetime Ladder (📊 Conversion Plan tab)</strong> projects conversions over every future year.
+                <strong style={{ color: "#94a3b8",  fontSize:14}}>Lifetime Ladder (📊 Conversion Plan tab)</strong> projects conversions over every future year.
                 For years where you have not saved a real number, it uses the bracket-fill optimizer —
                 which does not know about your working income, Cash or Taxable/Brokerage balance, or IRMAA timing.
                 <br /><br />
-                <strong style={{ color: "#fbbf24" }}>Press "Save to Lifetime Ladder" above</strong> to anchor the current year to your real number.
+                <strong style={{ color: "#fbbf24",  fontSize:14}}>Press "Save to Lifetime Ladder" above</strong> to anchor the current year to your real number.
                 The Ladder will then use the optimizer only for future years it does not have a pin for.
                 Do this every December to keep the projection grounded year by year — the same way
                 Monte Carlo checkpoints anchor the portfolio balance to reality.
                 <br /><br />
-                <strong style={{ color: "#94a3b8" }}>Tip — pre-retirement conversions:</strong> If you convert this year and retirement is still years away,
+                <strong style={{ color: "#94a3b8", fontSize:14 }}>Tip — Pre-Retirement Conversions:</strong> If you convert this year and retirement is still years away,
                 remember to reduce your Pre-Tax balance in the <em>Savings</em> tab to reflect what you'll
                 actually have at retirement. The Lifetime Ladder starts from whatever balance is entered there.
               </div>
