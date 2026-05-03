@@ -1300,6 +1300,18 @@ const RMD_DIV = {
   90: 15.3,
 };
 
+// IRS Pub 590-B Table II — Joint & Last Survivor, spouse 10 years younger.
+// Larger divisors → smaller RMDs vs Uniform table.
+const JOINT_RMD_DIV = {
+  73: 31.4, 74: 30.4,
+  75: 28.9, 76: 28.0, 77: 27.1,
+  78: 26.2, 79: 25.3, 80: 24.5,
+  81: 23.7, 82: 22.9, 83: 22.1,
+  84: 21.4, 85: 20.7, 86: 20.0,
+  87: 19.3, 88: 18.7, 89: 18.1,
+  90: 17.4,
+};
+
 function progTax(ti, br) {
   let t = 0;
   for (const b of br) {
@@ -1396,9 +1408,10 @@ function buildRothExplorer(params = {}) {
     : getRmdStartAge({ dob, birthYear, currentAge });
 
   const stateBr0 = getStateBrackets(stateOfResidence, isMFJ);
+  const _noTaxStates = ["FL","TX","NV","WA","WY","SD","AK","NH","TN"];
   const infR = inf / 100,
     retireYear = ROTH_BASE_YEAR + (retireAge - currentAge),
-    isNoTaxState = twoHousehold || !stateBr0;
+    isNoTaxState = _noTaxStates.includes(stateOfResidence) || !stateBr0;
 
   const _pretaxSum = (params.accounts || []).filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
   const _rothSum = (params.accounts || []).filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
@@ -1471,12 +1484,12 @@ function buildRothExplorer(params = {}) {
       const baseInc = ssT + abn;
       const portDraw = Math.max(0, sp - ss - abn);
 
-      // RMD calculation – using Uniform Lifetime Table (RMD_DIV)
-      // Start age follows SECURE Act 2.0: 75 if born 1960+, 73 if born 1951-1959, 72 if born before 1951.
-      // For Joint & Last Survivor, you would need spouse age and a 2D table.
+      // RMD calculation — Uniform or Joint & Last Survivor table per profile setting
       let rmd = 0;
       if (age >= rmdAge && pT > 0) {
-        const divisor = RMD_DIV[age] || 15.0;
+        const divisor = params.useJointRmdTable
+          ? (JOINT_RMD_DIV[age] || 15.0)
+          : (RMD_DIV[age] || 15.0);
         rmd = Math.round(pT / divisor);
       }
       const incBC = baseInc + rmd;
@@ -1562,9 +1575,21 @@ function buildRothExplorer(params = {}) {
             roAdd = Math.max(0, conv - (totT - taxFromTaxable));
           }
         } else if (taxFunding === "outside_cash") {
-          // Tax paid from external cash — full conversion goes to Roth,
-          // but the external cash pool (modeled via taxBal) must shrink.
-          taxFromTaxable = Math.min(taxBal, totT);
+          if (taxBal >= totT) {
+            // Enough SGOV cash — full conversion goes to Roth
+            taxFromTaxable = totT;
+          } else if (taxBal > 0) {
+            // SGOV partially depleted — reduce conversion proportionally
+            const ratio = taxBal / totT;
+            conv = Math.round(conv * ratio);
+            roAdd = conv;
+            taxFromTaxable = taxBal;
+            console.warn(`SGOV depleted — conversion reduced in year ${yr}`);
+          } else {
+            // No SGOV cash left — skip conversion entirely
+            conv = 0;
+            roAdd = 0;
+          }
         }
       }
       taxBal = Math.max(0, taxBal - taxFromTaxable) * (1 + gr);
@@ -3085,9 +3110,9 @@ function RothLadder({ params, onSaveConversionOverride }) {
     ]
   );
 
-  // No-tax state scenario: same profile but state tax zeroed out (twoHousehold flag)
+  // No-tax state scenario: run with FL (no state income tax)
   const exNoTax = useMemo(
-    () => buildRothExplorer({ ...(params ?? {}), rothMode, twoHousehold: true }),
+    () => buildRothExplorer({ ...(params ?? {}), rothMode, stateOfResidence: "FL" }),
     [
       params?.currentAge, params?.retireAge, params?.ssAge, params?.ab,
       params?.inf, params?.port, params?.useAb, params?.ssb, params?.accounts,
