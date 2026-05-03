@@ -6377,8 +6377,11 @@ function ContribPanel({ values, onChange }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", borderBottom: "1px solid #1e3a5f", paddingBottom: 6, marginBottom: 4 }}>
           ANNUAL CONTRIBUTIONS
+        </div>
+        <div style={{ fontSize: 11, color: "#7a90a8", marginBottom: 14, fontStyle: "italic" }}>
+          Still working before retirement? Enter what you save annually. Already retired? Leave at 0.
         </div>
         <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
