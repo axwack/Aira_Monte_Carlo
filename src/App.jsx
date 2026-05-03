@@ -1609,6 +1609,7 @@ function buildRothExplorer(params = {}) {
   const opt = runScenario(true),
   cur = runScenario(false);
   const convRows = opt.rows.filter((r) => r.conv > 0);
+  console.log("[buildRothExplorer] rows:", opt.rows.length, "convRows:", convRows.length, "pretaxBal:", Math.round(pretaxBal), "rmdAge:", rmdAge);
   const taxD = opt.cTax - cur.cTax;
   const estD = (cur.rows[cur.rows.length - 1]?.nw || 0) - (opt.rows[opt.rows.length - 1]?.nw || 0);
   const totIncOpt = opt.rows.reduce((s, r) => s + r.totInc, 0);
@@ -1635,7 +1636,9 @@ function buildRothLadder(params = {}) {
     stateTax: r.stT,                              // renamed from stateNJ
     effFed: r.conv > 0 ? ((r.fedT / r.conv) * 100).toFixed(1) : "0.0",   // was effFL
     effTotal: r.conv > 0 ? (((r.fedT + r.stT) / r.conv) * 100).toFixed(1) : "0.0", // was effNJ
-    netRoth: Math.round(r.conv - r.fedT - (params.twoHousehold ? 0 : r.stT)),
+    netRoth: params.taxFunding === "outside_cash"
+      ? r.conv
+      : Math.round(r.conv - r.fedT - (params.twoHousehold ? 0 : r.stT)),
   }));
 }
 
@@ -3837,7 +3840,11 @@ const modeDescs = {
                       {(r.effR * 100).toFixed(1)}%
                     </td>
                     <td style={{ color: isPast ? "#334155" : "#14b8a6", fontWeight: 600 }}>
-                      {fmtDollar(r.conv - r.fedT - (isNoTaxState ? 0 : r.stT))}
+                      {fmtDollar(
+                        params?.taxFunding === "outside_cash"
+                          ? r.conv
+                          : r.conv - r.fedT - (isNoTaxState ? 0 : r.stT)
+                      )}
                     </td>
                   </tr>
                   );
@@ -3866,7 +3873,9 @@ const modeDescs = {
                   <td style={{ color: "#14b8a6", fontWeight: 700 }}>
                     {fmtM(
                       convRows.reduce(
-                        (s, r) => s + r.conv - r.fedT - (isNoTaxState ? 0 : r.stT),
+                        (s, r) => s + (params?.taxFunding === "outside_cash"
+                          ? r.conv
+                          : r.conv - r.fedT - (isNoTaxState ? 0 : r.stT)),
                         0
                       )
                     )}
