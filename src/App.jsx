@@ -1455,8 +1455,14 @@ function buildRothExplorer(params = {}) {
     const initWR = totalPort0 > 0 ? initDraw0 / totalPort0 : 0.04;
 
     for (let age = retireAge; age <= endAge; age++) {
-      const yr = retireYear + (age - retireAge),
-        f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
+      const yr = retireYear + (age - retireAge), f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
+//DELETE AFTER DEBUGGING
+ if (age === 61) { 
+console.log("ROTH_BASE_YEAR=", ROTH_BASE_YEAR);
+  console.log("retireYear=", retireYear);
+  console.log("yr at age 61=", yr);
+  console.log("overrideMap=", overrideMap);
+ }
       const fB = idxB(fedBase, f);
       const nB = stateBr0 ? idxB(stateBr0, f) : [];
       
@@ -1489,7 +1495,7 @@ function buildRothExplorer(params = {}) {
         : 0;
       const portDraw = Math.max(0, sp - ss - abn);
       // Pre-tax draws are ordinary income — must be in the bracket base before sizing conversion room
-      const pretaxDraw = Math.max(0, portDraw * 0.6);
+      const pretaxDraw = portDraw;
 
       // RMD calculation — Uniform or Joint & Last Survivor table per profile setting
       let rmd = 0;
@@ -1511,7 +1517,7 @@ function buildRothExplorer(params = {}) {
         age < rmdAge &&
         pT > 0
       ) {
-        if (overrideMap[yr] !== undefined) {
+        if (overrideMap[Number(yr)] !== undefined) {
           // Manual override: use the user-specified amount (capped by available pretax)
           conv = Math.round(Math.min(Math.max(0, overrideMap[yr]), pT));
           capReason = overrideMap[yr] === 0 ? "manual $0" : "manual override";
@@ -1639,6 +1645,7 @@ function buildRothExplorer(params = {}) {
         sp: Math.round(sp), portDraw: Math.round(portDraw),
       });
     }
+  
     return { rows, cTax, cConv, cIrmaa, cRmd, fPT: Math.round(pT), fRo: Math.round(ro) };
   }
 
@@ -1672,7 +1679,7 @@ function buildRothLadder(params = {}) {
     stateTax: r.stT,                              // renamed from stateNJ
     effFed: r.conv > 0 ? ((r.fedT / r.conv) * 100).toFixed(1) : "0.0",   // was effFL
     effTotal: r.conv > 0 ? (((r.fedT + r.stT) / r.conv) * 100).toFixed(1) : "0.0", // was effNJ
-    netRoth: Math.round(r.conv - r.fedT - (params.twoHousehold ? 0 : r.stT)),
+    netRoth: params.taxFunding === "outside_cash"? r.conv : Math.round(r.conv - r.fedT - r.stT)  // full amount goes to Roth: Math.round(r.conv - r.fedT - r.stT)  // full amount goes to Roth: Math.round(r.conv - r.fedT - r.stT),
   }));
 }
 
