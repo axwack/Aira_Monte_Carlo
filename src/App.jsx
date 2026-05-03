@@ -1494,8 +1494,10 @@ console.log("ROTH_BASE_YEAR=", ROTH_BASE_YEAR);
         ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
         : 0;
       const portDraw = Math.max(0, sp - ss - abn);
-      // Pre-tax draws are ordinary income — must be in the bracket base before sizing conversion room
-      const pretaxDraw = portDraw;
+      // Three-bucket withdrawal order: Taxable → Pre-Tax → Roth
+      // Taxable draws are capital gains (not ordinary income); only pre-tax draws consume bracket space
+      const drawFromTaxable = Math.min(Math.max(0, taxBal), portDraw);
+      const portDrawLeft    = Math.max(0, portDraw - drawFromTaxable);
 
       // RMD calculation — Uniform or Joint & Last Survivor table per profile setting
       let rmd = 0;
@@ -1505,7 +1507,9 @@ console.log("ROTH_BASE_YEAR=", ROTH_BASE_YEAR);
           : (RMD_DIV[age] || 15.0);
         rmd = Math.round(pT / divisor);
       }
-      const incBC = ssT + abn + rmd + pretaxDraw;
+      const drawFromPretax = Math.min(Math.max(0, pT - rmd), portDrawLeft);
+      const drawFromRoth   = Math.max(0, portDrawLeft - drawFromPretax);
+      const incBC = ssT + abn + rmd + drawFromPretax;
       const txBC = Math.max(0, incBC - stdD);
 
       let conv = 0;
@@ -1575,31 +1579,28 @@ console.log("ROTH_BASE_YEAR=", ROTH_BASE_YEAR);
         margR = dTax / conv;
       }
 
-      // Tax funding: determine how conversion tax is paid.
+      // Tax funding: conversion tax comes from taxBal remaining after living-expense draw
+      const taxBalForConv = Math.max(0, taxBal - drawFromTaxable);
       let roAdd = conv;
       let taxFromTaxable = 0;
       if (doConvert && conv > 0 && totT > 0) {
         if (taxFunding === "from_conv") {
           roAdd = Math.max(0, conv - totT);
         } else if (taxFunding === "from_taxable") {
-          taxFromTaxable = Math.min(taxBal, totT);
+          taxFromTaxable = Math.min(taxBalForConv, totT);
           if (taxFromTaxable < totT) {
-            // taxable depleted — remainder comes out of the conversion
             roAdd = Math.max(0, conv - (totT - taxFromTaxable));
           }
         } else if (taxFunding === "outside_cash") {
-          if (taxBal >= totT) {
-            // Enough SGOV cash — full conversion goes to Roth
+          if (taxBalForConv >= totT) {
             taxFromTaxable = totT;
-          } else if (taxBal > 0) {
-            // SGOV partially depleted — reduce conversion proportionally
-            const ratio = taxBal / totT;
+          } else if (taxBalForConv > 0) {
+            const ratio = taxBalForConv / totT;
             conv = Math.round(conv * ratio);
             roAdd = conv;
-            taxFromTaxable = taxBal;
-            console.warn(`SGOV depleted — conversion reduced in year ${yr}`);
+            taxFromTaxable = taxBalForConv;
+            console.warn(`Taxable cash insufficient after living draw — conversion reduced in year ${yr}`);
           } else {
-            // No SGOV cash left — skip conversion entirely
             conv = 0;
             roAdd = 0;
           }
@@ -1607,9 +1608,9 @@ console.log("ROTH_BASE_YEAR=", ROTH_BASE_YEAR);
       }
       const collegeCash = (collegeAnnualCost > 0 && yr >= collegeStartYear && yr <= collegeEndYear)
         ? collegeAnnualCost : 0;
-      taxBal = Math.max(0, taxBal - taxFromTaxable - collegeCash) * (1 + gr);
-      pT = Math.max(0, pT - rmd - conv - Math.max(0, portDraw * 0.6)) * (1 + gr);
-      ro = Math.max(0, ro + roAdd - Math.max(0, portDraw * 0.4)) * (1 + gr);
+      taxBal = Math.max(0, taxBal - drawFromTaxable - taxFromTaxable - collegeCash) * (1 + gr);
+      pT = Math.max(0, pT - rmd - conv - drawFromPretax) * (1 + gr);
+      ro = Math.max(0, ro + roAdd - drawFromRoth) * (1 + gr);
       lastReturn = gr;
       cTax += totT;
       cConv += conv;
@@ -1633,7 +1634,7 @@ console.log("ROTH_BASE_YEAR=", ROTH_BASE_YEAR);
         });
       }
       rows.push({
-        yr, age, ss, abn, rmd, conv, baseInc: incBC, totInc, txInc,
+        yr, age, ss, abn, rmd, conv, baseInc: incBC, txBC: Math.round(txBC), totInc, txInc,
         fedT, stT, totT, effR, margR, irmaa, magi,
         pT: Math.round(pT), ro: Math.round(ro), nw: Math.round(pT + ro),
         label,
@@ -1641,8 +1642,14 @@ console.log("ROTH_BASE_YEAR=", ROTH_BASE_YEAR);
           ? txInc <= b12t ? "12%" : txInc <= b22t ? "22%" : txInc <= b24t ? "24%" : txInc <= b32t ? "32%" : txInc <= b35t ? "35%" : "37%"
           : "-",
         capReason,
+        source: yr < ROTH_BASE_YEAR ? "Historical"
+              : overrideMap[Number(yr)] !== undefined ? "Pinned"
+              : "Forecast",
         ...convByBr,
         sp: Math.round(sp), portDraw: Math.round(portDraw),
+        drawFromTaxable: Math.round(drawFromTaxable),
+        drawFromPretax: Math.round(drawFromPretax),
+        drawFromRoth: Math.round(drawFromRoth),
       });
     }
   
@@ -3160,13 +3167,37 @@ const domLabel = isNoTaxState
   : `${state} Domicile (with tax)`;
   const domColor = isNoTaxState ? "#34d399" : "#fb923c";
   
+  // Compute bracket room for year-1 so fill buttons show ~amounts
+  const _fRow = opt.rows[0];
+  const _fTxBC = _fRow?.txBC ?? 0;
+  const _fYr   = _fRow?.yr ?? ROTH_BASE_YEAR;
+  const _fInf  = Math.pow(1 + (params?.inf ?? 2.5) / 100, _fYr - ROTH_BASE_YEAR);
+  const _isMFJ = (params?.filingStatus ?? "mfj") !== "single";
+  const _bTops = {
+    fill_10: Math.round((_isMFJ ? 23850  : 11925 ) * _fInf),
+    fill_12: Math.round((_isMFJ ? 96950  : 48475 ) * _fInf),
+    fill_22: Math.round((_isMFJ ? 206700 : 103350) * _fInf),
+    fill_24: Math.round((_isMFJ ? 394600 : 197300) * _fInf),
+    fill_32: Math.round((_isMFJ ? 501050 : 250525) * _fInf),
+    fill_35: Math.round((_isMFJ ? 751600 : 375800) * _fInf),
+    fill_37: Infinity,
+    irmaa_safe: Math.round((_isMFJ ? 206700 : 103350) * _fInf),
+  };
+  const _fmtRoom = (k) => {
+    if (!_fRow) return "";
+    const top = _bTops[k];
+    if (top === Infinity) return "";
+    const room = Math.max(0, top - _fTxBC);
+    if (room <= 0) return " (full)";
+    return ` ~+${room >= 1000 ? "$" + Math.round(room / 1000) + "K" : "$" + room}`;
+  };
   const modeLabels = {
-      fill_10: "Fill 10%",
-      fill_12: "Fill 12%",
-      fill_22: "Fill 22%",
-      fill_24: "Fill 24%",
-      fill_32: "Fill 32%",
-      fill_35: "Fill 35%",
+      fill_10: `Fill 10%${_fmtRoom("fill_10")}`,
+      fill_12: `Fill 12%${_fmtRoom("fill_12")}`,
+      fill_22: `Fill 22%${_fmtRoom("fill_22")}`,
+      fill_24: `Fill 24%${_fmtRoom("fill_24")}`,
+      fill_32: `Fill 32%${_fmtRoom("fill_32")}`,
+      fill_35: `Fill 35%${_fmtRoom("fill_35")}`,
       fill_37: "Fill 37%",
       irmaa_safe: "IRMAA-Safe",
   };
