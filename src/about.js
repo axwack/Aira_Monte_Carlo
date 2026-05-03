@@ -104,4 +104,23 @@ export const ABOUT_FEATURES = [
           • <span style="color:#fbbf24;">Yellow</span> – between the 25th and 50th percentile<br/>
           • <span style="color:#ef4444;">Red</span> – below the 25th percentile<br/><br/>
           This isn't just a status check. It's the foundation of adaptive distribution planning, a framework championed by financial planner Michael Kitces. Instead of blindly following a withdrawal plan made years ago, you adjust based on how your portfolio is actually performing. If you're in the green, you might spend a little more. In the red, you tighten up. Over time, checkpoints build a living history of your financial journey, turning a static retirement plan into a responsive roadmap. You're not guessing whether you're still on track—you're measuring it, one checkpoint at a time.`,
-     },]
+     },
+     {
+    id:    "Tax ",
+    group: "Roth Conversions",
+    icon:  "🎯",
+    title: "Using Tax Room",
+    body:  `Tax Room is the amount of taxable income you can add in a given year without pushing yourself into a higher tax bracket. 
+    AiRA's Roth conversion tool uses this concept to optimize how much of your traditional assets to convert each year, 
+    aiming to fill up your current tax bracket without spilling into the next one. 
+    By strategically using your Tax Room, you can minimize the total taxes paid over time 
+    and maximize the amount growing tax-free in your Roth account. 
+    It's like packing a suitcase for a trip—you want to fill it up as much as possible without going over the weight limit.
+     AiRA helps you find that sweet spot for your retirement tax strategy. And remember, the goal isn't just to
+      convert as much as possible—it's to convert smartly, 
+      using your Tax Room to your advantage while keeping an eye on the overall tax picture. Once you understand how to 
+      use Tax Room effectively, you can make informed decisions about your Roth conversions and optimize your retirement income strategy. Save
+      the amount and it will automatically be factored in the Roth Conversion forecast for the year you selected. This allows Aira to 
+      create a better RMD and Roth conversion schedule for the years after, since it knows how much of your tax bracket you used in the year you made the conversion.`,
+     },
+]
