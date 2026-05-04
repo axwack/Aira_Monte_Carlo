@@ -3516,18 +3516,28 @@ const modeDescs = {
         const tax22 = convTax(room22);
         const tax24 = convTax(room24);
 
-        // Recommended: fill 22%, capped by available SGOV cash
+        // Map rothMode to the bracket row that should be highlighted and recommended
+        const modeHighlight = {
+          fill_10: "12%", fill_12: "12%",
+          fill_22: "22%", irmaa_safe: "22%",
+          fill_24: "24%", fill_32: "24%", fill_35: "24%", fill_37: "24%",
+        };
+        const targetLabel = modeHighlight[rothMode] ?? "22%";
+        const recRoom    = targetLabel === "12%" ? room12 : targetLabel === "24%" ? room24 : room22;
+        const recRoomTax = targetLabel === "12%" ? tax12  : targetLabel === "24%" ? tax24  : tax22;
+
+        // Recommended: fill to selected bracket, capped by available SGOV cash
         let recConv, recTax, recNote;
-        if (room22 === 0) {
-          recConv = 0; recTax = convTax(0); recNote = "Already above 22% bracket — no room";
+        if (recRoom === 0) {
+          recConv = 0; recTax = convTax(0); recNote = `Already above ${targetLabel} bracket — no room`;
         } else if (cySGOV <= 0) {
-          recConv = room22; recTax = tax22; recNote = "Enter Cash/Treasury/Short Term cash balance to check cash constraint";
-        } else if (tax22.total <= cySGOV) {
-          recConv = room22; recTax = tax22; recNote = "Cash/Treasury/Short Term cash covers full 22% fill ✅";
+          recConv = recRoom; recTax = recRoomTax; recNote = "Enter Cash/Treasury/Short Term cash balance to check cash constraint";
+        } else if (recRoomTax.total <= cySGOV) {
+          recConv = recRoom; recTax = recRoomTax; recNote = `Cash/Treasury/Short Term cash covers full ${targetLabel} fill ✅`;
         } else {
           // Scale down proportionally — linear approx within bracket
-          const ratio = cySGOV / tax22.total;
-          recConv = Math.round(room22 * ratio);
+          const ratio = cySGOV / recRoomTax.total;
+          recConv = Math.round(recRoom * ratio);
           recTax  = convTax(recConv);
           recNote = "Cash/Treasury/Short Term cash limits conversion — increase cash to fill full bracket";
         }
@@ -3632,8 +3642,8 @@ const modeDescs = {
                     ["22%", b22t, room22, tax22],
                     ["24%", b24t, room24, tax24],
                   ].map(([bracket, top, room, tax]) => (
-                    <tr key={bracket} style={{ background: bracket === "22%" ? "rgba(13,148,136,0.08)" : undefined }}>
-                      <td style={{ color: bracket === "22%" ? "#5eead4" : "#94a3b8", fontWeight: bracket === "22%" ? 700 : 400 }}>{bracket}</td>
+                    <tr key={bracket} style={{ background: bracket === targetLabel ? "rgba(13,148,136,0.08)" : undefined }}>
+                      <td style={{ color: bracket === targetLabel ? "#5eead4" : "#94a3b8", fontWeight: bracket === targetLabel ? 700 : 400 }}>{bracket}</td>
                       <td style={{ fontFamily: "'DM Mono',monospace" }}>{fmtN(top)}</td>
                       <td style={{ color: room > 0 ? "#e2e8f0" : "#475569", fontFamily: "'DM Mono',monospace" }}>{fmtN(room)}</td>
                       <td style={{ color: "#f87171", fontFamily: "'DM Mono',monospace" }}>{fmtN(tax.fedInc)}</td>
