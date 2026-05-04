@@ -3486,6 +3486,9 @@ const modeDescs = {
         const b12t    = fB.find(b => b.rate === 0.12)?.hi ?? 0;
         const b22t    = fB.find(b => b.rate === 0.22)?.hi ?? 0;
         const b24t    = fB.find(b => b.rate === 0.24)?.hi ?? 0;
+        const b32t    = fB.find(b => b.rate === 0.32)?.hi ?? 0;
+        const b35t    = fB.find(b => b.rate === 0.35)?.hi ?? 0;
+        const b37t    = fB.find(b => b.rate === 0.37)?.hi ?? 0;
 
         // SS provisional income → up to 85% taxable
         const provisional = cyW2 + cyRental + cyOther + cySS * 0.5;
@@ -3503,6 +3506,9 @@ const modeDescs = {
         const room12 = Math.max(0, b12t - taxableBC);
         const room22 = Math.max(0, b22t - taxableBC);
         const room24 = Math.max(0, b24t - taxableBC);
+        const room32 = Math.max(0, b32t - taxableBC);
+        const room35 = Math.max(0, b35t - taxableBC);
+        const room37 = Math.max(0, b37t - taxableBC);
 
         // Tax cost for converting the full room at each bracket
         function convTax(convAmt) {
@@ -3515,16 +3521,31 @@ const modeDescs = {
         const tax12 = convTax(room12);
         const tax22 = convTax(room22);
         const tax24 = convTax(room24);
+        const tax32 = convTax(room32);
+        const tax35 = convTax(room35);
+        const tax37 = convTax(room37);
 
         // Map rothMode to the bracket row that should be highlighted and recommended
         const modeHighlight = {
           fill_10: "12%", fill_12: "12%",
           fill_22: "22%", irmaa_safe: "22%",
-          fill_24: "24%", fill_32: "24%", fill_35: "24%", fill_37: "24%",
+          fill_24: "24%", fill_32: "32%", fill_35: "35%", fill_37: "37%",
         };
         const targetLabel = modeHighlight[rothMode] ?? "22%";
-        const recRoom    = targetLabel === "12%" ? room12 : targetLabel === "24%" ? room24 : room22;
-        const recRoomTax = targetLabel === "12%" ? tax12  : targetLabel === "24%" ? tax24  : tax22;
+        const recRoom =
+          targetLabel === "12%" ? room12 :
+          targetLabel === "24%" ? room24 :
+          targetLabel === "32%" ? room32 :
+          targetLabel === "35%" ? room35 :
+          targetLabel === "37%" ? room37 :
+          room22;
+        const recRoomTax =
+          targetLabel === "12%" ? tax12 :
+          targetLabel === "24%" ? tax24 :
+          targetLabel === "32%" ? tax32 :
+          targetLabel === "35%" ? tax35 :
+          targetLabel === "37%" ? tax37 :
+          tax22;
 
         // Recommended: fill to selected bracket, capped by available SGOV cash
         let recConv, recTax, recNote;
@@ -3574,6 +3595,7 @@ const modeDescs = {
                       <input
                         type="number" value={val}
                         onChange={e => setter(Number(e.target.value) || 0)}
+                        onFocus={e => e.target.select()}
                         min={mn ?? 0} max={mx ?? 9999999} step={isDollar ? 1000 : 1}
                         style={inputStyle}
                       />
@@ -3641,6 +3663,9 @@ const modeDescs = {
                     ["12%", b12t, room12, tax12],
                     ["22%", b22t, room22, tax22],
                     ["24%", b24t, room24, tax24],
+                    ...( ["32%","35%","37%"].includes(targetLabel) ? [["32%", b32t, room32, tax32]] : []),
+                    ...( ["35%","37%"].includes(targetLabel) ? [["35%", b35t, room35, tax35]] : []),
+                    ...( ["37%"].includes(targetLabel) ? [["37%", b37t, room37, tax37]] : []),
                   ].map(([bracket, top, room, tax]) => (
                     <tr key={bracket} style={{ background: bracket === targetLabel ? "rgba(13,148,136,0.08)" : undefined }}>
                       <td style={{ color: bracket === targetLabel ? "#5eead4" : "#94a3b8", fontWeight: bracket === targetLabel ? 700 : 400 }}>{bracket}</td>
