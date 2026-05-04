@@ -10,6 +10,7 @@
     "@vercel/analytics": "^2.0.1",
     "ajv": "^8.12.0",
     "ajv-keywords": "^5.1.0",
+    "claude": "^0.1.1",
     "moment": "2.30.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
