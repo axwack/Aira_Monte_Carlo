@@ -11,4 +11,12 @@ CLAUDE.md
 .env
 Archive
 /netlify
+CHECK.md
+CLAUDE.md
+TEST_CASE.md
+.claude
+data
+knowledge
+specs
+CLAUDE_backup.MD
 .wrangler
