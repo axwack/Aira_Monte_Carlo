@@ -4,7 +4,7 @@
 
 ---
 
-## Current State: READY FOR VIDEO DEMO
+## Current State: READY
 
 | Milestone | Status |
 |---|---|

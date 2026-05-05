@@ -4025,26 +4025,39 @@ const modeDescs = {
         const ntSave = baseCur.cTax - noTaxOpt.cTax;
         return (
           <div className="chart-card" style={{ overflowX: "auto" }}>
-            <div className="ct">3-Scenario Comparison · {userState} No Conv | {userState} + Conv | No-Tax State + Conv</div>
+            <div className="ct">3-Scenario Comparison · No Conversion | {userState} + Convert | No-Tax State + Convert</div>
             <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
-              <strong style={{ color: "#f87171" }}>{userState} No Conv</strong> = stay put, do nothing &nbsp;|&nbsp;
-              <strong style={{ color: "#5eead4" }}>{userState} + Conv</strong> = stay put, execute ladder &nbsp;|&nbsp;
-              <strong style={{ color: "#34d399" }}>No-Tax State + Conv</strong> = move to a no-income-tax state, execute ladder
+              <strong style={{ color: "#f87171" }}>No Conversion</strong> = stay put, do nothing &nbsp;|&nbsp;
+              <strong style={{ color: "#5eead4" }}>{userState} + Convert</strong> = stay put, execute Roth ladder &nbsp;|&nbsp;
+              <strong style={{ color: "#34d399" }}>No-Tax State + Convert</strong> = move to a no-income-tax state, execute Roth ladder
             </div>
             <table className="roth-tbl">
               <thead>
+                {/* Row 1: scenario group banners */}
                 <tr>
-                  <th>Year</th>
-                  <th>Age</th>
-                  <th style={{ color: "#f87171" }}>No Conv — Conv</th>
-                  <th style={{ color: "#f87171" }}>No Conv — Tax</th>
-                  <th style={{ color: "#f87171" }}>No Conv — PreTax</th>
-                  <th style={{ color: "#5eead4" }}>{userState} Conv — Conv</th>
-                  <th style={{ color: "#5eead4" }}>{userState} Conv — Tax</th>
-                  <th style={{ color: "#5eead4" }}>{userState} Conv — PreTax</th>
-                  <th style={{ color: "#34d399" }}>No-Tax Conv — Conv</th>
-                  <th style={{ color: "#34d399" }}>No-Tax Conv — Tax</th>
-                  <th style={{ color: "#34d399" }}>No-Tax Conv — PreTax</th>
+                  <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Year</th>
+                  <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Age</th>
+                  <th colSpan={3} style={{ color: "#f87171", background: "rgba(239,68,68,0.13)", textAlign: "center", borderBottom: "2px solid rgba(239,68,68,0.45)", paddingBottom: 5, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
+                    No Conversion
+                  </th>
+                  <th colSpan={3} style={{ color: "#5eead4", background: "rgba(20,184,166,0.13)", textAlign: "center", borderBottom: "2px solid rgba(20,184,166,0.45)", paddingBottom: 5, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
+                    {userState} + Convert
+                  </th>
+                  <th colSpan={3} style={{ color: "#34d399", background: "rgba(52,211,153,0.13)", textAlign: "center", borderBottom: "2px solid rgba(52,211,153,0.45)", paddingBottom: 5, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
+                    No-Tax State + Convert
+                  </th>
+                </tr>
+                {/* Row 2: measure sub-headers */}
+                <tr>
+                  <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)" }}>Roth $</th>
+                  <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax ⓘ</th>
+                  <th style={{ color: "#94a3b8", background: "rgba(239,68,68,0.07)" }}>IRA Bal</th>
+                  <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)" }}>Roth $</th>
+                  <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax ⓘ</th>
+                  <th style={{ color: "#94a3b8", background: "rgba(20,184,166,0.07)" }}>IRA Bal</th>
+                  <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)" }}>Roth $</th>
+                  <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", cursor: "help" }} title="Federal income tax only — no state income tax applies in this scenario (no-tax state). Hover any data cell to confirm the $0 state split.">Total Tax ⓘ</th>
+                  <th style={{ color: "#94a3b8", background: "rgba(52,211,153,0.07)" }}>IRA Bal</th>
                 </tr>
               </thead>
               <tbody>
@@ -4057,29 +4070,32 @@ const modeDescs = {
                     <tr key={r.yr} style={{ background: hasConv ? "rgba(13,148,136,0.06)" : undefined }}>
                       <td>{r.yr}</td>
                       <td style={{ color: "#94a3b8" }}>{r.age}</td>
-                      <td style={{ color: "#f87171" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "-"}</td>
-                      <td style={{ color: "#f87171" }}>{fmtDollar(nc.totT || 0)}</td>
-                      <td style={{ color: "#94a3b8" }}>{fmtDollar(nc.pT || 0)}</td>
-                      <td style={{ color: "#5eead4", fontWeight: bo.conv > 0 ? 600 : 400 }}>{bo.conv > 0 ? fmtDollar(bo.conv) : "-"}</td>
-                      <td style={{ color: "#5eead4" }}>{fmtDollar(bo.totT || 0)}</td>
-                      <td style={{ color: "#94a3b8" }}>{fmtDollar(bo.pT || 0)}</td>
-                      <td style={{ color: "#34d399", fontWeight: nt.conv > 0 ? 600 : 400 }}>{nt.conv > 0 ? fmtDollar(nt.conv) : "-"}</td>
-                      <td style={{ color: "#34d399" }}>{fmtDollar(nt.totT || 0)}</td>
-                      <td style={{ color: "#94a3b8" }}>{fmtDollar(nt.pT || 0)}</td>
+                      {/* No Conversion columns */}
+                      <td style={{ color: "#f87171", background: "rgba(239,68,68,0.04)" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "—"}</td>
+                      <td style={{ color: "#f87171", background: "rgba(239,68,68,0.04)", cursor: "help" }} title={`Fed: ${fmtDollar(nc.fedT || 0)} | State: ${fmtDollar(nc.stT || 0)}`}>{fmtDollar(nc.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8", background: "rgba(239,68,68,0.04)" }}>{fmtDollar(nc.pT || 0)}</td>
+                      {/* {userState} + Convert columns */}
+                      <td style={{ color: "#5eead4", fontWeight: bo.conv > 0 ? 600 : 400, background: "rgba(20,184,166,0.04)" }}>{bo.conv > 0 ? fmtDollar(bo.conv) : "—"}</td>
+                      <td style={{ color: "#5eead4", background: "rgba(20,184,166,0.04)", cursor: "help" }} title={`Fed: ${fmtDollar(bo.fedT || 0)} | State: ${fmtDollar(bo.stT || 0)}`}>{fmtDollar(bo.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8", background: "rgba(20,184,166,0.04)" }}>{fmtDollar(bo.pT || 0)}</td>
+                      {/* No-Tax State + Convert columns */}
+                      <td style={{ color: "#34d399", fontWeight: nt.conv > 0 ? 600 : 400, background: "rgba(52,211,153,0.04)" }}>{nt.conv > 0 ? fmtDollar(nt.conv) : "—"}</td>
+                      <td style={{ color: "#34d399", background: "rgba(52,211,153,0.04)", cursor: "help" }} title={`Fed: ${fmtDollar(nt.fedT || 0)} | State: $0 (no-tax state)`}>{fmtDollar(nt.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8", background: "rgba(52,211,153,0.04)" }}>{fmtDollar(nt.pT || 0)}</td>
                     </tr>
                   );
                 })}
                 <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.04)", fontWeight: 700 }}>
                   <td colSpan={2} style={{ color: "#e2e8f0" }}>Lifetime Totals</td>
-                  <td style={{ color: "#f87171" }}>—</td>
-                  <td style={{ color: "#f87171" }}>{fmtM(baseCur.cTax)}</td>
-                  <td style={{ color: "#94a3b8" }}>{fmtDollar(baseCur.rows[baseCur.rows.length-1]?.pT || 0)}</td>
-                  <td style={{ color: "#5eead4" }}>{fmtM(baseOpt.cConv)}</td>
-                  <td style={{ color: stSave > 0 ? "#34d399" : "#f87171" }}>{fmtM(baseOpt.cTax)} {stSave > 0 ? `(saves ${fmtM(stSave)})` : `(costs ${fmtM(-stSave)} more)`}</td>
-                  <td style={{ color: "#94a3b8" }}>{fmtDollar(baseOpt.rows[baseOpt.rows.length-1]?.pT || 0)}</td>
-                  <td style={{ color: "#34d399" }}>{fmtM(noTaxOpt.cConv)}</td>
-                  <td style={{ color: ntSave > 0 ? "#34d399" : "#f87171" }}>{fmtM(noTaxOpt.cTax)} {ntSave > 0 ? `(saves ${fmtM(ntSave)})` : `(costs ${fmtM(-ntSave)} more)`}</td>
-                  <td style={{ color: "#94a3b8" }}>{fmtDollar(noTaxOpt.rows[noTaxOpt.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#f87171", background: "rgba(239,68,68,0.04)" }}>—</td>
+                  <td style={{ color: "#f87171", background: "rgba(239,68,68,0.04)" }}>{fmtM(baseCur.cTax)}</td>
+                  <td style={{ color: "#94a3b8", background: "rgba(239,68,68,0.04)" }}>{fmtDollar(baseCur.rows[baseCur.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#5eead4", background: "rgba(20,184,166,0.04)" }}>{fmtM(baseOpt.cConv)}</td>
+                  <td style={{ color: stSave > 0 ? "#34d399" : "#f87171", background: "rgba(20,184,166,0.04)" }}>{fmtM(baseOpt.cTax)} {stSave > 0 ? `(saves ${fmtM(stSave)})` : `(costs ${fmtM(-stSave)} more)`}</td>
+                  <td style={{ color: "#94a3b8", background: "rgba(20,184,166,0.04)" }}>{fmtDollar(baseOpt.rows[baseOpt.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#34d399", background: "rgba(52,211,153,0.04)" }}>{fmtM(noTaxOpt.cConv)}</td>
+                  <td style={{ color: ntSave > 0 ? "#34d399" : "#f87171", background: "rgba(52,211,153,0.04)" }}>{fmtM(noTaxOpt.cTax)} {ntSave > 0 ? `(saves ${fmtM(ntSave)})` : `(costs ${fmtM(-ntSave)} more)`}</td>
+                  <td style={{ color: "#94a3b8", background: "rgba(52,211,153,0.04)" }}>{fmtDollar(noTaxOpt.rows[noTaxOpt.rows.length-1]?.pT || 0)}</td>
                 </tr>
               </tbody>
             </table>
@@ -6399,68 +6415,6 @@ function AssumptionsPanel({ values, onChange }) {
           </select>
         </ARow>
 
-        {/* Manual year-by-year conversion overrides */}
-        <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#a78bfa", marginBottom: 4 }}>
-            📋 Manual Conversion Schedule
-          </div>
-          <div style={{ fontSize: 11, color: "#475569", marginBottom: 8 }}>
-            Pin specific years to exact dollar amounts. Leave a year out to let the bracket-fill optimizer decide. Enter $0 to force no conversion that year.
-          </div>
-          {(values.conversionOverrides || []).length > 0 && (
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "80px 120px 28px", gap: "4px 8px", alignItems: "center", marginBottom: 4 }}>
-                <span style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>YEAR</span>
-                <span style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>AMOUNT ($)</span>
-                <span />
-              </div>
-              {(values.conversionOverrides || []).map((ov) => (
-                <div key={ov.id} style={{ display: "grid", gridTemplateColumns: "80px 120px 28px", gap: "4px 8px", alignItems: "center", marginBottom: 4 }}>
-                  <input
-                    type="number"
-                    value={ov.year || ""}
-                    onChange={(e) => {
-                      const updated = (values.conversionOverrides || []).map(o =>
-                        o.id === ov.id ? { ...o, year: e.target.value ? parseInt(e.target.value) : "" } : o
-                      );
-                      onChange("conversionOverrides", updated);
-                    }}
-                    placeholder="2031"
-                    min={2026} max={2070}
-                    style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
-                  />
-                  <input
-                    type="number"
-                    value={ov.amount === 0 ? "0" : (ov.amount || "")}
-                    onChange={(e) => {
-                      const updated = (values.conversionOverrides || []).map(o =>
-                        o.id === ov.id ? { ...o, amount: e.target.value !== "" ? parseInt(e.target.value) : "" } : o
-                      );
-                      onChange("conversionOverrides", updated);
-                    }}
-                    placeholder="60000"
-                    min={0} max={2000000} step={1000}
-                    style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
-                  />
-                  <button
-                    onClick={() => onChange("conversionOverrides", (values.conversionOverrides || []).filter(o => o.id !== ov.id))}
-                    style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "3px 6px" }}
-                  >×</button>
-                </div>
-              ))}
-            </div>
-          )}
-          <button
-            onClick={() => onChange("conversionOverrides", [...(values.conversionOverrides || []), { id: Date.now().toString(), year: "", amount: "" }])}
-            style={{ fontSize: 11, background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.25)", color: "#a78bfa", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}
-          >+ Add year override</button>
-          {(values.conversionOverrides || []).length > 0 && (
-            <button
-              onClick={() => onChange("conversionOverrides", [])}
-              style={{ fontSize: 11, background: "transparent", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", borderRadius: 6, padding: "5px 12px", cursor: "pointer", marginLeft: 8 }}
-            >Clear all</button>
-          )}
-        </div>
       </div>
 
       {/* MONTE CARLO MODEL PARAMETERS CARD */}
