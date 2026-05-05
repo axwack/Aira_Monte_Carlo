@@ -13,3 +13,6 @@ Archive
 /netlify
 .wrangler
 aira-forecaster-agents
+STATUS.md
+LOGIC_AUDIT.md
+Test Case.md
