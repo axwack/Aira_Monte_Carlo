@@ -3558,6 +3558,7 @@ const modeDescs = {
                   <th>Age</th>
                   <th>Label</th>
                   <th>Source</th>
+                  <th title="Pre-tax IRA/401k balance at the start of this year, before the conversion">Pre-Tax (before)</th>
                   <th>Conversion</th>
                   <th>Fed Tax</th>
                   <th>State Tax</th>
@@ -3565,6 +3566,7 @@ const modeDescs = {
                   <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg</th>
                   <th>Eff Rate</th>
                   <th>Net→Roth</th>
+                  <th title="Cumulative Roth balance at end of this year (includes growth and withdrawals)">Roth Bal</th>
                 </tr>
               </thead>
               <tbody>
@@ -3598,6 +3600,7 @@ const modeDescs = {
                       {r.label}
                     </td>
                     <td>{sourceLabel}</td>
+                    <td style={{ color: isPast ? "#334155" : "#64748b" }}>{fmtDollar(r.pTStart || 0)}</td>
                     <td style={{ color: isPast ? "#334155" : isPinned ? "#fbbf24" : "#e2e8f0", fontWeight: isPinned ? 700 : 400 }}>{fmtDollar(r.conv)}</td>
                     <td style={{ color: isPast ? "#334155" : "#f87171" }}>{fmtDollar(r.fedT)}</td>
                     <td style={{ color: isPast ? "#334155" : isNoTaxState ? "#34d399" : "#fb923c" }}>
@@ -3639,6 +3642,9 @@ const modeDescs = {
                           : r.conv
                       )}
                     </td>
+                    <td style={{ color: isPast ? "#334155" : "#5eead4" }} title={`Start of year: ${fmtDollar(r.roStart || 0)} → end of year: ${fmtDollar(r.ro || 0)}`}>
+                      {fmtDollar(r.ro || 0)}
+                    </td>
                   </tr>
                   );
                 })}
@@ -3646,6 +3652,7 @@ const modeDescs = {
                   <td style={{ fontWeight: 700 }} colSpan={4}>
                     Total
                   </td>
+                  <td>—</td>
                   <td style={{ fontWeight: 700 }}>{fmtM(opt.cConv)}</td>
                   <td style={{ color: "#f87171", fontWeight: 700 }}>
                     {fmtM(convRows.reduce((s, r) => s + r.fedT, 0))}
@@ -3673,9 +3680,42 @@ const modeDescs = {
                       )
                     )}
                   </td>
+                  <td style={{ color: "#5eead4", fontWeight: 700 }}
+                    title="Final Roth balance at end of conversion window">
+                    {fmtDollar(convRows[convRows.length - 1]?.ro || 0)}
+                  </td>
                 </tr>
               </tbody>
             </table>
+            {(() => {
+              const orphaned = (params?.conversionOverrides || []).filter(
+                o => !convRows.some(r => r.yr === Number(o.year))
+              );
+              if (!orphaned.length) return null;
+              return (
+                <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(239,68,68,0.07)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#f87171", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    ⚠️ Stale Pins — producing $0 conversion
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, lineHeight: 1.6 }}>
+                    The pins below exist in your plan but result in <strong style={{ color: "#e2e8f0" }}>$0 converted</strong> — the pre-tax balance was likely exhausted before that year, or your income already exceeds the bracket ceiling. They have no effect and can be safely removed.
+                  </div>
+                  {orphaned.map(o => (
+                    <div key={o.year} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "'DM Mono',monospace", flex: 1 }}>
+                        📌 {o.year} — pinned at {fmtDollar(Number(o.amount))} → effective: $0
+                      </span>
+                      {onRemoveConversionOverride && (
+                        <button
+                          onClick={() => onRemoveConversionOverride(o.year)}
+                          style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 11, padding: "2px 10px", fontFamily: "inherit" }}
+                        >× Remove</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
           <div className="chart-card">
             <div className="ct">
