@@ -62,6 +62,7 @@ consult your fiduciary, CPA or tax accountant.
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
+import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -1347,297 +1348,7 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   return 72;
 }
 
-function buildRothExplorer(params = {}) {
-  console.log("[buildRothExplorer] taxFunding =", params.taxFunding);
-  const {
-    currentAge,
-    retireAge,
-    ssAge,
-    ssb,
-    ab,
-    useAb,
-    inf,
-    endAge = 90, 
-    port,
-    twoHousehold,
-    rothMode = "fill_22",           // keep default for mode only
-    filingStatus = "mfj",
-    stateOfResidence = "NJ",
-    dob,
-    birthYear,
-    rmdStartAge,
-    taxFunding = "from_taxable",
-    fafsaGuard = false,
-    fafsaEndYear = null,
-    cssEndYear = null,
-    conversionOverrides = [],
-  } = params;
-  // Build a fast year→amount lookup from the overrides array
-  const overrideMap = {};
-  for (const o of conversionOverrides) {
-    if (o.year && o.amount != null) overrideMap[Number(o.year)] = Number(o.amount);
-  }
-
-  // Safeguard: if critical numbers are missing, return empty or throw a helpful error
-  if (currentAge == null || retireAge == null || port == null) {
-    console.warn("buildRothExplorer missing required params:", { currentAge, retireAge, port });
-    return { opt: { rows: [], cTax: 0, cConv: 0 }, cur: { rows: [], cTax: 0, cConv: 0 }, convRows: [] };
-  }
-
-
-  const isMFJ = filingStatus !== "single";
-  const fedBase = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
-  const stdDedBase = isMFJ ? 32200 : 16100;
-  const stdDedAgeBonus = isMFJ ? 3300 : 1650;
-  const rmdAge = typeof rmdStartAge === "number" && rmdStartAge > 0
-    ? rmdStartAge
-    : getRmdStartAge({ dob, birthYear, currentAge });
-
-  const stateBr0 = getStateBrackets(stateOfResidence, isMFJ);
-  const infR = inf / 100,
-    retireYear = ROTH_BASE_YEAR + (retireAge - currentAge),
-    isNoTaxState = twoHousehold || !stateBr0;
-
-  const _pretaxSum = (params.accounts || []).filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
-  const _rothSum = (params.accounts || []).filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
-  const _otherSum = (params.accounts || []).filter(a => !["pretax","roth"].includes(a.category)).reduce((s, a) => s + (a.balance || 0), 0);
-  const _totalFromAccounts = _pretaxSum + _rothSum + _otherSum;
-  const pretaxBal = _totalFromAccounts > 0 ? _pretaxSum : port * 0.6,
-    rothBal = _totalFromAccounts > 0 ? _rothSum : port * 0.4,
-    taxBal0 = _totalFromAccounts > 0 ? _otherSum : 0,
-    gr = 0.07;
-
-  function irmaaCeiling(yr) {
-    const f = Math.pow(1.025, yr - 2026);
-    return Math.round(218000 * f);
-  }
-
-  const gkF = params.gkFloor || 48000;
-  const gkC = params.gkCeiling || 115000;
-  const baseSp = params.sp || 100000;
-
-  function runScenario(doConvert) {
-    let pT = pretaxBal,
-      ro = rothBal,
-      taxBal = taxBal0,
-      cTax = 0,
-      cConv = 0,
-      cIrmaa = 0,
-      cRmd = 0;
-    const rows = [];
-    let sp = baseSp,
-      lastReturn = gr;
-    const totalPort0 = pretaxBal + rothBal;
-    const ss0 = retireAge >= ssAge ? ssb : 0;
-    const ab0 = ab > 0 ? ab : 0;
-    const initDraw0 = Math.max(0, baseSp - ss0 - ab0);
-    const initWR = totalPort0 > 0 ? initDraw0 / totalPort0 : 0.04;
-
-    for (let age = retireAge; age <= endAge; age++) {
-      const yr = retireYear + (age - retireAge),
-        f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
-      const fB = idxB(fedBase, f);
-      const nB = stateBr0 ? idxB(stateBr0, f) : [];
-      
-      const stdD = Math.round(stdDedBase * f) + (age >= 65 ? Math.round(stdDedAgeBonus * f) : 0);
-      const b10t = fB.find((b) => b.rate === 0.10)?.hi || Math.round((isMFJ ? 24800 : 12400) * f);
-      const b12t = fB.find((b) => b.rate === 0.12)?.hi || Math.round((isMFJ ? 100800 : 50400) * f);
-      const b22t = fB.find((b) => b.rate === 0.22)?.hi || Math.round((isMFJ ? 211400 : 105700) * f);
-      const b24t = fB.find((b) => b.rate === 0.24)?.hi || Math.round((isMFJ ? 403550 : 201800) * f);
-      const b32t = fB.find((b) => b.rate === 0.32)?.hi || Math.round((isMFJ ? 512450 : 256225) * f);
-      const b35t = fB.find((b) => b.rate === 0.35)?.hi || Math.round((isMFJ ? 768700 : 384350) * f);
-      const b37t = Infinity; // top bracket has no ceiling
-
-      const totalPort = pT + ro;
-      if (age > retireAge && totalPort > 0) {
-        sp = guytonKlingerWithdrawal(
-          totalPort,
-          initWR,
-          sp,
-          lastReturn,
-          infR,
-          gkF,
-          gkC
-        );
-      }
-
-      const ss = age >= ssAge ? Math.round(ssb * Math.pow(1.024, age - ssAge)) : 0;
-      const ssT = Math.round(ss * 0.85);
-      const abn = ab > 0 && age <= 80
-        ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
-        : 0;
-      const baseInc = ssT + abn;
-      const portDraw = Math.max(0, sp - ss - abn);
-
-      // RMD calculation – using Uniform Lifetime Table (RMD_DIV)
-      // Start age follows SECURE Act 2.0: 75 if born 1960+, 73 if born 1951-1959, 72 if born before 1951.
-      // For Joint & Last Survivor, you would need spouse age and a 2D table.
-      let rmd = 0;
-      if (age >= rmdAge && pT > 0) {
-        const divisor = RMD_DIV[age] || 15.0;
-        rmd = Math.round(pT / divisor);
-      }
-      const incBC = baseInc + rmd;
-      const txBC = Math.max(0, incBC - stdD);
-
-      let conv = 0;
-      let capReason = "";
-      if (
-        doConvert &&
-        rothMode !== "no_convert" &&
-        age >= retireAge &&
-        age < rmdAge &&
-        pT > 0
-      ) {
-        if (overrideMap[yr] !== undefined) {
-          // Manual override: use the user-specified amount (capped by available pretax)
-          conv = Math.round(Math.min(Math.max(0, overrideMap[yr]), pT));
-          capReason = overrideMap[yr] === 0 ? "manual $0" : "manual override";
-        } else {
-          let targetTop;
-          if (rothMode === "fill_10") { targetTop = b10t; capReason = "mode 10%"; }
-          else if (rothMode === "fill_12") { targetTop = b12t; capReason = "mode 12%"; }
-          else if (rothMode === "fill_22") { targetTop = b22t; capReason = "mode 22%"; }
-          else if (rothMode === "fill_24") { targetTop = b24t; capReason = "mode 24%"; }
-          else if (rothMode === "fill_32") { targetTop = b32t; capReason = "mode 32%"; }
-          else if (rothMode === "fill_35") { targetTop = b35t; capReason = "mode 35%"; }
-          else if (rothMode === "fill_37") { targetTop = b37t; capReason = "mode 37%"; }
-          else if (rothMode === "irmaa_safe") {
-            const irmaaTop = irmaaCeiling(yr) + stdD;
-            if (irmaaTop < b22t) { targetTop = irmaaTop; capReason = "IRMAA ceiling"; }
-            else { targetTop = b22t; capReason = "mode 22%"; }
-          } else { targetTop = b22t; capReason = "mode 22%"; }
-
-          // IRMAA lookback guard: ages 60-65 — cap at 22% for aggressive brackets
-          if (age >= 60 && age <= 65 && ["fill_24","fill_32","fill_35","fill_37"].includes(rothMode) && b22t < targetTop) {
-            targetTop = b22t; capReason = "IRMAA lookback (age 60–65)";
-          }
-          // FAFSA/CSS college-aid guards — year values alone are the trigger (no toggle required)
-          if (fafsaEndYear && yr <= fafsaEndYear && b12t < targetTop) {
-            targetTop = b12t; capReason = `FAFSA guard (≤${fafsaEndYear})`;
-          }
-          if (cssEndYear && yr <= cssEndYear && (!fafsaEndYear || yr > fafsaEndYear) && b22t < targetTop) {
-            targetTop = b22t; capReason = `CSS Profile guard (≤${cssEndYear})`;
-          }
-          const room = Math.max(0, targetTop - txBC);
-          const preCap = Math.min(room, Math.max(0, pT));
-          conv = Math.round(preCap);
-          if (pT < room) capReason = "pretax exhausted";
-        }
-      }
-
-      const totInc = incBC + conv,
-        txInc = Math.max(0, totInc - stdD);
-      const fedT = Math.round(progTax(txInc, fB));
-      const stT = isNoTaxState ? 0 : Math.round(progTax(Math.max(0, txInc), nB));
-      const totT = fedT + stT,
-        effR = totInc > 0 ? totT / totInc : 0;
-      const magi = totInc + (ss - ssT);
-      const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
-
-      // True marginal rate: Δ(fed + state + IRMAA) / conv when conv > 0.
-      let margR = 0;
-      if (conv > 0) {
-        const txIncNo = Math.max(0, incBC - stdD);
-        const fedTNo = Math.round(progTax(txIncNo, fB));
-        const stTNo = isNoTaxState ? 0 : Math.round(progTax(txIncNo, nB));
-        const magiNo = incBC + (ss - ssT);
-        const irmaaNo = age >= 65 ? irmaaCost(magiNo, yr) : 0;
-        const dTax = (fedT + stT + irmaa) - (fedTNo + stTNo + irmaaNo);
-        margR = dTax / conv;
-      }
-
-      // Tax funding: determine how conversion tax is paid.
-      let roAdd = conv;
-      let taxFromTaxable = 0;
-      if (doConvert && conv > 0 && totT > 0) {
-        if (taxFunding === "from_conv") {
-          roAdd = Math.max(0, conv - totT);
-        } else if (taxFunding === "from_taxable") {
-          taxFromTaxable = Math.min(taxBal, totT);
-          if (taxFromTaxable < totT) {
-            // taxable depleted — remainder comes out of the conversion
-            roAdd = Math.max(0, conv - (totT - taxFromTaxable));
-          }
-        } else if (taxFunding === "outside_cash") {
-          // Tax paid from external cash — full conversion goes to Roth,
-          // but the external cash pool (modeled via taxBal) must shrink.
-          taxFromTaxable = Math.min(taxBal, totT);
-        }
-      }
-      taxBal = Math.max(0, taxBal - taxFromTaxable) * (1 + gr);
-      pT = Math.max(0, pT - rmd - conv - Math.max(0, portDraw * 0.6)) * (1 + gr);
-      ro = Math.max(0, ro + roAdd - Math.max(0, portDraw * 0.4)) * (1 + gr);
-      lastReturn = gr;
-      cTax += totT;
-      cConv += conv;
-      cIrmaa += irmaa;
-      cRmd += rmd;
-
-      let label = "";
-      if (conv > 0) {
-        if (age === ssAge - 1) label = "Golden Year ★";
-        else if (age === ssAge) label = "SS Starts";
-        else label = `Year ${age - retireAge}`;
-      }
-
-      // Per-bracket split of the conversion: which dollars landed in which bracket.
-      const convByBr = { conv10: 0, conv12: 0, conv22: 0, conv24: 0, conv32: 0, conv35: 0, conv37: 0 };
-      if (conv > 0) {
-        fB.forEach((b) => {
-          const inBr = Math.max(0, Math.min(txInc, b.hi) - Math.max(txBC, b.lo));
-          const key = `conv${Math.round(b.rate * 100)}`;
-          if (key in convByBr) convByBr[key] = Math.round(inBr);
-        });
-      }
-      rows.push({
-        yr, age, ss, abn, rmd, conv, baseInc: incBC, totInc, txInc,
-        fedT, stT, totT, effR, margR, irmaa, magi,
-        pT: Math.round(pT), ro: Math.round(ro), nw: Math.round(pT + ro),
-        label,
-        bracketUsed: conv > 0
-          ? txInc <= b12t ? "12%" : txInc <= b22t ? "22%" : txInc <= b24t ? "24%" : txInc <= b32t ? "32%" : txInc <= b35t ? "35%" : "37%"
-          : "-",
-        capReason,
-        ...convByBr,
-        sp: Math.round(sp), portDraw: Math.round(portDraw),
-      });
-    }
-    return { rows, cTax, cConv, cIrmaa, cRmd, fPT: Math.round(pT), fRo: Math.round(ro) };
-  }
-
-  const opt = runScenario(true),
-  cur = runScenario(false);
-  const convRows = opt.rows.filter((r) => r.conv > 0);
-  const taxD = opt.cTax - cur.cTax;
-  const estD = (cur.rows[cur.rows.length - 1]?.nw || 0) - (opt.rows[opt.rows.length - 1]?.nw || 0);
-  const totIncOpt = opt.rows.reduce((s, r) => s + r.totInc, 0);
-  const totIncCur = cur.rows.reduce((s, r) => s + r.totInc, 0);
-  const leOpt = totIncOpt > 0 ? opt.cTax / totIncOpt : 0;
-  const leCur = totIncCur > 0 ? cur.cTax / totIncCur : 0;
-  const rmdRed = cur.cRmd > 0 ? Math.round((1 - opt.cRmd / cur.cRmd) * 100) : 0;
-
-  return {
-    opt, cur, convRows, taxD, estD, leOpt, leCur, rmdRed,
-    isNoTaxState, retireYear, retireAge, ssAge, rmdAge, filingStatus: isMFJ ? "mfj" : "single",
-  };
-}
-
-function buildRothLadder(params = {}) {
-  const ex = buildRothExplorer(params);
-  return ex.convRows.map((r) => ({
-    yr: r.yr,
-    age: r.age,
-    label: r.label,
-    otherInc: r.abn,
-    conv: r.conv,
-    fedTax: r.fedT,
-    stateTax: r.stT,                              // renamed from stateNJ
-    effFed: r.conv > 0 ? ((r.fedT / r.conv) * 100).toFixed(1) : "0.0",   // was effFL
-    effTotal: r.conv > 0 ? (((r.fedT + r.stT) / r.conv) * 100).toFixed(1) : "0.0", // was effNJ
-    netRoth: Math.round(r.conv - r.fedT - (params.twoHousehold ? 0 : r.stT)),
-  }));
-}
+// buildRothExplorer and buildRothLadder imported from ./engine/buildRothExplorer.js
 
 /* ════ MORTGAGE MATH ════ */
 function mortgageSchedule(
@@ -3686,22 +3397,44 @@ const modeDescs = {
             {/* ── Recommendation ── */}
             <div className="chart-card" style={{ border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.05)" }}>
               <div className="ct" style={{ color: "#fbbf24" }}>✅ Recommended Conversion — {cyYear}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                <div className="met" style={{ border: "1px solid rgba(245,158,11,0.3)" }}>
-                  <div className="ml">Convert This Amount</div>
-                  <div className="mv" style={{ color: "#fbbf24", fontSize: 22 }}>{fmtN(recConv)}</div>
-                  <div className="ms">pretax → Roth</div>
-                </div>
-                <div className="met" style={{ border: "1px solid rgba(248,113,113,0.3)" }}>
-                  <div className="ml">Total Tax Cost</div>
-                  <div className="mv" style={{ color: "#f87171", fontSize: 22 }}>{fmtN(recTax.total)}</div>
-                  <div className="ms">fed {fmtN(recTax.fedInc)} + state {fmtN(recTax.stInc)}</div>
-                </div>
-              </div>
-              <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
-                📋 Give this to your CPA: Convert {fmtN(recConv)} from pretax to Roth in {cyYear}.
-                Tax cost is {fmtN(recTax.total)} — fund from Taxable/Cash outside the retirement accounts.
-              </div>
+              {(() => {
+                const cyTaxFunding = params?.taxFunding || "from_taxable";
+                const cyNetRoth = cyTaxFunding === "from_conv"
+                  ? Math.max(0, recConv - recTax.total)
+                  : recConv;
+                const cyFundLabel = cyTaxFunding === "from_conv"
+                  ? "From conversion (taxes deducted)"
+                  : cyTaxFunding === "outside_cash"
+                  ? "Outside cash"
+                  : "From taxable / HSA bucket";
+                const cyCpaTax = cyTaxFunding === "from_conv"
+                  ? `Tax cost is ${fmtN(recTax.total)} — deducted from conversion; ${fmtN(cyNetRoth)} net reaches Roth.`
+                  : `Tax cost is ${fmtN(recTax.total)} — pay from ${cyTaxFunding === "outside_cash" ? "outside cash (e.g. SGOV/HYSArea)" : "your taxable / HSA bucket"}.`;
+                return (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div className="met" style={{ border: "1px solid rgba(245,158,11,0.3)" }}>
+                        <div className="ml">Convert This Amount</div>
+                        <div className="mv" style={{ color: "#fbbf24", fontSize: 22 }}>{fmtN(recConv)}</div>
+                        <div className="ms">pretax → Roth</div>
+                      </div>
+                      <div className="met" style={{ border: "1px solid rgba(248,113,113,0.3)" }}>
+                        <div className="ml">Total Tax Cost</div>
+                        <div className="mv" style={{ color: "#f87171", fontSize: 22 }}>{fmtN(recTax.total)}</div>
+                        <div className="ms">fed {fmtN(recTax.fedInc)} + state {fmtN(recTax.stInc)}</div>
+                      </div>
+                      <div className="met" style={{ border: "1px solid rgba(20,184,166,0.3)" }}>
+                        <div className="ml">Net → Roth</div>
+                        <div className="mv" style={{ color: "#14b8a6", fontSize: 22 }}>{fmtN(cyNetRoth)}</div>
+                        <div className="ms">{cyFundLabel}</div>
+                      </div>
+                    </div>
+                    <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
+                      📋 Give this to your CPA: Convert {fmtN(recConv)} from pretax to Roth in {cyYear}. {cyCpaTax}
+                    </div>
+                  </>
+                );
+              })()}
               {recNote && (
                 <div style={{ marginTop: 8, fontSize: 11, color: "#94a3b8" }}>{recNote}</div>
               )}
@@ -3785,10 +3518,18 @@ const modeDescs = {
                 <Bar dataKey="37%" stackId="br" fill="#991b1b" name="37%" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-            <div style={{ fontSize: 10, color: "#475569", margin: "8px 0 4px", display: "flex", gap: 14 }}>
+            <div style={{ fontSize: 10, color: "#475569", margin: "8px 0 4px", display: "flex", gap: 14, flexWrap: "wrap" }}>
               <span>📌 <span style={{ color: "#fbbf24" }}>Amber</span> = pinned from Tax Room or manual entry</span>
               <span>🔮 <span style={{ color: "#5eead4" }}>Default</span> = optimizer projection</span>
               <span>📅 <span style={{ color: "#334155" }}>Gray</span> = historical (already past)</span>
+              <span style={{ marginLeft: "auto", color: "#64748b" }}>
+                💰 Net→Roth basis:{" "}
+                {params?.taxFunding === "from_conv"
+                  ? <span style={{ color: "#f87171" }}>From conversion (Conv − total tax)</span>
+                  : params?.taxFunding === "outside_cash"
+                  ? <span style={{ color: "#34d399" }}>Outside cash (full conversion)</span>
+                  : <span style={{ color: "#5eead4" }}>From taxable bucket (full conversion)</span>}
+              </span>
             </div>
             <table className="roth-tbl" style={{ marginTop: 4 }}>
               <thead>
@@ -3872,7 +3613,11 @@ const modeDescs = {
                       {(r.effR * 100).toFixed(1)}%
                     </td>
                     <td style={{ color: isPast ? "#334155" : "#14b8a6", fontWeight: 600 }}>
-                      {fmtDollar(r.conv - r.fedT - (isNoTaxState ? 0 : r.stT))}
+                      {fmtDollar(
+                        params?.taxFunding === "from_conv"
+                          ? Math.max(0, r.conv - r.fedT - (isNoTaxState ? 0 : r.stT))
+                          : r.conv
+                      )}
                     </td>
                   </tr>
                   );
@@ -3901,7 +3646,9 @@ const modeDescs = {
                   <td style={{ color: "#14b8a6", fontWeight: 700 }}>
                     {fmtM(
                       convRows.reduce(
-                        (s, r) => s + r.conv - r.fedT - (isNoTaxState ? 0 : r.stT),
+                        (s, r) => s + (params?.taxFunding === "from_conv"
+                          ? Math.max(0, r.conv - r.fedT - (isNoTaxState ? 0 : r.stT))
+                          : r.conv),
                         0
                       )
                     )}
