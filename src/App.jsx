@@ -2752,7 +2752,7 @@ function SmileChart({ p, inf }) {
   );
 }
 
-function RothLadder({ params, onSaveConversionOverride }) {
+function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverride }) {
 
   const [showInputs, setShowInputs] = useState(false);
   const [view, setView] = useState("optimized");
@@ -3438,22 +3438,42 @@ const modeDescs = {
               {recNote && (
                 <div style={{ marginTop: 8, fontSize: 11, color: "#94a3b8" }}>{recNote}</div>
               )}
-              {recConv > 0 && onSaveConversionOverride && (
-                <button
-                  onClick={() => {
-                    onSaveConversionOverride(cyYear, recConv);
-                    alert(`✅ Saved: Convert ${fmtN(recConv)} in ${cyYear} to your Lifetime Projection ladder.`);
-                  }}
-                  style={{
-                    marginTop: 12, width: "100%", padding: "10px 0",
-                    background: "rgba(245,158,11,0.2)", border: "1px solid #f59e0b",
-                    color: "#fbbf24", borderRadius: 8, cursor: "pointer",
-                    fontSize: 13, fontWeight: 700, fontFamily: "inherit",
-                  }}
-                >
-                  → Save to Lifetime Ladder
-                </button>
-              )}
+              {(() => {
+                const cyPin = (params?.conversionOverrides || []).find(o => Number(o.year) === cyYear);
+                return (
+                  <>
+                    {cyPin && (
+                      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, background: "rgba(167,139,250,0.08)", border: "1px solid rgba(167,139,250,0.3)", borderRadius: 8, padding: "8px 12px" }}>
+                        <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 600, flex: 1 }}>
+                          📌 Pinned for {cyYear}: {fmtN(cyPin.amount)}
+                        </span>
+                        {onRemoveConversionOverride && (
+                          <button
+                            onClick={() => onRemoveConversionOverride(cyYear)}
+                            style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 12, padding: "3px 10px", fontFamily: "inherit" }}
+                          >× Remove pin</button>
+                        )}
+                      </div>
+                    )}
+                    {recConv > 0 && onSaveConversionOverride && (
+                      <button
+                        onClick={() => {
+                          onSaveConversionOverride(cyYear, recConv);
+                          alert(`✅ Saved: Convert ${fmtN(recConv)} in ${cyYear} to your Lifetime Projection ladder.`);
+                        }}
+                        style={{
+                          marginTop: 8, width: "100%", padding: "10px 0",
+                          background: "rgba(245,158,11,0.2)", border: "1px solid #f59e0b",
+                          color: "#fbbf24", borderRadius: 8, cursor: "pointer",
+                          fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                        }}
+                      >
+                        {cyPin ? "↺ Update Lifetime Ladder pin" : "→ Save to Lifetime Ladder"}
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* ── How this works ── */}
@@ -4294,6 +4314,7 @@ function ScenariosTab({
   dob,
   sex,
   onSaveConversionOverride,
+  onRemoveConversionOverride,
 }) {
 
   const [scenarioSubTab, setScenarioSubTab] = useState("roth");
@@ -4416,7 +4437,7 @@ function ScenariosTab({
         <DeterministicWithdrawalView p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} />
       )}
 
-      {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} />}
+      {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} />}
       {scenarioSubTab === "buckets" && <BucketsTab params={baseParams} />}
       {scenarioSubTab === "smile" && <SmileChart p={baseParams} inf={inf} />}
     </div>
@@ -7174,7 +7195,7 @@ export default function AiRAForecaster() {
     ["montecarlo", "🎲 Forecast"],
     ["scenarios", "🎯 Scenarios"],
     ["income", "💵 Income"],
-    ["mortgage", "🏠 Mortgage"],
+    ["mortgage", "🏠 Real Estate"],
     ["actionplan", "✅ Action Plan"],
     ["assumptions", "👤 Profile"],
   ];
@@ -8122,6 +8143,12 @@ export default function AiRAForecaster() {
                           ...(prev.conversionOverrides || []).filter(o => Number(o.year) !== Number(year)),
                           { id: Date.now().toString(), year: Number(year), amount: Number(amount) },
                         ].sort((a, b) => a.year - b.year),
+                      }));
+                    }}
+                    onRemoveConversionOverride={(year) => {
+                      setAssumptions(prev => ({
+                        ...prev,
+                        conversionOverrides: (prev.conversionOverrides || []).filter(o => Number(o.year) !== Number(year)),
                       }));
                     }}
                   />
