@@ -3458,7 +3458,7 @@ const modeDescs = {
                     {recConv > 0 && onSaveConversionOverride && (
                       <button
                         onClick={() => {
-                          onSaveConversionOverride(cyYear, recConv);
+                          onSaveConversionOverride(cyYear, recConv, { w2: cyW2, ss: cySS, rental: cyRental, other: cyOther, sgov: cySGOV });
                           alert(`✅ Saved: Convert ${fmtN(recConv)} in ${cyYear} to your Lifetime Projection ladder.`);
                         }}
                         style={{
@@ -3584,7 +3584,18 @@ const modeDescs = {
                     ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         <span style={{ color: "#fbbf24", fontWeight: 700, fontSize: 9 }}>📌 Pinned</span>
                         <button
-                          onClick={() => { setCyYear(r.yr); setView("thisyear"); }}
+                          onClick={() => {
+                            setCyYear(r.yr);
+                            const pin = (params?.conversionOverrides || []).find(o => Number(o.year) === r.yr);
+                            if (pin) {
+                              if (pin.w2     !== undefined) setCyW2(pin.w2);
+                              if (pin.ss     !== undefined) setCySS(pin.ss);
+                              if (pin.rental !== undefined) setCyRental(pin.rental);
+                              if (pin.other  !== undefined) setCyOther(pin.other);
+                              if (pin.sgov   !== undefined) setCySGOV(pin.sgov);
+                            }
+                            setView("thisyear");
+                          }}
                           title={`Edit pin for ${r.yr} in calculator`}
                           style={{ background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#a78bfa", borderRadius: 4, cursor: "pointer", fontSize: 9, padding: "1px 5px", fontFamily: "inherit", lineHeight: 1.4 }}
                         >✏</button>
@@ -6982,6 +6993,9 @@ export default function AiRAForecaster() {
   const [feedbackName, setFeedbackName] = useState("");
   const [feedbackEmail, setFeedbackEmail] = useState("");
   const [showTerms, setShowTerms] = useState(false);
+  const [showEngineCard, setShowEngineCard] = useState(
+    () => localStorage.getItem("aira_engine_open") === "true"
+  );
   const isFirst = useRef(true);
 
   // Slider states – initialized from BLANK_PROFILE
@@ -7626,79 +7640,92 @@ export default function AiRAForecaster() {
               })()}
             </div>
             <div className="sb-card">
-              <div className="sb-title">MC Engine — {APP_VERSION}</div>
-              <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
-                <div>
-                  📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P bootstrap [-30 / +30%]
-                </div>
-                <div>
-                  📊 <span style={{ color: "#a78bfa" }}>Bonds:</span> 50yr Bloomberg [-15 / +20%]
-                </div>
-                <div>
-                  <span style={{ color: "#fbbf24" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
-                  {(() => {
-                    const s = assumptions.withdrawalStrategy;
-                    if (s === "gk") return `Floor: ${fmtM(params.gkFloor)} · Ceiling ${fmtM(params.gkCeiling)}`;
-                    if (s === "fixed") return `Rate: ${((params.fixedWithdrawalRate || 0.04) * 100).toFixed(1)}%`;
-                    if (s === "vanguard") return `Cap: ${(params.vanguardCap || 0.05) * 100}% · Floor: ${(params.vanguardFloor || -0.025) * 100}%`;
-                    return "";
-                  })()}
-                </div>
-                <div>
-                  🏖 <span style={{ color: "#059669" }}>Rental:</span> {assumptions.abReliability || 80}% reliability per year
-                </div>
-                <div>
-                  🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#14b8a6" }}>💹 Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(2)}% μ
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.08)",
-                      color: "#64748b",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: "help",
-                      marginLeft: 4,
-                    }}
-                    title={`Pre‑retirement expected return (${assumptions.preRetireEq ?? 91}% stocks / ${100 - (assumptions.preRetireEq ?? 91)}% bonds). Historical average annual return.`}
-                  >
-                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
-                      ℹ️
-                    </span>
-                  </span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#fb923c" }}>💹 Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(2)}% μ
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.08)",
-                      color: "#64748b",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: "help",
-                      marginLeft: 4,
-                    }}
-                    title={`Post‑retirement expected return (${assumptions.postRetireEq ?? 70}% stocks / ${100 - (assumptions.postRetireEq ?? 70)}% bonds). Lower volatility, slightly lower return.`}
-                  >
-                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
-                      ℹ️
-                    </span>
-                  </span>
-                </div>
+              <div
+                className="sb-title"
+                onClick={() => setShowEngineCard(v => {
+                  const next = !v;
+                  localStorage.setItem("aira_engine_open", next);
+                  return next;
+                })}
+                style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", userSelect: "none" }}
+              >
+                <span>MC Engine — {APP_VERSION}</span>
+                <span style={{ fontSize: 14, color: "#475569" }}>{showEngineCard ? "▾" : "▸"}</span>
               </div>
+              {showEngineCard && (
+                <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
+                  <div>
+                    📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P bootstrap [-30 / +30%]
+                  </div>
+                  <div>
+                    📊 <span style={{ color: "#a78bfa" }}>Bonds:</span> 50yr Bloomberg [-15 / +20%]
+                  </div>
+                  <div>
+                    📉  <span style={{ color: "#fbbf24" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
+                    {(() => {
+                      const s = assumptions.withdrawalStrategy;
+                      if (s === "gk") return `Floor: ${fmtM(params.gkFloor)} · Ceiling ${fmtM(params.gkCeiling)}`;
+                      if (s === "fixed") return `Rate: ${((params.fixedWithdrawalRate || 0.04) * 100).toFixed(1)}%`;
+                      if (s === "vanguard") return `Cap: ${(params.vanguardCap || 0.05) * 100}% · Floor: ${(params.vanguardFloor || -0.025) * 100}%`;
+                      return "";
+                    })()}
+                  </div>
+                  <div>
+                    🏖 <span style={{ color: "#059669" }}>Rental:</span> {assumptions.abReliability || 80}% reliability per year
+                  </div>
+                  <div>
+                    🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ color: "#14b8a6" }}>💹 Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(2)}% μ
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.08)",
+                        color: "#64748b",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        cursor: "help",
+                        marginLeft: 4,
+                      }}
+                      title={`Pre‑retirement expected return (${assumptions.preRetireEq ?? 91}% stocks / ${100 - (assumptions.preRetireEq ?? 91)}% bonds). Historical average annual return.`}
+                    >
+                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
+                        ℹ️
+                      </span>
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ color: "#fb923c" }}>💹 Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(2)}% μ
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.08)",
+                        color: "#64748b",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        cursor: "help",
+                        marginLeft: 4,
+                      }}
+                      title={`Post‑retirement expected return (${assumptions.postRetireEq ?? 70}% stocks / ${100 - (assumptions.postRetireEq ?? 70)}% bonds). Lower volatility, slightly lower return.`}
+                    >
+                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
+                        ℹ️
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="sb-card">
@@ -8144,12 +8171,12 @@ export default function AiRAForecaster() {
                     checkpoints={assumptions.checkpoints}
                     dob={assumptions.dob}
                     sex={assumptions.sex}
-                    onSaveConversionOverride={(year, amount) => {
+                    onSaveConversionOverride={(year, amount, income) => {
                       setAssumptions(prev => ({
                         ...prev,
                         conversionOverrides: [
                           ...(prev.conversionOverrides || []).filter(o => Number(o.year) !== Number(year)),
-                          { id: Date.now().toString(), year: Number(year), amount: Number(amount) },
+                          { id: Date.now().toString(), year: Number(year), amount: Number(amount), ...(income || {}) },
                         ].sort((a, b) => a.year - b.year),
                       }));
                     }}
