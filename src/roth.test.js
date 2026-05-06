@@ -630,6 +630,132 @@ describe("buildRothLadder — net-Roth accounting", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 14. ALEX MERCER FULL PROFILE — Roth balance / conversion accounting
+//     Verifies the exact scenario the user reported: profile with NM state tax,
+//     outside_cash tax funding, conversionOverride for 2032 at 87,239.
+//
+//     Key invariants tested:
+//       pT update:  pT_end = max(0, pT_start - rmd - conv - portDraw*0.6) * 1.07
+//       ro update:  ro_end = max(0, ro_start + conv - portDraw*0.4) * 1.07  (outside_cash)
+//       continuity: row[N].pT === row[N+1].pTStart (and same for ro / roStart)
+// ═══════════════════════════════════════════════════════════════════════════════
+const GR = 0.07; // growth rate hardcoded in engine
+
+const ALEX_FULL = {
+  currentAge: 56,
+  retireAge: 60,
+  endAge: 85,
+  port: 693_000,
+  inf: 2.5,
+  sp: 65_000,
+  ssAge: 64,
+  ssb: 24_000,
+  ab: 12_000,
+  useAb: true,
+  filingStatus: "mfj",
+  stateOfResidence: "NM",
+  twoHousehold: false,
+  rothMode: "fill_12",
+  rmdStartAge: 75,
+  taxFunding: "outside_cash",
+  fafsaGuard: true,
+  fafsaEndYear: 0,
+  dob: "1972-01-12",
+  useJointRmdTable: true,
+  gkFloor: 50_000,
+  gkCeiling: 90_000,
+  conversionOverrides: [{ id: "1778021776472", year: 2032, amount: 87_239 }],
+  accounts: [
+    { id: "a1", category: "pretax",  name: "Traditional 401(k)", balance: 426_500 },
+    { id: "a2", category: "roth",    name: "Roth IRA",           balance: 186_500 },
+    { id: "a5", category: "taxable", name: "Taxable Brokerage",  balance:  80_000 },
+  ],
+};
+
+const ALEX_FULL_RETIRE_YR = ROTH_BASE_YEAR + (ALEX_FULL.retireAge - ALEX_FULL.currentAge); // 2030
+
+describe("buildRothExplorer — Alex Mercer full profile (NM, fill_12, outside_cash)", () => {
+
+  test("year 2032 override fires: conv = 87,239 and capReason starts with 'manual'", () => {
+    const { convRows } = buildRothExplorer(ALEX_FULL);
+    const row = convRows.find(r => r.yr === 2032);
+    expect(row).toBeDefined();
+    expect(row.conv).toBe(87_239);
+    expect(row.capReason).toMatch(/^manual/);
+  });
+
+  test("pretax balance is reduced by conv+spending in year 2032 (not frozen)", () => {
+    const { opt } = buildRothExplorer(ALEX_FULL);
+    const row = opt.rows.find(r => r.yr === 2032);
+    expect(row.pT).toBeLessThan(row.pTStart);           // pT went down
+    expect(row.pTStart).toBeGreaterThan(row.conv);       // override fits in remaining pretax
+  });
+
+  test("Roth balance is higher than starting 186,500 in year 2032 (growth + conversions)", () => {
+    const { opt } = buildRothExplorer(ALEX_FULL);
+    const row = opt.rows.find(r => r.yr === 2032);
+    expect(row.ro).toBeGreaterThan(186_500);             // Roth grew since retirement start
+    expect(row.ro).toBeGreaterThan(row.roStart);         // this year's conv pushed it up
+  });
+
+  test("pT update invariant holds on every row with a conversion", () => {
+    const { opt } = buildRothExplorer(ALEX_FULL);
+    for (const r of opt.rows.filter(r => r.conv > 0)) {
+      const expected = Math.round(
+        Math.max(0, r.pTStart - r.rmd - r.conv - Math.max(0, r.portDraw * 0.6)) * (1 + GR)
+      );
+      expect(Math.abs(r.pT - expected)).toBeLessThanOrEqual(2); // ±$2 rounding tolerance
+    }
+  });
+
+  test("ro update invariant holds for outside_cash (full conv reaches Roth) on every conversion row", () => {
+    const { opt } = buildRothExplorer(ALEX_FULL);
+    for (const r of opt.rows.filter(r => r.conv > 0)) {
+      const expected = Math.round(
+        Math.max(0, r.roStart + r.conv - Math.max(0, r.portDraw * 0.4)) * (1 + GR)
+      );
+      expect(Math.abs(r.ro - expected)).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test("pT continuity: every row's pT equals the next row's pTStart", () => {
+    const { opt } = buildRothExplorer(ALEX_FULL);
+    for (let i = 0; i < opt.rows.length - 1; i++) {
+      expect(opt.rows[i + 1].pTStart).toBe(opt.rows[i].pT);
+    }
+  });
+
+  test("ro continuity: every row's ro equals the next row's roStart", () => {
+    const { opt } = buildRothExplorer(ALEX_FULL);
+    for (let i = 0; i < opt.rows.length - 1; i++) {
+      expect(opt.rows[i + 1].roStart).toBe(opt.rows[i].ro);
+    }
+  });
+
+  test("auto-fill runs in 2030 and 2031 (fill_12 mode, no override) — pT shrinks each year", () => {
+    const { opt } = buildRothExplorer(ALEX_FULL);
+    const row2030 = opt.rows.find(r => r.yr === ALEX_FULL_RETIRE_YR);
+    const row2031 = opt.rows.find(r => r.yr === ALEX_FULL_RETIRE_YR + 1);
+    expect(row2030.conv).toBeGreaterThan(0);             // auto-fill fired in 2030
+    expect(row2031.conv).toBeGreaterThan(0);             // auto-fill fired in 2031
+    expect(row2031.pTStart).toBeLessThan(row2030.pTStart); // pretax shrinking
+  });
+
+  test("with fill_22 mode the 2032 override is orphaned: conv = 0 and absent from convRows", () => {
+    const { opt, convRows } = buildRothExplorer({ ...ALEX_FULL, rothMode: "fill_22" });
+    const row2032 = opt.rows.find(r => r.yr === 2032);
+    expect(row2032.conv).toBe(0);                        // pT exhausted, override capped at 0
+    expect(convRows.some(r => r.yr === 2032)).toBe(false);
+  });
+
+  test("Roth balance in first retirement year is above starting 186,500 (auto-fill adds to Roth)", () => {
+    const { opt } = buildRothExplorer(ALEX_FULL);
+    const row2030 = opt.rows.find(r => r.yr === ALEX_FULL_RETIRE_YR);
+    expect(row2030.ro).toBeGreaterThan(186_500);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // 13. EDGE CASES
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("buildRothExplorer — edge cases", () => {
