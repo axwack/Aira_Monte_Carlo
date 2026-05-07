@@ -63,7 +63,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
-import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
+import { solveRetirementDate } from "./ai/ai-analysis.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -4289,52 +4289,75 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
 }
 
 function BucketsTab({ params = {} }) {
-  const port = params.port || 0;
-  const retireAge = params.retireAge || 60;
-  const currentAge = params.currentAge || 50;
+  const port        = params.port       || 0;
+  const retireAge   = params.retireAge  || 60;
+  const currentAge  = params.currentAge || 50;
+  const ssAge       = params.ssAge      || 67;
   const yrsToRetire = Math.max(0, retireAge - currentAge);
-  const retireYear = new Date().getFullYear() + yrsToRetire;
-  const bucketPcts = [6, 16, 78];
-  const bucketTargets = bucketPcts.map((pct) =>
-    port > 0 ? fmtM((port * pct) / 100) : `${pct}%`
-  );
+  const retireYear  = new Date().getFullYear() + yrsToRetire;
+
+  // Annual mortgage P&I (matches runMC logic)
+  const mortAnnualPI = (() => {
+    if (!params.mortBalance || params.mortBalance <= 0) return 0;
+    const ms = mortgageSchedule(
+      params.mortBalance,
+      params.mortRate  || 6.5,
+      params.mortStart || "2020-01",
+      params.mortTerm  || 30,
+      params.mortExtra || 0
+    );
+    return ms.pmt * 12;
+  })();
+
+  // Dynamic allocation — derived from actual spending data
+  const RUNWAY_YEARS = 3;
+  const propIncome   = params.propIncome || 0;
+  const netDraw      = Math.max(0, (params.sp || 0) + mortAnnualPI - propIncome);
+  const ssGapYears   = Math.max(0, ssAge - retireAge);
+  const fmtK         = (n) => `$${Math.round(n / 1000)}K`;
+
+  const b1 = Math.round(RUNWAY_YEARS * netDraw);
+  const b2 = Math.round(ssGapYears   * netDraw);
+  const b3 = Math.max(0, port - b1 - b2);
+  const pct = (n) => port > 0 ? Math.round((n / port) * 100) : 0;
+
   const buckets = [
     {
-      name: "Bucket 1 — Cash / Short-term",
-      target: bucketTargets[0],
-      pct: bucketPcts[0],
-      color: "#0ea5e9",
-      purpose:
-        "Living expenses 3-5yr runway.  NEVER dual-purpose.",
-      holdings: "Cash · Money market · Short-term Treasuries",
-      locked: `Draws begin at retirement (age ${retireAge})`,
+      name:     "Bucket 1 — Cash",
+      horizon:  "1–3 years",
+      amount:   b1,
+      pct:      pct(b1),
+      color:    "#0ea5e9",
+      purpose:  `Day-to-day expenses & safety net. ${RUNWAY_YEARS}-year runway at ${fmtK(netDraw)}/yr net draw. NEVER dual-purpose.`,
+      holdings: "100% Cash / Cash Equivalents · HYSA · Money market · T-bills · CDs",
+      locked:   `Draws begin at retirement (age ${retireAge})`,
     },
     {
-      name: "Bucket 2 — Income Sleeve",
-      target: bucketTargets[1],
-      pct: bucketPcts[1],
-      color: "#a78bfa",
-      purpose:
-        "Dividend/income generation. Starts AT retirement. Reduces portfolio WR.",
-      holdings: "Dividend equities · Covered-call income · REITs",
-      locked: `Activates at retirement (${retireYear})`,
+      name:     "Bucket 2 — Income & Stability",
+      horizon:  "3–10 years",
+      amount:   b2,
+      pct:      pct(b2),
+      color:    "#a78bfa",
+      purpose:  `Intermediate-term needs. Bridges ${ssGapYears}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`,
+      holdings: "30–50% Equities · 50–70% Fixed Income · Dividend stocks · Bonds · REITs",
+      locked:   `Activates at retirement (${retireYear})`,
     },
     {
-      name: "Bucket 3 — Growth",
-      target: bucketTargets[2],
-      pct: bucketPcts[2],
-      color: "#10b981",
-      purpose:
-        "Never touch 7-10 years. Compounding engine. Draw only when Bucket 1 depleted.",
-      holdings: "Broad-market equity · Momentum · International",
-      locked: `Never before age ${retireAge + 7}`,
+      name:     "Bucket 3 — Long-Term Growth",
+      horizon:  "10+ years",
+      amount:   b3,
+      pct:      pct(b3),
+      color:    "#10b981",
+      purpose:  "Protects against inflation & grows wealth. Won't be needed for a decade or more. Refills Bucket 2 when markets are favorable.",
+      holdings: "50–100% Equities · 0–50% Fixed Income · Broad-market equity · Momentum · International",
+      locked:   `Never before age ${retireAge + 7}`,
     },
   ];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="chart-card">
         <div className="ct">
-          3-Bucket Strategy · Section 0.G ·
+          3-Bucket Strategy
         </div>
         {buckets.map((b) => (
           <div
@@ -4355,17 +4378,19 @@ function BucketsTab({ params = {} }) {
                 marginBottom: 6,
               }}
             >
-              <div style={{ fontSize: 15, fontWeight: 600, color: b.color }}>
-                {b.name}
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: b.color }}>{b.name}</div>
+                <div style={{ fontSize: 10, color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 1 }}>{b.horizon}</div>
               </div>
               <div
                 style={{
                   fontSize: 15,
                   color: b.color,
                   fontFamily: "'DM Mono',monospace",
+                  textAlign: "right",
                 }}
               >
-                {b.target} · {b.pct}%
+                {port > 0 ? fmtM(b.amount) : "—"} · {b.pct}%
               </div>
             </div>
             <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>
@@ -5617,6 +5642,63 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
           ⚠ AI unavailable: {aiError}
         </div>
       )}
+
+      {/* Retirement Date Solver */}
+      {(() => {
+        const solver = solveRetirementDate(params);
+        const { target, currentPort, currentAge, results } = solver;
+        const fmtM = (n) => `$${(n / 1_000_000).toFixed(2)}M`;
+        const retireAge = params.retireAge || 60;
+        const rowColor = (age) => {
+          if (age == null) return "#f87171";
+          if (age <= retireAge) return "#34d399";
+          if (age <= retireAge + 3) return "#fbbf24";
+          return "#f87171";
+        };
+        return (
+          <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 9, padding: "12px 15px", marginBottom: 4 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#818cf8", marginBottom: 8 }}>
+              🎯 Retirement Date Solver — Target {fmtM(target)}
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
+              Portfolio today: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>{fmtM(currentPort)}</span>
+              &nbsp;·&nbsp;Planned retirement: <span style={{ color: "#e2e8f0" }}>age {retireAge}</span>
+              &nbsp;·&nbsp;Annual contrib: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>${(params.contrib || 0).toLocaleString()}</span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <th style={{ textAlign: "left", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Scenario</th>
+                  <th style={{ textAlign: "center", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Return</th>
+                  <th style={{ textAlign: "right", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Hits {fmtM(target)}</th>
+                  <th style={{ textAlign: "right", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>vs. Plan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r) => {
+                  const diff = r.crossoverAge != null ? r.crossoverAge - retireAge : null;
+                  const color = rowColor(r.crossoverAge);
+                  return (
+                    <tr key={r.label} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                      <td style={{ color: "#cbd5e1", padding: "4px 0" }}>{r.label}</td>
+                      <td style={{ textAlign: "center", color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>{(r.rate * 100).toFixed(1)}%</td>
+                      <td style={{ textAlign: "right", color, fontWeight: 600, fontFamily: "'DM Mono',monospace" }}>
+                        {r.crossoverAge != null ? `Age ${r.crossoverAge}` : "> 80"}
+                      </td>
+                      <td style={{ textAlign: "right", color, fontFamily: "'DM Mono',monospace" }}>
+                        {diff == null ? "—" : diff === 0 ? "On target" : diff < 0 ? `${Math.abs(diff)}yr early` : `${diff}yr late`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 8 }}>
+              Update your portfolio balance in the profile to keep this projection current.
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Action cards */}
       {displayCards.map((a, i) => {
