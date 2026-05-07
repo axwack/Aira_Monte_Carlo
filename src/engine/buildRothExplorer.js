@@ -462,6 +462,7 @@ function buildRothExplorer(params = {}) {
           taxFromTaxable = Math.min(taxBal, totT);
         }
       }
+      const pTStart = pT, roStart = ro;
       taxBal = Math.max(0, taxBal - taxFromTaxable) * (1 + gr);
       pT = Math.max(0, pT - rmd - conv - Math.max(0, portDraw * 0.6)) * (1 + gr);
       ro = Math.max(0, ro + roAdd - Math.max(0, portDraw * 0.4)) * (1 + gr);
@@ -489,6 +490,7 @@ function buildRothExplorer(params = {}) {
       rows.push({
         yr, age, ss, abn, rmd, conv, baseInc: incBC, totInc, txInc,
         fedT, stT, totT, effR, margR, irmaa, magi,
+        pTStart: Math.round(pTStart), roStart: Math.round(roStart),
         pT: Math.round(pT), ro: Math.round(ro), nw: Math.round(pT + ro),
         label,
         bracketUsed: conv > 0
