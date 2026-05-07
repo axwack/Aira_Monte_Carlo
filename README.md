@@ -73,7 +73,7 @@ Same formula the existing simulateDeterministic already uses for accumulation �
 
 ### 📋 Readiness Tab — Uncle John's 7-Step Retirement Readiness Check
 
-**Status:** Planned
+**Status:** RELEASED
 
 A new `📋 Readiness` tab alongside Net Worth, Forecast, Income, and Action Plan that scores the user against Uncle John's 7-step retirement framework using their actual profile data. Zero new inputs required — all data comes from the existing profile.
 
