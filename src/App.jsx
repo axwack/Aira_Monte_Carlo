@@ -86,9 +86,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.7";
-export const BUILD_TAG = "Roth engine fixes: outside_cash tax funding now deducts from taxable pool; RMD divisors at 75/76 corrected to IRS Pub 590-B Table II joint values; manual year-by-year conversion override schedule added; FAFSA/CSS guardrails trigger on year entry alone (no toggle); 3-scenario tab (state/no-tax state/no conv) added to Roth Ladder. BLANK_PROFILE kept clean — user-specific overrides belong in exported JSON only.";
-export const BUILD_TIME = "05-02-2026";
+const APP_VERSION = "1.0.7.5";
+export const BUILD_TAG = "Collapsible MC Panel. Changes to Roth Explorer. V 1.0.7.5. Major bugs in imports.";
+export const BUILD_TIME = "05-2026-06-05T12:00:00Z-2026";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2104,7 +2104,17 @@ function CleanNumberInput({ value, onChange, min, max, step = 1, style = {} }) {
 const LS_PROFILE_KEY = "aira_profile_v1";
 function saveProfileToLocal(values) {
   try {
-    const payload = { ...values, savedAt: new Date().toISOString(), buildTag: BUILD_TAG };
+    const hasPropIncome = (values.properties || []).some(pr => Number(pr.income) > 0);
+    const rct = values.rothConversionTarget || "off";
+    const payload = {
+      ...values,
+      ab: hasPropIncome ? 0 : (values.ab || 0),
+      rothConversionTarget: rct.startsWith("fill_") ? rct.replace("fill_", "") : rct,
+      fafsaEndYear: values.fafsaEndYear || null,
+      cssEndYear: values.cssEndYear || null,
+      savedAt: new Date().toISOString(),
+      buildTag: BUILD_TAG,
+    };
     localStorage.setItem(LS_PROFILE_KEY, JSON.stringify(payload));
     return true;
   } catch {
@@ -7114,11 +7124,11 @@ export default function AiRAForecaster() {
       gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 0.65),
       gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 1.35),
       ssb,
-      ab,
       propIncome: (() => {
          const raw = (assumptions.properties || []).reduce((s, pr) => s + (Number(pr.income) || 0), 0);
           return isNaN(raw) ? 0 : raw;
         })(),
+      ab: (assumptions.properties || []).some(pr => Number(pr.income) > 0) ? 0 : (assumptions.ab || 0),
       useAb,
       abReliability: assumptions.abReliability,
       abGrowth: assumptions.abGrowth,
@@ -7140,7 +7150,7 @@ export default function AiRAForecaster() {
       housingType: assumptions.housingType || "own",
       annualRent: assumptions.annualRent || 0,
       carveouts: assumptions.carveouts || [],
-      rothConversionTarget: assumptions.rothConversionTarget || "off",
+      rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
       taxFunding: assumptions.taxFunding || "from_taxable",
       fafsaGuard: assumptions.fafsaGuard || false,
       fafsaEndYear: assumptions.fafsaEndYear || null,
@@ -7285,11 +7295,15 @@ export default function AiRAForecaster() {
                     inf,
                     sp,
                     ssb,
-                    ab,
+                    ab: (assumptions.properties || []).some(pr => Number(pr.income) > 0) ? 0 : ab,
                     useAb,
                     smile,
                     tax,
                     real,
+                    rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
+                    fafsaEndYear: assumptions.fafsaEndYear || null,
+                    cssEndYear: assumptions.cssEndYear || null,
+                    savedAt: new Date().toISOString(),
                     exportedAt: new Date().toISOString(),
                     appVersion: APP_VERSION,
                   },
@@ -7314,7 +7328,10 @@ export default function AiRAForecaster() {
                   if (data.sp !== undefined) setSp(data.sp);
                   if (data.ssAge !== undefined) updateAssumption("ssAge", data.ssAge);
                   if (data.ssb !== undefined) setSsb(data.ssb);
-                  if (data.ab !== undefined) setAb(data.ab);
+                  if (data.ab !== undefined) {
+                    const hasPropIncome = (data.properties || []).some(pr => Number(pr.income) > 0);
+                    setAb(hasPropIncome ? 0 : data.ab);
+                  }
                   if (data.useAb !== undefined) setUseAb(data.useAb);
                   if (data.smile !== undefined) setSmile(data.smile);
                   if (data.tax !== undefined) setTax(data.tax);
@@ -7373,6 +7390,8 @@ export default function AiRAForecaster() {
                     data.otherIncomes = [];
                   }
 
+                  const hasPropIncome = (data.properties || []).some(pr => Number(pr.income) > 0);
+                  const rawRct = data.rothConversionTarget || "off";
                   setAssumptions((prev) => ({
                     ...prev,
                     ...data,
@@ -7387,7 +7406,11 @@ export default function AiRAForecaster() {
                     properties: data.properties,
                     checkpoints: data.checkpoints,
                     carveouts: data.carveouts,
-                    otherIncomes: data.otherIncomes, 
+                    otherIncomes: data.otherIncomes,
+                    ab: hasPropIncome ? 0 : (data.ab || 0),
+                    rothConversionTarget: rawRct.startsWith("fill_") ? rawRct.replace("fill_", "") : rawRct,
+                    fafsaEndYear: data.fafsaEndYear || null,
+                    cssEndYear: data.cssEndYear || null,
                   }));
 
                   setStale(true);

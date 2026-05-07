@@ -59,3 +59,17 @@ All five items from the LOGIC_AUDIT were applied and re-verified:
 - Spending withdrawals use a fixed 60/40 pretax/Roth split — pre-tax draw not added to taxable income. Conversion tax *deltas* remain valid; absolute effective rates are understated.
 - `outside_cash` mode: if taxable pool is exhausted mid-scenario, the remaining tax shortfall is not tracked.
 - BETR metric is not computed inside `buildRothExplorer`; it is referenced in the UI but is a planned feature.
+
+---
+
+## Roadmap — Housing & Real Estate
+
+
+### 2. Property sale — current guidance (no feature needed)
+Aira is designed around current-state snapshots that users keep up to date. When a home is sold, the user:
+1. Deletes the property from the Real Estate section
+2. Calculates net proceeds (sale price − remaining mortgage − capital gains tax, applying the $250k/$500k primary residence exclusion where applicable)
+3. Adds net proceeds to their taxable/cash portfolio field
+4. Re-runs the simulation
+
+Because users update their profile to reflect actual current balances, timing accuracy is preserved — there is no "future injection" problem. A dedicated `saleAge` engine feature is not needed.
