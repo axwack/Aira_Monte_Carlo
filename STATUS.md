@@ -1,5 +1,5 @@
 # AiRA Project Status
-**Date:** 2026-05-04  
+**Date:** 2026-05-05  
 **Branch:** main
 
 ---
@@ -11,12 +11,32 @@
 | Engine extraction (`buildRothExplorer` → `src/engine/`) | ✅ COMPLETE |
 | Logic audit (LOGIC_AUDIT.md) | ✅ APPROVED |
 | All four FAIL/FLAG items patched | ✅ COMPLETE |
-| Test suite | ✅ `banner.test.js` passing; other suite failures are pre-existing ESM transform issues, not regressions |
+| Test suite | ✅ 76 tests passing (added 10 Alex Mercer invariant tests in `roth.test.js`) |
 | BUILD_SPEC.md | ✅ Updated |
+| Roth Explorer — pinned row ✏ edit + × delete buttons | ✅ COMPLETE |
+| Roth Explorer — delete-after-import bug | ✅ FIXED (buttons embedded per-row, not dependent on cyYear state) |
+| Roth Explorer — 3-scenario table column separators | ✅ COMPLETE |
+| Roth Explorer — year-by-year table column separators | ✅ COMPLETE |
 
 ---
 
 ## What Was Done
+
+### Roth Explorer UX — Sprint 2026-05-05
+
+**Bug fix — delete-after-import:** Pinned conversion override rows couldn't be deleted after saving/reimporting a profile because the × button was conditioned on `cyYear` matching the pin year, and `cyYear` resets to current year on load. Fixed by embedding ✏ (edit) and × (delete) buttons directly inside the Source cell of each pinned row in the convRows table — no dependency on page-level state.
+
+**Feature — edit pinned row:** ✏ button on each pinned row calls `setCyYear(r.yr)` + `setView("thisyear")`, navigating the calculator to that year so the user can change the amount and re-save via the normal upsert flow.
+
+**Design — column separators:** Color-banded left-border separators added to both Roth Explorer tables:
+- *3-Scenario Comparison* — vertical separators between No Conversion (red), State + Convert (teal), and No-Tax State + Convert (green) groups; applied to banner headers, sub-headers, data rows, and totals row.
+- *Year-by-Year Comparison* — vertical separators between Rate pair (indigo), Tax pair (red), and RMD pair (green) metric groups; headers relabeled OPT/CUR for clarity.
+
+**Tests — engine invariants (`roth.test.js`):** New describe block "14. ALEX MERCER FULL PROFILE" adds 10 tests (76 total, all passing):
+- pT and ro balance update equations verified within $2 rounding tolerance
+- Year-to-year continuity: `rows[i+1].pTStart === rows[i].pT` and same for ro
+- Orphaned override detection: pinned year with pT=0 produces conv=0 and is absent from convRows
+- Confirmed engine correctly computes 270,217 Roth balance for the reported "bug" — value is correct given prior-year auto-fill growth
 
 ### Engine Extraction
 `buildRothExplorer` and `buildRothLadder` extracted from `App.jsx` into `src/engine/buildRothExplorer.js`. The file is self-contained: state brackets, federal brackets, IRMAA table, RMD tables, Guyton-Klinger, and the full explorer logic.
