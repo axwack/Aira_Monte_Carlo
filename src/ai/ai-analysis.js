@@ -361,6 +361,82 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
   return merged;
 }
 
+// ─── 7. Retirement Date Solver ────────────────────────────────────────────────
+/**
+ * Pure deterministic solver — no API call needed.
+ * Projects the accumulation path at three return scenarios and finds the age
+ * at which the portfolio crosses the target value.
+ *
+ * @param {object} values  ProfileWizard values (uses port, contrib, currentAge, earlyRetireTarget)
+ * @returns {{ target, currentPort, results: [{ label, rate, crossoverAge, portAtCrossover }] }}
+ */
+export function solveRetirementDate(values) {
+  const currentAge  = values.currentAge  || 56;
+  const currentPort = values.port        || 0;
+  const annualContrib = values.contrib   || 0;
+  const target = values.earlyRetireTarget || values.portfolioGoal || 3_500_000;
+  const MAX_AGE = 80;
+
+  const scenarios = [
+    { label: "Conservative", rate: 0.06 },
+    { label: "Expected",     rate: 0.075 },
+    { label: "Strong",       rate: 0.09 },
+  ];
+
+  const results = scenarios.map(({ label, rate }) => {
+    let port = currentPort;
+    for (let age = currentAge; age <= MAX_AGE; age++) {
+      if (port >= target) return { label, rate, crossoverAge: age, portAtCrossover: Math.round(port) };
+      port = port * (1 + rate) + annualContrib;
+    }
+    return { label, rate, crossoverAge: null, portAtCrossover: Math.round(port) };
+  });
+
+  return { target, currentPort, currentAge, results };
+}
+
+/**
+ * AI-enhanced retirement date analysis. Falls back to solveRetirementDate() when
+ * the Netlify function is unreachable.
+ *
+ * @param {object} values     ProfileWizard values
+ * @param {object} mcResults  runMC() output
+ * @returns {{ solver, narrative }} solver = solveRetirementDate output, narrative = string
+ */
+export async function analyzeRetirementDate(values, mcResults) {
+  const solver = solveRetirementDate(values);
+  try {
+    const result = await callAnalyze({ type: "retirementdate", values, mcResults, solver });
+    return { solver, narrative: result.text };
+  } catch {
+    const { target, currentPort, currentAge, results } = solver;
+    const expected = results.find(r => r.label === "Expected");
+    const conservative = results.find(r => r.label === "Conservative");
+    const fmt = (n) => n != null ? `age ${n}` : "beyond age 80";
+    const fmtM = (n) => `$${(n / 1_000_000).toFixed(2)}M`;
+
+    const narrative = [
+      `**Retirement Date Solver** — Target: ${fmtM(target)}`,
+      ``,
+      `Current portfolio: ${fmtM(currentPort)} at age ${currentAge}.`,
+      ``,
+      `| Scenario | Reaches ${fmtM(target)} |`,
+      `|---|---|`,
+      ...results.map(r => `| ${r.label} (${(r.rate * 100).toFixed(1)}%) | ${fmt(r.crossoverAge)} |`),
+      ``,
+      expected?.crossoverAge != null
+        ? `At expected returns your portfolio crosses ${fmtM(target)} at **${fmt(expected.crossoverAge)}** — ${expected.crossoverAge <= (values.retireAge || 60) ? "on track for your planned retirement." : `${expected.crossoverAge - (values.retireAge || 60)} years after your planned retirement date.`}`
+        : `Portfolio does not reach target before age 80 at expected returns — review contributions or target.`,
+      ``,
+      conservative?.crossoverAge != null && conservative.crossoverAge <= (values.retireAge || 60)
+        ? `Even the conservative path hits the target by your planned retirement age — strong position.`
+        : `The conservative path reaches target at ${fmt(conservative?.crossoverAge)} — consider this your planning floor.`,
+    ].join("\n");
+
+    return { solver, narrative };
+  }
+}
+
 // ─── AIAnalysisPanel Component ────────────────────────────────────────────────
 
 export function AIAnalysisPanel({ values, mcResults }) {
