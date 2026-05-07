@@ -86,8 +86,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.7.1";
-export const BUILD_TAG = "Collapsible MC Panel. Changes to Roth Explorer. V 1.0.7.1";
+const APP_VERSION = "1.0.7.5";
+export const BUILD_TAG = "Collapsible MC Panel. Changes to Roth Explorer. V 1.0.7.5. Major bugs in imports.";
 export const BUILD_TIME = "05-2026-06-05T12:00:00Z-2026";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
