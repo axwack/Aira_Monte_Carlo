@@ -1,4 +1,3 @@
-Great idea. Let me design test cases that isolate each component with predictable math. The key is: **if you can't verify it by hand, you can't trust it.**
 
 ## Test Framework
 
