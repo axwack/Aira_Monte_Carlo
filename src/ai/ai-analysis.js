@@ -173,12 +173,8 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
       balance:  a.balance,
     })),
   };
-  try {
-    const result = await callAnalyze({ type: "actionplan", values: slimValues, mcResults, cards });
-    return result.cards || cards;
-  } catch {
-    return cards;
-  }
+  const result = await callAnalyze({ type: "actionplan", values: slimValues, mcResults, cards });
+  return result.cards || cards;
 }
 
 // ─── AIAnalysisPanel Component ────────────────────────────────────────────────
