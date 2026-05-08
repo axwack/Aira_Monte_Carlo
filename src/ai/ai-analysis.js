@@ -1,21 +1,32 @@
 /**
- * AI-analysis.js — Aira AI analysis via Netlify serverless proxy
+ * AI-analysis.js — Aira AI analysis via Cloudflare Pages Function proxy
  *
- * All Claude API calls go through /.netlify/functions/analyze.
- * Your ANTHROPIC_API_KEY lives only in Netlify's environment — never in the browser.
- *
- * Each function returns real Claude output in production, and a deterministic
- * rules-based fallback when the function is unreachable (local dev without
- * netlify dev, or before the key is configured).
+ * All Claude API calls go through /api/analyze.
+ * ANTHROPIC_API_KEY lives only in Cloudflare's environment — never in the browser.
  *
  * Local development:
- *   npm install -g netlify-cli
- *   netlify dev          ← starts React + functions together on :8888
+ *   npm install -g wrangler
+ *   wrangler pages dev ./build   ← serves React + functions together
  */
 
 import { useState, useCallback } from "react";
 
-const FUNCTION_URL = "/.netlify/functions/analyze";
+const FUNCTION_URL = "/api/analyze";
+
+// ─── Data quality gate ────────────────────────────────────────────────────────
+/**
+ * Returns true only when the profile has enough real data to produce
+ * meaningful AI output. Prevents calling Claude on empty/default inputs.
+ */
+export function profileIsComplete(values, mcResults) {
+  if (!mcResults || !(mcResults.rate > 0)) return false;
+  if (!values) return false;
+  if ((values.port || 0) < 50_000) return false;
+  if ((values.sp  || 0) <= 0) return false;
+  const filledAccounts = (values.accounts || []).filter(a => (a.balance || 0) > 0);
+  if (filledAccounts.length < 1) return false;
+  return true;
+}
 
 // ─── Core fetch helper ────────────────────────────────────────────────────────
 async function callAnalyze(payload) {
@@ -137,22 +148,36 @@ export async function generateChatResponse(values, mcResults, question, history 
 
 // ─── 6. AI-Enhanced Action Plan ───────────────────────────────────────────────
 /**
- * Augments the rules-engine output of generateActions() in App.jsx.
+ * Annotates rules-engine cards with aiNote and adds up to 2 net-new AI cards.
+ * Sends only the triggered card list + slim profile metrics — not the full profile.
  *
- * @param {object} values           ProfileWizard values
- * @param {object} mcResults        runMC() output
- * @param {Array}  existingActions  Output of generateActions() from App.jsx
- * @returns {Array} [{ priority, category, action, reason, deadline, aiNote? }]
+ * @param {object} values   ProfileWizard values
+ * @param {object} mcResults runMC() output
+ * @param {Array}  cards    evaluateRules() output from rulesEngine.js
+ * @returns {Array} merged cards sorted red → yellow → green
  */
-export async function runAIActionPlan(values, mcResults, existingActions = []) {
+export async function runAIActionPlan(values, mcResults, cards = []) {
+  // Send slim payload: only what the Cloudflare function needs for action plan context
+  const slimValues = {
+    port:               values.port,
+    sp:                 values.sp,
+    currentAge:         values.currentAge,
+    retireAge:          values.retireAge,
+    stateOfResidence:   values.stateOfResidence,
+    filingStatus:       values.filingStatus,
+    ssAge:              values.ssAge,
+    withdrawalStrategy: values.withdrawalStrategy,
+    fafsaEndYear:       values.fafsaEndYear,
+    accounts:           (values.accounts || []).filter(a => (a.balance || 0) > 0).map(a => ({
+      category: a.category,
+      balance:  a.balance,
+    })),
+  };
   try {
-    const result = await callAnalyze({ type: "actionplan", values, mcResults, existingActions });
-    return result.actions;
+    const result = await callAnalyze({ type: "actionplan", values: slimValues, mcResults, cards });
+    return result.cards || cards;
   } catch {
-    return existingActions.map((a) => ({
-      ...a,
-      aiNote: "AI unavailable — configure ANTHROPIC_API_KEY in Netlify.",
-    }));
+    return cards;
   }
 }
 
