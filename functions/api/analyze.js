@@ -2,17 +2,12 @@
  * functions/api/analyze.js — Cloudflare Pages Function
  *
  * Route: POST /api/analyze
- * Set ANTHROPIC_API_KEY in Cloudflare Dashboard → Settings → Environment Variables.
- *
- * Context is kept minimal per call type to reduce token spend.
- * Models are tiered: Haiku for fast annotation, Sonnet for analysis.
+ * Set GEMINI_API_KEY in Cloudflare Dashboard → Settings → Environment Variables.
  */
 
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_VERSION = "2023-06-01";
-
-const MODEL_FAST   = "claude-haiku-4-5-20251001"; // action plan annotation, withdrawal rec
-const MODEL_STANDARD = "claude-sonnet-4-6";        // health, narrative, roth, chat
+const GEMINI_BASE    = "https://generativelanguage.googleapis.com/v1beta/models";
+const MODEL_FAST     = "gemini-2.0-flash";
+const MODEL_STANDARD = "gemini-2.0-flash";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -24,24 +19,39 @@ function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: CORS });
 }
 
-async function callClaude(apiKey, payload) {
-  const res = await fetch(ANTHROPIC_URL, {
+async function callGemini(apiKey, model, payload) {
+  const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": ANTHROPIC_VERSION,
-      "content-type": "application/json",
-    },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Anthropic ${res.status}: ${err}`);
+    throw new Error(`Gemini ${res.status}: ${err}`);
   }
   return res.json();
 }
 
-// ─── Slim context builders (one per call type) ────────────────────────────────
+function geminiFnCall(apiKey, model, maxTokens, systemText, userText, fnDecl) {
+  return callGemini(apiKey, model, {
+    systemInstruction: { parts: [{ text: systemText }] },
+    contents: [{ role: "user", parts: [{ text: userText }] }],
+    tools: [{ functionDeclarations: [fnDecl] }],
+    toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [fnDecl.name] } },
+    generationConfig: { maxOutputTokens: maxTokens },
+  });
+}
+
+function getFnArgs(res) {
+  return res.candidates?.[0]?.content?.parts?.[0]?.functionCall?.args || {};
+}
+
+function getText(res) {
+  return res.candidates?.[0]?.content?.parts?.[0]?.text || "";
+}
+
+// ─── Context builders ─────────────────────────────────────────────────────────
 
 function ctxActionPlan(values, mcResults, cards) {
   const swr = values.port > 0 ? ((values.sp / values.port) * 100).toFixed(1) : "N/A";
@@ -113,13 +123,13 @@ async function handleActionPlan(apiKey, values, mcResults, cards) {
     `[${c.id}] ${c.priority.toUpperCase()} | ${c.category}: ${c.action}`
   ).join("\n");
 
-  const res = await callClaude(apiKey, {
-    model: MODEL_FAST,
-    max_tokens: 1024,
-    tools: [{
+  const res = await geminiFnCall(apiKey, MODEL_FAST, 1024,
+    "You are Aira, a fiduciary retirement planning AI. Be specific, concise, and quantitative. Never give legal or tax advice.",
+    `Profile:\n${ctx}\n\nExisting cards:\n${cardList}\n\nFor each card, add a specific 1-2 sentence aiNote with numbers from the profile. Then add up to 2 net-new cards the rules engine missed (e.g. IRMAA cliff, SS bridge gap, specific bracket math). Skip new cards if none apply.`,
+    {
       name: "annotate_cards",
       description: "Annotate existing action cards and add new ones",
-      input_schema: {
+      parameters: {
         type: "object",
         properties: {
           annotated: {
@@ -127,15 +137,14 @@ async function handleActionPlan(apiKey, values, mcResults, cards) {
             items: {
               type: "object",
               properties: {
-                id:      { type: "string" },
-                aiNote:  { type: "string", description: "1–2 sentence specific insight for this card" },
+                id:     { type: "string" },
+                aiNote: { type: "string", description: "1–2 sentence specific insight for this card" },
               },
               required: ["id", "aiNote"],
             },
           },
           new_cards: {
             type: "array",
-            maxItems: 2,
             items: {
               type: "object",
               properties: {
@@ -152,21 +161,16 @@ async function handleActionPlan(apiKey, values, mcResults, cards) {
         },
         required: ["annotated", "new_cards"],
       },
-    }],
-    tool_choice: { type: "tool", name: "annotate_cards" },
-    system: "You are Aira, a fiduciary retirement planning AI. Be specific, concise, and quantitative. Never give legal or tax advice.",
-    messages: [{
-      role: "user",
-      content: `Profile:\n${ctx}\n\nExisting cards:\n${cardList}\n\nFor each card, add a specific 1-2 sentence aiNote with numbers from the profile. Then add up to 2 net-new cards the rules engine missed (e.g. IRMAA cliff, SS bridge gap, specific bracket math). Skip new cards if none apply.`,
-    }],
-  });
+    }
+  );
 
-  const toolInput = res.content.find(b => b.type === "tool_use")?.input || { annotated: [], new_cards: [] };
+  const toolInput = getFnArgs(res);
   const noteMap = Object.fromEntries((toolInput.annotated || []).map(a => [a.id, a.aiNote]));
+  const newCards = (toolInput.new_cards || []).slice(0, 2);
 
   const merged = [
     ...cards.map(c => ({ ...c, aiNote: noteMap[c.id] || null })),
-    ...(toolInput.new_cards || []).map(c => ({ ...c, id: `ai-${c.category.toLowerCase().replace(/\s+/g,"-")}`, aiGenerated: true })),
+    ...newCards.map(c => ({ ...c, id: `ai-${c.category.toLowerCase().replace(/\s+/g, "-")}`, aiGenerated: true })),
   ];
   merged.sort((a, b) => ({ red: 0, yellow: 1, green: 2 }[a.priority] - { red: 0, yellow: 1, green: 2 }[b.priority]));
   return { cards: merged };
@@ -174,104 +178,100 @@ async function handleActionPlan(apiKey, values, mcResults, cards) {
 
 async function handleHealth(apiKey, values, mcResults) {
   const ctx = ctxHealth(values, mcResults);
-  const res = await callClaude(apiKey, {
-    model: MODEL_STANDARD,
-    max_tokens: 512,
-    tools: [{
+  const res = await geminiFnCall(apiKey, MODEL_STANDARD, 512,
+    "You are Aira. Score this retirement plan 0–100 and list 2–4 specific risk flags.",
+    ctx,
+    {
       name: "health_score",
-      input_schema: {
+      description: "Score a retirement plan",
+      parameters: {
         type: "object",
         properties: {
           score:   { type: "number" },
-          grade:   { type: "string", enum: ["A","B","C","D","F"] },
+          grade:   { type: "string", enum: ["A", "B", "C", "D", "F"] },
           summary: { type: "string" },
           flags:   { type: "array", items: { type: "string" } },
         },
-        required: ["score","grade","summary","flags"],
+        required: ["score", "grade", "summary", "flags"],
       },
-    }],
-    tool_choice: { type: "tool", name: "health_score" },
-    system: "You are Aira. Score this retirement plan 0–100 and list 2–4 specific risk flags.",
-    messages: [{ role: "user", content: ctx }],
-  });
-  return res.content.find(b => b.type === "tool_use")?.input || {};
+    }
+  );
+  return getFnArgs(res);
 }
 
 async function handleNarrative(apiKey, values, mcResults) {
   const ctx = ctxNarrative(values, mcResults);
-  const res = await callClaude(apiKey, {
-    model: MODEL_STANDARD,
-    max_tokens: 1024,
-    system: "You are Aira. Write a 3–5 paragraph retirement narrative in plain English with markdown headers: Overview | Strengths | Risks | Recommended Actions. No legal advice.",
-    messages: [{ role: "user", content: ctx }],
+  const res = await callGemini(apiKey, MODEL_STANDARD, {
+    systemInstruction: { parts: [{ text: "You are Aira. Write a 3–5 paragraph retirement narrative in plain English with markdown headers: Overview | Strengths | Risks | Recommended Actions. No legal advice." }] },
+    contents: [{ role: "user", parts: [{ text: ctx }] }],
+    generationConfig: { maxOutputTokens: 1024 },
   });
-  return { text: res.content.find(b => b.type === "text")?.text || "" };
+  return { text: getText(res) };
 }
 
 async function handleRoth(apiKey, values) {
   const ctx = ctxRoth(values);
-  const res = await callClaude(apiKey, {
-    model: MODEL_STANDARD,
-    max_tokens: 512,
-    tools: [{
+  const res = await geminiFnCall(apiKey, MODEL_STANDARD, 512,
+    "You are Aira. Evaluate Roth conversion strategy. Consider IRMAA tiers, SECURE 2.0 RMD ages, bracket management. No tax advice.",
+    ctx,
+    {
       name: "roth_strategy",
-      input_schema: {
+      description: "Evaluate Roth conversion strategy",
+      parameters: {
         type: "object",
         properties: {
           assessment:            { type: "string" },
           conversionAdvice:      { type: "string" },
           suggestedAnnualAmount: { type: "number" },
         },
-        required: ["assessment","conversionAdvice","suggestedAnnualAmount"],
+        required: ["assessment", "conversionAdvice", "suggestedAnnualAmount"],
       },
-    }],
-    tool_choice: { type: "tool", name: "roth_strategy" },
-    system: "You are Aira. Evaluate Roth conversion strategy. Consider IRMAA tiers, SECURE 2.0 RMD ages, bracket management. No tax advice.",
-    messages: [{ role: "user", content: ctx }],
-  });
-  return res.content.find(b => b.type === "tool_use")?.input || {};
+    }
+  );
+  return getFnArgs(res);
 }
 
 async function handleWithdrawal(apiKey, values, mcResults) {
   const ctx = ctxWithdrawal(values, mcResults);
   const strategies = ["gk","fixed","vanguard","risk","kitces","vpw","cape","endowment","one_n","ninety_five_rule"];
-  const res = await callClaude(apiKey, {
-    model: MODEL_FAST,
-    max_tokens: 256,
-    tools: [{
+  const res = await geminiFnCall(apiKey, MODEL_FAST, 256,
+    `You are Aira. Pick the best withdrawal strategy. Available: ${strategies.join(", ")}.`,
+    ctx,
+    {
       name: "withdrawal_rec",
-      input_schema: {
+      description: "Recommend a withdrawal strategy",
+      parameters: {
         type: "object",
         properties: {
           recommended:              { type: "string", enum: strategies },
           reason:                   { type: "string" },
           projectedRateImprovement: { type: "string" },
         },
-        required: ["recommended","reason","projectedRateImprovement"],
+        required: ["recommended", "reason", "projectedRateImprovement"],
       },
-    }],
-    tool_choice: { type: "tool", name: "withdrawal_rec" },
-    system: `You are Aira. Pick the best withdrawal strategy. Available: ${strategies.join(", ")}.`,
-    messages: [{ role: "user", content: ctx }],
-  });
-  return res.content.find(b => b.type === "tool_use")?.input || {};
+    }
+  );
+  return getFnArgs(res);
 }
 
 async function handleChat(apiKey, values, mcResults, question, history) {
   const ctx = ctxNarrative(values, mcResults);
-  const res = await callClaude(apiKey, {
-    model: MODEL_STANDARD,
-    max_tokens: 768,
-    system: `You are Aira, a fiduciary retirement planning AI. Answer questions about this plan. Be concise and honest about uncertainty. No legal advice.\n\nPLAN:\n${ctx}`,
-    messages: [
-      ...(history || []).map(m => ({ role: m.role, content: m.content })),
-      { role: "user", content: question },
-    ],
+  const contents = [
+    ...(history || []).map(m => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    })),
+    { role: "user", parts: [{ text: question }] },
+  ];
+  const res = await callGemini(apiKey, MODEL_STANDARD, {
+    systemInstruction: { parts: [{ text: `You are Aira, a fiduciary retirement planning AI. Answer questions about this plan. Be concise and honest about uncertainty. No legal advice.\n\nPLAN:\n${ctx}` }] },
+    contents,
+    generationConfig: { maxOutputTokens: 768 },
   });
-  return { text: res.content.find(b => b.type === "text")?.text || "" };
+  return { text: getText(res) };
 }
 
-// ─── Main handler (Cloudflare Pages Functions format) ─────────────────────────
+// ─── Main handler ─────────────────────────────────────────────────────────────
 
 export async function onRequestOptions() {
   return new Response(null, { status: 200, headers: CORS });
@@ -282,10 +282,9 @@ export async function onRequestPost({ request, env }) {
   try { body = await request.json(); }
   catch { return json({ error: "Invalid JSON" }, 400); }
 
-  // Key from profile takes precedence; Cloudflare env var is fallback for shared deployments
-  const apiKey = body.apiKey || env.ANTHROPIC_API_KEY;
+  const apiKey = body.apiKey || env.GEMINI_API_KEY;
   if (!apiKey) {
-    return json({ error: "No API key — add your Anthropic API key in Profile → Assumptions" }, 500);
+    return json({ error: "No API key — add your Gemini API key in Profile → Assumptions" }, 500);
   }
 
   const { type, values, mcResults, question, history, cards } = body;
