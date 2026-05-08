@@ -87,9 +87,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.8.1";
-export const BUILD_TAG = "[feature/ai-analysis] v1.0.8.1 — Confirmed Gemini model (2.0-flash) for cost/quality balance. AI button gate when no key. Pay-tier groundwork queued in STATUS.md Phase 2.";
-export const BUILD_TIME = "2026-05-08T14:00:00Z";
+const APP_VERSION = "1.0.8.2";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.2 — Cherry-picked Retirement Date Solver from feature/ai-analysis. Deterministic accumulation projection at 6%/7.5%/9% returns finds target-portfolio crossover age. No API key needed.";
+export const BUILD_TIME = "2026-05-08T15:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
