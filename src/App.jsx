@@ -379,7 +379,7 @@ export const BLANK_PROFILE = {
   checkpoints: [],          // each: { id, date, value, note }
   earlyRetireTarget: 2_000_000,
   withdrawalStrategy: "gk",
-  geminiApiKey: "",
+  anthropicApiKey: "",
 };
 
 const ANALOGUES = [
@@ -5514,7 +5514,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
       setCards(merged);
     } catch (e) {
       console.error("AI action plan error:", e);
-      setAiError(e.message || "AI unavailable — check that ANTHROPIC_API_KEY is set in Cloudflare.");
+      setAiError(e.message || "AI unavailable — enter your Anthropic API key in Profile → Assumptions.");
     } finally {
       setLoadingAI(false);
     }
@@ -5539,7 +5539,8 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   const displayCards = cards || baseCards;
 
   // Gate: AI button only enabled when profile has real data
-  const canRunAI = !loadingAI && !cards &&
+  const hasApiKey = !!(assumptions?.anthropicApiKey?.trim());
+  const canRunAI = !loadingAI && !cards && hasApiKey &&
     (params.port || 0) > 50_000 &&
     (params.sp  || 0) > 0 &&
     r90?.rate > 0 &&
@@ -5559,7 +5560,11 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
         <button
           onClick={() => runAI(baseCards)}
           disabled={!canRunAI}
-          title={canRunAI ? "Run AI analysis on your plan" : "Complete your profile and run Monte Carlo first"}
+          title={
+            !hasApiKey ? "Add your Anthropic API key in Profile → Assumptions" :
+            !r90?.rate ? "Run Monte Carlo first" :
+            "Run AI analysis on your plan"
+          }
           style={{
             padding: "8px 18px",
             borderRadius: 8,
@@ -6324,13 +6329,13 @@ function AssumptionsPanel({ values, onChange }) {
           />
         )}
 
-        {/* --- GEMINI API KEY INPUT --- */}
-        <ARow label="Gemini API Key" desc="Bring your own free key from Google AI Studio to unlock AI analysis.">
+        {/* --- ANTHROPIC API KEY INPUT --- */}
+        <ARow label="Anthropic API Key" desc="Your personal Claude API key from console.anthropic.com — saved and exported with your profile. Never shared.">
           <input
             type="password"
-            value={values.geminiApiKey || ''}
-            onChange={(e) => onChange('geminiApiKey', e.target.value)}
-            placeholder="AIza..."
+            value={values.anthropicApiKey || ''}
+            onChange={(e) => onChange('anthropicApiKey', e.target.value)}
+            placeholder="sk-ant-..."
             style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
           />
           <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#60a5fa", marginLeft: 8 }}>Get free key →</a>

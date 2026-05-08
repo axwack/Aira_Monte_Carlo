@@ -278,14 +278,15 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestPost({ request, env }) {
-  const apiKey = env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return json({ error: "ANTHROPIC_API_KEY not set — add it in Cloudflare Dashboard → Settings → Environment Variables" }, 500);
-  }
-
   let body;
   try { body = await request.json(); }
   catch { return json({ error: "Invalid JSON" }, 400); }
+
+  // Key from profile takes precedence; Cloudflare env var is fallback for shared deployments
+  const apiKey = body.apiKey || env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return json({ error: "No API key — add your Anthropic API key in Profile → Assumptions" }, 500);
+  }
 
   const { type, values, mcResults, question, history, cards } = body;
   if (!type || !values) return json({ error: "Missing type or values" }, 400);
