@@ -5500,19 +5500,21 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     Math.floor((new Date(`${retireYear}-03-15`) - new Date()) / 86400000)
   );
 
-  const [cards, setCards]       = useState(null); // null = not yet AI-annotated
+  const [cards, setCards]         = useState(null);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [aiError, setAiError]     = useState(null);
 
-  // Lazy-import so the AI module doesn't bloat the initial bundle
   const runAI = async (baseCards) => {
     const { runAIActionPlan, profileIsComplete } = await import("./ai/ai-analysis.js");
     if (!profileIsComplete(params, r90)) return;
     setLoadingAI(true);
+    setAiError(null);
     try {
       const merged = await runAIActionPlan(params, r90, baseCards);
       setCards(merged);
     } catch (e) {
       console.error("AI action plan error:", e);
+      setAiError(e.message || "AI unavailable — check that ANTHROPIC_API_KEY is set in Cloudflare.");
     } finally {
       setLoadingAI(false);
     }
@@ -5579,15 +5581,28 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
           {loadingAI ? "Analyzing…" : cards ? "✓ AI Applied" : "🤖 Run AI Analysis"}
         </button>
         {loadingAI && <span style={{ color: "#a78bfa", fontSize: 12 }}>Aira is thinking…</span>}
-        {cards && !loadingAI && (
+        {(cards || aiError) && !loadingAI && (
           <button
-            onClick={() => setCards(null)}
+            onClick={() => { setCards(null); setAiError(null); }}
             style={{ fontSize: 11, color: "#64748b", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
           >
             Reset
           </button>
         )}
       </div>
+
+      {aiError && (
+        <div style={{
+          background: "rgba(239,68,68,0.08)",
+          border: "1px solid rgba(239,68,68,0.25)",
+          borderRadius: 8,
+          padding: "10px 14px",
+          fontSize: 12,
+          color: "#f87171",
+        }}>
+          ⚠ AI unavailable: {aiError}
+        </div>
+      )}
 
       {/* Action cards */}
       {displayCards.map((a, i) => {
