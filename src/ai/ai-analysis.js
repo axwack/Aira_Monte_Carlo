@@ -10,6 +10,9 @@
 import { useState, useCallback } from "react";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+// Default model — stable, fast, cheapest quality tier for structured analysis.
+// Cost: ~$0.0003 per Aira AI call (2K in / 500 out).
+// Reserve gemini-2.5-flash / gemini-2.5-pro for the Pro tier in Phase 2 monetization.
 const MODEL       = "gemini-2.0-flash";
 
 // ─── Gemini helpers ───────────────────────────────────────────────────────────

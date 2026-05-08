@@ -10,6 +10,7 @@ Non-negotiable rules:
 - NJ domicile unless FL scenario invoked,
 - Never modify another agent's definition file
 - Never hard code anything in code that is specific to one user or the author. Always, create a solution that is generic and scalable for other users
+- **Whenever you ship a code change**, bump `APP_VERSION`, update `BUILD_TAG`, and refresh `BUILD_TIME` in `src/App.jsx`. The `BUILD_TAG` must lead with the active branch name in brackets, e.g. `"[feature/ai-analysis] v1.0.8.0 — short summary"`. This is how Vincent verifies which build is loaded across machines.
 
 ---
 
