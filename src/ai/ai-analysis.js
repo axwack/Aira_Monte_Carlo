@@ -10,15 +10,29 @@
 import { useState, useCallback } from "react";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-// Default model — stable, fast, cheapest quality tier for structured analysis.
-// Cost: ~$0.0003 per Aira AI call (2K in / 500 out).
-// Reserve gemini-2.5-flash / gemini-2.5-pro for the Pro tier in Phase 2 monetization.
-const MODEL       = "gemini-2.0-flash";
+
+// Default model used when values.geminiModel is not set.
+// gemini-2.0-flash was deprecated for new users; 2.5-flash is the current stable default.
+// User can override per-profile via Profile → Assumptions → AI Model dropdown.
+export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+
+// Available models for the UI dropdown. Cheapest first.
+// Update this list when Google publishes new models or deprecates old ones.
+export const GEMINI_MODELS = [
+  { id: "gemini-2.5-flash",       label: "Gemini 2.5 Flash (recommended)", note: "Newest stable, fast, supports thinking" },
+  { id: "gemini-2.5-pro",         label: "Gemini 2.5 Pro",                  note: "Highest quality, ~10× cost" },
+  { id: "gemini-2.0-flash-lite",  label: "Gemini 2.0 Flash-Lite",           note: "Cheapest, lower quality" },
+  { id: "gemini-2.0-flash-001",   label: "Gemini 2.0 Flash 001",            note: "Legacy stable" },
+];
+
+function resolveModel(values) {
+  return (values?.geminiModel || "").trim() || DEFAULT_GEMINI_MODEL;
+}
 
 // ─── Gemini helpers ───────────────────────────────────────────────────────────
 
-async function callGemini(apiKey, payload) {
-  const res = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
+async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL) {
+  const res = await fetch(`${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -30,14 +44,17 @@ async function callGemini(apiKey, payload) {
   return res.json();
 }
 
-function fnCall(apiKey, maxTokens, systemText, userText, fnDecl) {
+function fnCall(apiKey, maxTokens, systemText, userText, fnDecl, model = DEFAULT_GEMINI_MODEL) {
   return callGemini(apiKey, {
     systemInstruction: { parts: [{ text: systemText }] },
     contents: [{ role: "user", parts: [{ text: userText }] }],
     tools: [{ functionDeclarations: [fnDecl] }],
     toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [fnDecl.name] } },
-    generationConfig: { maxOutputTokens: maxTokens },
-  });
+    // Disable thinking for function calls — Gemini 2.5 thinking mode emits
+    // function calls as Python-style code (`print(default_api.foo(...))`)
+    // which the API rejects as MALFORMED_FUNCTION_CALL. No-op for non-thinking models.
+    generationConfig: { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } },
+  }, model);
 }
 
 function getFnArgs(res) {
@@ -160,7 +177,8 @@ export async function analyzeRetirementHealth(values, mcResults) {
           },
           required: ["score","grade","summary","flags"],
         },
-      }
+      },
+      resolveModel(values)
     );
     return getFnArgs(res);
   } catch {
@@ -180,7 +198,7 @@ export async function generateNarrativeSummary(values, mcResults) {
       systemInstruction: { parts: [{ text: "You are Aira. Write a 3–5 paragraph retirement narrative in plain English with markdown headers: Overview | Strengths | Risks | Recommended Actions. No legal advice." }] },
       contents: [{ role: "user", parts: [{ text: ctxNarrative(values, mcResults) }] }],
       generationConfig: { maxOutputTokens: 1024 },
-    });
+    }, resolveModel(values));
     return getText(res);
   } catch {
     return fallback;
@@ -210,7 +228,8 @@ export async function suggestWithdrawalOptimization(values, mcResults) {
           },
           required: ["recommended","reason","projectedRateImprovement"],
         },
-      }
+      },
+      resolveModel(values)
     );
     return getFnArgs(res);
   } catch {
@@ -249,7 +268,8 @@ export async function evaluateRothStrategy(values) {
           },
           required: ["assessment","conversionAdvice","suggestedAnnualAmount"],
         },
-      }
+      },
+      resolveModel(values)
     );
     return getFnArgs(res);
   } catch {
@@ -276,7 +296,7 @@ export async function generateChatResponse(values, mcResults, question, history 
       systemInstruction: { parts: [{ text: `You are Aira, a fiduciary retirement planning AI. Answer questions about this plan. Be concise and honest about uncertainty. No legal advice.\n\nPLAN:\n${ctxNarrative(values, mcResults)}` }] },
       contents,
       generationConfig: { maxOutputTokens: 768 },
-    });
+    }, resolveModel(values));
     return getText(res);
   } catch (e) {
     return `**Aira:** AI error — ${e.message}`;
@@ -346,10 +366,13 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
         },
         required: ["annotated","new_cards"],
       },
-    }
+    },
+    resolveModel(values)
   );
 
+  console.log("[AI] Gemini raw response:", res);
   const toolInput = getFnArgs(res);
+  console.log("[AI] Parsed toolInput:", toolInput);
   const noteMap   = Object.fromEntries((toolInput.annotated || []).map(a => [a.id, a.aiNote]));
   const newCards  = (toolInput.new_cards || []).slice(0, 2);
 

@@ -64,7 +64,7 @@ import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
-import { solveRetirementDate } from "./ai/ai-analysis.js";
+import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL } from "./ai/ai-analysis.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -88,9 +88,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.8.2";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.2 — Cherry-picked Retirement Date Solver from feature/ai-analysis. Deterministic accumulation projection at 6%/7.5%/9% returns finds target-portfolio crossover age. No API key needed.";
-export const BUILD_TIME = "2026-05-08T15:30:00Z";
+const APP_VERSION = "1.0.8.5";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.5 — Disabled Gemini 2.5 thinking mode on function calls (thinkingBudget: 0). Fixes MALFORMED_FUNCTION_CALL where 2.5-flash emitted Python-style print(default_api.foo()) instead of structured output. No-op for non-thinking models.";
+export const BUILD_TIME = "2026-05-08T17:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -381,6 +381,7 @@ export const BLANK_PROFILE = {
   earlyRetireTarget: 2_000_000,
   withdrawalStrategy: "gk",
   geminiApiKey: "",
+  geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
 };
 
 const ANALOGUES = [
@@ -5532,14 +5533,24 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
 
   const runAI = async (baseCards) => {
     const { runAIActionPlan, profileIsComplete } = await import("./ai/ai-analysis.js");
-    if (!profileIsComplete(params, r90)) return;
+    console.log("[AI] runAI called. profileIsComplete:", profileIsComplete(params, r90));
+    console.log("[AI] geminiApiKey present:", !!assumptions?.geminiApiKey, "model:", assumptions?.geminiModel || "default");
+    console.log("[AI] baseCards count:", baseCards?.length, "ids:", baseCards?.map(c => c.id));
+    if (!profileIsComplete(params, r90)) {
+      console.warn("[AI] Profile incomplete — runAI exiting silently. Need: port>50K, sp>0, mcResults.rate>0, ≥1 funded account.");
+      return;
+    }
     setLoadingAI(true);
     setAiError(null);
     try {
-      const merged = await runAIActionPlan({ ...params, geminiApiKey: assumptions?.geminiApiKey }, r90, baseCards);
+      console.log("[AI] Calling runAIActionPlan…");
+      const merged = await runAIActionPlan({ ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel }, r90, baseCards);
+      console.log("[AI] Merged result:", merged);
+      console.log("[AI] Cards with aiNote:", merged?.filter(c => c.aiNote).length, "/ total:", merged?.length);
+      console.log("[AI] AI-generated new cards:", merged?.filter(c => c.aiGenerated).length);
       setCards(merged);
     } catch (e) {
-      console.error("AI action plan error:", e);
+      console.error("[AI] action plan error:", e);
       setAiError(e.message || "AI unavailable — check that your Gemini API_KEY is set in the UI in the Profile Section.");
     } finally {
       setLoadingAI(false);
@@ -6431,6 +6442,20 @@ function AssumptionsPanel({ values, onChange }) {
             style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
           />
           <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#60a5fa", marginLeft: 8 }}>Get free key →</a>
+        </ARow>
+        <ARow label="AI Model" desc="Select the Gemini model for AI features. If a model becomes unavailable (Google deprecates often), pick another from the dropdown.">
+          <select
+            value={values.geminiModel || DEFAULT_GEMINI_MODEL}
+            onChange={(e) => onChange('geminiModel', e.target.value)}
+            style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
+          >
+            {GEMINI_MODELS.map(m => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+          <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
+            {(GEMINI_MODELS.find(m => m.id === (values.geminiModel || DEFAULT_GEMINI_MODEL))?.note) || ""}
+          </span>
         </ARow>
       </div>
 
