@@ -63,6 +63,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
+import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -5491,7 +5492,7 @@ function generateActions({
     return order[a.priority] - order[b.priority];
   });
 }
-// Replace the existing ActionPlanTab with this dynamic version
+// ─── ActionPlanTab ────────────────────────────────────────────────────────────
 function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   const currentYear = new Date().getFullYear();
   const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
@@ -5499,62 +5500,23 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     Math.floor((new Date(`${retireYear}-03-15`) - new Date()) / 86400000)
   );
 
-  const [aiAnalysis, setAiAnalysis] = useState('');
+  const [cards, setCards]       = useState(null); // null = not yet AI-annotated
   const [loadingAI, setLoadingAI] = useState(false);
 
-  const runAIAnalysis = async () => {
-    const apiKey = assumptions.geminiApiKey;
-    if (!apiKey) {
-      alert('Please enter your Gemini API key in the Profile → Assumptions tab.');
-      return;
+  // Lazy-import so the AI module doesn't bloat the initial bundle
+  const runAI = async (baseCards) => {
+    const { runAIActionPlan, profileIsComplete } = await import("./ai/ai-analysis.js");
+    if (!profileIsComplete(params, r90)) return;
+    setLoadingAI(true);
+    try {
+      const merged = await runAIActionPlan(params, r90, baseCards);
+      setCards(merged);
+    } catch (e) {
+      console.error("AI action plan error:", e);
+    } finally {
+      setLoadingAI(false);
     }
-
-  setLoadingAI(true);
-  setAiAnalysis('');
-
-  const successRate = r90?.rate ? (r90.rate * 100).toFixed(1) : 'N/A';
-  const withdrawalRate = params?.sp && params?.port ? ((params.sp / params.port) * 100).toFixed(1) : 'N/A';
-  const portfolioGoal = assumptions.portfolioGoal ? (assumptions.portfolioGoal / 1_000_000).toFixed(1) : '3.2';
-
-  const prompt = `You are AiRA, an AI retirement planning assistant. Analyze the following retirement plan and provide a complete, well-formed paragraph (4-6 sentences) with one specific recommendation. Do not stop mid-sentence. Be conversational and reference the numbers provided.
-
-                Plan Summary:
-                - Success Rate (Monte Carlo): ${successRate}% to age ${params.endAge || 90}
-                - Current Portfolio: $${(params.port / 1_000_000).toFixed(2)}M
-                - Target Portfolio: $${portfolioGoal}M
-                - Annual Spending: $${(params.sp / 1000).toFixed(0)}K
-                - Withdrawal Rate: ${withdrawalRate}%
-                - Withdrawal Strategy: ${getStrategyLabel(assumptions.withdrawalStrategy)}
-                - State of Residence: ${assumptions.stateOfResidence || 'FL'}
-
-                Begin your response with "I am AiRA. I have analyzed your plan." and then provide the analysis.`;
-
-   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
-      }),
-    });
-
-    const data = await response.json();
-    if (data.error) {
-      throw new Error(data.error.message);
-    }
-    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response from Gemini.';
-    setAiAnalysis(aiText);
-  } catch (err) {
-    console.error('Gemini API error:', err);
-    setAiAnalysis('AI analysis failed. Please check your API key and try again.');
-  } finally {
-    setLoadingAI(false);
-  }
-};
+  };
 
   if (!params || !r90) {
     return (
@@ -5565,13 +5527,23 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     );
   }
 
-  const dynActions = generateActions({
-    params, r90, r85, assumptions, mortgagePayoffYear,
+  // Evaluate declarative rules engine
+  const baseCards = evaluateRulesEngine({
+    params, r90, r85, assumptions,
     currentYear, retireYear, daysToRetire,
-    goal: assumptions?.portfolioGoal || 3_200_000,
   });
 
-  const colors = {
+  // Display AI-annotated cards if available, else base cards
+  const displayCards = cards || baseCards;
+
+  // Gate: AI button only enabled when profile has real data
+  const canRunAI = !loadingAI && !cards &&
+    (params.port || 0) > 50_000 &&
+    (params.sp  || 0) > 0 &&
+    r90?.rate > 0 &&
+    (params.accounts || []).some(a => (a.balance || 0) > 0);
+
+  const COLORS = {
     red:    { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.25)",   label: "#f87171", badge: "🔴 Critical" },
     yellow: { bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.25)",  label: "#fbbf24", badge: "🟡 Important" },
     green:  { bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.25)",  label: "#34d399", badge: "🟢 On Track" },
@@ -5579,85 +5551,90 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {/* AI Analysis Button */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+
+      {/* AI Analyze button */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
         <button
-          onClick={""}
-          disabled={"true"}
+          onClick={() => runAI(baseCards)}
+          disabled={!canRunAI}
+          title={canRunAI ? "Run AI analysis on your plan" : "Complete your profile and run Monte Carlo first"}
           style={{
             padding: "8px 18px",
             borderRadius: 8,
             border: "none",
-            background: loadingAI
-              ? "rgba(255,255,255,0.05)"
-              : "linear-gradient(135deg, #7c3aed, #a78bfa)",
-            color: "white",
+            background: canRunAI
+              ? "linear-gradient(135deg, #7c3aed, #a78bfa)"
+              : "rgba(255,255,255,0.05)",
+            color: canRunAI ? "white" : "#475569",
             fontSize: 13,
             fontWeight: 600,
-            cursor: loadingAI ? "not-allowed" : "pointer",
-            fontFamily: "'Inter', sans-serif",
+            cursor: canRunAI ? "pointer" : "not-allowed",
             display: "flex",
             alignItems: "center",
             gap: 6,
-            boxShadow: loadingAI ? "none" : "0 2px 8px rgba(124,58,237,0.3)",
+            boxShadow: canRunAI ? "0 2px 8px rgba(124,58,237,0.3)" : "none",
             transition: "all 0.2s",
           }}
         >
-          {loadingAI ? "Analyzing..." : "🤖 Run AI Analysis {Stay Tuned}"}
+          {loadingAI ? "Analyzing…" : cards ? "✓ AI Applied" : "🤖 Run AI Analysis"}
         </button>
-        {loadingAI && (
-          <span style={{ color: "#a78bfa", fontSize: 12 }}>Thinking...</span>
+        {loadingAI && <span style={{ color: "#a78bfa", fontSize: 12 }}>Aira is thinking…</span>}
+        {cards && !loadingAI && (
+          <button
+            onClick={() => setCards(null)}
+            style={{ fontSize: 11, color: "#64748b", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+          >
+            Reset
+          </button>
         )}
       </div>
 
-      {/* AI Response Card */}
-      {aiAnalysis && (
-        <div
-          style={{
-            background: "rgba(124,58,237,0.06)",
-            border: "1px solid rgba(124,58,237,0.25)",
-            borderRadius: 10,
-            padding: "16px 18px",
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa", marginBottom: 8 }}>
-            🤖 AI Insights
-          </div>
-          <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-            {aiAnalysis}
-          </div>
-        </div>
-      )}
-
-      {/* Existing Action Cards */}
-      {dynActions.map((a, i) => {
-        const c = colors[a.priority];
+      {/* Action cards */}
+      {displayCards.map((a, i) => {
+        const c = COLORS[a.priority] || COLORS.yellow;
         return (
           <div
-            key={i}
+            key={a.id || i}
             style={{
               background: c.bg,
               border: `1px solid ${c.border}`,
               borderRadius: 9,
               padding: "11px 15px",
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start"
+              flexDirection: "column",
+              gap: 0,
             }}
           >
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: c.label, marginBottom: 3 }}>
-                {c.badge} · {a.category}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: c.label, marginBottom: 3 }}>
+                  {c.badge} · {a.category}
+                  {a.aiGenerated && <span style={{ marginLeft: 6, color: "#a78bfa" }}>✦ AI</span>}
+                  {a.law && <span style={{ marginLeft: 6, color: "#475569", fontWeight: 400, textTransform: "none" }}>{a.law}</span>}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
+                  {a.action}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>{a.reason}</div>
               </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
-                {a.action}
+              <div style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap", marginLeft: 16, paddingTop: 2 }}>
+                ⏱ {a.deadline}
               </div>
-              <div style={{ fontSize: 11, color: "#64748b" }}>{a.reason}</div>
             </div>
-            <div style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap", marginLeft: 16, paddingTop: 2 }}>
-              ⏱ {a.deadline}
-            </div>
+
+            {/* Inline AI note — only shown after AI analysis */}
+            {a.aiNote && (
+              <div style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: `1px solid ${c.border}`,
+                fontSize: 11,
+                color: "#a78bfa",
+                lineHeight: 1.5,
+              }}>
+                🤖 {a.aiNote}
+              </div>
+            )}
           </div>
         );
       })}
