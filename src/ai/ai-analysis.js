@@ -173,7 +173,13 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
       balance:  a.balance,
     })),
   };
-  const result = await callAnalyze({ type: "actionplan", values: slimValues, mcResults, cards });
+  const result = await callAnalyze({
+    type: "actionplan",
+    apiKey: values.anthropicApiKey || "",
+    values: slimValues,
+    mcResults,
+    cards,
+  });
   return result.cards || cards;
 }
 
