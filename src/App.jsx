@@ -86,10 +86,10 @@ if (typeof document !== "undefined") {
  */
 
 
-/* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.7.5";
-export const BUILD_TAG = "Collapsible MC Panel. Changes to Roth Explorer. V 1.0.7.5. Major bugs in imports.";
-export const BUILD_TIME = "05-2026-06-05T12:00:00Z-2026";
+/* ════ REFERENCE DATA ════ updated to 2026-05-08 */
+const APP_VERSION = "1.0.8.1";
+export const BUILD_TAG = "[feature/ai-analysis] v1.0.8.1 — Confirmed Gemini model (2.0-flash) for cost/quality balance. AI button gate when no key. Pay-tier groundwork queued in STATUS.md Phase 2.";
+export const BUILD_TIME = "2026-05-08T14:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -5538,12 +5538,18 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   // Display AI-annotated cards if available, else base cards
   const displayCards = cards || baseCards;
 
-  // Gate: AI button only enabled when profile has real data
-  const canRunAI = !loadingAI && !cards &&
-    (params.port || 0) > 50_000 &&
+  // Gate: AI button only enabled when profile has real data AND a Gemini key is present
+  const hasGeminiKey = !!(assumptions?.geminiApiKey?.trim());
+  const profileReady = (params.port || 0) > 50_000 &&
     (params.sp  || 0) > 0 &&
     r90?.rate > 0 &&
     (params.accounts || []).some(a => (a.balance || 0) > 0);
+  const canRunAI = !loadingAI && !cards && profileReady && hasGeminiKey;
+  const aiDisabledReason = !profileReady
+    ? "Complete your profile and run Monte Carlo first"
+    : !hasGeminiKey
+    ? "Add a free Gemini API key in Profile → Assumptions to enable AI"
+    : "Run AI analysis on your plan";
 
   const COLORS = {
     red:    { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.25)",   label: "#f87171", badge: "🔴 Critical" },
@@ -5559,7 +5565,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
         <button
           onClick={() => runAI(baseCards)}
           disabled={!canRunAI}
-          title={canRunAI ? "Run AI analysis on your plan" : "Complete your profile and run Monte Carlo first"}
+          title={aiDisabledReason}
           style={{
             padding: "8px 18px",
             borderRadius: 8,
@@ -5581,6 +5587,14 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
           {loadingAI ? "Analyzing…" : cards ? "✓ AI Applied" : "🤖 Run AI Analysis"}
         </button>
         {loadingAI && <span style={{ color: "#a78bfa", fontSize: 12 }}>Aira is thinking…</span>}
+        {!loadingAI && !cards && profileReady && !hasGeminiKey && (
+          <span style={{ fontSize: 11, color: "#fbbf24" }}>
+            🔒 Add a free Gemini key in Profile → Assumptions ·{" "}
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "#fbbf24", textDecoration: "underline" }}>
+              Get one here
+            </a>
+          </span>
+        )}
         {(cards || aiError) && !loadingAI && (
           <button
             onClick={() => { setCards(null); setAiError(null); }}
@@ -7295,6 +7309,7 @@ export default function AiRAForecaster() {
                     rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
                     fafsaEndYear: assumptions.fafsaEndYear || null,
                     cssEndYear: assumptions.cssEndYear || null,
+                    geminiApiKey: assumptions.geminiApiKey || "",
                     savedAt: new Date().toISOString(),
                     exportedAt: new Date().toISOString(),
                     appVersion: APP_VERSION,
@@ -7403,6 +7418,8 @@ export default function AiRAForecaster() {
                     rothConversionTarget: rawRct.startsWith("fill_") ? rawRct.replace("fill_", "") : rawRct,
                     fafsaEndYear: data.fafsaEndYear || null,
                     cssEndYear: data.cssEndYear || null,
+                    // Preserve existing API key if imported file has empty/missing key
+                    geminiApiKey: data.geminiApiKey || prev.geminiApiKey || "",
                   }));
 
                   setStale(true);
