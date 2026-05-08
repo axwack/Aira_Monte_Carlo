@@ -6,16 +6,16 @@ main*
 *-workspace
 # Local Netlify folder
 .netlify
-CLAUDE.md
 .env
 Archive
 /netlify
 .wrangler
 aira-forecaster-agents
 
-# Markdown docs (README.md is the only exception)
+# Markdown docs — only README and CLAUDE tracked
 *.md
 !README.md
+!CLAUDE.md
 
 # Local/integration tests — never commit
 *.local.js
