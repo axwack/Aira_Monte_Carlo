@@ -7,9 +7,92 @@
  * Get a free key at: https://aistudio.google.com/app/apikey
  */
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+
+// ─── Pricing & session usage tracking ────────────────────────────────────────
+
+// $ per 1M tokens. Google AI Studio public pricing — update as Google revises.
+// Thinking ("thoughts") tokens are billed at the output rate.
+export const GEMINI_PRICING = {
+  "gemini-2.5-flash":      { inputPerM: 0.30,  outputPerM: 2.50  },
+  "gemini-2.5-pro":        { inputPerM: 1.25,  outputPerM: 10.00 },
+  "gemini-2.0-flash-lite": { inputPerM: 0.075, outputPerM: 0.30  },
+  "gemini-2.0-flash-001":  { inputPerM: 0.10,  outputPerM: 0.40  },
+};
+
+const USAGE_STORAGE_KEY = "airaAiUsage.v1";
+const USAGE_MAX_RECORDS = 1000;  // Cap to prevent unbounded localStorage growth.
+
+function _loadPersistedUsage() {
+  try {
+    const raw = typeof localStorage !== "undefined" && localStorage.getItem(USAGE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(-USAGE_MAX_RECORDS) : [];
+  } catch { return []; }
+}
+
+function _persistUsage() {
+  try {
+    if (typeof localStorage === "undefined") return;
+    const trimmed = _usageRecords.slice(-USAGE_MAX_RECORDS);
+    localStorage.setItem(USAGE_STORAGE_KEY, JSON.stringify(trimmed));
+  } catch { /* quota exceeded or storage disabled — silently drop */ }
+}
+
+const _usageRecords = _loadPersistedUsage();
+const _usageListeners = new Set();
+
+export function calcCost(model, inputTokens, outputTokens) {
+  const p = GEMINI_PRICING[model] || GEMINI_PRICING[DEFAULT_GEMINI_MODEL];
+  return (inputTokens / 1e6) * p.inputPerM + (outputTokens / 1e6) * p.outputPerM;
+}
+
+function _notify() {
+  _usageListeners.forEach(l => { try { l(); } catch { /* ignore */ } });
+}
+
+function recordUsage(model, fnLabel, usage) {
+  if (!usage) return null;
+  const promptTokens   = usage.promptTokenCount      || 0;
+  const outputTokens   = usage.candidatesTokenCount  || 0;
+  const thoughtsTokens = usage.thoughtsTokenCount    || 0;
+  // Thinking tokens bill at the output rate.
+  const billableOutput = outputTokens + thoughtsTokens;
+  const totalTokens    = usage.totalTokenCount || (promptTokens + billableOutput);
+  const costUsd        = calcCost(model, promptTokens, billableOutput);
+  const rec = { ts: Date.now(), model, fnLabel, promptTokens, outputTokens, thoughtsTokens, totalTokens, costUsd };
+  _usageRecords.push(rec);
+  if (_usageRecords.length > USAGE_MAX_RECORDS) _usageRecords.splice(0, _usageRecords.length - USAGE_MAX_RECORDS);
+  _persistUsage();
+  _notify();
+  return rec;
+}
+
+export function getAiUsage() {
+  let totalTokens = 0, totalCostUsd = 0;
+  for (const r of _usageRecords) { totalTokens += r.totalTokens; totalCostUsd += r.costUsd; }
+  return { records: _usageRecords.slice(), totalTokens, totalCostUsd, callCount: _usageRecords.length };
+}
+
+export function resetAiUsage() {
+  _usageRecords.length = 0;
+  _persistUsage();
+  _notify();
+}
+
+export function subscribeAiUsage(listener) {
+  _usageListeners.add(listener);
+  return () => _usageListeners.delete(listener);
+}
+
+export function useAiUsage() {
+  const [usage, setUsage] = useState(getAiUsage());
+  useEffect(() => subscribeAiUsage(() => setUsage(getAiUsage())), []);
+  return usage;
+}
 
 // Default model used when values.geminiModel is not set.
 // gemini-2.0-flash was deprecated for new users; 2.5-flash is the current stable default.
@@ -31,7 +114,7 @@ function resolveModel(values) {
 
 // ─── Gemini helpers ───────────────────────────────────────────────────────────
 
-async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL) {
+async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel = "unknown") {
   const res = await fetch(`${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -41,10 +124,12 @@ async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error?.message || `Gemini HTTP ${res.status}`);
   }
-  return res.json();
+  const data = await res.json();
+  recordUsage(model, fnLabel, data.usageMetadata);
+  return data;
 }
 
-function fnCall(apiKey, maxTokens, systemText, userText, fnDecl, model = DEFAULT_GEMINI_MODEL) {
+function fnCall(apiKey, maxTokens, systemText, userText, fnDecl, model = DEFAULT_GEMINI_MODEL, fnLabel = "unknown") {
   return callGemini(apiKey, {
     systemInstruction: { parts: [{ text: systemText }] },
     contents: [{ role: "user", parts: [{ text: userText }] }],
@@ -54,7 +139,7 @@ function fnCall(apiKey, maxTokens, systemText, userText, fnDecl, model = DEFAULT
     // function calls as Python-style code (`print(default_api.foo(...))`)
     // which the API rejects as MALFORMED_FUNCTION_CALL. No-op for non-thinking models.
     generationConfig: { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } },
-  }, model);
+  }, model, fnLabel);
 }
 
 function getFnArgs(res) {
@@ -178,7 +263,8 @@ export async function analyzeRetirementHealth(values, mcResults) {
           required: ["score","grade","summary","flags"],
         },
       },
-      resolveModel(values)
+      resolveModel(values),
+      "health_score"
     );
     return getFnArgs(res);
   } catch {
@@ -198,7 +284,7 @@ export async function generateNarrativeSummary(values, mcResults) {
       systemInstruction: { parts: [{ text: "You are Aira. Write a 3–5 paragraph retirement narrative in plain English with markdown headers: Overview | Strengths | Risks | Recommended Actions. No legal advice." }] },
       contents: [{ role: "user", parts: [{ text: ctxNarrative(values, mcResults) }] }],
       generationConfig: { maxOutputTokens: 1024 },
-    }, resolveModel(values));
+    }, resolveModel(values), "narrative");
     return getText(res);
   } catch {
     return fallback;
@@ -229,7 +315,8 @@ export async function suggestWithdrawalOptimization(values, mcResults) {
           required: ["recommended","reason","projectedRateImprovement"],
         },
       },
-      resolveModel(values)
+      resolveModel(values),
+      "withdrawal_rec"
     );
     return getFnArgs(res);
   } catch {
@@ -269,7 +356,8 @@ export async function evaluateRothStrategy(values) {
           required: ["assessment","conversionAdvice","suggestedAnnualAmount"],
         },
       },
-      resolveModel(values)
+      resolveModel(values),
+      "roth_strategy"
     );
     return getFnArgs(res);
   } catch {
@@ -296,7 +384,7 @@ export async function generateChatResponse(values, mcResults, question, history 
       systemInstruction: { parts: [{ text: `You are Aira, a fiduciary retirement planning AI. Answer questions about this plan. Be concise and honest about uncertainty. No legal advice.\n\nPLAN:\n${ctxNarrative(values, mcResults)}` }] },
       contents,
       generationConfig: { maxOutputTokens: 768 },
-    }, resolveModel(values));
+    }, resolveModel(values), "chat");
     return getText(res);
   } catch (e) {
     return `**Aira:** AI error — ${e.message}`;
@@ -367,7 +455,8 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
         required: ["annotated","new_cards"],
       },
     },
-    resolveModel(values)
+    resolveModel(values),
+    "annotate_cards"
   );
 
   console.log("[AI] Gemini raw response:", res);
@@ -419,8 +508,8 @@ export function solveRetirementDate(values) {
 }
 
 /**
- * AI-enhanced retirement date analysis. Falls back to solveRetirementDate() when
- * the Netlify function is unreachable.
+ * AI-enhanced retirement date analysis. Falls back to a deterministic narrative when
+ * no Gemini key is present or the API call fails.
  *
  * @param {object} values     ProfileWizard values
  * @param {object} mcResults  runMC() output
@@ -428,9 +517,28 @@ export function solveRetirementDate(values) {
  */
 export async function analyzeRetirementDate(values, mcResults) {
   const solver = solveRetirementDate(values);
+  const apiKey = values?.geminiApiKey?.trim();
   try {
-    const result = await callAnalyze({ type: "retirementdate", values, mcResults, solver });
-    return { solver, narrative: result.text };
+    if (!apiKey) throw new Error("no api key");
+    const fmtM = (n) => `$${(n / 1_000_000).toFixed(2)}M`;
+    const scenarioLines = solver.results.map(r =>
+      `- ${r.label} (${(r.rate * 100).toFixed(1)}%): reaches ${fmtM(solver.target)} ${r.crossoverAge != null ? `at age ${r.crossoverAge}` : "beyond age 80"}`
+    ).join("\n");
+    const userText = [
+      `Target portfolio: ${fmtM(solver.target)}`,
+      `Current portfolio: ${fmtM(solver.currentPort)} at age ${solver.currentAge}`,
+      `Planned retirement age: ${values.retireAge || 60}`,
+      `MC success rate: ${mcResults ? (mcResults.rate * 100).toFixed(1) : "N/A"}%`,
+      ``,
+      `Solver results across three return scenarios:`,
+      scenarioLines,
+    ].join("\n");
+    const res = await callGemini(apiKey, {
+      systemInstruction: { parts: [{ text: "You are Aira. Write a 2-3 paragraph plain-English narrative about when this person reaches their portfolio target. Quote specific ages and dollar amounts from the solver. Mention the gap between expected and conservative paths. No legal or tax advice." }] },
+      contents: [{ role: "user", parts: [{ text: userText }] }],
+      generationConfig: { maxOutputTokens: 512 },
+    }, resolveModel(values), "retirement_date");
+    return { solver, narrative: getText(res) };
   } catch {
     const { target, currentPort, currentAge, results } = solver;
     const expected = results.find(r => r.label === "Expected");
@@ -461,6 +569,32 @@ export async function analyzeRetirementDate(values, mcResults) {
 }
 
 // ─── AIAnalysisPanel Component ────────────────────────────────────────────────
+
+function formatTokens(n) {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return `${n}`;
+}
+
+function formatCost(usd) {
+  if (usd < 0.01)  return `<$0.01`;
+  if (usd < 1)     return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+export function AiUsageBadge({ style }) {
+  const usage = useAiUsage();
+  if (usage.callCount === 0) return null;
+  return (
+    <div style={{ fontSize: 11, color: "#64748b", display: "flex", alignItems: "center", gap: 8, ...style }}>
+      <span>Session: {usage.callCount} call{usage.callCount === 1 ? "" : "s"} · {formatTokens(usage.totalTokens)} tokens · ~{formatCost(usage.totalCostUsd)}</span>
+      <button
+        onClick={resetAiUsage}
+        style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", borderRadius: 4, padding: "1px 6px", fontSize: 10, cursor: "pointer" }}
+      >reset</button>
+    </div>
+  );
+}
 
 export function AIAnalysisPanel({ values, mcResults }) {
   const [health,  setHealth]  = useState(null);
@@ -546,6 +680,336 @@ export function AIAnalysisPanel({ values, mcResults }) {
           MC engine: {(mcResults.rate * 100).toFixed(1)}% success · ${(mcResults.term.p50 / 1_000_000).toFixed(2)}M median terminal
         </p>
       )}
+
+      <AiUsageBadge style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }} />
+    </div>
+  );
+}
+
+// ─── AiraAITab — full AI workspace ───────────────────────────────────────────
+//
+// Hosts all 6 AI features in one place. Each section is independent — load on
+// demand, no auto-run. Wired into App.jsx as a top-level tab.
+//
+// Props:
+//   values      — assumptions / params object (geminiApiKey, accounts, etc.)
+//   mcResults   — runMC() output
+//   onApplyWithdrawal(strategy) — optional callback to write recommended
+//     withdrawal strategy back to App.jsx state
+
+const sectionStyle = {
+  padding: "14px 16px",
+  border: "1px solid rgba(255,255,255,0.08)",
+  borderRadius: 10,
+  background: "rgba(255,255,255,0.02)",
+  marginBottom: 12,
+};
+
+const sectionHeaderStyle = {
+  fontSize: 11,
+  fontWeight: 700,
+  color: "#818cf8",
+  textTransform: "uppercase",
+  letterSpacing: "0.1em",
+  marginBottom: 10,
+};
+
+const aiButtonStyle = (disabled) => ({
+  background: disabled ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg, #7c3aed, #a78bfa)",
+  border: "none",
+  color: disabled ? "#475569" : "white",
+  borderRadius: 6,
+  padding: "5px 14px",
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: disabled ? "not-allowed" : "pointer",
+});
+
+function HealthAndNarrativeSection({ values, mcResults }) {
+  const [health, setHealth] = useState(null);
+  const [narr, setNarr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const gradeColor = { A: "#86efac", B: "#a3e635", C: "#fbbf24", D: "#fb923c", F: "#f87171" };
+
+  const run = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const [h, n] = await Promise.all([
+        analyzeRetirementHealth(values, mcResults),
+        generateNarrativeSummary(values, mcResults),
+      ]);
+      setHealth(h); setNarr(n);
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, [values, mcResults]);
+
+  return (
+    <div style={sectionStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={sectionHeaderStyle}>📊 Plan Health &amp; Narrative</div>
+        <button onClick={run} disabled={loading} style={aiButtonStyle(loading)}>
+          {loading ? "Analyzing…" : health ? "Re-analyze" : "Analyze Plan"}
+        </button>
+      </div>
+      {error && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>Error: {error}</div>}
+      {health && (
+        <div style={{ marginBottom: 12 }}>
+          <span style={{ fontSize: 28, fontWeight: 700, color: gradeColor[health.grade] || "#e2e8f0" }}>{health.grade}</span>
+          <span style={{ fontSize: 14, color: "#94a3b8", marginLeft: 8 }}>{health.score}/100</span>
+          <p style={{ fontSize: 12, color: "#cbd5e1", margin: "6px 0 8px" }}>{health.summary}</p>
+          {health.flags?.length > 0 && (
+            <ul style={{ margin: 0, paddingLeft: 16 }}>
+              {health.flags.map((f, i) => <li key={i} style={{ fontSize: 12, color: "#fbbf24", marginBottom: 3 }}>{f}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+      {narr && (
+        <div style={{ fontSize: 12, color: "#94a3b8", whiteSpace: "pre-wrap", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10 }}>
+          {narr}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RothStrategySection({ values }) {
+  const [out, setOut] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const run = async () => {
+    setLoading(true); setError(null);
+    try { setOut(await evaluateRothStrategy(values)); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+  return (
+    <div style={sectionStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={sectionHeaderStyle}>🔄 Roth Conversion Strategy</div>
+        <button onClick={run} disabled={loading} style={aiButtonStyle(loading)}>
+          {loading ? "Evaluating…" : out ? "Re-evaluate" : "Evaluate"}
+        </button>
+      </div>
+      {error && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>Error: {error}</div>}
+      {out && (
+        <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6 }}>
+          <div style={{ marginBottom: 6 }}><strong style={{ color: "#a78bfa" }}>Assessment:</strong> {out.assessment}</div>
+          <div style={{ marginBottom: 6 }}><strong style={{ color: "#a78bfa" }}>Advice:</strong> {out.conversionAdvice}</div>
+          {out.suggestedAnnualAmount > 0 && (
+            <div><strong style={{ color: "#a78bfa" }}>Suggested annual conversion:</strong> ${out.suggestedAnnualAmount.toLocaleString()}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WithdrawalStrategySection({ values, mcResults, onApplyWithdrawal }) {
+  const [out, setOut] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [applied, setApplied] = useState(false);
+  const run = async () => {
+    setLoading(true); setError(null); setApplied(false);
+    try { setOut(await suggestWithdrawalOptimization(values, mcResults)); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+  const apply = () => {
+    if (out?.recommended && onApplyWithdrawal) {
+      onApplyWithdrawal(out.recommended);
+      setApplied(true);
+    }
+  };
+  const current = values?.withdrawalStrategy || "gk";
+  const isDifferent = out && out.recommended && out.recommended !== current;
+  return (
+    <div style={sectionStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={sectionHeaderStyle}>💸 Withdrawal Strategy</div>
+        <button onClick={run} disabled={loading} style={aiButtonStyle(loading)}>
+          {loading ? "Analyzing…" : out ? "Re-analyze" : "Suggest"}
+        </button>
+      </div>
+      {error && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>Error: {error}</div>}
+      {out && (
+        <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6 }}>
+          <div style={{ marginBottom: 6 }}>
+            <strong style={{ color: "#a78bfa" }}>Current:</strong> {current}
+            {" → "}
+            <strong style={{ color: isDifferent ? "#86efac" : "#94a3b8" }}>Recommended: {out.recommended}</strong>
+          </div>
+          <div style={{ marginBottom: 6 }}><strong style={{ color: "#a78bfa" }}>Reason:</strong> {out.reason}</div>
+          {out.projectedRateImprovement && out.projectedRateImprovement !== "N/A" && (
+            <div style={{ marginBottom: 8 }}><strong style={{ color: "#a78bfa" }}>Projected improvement:</strong> {out.projectedRateImprovement}</div>
+          )}
+          {isDifferent && onApplyWithdrawal && (
+            <button onClick={apply} disabled={applied} style={{
+              ...aiButtonStyle(applied),
+              background: applied ? "rgba(134,239,172,0.2)" : "linear-gradient(135deg, #16a34a, #4ade80)",
+              color: applied ? "#86efac" : "white",
+            }}>
+              {applied ? "✓ Applied" : `Apply "${out.recommended}"`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RetirementDateSection({ values, mcResults }) {
+  const [out, setOut] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const run = async () => {
+    setLoading(true); setError(null);
+    try { setOut(await analyzeRetirementDate(values, mcResults)); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+  return (
+    <div style={sectionStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={sectionHeaderStyle}>🎯 Retirement Date Analysis</div>
+        <button onClick={run} disabled={loading} style={aiButtonStyle(loading)}>
+          {loading ? "Analyzing…" : out ? "Re-analyze" : "Analyze"}
+        </button>
+      </div>
+      {error && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>Error: {error}</div>}
+      {out && (
+        <div style={{ fontSize: 12, color: "#94a3b8", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+          {out.narrative}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChatSection({ values, mcResults }) {
+  const [history, setHistory] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const send = async () => {
+    const q = input.trim();
+    if (!q || loading) return;
+    setInput("");
+    const next = [...history, { role: "user", content: q }];
+    setHistory(next);
+    setLoading(true);
+    try {
+      const reply = await generateChatResponse(values, mcResults, q, history);
+      setHistory([...next, { role: "assistant", content: reply }]);
+    } catch (e) {
+      setHistory([...next, { role: "assistant", content: `**Error:** ${e.message}` }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const onKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  };
+  return (
+    <div style={sectionStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={sectionHeaderStyle}>💬 Chat with Aira</div>
+        {history.length > 0 && (
+          <button onClick={() => setHistory([])} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>
+            Clear
+          </button>
+        )}
+      </div>
+      <div style={{ maxHeight: 360, overflowY: "auto", marginBottom: 10, paddingRight: 4 }}>
+        {history.length === 0 && (
+          <div style={{ fontSize: 12, color: "#475569", fontStyle: "italic", padding: "8px 0" }}>
+            Ask Aira anything about your plan — e.g. "What's my biggest risk?" or "Should I delay Social Security?"
+          </div>
+        )}
+        {history.map((m, i) => (
+          <div key={i} style={{
+            background: m.role === "user" ? "rgba(99,102,241,0.08)" : "rgba(255,255,255,0.03)",
+            border: "1px solid " + (m.role === "user" ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.06)"),
+            borderRadius: 8,
+            padding: "8px 12px",
+            marginBottom: 8,
+            fontSize: 12,
+            color: m.role === "user" ? "#c7d2fe" : "#cbd5e1",
+            whiteSpace: "pre-wrap",
+            lineHeight: 1.6,
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: m.role === "user" ? "#818cf8" : "#a78bfa", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              {m.role === "user" ? "You" : "Aira"}
+            </div>
+            {m.content}
+          </div>
+        ))}
+        {loading && (
+          <div style={{ fontSize: 11, color: "#a78bfa", padding: "4px 0", fontStyle: "italic" }}>Aira is thinking…</div>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+          disabled={loading}
+          placeholder="Ask a question…"
+          style={{
+            flex: 1,
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: 6,
+            padding: "6px 12px",
+            color: "#e2e8f0",
+            fontSize: 12,
+            outline: "none",
+          }}
+        />
+        <button onClick={send} disabled={loading || !input.trim()} style={aiButtonStyle(loading || !input.trim())}>
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function AiraAITab({ values, mcResults, onApplyWithdrawal }) {
+  const hasKey = !!values?.geminiApiKey?.trim();
+  if (!values || !mcResults) {
+    return (
+      <div style={{ ...sectionStyle, textAlign: "center", padding: "40px 20px" }}>
+        <div style={{ fontSize: 14, color: "#94a3b8", marginBottom: 8 }}>🎲 Monte Carlo not run yet</div>
+        <div style={{ fontSize: 12, color: "#64748b" }}>Press ▶ Run Monte Carlo to unlock AI analysis.</div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      {!hasKey && (
+        <div style={{
+          background: "rgba(245,158,11,0.08)",
+          border: "1px solid rgba(245,158,11,0.25)",
+          borderRadius: 8,
+          padding: "10px 14px",
+          marginBottom: 12,
+          fontSize: 12,
+          color: "#fbbf24",
+        }}>
+          🔒 No Gemini API key set. AI features fall back to rules-based output. {" "}
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "#fbbf24", textDecoration: "underline" }}>
+            Get a free key
+          </a>
+          {" "}then add it in Profile → Assumptions.
+        </div>
+      )}
+      <HealthAndNarrativeSection values={values} mcResults={mcResults} />
+      <RothStrategySection values={values} />
+      <WithdrawalStrategySection values={values} mcResults={mcResults} onApplyWithdrawal={onApplyWithdrawal} />
+      <RetirementDateSection values={values} mcResults={mcResults} />
+      <ChatSection values={values} mcResults={mcResults} />
+      <AiUsageBadge style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }} />
     </div>
   );
 }
