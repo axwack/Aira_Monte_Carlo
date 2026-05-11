@@ -4,16 +4,21 @@ public/desktop.ini
 main*
 *.json
 *-workspace
-Requirements.md
 # Local Netlify folder
 .netlify
-CLAUDE.md
 .env
 Archive
 /netlify
 .wrangler
 aira-forecaster-agents
-STATUS.md
-LOGIC_AUDIT.md
-Test Case.md
-STATUS.md
+
+# Markdown docs — only README tracked (CLAUDE.md is private, synced manually)
+*.md
+!README.md
+
+# Local/integration tests — never commit
+*.local.js
+*.local.ts
+TEST_REPORT.md
+tests/local/
+
