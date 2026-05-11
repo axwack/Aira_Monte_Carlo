@@ -64,7 +64,7 @@ import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
-import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL } from "./ai/ai-analysis.js";
+import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, AiraAITab } from "./ai/ai-analysis.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -5640,6 +5640,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
             Reset
           </button>
         )}
+        <AiUsageBadge style={{ marginLeft: "auto" }} />
       </div>
 
       {aiError && (
@@ -7343,6 +7344,7 @@ export default function AiRAForecaster() {
     ["income", "💵 Income"],
     ["mortgage", "🏠 Real Estate"],
     ["actionplan", "✅ Action Plan"],
+    ["airaai", "🤖 Aira AI"],
     ["assumptions", "👤 Profile"],
   ];
 
@@ -8338,6 +8340,13 @@ export default function AiRAForecaster() {
                     r85={r85}
                     assumptions={assumptions}
                     mortgagePayoffYear={mortgagePayoffYear}
+                  />
+                )}
+                {activeTab === "airaai" && (
+                  <AiraAITab
+                    values={{ ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel }}
+                    mcResults={r90}
+                    onApplyWithdrawal={(strategy) => updateAssumption("withdrawalStrategy", strategy)}
                   />
                 )}
                 {activeTab === "assumptions" && (
