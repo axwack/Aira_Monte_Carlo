@@ -12,10 +12,9 @@ Archive
 .wrangler
 aira-forecaster-agents
 
-# Markdown docs — only README and CLAUDE tracked
+# Markdown docs — only README tracked (CLAUDE.md is private, synced manually)
 *.md
 !README.md
-!CLAUDE.md
 
 # Local/integration tests — never commit
 *.local.js
