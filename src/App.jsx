@@ -64,7 +64,7 @@ import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
-import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, AiraAITab } from "./ai/ai-analysis.js";
+import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -7344,7 +7344,7 @@ export default function AiRAForecaster() {
     ["income", "💵 Income"],
     ["mortgage", "🏠 Real Estate"],
     ["actionplan", "✅ Action Plan"],
-    ["airaai", "🤖 Aira AI"],
+    // ["airaai", "🤖 Aira AI"],  // DO NOT RE-ADD — AiraAITab is being integrated INSIDE ActionPlanTab on a separate branch (per user: no tab sprawl).
     ["assumptions", "👤 Profile"],
   ];
 
@@ -8342,13 +8342,7 @@ export default function AiRAForecaster() {
                     mortgagePayoffYear={mortgagePayoffYear}
                   />
                 )}
-                {activeTab === "airaai" && (
-                  <AiraAITab
-                    values={{ ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel }}
-                    mcResults={r90}
-                    onApplyWithdrawal={(strategy) => updateAssumption("withdrawalStrategy", strategy)}
-                  />
-                )}
+                {/* AiraAITab is dormant — integration target is INSIDE ActionPlanTab (above), not as its own tab. See memory/project_aira_ai_tab.md. */}
                 {activeTab === "assumptions" && (
                   <>
                   {showWelcome && (
