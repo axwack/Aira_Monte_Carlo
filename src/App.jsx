@@ -63,6 +63,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
+import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
+import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -85,10 +87,10 @@ if (typeof document !== "undefined") {
  */
 
 
-/* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.7.5";
-export const BUILD_TAG = "Collapsible MC Panel. Changes to Roth Explorer. V 1.0.7.5. Major bugs in imports.";
-export const BUILD_TIME = "05-2026-06-05T12:00:00Z-2026";
+/* ════ REFERENCE DATA ════ updated to 2026-05-08 */
+const APP_VERSION = "1.0.8.5";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.5 — Disabled Gemini 2.5 thinking mode on function calls (thinkingBudget: 0). Fixes MALFORMED_FUNCTION_CALL where 2.5-flash emitted Python-style print(default_api.foo()) instead of structured output. No-op for non-thinking models.";
+export const BUILD_TIME = "2026-05-08T17:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -379,6 +381,7 @@ export const BLANK_PROFILE = {
   earlyRetireTarget: 2_000_000,
   withdrawalStrategy: "gk",
   geminiApiKey: "",
+  geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
 };
 
 const ANALOGUES = [
@@ -4288,52 +4291,75 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
 }
 
 function BucketsTab({ params = {} }) {
-  const port = params.port || 0;
-  const retireAge = params.retireAge || 60;
-  const currentAge = params.currentAge || 50;
+  const port        = params.port       || 0;
+  const retireAge   = params.retireAge  || 60;
+  const currentAge  = params.currentAge || 50;
+  const ssAge       = params.ssAge      || 67;
   const yrsToRetire = Math.max(0, retireAge - currentAge);
-  const retireYear = new Date().getFullYear() + yrsToRetire;
-  const bucketPcts = [6, 16, 78];
-  const bucketTargets = bucketPcts.map((pct) =>
-    port > 0 ? fmtM((port * pct) / 100) : `${pct}%`
-  );
+  const retireYear  = new Date().getFullYear() + yrsToRetire;
+
+  // Annual mortgage P&I (matches runMC logic)
+  const mortAnnualPI = (() => {
+    if (!params.mortBalance || params.mortBalance <= 0) return 0;
+    const ms = mortgageSchedule(
+      params.mortBalance,
+      params.mortRate  || 6.5,
+      params.mortStart || "2020-01",
+      params.mortTerm  || 30,
+      params.mortExtra || 0
+    );
+    return ms.pmt * 12;
+  })();
+
+  // Dynamic allocation — derived from actual spending data
+  const RUNWAY_YEARS = 3;
+  const propIncome   = params.propIncome || 0;
+  const netDraw      = Math.max(0, (params.sp || 0) + mortAnnualPI - propIncome);
+  const ssGapYears   = Math.max(0, ssAge - retireAge);
+  const fmtK         = (n) => `$${Math.round(n / 1000)}K`;
+
+  const b1 = Math.round(RUNWAY_YEARS * netDraw);
+  const b2 = Math.round(ssGapYears   * netDraw);
+  const b3 = Math.max(0, port - b1 - b2);
+  const pct = (n) => port > 0 ? Math.round((n / port) * 100) : 0;
+
   const buckets = [
     {
-      name: "Bucket 1 — Cash / Short-term",
-      target: bucketTargets[0],
-      pct: bucketPcts[0],
-      color: "#0ea5e9",
-      purpose:
-        "Living expenses 3-5yr runway.  NEVER dual-purpose.",
-      holdings: "Cash · Money market · Short-term Treasuries",
-      locked: `Draws begin at retirement (age ${retireAge})`,
+      name:     "Bucket 1 — Cash",
+      horizon:  "1–3 years",
+      amount:   b1,
+      pct:      pct(b1),
+      color:    "#0ea5e9",
+      purpose:  `Day-to-day expenses & safety net. ${RUNWAY_YEARS}-year runway at ${fmtK(netDraw)}/yr net draw. NEVER dual-purpose.`,
+      holdings: "100% Cash / Cash Equivalents · HYSA · Money market · T-bills · CDs",
+      locked:   `Draws begin at retirement (age ${retireAge})`,
     },
     {
-      name: "Bucket 2 — Income Sleeve",
-      target: bucketTargets[1],
-      pct: bucketPcts[1],
-      color: "#a78bfa",
-      purpose:
-        "Dividend/income generation. Starts AT retirement. Reduces portfolio WR.",
-      holdings: "Dividend equities · Covered-call income · REITs",
-      locked: `Activates at retirement (${retireYear})`,
+      name:     "Bucket 2 — Income & Stability",
+      horizon:  "3–10 years",
+      amount:   b2,
+      pct:      pct(b2),
+      color:    "#a78bfa",
+      purpose:  `Intermediate-term needs. Bridges ${ssGapYears}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`,
+      holdings: "30–50% Equities · 50–70% Fixed Income · Dividend stocks · Bonds · REITs",
+      locked:   `Activates at retirement (${retireYear})`,
     },
     {
-      name: "Bucket 3 — Growth",
-      target: bucketTargets[2],
-      pct: bucketPcts[2],
-      color: "#10b981",
-      purpose:
-        "Never touch 7-10 years. Compounding engine. Draw only when Bucket 1 depleted.",
-      holdings: "Broad-market equity · Momentum · International",
-      locked: `Never before age ${retireAge + 7}`,
+      name:     "Bucket 3 — Long-Term Growth",
+      horizon:  "10+ years",
+      amount:   b3,
+      pct:      pct(b3),
+      color:    "#10b981",
+      purpose:  "Protects against inflation & grows wealth. Won't be needed for a decade or more. Refills Bucket 2 when markets are favorable.",
+      holdings: "50–100% Equities · 0–50% Fixed Income · Broad-market equity · Momentum · International",
+      locked:   `Never before age ${retireAge + 7}`,
     },
   ];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="chart-card">
         <div className="ct">
-          3-Bucket Strategy · Section 0.G ·
+          3-Bucket Strategy
         </div>
         {buckets.map((b) => (
           <div
@@ -4354,17 +4380,19 @@ function BucketsTab({ params = {} }) {
                 marginBottom: 6,
               }}
             >
-              <div style={{ fontSize: 15, fontWeight: 600, color: b.color }}>
-                {b.name}
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: b.color }}>{b.name}</div>
+                <div style={{ fontSize: 10, color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 1 }}>{b.horizon}</div>
               </div>
               <div
                 style={{
                   fontSize: 15,
                   color: b.color,
                   fontFamily: "'DM Mono',monospace",
+                  textAlign: "right",
                 }}
               >
-                {b.target} · {b.pct}%
+                {port > 0 ? fmtM(b.amount) : "—"} · {b.pct}%
               </div>
             </div>
             <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>
@@ -5491,7 +5519,7 @@ function generateActions({
     return order[a.priority] - order[b.priority];
   });
 }
-// Replace the existing ActionPlanTab with this dynamic version
+// ─── ActionPlanTab ────────────────────────────────────────────────────────────
 function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   const currentYear = new Date().getFullYear();
   const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
@@ -5499,62 +5527,35 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     Math.floor((new Date(`${retireYear}-03-15`) - new Date()) / 86400000)
   );
 
-  const [aiAnalysis, setAiAnalysis] = useState('');
+  const [cards, setCards]         = useState(null);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [aiError, setAiError]     = useState(null);
 
-  const runAIAnalysis = async () => {
-    const apiKey = assumptions.geminiApiKey;
-    if (!apiKey) {
-      alert('Please enter your Gemini API key in the Profile → Assumptions tab.');
+  const runAI = async (baseCards) => {
+    const { runAIActionPlan, profileIsComplete } = await import("./ai/ai-analysis.js");
+    console.log("[AI] runAI called. profileIsComplete:", profileIsComplete(params, r90));
+    console.log("[AI] geminiApiKey present:", !!assumptions?.geminiApiKey, "model:", assumptions?.geminiModel || "default");
+    console.log("[AI] baseCards count:", baseCards?.length, "ids:", baseCards?.map(c => c.id));
+    if (!profileIsComplete(params, r90)) {
+      console.warn("[AI] Profile incomplete — runAI exiting silently. Need: port>50K, sp>0, mcResults.rate>0, ≥1 funded account.");
       return;
     }
-
-  setLoadingAI(true);
-  setAiAnalysis('');
-
-  const successRate = r90?.rate ? (r90.rate * 100).toFixed(1) : 'N/A';
-  const withdrawalRate = params?.sp && params?.port ? ((params.sp / params.port) * 100).toFixed(1) : 'N/A';
-  const portfolioGoal = assumptions.portfolioGoal ? (assumptions.portfolioGoal / 1_000_000).toFixed(1) : '3.2';
-
-  const prompt = `You are AiRA, an AI retirement planning assistant. Analyze the following retirement plan and provide a complete, well-formed paragraph (4-6 sentences) with one specific recommendation. Do not stop mid-sentence. Be conversational and reference the numbers provided.
-
-                Plan Summary:
-                - Success Rate (Monte Carlo): ${successRate}% to age ${params.endAge || 90}
-                - Current Portfolio: $${(params.port / 1_000_000).toFixed(2)}M
-                - Target Portfolio: $${portfolioGoal}M
-                - Annual Spending: $${(params.sp / 1000).toFixed(0)}K
-                - Withdrawal Rate: ${withdrawalRate}%
-                - Withdrawal Strategy: ${getStrategyLabel(assumptions.withdrawalStrategy)}
-                - State of Residence: ${assumptions.stateOfResidence || 'FL'}
-
-                Begin your response with "I am AiRA. I have analyzed your plan." and then provide the analysis.`;
-
-   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
-      }),
-    });
-
-    const data = await response.json();
-    if (data.error) {
-      throw new Error(data.error.message);
+    setLoadingAI(true);
+    setAiError(null);
+    try {
+      console.log("[AI] Calling runAIActionPlan…");
+      const merged = await runAIActionPlan({ ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel }, r90, baseCards);
+      console.log("[AI] Merged result:", merged);
+      console.log("[AI] Cards with aiNote:", merged?.filter(c => c.aiNote).length, "/ total:", merged?.length);
+      console.log("[AI] AI-generated new cards:", merged?.filter(c => c.aiGenerated).length);
+      setCards(merged);
+    } catch (e) {
+      console.error("[AI] action plan error:", e);
+      setAiError(e.message || "AI unavailable — check that your Gemini API_KEY is set in the UI in the Profile Section.");
+    } finally {
+      setLoadingAI(false);
     }
-    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response from Gemini.';
-    setAiAnalysis(aiText);
-  } catch (err) {
-    console.error('Gemini API error:', err);
-    setAiAnalysis('AI analysis failed. Please check your API key and try again.');
-  } finally {
-    setLoadingAI(false);
-  }
-};
+  };
 
   if (!params || !r90) {
     return (
@@ -5565,13 +5566,29 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     );
   }
 
-  const dynActions = generateActions({
-    params, r90, r85, assumptions, mortgagePayoffYear,
+  // Evaluate declarative rules engine
+  const baseCards = evaluateRulesEngine({
+    params, r90, r85, assumptions,
     currentYear, retireYear, daysToRetire,
-    goal: assumptions?.portfolioGoal || 3_200_000,
   });
 
-  const colors = {
+  // Display AI-annotated cards if available, else base cards
+  const displayCards = cards || baseCards;
+
+  // Gate: AI button only enabled when profile has real data AND a Gemini key is present
+  const hasGeminiKey = !!(assumptions?.geminiApiKey?.trim());
+  const profileReady = (params.port || 0) > 50_000 &&
+    (params.sp  || 0) > 0 &&
+    r90?.rate > 0 &&
+    (params.accounts || []).some(a => (a.balance || 0) > 0);
+  const canRunAI = !loadingAI && !cards && profileReady && hasGeminiKey;
+  const aiDisabledReason = !profileReady
+    ? "Complete your profile and run Monte Carlo first"
+    : !hasGeminiKey
+    ? "Add a free Gemini API key in Profile → Assumptions to enable AI"
+    : "Run AI analysis on your plan";
+
+  const COLORS = {
     red:    { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.25)",   label: "#f87171", badge: "🔴 Critical" },
     yellow: { bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.25)",  label: "#fbbf24", badge: "🟡 Important" },
     green:  { bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.25)",  label: "#34d399", badge: "🟢 On Track" },
@@ -5579,85 +5596,169 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {/* AI Analysis Button */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+
+      {/* AI Analyze button */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
         <button
-          onClick={""}
-          disabled={"true"}
+          onClick={() => runAI(baseCards)}
+          disabled={!canRunAI}
+          title={aiDisabledReason}
           style={{
             padding: "8px 18px",
             borderRadius: 8,
             border: "none",
-            background: loadingAI
-              ? "rgba(255,255,255,0.05)"
-              : "linear-gradient(135deg, #7c3aed, #a78bfa)",
-            color: "white",
+            background: canRunAI
+              ? "linear-gradient(135deg, #7c3aed, #a78bfa)"
+              : "rgba(255,255,255,0.05)",
+            color: canRunAI ? "white" : "#475569",
             fontSize: 13,
             fontWeight: 600,
-            cursor: loadingAI ? "not-allowed" : "pointer",
-            fontFamily: "'Inter', sans-serif",
+            cursor: canRunAI ? "pointer" : "not-allowed",
             display: "flex",
             alignItems: "center",
             gap: 6,
-            boxShadow: loadingAI ? "none" : "0 2px 8px rgba(124,58,237,0.3)",
+            boxShadow: canRunAI ? "0 2px 8px rgba(124,58,237,0.3)" : "none",
             transition: "all 0.2s",
           }}
         >
-          {loadingAI ? "Analyzing..." : "🤖 Run AI Analysis {Stay Tuned}"}
+          {loadingAI ? "Analyzing…" : cards ? "✓ AI Applied" : "🤖 Run AI Analysis"}
         </button>
-        {loadingAI && (
-          <span style={{ color: "#a78bfa", fontSize: 12 }}>Thinking...</span>
+        {loadingAI && <span style={{ color: "#a78bfa", fontSize: 12 }}>Aira is thinking…</span>}
+        {!loadingAI && !cards && profileReady && !hasGeminiKey && (
+          <span style={{ fontSize: 11, color: "#fbbf24" }}>
+            🔒 Add a free Gemini key in Profile → Assumptions ·{" "}
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "#fbbf24", textDecoration: "underline" }}>
+              Get one here
+            </a>
+          </span>
         )}
+        {(cards || aiError) && !loadingAI && (
+          <button
+            onClick={() => { setCards(null); setAiError(null); }}
+            style={{ fontSize: 11, color: "#64748b", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+          >
+            Reset
+          </button>
+        )}
+        <AiUsageBadge style={{ marginLeft: "auto" }} />
       </div>
 
-      {/* AI Response Card */}
-      {aiAnalysis && (
-        <div
-          style={{
-            background: "rgba(124,58,237,0.06)",
-            border: "1px solid rgba(124,58,237,0.25)",
-            borderRadius: 10,
-            padding: "16px 18px",
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa", marginBottom: 8 }}>
-            🤖 AI Insights
-          </div>
-          <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-            {aiAnalysis}
-          </div>
+      {aiError && (
+        <div style={{
+          background: "rgba(239,68,68,0.08)",
+          border: "1px solid rgba(239,68,68,0.25)",
+          borderRadius: 8,
+          padding: "10px 14px",
+          fontSize: 12,
+          color: "#f87171",
+        }}>
+          ⚠ AI unavailable: {aiError}
         </div>
       )}
 
-      {/* Existing Action Cards */}
-      {dynActions.map((a, i) => {
-        const c = colors[a.priority];
+      {/* Retirement Date Solver */}
+      {(() => {
+        const solver = solveRetirementDate(params);
+        const { target, currentPort, currentAge, results } = solver;
+        const fmtM = (n) => `$${(n / 1_000_000).toFixed(2)}M`;
+        const retireAge = params.retireAge || 60;
+        const rowColor = (age) => {
+          if (age == null) return "#f87171";
+          if (age <= retireAge) return "#34d399";
+          if (age <= retireAge + 3) return "#fbbf24";
+          return "#f87171";
+        };
+        return (
+          <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 9, padding: "12px 15px", marginBottom: 4 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#818cf8", marginBottom: 8 }}>
+              🎯 Retirement Date Solver — Target {fmtM(target)}
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
+              Portfolio today: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>{fmtM(currentPort)}</span>
+              &nbsp;·&nbsp;Planned retirement: <span style={{ color: "#e2e8f0" }}>age {retireAge}</span>
+              &nbsp;·&nbsp;Annual contrib: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>${(params.contrib || 0).toLocaleString()}</span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <th style={{ textAlign: "left", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Scenario</th>
+                  <th style={{ textAlign: "center", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Return</th>
+                  <th style={{ textAlign: "right", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Hits {fmtM(target)}</th>
+                  <th style={{ textAlign: "right", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>vs. Plan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r) => {
+                  const diff = r.crossoverAge != null ? r.crossoverAge - retireAge : null;
+                  const color = rowColor(r.crossoverAge);
+                  return (
+                    <tr key={r.label} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                      <td style={{ color: "#cbd5e1", padding: "4px 0" }}>{r.label}</td>
+                      <td style={{ textAlign: "center", color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>{(r.rate * 100).toFixed(1)}%</td>
+                      <td style={{ textAlign: "right", color, fontWeight: 600, fontFamily: "'DM Mono',monospace" }}>
+                        {r.crossoverAge != null ? `Age ${r.crossoverAge}` : "> 80"}
+                      </td>
+                      <td style={{ textAlign: "right", color, fontFamily: "'DM Mono',monospace" }}>
+                        {diff == null ? "—" : diff === 0 ? "On target" : diff < 0 ? `${Math.abs(diff)}yr early` : `${diff}yr late`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 8 }}>
+              Update your portfolio balance in the profile to keep this projection current.
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Action cards */}
+      {displayCards.map((a, i) => {
+        const c = COLORS[a.priority] || COLORS.yellow;
         return (
           <div
-            key={i}
+            key={a.id || i}
             style={{
               background: c.bg,
               border: `1px solid ${c.border}`,
               borderRadius: 9,
               padding: "11px 15px",
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start"
+              flexDirection: "column",
+              gap: 0,
             }}
           >
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: c.label, marginBottom: 3 }}>
-                {c.badge} · {a.category}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: c.label, marginBottom: 3 }}>
+                  {c.badge} · {a.category}
+                  {a.aiGenerated && <span style={{ marginLeft: 6, color: "#a78bfa" }}>✦ AI</span>}
+                  {a.law && <span style={{ marginLeft: 6, color: "#475569", fontWeight: 400, textTransform: "none" }}>{a.law}</span>}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
+                  {a.action}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>{a.reason}</div>
               </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
-                {a.action}
+              <div style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap", marginLeft: 16, paddingTop: 2 }}>
+                ⏱ {a.deadline}
               </div>
-              <div style={{ fontSize: 11, color: "#64748b" }}>{a.reason}</div>
             </div>
-            <div style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap", marginLeft: 16, paddingTop: 2 }}>
-              ⏱ {a.deadline}
-            </div>
+
+            {/* Inline AI note — only shown after AI analysis */}
+            {a.aiNote && (
+              <div style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: `1px solid ${c.border}`,
+                fontSize: 11,
+                color: "#a78bfa",
+                lineHeight: 1.5,
+              }}>
+                🤖 {a.aiNote}
+              </div>
+            )}
           </div>
         );
       })}
@@ -6342,6 +6443,20 @@ function AssumptionsPanel({ values, onChange }) {
             style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
           />
           <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#60a5fa", marginLeft: 8 }}>Get free key →</a>
+        </ARow>
+        <ARow label="AI Model" desc="Select the Gemini model for AI features. If a model becomes unavailable (Google deprecates often), pick another from the dropdown.">
+          <select
+            value={values.geminiModel || DEFAULT_GEMINI_MODEL}
+            onChange={(e) => onChange('geminiModel', e.target.value)}
+            style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
+          >
+            {GEMINI_MODELS.map(m => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+          <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
+            {(GEMINI_MODELS.find(m => m.id === (values.geminiModel || DEFAULT_GEMINI_MODEL))?.note) || ""}
+          </span>
         </ARow>
       </div>
 
@@ -7229,6 +7344,7 @@ export default function AiRAForecaster() {
     ["income", "💵 Income"],
     ["mortgage", "🏠 Real Estate"],
     ["actionplan", "✅ Action Plan"],
+    // ["airaai", "🤖 Aira AI"],  // DO NOT RE-ADD — AiraAITab is being integrated INSIDE ActionPlanTab on a separate branch (per user: no tab sprawl).
     ["assumptions", "👤 Profile"],
   ];
 
@@ -7303,6 +7419,7 @@ export default function AiRAForecaster() {
                     rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
                     fafsaEndYear: assumptions.fafsaEndYear || null,
                     cssEndYear: assumptions.cssEndYear || null,
+                    geminiApiKey: assumptions.geminiApiKey || "",
                     savedAt: new Date().toISOString(),
                     exportedAt: new Date().toISOString(),
                     appVersion: APP_VERSION,
@@ -7411,6 +7528,8 @@ export default function AiRAForecaster() {
                     rothConversionTarget: rawRct.startsWith("fill_") ? rawRct.replace("fill_", "") : rawRct,
                     fafsaEndYear: data.fafsaEndYear || null,
                     cssEndYear: data.cssEndYear || null,
+                    // Preserve existing API key if imported file has empty/missing key
+                    geminiApiKey: data.geminiApiKey || prev.geminiApiKey || "",
                   }));
 
                   setStale(true);
@@ -8223,6 +8342,7 @@ export default function AiRAForecaster() {
                     mortgagePayoffYear={mortgagePayoffYear}
                   />
                 )}
+                {/* AiraAITab is dormant — integration target is INSIDE ActionPlanTab (above), not as its own tab. See memory/project_aira_ai_tab.md. */}
                 {activeTab === "assumptions" && (
                   <>
                   {showWelcome && (
