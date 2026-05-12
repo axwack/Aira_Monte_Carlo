@@ -7762,7 +7762,7 @@ export default function AiRAForecaster() {
               >
                 <span style={{ fontSize: 10, color: "#64748b" }}>Liquid Portfolio</span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px" }}>
-                  {fmtM(port)}
+                  {fmtDollar(port)}
                 </span>
               </div>
               {(() => {
