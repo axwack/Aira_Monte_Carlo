@@ -105,6 +105,22 @@ export const ABOUT_FEATURES = [
           • <span style="color:#ef4444;">Red</span> – below the 25th percentile<br/><br/>
           This isn't just a status check. It's the foundation of adaptive distribution planning, a framework championed by financial planner Michael Kitces. Instead of blindly following a withdrawal plan made years ago, you adjust based on how your portfolio is actually performing. If you're in the green, you might spend a little more. In the red, you tighten up. Over time, checkpoints build a living history of your financial journey, turning a static retirement plan into a responsive roadmap. You're not guessing whether you're still on track—you're measuring it, one checkpoint at a time.`,
      },
+  // ── Tax Modeling ──────────────────────────────────────────
+  {
+    id:    "tax-drag",
+    group: "Tax Modeling",
+    icon:  "🏛",
+    title: "Tax Drag Adjustment",
+    body:  `<strong style="color:#e2e8f0;">What is tax drag?</strong> Every dollar you withdraw from a pre-tax account is taxed as ordinary income before you can spend it. "Tax drag" is the gross-up factor AiRA applies so the after-tax cash you keep matches your stated annual spending. If your spend target is $80,000 and your effective drag is 10%, the engine pulls $88,000 from the portfolio so $80,000 lands in your pocket.<br/><br/>
+            <strong style="color:#e2e8f0;">Why it varies by year:</strong> Tax exposure isn't flat across retirement. The drag percentage rises in three stages:<br/>
+            • <strong>Before Social Security claims</strong> — lowest drag. You're living off taxable / Roth draws with no SS income on the return.<br/>
+            • <strong>SS started, before RMDs</strong> — moderate drag. SS becomes partially taxable; provisional-income math starts to bite.<br/>
+            • <strong>RMD age and beyond</strong> — highest drag. Forced pre-tax withdrawals stack with SS taxation and IRMAA exposure.<br/><br/>
+            <strong style="color:#e2e8f0;">Filing status matters:</strong> Single filers see higher drag than MFJ at every stage — halved brackets and a halved standard deduction mean the same dollar of income hits a higher marginal rate sooner.<br/><br/>
+            <strong style="color:#e2e8f0;">Toggle ON (default):</strong> Realistic mode. Withdrawals are grossed up so the spend number you entered is the after-tax amount you actually get to use. This is what you should leave on for any plan you intend to act on.<br/><br/>
+            <strong style="color:#e2e8f0;">Toggle OFF:</strong> Pre-tax view. Useful for sanity-checking the underlying portfolio dynamics without tax noise, but it overstates how long your money lasts because Uncle Sam still takes his cut in real life.<br/><br/>
+            <strong style="color:#e2e8f0;">Note:</strong> This is the engine's <em>simplified</em> drag model for the high-level success-rate view. The detailed year-by-year withdrawal schedule (and the Roth conversion explorer) compute exact federal + state + IRMAA tax using full progressive brackets — not the drag approximation.`,
+  },
      {
     id:    "Tax ",
     group: "Roth Conversions",
