@@ -1,25 +1,28 @@
 /**
- * functions/api/analyze.js — Cloudflare Pages Function
+ * POST /api/analyze
+ * Body: { type, values, mcResults?, question?, history?, cards? }
+ * Header (billing mode): Authorization: Bearer <jwt>
  *
- * Route: POST /api/analyze
- * Set GEMINI_API_KEY in Cloudflare Dashboard → Settings → Environment Variables.
+ * Dual-mode:
+ *   - JWT present  → use server GEMINI_API_KEY, check/deduct D1 credits
+ *   - No JWT       → BYOK: use body.apiKey or env.GEMINI_API_KEY (legacy)
+ *
+ * Required env vars: GEMINI_API_KEY, JWT_SECRET (billing), DB (billing)
  */
 
-const GEMINI_BASE    = "https://generativelanguage.googleapis.com/v1beta/models";
-const MODEL_FAST     = "gemini-2.0-flash";
-const MODEL_STANDARD = "gemini-2.0-flash";
+import { json, handleOptions, verifyJWT } from "../_shared/jwt.js";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type",
-  "Content-Type": "application/json",
-};
+const GEMINI_BASE        = "https://generativelanguage.googleapis.com/v1beta/models";
+const MODEL_FAST         = "gemini-2.5-flash";
+const MODEL_STANDARD     = "gemini-2.5-flash";
+const RAW_TOKENS_PER_CREDIT = 1_000;  // must match src/billing/credits.js
+const MIN_CREDITS_GUARD  = 5;         // refuse if balance below this before calling
 
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: CORS });
-}
+// ─── Gemini helpers ───────────────────────────────────────────────────────────
 
-async function callGemini(apiKey, model, payload) {
+// usageBucket is a per-request array; callGemini pushes usageMetadata into it.
+// This avoids module-level state and is concurrent-request safe.
+async function callGemini(apiKey, model, payload, usageBucket) {
   const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: "POST",
@@ -30,17 +33,19 @@ async function callGemini(apiKey, model, payload) {
     const err = await res.text();
     throw new Error(`Gemini ${res.status}: ${err}`);
   }
-  return res.json();
+  const data = await res.json();
+  if (data.usageMetadata) usageBucket.push(data.usageMetadata);
+  return data;
 }
 
-function geminiFnCall(apiKey, model, maxTokens, systemText, userText, fnDecl) {
+function geminiFnCall(apiKey, model, maxTokens, systemText, userText, fnDecl, usageBucket) {
   return callGemini(apiKey, model, {
     systemInstruction: { parts: [{ text: systemText }] },
     contents: [{ role: "user", parts: [{ text: userText }] }],
     tools: [{ functionDeclarations: [fnDecl] }],
     toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [fnDecl.name] } },
-    generationConfig: { maxOutputTokens: maxTokens },
-  });
+    generationConfig: { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } },
+  }, usageBucket);
 }
 
 function getFnArgs(res) {
@@ -60,12 +65,11 @@ function ctxActionPlan(values, mcResults, cards) {
   const roth   = accts.filter(a => a.category === "roth").reduce((s, a) => s + a.balance, 0);
   const preTaxPct = values.port > 0 ? ((preTax / values.port) * 100).toFixed(0) : "0";
   const rothPct   = values.port > 0 ? ((roth   / values.port) * 100).toFixed(0) : "0";
-  const triggeredIds = cards.map(c => c.id).join(", ");
   return [
     `SWR: ${swr}% | MC Success: ${mcResults ? (mcResults.rate * 100).toFixed(1) : "N/A"}%`,
     `Portfolio: $${(values.port || 0).toLocaleString()} | Pre-tax: ${preTaxPct}% | Roth: ${rothPct}%`,
     `Age: ${values.currentAge} → Retire: ${values.retireAge} | State: ${values.stateOfResidence || "unknown"}`,
-    `Triggered rules: [${triggeredIds}]`,
+    `Triggered rules: [${(cards || []).map(c => c.id).join(", ")}]`,
   ].join("\n");
 }
 
@@ -117,11 +121,9 @@ function ctxWithdrawal(values, mcResults) {
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
-async function handleActionPlan(apiKey, values, mcResults, cards) {
-  const ctx = ctxActionPlan(values, mcResults, cards);
-  const cardList = cards.map(c =>
-    `[${c.id}] ${c.priority.toUpperCase()} | ${c.category}: ${c.action}`
-  ).join("\n");
+async function handleActionPlan(apiKey, values, mcResults, cards, usageBucket) {
+  const ctx      = ctxActionPlan(values, mcResults, cards);
+  const cardList = cards.map(c => `[${c.id}] ${c.priority.toUpperCase()} | ${c.category}: ${c.action}`).join("\n");
 
   const res = await geminiFnCall(apiKey, MODEL_FAST, 1024,
     "You are Aira, a fiduciary retirement planning AI. Be specific, concise, and quantitative. Never give legal or tax advice.",
@@ -161,12 +163,13 @@ async function handleActionPlan(apiKey, values, mcResults, cards) {
         },
         required: ["annotated", "new_cards"],
       },
-    }
+    },
+    usageBucket
   );
 
   const toolInput = getFnArgs(res);
-  const noteMap = Object.fromEntries((toolInput.annotated || []).map(a => [a.id, a.aiNote]));
-  const newCards = (toolInput.new_cards || []).slice(0, 2);
+  const noteMap   = Object.fromEntries((toolInput.annotated || []).map(a => [a.id, a.aiNote]));
+  const newCards  = (toolInput.new_cards || []).slice(0, 2);
 
   const merged = [
     ...cards.map(c => ({ ...c, aiNote: noteMap[c.id] || null })),
@@ -176,11 +179,10 @@ async function handleActionPlan(apiKey, values, mcResults, cards) {
   return { cards: merged };
 }
 
-async function handleHealth(apiKey, values, mcResults) {
-  const ctx = ctxHealth(values, mcResults);
+async function handleHealth(apiKey, values, mcResults, usageBucket) {
   const res = await geminiFnCall(apiKey, MODEL_STANDARD, 512,
     "You are Aira. Score this retirement plan 0–100 and list 2–4 specific risk flags.",
-    ctx,
+    ctxHealth(values, mcResults),
     {
       name: "health_score",
       description: "Score a retirement plan",
@@ -194,26 +196,25 @@ async function handleHealth(apiKey, values, mcResults) {
         },
         required: ["score", "grade", "summary", "flags"],
       },
-    }
+    },
+    usageBucket
   );
   return getFnArgs(res);
 }
 
-async function handleNarrative(apiKey, values, mcResults) {
-  const ctx = ctxNarrative(values, mcResults);
+async function handleNarrative(apiKey, values, mcResults, usageBucket) {
   const res = await callGemini(apiKey, MODEL_STANDARD, {
     systemInstruction: { parts: [{ text: "You are Aira. Write a 3–5 paragraph retirement narrative in plain English with markdown headers: Overview | Strengths | Risks | Recommended Actions. No legal advice." }] },
-    contents: [{ role: "user", parts: [{ text: ctx }] }],
+    contents: [{ role: "user", parts: [{ text: ctxNarrative(values, mcResults) }] }],
     generationConfig: { maxOutputTokens: 1024 },
-  });
+  }, usageBucket);
   return { text: getText(res) };
 }
 
-async function handleRoth(apiKey, values) {
-  const ctx = ctxRoth(values);
+async function handleRoth(apiKey, values, usageBucket) {
   const res = await geminiFnCall(apiKey, MODEL_STANDARD, 512,
     "You are Aira. Evaluate Roth conversion strategy. Consider IRMAA tiers, SECURE 2.0 RMD ages, bracket management. No tax advice.",
-    ctx,
+    ctxRoth(values),
     {
       name: "roth_strategy",
       description: "Evaluate Roth conversion strategy",
@@ -226,17 +227,17 @@ async function handleRoth(apiKey, values) {
         },
         required: ["assessment", "conversionAdvice", "suggestedAnnualAmount"],
       },
-    }
+    },
+    usageBucket
   );
   return getFnArgs(res);
 }
 
-async function handleWithdrawal(apiKey, values, mcResults) {
-  const ctx = ctxWithdrawal(values, mcResults);
+async function handleWithdrawal(apiKey, values, mcResults, usageBucket) {
   const strategies = ["gk","fixed","vanguard","risk","kitces","vpw","cape","endowment","one_n","ninety_five_rule"];
   const res = await geminiFnCall(apiKey, MODEL_FAST, 256,
     `You are Aira. Pick the best withdrawal strategy. Available: ${strategies.join(", ")}.`,
-    ctx,
+    ctxWithdrawal(values, mcResults),
     {
       name: "withdrawal_rec",
       description: "Recommend a withdrawal strategy",
@@ -249,13 +250,13 @@ async function handleWithdrawal(apiKey, values, mcResults) {
         },
         required: ["recommended", "reason", "projectedRateImprovement"],
       },
-    }
+    },
+    usageBucket
   );
   return getFnArgs(res);
 }
 
-async function handleChat(apiKey, values, mcResults, question, history) {
-  const ctx = ctxNarrative(values, mcResults);
+async function handleChat(apiKey, values, mcResults, question, history, usageBucket) {
   const contents = [
     ...(history || []).map(m => ({
       role: m.role === "assistant" ? "model" : "user",
@@ -264,17 +265,116 @@ async function handleChat(apiKey, values, mcResults, question, history) {
     { role: "user", parts: [{ text: question }] },
   ];
   const res = await callGemini(apiKey, MODEL_STANDARD, {
-    systemInstruction: { parts: [{ text: `You are Aira, a fiduciary retirement planning AI. Answer questions about this plan. Be concise and honest about uncertainty. No legal advice.\n\nPLAN:\n${ctx}` }] },
+    systemInstruction: { parts: [{ text: `You are Aira, a fiduciary retirement planning AI. Answer questions about this plan. Be concise and honest about uncertainty. No legal advice.\n\nPLAN:\n${ctxNarrative(values, mcResults)}` }] },
     contents,
     generationConfig: { maxOutputTokens: 768 },
-  });
+  }, usageBucket);
   return { text: getText(res) };
+}
+
+async function handleTimeSensitive(apiKey, values, mcResults, usageBucket) {
+  const age       = values.currentAge || 56;
+  const retireAge = values.retireAge  || 65;
+  const state     = values.stateOfResidence;
+  const hasSS     = (values.ssb || 0) > 0 || age > 50;
+  const hasPreTax = (values.accounts || []).some(a => a.category === "pretax" && (a.balance || 0) > 0);
+
+  const topics = [
+    "IRS 401k IRA HSA contribution limits catch-up amounts 2026",
+    "IRS federal income tax brackets standard deduction 2026",
+    "long-term capital gains tax rates income thresholds 2026",
+    "SECURE 2.0 Act provisions effective 2025 2026 key retirement changes",
+    "current US CPI inflation rate Federal Reserve interest rate 2026",
+    "10-year Treasury yield I-Bond composite rate 2026",
+    "safe withdrawal rate 4 percent rule research update 2025 2026",
+    ...(hasSS ? [
+      "Social Security COLA 2026 benefit increase announcement",
+      "Social Security trust fund solvency depletion projection 2026",
+    ] : []),
+    ...((age >= 58 || retireAge <= 67) ? [
+      "Medicare Part B premium 2026 IRMAA income surcharge thresholds",
+    ] : []),
+    ...(hasPreTax && (age >= 68 || retireAge >= 70) ? [
+      "required minimum distribution RMD age 73 rules 2026 SECURE 2.0",
+    ] : []),
+    "Roth IRA conversion strategy 2026 tax bracket optimization",
+    ...(state ? [
+      `${state} state income tax retirement income IRA 401k pension Social Security exemption 2026`,
+      `${state} property tax exemption senior retiree 2026`,
+    ] : []),
+  ];
+
+  const profileCtx = [
+    `Age: ${age} | Retire: ${retireAge} | State: ${state || "unknown"}`,
+    `Portfolio: $${(values.port || 0).toLocaleString()} | Spending: $${(values.sp || 0).toLocaleString()}/yr`,
+    `Filing: ${values.filingStatus || "mfj"} | SS: $${(values.ssb || 0).toLocaleString()}/yr at ${values.ssAge}`,
+    `MC success: ${mcResults ? (mcResults.rate * 100).toFixed(1) : "N/A"}%`,
+  ].join("\n");
+
+  const prompt = `You are Aira, a fiduciary retirement planning AI.
+
+USER PROFILE:
+${profileCtx}
+
+Use Google Search to find CURRENT information on these topics. Only create a card when you find specific current numbers actionable for this user.
+
+SEARCH TOPICS:
+${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+
+Return ONLY a valid JSON array between <cards> and </cards> tags:
+[{ "priority": "red|yellow|green", "category": "string", "action": "string", "reason": "string", "deadline": "string", "aiNote": "current number/threshold found", "source": "website name" }]
+
+Rules: real current numbers only, max 12 cards, skip topics with only general knowledge.
+
+<cards>
+</cards>`;
+
+  const res = await callGemini(apiKey, MODEL_STANDARD, {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    tools:    [{ google_search: {} }],
+    generationConfig: { maxOutputTokens: 2048 },
+  }, usageBucket);
+
+  const text  = res.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+  const match = text.match(/<cards>([\s\S]*?)<\/cards>/);
+  if (!match) return { cards: [] };
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    const cards  = (Array.isArray(parsed) ? parsed : []).map((c, i) => ({
+      ...c, id: `live-${i}`, isLiveData: true, aiGenerated: true,
+    }));
+    return { cards };
+  } catch { return { cards: [] }; }
+}
+
+// ─── D1 credit deduction ──────────────────────────────────────────────────────
+
+async function deductD1Credits(db, customerId, rawTokens) {
+  const creditCost = Math.ceil(rawTokens / RAW_TOKENS_PER_CREDIT);
+  if (creditCost <= 0) return 0;
+
+  await db.batch([
+    // Deduct, floored at 0 — prevents negative balances
+    db.prepare(`
+      UPDATE customers
+      SET credits    = MAX(0, credits - ?),
+          updated_at = unixepoch()
+      WHERE stripe_customer_id = ?
+    `).bind(creditCost, customerId),
+    // Audit log
+    db.prepare(`
+      INSERT INTO credit_transactions (customer_id, type, amount, raw_tokens)
+      VALUES (?, 'deduct', ?, ?)
+    `).bind(customerId, -creditCost, rawTokens),
+  ]);
+
+  return creditCost;
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
-export async function onRequestOptions() {
-  return new Response(null, { status: 200, headers: CORS });
+export function onRequestOptions() {
+  return handleOptions();
 }
 
 export async function onRequestPost({ request, env }) {
@@ -282,26 +382,73 @@ export async function onRequestPost({ request, env }) {
   try { body = await request.json(); }
   catch { return json({ error: "Invalid JSON" }, 400); }
 
-  const apiKey = body.apiKey || env.GEMINI_API_KEY;
+  // ── Auth: try to extract JWT for billing mode ──────────────────────────────
+  const authHeader = request.headers.get("Authorization") || "";
+  let customerId  = null;
+
+  if (authHeader.startsWith("Bearer ") && env.JWT_SECRET) {
+    try {
+      const payload = await verifyJWT(authHeader.slice(7), env.JWT_SECRET);
+      customerId = payload.customerId;
+    } catch {
+      return json({ error: "Invalid or expired token" }, 401);
+    }
+  }
+
+  // ── API key: billing uses server key, BYOK uses request/env key ───────────
+  const apiKey = customerId
+    ? env.GEMINI_API_KEY
+    : (body.apiKey || env.GEMINI_API_KEY);
+
   if (!apiKey) {
     return json({ error: "No API key — add your Gemini API key in Profile → Assumptions" }, 500);
+  }
+
+  // ── Pre-call balance check (billing mode only) ─────────────────────────────
+  if (customerId && env.DB) {
+    const customer = await env.DB.prepare(
+      "SELECT credits FROM customers WHERE stripe_customer_id = ?"
+    ).bind(customerId).first();
+
+    if (!customer || customer.credits < MIN_CREDITS_GUARD) {
+      return json({ error: "Insufficient AiRA credits. Please purchase a credit pack to continue." }, 402);
+    }
   }
 
   const { type, values, mcResults, question, history, cards } = body;
   if (!type || !values) return json({ error: "Missing type or values" }, 400);
 
+  // ── Gemini call ───────────────────────────────────────────────────────────
+  const usageBucket = []; // per-request usage accumulator
+  let result;
+
   try {
     switch (type) {
-      case "actionplan": return json(await handleActionPlan(apiKey, values, mcResults, cards || []));
-      case "health":     return json(await handleHealth(apiKey, values, mcResults));
-      case "narrative":  return json(await handleNarrative(apiKey, values, mcResults));
-      case "roth":       return json(await handleRoth(apiKey, values));
-      case "withdrawal": return json(await handleWithdrawal(apiKey, values, mcResults));
-      case "chat":       return json(await handleChat(apiKey, values, mcResults, question, history));
-      default:           return json({ error: `Unknown type: ${type}` }, 400);
+      case "actionplan":    result = await handleActionPlan(apiKey, values, mcResults, cards || [], usageBucket); break;
+      case "health":        result = await handleHealth(apiKey, values, mcResults, usageBucket);                  break;
+      case "narrative":     result = await handleNarrative(apiKey, values, mcResults, usageBucket);               break;
+      case "roth":          result = await handleRoth(apiKey, values, usageBucket);                               break;
+      case "withdrawal":    result = await handleWithdrawal(apiKey, values, mcResults, usageBucket);              break;
+      case "chat":          result = await handleChat(apiKey, values, mcResults, question, history, usageBucket); break;
+      case "timesensitive": result = await handleTimeSensitive(apiKey, values, mcResults, usageBucket);           break;
+      default:              return json({ error: `Unknown type: ${type}` }, 400);
     }
   } catch (err) {
-    console.error(err);
+    console.error(`[analyze] ${type} failed:`, err.message);
     return json({ error: err.message }, 502);
   }
+
+  // ── Post-call credit deduction (billing mode only) ────────────────────────
+  let creditsUsed = 0;
+  if (customerId && env.DB && usageBucket.length > 0) {
+    const rawTokens = usageBucket.reduce((sum, u) => sum + (u.totalTokenCount || 0), 0);
+    try {
+      creditsUsed = await deductD1Credits(env.DB, customerId, rawTokens);
+    } catch (e) {
+      // Non-fatal: user still gets their response; log the accounting failure
+      console.error("[analyze] D1 deduction failed:", e.message);
+    }
+  }
+
+  return json({ ...result, _credits_used: creditsUsed });
 }
