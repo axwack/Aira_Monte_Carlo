@@ -64,7 +64,8 @@ import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
-import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
+import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
+import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -5519,17 +5520,397 @@ function generateActions({
     return order[a.priority] - order[b.priority];
   });
 }
+// ─── ActionTile ───────────────────────────────────────────────────────────────
+const PRIORITY_COLOR = {
+  red:    { border: "#ef4444", bg: "rgba(239,68,68,0.07)",  label: "#f87171", dot: "🔴" },
+  yellow: { border: "#f59e0b", bg: "rgba(245,158,11,0.07)", label: "#fbbf24", dot: "🟡" },
+  green:  { border: "#10b981", bg: "rgba(16,185,129,0.07)", label: "#34d399", dot: "🟢" },
+};
+
+function ActionTile({ card }) {
+  const [open, setOpen] = useState(false);
+  const C = PRIORITY_COLOR[card.priority] || PRIORITY_COLOR.yellow;
+  return (
+    <div
+      onClick={() => setOpen(v => !v)}
+      style={{
+        background:   C.bg,
+        border:       `1px solid rgba(255,255,255,0.08)`,
+        borderLeft:   `3px solid ${C.border}`,
+        borderRadius: 8,
+        padding:      "11px 13px",
+        cursor:       "pointer",
+        display:      "flex",
+        flexDirection:"column",
+        gap:          6,
+        minHeight:    110,
+        transition:   "box-shadow 0.15s",
+      }}
+      onMouseEnter={e => e.currentTarget.style.boxShadow = `0 0 0 1px ${C.border}40`}
+      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+    >
+      <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: C.label, display: "flex", alignItems: "center", gap: 5 }}>
+        {card.category}
+        {card.isLiveData  && <span style={{ color: "#22d3ee", fontSize: 9 }}>🌐 LIVE</span>}
+        {card.aiGenerated && !card.isLiveData && <span style={{ color: "#a78bfa", fontSize: 9 }}>✦ AI</span>}
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#f1f5f9", lineHeight: 1.45, flex: 1 }}>
+        {card.action}
+      </div>
+      <div style={{ fontSize: 10, color: "#475569", display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 6 }}>
+        <span>⏱ {card.deadline}</span>
+        {card.aiNote && <span style={{ color: "#6366f1", fontSize: 9 }}>▾ insight</span>}
+      </div>
+      {card.aiNote && (
+        <div style={{ fontSize: 10, color: "#a78bfa", lineHeight: 1.45, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
+          🤖 {card.aiNote}
+        </div>
+      )}
+      {card.source && (
+        <div style={{ fontSize: 9, color: "#22d3ee", marginTop: 2 }}>📡 {card.source}</div>
+      )}
+    </div>
+  );
+}
+
+// ─── Milestone timeline ───────────────────────────────────────────────────────
+function buildMilestones(params, rmdAge) {
+  const age       = params?.currentAge  || 56;
+  const retireAge = params?.retireAge   || 65;
+  const ssAge     = params?.ssAge       || 67;
+  const yr        = new Date().getFullYear();
+  const hasPreTax = (params?.accounts || []).some(a => a.category === "pretax" && (a.balance || 0) > 0);
+  const rmd       = rmdAge || getRmdStartAge({ currentAge: age });
+
+  const all = [
+    {
+      age: age, label: "Now", year: yr,
+      items: [
+        "Review your withdrawal rate — target below 4%",
+        "Ensure emergency fund covers 6 months of expenses",
+        "Verify beneficiary designations on all accounts",
+      ],
+    },
+    age < 50 && {
+      age: 50, label: "Catch-Up Contributions", year: yr + (50 - age),
+      items: [
+        "401k limit increases by $7,500/yr (catch-up)",
+        "IRA limit increases by $1,000/yr",
+        "Review asset allocation — consider gradual de-risking",
+      ],
+    },
+    age < 55 && {
+      age: 55, label: "Age 55 Benefits", year: yr + (55 - age),
+      items: [
+        "HSA catch-up increases by $1,000/yr",
+        "Rule of 55 — penalty-free 401k withdrawals if retiring this year",
+        "Start projecting Medicare bridge costs if retiring before 65",
+      ],
+    },
+    age < 60 && {
+      age: 60, label: "Super Catch-Up (SECURE 2.0)", year: yr + (60 - age),
+      items: [
+        "401k limit rises to $34,750/yr for ages 60–63 only",
+        "Maximize this 4-year window — largest single tax-shelter opportunity",
+        "Consider Roth conversion ladder if retiring at 60",
+      ],
+    },
+    {
+      age: retireAge, label: "Retirement", year: yr + (retireAge - age),
+      items: [
+        "Begin tax-optimal withdrawal: HSA first (medical) → taxable → pre-tax → Roth last",
+        "Shift to inflation-adjusted withdrawal strategy",
+        retireAge < 65 ? `Bridge to Medicare — budget for ACA marketplace until age 65` : "Enroll in Medicare Parts A and B",
+        `Social Security: ${ssAge > retireAge ? `consider delaying to age ${ssAge} for higher benefit` : "claim at retirement"}`,
+      ],
+    },
+    retireAge < 65 && {
+      age: 65, label: "Medicare Enrollment", year: yr + (65 - age),
+      items: [
+        "Enroll during 7-month Initial Enrollment Period (3 months before 65)",
+        "IRMAA surcharge if income >$103K single or >$206K MFJ",
+        "Stop HSA contributions at 65 (Medicare makes you ineligible)",
+        "Compare Original Medicare vs Medicare Advantage",
+      ],
+    },
+    ssAge !== retireAge && {
+      age: ssAge, label: `Social Security — Age ${ssAge}`, year: yr + (ssAge - age),
+      items: [
+        `Claim SS benefit — delayed past FRA earns +8%/yr in higher lifetime income`,
+        "Coordinate SS timing with Roth conversions to minimize IRMAA",
+        "File for Medicare 3 months before 65 even if delaying SS",
+      ],
+    },
+    hasPreTax && age < rmd && {
+      age: rmd, label: "Required Minimum Distributions", year: yr + (rmd - age),
+      items: [
+        `RMDs begin at age ${rmd} — distributions from 401k/IRA are fully taxable ordinary income`,
+        "25% penalty on any missed RMD amount",
+        `Do Roth conversions before age ${rmd} to shrink the pre-tax balance`,
+        "QCDs (qualified charitable distributions) offset RMDs tax-free if charitably inclined",
+      ],
+    },
+  ].filter(Boolean).sort((a, b) => a.age - b.age);
+
+  return all;
+}
+
+function MilestonesSection({ params, rmdAge }) {
+  const [open, setOpen] = useState(false);
+  const milestones = buildMilestones(params, rmdAge);
+  if (!milestones.length) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          background: "none", border: "none", cursor: "pointer", padding: 0, width: "100%",
+          marginBottom: open ? 12 : 0,
+        }}
+      >
+        <span style={{ fontSize: 11, color: "#6366f1", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6366f1" }}>
+          📅 Age Milestones
+        </span>
+        <span style={{ fontSize: 10, color: "#475569", marginLeft: 4 }}>({milestones.length} milestones)</span>
+      </button>
+      {open && (
+      <div style={{ position: "relative" }}>
+        {milestones.map((m, idx) => (
+          <div key={m.age} style={{ display: "flex", gap: 14, marginBottom: 14 }}>
+            {/* Timeline spine */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 36, flexShrink: 0 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: "50%",
+                background: "rgba(99,102,241,0.15)", border: "2px solid rgba(99,102,241,0.4)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 700, color: "#818cf8", flexShrink: 0,
+              }}>
+                {m.age === (params?.currentAge || 56) ? "Now" : m.age}
+              </div>
+              {idx < milestones.length - 1 && (
+                <div style={{ width: 2, flex: 1, minHeight: 16, background: "rgba(99,102,241,0.2)", marginTop: 4 }} />
+              )}
+            </div>
+            {/* Milestone card */}
+            <div style={{
+              flex: 1, background: "rgba(99,102,241,0.04)", border: "1px solid rgba(99,102,241,0.15)",
+              borderRadius: 9, padding: "10px 14px", marginBottom: 2,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc", marginBottom: 6 }}>
+                {m.label}
+                <span style={{ fontWeight: 400, color: "#475569", marginLeft: 8 }}>{m.year}</span>
+              </div>
+              {m.items.map((item, j) => (
+                <div key={j} style={{ fontSize: 11, color: "#94a3b8", marginBottom: 3, display: "flex", gap: 6 }}>
+                  <span style={{ color: "#6366f1", flexShrink: 0 }}>•</span>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Card step lookup ─────────────────────────────────────────────────────────
+function getCardSteps(card) {
+  if (card.steps?.length) return card.steps;
+  const a = (card.action   || "").toLowerCase();
+  const c = (card.category || "").toLowerCase();
+  if (a.includes("roth") || c.includes("roth")) return [
+    "Calculate your current marginal tax bracket for this year",
+    "Convert up to the top of your bracket — stop before jumping to the next",
+    "Model the conversion in AiRA's Tax Room tab to see the IRMAA impact",
+    "Pay the conversion tax from taxable cash, not from the IRA itself",
+  ];
+  if (a.includes("withdrawal rate") || a.includes("swr") || a.includes("spending")) return [
+    "Target a sustainable rate — 3.5–4% is the historical safe zone",
+    "Switch to a dynamic strategy (Guardrails, VPW) to flex with markets",
+    "Build a 1–2 year cash buffer so you never sell equities in a downturn",
+    "Re-run Monte Carlo in AiRA after any spending or portfolio change",
+  ];
+  if (a.includes("social security") || c.includes("social security")) return [
+    "Get your personalized estimate at SSA.gov → my Social Security",
+    "Each year of delay past 62 adds roughly 6–8% to your monthly benefit",
+    "Run the breakeven analysis — typically breaks even around age 79–82",
+    "Coordinate timing with your spouse to maximize survivor benefit",
+  ];
+  if (a.includes("rmd") || a.includes("required minimum")) return [
+    "Calculate this year's RMD using the IRS Uniform Lifetime Table",
+    "Do Roth conversions now to reduce the pre-tax balance before RMDs begin",
+    "Set up automatic distributions so you never miss the year-end deadline",
+    "Consider QCDs (Qualified Charitable Distributions) to offset RMD income tax-free",
+  ];
+  if (a.includes("irmaa") || a.includes("medicare")) return [
+    "Check the IRMAA brackets — Medicare uses your MAGI from 2 years ago",
+    "Keep MAGI below the first cliff ($103K single / $206K MFJ) when possible",
+    "Roth conversions this year affect Medicare premiums in two years — plan ahead",
+    "If income dropped (retirement, death of spouse), file for IRMAA appeal (SSA-44)",
+  ];
+  if (a.includes("emergency") || a.includes("cash reserve") || a.includes("liquidity")) return [
+    "Target 6 months of essential expenses in a high-yield savings account",
+    "Current HYSA rates are 4%+ — don't leave this in a checking account",
+    "Keep this separate from your investment portfolio — don't count brokerage cash",
+    "Replenish immediately after any large withdrawal",
+  ];
+  if (a.includes("beneficiar")) return [
+    "Log into each account (401k, IRA, life insurance) and check current beneficiaries",
+    "Ensure primary and contingent beneficiaries are named — don't leave it blank",
+    "Update after major life events: marriage, divorce, death, new children",
+    "Confirm beneficiary designations override your will — they're separate legal documents",
+  ];
+  return [];
+}
+
+// ─── Action plan row ──────────────────────────────────────────────────────────
+function ActionPlanRow({ card, isSelected, onClick }) {
+  const C = PRIORITY_COLOR[card.priority] || PRIORITY_COLOR.yellow;
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display:      "flex",
+        alignItems:   "center",
+        gap:          12,
+        padding:      "10px 14px",
+        borderRadius: 8,
+        background:   isSelected ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)",
+        border:       `1px solid ${isSelected ? "rgba(99,102,241,0.4)" : "rgba(255,255,255,0.06)"}`,
+        cursor:       "pointer",
+        transition:   "all 0.12s",
+        marginBottom: 4,
+      }}
+      onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+      onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
+    >
+      <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.border, flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.label, marginBottom: 1 }}>
+          {card.category}
+          {card.isLiveData  && <span style={{ color: "#22d3ee",  marginLeft: 6, fontSize: 9 }}>🌐 LIVE</span>}
+          {card.aiGenerated && !card.isLiveData && <span style={{ color: "#a78bfa", marginLeft: 6, fontSize: 9 }}>✦ AI</span>}
+        </div>
+        <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {card.action}
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: "#475569", flexShrink: 0, whiteSpace: "nowrap" }}>{card.deadline}</div>
+      <div style={{ fontSize: 14, color: isSelected ? "#818cf8" : "#334155", flexShrink: 0 }}>›</div>
+    </div>
+  );
+}
+
+// ─── Card detail panel ────────────────────────────────────────────────────────
+function CardDetailPanel({ card, onClose }) {
+  const C     = PRIORITY_COLOR[card.priority] || PRIORITY_COLOR.yellow;
+  const steps = getCardSteps(card);
+  const label = card.priority === "red" ? "CRITICAL" : card.priority === "yellow" ? "IMPORTANT" : "ON TRACK";
+
+  return (
+    <div style={{
+      background:   "rgba(15,23,42,0.98)",
+      border:       `1px solid ${C.border}40`,
+      borderTop:    `3px solid ${C.border}`,
+      borderRadius: 10,
+      padding:      "20px",
+      position:     "sticky",
+      top:          8,
+      maxHeight:    "80vh",
+      overflowY:    "auto",
+    }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <div style={{ flex: 1, paddingRight: 12 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            <span style={{
+              background: C.bg, border: `1px solid ${C.border}`, color: C.label,
+              borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 700,
+            }}>{label}</span>
+            <span style={{
+              background: "rgba(255,255,255,0.06)", color: "#94a3b8",
+              borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 600,
+            }}>{card.category}</span>
+            {card.isLiveData  && <span style={{ background: "rgba(6,182,212,0.1)", color: "#22d3ee", borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>🌐 LIVE</span>}
+            {card.aiGenerated && !card.isLiveData && <span style={{ background: "rgba(167,139,250,0.1)", color: "#a78bfa", borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>✦ AI</span>}
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.4 }}>{card.action}</div>
+        </div>
+        <button onClick={onClose} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 20, lineHeight: 1, flexShrink: 0 }}>×</button>
+      </div>
+
+      {/* Details */}
+      {card.reason && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#475569", marginBottom: 6 }}>DETAILS</div>
+          <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.65 }}>{card.reason}</div>
+        </div>
+      )}
+
+      {/* What to do */}
+      {steps.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#475569", marginBottom: 8 }}>WHAT TO DO</div>
+          {steps.map((step, i) => (
+            <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 700, color: "#818cf8",
+              }}>{i + 1}</div>
+              <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.55, paddingTop: 2 }}>{step}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* AI insight */}
+      {card.aiNote && (
+        <div style={{
+          background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)",
+          borderRadius: 8, padding: "10px 14px", marginBottom: 14,
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#818cf8", marginBottom: 4 }}>🤖 AI INSIGHT</div>
+          <div style={{ fontSize: 12, color: "#a78bfa", lineHeight: 1.55 }}>{card.aiNote}</div>
+        </div>
+      )}
+
+      {/* Source */}
+      {card.source && (
+        <div style={{ fontSize: 11, color: "#22d3ee", marginBottom: 12 }}>📡 Source: {card.source}</div>
+      )}
+
+      {/* Deadline */}
+      <div style={{ fontSize: 12, color: "#475569", display: "flex", alignItems: "center", gap: 6, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        ⏱ <span style={{ color: "#64748b" }}>{card.deadline}</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── ActionPlanTab ────────────────────────────────────────────────────────────
-function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
+function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdAge: rmdAgeProp }) {
   const currentYear = new Date().getFullYear();
   const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
   const daysToRetire = Math.max(0,
     Math.floor((new Date(`${retireYear}-03-15`) - new Date()) / 86400000)
   );
 
-  const [cards, setCards]         = useState(null);
-  const [loadingAI, setLoadingAI] = useState(false);
-  const [aiError, setAiError]     = useState(null);
+  const [cards, setCards]               = useState(null);
+  const [loadingAI, setLoadingAI]       = useState(false);
+  const [aiError, setAiError]           = useState(null);
+  const [showBuyModal, setShowBuyModal] = useState(false);
+  const [liveCards, setLiveCards]       = useState(null);
+  const [loadingLive, setLoadingLive]   = useState(false);
+  const [liveError, setLiveError]       = useState(null);
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [filterPriority, setFilter]     = useState("all");
+  const creditBalance                    = useCreditBalance();
 
   const runAI = async (baseCards) => {
     const { runAIActionPlan, profileIsComplete } = await import("./ai/ai-analysis.js");
@@ -5551,9 +5932,30 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
       setCards(merged);
     } catch (e) {
       console.error("[AI] action plan error:", e);
-      setAiError(e.message || "AI unavailable — check that your Gemini API_KEY is set in the UI in the Profile Section.");
+      if (BILLING_ENABLED && e.message?.toLowerCase().includes("credit")) {
+        setShowBuyModal(true);
+      } else {
+        setAiError(e.message || "AI unavailable — check that your Gemini API_KEY is set in the UI in the Profile Section.");
+      }
     } finally {
       setLoadingAI(false);
+    }
+  };
+
+  const runLiveSearch = async () => {
+    const { generateTimeSensitiveCards } = await import("./ai/ai-analysis.js");
+    setLoadingLive(true);
+    setLiveError(null);
+    try {
+      const found = await generateTimeSensitiveCards(
+        { ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel },
+        r90
+      );
+      setLiveCards(found);
+    } catch (e) {
+      setLiveError(e.message);
+    } finally {
+      setLoadingLive(false);
     }
   };
 
@@ -5575,16 +5977,19 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   // Display AI-annotated cards if available, else base cards
   const displayCards = cards || baseCards;
 
-  // Gate: AI button only enabled when profile has real data AND a Gemini key is present
+  // Gate: AI button only enabled when profile has real data AND either credits (billing) or Gemini key (BYOK)
   const hasGeminiKey = !!(assumptions?.geminiApiKey?.trim());
   const profileReady = (params.port || 0) > 50_000 &&
     (params.sp  || 0) > 0 &&
     r90?.rate > 0 &&
     (params.accounts || []).some(a => (a.balance || 0) > 0);
-  const canRunAI = !loadingAI && !cards && profileReady && hasGeminiKey;
+  const hasAiAccess  = BILLING_ENABLED ? creditBalance >= 5 : hasGeminiKey;
+  const canRunAI     = !loadingAI && !cards && profileReady && hasAiAccess;
   const aiDisabledReason = !profileReady
     ? "Complete your profile and run Monte Carlo first"
-    : !hasGeminiKey
+    : BILLING_ENABLED && creditBalance < 5
+    ? "Buy AiRA credits to run AI analysis"
+    : !hasGeminiKey && !BILLING_ENABLED
     ? "Add a free Gemini API key in Profile → Assumptions to enable AI"
     : "Run AI analysis on your plan";
 
@@ -5597,51 +6002,89 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 
-      {/* AI Analyze button */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-        <button
-          onClick={() => runAI(baseCards)}
-          disabled={!canRunAI}
-          title={aiDisabledReason}
-          style={{
-            padding: "8px 18px",
-            borderRadius: 8,
-            border: "none",
-            background: canRunAI
-              ? "linear-gradient(135deg, #7c3aed, #a78bfa)"
-              : "rgba(255,255,255,0.05)",
-            color: canRunAI ? "white" : "#475569",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: canRunAI ? "pointer" : "not-allowed",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            boxShadow: canRunAI ? "0 2px 8px rgba(124,58,237,0.3)" : "none",
-            transition: "all 0.2s",
-          }}
-        >
-          {loadingAI ? "Analyzing…" : cards ? "✓ AI Applied" : "🤖 Run AI Analysis"}
-        </button>
-        {loadingAI && <span style={{ color: "#a78bfa", fontSize: 12 }}>Aira is thinking…</span>}
-        {!loadingAI && !cards && profileReady && !hasGeminiKey && (
-          <span style={{ fontSize: 11, color: "#fbbf24" }}>
-            🔒 Add a free Gemini key in Profile → Assumptions ·{" "}
-            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "#fbbf24", textDecoration: "underline" }}>
-              Get one here
-            </a>
-          </span>
-        )}
-        {(cards || aiError) && !loadingAI && (
+      {/* ── AI controls ────────────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, flexWrap: "wrap" }}>
+
+        {/* Left — action button + status */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
           <button
-            onClick={() => { setCards(null); setAiError(null); }}
-            style={{ fontSize: 11, color: "#64748b", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+            onClick={() => runAI(baseCards)}
+            disabled={!canRunAI}
+            title={aiDisabledReason}
+            style={{
+              padding: "8px 18px", borderRadius: 8, border: "none", flexShrink: 0,
+              background: canRunAI ? "linear-gradient(135deg, #7c3aed, #a78bfa)" : "rgba(255,255,255,0.05)",
+              color: canRunAI ? "white" : "#475569",
+              fontSize: 13, fontWeight: 600,
+              cursor: canRunAI ? "pointer" : "not-allowed",
+              display: "flex", alignItems: "center", gap: 6,
+              boxShadow: canRunAI ? "0 2px 8px rgba(124,58,237,0.3)" : "none",
+              transition: "all 0.2s",
+            }}
           >
-            Reset
+            {loadingAI ? "Analyzing…" : cards ? "✓ AI Applied" : "🤖 Run AI Analysis"}
           </button>
-        )}
-        <AiUsageBadge style={{ marginLeft: "auto" }} />
+
+          {loadingAI && (
+            <span style={{ color: "#a78bfa", fontSize: 12 }}>Aira is thinking…</span>
+          )}
+          {!loadingAI && !cards && profileReady && !hasAiAccess && !BILLING_ENABLED && (
+            <span style={{ fontSize: 11, color: "#fbbf24" }}>
+              🔒 Add a free Gemini key in Profile → Assumptions ·{" "}
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "#fbbf24", textDecoration: "underline" }}>
+                Get one here
+              </a>
+            </span>
+          )}
+          {(cards || aiError) && !loadingAI && (
+            <button
+              onClick={() => { setCards(null); setAiError(null); }}
+              style={{ fontSize: 11, color: "#64748b", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+            >
+              Reset
+            </button>
+          )}
+        </div>
+
+        {/* Right — credit panel */}
+        <div style={{
+          display:      "flex",
+          alignItems:   "center",
+          gap:          16,
+          background:   creditBalance < 500 ? "rgba(239,68,68,0.06)" : "rgba(124,58,237,0.06)",
+          border:       `1px solid ${creditBalance < 500 ? "rgba(239,68,68,0.25)" : "rgba(124,58,237,0.2)"}`,
+          borderRadius: 10,
+          padding:      "10px 16px",
+          flexShrink:   0,
+        }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+              AiRA Credits
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: creditBalance < 500 ? "#f87171" : "#e2e8f0", lineHeight: 1 }}>
+              {creditBalance.toLocaleString()}
+            </div>
+          </div>
+          <button
+            onClick={() => setShowBuyModal(true)}
+            style={{
+              background:   "linear-gradient(135deg, #7c3aed, #a78bfa)",
+              border:       "none", color: "white",
+              borderRadius: 8, padding: "8px 16px",
+              fontSize:     13, fontWeight: 600, cursor: "pointer",
+              boxShadow:    "0 2px 8px rgba(124,58,237,0.3)",
+              whiteSpace:   "nowrap",
+            }}
+          >
+            💳 Buy Credits
+          </button>
+        </div>
       </div>
+
+      {/* Session token usage — shown for BYOK users after any AI call */}
+      <AiUsageBadge style={{ marginBottom: 4 }} />
+
+      {showBuyModal && <CreditPackModal onClose={() => setShowBuyModal(false)} />}
 
       {aiError && (
         <div style={{
@@ -5713,55 +6156,118 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
         );
       })()}
 
-      {/* Action cards */}
-      {displayCards.map((a, i) => {
-        const c = COLORS[a.priority] || COLORS.yellow;
+      {/* ── Summary bar + filter ─────────────────────────────────────────────── */}
+      {(() => {
+        const allCards     = [...displayCards, ...(liveCards || [])];
+        const counts       = { all: allCards.length, red: 0, yellow: 0, green: 0 };
+        allCards.forEach(c => { if (counts[c.priority] !== undefined) counts[c.priority]++; });
+        const filtered     = filterPriority === "all" ? allCards : allCards.filter(c => c.priority === filterPriority);
+        const canLive      = !loadingLive && (!!(assumptions?.geminiApiKey?.trim()) || BILLING_ENABLED);
+
+        const FILTER_OPTS = [
+          { key: "all",    label: `All`,       count: counts.all,    color: "#64748b",  active: "#e2e8f0" },
+          { key: "red",    label: `Critical`,  count: counts.red,    color: "#f87171",  active: "#fca5a5" },
+          { key: "yellow", label: `Important`, count: counts.yellow, color: "#fbbf24",  active: "#fde68a" },
+          { key: "green",  label: `On Track`,  count: counts.green,  color: "#34d399",  active: "#6ee7b7" },
+        ];
+
         return (
-          <div
-            key={a.id || i}
-            style={{
-              background: c.bg,
-              border: `1px solid ${c.border}`,
-              borderRadius: 9,
-              padding: "11px 15px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 0,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: c.label, marginBottom: 3 }}>
-                  {c.badge} · {a.category}
-                  {a.aiGenerated && <span style={{ marginLeft: 6, color: "#a78bfa" }}>✦ AI</span>}
-                  {a.law && <span style={{ marginLeft: 6, color: "#475569", fontWeight: 400, textTransform: "none" }}>{a.law}</span>}
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
-                  {a.action}
-                </div>
-                <div style={{ fontSize: 11, color: "#64748b" }}>{a.reason}</div>
-              </div>
-              <div style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap", marginLeft: 16, paddingTop: 2 }}>
-                ⏱ {a.deadline}
-              </div>
+          <div>
+            {/* Filter row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+              {FILTER_OPTS.map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => { setFilter(f.key); setSelectedCard(null); }}
+                  style={{
+                    background:   filterPriority === f.key ? "rgba(255,255,255,0.08)" : "transparent",
+                    border:       `1px solid ${filterPriority === f.key ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.07)"}`,
+                    color:        filterPriority === f.key ? (f.key === "all" ? "#e2e8f0" : f.active) : f.color,
+                    borderRadius: 6, padding: "4px 12px",
+                    fontSize:     12, fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  {f.label} <span style={{ opacity: 0.7, fontSize: 11 }}>{f.count}</span>
+                </button>
+              ))}
+              <div style={{ flex: 1 }} />
+              <button
+                onClick={runLiveSearch}
+                disabled={!canLive}
+                title={canLive ? "Search the web for current IRS limits, SS COLA, Medicare premiums, and more" : "Add a Gemini API key to enable live search"}
+                style={{
+                  background:   !canLive ? "rgba(255,255,255,0.03)" : loadingLive ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg, #0e7490, #22d3ee)",
+                  border:       "none", color: !canLive || loadingLive ? "#475569" : "white",
+                  borderRadius: 7, padding: "5px 14px",
+                  fontSize:     12, fontWeight: 600, cursor: canLive && !loadingLive ? "pointer" : "not-allowed",
+                  whiteSpace:   "nowrap",
+                  boxShadow:    canLive && !loadingLive ? "0 2px 8px rgba(6,182,212,0.25)" : "none",
+                }}
+              >
+                {loadingLive ? "Searching…" : liveCards ? "🔄 Refresh Live" : "🌐 Live Updates"}
+              </button>
             </div>
 
-            {/* Inline AI note — only shown after AI analysis */}
-            {a.aiNote && (
-              <div style={{
-                marginTop: 8,
-                paddingTop: 8,
-                borderTop: `1px solid ${c.border}`,
-                fontSize: 11,
-                color: "#a78bfa",
-                lineHeight: 1.5,
-              }}>
-                🤖 {a.aiNote}
+            {liveError && <div style={{ fontSize: 11, color: "#f87171", marginBottom: 8 }}>⚠ {liveError}</div>}
+
+            {/* Master-detail layout */}
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+
+              {/* Left — list of rows */}
+              <div style={{ flex: selectedCard ? "0 0 46%" : 1, minWidth: 0, transition: "flex 0.2s" }}>
+                {filtered.length === 0 && (
+                  <div style={{ fontSize: 12, color: "#475569", padding: "20px 0", textAlign: "center" }}>
+                    No cards for this filter.
+                  </div>
+                )}
+
+                {/* Regular cards */}
+                {filtered.filter(c => !c.isLiveData).map((card, i) => (
+                  <ActionPlanRow
+                    key={card.id || i}
+                    card={card}
+                    isSelected={selectedCard?.id === card.id}
+                    onClick={() => setSelectedCard(prev => prev?.id === card.id ? null : card)}
+                  />
+                ))}
+
+                {/* Live cards — separated with a label */}
+                {filtered.some(c => c.isLiveData) && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#22d3ee", margin: "12px 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
+                      🌐 Live Updates
+                    </div>
+                    {filtered.filter(c => c.isLiveData).map((card, i) => (
+                      <ActionPlanRow
+                        key={card.id || i}
+                        card={card}
+                        isSelected={selectedCard?.id === card.id}
+                        onClick={() => setSelectedCard(prev => prev?.id === card.id ? null : card)}
+                      />
+                    ))}
+                  </>
+                )}
+
+                {/* Milestones — inside the list column */}
+                <div style={{ marginTop: 16 }}>
+                  <MilestonesSection params={params} rmdAge={rmdAgeProp} />
+                </div>
               </div>
-            )}
+
+              {/* Right — detail panel */}
+              {selectedCard && (
+                <div style={{ flex: "0 0 51%", minWidth: 0 }}>
+                  <CardDetailPanel
+                    card={selectedCard}
+                    onClose={() => setSelectedCard(null)}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         );
-      })}
+      })()}
+
     </div>
   );
 }
@@ -7121,6 +7627,15 @@ export default function AiRAForecaster() {
   const [showEngineCard, setShowEngineCard] = useState(
     () => localStorage.getItem("aira_engine_open") === "true"
   );
+  const [stripeToast, setStripeToast] = useState(null);
+  const stripeReturn = useStripeReturn();
+  useEffect(() => {
+    if (stripeReturn?.success) {
+      setStripeToast(`✓ ${stripeReturn.credits.toLocaleString()} credits added to your account`);
+      const t = setTimeout(() => setStripeToast(null), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [stripeReturn]);
   const isFirst = useRef(true);
 
   // Slider states – initialized from BLANK_PROFILE
@@ -8340,6 +8855,7 @@ export default function AiRAForecaster() {
                     r85={r85}
                     assumptions={assumptions}
                     mortgagePayoffYear={mortgagePayoffYear}
+                    rmdAge={rmdAge}
                   />
                 )}
                 {/* AiraAITab is dormant — integration target is INSIDE ActionPlanTab (above), not as its own tab. See memory/project_aira_ai_tab.md. */}
@@ -8441,6 +8957,19 @@ export default function AiRAForecaster() {
           </div>
         </div>
       </div>
+
+      {/* ── Stripe purchase success toast ── */}
+      {stripeToast && (
+        <div style={{
+          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          background: "rgba(16,185,129,0.95)", color: "white",
+          borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 600,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.4)", zIndex: 99999,
+          pointerEvents: "none",
+        }}>
+          {stripeToast}
+        </div>
+      )}
 
       {/* ── Terms of Service Modal ── */}
       {showTerms && (
