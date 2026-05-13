@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tax Treatment by Account Type — AiRA Reference</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: #0f1729;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 40px 20px 60px;
+    }
+    .page-shell { max-width: 860px; margin: 0 auto; }
+    .page-header {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 28px; padding-bottom: 16px;
+      border-bottom: 1px solid rgba(96,165,250,0.12);
+    }
+    .back-link {
+      font-size: 12px; color: #60a5fa; text-decoration: none;
+      display: flex; align-items: center; gap: 4px;
+      padding: 5px 10px; border: 1px solid rgba(96,165,250,0.25);
+      border-radius: 6px; background: rgba(96,165,250,0.08);
+    }
+    .back-link:hover { background: rgba(96,165,250,0.18); }
+    .title-block h1 { font-size: 16px; font-weight: 700; }
+    .title-block .sub { font-size: 11px; color: #475569; margin-top: 2px; }
+
+    .section-label {
+      font-size: 10px; font-weight: 600; letter-spacing: .07em;
+      text-transform: uppercase; color: #475569; margin: 1.4rem 0 .6rem;
+    }
+    .page-sub { font-size: 12px; color: #94a3b8; margin-bottom: 1.2rem; line-height: 1.6; }
+
+    .acct-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 1.4rem; }
+    @media (max-width: 640px) { .acct-grid { grid-template-columns: repeat(2,1fr); } }
+    .acct-card {
+      background: #182038; border-radius: 9px;
+      border: .5px solid rgba(96,165,250,0.12); padding: 11px 13px;
+    }
+    .acct-name { font-weight: 600; font-size: 13px; color: #e2e8f0; margin-bottom: 5px; }
+    .acct-detail { font-size: 11px; color: #94a3b8; line-height: 1.55; }
+
+    .legend-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: .9rem; }
+    .scroll-wrap { overflow-x: auto; border-radius: 8px; margin-bottom: 1.4rem; }
+    table { width: 100%; border-collapse: collapse; min-width: 520px; }
+    th {
+      font-size: 10px; font-weight: 500; color: #94a3b8; text-align: left;
+      padding: 7px 10px; border-bottom: 1px solid rgba(96,165,250,0.12); white-space: nowrap;
+    }
+    td {
+      font-size: 11px; padding: 7px 10px;
+      border-bottom: .5px solid rgba(96,165,250,0.08);
+      vertical-align: middle; color: #e2e8f0;
+    }
+    tr:last-child td { border-bottom: none; }
+    .rl { font-weight: 500; color: #94a3b8; }
+    .col-tax { background: rgba(96,165,250,0.04); }
+    .note { font-size: 10px; color: #475569; margin-top: 2px; display: block; }
+
+    .pill { display: inline-block; padding: 1px 7px; border-radius: 7px; font-size: 10px; font-weight: 500; white-space: nowrap; margin: 1px 0; }
+    .r0  { background: #0f3d2a; color: #34d39a; }
+    .rl2 { background: #1a3a10; color: #7dca4a; }
+    .rm  { background: #3a2a0a; color: #f59e0b; }
+    .rh  { background: #3a1a0a; color: #f97316; }
+    .rx  { background: #3a0a0a; color: #f87171; }
+    .rn  { background: #1e2d4d; color: #475569; }
+
+    .flag { background: rgba(239,159,39,0.08); border-left: 3px solid #EF9F27; border-radius: 0 7px 7px 0; padding: 10px 14px; margin-bottom: 10px; font-size: 12px; color: #e2e8f0; line-height: 1.6; }
+    .warn { background: rgba(226,75,74,0.08);  border-left: 3px solid #E24B4A; border-radius: 0 7px 7px 0; padding: 10px 14px; margin-bottom: 10px; font-size: 12px; color: #e2e8f0; line-height: 1.6; }
+  </style>
+</head>
+<body>
+<div class="page-shell">
+
+  <div class="page-header">
+    <a href="javascript:history.back()" class="back-link">← Back</a>
+    <div class="title-block">
+      <h1>Tax Treatment by Account Type</h1>
+      <div class="sub">AiRA Reference · Federal rules · State treatment varies — check your domicile</div>
+    </div>
+  </div>
+
+  <p class="page-sub">How the IRS treats each dollar depending on where it lives. The account wrapper — not the underlying holding — determines the tax rate.</p>
+
+  <p class="section-label">The four buckets</p>
+  <div class="acct-grid">
+    <div class="acct-card">
+      <div class="acct-name">Taxable brokerage</div>
+      <div class="acct-detail">After-tax contributions. Dividends and interest taxed each year. Gains taxed at sale. Most flexible — but most tax-exposed.</div>
+    </div>
+    <div class="acct-card">
+      <div class="acct-name">Pre-tax 401k / IRA</div>
+      <div class="acct-detail">Pre-tax contributions. Grows tax-deferred. Every dollar withdrawn is ordinary income — no capital gains treatment, ever.</div>
+    </div>
+    <div class="acct-card">
+      <div class="acct-name">Roth IRA</div>
+      <div class="acct-detail">After-tax contributions. Grows tax-free. Qualified withdrawals (59½ + 5-year rule) = 0% federal. No RMDs required.</div>
+    </div>
+    <div class="acct-card">
+      <div class="acct-name">HSA</div>
+      <div class="acct-detail">Pre-tax contributions. Tax-free growth and withdrawal for qualified medical. After 65 non-medical = ordinary income, like a 401k.</div>
+    </div>
+  </div>
+
+  <p class="section-label">Income type × bucket tax matrix</p>
+  <div class="legend-row">
+    <span class="pill r0">0%</span>
+    <span class="pill rl2">low &lt;10%</span>
+    <span class="pill rm">mid 10–20%</span>
+    <span class="pill rh">high 20–35%</span>
+    <span class="pill rx">max 35%+</span>
+    <span class="pill rn">N/A</span>
+  </div>
+
+  <div class="scroll-wrap">
+  <table>
+    <thead><tr>
+      <th style="width:22%">Income type</th>
+      <th style="width:22%" class="col-tax">Taxable brokerage<br><span class="note">(federal · state varies)</span></th>
+      <th style="width:20%">Pre-tax 401k / IRA<br><span class="note">at withdrawal</span></th>
+      <th style="width:18%">Roth IRA<br><span class="note">qualified</span></th>
+      <th style="width:18%">HSA<br><span class="note">qual. medical</span></th>
+    </tr></thead>
+    <tbody>
+    <tr>
+      <td class="rl">Long-term cap gains<br><span class="note">assets held &gt;1 year</span></td>
+      <td class="col-tax">
+        <span class="pill r0">0% fed</span> lower incomes<br>
+        <span class="pill rm">15% fed</span> middle incomes<br>
+        <span class="pill rh">20% fed</span> high incomes<br>
+        <span class="pill rm">+NIIT 3.8%</span> high MAGI<br>
+        <span class="note">State: some follow fed LTCG rates; others tax as ordinary income</span>
+      </td>
+      <td><span class="pill rh">ordinary income</span><br><span class="note">No LTCG treatment — ever.</span></td>
+      <td><span class="pill r0">0%</span><br><span class="note">No tax event at withdrawal.</span></td>
+      <td><span class="pill r0">0%</span><br><span class="note">No tax event if qualified medical.</span></td>
+    </tr>
+    <tr>
+      <td class="rl">Qualified dividends<br><span class="note">most US stocks, ETFs</span></td>
+      <td class="col-tax">
+        <span class="pill r0">0% fed</span> lower incomes<br>
+        <span class="pill rm">15% fed</span> middle incomes<br>
+        <span class="note">Same thresholds as LTCG · state varies</span>
+      </td>
+      <td><span class="pill rh">ordinary income</span><br><span class="note">Reinvested inside — deferred until withdrawal.</span></td>
+      <td><span class="pill r0">0%</span><br><span class="note">Compounds tax-free.</span></td>
+      <td><span class="pill r0">0%</span></td>
+    </tr>
+    <tr>
+      <td class="rl">Ordinary dividends<br><span class="note">REITs, non-qualified</span></td>
+      <td class="col-tax">
+        <span class="pill rh">ordinary income fed</span><br>
+        <span class="note">No preferential rate · state tax on top</span>
+      </td>
+      <td><span class="pill rh">ordinary income</span><br><span class="note">Deferred — paid at withdrawal, not now.</span></td>
+      <td><span class="pill r0">0%</span></td>
+      <td><span class="pill r0">0%</span></td>
+    </tr>
+    <tr>
+      <td class="rl">Interest income<br><span class="note">bonds, T-bills, CDs</span></td>
+      <td class="col-tax">
+        <span class="pill rh">ordinary income fed</span><br>
+        <span class="note">US Treasuries: state-exempt · other instruments vary</span>
+      </td>
+      <td><span class="pill rh">ordinary income</span><br><span class="note">Deferred until withdrawal.</span></td>
+      <td><span class="pill r0">0%</span></td>
+      <td><span class="pill r0">0%</span></td>
+    </tr>
+    <tr>
+      <td class="rl">Short-term cap gains<br><span class="note">assets held ≤1 year</span></td>
+      <td class="col-tax">
+        <span class="pill rx">ordinary income fed</span><br>
+        <span class="note">No preferential rate. Worst outcome in this bucket.</span>
+      </td>
+      <td><span class="pill rh">ordinary income</span><br><span class="note">Deferred.</span></td>
+      <td><span class="pill r0">0%</span></td>
+      <td><span class="pill r0">0%</span></td>
+    </tr>
+    <tr>
+      <td class="rl">Return of capital<br><span class="note">options-income funds</span></td>
+      <td class="col-tax">
+        <span class="pill r0">0% now</span><br>
+        <span class="note">Reduces cost basis. Taxed as LTCG/STCG at sale — deferred, not forgiven.</span>
+      </td>
+      <td><span class="pill rn">irrelevant</span><br><span class="note">Everything = ordinary income at withdrawal regardless.</span></td>
+      <td><span class="pill r0">0%</span></td>
+      <td><span class="pill r0">0%</span></td>
+    </tr>
+    <tr>
+      <td class="rl">Withdrawal / distribution<br><span class="note">spending in retirement</span></td>
+      <td class="col-tax">
+        <span class="pill r0">basis: 0%</span><br>
+        <span class="pill rl2">gains: LTCG rate</span>
+      </td>
+      <td>
+        <span class="pill rh">ordinary income</span><br>
+        <span class="note">Stacks with SS, RMDs. State treatment varies widely.</span>
+      </td>
+      <td><span class="pill r0">0% federal</span><br><span class="note">Most states follow federal Roth treatment.</span></td>
+      <td>
+        <span class="pill r0">0% if medical</span><br>
+        <span class="pill rh">ordinary if non-medical</span>
+      </td>
+    </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="section-label">Key concepts</p>
+  <div class="warn"><strong>The "taxable first" rule only applies if you have a taxable brokerage.</strong> If your portfolio is entirely pre-tax, Roth, and HSA, there are no long-term gains to harvest at preferential rates. Pre-tax withdrawals are always ordinary income regardless of what you held inside the account.</div>
+  <div class="flag"><strong>State domicile changes the math significantly.</strong> States that tax capital gains as ordinary income eliminate the federal 0% LTCG advantage. States with no income tax make taxable gains meaningfully cheaper. Your domicile before retirement is one of the highest-leverage tax decisions available.</div>
+  <div class="flag"><strong>The pre-tax trap.</strong> Large traditional IRA/401k balances generate forced ordinary income at RMD age, stacking with Social Security taxation and IRMAA surcharges. A Roth conversion ladder in the years before RMDs begin is the primary tool for reducing this exposure.</div>
+  <div class="flag"><strong>Optimal withdrawal order:</strong> Roth last (preserve tax-free compounding) · HSA for medical (0% always) · taxable next (LTCG rates) · pre-tax bracketed to avoid crossing into a higher tier. This order minimizes lifetime taxes across all states.</div>
+
+</div>
+</body>
+</html>

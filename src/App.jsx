@@ -89,9 +89,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.8.6";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.6 — Tax Drag info tooltip + About → How It Works panels are now collapsible, plus new 'Tax Modeling' section explaining the drag adjustment.";
-export const BUILD_TIME = "2026-05-12T12:00:00Z";
+const APP_VERSION = "1.0.8.7";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.7 — Tax treatment matrix embedded in About → How It Works → Tax Modeling.";
+export const BUILD_TIME = "2026-05-13T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
