@@ -5,9 +5,43 @@
  * No server proxy needed — calls go directly to Google's API.
  *
  * Get a free key at: https://aistudio.google.com/app/apikey
+ *
+ * Path A billing stub:
+ *   Set BILLING_ENABLED = true to activate credit checks + deductions.
+ *   False (default) = pure BYOK — existing behavior, no changes.
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { hasEnoughCredits, deductCredits, ESTIMATED_CREDITS_PER_CALL, getStoredJWT, fetchCreditBalance } from "../billing/credits.js";
+
+// ─── Billing mode flag ────────────────────────────────────────────────────────
+// Flip to true when Path A (token-resale) goes live.
+// When false, all credit logic is bypassed — pure BYOK, no code path changes.
+export const BILLING_ENABLED = false;
+
+// ─── Billing proxy ────────────────────────────────────────────────────────────
+// Routes all AI calls through /api/analyze when BILLING_ENABLED = true.
+// The Worker verifies the JWT, deducts credits from D1, and calls Gemini
+// with the server-side key — the user's BYOK key is not needed.
+
+async function callViaProxy(type, data) {
+  const jwt = getStoredJWT();
+  if (!jwt) throw new Error("Not authenticated — please purchase AiRA credits to continue.");
+  const res = await fetch("/api/analyze", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` },
+    body:    JSON.stringify({ type, ...data }),
+  });
+  if (res.status === 401) throw new Error("Session expired — please log in again.");
+  if (res.status === 402) throw new Error("Insufficient AiRA credits. Please purchase more.");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `API error ${res.status}`);
+  }
+  // Refresh cached balance in the background after each successful call
+  fetchCreditBalance();
+  return res.json();
+}
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -115,6 +149,11 @@ function resolveModel(values) {
 // ─── Gemini helpers ───────────────────────────────────────────────────────────
 
 async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel = "unknown") {
+  // Path A credit guard — only active when BILLING_ENABLED = true
+  if (BILLING_ENABLED && !hasEnoughCredits(ESTIMATED_CREDITS_PER_CALL)) {
+    throw new Error("Insufficient AiRA credits. Please purchase a credit pack to continue.");
+  }
+
   const res = await fetch(`${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -125,7 +164,13 @@ async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel
     throw new Error(err.error?.message || `Gemini HTTP ${res.status}`);
   }
   const data = await res.json();
-  recordUsage(model, fnLabel, data.usageMetadata);
+  const rec = recordUsage(model, fnLabel, data.usageMetadata);
+
+  // Path A credit deduction — deduct actual tokens used, not the estimate
+  if (BILLING_ENABLED && rec?.totalTokens) {
+    deductCredits(rec.totalTokens);
+  }
+
   return data;
 }
 
@@ -243,6 +288,10 @@ function healthFallback(values, mcResults) {
 // ─── 1. Retirement Health Score ───────────────────────────────────────────────
 
 export async function analyzeRetirementHealth(values, mcResults) {
+  if (BILLING_ENABLED) {
+    try { return await callViaProxy("health", { values, mcResults }); }
+    catch { return healthFallback(values, mcResults); }
+  }
   const apiKey = values.geminiApiKey?.trim();
   if (!apiKey) return healthFallback(values, mcResults);
   try {
@@ -275,6 +324,14 @@ export async function analyzeRetirementHealth(values, mcResults) {
 // ─── 2. Narrative Summary ─────────────────────────────────────────────────────
 
 export async function generateNarrativeSummary(values, mcResults) {
+  if (BILLING_ENABLED) {
+    const rate = mcResults?.rate ?? 0;
+    const fallback = `**Aira Narrative (unavailable)**\n\n${(rate * 100).toFixed(1)}% success rate.`;
+    try {
+      const result = await callViaProxy("narrative", { values, mcResults });
+      return result.text;
+    } catch { return fallback; }
+  }
   const apiKey = values.geminiApiKey?.trim();
   const rate   = mcResults?.rate ?? 0;
   const fallback = `**Aira Narrative (AI unavailable)**\n\nYour plan shows a **${(rate * 100).toFixed(1)}% success rate** across ${mcResults?.N?.toLocaleString() ?? "N/A"} simulations to age ${values.endAge || 90}.\n\n**Portfolio:** $${(values.port || 0).toLocaleString()} · **Spending:** $${(values.sp || 0).toLocaleString()}/yr · **State:** ${values.stateOfResidence || "unknown"}\n\n_Add your Gemini API key in Profile → Assumptions to receive a personalized AI narrative._`;
@@ -294,8 +351,12 @@ export async function generateNarrativeSummary(values, mcResults) {
 // ─── 3. Withdrawal Strategy Optimization ─────────────────────────────────────
 
 export async function suggestWithdrawalOptimization(values, mcResults) {
-  const apiKey  = values.geminiApiKey?.trim();
   const current = values.withdrawalStrategy || "gk";
+  if (BILLING_ENABLED) {
+    try { return await callViaProxy("withdrawal", { values, mcResults }); }
+    catch { return { recommended: current, reason: "AI unavailable.", projectedRateImprovement: "N/A" }; }
+  }
+  const apiKey  = values.geminiApiKey?.trim();
   if (!apiKey) return { recommended: current, reason: "AI unavailable — add your Gemini API key in Profile.", projectedRateImprovement: "N/A" };
   const strategies = ["gk","fixed","vanguard","risk","kitces","vpw","cape","endowment","one_n","ninety_five_rule"];
   try {
@@ -327,6 +388,10 @@ export async function suggestWithdrawalOptimization(values, mcResults) {
 // ─── 4. Roth Conversion Strategy ─────────────────────────────────────────────
 
 export async function evaluateRothStrategy(values) {
+  if (BILLING_ENABLED) {
+    try { return await callViaProxy("roth", { values }); }
+    catch { /* fall through to rules fallback */ }
+  }
   const apiKey = values.geminiApiKey?.trim();
   const accounts  = values.accounts || [];
   const preTax    = accounts.filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
@@ -368,6 +433,14 @@ export async function evaluateRothStrategy(values) {
 // ─── 5. Conversational Chat Response ─────────────────────────────────────────
 
 export async function generateChatResponse(values, mcResults, question, history = []) {
+  if (BILLING_ENABLED) {
+    try {
+      const result = await callViaProxy("chat", { values, mcResults, question, history });
+      return result.text;
+    } catch (e) {
+      return `**Aira:** ${e.message}`;
+    }
+  }
   const apiKey = values.geminiApiKey?.trim();
   if (!apiKey) {
     return `**Aira:** You asked: _"${question}"_\n\nAI is currently unavailable. Add your Gemini API key in Profile → Assumptions to enable Aira chat.\n\nPlan snapshot: ${(mcResults?.rate * 100 || 0).toFixed(1)}% success · $${(values.port || 0).toLocaleString()} portfolio.`;
@@ -394,9 +467,6 @@ export async function generateChatResponse(values, mcResults, question, history 
 // ─── 6. AI-Enhanced Action Plan ───────────────────────────────────────────────
 
 export async function runAIActionPlan(values, mcResults, cards = []) {
-  const apiKey = values.geminiApiKey?.trim();
-  if (!apiKey) throw new Error("No Gemini API key — add it in Profile → Assumptions");
-
   const slimValues = {
     port:               values.port,
     sp:                 values.sp,
@@ -412,6 +482,14 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
       balance:  a.balance,
     })),
   };
+
+  if (BILLING_ENABLED) {
+    const result = await callViaProxy("actionplan", { values: slimValues, mcResults, cards });
+    return result.cards;
+  }
+
+  const apiKey = values.geminiApiKey?.trim();
+  if (!apiKey) throw new Error("No Gemini API key — add it in Profile → Assumptions");
 
   const ctx      = ctxActionPlan(slimValues, mcResults, cards);
   const cardList = cards.map(c => `[${c.id}] ${c.priority.toUpperCase()} | ${c.category}: ${c.action}`).join("\n");
@@ -474,6 +552,133 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
 }
 
 // ─── 7. Retirement Date Solver ────────────────────────────────────────────────
+// ─── 8. Live Internet Search Cards ───────────────────────────────────────────
+
+function getSearchTopics(values) {
+  const age       = values.currentAge || 56;
+  const retireAge = values.retireAge  || 65;
+  const state     = values.stateOfResidence;
+  const hasSS     = (values.ssb || 0) > 0 || age > 50;
+  const hasPreTax = (values.accounts || []).some(a => a.category === "pretax" && (a.balance || 0) > 0);
+  const topics    = [];
+
+  // Always relevant
+  topics.push("IRS 401k IRA HSA contribution limits catch-up amounts 2026");
+  topics.push("IRS federal income tax brackets standard deduction 2026 married filing jointly single");
+  topics.push("long-term capital gains tax rates income thresholds 2026");
+  topics.push("SECURE 2.0 Act provisions effective 2025 2026 key retirement account changes");
+  topics.push("current US CPI inflation rate Federal Reserve interest rate decision 2026");
+  topics.push("10-year Treasury yield I-Bond composite rate 2026");
+  topics.push("safe withdrawal rate 4 percent rule latest research 2025 2026 update");
+
+  if (hasSS) {
+    topics.push("Social Security COLA 2026 cost-of-living adjustment benefit increase announcement");
+    topics.push("Social Security trust fund solvency depletion date projection benefit cut risk 2026");
+    topics.push("Social Security earnings test exempt amount limit 2026 working while collecting");
+  }
+
+  if (age >= 58 || retireAge <= 67) {
+    topics.push("Medicare Part B standard premium 2026 IRMAA income surcharge thresholds brackets");
+    topics.push("Medicare Advantage vs original Medicare cost comparison 2026 trends");
+  }
+
+  if (hasPreTax && (age >= 68 || retireAge >= 70)) {
+    topics.push("required minimum distribution RMD age 73 rules calculation tables 2026 SECURE 2.0");
+  }
+
+  if (age >= 65) {
+    topics.push("qualified charitable distribution QCD annual limit 2026 IRA direct to charity rules");
+  }
+
+  if (age >= 55) {
+    topics.push("long-term care nursing home assisted living average cost 2026 national");
+  }
+
+  topics.push("Roth IRA conversion strategy 2026 tax bracket optimization IRMAA");
+  topics.push("Social Security reform proposals benefit cut risk 2026 Congress");
+
+  if (state) {
+    topics.push(`${state} state income tax retirement income IRA 401k pension Social Security exemption 2026`);
+    topics.push(`${state} property tax exemption senior retiree homestead credit 2026`);
+    topics.push(`${state} estate inheritance tax exemption threshold 2026`);
+  }
+
+  return topics;
+}
+
+export async function generateTimeSensitiveCards(values, mcResults) {
+  if (BILLING_ENABLED) {
+    try {
+      const result = await callViaProxy("timesensitive", { values, mcResults });
+      return result.cards || [];
+    } catch (e) { throw e; }
+  }
+
+  const apiKey = values?.geminiApiKey?.trim();
+  if (!apiKey) throw new Error("Gemini API key required — add it in Profile → Assumptions");
+
+  const topics  = getSearchTopics(values);
+  const model   = resolveModel(values);
+
+  const profileCtx = [
+    `Age: ${values.currentAge} | Retire: ${values.retireAge} | State: ${values.stateOfResidence || "unknown"}`,
+    `Portfolio: $${(values.port || 0).toLocaleString()} | Spending: $${(values.sp || 0).toLocaleString()}/yr`,
+    `Filing: ${values.filingStatus || "mfj"} | SS: $${(values.ssb || 0).toLocaleString()}/yr at ${values.ssAge}`,
+    `MC success: ${mcResults ? (mcResults.rate * 100).toFixed(1) : "N/A"}%`,
+    `Pre-tax: $${((values.accounts||[]).filter(a=>a.category==="pretax").reduce((s,a)=>s+(a.balance||0),0)/1000).toFixed(0)}K | Roth: $${((values.accounts||[]).filter(a=>a.category==="roth").reduce((s,a)=>s+(a.balance||0),0)/1000).toFixed(0)}K`,
+  ].join("\n");
+
+  const prompt = `You are Aira, a fiduciary retirement planning AI.
+
+USER PROFILE:
+${profileCtx}
+
+Use Google Search to find CURRENT information on these topics. Only create a card when you find specific, current numbers or thresholds directly actionable for this user.
+
+SEARCH TOPICS:
+${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+
+Return ONLY a valid JSON array between <cards> and </cards> tags. Each object:
+{
+  "priority": "red|yellow|green",
+  "category": "short category name",
+  "action": "specific action sentence tailored to this user",
+  "reason": "why this matters given their numbers",
+  "deadline": "when to act",
+  "aiNote": "key current number or threshold found (dollar amount, percentage, date)",
+  "source": "website or publication name"
+}
+
+Rules:
+- Only include cards with real current numbers you found via search
+- Skip topics where you only have general/training knowledge
+- Set priority by financial impact urgency for this user
+- Maximum 12 cards
+
+<cards>
+</cards>`;
+
+  const res = await callGemini(apiKey, {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    tools:    [{ google_search: {} }],
+    generationConfig: { maxOutputTokens: 2048 },
+  }, model, "time_sensitive");
+
+  const text  = res.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+  const match = text.match(/<cards>([\s\S]*?)<\/cards>/);
+  if (!match) return [];
+
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    return (Array.isArray(parsed) ? parsed : []).map((c, i) => ({
+      ...c,
+      id:           `live-${i}-${Date.now()}`,
+      isLiveData:   true,
+      aiGenerated:  true,
+    }));
+  } catch { return []; }
+}
+
 /**
  * Pure deterministic solver — no API call needed.
  * Projects the accumulation path at three return scenarios and finds the age
