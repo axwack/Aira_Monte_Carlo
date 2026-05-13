@@ -63,6 +63,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
+import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
+import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -85,10 +87,10 @@ if (typeof document !== "undefined") {
  */
 
 
-/* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.7";
-export const BUILD_TAG = "Roth engine fixes: outside_cash tax funding now deducts from taxable pool; RMD divisors at 75/76 corrected to IRS Pub 590-B Table II joint values; manual year-by-year conversion override schedule added; FAFSA/CSS guardrails trigger on year entry alone (no toggle); 3-scenario tab (state/no-tax state/no conv) added to Roth Ladder. BLANK_PROFILE kept clean — user-specific overrides belong in exported JSON only.";
-export const BUILD_TIME = "05-02-2026";
+/* ════ REFERENCE DATA ════ updated to 2026-05-08 */
+const APP_VERSION = "1.0.8.5";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.5 — Disabled Gemini 2.5 thinking mode on function calls (thinkingBudget: 0). Fixes MALFORMED_FUNCTION_CALL where 2.5-flash emitted Python-style print(default_api.foo()) instead of structured output. No-op for non-thinking models.";
+export const BUILD_TIME = "2026-05-08T17:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -379,6 +381,7 @@ export const BLANK_PROFILE = {
   earlyRetireTarget: 2_000_000,
   withdrawalStrategy: "gk",
   geminiApiKey: "",
+  geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
 };
 
 const ANALOGUES = [
@@ -2104,7 +2107,17 @@ function CleanNumberInput({ value, onChange, min, max, step = 1, style = {} }) {
 const LS_PROFILE_KEY = "aira_profile_v1";
 function saveProfileToLocal(values) {
   try {
-    const payload = { ...values, savedAt: new Date().toISOString(), buildTag: BUILD_TAG };
+    const hasPropIncome = (values.properties || []).some(pr => Number(pr.income) > 0);
+    const rct = values.rothConversionTarget || "off";
+    const payload = {
+      ...values,
+      ab: hasPropIncome ? 0 : (values.ab || 0),
+      rothConversionTarget: rct.startsWith("fill_") ? rct.replace("fill_", "") : rct,
+      fafsaEndYear: values.fafsaEndYear || null,
+      cssEndYear: values.cssEndYear || null,
+      savedAt: new Date().toISOString(),
+      buildTag: BUILD_TAG,
+    };
     localStorage.setItem(LS_PROFILE_KEY, JSON.stringify(payload));
     return true;
   } catch {
@@ -3458,7 +3471,7 @@ const modeDescs = {
                     {recConv > 0 && onSaveConversionOverride && (
                       <button
                         onClick={() => {
-                          onSaveConversionOverride(cyYear, recConv);
+                          onSaveConversionOverride(cyYear, recConv, { w2: cyW2, ss: cySS, rental: cyRental, other: cyOther, sgov: cySGOV });
                           alert(`✅ Saved: Convert ${fmtN(recConv)} in ${cyYear} to your Lifetime Projection ladder.`);
                         }}
                         style={{
@@ -3581,7 +3594,31 @@ const modeDescs = {
                   const sourceLabel = isPast
                     ? <span style={{ color: "#334155", fontSize: 9 }}>📅 Past</span>
                     : isPinned
-                    ? <span style={{ color: "#fbbf24", fontWeight: 700, fontSize: 9 }}>📌 Pinned</span>
+                    ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ color: "#fbbf24", fontWeight: 700, fontSize: 9 }}>📌 Pinned</span>
+                        <button
+                          onClick={() => {
+                            setCyYear(r.yr);
+                            const pin = (params?.conversionOverrides || []).find(o => Number(o.year) === r.yr);
+                            if (pin) {
+                              if (pin.w2     !== undefined) setCyW2(pin.w2);
+                              if (pin.ss     !== undefined) setCySS(pin.ss);
+                              if (pin.rental !== undefined) setCyRental(pin.rental);
+                              if (pin.other  !== undefined) setCyOther(pin.other);
+                              if (pin.sgov   !== undefined) setCySGOV(pin.sgov);
+                            }
+                            setView("thisyear");
+                          }}
+                          title={`Edit pin for ${r.yr} in calculator`}
+                          style={{ background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#a78bfa", borderRadius: 4, cursor: "pointer", fontSize: 9, padding: "1px 5px", fontFamily: "inherit", lineHeight: 1.4 }}
+                        >✏</button>
+                        {onRemoveConversionOverride && (
+                          <button
+                            onClick={() => onRemoveConversionOverride(r.yr)}
+                            style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 4, cursor: "pointer", fontSize: 9, padding: "1px 5px", fontFamily: "inherit", lineHeight: 1.4 }}
+                          >×</button>
+                        )}
+                      </span>
                     : <span style={{ color: "#475569", fontSize: 9 }}>🔮 Forecast</span>;
                   return (
                   <tr
@@ -4010,12 +4047,12 @@ const modeDescs = {
               <tr>
                 <th>Year</th>
                 <th>Age</th>
-                <th>Optimal Rate</th>
-                <th>Current Rate</th>
-                <th>Optimal Tax</th>
-                <th>Current Tax</th>
-                <th>Optimal RMD</th>
-                <th>Current RMD</th>
+                <th style={{ borderLeft: "2px solid rgba(99,102,241,0.4)", color: "#a5b4fc" }}>OPT Rate</th>
+                <th style={{ color: "#94a3b8" }}>CUR Rate</th>
+                <th style={{ borderLeft: "2px solid rgba(239,68,68,0.4)", color: "#f87171" }}>OPT Tax</th>
+                <th style={{ color: "#94a3b8" }}>CUR Tax</th>
+                <th style={{ borderLeft: "2px solid rgba(52,211,153,0.4)", color: "#34d399" }}>OPT RMD</th>
+                <th style={{ color: "#94a3b8" }}>CUR RMD</th>
               </tr>
             </thead>
             <tbody>
@@ -4028,27 +4065,28 @@ const modeDescs = {
                     <tr key={r.yr} className={r.conv > 0 ? "gold" : ""}>
                       <td>{r.yr}</td>
                       <td style={{ color: "#94a3b8" }}>{r.age}</td>
-                      <td>{(r.effR * 100).toFixed(0)}%</td>
-                      <td>{c ? (c.effR * 100).toFixed(0) : "0"}%</td>
-                      <td style={{ color: "#f87171" }}>{fmtDollar(r.totT)}</td>
-                      <td style={{ color: "#94a3b8" }}>
+                      <td style={{ borderLeft: "2px solid rgba(99,102,241,0.2)", background: "rgba(99,102,241,0.05)" }}>{(r.effR * 100).toFixed(0)}%</td>
+                      <td style={{ background: "rgba(99,102,241,0.05)" }}>{c ? (c.effR * 100).toFixed(0) : "0"}%</td>
+                      <td style={{ color: "#f87171", borderLeft: "2px solid rgba(239,68,68,0.2)", background: "rgba(239,68,68,0.05)" }}>{fmtDollar(r.totT)}</td>
+                      <td style={{ color: "#94a3b8", background: "rgba(239,68,68,0.05)" }}>
                         {c ? fmtDollar(c.totT) : "$0"}
                       </td>
-                      <td style={{ color: "#34d399" }}>
+                      <td style={{ color: "#34d399", borderLeft: "2px solid rgba(52,211,153,0.2)", background: "rgba(52,211,153,0.05)" }}>
                         {r.rmd > 0 ? fmtDollar(r.rmd) : "-"}
                       </td>
-                      <td style={{ color: "#f87171" }}>
+                      <td style={{ color: "#f87171", background: "rgba(52,211,153,0.05)" }}>
                         {c && c.rmd > 0 ? fmtDollar(c.rmd) : "-"}
                       </td>
                     </tr>
                   );
                 })}
               <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.03)" }}>
-                <td colSpan={4} style={{ fontWeight: 700, color: "#e2e8f0", textAlign: "left" }}>Lifetime Totals</td>
-                <td style={{ color: "#f87171", fontWeight: 700 }}>{fmtM(opt.cTax)}</td>
-                <td style={{ color: "#94a3b8", fontWeight: 700 }}>{fmtM(cur.cTax)}</td>
-                <td colSpan={2} style={{ color: cur.cTax - opt.cTax > 0 ? "#34d399" : "#f87171", fontWeight: 700, textAlign: "left" }}>
-                  {cur.cTax - opt.cTax > 0 ? `✅ Lifetime savings: ${fmtM(cur.cTax - opt.cTax)}` : `⚠️ Net cost: ${fmtM(opt.cTax - cur.cTax)}`}
+                <td colSpan={2} style={{ fontWeight: 700, color: "#e2e8f0", textAlign: "left" }}>Lifetime Totals</td>
+                <td colSpan={2} style={{ borderLeft: "2px solid rgba(99,102,241,0.2)", background: "rgba(99,102,241,0.05)" }} />
+                <td style={{ color: "#f87171", fontWeight: 700, borderLeft: "2px solid rgba(239,68,68,0.2)", background: "rgba(239,68,68,0.05)" }}>{fmtM(opt.cTax)}</td>
+                <td style={{ color: "#94a3b8", fontWeight: 700, background: "rgba(239,68,68,0.05)" }}>{fmtM(cur.cTax)}</td>
+                <td colSpan={2} style={{ color: cur.cTax - opt.cTax > 0 ? "#34d399" : "#f87171", fontWeight: 700, textAlign: "left", borderLeft: "2px solid rgba(52,211,153,0.2)", background: "rgba(52,211,153,0.05)" }}>
+                  {cur.cTax - opt.cTax > 0 ? `✅ Saves ${fmtM(cur.cTax - opt.cTax)}` : `⚠️ Costs ${fmtM(opt.cTax - cur.cTax)} more`}
                 </td>
               </tr>
             </tbody>
@@ -4077,25 +4115,25 @@ const modeDescs = {
                 <tr>
                   <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Year</th>
                   <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Age</th>
-                  <th colSpan={3} style={{ color: "#f87171", background: "rgba(239,68,68,0.13)", textAlign: "center", borderBottom: "2px solid rgba(239,68,68,0.45)", paddingBottom: 5, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
+                  <th colSpan={3} style={{ color: "#f87171", background: "rgba(239,68,68,0.13)", textAlign: "center", borderBottom: "2px solid rgba(239,68,68,0.45)", borderLeft: "2px solid rgba(239,68,68,0.45)", paddingBottom: 5, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
                     No Conversion
                   </th>
-                  <th colSpan={3} style={{ color: "#5eead4", background: "rgba(20,184,166,0.13)", textAlign: "center", borderBottom: "2px solid rgba(20,184,166,0.45)", paddingBottom: 5, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
+                  <th colSpan={3} style={{ color: "#5eead4", background: "rgba(20,184,166,0.13)", textAlign: "center", borderBottom: "2px solid rgba(20,184,166,0.45)", borderLeft: "2px solid rgba(20,184,166,0.45)", paddingBottom: 5, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
                     {userState} + Convert
                   </th>
-                  <th colSpan={3} style={{ color: "#34d399", background: "rgba(52,211,153,0.13)", textAlign: "center", borderBottom: "2px solid rgba(52,211,153,0.45)", paddingBottom: 5, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
+                  <th colSpan={3} style={{ color: "#34d399", background: "rgba(52,211,153,0.13)", textAlign: "center", borderBottom: "2px solid rgba(52,211,153,0.45)", borderLeft: "2px solid rgba(52,211,153,0.45)", paddingBottom: 5, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
                     No-Tax State + Convert
                   </th>
                 </tr>
                 {/* Row 2: measure sub-headers */}
                 <tr>
-                  <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)" }}>Roth $</th>
+                  <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", borderLeft: "2px solid rgba(239,68,68,0.35)" }}>Roth $</th>
                   <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax ⓘ</th>
                   <th style={{ color: "#94a3b8", background: "rgba(239,68,68,0.07)" }}>IRA Bal</th>
-                  <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)" }}>Roth $</th>
+                  <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", borderLeft: "2px solid rgba(20,184,166,0.35)" }}>Roth $</th>
                   <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax ⓘ</th>
                   <th style={{ color: "#94a3b8", background: "rgba(20,184,166,0.07)" }}>IRA Bal</th>
-                  <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)" }}>Roth $</th>
+                  <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", borderLeft: "2px solid rgba(52,211,153,0.35)" }}>Roth $</th>
                   <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", cursor: "help" }} title="Federal income tax only — no state income tax applies in this scenario (no-tax state). Hover any data cell to confirm the $0 state split.">Total Tax ⓘ</th>
                   <th style={{ color: "#94a3b8", background: "rgba(52,211,153,0.07)" }}>IRA Bal</th>
                 </tr>
@@ -4111,31 +4149,31 @@ const modeDescs = {
                       <td>{r.yr}</td>
                       <td style={{ color: "#94a3b8" }}>{r.age}</td>
                       {/* No Conversion columns */}
-                      <td style={{ color: "#f87171", background: "rgba(239,68,68,0.04)" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "—"}</td>
-                      <td style={{ color: "#f87171", background: "rgba(239,68,68,0.04)", cursor: "help" }} title={`Fed: ${fmtDollar(nc.fedT || 0)} | State: ${fmtDollar(nc.stT || 0)}`}>{fmtDollar(nc.totT || 0)}</td>
-                      <td style={{ color: "#94a3b8", background: "rgba(239,68,68,0.04)" }}>{fmtDollar(nc.pT || 0)}</td>
+                      <td style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", borderLeft: "2px solid rgba(239,68,68,0.25)" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "—"}</td>
+                      <td style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", cursor: "help" }} title={`Fed: ${fmtDollar(nc.fedT || 0)} | State: ${fmtDollar(nc.stT || 0)}`}>{fmtDollar(nc.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8", background: "rgba(239,68,68,0.07)" }}>{fmtDollar(nc.pT || 0)}</td>
                       {/* {userState} + Convert columns */}
-                      <td style={{ color: "#5eead4", fontWeight: bo.conv > 0 ? 600 : 400, background: "rgba(20,184,166,0.04)" }}>{bo.conv > 0 ? fmtDollar(bo.conv) : "—"}</td>
-                      <td style={{ color: "#5eead4", background: "rgba(20,184,166,0.04)", cursor: "help" }} title={`Fed: ${fmtDollar(bo.fedT || 0)} | State: ${fmtDollar(bo.stT || 0)}`}>{fmtDollar(bo.totT || 0)}</td>
-                      <td style={{ color: "#94a3b8", background: "rgba(20,184,166,0.04)" }}>{fmtDollar(bo.pT || 0)}</td>
+                      <td style={{ color: "#5eead4", fontWeight: bo.conv > 0 ? 600 : 400, background: "rgba(20,184,166,0.07)", borderLeft: "2px solid rgba(20,184,166,0.25)" }}>{bo.conv > 0 ? fmtDollar(bo.conv) : "—"}</td>
+                      <td style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", cursor: "help" }} title={`Fed: ${fmtDollar(bo.fedT || 0)} | State: ${fmtDollar(bo.stT || 0)}`}>{fmtDollar(bo.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8", background: "rgba(20,184,166,0.07)" }}>{fmtDollar(bo.pT || 0)}</td>
                       {/* No-Tax State + Convert columns */}
-                      <td style={{ color: "#34d399", fontWeight: nt.conv > 0 ? 600 : 400, background: "rgba(52,211,153,0.04)" }}>{nt.conv > 0 ? fmtDollar(nt.conv) : "—"}</td>
-                      <td style={{ color: "#34d399", background: "rgba(52,211,153,0.04)", cursor: "help" }} title={`Fed: ${fmtDollar(nt.fedT || 0)} | State: $0 (no-tax state)`}>{fmtDollar(nt.totT || 0)}</td>
-                      <td style={{ color: "#94a3b8", background: "rgba(52,211,153,0.04)" }}>{fmtDollar(nt.pT || 0)}</td>
+                      <td style={{ color: "#34d399", fontWeight: nt.conv > 0 ? 600 : 400, background: "rgba(52,211,153,0.07)", borderLeft: "2px solid rgba(52,211,153,0.25)" }}>{nt.conv > 0 ? fmtDollar(nt.conv) : "—"}</td>
+                      <td style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", cursor: "help" }} title={`Fed: ${fmtDollar(nt.fedT || 0)} | State: $0 (no-tax state)`}>{fmtDollar(nt.totT || 0)}</td>
+                      <td style={{ color: "#94a3b8", background: "rgba(52,211,153,0.07)" }}>{fmtDollar(nt.pT || 0)}</td>
                     </tr>
                   );
                 })}
                 <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.04)", fontWeight: 700 }}>
                   <td colSpan={2} style={{ color: "#e2e8f0" }}>Lifetime Totals</td>
-                  <td style={{ color: "#f87171", background: "rgba(239,68,68,0.04)" }}>—</td>
-                  <td style={{ color: "#f87171", background: "rgba(239,68,68,0.04)" }}>{fmtM(baseCur.cTax)}</td>
-                  <td style={{ color: "#94a3b8", background: "rgba(239,68,68,0.04)" }}>{fmtDollar(baseCur.rows[baseCur.rows.length-1]?.pT || 0)}</td>
-                  <td style={{ color: "#5eead4", background: "rgba(20,184,166,0.04)" }}>{fmtM(baseOpt.cConv)}</td>
-                  <td style={{ color: stSave > 0 ? "#34d399" : "#f87171", background: "rgba(20,184,166,0.04)" }}>{fmtM(baseOpt.cTax)} {stSave > 0 ? `(saves ${fmtM(stSave)})` : `(costs ${fmtM(-stSave)} more)`}</td>
-                  <td style={{ color: "#94a3b8", background: "rgba(20,184,166,0.04)" }}>{fmtDollar(baseOpt.rows[baseOpt.rows.length-1]?.pT || 0)}</td>
-                  <td style={{ color: "#34d399", background: "rgba(52,211,153,0.04)" }}>{fmtM(noTaxOpt.cConv)}</td>
-                  <td style={{ color: ntSave > 0 ? "#34d399" : "#f87171", background: "rgba(52,211,153,0.04)" }}>{fmtM(noTaxOpt.cTax)} {ntSave > 0 ? `(saves ${fmtM(ntSave)})` : `(costs ${fmtM(-ntSave)} more)`}</td>
-                  <td style={{ color: "#94a3b8", background: "rgba(52,211,153,0.04)" }}>{fmtDollar(noTaxOpt.rows[noTaxOpt.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", borderLeft: "2px solid rgba(239,68,68,0.25)" }}>—</td>
+                  <td style={{ color: "#f87171", background: "rgba(239,68,68,0.07)" }}>{fmtM(baseCur.cTax)}</td>
+                  <td style={{ color: "#94a3b8", background: "rgba(239,68,68,0.07)" }}>{fmtDollar(baseCur.rows[baseCur.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", borderLeft: "2px solid rgba(20,184,166,0.25)" }}>{fmtM(baseOpt.cConv)}</td>
+                  <td style={{ color: stSave > 0 ? "#34d399" : "#f87171", background: "rgba(20,184,166,0.07)" }}>{fmtM(baseOpt.cTax)} {stSave > 0 ? `(saves ${fmtM(stSave)})` : `(costs ${fmtM(-stSave)} more)`}</td>
+                  <td style={{ color: "#94a3b8", background: "rgba(20,184,166,0.07)" }}>{fmtDollar(baseOpt.rows[baseOpt.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", borderLeft: "2px solid rgba(52,211,153,0.25)" }}>{fmtM(noTaxOpt.cConv)}</td>
+                  <td style={{ color: ntSave > 0 ? "#34d399" : "#f87171", background: "rgba(52,211,153,0.07)" }}>{fmtM(noTaxOpt.cTax)} {ntSave > 0 ? `(saves ${fmtM(ntSave)})` : `(costs ${fmtM(-ntSave)} more)`}</td>
+                  <td style={{ color: "#94a3b8", background: "rgba(52,211,153,0.07)" }}>{fmtDollar(noTaxOpt.rows[noTaxOpt.rows.length-1]?.pT || 0)}</td>
                 </tr>
               </tbody>
             </table>
@@ -4253,52 +4291,75 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
 }
 
 function BucketsTab({ params = {} }) {
-  const port = params.port || 0;
-  const retireAge = params.retireAge || 60;
-  const currentAge = params.currentAge || 50;
+  const port        = params.port       || 0;
+  const retireAge   = params.retireAge  || 60;
+  const currentAge  = params.currentAge || 50;
+  const ssAge       = params.ssAge      || 67;
   const yrsToRetire = Math.max(0, retireAge - currentAge);
-  const retireYear = new Date().getFullYear() + yrsToRetire;
-  const bucketPcts = [6, 16, 78];
-  const bucketTargets = bucketPcts.map((pct) =>
-    port > 0 ? fmtM((port * pct) / 100) : `${pct}%`
-  );
+  const retireYear  = new Date().getFullYear() + yrsToRetire;
+
+  // Annual mortgage P&I (matches runMC logic)
+  const mortAnnualPI = (() => {
+    if (!params.mortBalance || params.mortBalance <= 0) return 0;
+    const ms = mortgageSchedule(
+      params.mortBalance,
+      params.mortRate  || 6.5,
+      params.mortStart || "2020-01",
+      params.mortTerm  || 30,
+      params.mortExtra || 0
+    );
+    return ms.pmt * 12;
+  })();
+
+  // Dynamic allocation — derived from actual spending data
+  const RUNWAY_YEARS = 3;
+  const propIncome   = params.propIncome || 0;
+  const netDraw      = Math.max(0, (params.sp || 0) + mortAnnualPI - propIncome);
+  const ssGapYears   = Math.max(0, ssAge - retireAge);
+  const fmtK         = (n) => `$${Math.round(n / 1000)}K`;
+
+  const b1 = Math.round(RUNWAY_YEARS * netDraw);
+  const b2 = Math.round(ssGapYears   * netDraw);
+  const b3 = Math.max(0, port - b1 - b2);
+  const pct = (n) => port > 0 ? Math.round((n / port) * 100) : 0;
+
   const buckets = [
     {
-      name: "Bucket 1 — Cash / Short-term",
-      target: bucketTargets[0],
-      pct: bucketPcts[0],
-      color: "#0ea5e9",
-      purpose:
-        "Living expenses 3-5yr runway.  NEVER dual-purpose.",
-      holdings: "Cash · Money market · Short-term Treasuries",
-      locked: `Draws begin at retirement (age ${retireAge})`,
+      name:     "Bucket 1 — Cash",
+      horizon:  "1–3 years",
+      amount:   b1,
+      pct:      pct(b1),
+      color:    "#0ea5e9",
+      purpose:  `Day-to-day expenses & safety net. ${RUNWAY_YEARS}-year runway at ${fmtK(netDraw)}/yr net draw. NEVER dual-purpose.`,
+      holdings: "100% Cash / Cash Equivalents · HYSA · Money market · T-bills · CDs",
+      locked:   `Draws begin at retirement (age ${retireAge})`,
     },
     {
-      name: "Bucket 2 — Income Sleeve",
-      target: bucketTargets[1],
-      pct: bucketPcts[1],
-      color: "#a78bfa",
-      purpose:
-        "Dividend/income generation. Starts AT retirement. Reduces portfolio WR.",
-      holdings: "Dividend equities · Covered-call income · REITs",
-      locked: `Activates at retirement (${retireYear})`,
+      name:     "Bucket 2 — Income & Stability",
+      horizon:  "3–10 years",
+      amount:   b2,
+      pct:      pct(b2),
+      color:    "#a78bfa",
+      purpose:  `Intermediate-term needs. Bridges ${ssGapYears}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`,
+      holdings: "30–50% Equities · 50–70% Fixed Income · Dividend stocks · Bonds · REITs",
+      locked:   `Activates at retirement (${retireYear})`,
     },
     {
-      name: "Bucket 3 — Growth",
-      target: bucketTargets[2],
-      pct: bucketPcts[2],
-      color: "#10b981",
-      purpose:
-        "Never touch 7-10 years. Compounding engine. Draw only when Bucket 1 depleted.",
-      holdings: "Broad-market equity · Momentum · International",
-      locked: `Never before age ${retireAge + 7}`,
+      name:     "Bucket 3 — Long-Term Growth",
+      horizon:  "10+ years",
+      amount:   b3,
+      pct:      pct(b3),
+      color:    "#10b981",
+      purpose:  "Protects against inflation & grows wealth. Won't be needed for a decade or more. Refills Bucket 2 when markets are favorable.",
+      holdings: "50–100% Equities · 0–50% Fixed Income · Broad-market equity · Momentum · International",
+      locked:   `Never before age ${retireAge + 7}`,
     },
   ];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="chart-card">
         <div className="ct">
-          3-Bucket Strategy · Section 0.G ·
+          3-Bucket Strategy
         </div>
         {buckets.map((b) => (
           <div
@@ -4319,17 +4380,19 @@ function BucketsTab({ params = {} }) {
                 marginBottom: 6,
               }}
             >
-              <div style={{ fontSize: 15, fontWeight: 600, color: b.color }}>
-                {b.name}
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: b.color }}>{b.name}</div>
+                <div style={{ fontSize: 10, color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 1 }}>{b.horizon}</div>
               </div>
               <div
                 style={{
                   fontSize: 15,
                   color: b.color,
                   fontFamily: "'DM Mono',monospace",
+                  textAlign: "right",
                 }}
               >
-                {b.target} · {b.pct}%
+                {port > 0 ? fmtM(b.amount) : "—"} · {b.pct}%
               </div>
             </div>
             <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>
@@ -5456,7 +5519,7 @@ function generateActions({
     return order[a.priority] - order[b.priority];
   });
 }
-// Replace the existing ActionPlanTab with this dynamic version
+// ─── ActionPlanTab ────────────────────────────────────────────────────────────
 function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
   const currentYear = new Date().getFullYear();
   const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
@@ -5464,62 +5527,35 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     Math.floor((new Date(`${retireYear}-03-15`) - new Date()) / 86400000)
   );
 
-  const [aiAnalysis, setAiAnalysis] = useState('');
+  const [cards, setCards]         = useState(null);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [aiError, setAiError]     = useState(null);
 
-  const runAIAnalysis = async () => {
-    const apiKey = assumptions.geminiApiKey;
-    if (!apiKey) {
-      alert('Please enter your Gemini API key in the Profile → Assumptions tab.');
+  const runAI = async (baseCards) => {
+    const { runAIActionPlan, profileIsComplete } = await import("./ai/ai-analysis.js");
+    console.log("[AI] runAI called. profileIsComplete:", profileIsComplete(params, r90));
+    console.log("[AI] geminiApiKey present:", !!assumptions?.geminiApiKey, "model:", assumptions?.geminiModel || "default");
+    console.log("[AI] baseCards count:", baseCards?.length, "ids:", baseCards?.map(c => c.id));
+    if (!profileIsComplete(params, r90)) {
+      console.warn("[AI] Profile incomplete — runAI exiting silently. Need: port>50K, sp>0, mcResults.rate>0, ≥1 funded account.");
       return;
     }
-
-  setLoadingAI(true);
-  setAiAnalysis('');
-
-  const successRate = r90?.rate ? (r90.rate * 100).toFixed(1) : 'N/A';
-  const withdrawalRate = params?.sp && params?.port ? ((params.sp / params.port) * 100).toFixed(1) : 'N/A';
-  const portfolioGoal = assumptions.portfolioGoal ? (assumptions.portfolioGoal / 1_000_000).toFixed(1) : '3.2';
-
-  const prompt = `You are AiRA, an AI retirement planning assistant. Analyze the following retirement plan and provide a complete, well-formed paragraph (4-6 sentences) with one specific recommendation. Do not stop mid-sentence. Be conversational and reference the numbers provided.
-
-                Plan Summary:
-                - Success Rate (Monte Carlo): ${successRate}% to age ${params.endAge || 90}
-                - Current Portfolio: $${(params.port / 1_000_000).toFixed(2)}M
-                - Target Portfolio: $${portfolioGoal}M
-                - Annual Spending: $${(params.sp / 1000).toFixed(0)}K
-                - Withdrawal Rate: ${withdrawalRate}%
-                - Withdrawal Strategy: ${getStrategyLabel(assumptions.withdrawalStrategy)}
-                - State of Residence: ${assumptions.stateOfResidence || 'FL'}
-
-                Begin your response with "I am AiRA. I have analyzed your plan." and then provide the analysis.`;
-
-   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
-      }),
-    });
-
-    const data = await response.json();
-    if (data.error) {
-      throw new Error(data.error.message);
+    setLoadingAI(true);
+    setAiError(null);
+    try {
+      console.log("[AI] Calling runAIActionPlan…");
+      const merged = await runAIActionPlan({ ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel }, r90, baseCards);
+      console.log("[AI] Merged result:", merged);
+      console.log("[AI] Cards with aiNote:", merged?.filter(c => c.aiNote).length, "/ total:", merged?.length);
+      console.log("[AI] AI-generated new cards:", merged?.filter(c => c.aiGenerated).length);
+      setCards(merged);
+    } catch (e) {
+      console.error("[AI] action plan error:", e);
+      setAiError(e.message || "AI unavailable — check that your Gemini API_KEY is set in the UI in the Profile Section.");
+    } finally {
+      setLoadingAI(false);
     }
-    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response from Gemini.';
-    setAiAnalysis(aiText);
-  } catch (err) {
-    console.error('Gemini API error:', err);
-    setAiAnalysis('AI analysis failed. Please check your API key and try again.');
-  } finally {
-    setLoadingAI(false);
-  }
-};
+  };
 
   if (!params || !r90) {
     return (
@@ -5530,13 +5566,29 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     );
   }
 
-  const dynActions = generateActions({
-    params, r90, r85, assumptions, mortgagePayoffYear,
+  // Evaluate declarative rules engine
+  const baseCards = evaluateRulesEngine({
+    params, r90, r85, assumptions,
     currentYear, retireYear, daysToRetire,
-    goal: assumptions?.portfolioGoal || 3_200_000,
   });
 
-  const colors = {
+  // Display AI-annotated cards if available, else base cards
+  const displayCards = cards || baseCards;
+
+  // Gate: AI button only enabled when profile has real data AND a Gemini key is present
+  const hasGeminiKey = !!(assumptions?.geminiApiKey?.trim());
+  const profileReady = (params.port || 0) > 50_000 &&
+    (params.sp  || 0) > 0 &&
+    r90?.rate > 0 &&
+    (params.accounts || []).some(a => (a.balance || 0) > 0);
+  const canRunAI = !loadingAI && !cards && profileReady && hasGeminiKey;
+  const aiDisabledReason = !profileReady
+    ? "Complete your profile and run Monte Carlo first"
+    : !hasGeminiKey
+    ? "Add a free Gemini API key in Profile → Assumptions to enable AI"
+    : "Run AI analysis on your plan";
+
+  const COLORS = {
     red:    { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.25)",   label: "#f87171", badge: "🔴 Critical" },
     yellow: { bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.25)",  label: "#fbbf24", badge: "🟡 Important" },
     green:  { bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.25)",  label: "#34d399", badge: "🟢 On Track" },
@@ -5544,85 +5596,169 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {/* AI Analysis Button */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+
+      {/* AI Analyze button */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
         <button
-          onClick={""}
-          disabled={"true"}
+          onClick={() => runAI(baseCards)}
+          disabled={!canRunAI}
+          title={aiDisabledReason}
           style={{
             padding: "8px 18px",
             borderRadius: 8,
             border: "none",
-            background: loadingAI
-              ? "rgba(255,255,255,0.05)"
-              : "linear-gradient(135deg, #7c3aed, #a78bfa)",
-            color: "white",
+            background: canRunAI
+              ? "linear-gradient(135deg, #7c3aed, #a78bfa)"
+              : "rgba(255,255,255,0.05)",
+            color: canRunAI ? "white" : "#475569",
             fontSize: 13,
             fontWeight: 600,
-            cursor: loadingAI ? "not-allowed" : "pointer",
-            fontFamily: "'Inter', sans-serif",
+            cursor: canRunAI ? "pointer" : "not-allowed",
             display: "flex",
             alignItems: "center",
             gap: 6,
-            boxShadow: loadingAI ? "none" : "0 2px 8px rgba(124,58,237,0.3)",
+            boxShadow: canRunAI ? "0 2px 8px rgba(124,58,237,0.3)" : "none",
             transition: "all 0.2s",
           }}
         >
-          {loadingAI ? "Analyzing..." : "🤖 Run AI Analysis {Stay Tuned}"}
+          {loadingAI ? "Analyzing…" : cards ? "✓ AI Applied" : "🤖 Run AI Analysis"}
         </button>
-        {loadingAI && (
-          <span style={{ color: "#a78bfa", fontSize: 12 }}>Thinking...</span>
+        {loadingAI && <span style={{ color: "#a78bfa", fontSize: 12 }}>Aira is thinking…</span>}
+        {!loadingAI && !cards && profileReady && !hasGeminiKey && (
+          <span style={{ fontSize: 11, color: "#fbbf24" }}>
+            🔒 Add a free Gemini key in Profile → Assumptions ·{" "}
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "#fbbf24", textDecoration: "underline" }}>
+              Get one here
+            </a>
+          </span>
         )}
+        {(cards || aiError) && !loadingAI && (
+          <button
+            onClick={() => { setCards(null); setAiError(null); }}
+            style={{ fontSize: 11, color: "#64748b", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+          >
+            Reset
+          </button>
+        )}
+        <AiUsageBadge style={{ marginLeft: "auto" }} />
       </div>
 
-      {/* AI Response Card */}
-      {aiAnalysis && (
-        <div
-          style={{
-            background: "rgba(124,58,237,0.06)",
-            border: "1px solid rgba(124,58,237,0.25)",
-            borderRadius: 10,
-            padding: "16px 18px",
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa", marginBottom: 8 }}>
-            🤖 AI Insights
-          </div>
-          <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-            {aiAnalysis}
-          </div>
+      {aiError && (
+        <div style={{
+          background: "rgba(239,68,68,0.08)",
+          border: "1px solid rgba(239,68,68,0.25)",
+          borderRadius: 8,
+          padding: "10px 14px",
+          fontSize: 12,
+          color: "#f87171",
+        }}>
+          ⚠ AI unavailable: {aiError}
         </div>
       )}
 
-      {/* Existing Action Cards */}
-      {dynActions.map((a, i) => {
-        const c = colors[a.priority];
+      {/* Retirement Date Solver */}
+      {(() => {
+        const solver = solveRetirementDate(params);
+        const { target, currentPort, currentAge, results } = solver;
+        const fmtM = (n) => `$${(n / 1_000_000).toFixed(2)}M`;
+        const retireAge = params.retireAge || 60;
+        const rowColor = (age) => {
+          if (age == null) return "#f87171";
+          if (age <= retireAge) return "#34d399";
+          if (age <= retireAge + 3) return "#fbbf24";
+          return "#f87171";
+        };
+        return (
+          <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 9, padding: "12px 15px", marginBottom: 4 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#818cf8", marginBottom: 8 }}>
+              🎯 Retirement Date Solver — Target {fmtM(target)}
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
+              Portfolio today: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>{fmtM(currentPort)}</span>
+              &nbsp;·&nbsp;Planned retirement: <span style={{ color: "#e2e8f0" }}>age {retireAge}</span>
+              &nbsp;·&nbsp;Annual contrib: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>${(params.contrib || 0).toLocaleString()}</span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <th style={{ textAlign: "left", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Scenario</th>
+                  <th style={{ textAlign: "center", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Return</th>
+                  <th style={{ textAlign: "right", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Hits {fmtM(target)}</th>
+                  <th style={{ textAlign: "right", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>vs. Plan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r) => {
+                  const diff = r.crossoverAge != null ? r.crossoverAge - retireAge : null;
+                  const color = rowColor(r.crossoverAge);
+                  return (
+                    <tr key={r.label} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                      <td style={{ color: "#cbd5e1", padding: "4px 0" }}>{r.label}</td>
+                      <td style={{ textAlign: "center", color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>{(r.rate * 100).toFixed(1)}%</td>
+                      <td style={{ textAlign: "right", color, fontWeight: 600, fontFamily: "'DM Mono',monospace" }}>
+                        {r.crossoverAge != null ? `Age ${r.crossoverAge}` : "> 80"}
+                      </td>
+                      <td style={{ textAlign: "right", color, fontFamily: "'DM Mono',monospace" }}>
+                        {diff == null ? "—" : diff === 0 ? "On target" : diff < 0 ? `${Math.abs(diff)}yr early` : `${diff}yr late`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 8 }}>
+              Update your portfolio balance in the profile to keep this projection current.
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Action cards */}
+      {displayCards.map((a, i) => {
+        const c = COLORS[a.priority] || COLORS.yellow;
         return (
           <div
-            key={i}
+            key={a.id || i}
             style={{
               background: c.bg,
               border: `1px solid ${c.border}`,
               borderRadius: 9,
               padding: "11px 15px",
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start"
+              flexDirection: "column",
+              gap: 0,
             }}
           >
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: c.label, marginBottom: 3 }}>
-                {c.badge} · {a.category}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: c.label, marginBottom: 3 }}>
+                  {c.badge} · {a.category}
+                  {a.aiGenerated && <span style={{ marginLeft: 6, color: "#a78bfa" }}>✦ AI</span>}
+                  {a.law && <span style={{ marginLeft: 6, color: "#475569", fontWeight: 400, textTransform: "none" }}>{a.law}</span>}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
+                  {a.action}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>{a.reason}</div>
               </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
-                {a.action}
+              <div style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap", marginLeft: 16, paddingTop: 2 }}>
+                ⏱ {a.deadline}
               </div>
-              <div style={{ fontSize: 11, color: "#64748b" }}>{a.reason}</div>
             </div>
-            <div style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap", marginLeft: 16, paddingTop: 2 }}>
-              ⏱ {a.deadline}
-            </div>
+
+            {/* Inline AI note — only shown after AI analysis */}
+            {a.aiNote && (
+              <div style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: `1px solid ${c.border}`,
+                fontSize: 11,
+                color: "#a78bfa",
+                lineHeight: 1.5,
+              }}>
+                🤖 {a.aiNote}
+              </div>
+            )}
           </div>
         );
       })}
@@ -6308,6 +6444,20 @@ function AssumptionsPanel({ values, onChange }) {
           />
           <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#60a5fa", marginLeft: 8 }}>Get free key →</a>
         </ARow>
+        <ARow label="AI Model" desc="Select the Gemini model for AI features. If a model becomes unavailable (Google deprecates often), pick another from the dropdown.">
+          <select
+            value={values.geminiModel || DEFAULT_GEMINI_MODEL}
+            onChange={(e) => onChange('geminiModel', e.target.value)}
+            style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
+          >
+            {GEMINI_MODELS.map(m => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+          <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
+            {(GEMINI_MODELS.find(m => m.id === (values.geminiModel || DEFAULT_GEMINI_MODEL))?.note) || ""}
+          </span>
+        </ARow>
       </div>
 
       {/* EXPENSE MODEL CARD */}
@@ -6968,6 +7118,9 @@ export default function AiRAForecaster() {
   const [feedbackName, setFeedbackName] = useState("");
   const [feedbackEmail, setFeedbackEmail] = useState("");
   const [showTerms, setShowTerms] = useState(false);
+  const [showEngineCard, setShowEngineCard] = useState(
+    () => localStorage.getItem("aira_engine_open") === "true"
+  );
   const isFirst = useRef(true);
 
   // Slider states – initialized from BLANK_PROFILE
@@ -7086,11 +7239,11 @@ export default function AiRAForecaster() {
       gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 0.65),
       gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 1.35),
       ssb,
-      ab,
       propIncome: (() => {
          const raw = (assumptions.properties || []).reduce((s, pr) => s + (Number(pr.income) || 0), 0);
           return isNaN(raw) ? 0 : raw;
         })(),
+      ab: (assumptions.properties || []).some(pr => Number(pr.income) > 0) ? 0 : (assumptions.ab || 0),
       useAb,
       abReliability: assumptions.abReliability,
       abGrowth: assumptions.abGrowth,
@@ -7112,7 +7265,7 @@ export default function AiRAForecaster() {
       housingType: assumptions.housingType || "own",
       annualRent: assumptions.annualRent || 0,
       carveouts: assumptions.carveouts || [],
-      rothConversionTarget: assumptions.rothConversionTarget || "off",
+      rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
       taxFunding: assumptions.taxFunding || "from_taxable",
       fafsaGuard: assumptions.fafsaGuard || false,
       fafsaEndYear: assumptions.fafsaEndYear || null,
@@ -7191,6 +7344,7 @@ export default function AiRAForecaster() {
     ["income", "💵 Income"],
     ["mortgage", "🏠 Real Estate"],
     ["actionplan", "✅ Action Plan"],
+    // ["airaai", "🤖 Aira AI"],  // DO NOT RE-ADD — AiraAITab is being integrated INSIDE ActionPlanTab on a separate branch (per user: no tab sprawl).
     ["assumptions", "👤 Profile"],
   ];
 
@@ -7257,11 +7411,16 @@ export default function AiRAForecaster() {
                     inf,
                     sp,
                     ssb,
-                    ab,
+                    ab: (assumptions.properties || []).some(pr => Number(pr.income) > 0) ? 0 : ab,
                     useAb,
                     smile,
                     tax,
                     real,
+                    rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
+                    fafsaEndYear: assumptions.fafsaEndYear || null,
+                    cssEndYear: assumptions.cssEndYear || null,
+                    geminiApiKey: assumptions.geminiApiKey || "",
+                    savedAt: new Date().toISOString(),
                     exportedAt: new Date().toISOString(),
                     appVersion: APP_VERSION,
                   },
@@ -7286,7 +7445,10 @@ export default function AiRAForecaster() {
                   if (data.sp !== undefined) setSp(data.sp);
                   if (data.ssAge !== undefined) updateAssumption("ssAge", data.ssAge);
                   if (data.ssb !== undefined) setSsb(data.ssb);
-                  if (data.ab !== undefined) setAb(data.ab);
+                  if (data.ab !== undefined) {
+                    const hasPropIncome = (data.properties || []).some(pr => Number(pr.income) > 0);
+                    setAb(hasPropIncome ? 0 : data.ab);
+                  }
                   if (data.useAb !== undefined) setUseAb(data.useAb);
                   if (data.smile !== undefined) setSmile(data.smile);
                   if (data.tax !== undefined) setTax(data.tax);
@@ -7345,6 +7507,8 @@ export default function AiRAForecaster() {
                     data.otherIncomes = [];
                   }
 
+                  const hasPropIncome = (data.properties || []).some(pr => Number(pr.income) > 0);
+                  const rawRct = data.rothConversionTarget || "off";
                   setAssumptions((prev) => ({
                     ...prev,
                     ...data,
@@ -7359,7 +7523,13 @@ export default function AiRAForecaster() {
                     properties: data.properties,
                     checkpoints: data.checkpoints,
                     carveouts: data.carveouts,
-                    otherIncomes: data.otherIncomes, 
+                    otherIncomes: data.otherIncomes,
+                    ab: hasPropIncome ? 0 : (data.ab || 0),
+                    rothConversionTarget: rawRct.startsWith("fill_") ? rawRct.replace("fill_", "") : rawRct,
+                    fafsaEndYear: data.fafsaEndYear || null,
+                    cssEndYear: data.cssEndYear || null,
+                    // Preserve existing API key if imported file has empty/missing key
+                    geminiApiKey: data.geminiApiKey || prev.geminiApiKey || "",
                   }));
 
                   setStale(true);
@@ -7612,79 +7782,92 @@ export default function AiRAForecaster() {
               })()}
             </div>
             <div className="sb-card">
-              <div className="sb-title">MC Engine — {APP_VERSION}</div>
-              <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
-                <div>
-                  📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P bootstrap [-30 / +30%]
-                </div>
-                <div>
-                  📊 <span style={{ color: "#a78bfa" }}>Bonds:</span> 50yr Bloomberg [-15 / +20%]
-                </div>
-                <div>
-                  <span style={{ color: "#fbbf24" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
-                  {(() => {
-                    const s = assumptions.withdrawalStrategy;
-                    if (s === "gk") return `Floor: ${fmtM(params.gkFloor)} · Ceiling ${fmtM(params.gkCeiling)}`;
-                    if (s === "fixed") return `Rate: ${((params.fixedWithdrawalRate || 0.04) * 100).toFixed(1)}%`;
-                    if (s === "vanguard") return `Cap: ${(params.vanguardCap || 0.05) * 100}% · Floor: ${(params.vanguardFloor || -0.025) * 100}%`;
-                    return "";
-                  })()}
-                </div>
-                <div>
-                  🏖 <span style={{ color: "#059669" }}>Rental:</span> {assumptions.abReliability || 80}% reliability per year
-                </div>
-                <div>
-                  🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#14b8a6" }}>💹 Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(2)}% μ
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.08)",
-                      color: "#64748b",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: "help",
-                      marginLeft: 4,
-                    }}
-                    title={`Pre‑retirement expected return (${assumptions.preRetireEq ?? 91}% stocks / ${100 - (assumptions.preRetireEq ?? 91)}% bonds). Historical average annual return.`}
-                  >
-                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
-                      ℹ️
-                    </span>
-                  </span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#fb923c" }}>💹 Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(2)}% μ
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.08)",
-                      color: "#64748b",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: "help",
-                      marginLeft: 4,
-                    }}
-                    title={`Post‑retirement expected return (${assumptions.postRetireEq ?? 70}% stocks / ${100 - (assumptions.postRetireEq ?? 70)}% bonds). Lower volatility, slightly lower return.`}
-                  >
-                    <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
-                      ℹ️
-                    </span>
-                  </span>
-                </div>
+              <div
+                className="sb-title"
+                onClick={() => setShowEngineCard(v => {
+                  const next = !v;
+                  localStorage.setItem("aira_engine_open", next);
+                  return next;
+                })}
+                style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", userSelect: "none" }}
+              >
+                <span>MC Engine — {APP_VERSION}</span>
+                <span style={{ fontSize: 14, color: "#475569" }}>{showEngineCard ? "▾" : "▸"}</span>
               </div>
+              {showEngineCard && (
+                <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
+                  <div>
+                    📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P bootstrap [-30 / +30%]
+                  </div>
+                  <div>
+                    📊 <span style={{ color: "#a78bfa" }}>Bonds:</span> 50yr Bloomberg [-15 / +20%]
+                  </div>
+                  <div>
+                    📉  <span style={{ color: "#fbbf24" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
+                    {(() => {
+                      const s = assumptions.withdrawalStrategy;
+                      if (s === "gk") return `Floor: ${fmtM(params.gkFloor)} · Ceiling ${fmtM(params.gkCeiling)}`;
+                      if (s === "fixed") return `Rate: ${((params.fixedWithdrawalRate || 0.04) * 100).toFixed(1)}%`;
+                      if (s === "vanguard") return `Cap: ${(params.vanguardCap || 0.05) * 100}% · Floor: ${(params.vanguardFloor || -0.025) * 100}%`;
+                      return "";
+                    })()}
+                  </div>
+                  <div>
+                    🏖 <span style={{ color: "#059669" }}>Rental:</span> {assumptions.abReliability || 80}% reliability per year
+                  </div>
+                  <div>
+                    🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ color: "#14b8a6" }}>💹 Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(2)}% μ
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.08)",
+                        color: "#64748b",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        cursor: "help",
+                        marginLeft: 4,
+                      }}
+                      title={`Pre‑retirement expected return (${assumptions.preRetireEq ?? 91}% stocks / ${100 - (assumptions.preRetireEq ?? 91)}% bonds). Historical average annual return.`}
+                    >
+                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
+                        ℹ️
+                      </span>
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ color: "#fb923c" }}>💹 Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(2)}% μ
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.08)",
+                        color: "#64748b",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        cursor: "help",
+                        marginLeft: 4,
+                      }}
+                      title={`Post‑retirement expected return (${assumptions.postRetireEq ?? 70}% stocks / ${100 - (assumptions.postRetireEq ?? 70)}% bonds). Lower volatility, slightly lower return.`}
+                    >
+                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
+                        ℹ️
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="sb-card">
@@ -8130,12 +8313,12 @@ export default function AiRAForecaster() {
                     checkpoints={assumptions.checkpoints}
                     dob={assumptions.dob}
                     sex={assumptions.sex}
-                    onSaveConversionOverride={(year, amount) => {
+                    onSaveConversionOverride={(year, amount, income) => {
                       setAssumptions(prev => ({
                         ...prev,
                         conversionOverrides: [
                           ...(prev.conversionOverrides || []).filter(o => Number(o.year) !== Number(year)),
-                          { id: Date.now().toString(), year: Number(year), amount: Number(amount) },
+                          { id: Date.now().toString(), year: Number(year), amount: Number(amount), ...(income || {}) },
                         ].sort((a, b) => a.year - b.year),
                       }));
                     }}
@@ -8159,6 +8342,7 @@ export default function AiRAForecaster() {
                     mortgagePayoffYear={mortgagePayoffYear}
                   />
                 )}
+                {/* AiraAITab is dormant — integration target is INSIDE ActionPlanTab (above), not as its own tab. See memory/project_aira_ai_tab.md. */}
                 {activeTab === "assumptions" && (
                   <>
                   {showWelcome && (
