@@ -89,9 +89,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.8.6";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.6 — Tax Drag info tooltip + About → How It Works panels are now collapsible, plus new 'Tax Modeling' section explaining the drag adjustment.";
-export const BUILD_TIME = "2026-05-12T12:00:00Z";
+const APP_VERSION = "1.0.8.7";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.7 — Tax treatment matrix embedded in About → How It Works → Tax Modeling.";
+export const BUILD_TIME = "2026-05-13T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -5128,23 +5128,36 @@ function NetWorthTab({ p, results90, inf }) {
 
   const nwData = useMemo(() => {
     if (!results90) return [];
-    
-    // Build ages dynamically: from current age to plan end age, step 5
+
+    // Current liquid portfolio from accounts (matches home page sidebar)
+    const currentPort = (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0) || p.port || 0;
+    const preReturnRate = expectedReturn(p.preRetireEq ?? 91) / 100;
+
     const maxChartAge = p.endAge;
     const step = 1;
     const ages = [];
     for (let age = p.currentAge; age <= maxChartAge; age += step) {
       ages.push(age);
     }
-    
+
     return ages.map((age, idx) => {
       const yr = new Date().getFullYear() + idx * step;
-      // Map age to closest index in results90.pcts (which goes to age 90)
-      const pctIndex = Math.min(
-        Math.max(0, age - p.retireAge),
-        results90.pcts.length - 1
-      );
-      const port = results90.pcts[pctIndex]?.p50 || 0;
+
+      let port;
+      if (age < p.retireAge) {
+        // Accumulation phase: grow from current portfolio deterministically
+        const yearsToAge = age - p.currentAge;
+        let acc = currentPort;
+        for (let y = 0; y < yearsToAge; y++) {
+          acc = acc * (1 + preReturnRate) + (p.contrib || 0);
+        }
+        port = Math.round(acc);
+      } else {
+        // Retirement phase: use MC median percentile
+        const pctIndex = Math.min(age - p.retireAge, results90.pcts.length - 1);
+        port = results90.pcts[pctIndex]?.p50 || 0;
+      }
+
       const mortEntry = mortSched.years.find((y) => y.yr === yr);
       const mortBal = mortEntry ? mortEntry.bal : 0;
       const yearsFromNow = yr - new Date().getFullYear();
@@ -7210,13 +7223,13 @@ function ContribPanel({ values, onChange }) {
   const matchAmount = Math.round((annual401k * employerMatch) / 100);
   const totalSavings = annual401k + hsaAnnual + matchAmount;
 
-
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+      {/* ── Contributions ── */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
-          ANNUAL CONTRIBUTIONS - Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
+          ANNUAL CONTRIBUTIONS — Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
         </div>
         <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
@@ -7229,6 +7242,7 @@ function ContribPanel({ values, onChange }) {
         </WFieldRow>
       </div>
 
+      {/* ── Summary grid ── */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
         {[
           { label: "401(k) Contribution", val: annual401k, color: "#0ea5e9" },
@@ -7244,6 +7258,7 @@ function ContribPanel({ values, onChange }) {
         ))}
       </div>
 
+      {/* ── Total savings banner ── */}
       <div style={{ background: "linear-gradient(135deg, #0d948818, #14b8a618)", border: "1px solid #0d948844", borderRadius: 10, padding: 18, textAlign: "center" }}>
         <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>💰 Total Annual Savings Rate</div>
         <div style={{ fontSize: 36, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>
@@ -7252,6 +7267,29 @@ function ContribPanel({ values, onChange }) {
         </div>
         <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Including employer match and HSA</div>
       </div>
+
+      {/* ── Other income sources ── */}
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 10, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
+          OTHER INCOME (pension, part-time, royalties…) — reduces portfolio draw
+        </div>
+        {(values.otherIncomes || []).map((inc, idx) => (
+          <OtherIncomeCard
+            key={inc.id}
+            inc={inc}
+            autoFocus={idx === (values.otherIncomes || []).length - 1 && !inc.annual}
+            onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
+            onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
+          />
+        ))}
+        <button
+          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthRate: 0, growthCapYears: null, taxable: true }])}
+          style={{ background: "transparent", border: "1px dashed rgba(14,165,233,0.35)", borderRadius: 4, color: "#38bdf8", fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.7, marginTop: 2 }}
+          onMouseEnter={e => e.currentTarget.style.opacity = 1}
+          onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
+        >+ Add income source</button>
+      </div>
+
     </div>
   );
 }
@@ -7412,25 +7450,6 @@ function RetirementPanel({ values, onChange }) {
             width:80, textAlign:"right" }}
             /> year
         </WFieldRow>
-      </div>
-
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 10, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>OTHER INCOME (pension, royalties, part-time…)</div>
-        {(values.otherIncomes || []).map((inc, idx) => (
-          <OtherIncomeCard
-            key={inc.id}
-            inc={inc}
-            autoFocus={idx === (values.otherIncomes || []).length - 1 && !inc.annual}
-            onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
-            onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
-          />
-        ))}
-        <button
-          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthRate: 0, growthCapYears: null, taxable: true }])}
-          style={{ background: "transparent", border: "1px dashed rgba(14,165,233,0.35)", borderRadius: 4, color: "#38bdf8", fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.7, marginTop: 2 }}
-          onMouseEnter={e => e.currentTarget.style.opacity = 1}
-          onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
-        >+ Add income source</button>
       </div>
 
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
