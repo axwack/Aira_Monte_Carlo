@@ -89,9 +89,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.8.7";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.7 — Tax treatment matrix embedded in About → How It Works → Tax Modeling.";
-export const BUILD_TIME = "2026-05-13T00:00:00Z";
+const APP_VERSION = "1.0.8.8";
+export const BUILD_TAG = "[main] v1.0.8.8 — Net Worth tab label updates to ex. RE when real estate toggle is off.";
+export const BUILD_TIME = "2026-05-14T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -5236,7 +5236,7 @@ function NetWorthTab({ p, results90, inf }) {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div className="ct" style={{ margin: 0 }}>
-              Net Worth Projection · 5‑year Intervals to Age {planAge} · Median MC Path
+              {showRE ? "Net Worth Projection" : "Portfolio Projection (ex. Real Estate)"} · 5‑year Intervals to Age {planAge} · Median MC Path
             </div>
             <span
               style={{ cursor: "pointer", color: "#64748b", fontSize: 12 }}
@@ -5311,7 +5311,7 @@ function NetWorthTab({ p, results90, inf }) {
           <div className="li"><div className="ll" style={{ background: "#0ea5e9" }} />Liquid Portfolio</div>
           <div className="li"><div className="ll" style={{ background: "#f87171", borderTop: "1px dashed #f87171", height: 2 }} />Mortgage Debt (dashed)</div>
           {showRE && <div className="li"><div className="ll" style={{ background: "#fbbf24" }} />Real Estate</div>}
-          <div className="li"><div className="ll" style={{ background: "#10b981" }} />Net Worth</div>
+          <div className="li"><div className="ll" style={{ background: "#10b981" }} />{showRE ? "Net Worth" : "Portfolio (ex. RE)"}</div>
         </div>
 
         {/* Footnote about peak age */}
