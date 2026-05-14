@@ -7160,7 +7160,7 @@ function AssumptionsPanel({ values, onChange }) {
         >
           Monte Carlo Model Parameters
         </div>
-        <ARow label="Target Portfolio Value for Early Retirement" desc="This is your retirement goal. This is the number that answers, What number is do I need to retire? What is my retirement $$$ where no matter what, I RETIRE!!.">
+        <ARow label="Target Portfolio Value for Early Retirement" desc="This is your retirement goal. This is the number that answers, What number do I need to retire? What is my retirement $$$ where no matter what, I RETIRE!!.">
           <CleanNumberInput value={values.earlyRetireTarget} onChange={(v) => onChange("earlyRetireTarget", v)} min={0} max={10000000} step={50000} />
         </ARow>
         <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is a number where, if you hit this, would reconsider your target goal? This is a number that is a secondary decision. If you hit this, would you be ok with this goal if something caused a change in your plan,">
