@@ -3138,7 +3138,7 @@ const modeDescs = {
         }}
       >
         <div style={{ display: "flex", gap: 4 }}>
-          {["thisyear", "optimized", "comparison", "table", "scenarios"].map((v) => (
+          {["thisyear", "optimized", "taxes", "table", "scenarios"].map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -3162,7 +3162,7 @@ const modeDescs = {
             >
               {v === "thisyear"   ? "💰 Tax Room"
                : v === "optimized"  ? "📊 Conversion Plan"
-               : v === "comparison" ? "⚖️ Compare"
+               : v === "taxes" ? "⚖️ Taxes"
                : v === "table"      ? "📋 Year-by-Year"
                :                      "🗺️ 3-Scenario"}
             </button>
@@ -4015,7 +4015,7 @@ const modeDescs = {
           })()}
         </>
       )}
-      {view === "comparison" && (() => {
+      {view === "taxes" && (() => {
         const optFedTotal  = opt.rows.reduce((s, r) => s + (r.fedT  || 0), 0);
         const optStTotal   = opt.rows.reduce((s, r) => s + (r.stT   || 0), 0);
         const curFedTotal  = cur.rows.reduce((s, r) => s + (r.fedT  || 0), 0);
