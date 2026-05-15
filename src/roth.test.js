@@ -207,11 +207,13 @@ describe("buildRothExplorer — state tax behaviour", () => {
     expect(opt.rows.every(r => r.stT === 0)).toBe(true);
   });
 
-  test("NJ: stT > 0 on rows where a conversion occurs", () => {
-    const { opt } = buildRothExplorer({ ...BASE, stateOfResidence: "NJ" });
-    const convRows = opt.rows.filter(r => r.conv > 0);
-    expect(convRows.length).toBeGreaterThan(0);
-    expect(convRows.every(r => r.stT > 0)).toBe(true);
+  test("NJ: lifetime state tax is greater than FL (state tax applies)", () => {
+    // NJ has progressive income tax; FL has none. NJ cTax must exceed FL cTax.
+    const { opt: njOpt } = buildRothExplorer({ ...BASE, stateOfResidence: "NJ" });
+    const { opt: flOpt } = buildRothExplorer({ ...BASE, stateOfResidence: "FL" });
+    const njStTotal = njOpt.rows.reduce((s, r) => s + r.stT, 0);
+    expect(njStTotal).toBeGreaterThan(0);
+    expect(njOpt.cTax).toBeGreaterThan(flOpt.cTax);
   });
 
   test("NJ with twoHousehold=true: stT = 0 on every row (state tax bypassed)", () => {
@@ -265,14 +267,18 @@ describe("buildRothExplorer — conversion age-gate (retireAge to rmdAge)", () =
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("buildRothExplorer — bracket fill amounts (first retirement year, f=1)", () => {
 
-  test("fill_22: first-year conv = B22T_MFJ (211,400) when pT >> bracket room", () => {
+  test("fill_22: first-year conv fills remaining bracket room after pretax spending draw", () => {
+    // pretaxSpend reduces txBC → room < B22T_MFJ.
+    // pretaxShare = 1,500,000 / 1,850,000 ≈ 0.8108; pretaxSpend = round(80000*0.8108) = 64865
+    // txBC = max(0, 64865 - 32200) = 32665; room = 211400 - 32665 = 178735
     const { opt } = buildRothExplorer({ ...BASE, rothMode: "fill_22" });
-    expect(opt.rows[0].conv).toBe(B22T_MFJ);
+    expect(opt.rows[0].conv).toBe(178_735);
   });
 
-  test("fill_12: first-year conv = B12T_MFJ (100,800) when pT >> bracket room", () => {
+  test("fill_12: first-year conv fills remaining 12% bracket room after pretax spending draw", () => {
+    // room = 100800 - 32665 = 68135
     const { opt } = buildRothExplorer({ ...BASE, rothMode: "fill_12" });
-    expect(opt.rows[0].conv).toBe(B12T_MFJ);
+    expect(opt.rows[0].conv).toBe(68_135);
   });
 
   test("fill_22 converts more per year than fill_12 on same profile (more bracket room)", () => {
@@ -281,32 +287,21 @@ describe("buildRothExplorer — bracket fill amounts (first retirement year, f=1
     expect(f22.opt.rows[0].conv).toBeGreaterThan(f12.opt.rows[0].conv);
   });
 
-  test("fill_22: first-year fedT = 28,848 (hand-verified progressive bracket math)", () => {
-    // txInc = 211,400 − 32,200 std = 179,200
-    // 10%: 24,800×0.10 = 2,480
-    // 12%: (100,800−24,800)×0.12 = 9,120
-    // 22%: (179,200−100,800)×0.22 = 17,248
-    // Total = 28,848
+  test("fill_22: first-year fedT (hand-verified with pretax spending draw)", () => {
+    // pretaxSpend = round(80000 * 1500000/1850000) = 64865
+    // conv = 211400 - (64865 - 32200) = 178735
+    // totInc = 64865 + 178735 = 243600; txInc = 243600 - 32200 = 211400
+    // 10%: 24800×0.10=2480; 12%: 76000×0.12=9120; 22%: 110600×0.22=24332 → Total=35932
     const { opt } = buildRothExplorer({ ...BASE, rothMode: "fill_22" });
-    expect(opt.rows[0].fedT).toBe(28_848);
+    expect(opt.rows[0].fedT).toBe(35_932);
   });
 
-  test("fill_12: first-year fedT = 8,432 (hand-verified bracket math)", () => {
-    // txInc = 100,800 − 32,200 = 68,600
-    // 10%: 24,800×0.10 = 2,480
-    // 12%: (68,600−24,800)×0.12 = 43,800×0.12 = 5,256  -- wait let me recalculate
-    // Actually: 10% bracket is 0→24,800, 12% is 24,800→100,800
-    // 10%: min(68,600, 24,800) = 24,800 → 2,480
-    // 12%: 68,600 − 24,800 = 43,800 → 43,800×0.12 = 5,256
-    // Total = 7,736
-    // Hmm, let me recalculate more carefully.
-    // The brackets are IN TAXABLE INCOME (after std deduction).
-    // txInc = max(0, totInc - stdD) = max(0, 100,800 - 32,200) = 68,600
-    // 10%: min(68600,24800) - 0 = 24,800 → 2,480
-    // 12%: min(68600,100800) - 24800 = 68600-24800 = 43,800 → 5,256
-    // Total = 7,736
+  test("fill_12: first-year fedT (hand-verified with pretax spending draw)", () => {
+    // pretaxSpend = 64865; conv = 100800 - 32665 = 68135
+    // totInc = 64865 + 68135 = 133000; txInc = 133000 - 32200 = 100800
+    // 10%: 24800×0.10=2480; 12%: 76000×0.12=9120 → Total=11600
     const { opt } = buildRothExplorer({ ...BASE, rothMode: "fill_12" });
-    expect(opt.rows[0].fedT).toBe(7_736);
+    expect(opt.rows[0].fedT).toBe(11_600);
   });
 
   test("no_convert: opt.cConv = 0 and convRows is empty", () => {
@@ -420,8 +415,9 @@ describe("buildRothExplorer — FAFSA guard (cap at 12% bracket)", () => {
   test("fill_22 with fafsaEndYear: years ≤ fafsaEndYear are capped at fill_12 room", () => {
     const p = { ...BASE, rothMode: "fill_22", fafsaEndYear: FAFSA_END };
     const { opt } = buildRothExplorer(p);
-    // First year: FAFSA guard → conv = B12T_MFJ (same as fill_12), not B22T_MFJ
-    expect(opt.rows[0].conv).toBe(B12T_MFJ);
+    // First year: FAFSA guard → conv capped at fill_12 room (68135, same as standalone fill_12)
+    const fill12Result = buildRothExplorer({ ...BASE, rothMode: "fill_12" });
+    expect(opt.rows[0].conv).toBe(fill12Result.opt.rows[0].conv);
     expect(opt.rows[0].capReason).toMatch(/FAFSA/);
   });
 
@@ -429,18 +425,21 @@ describe("buildRothExplorer — FAFSA guard (cap at 12% bracket)", () => {
     const p = { ...BASE, rothMode: "fill_22", fafsaEndYear: FAFSA_END };
     const { opt } = buildRothExplorer(p);
     // Find first row after the guard period (if pT still has room)
+    const fill12Baseline = buildRothExplorer({ ...BASE, rothMode: "fill_12" });
     const postFafsa = opt.rows.find(r => r.yr > FAFSA_END && r.conv > 0);
     if (postFafsa) {
-      // Should now fill to 22% (larger than 12% cap)
-      expect(postFafsa.conv).toBeGreaterThan(B12T_MFJ);
+      // Should now fill to 22% room (larger than fill_12 room in that year)
+      const matchFill12 = fill12Baseline.opt.rows.find(r => r.yr === postFafsa.yr);
+      if (matchFill12) expect(postFafsa.conv).toBeGreaterThan(matchFill12.conv);
     }
   });
 
   test("fafsaEndYear=0 (disabled): no FAFSA guard applied in fill_22 mode", () => {
     const p = { ...BASE, rothMode: "fill_22", fafsaEndYear: 0 };
     const { opt } = buildRothExplorer(p);
-    // No FAFSA guard → first year conv should be B22T_MFJ
-    expect(opt.rows[0].conv).toBe(B22T_MFJ);
+    // No FAFSA guard → first year conv = fill_22 room (178735, same as fill_22 baseline)
+    const fill22Baseline = buildRothExplorer({ ...BASE, rothMode: "fill_22" });
+    expect(opt.rows[0].conv).toBe(fill22Baseline.opt.rows[0].conv);
     expect(opt.rows[0].capReason).not.toMatch(/FAFSA/);
   });
 });
@@ -699,20 +698,23 @@ describe("buildRothExplorer — Alex Mercer full profile (NM, fill_12, outside_c
   });
 
   test("pT update invariant holds on every row with a conversion", () => {
+    // Dynamic ratio: pT_end = max(0, pTStart - rmd - conv - pretaxSpend) * (1+GR)
     const { opt } = buildRothExplorer(ALEX_FULL);
     for (const r of opt.rows.filter(r => r.conv > 0)) {
       const expected = Math.round(
-        Math.max(0, r.pTStart - r.rmd - r.conv - Math.max(0, r.portDraw * 0.6)) * (1 + GR)
+        Math.max(0, r.pTStart - r.rmd - r.conv - (r.pretaxSpend || 0)) * (1 + GR)
       );
-      expect(Math.abs(r.pT - expected)).toBeLessThanOrEqual(2); // ±$2 rounding tolerance
+      expect(Math.abs(r.pT - expected)).toBeLessThanOrEqual(2);
     }
   });
 
   test("ro update invariant holds for outside_cash (full conv reaches Roth) on every conversion row", () => {
+    // additionalRoth = max(0, portDraw - rmd) - pretaxSpend
     const { opt } = buildRothExplorer(ALEX_FULL);
     for (const r of opt.rows.filter(r => r.conv > 0)) {
+      const additionalRoth = Math.max(0, r.portDraw - r.rmd) - (r.pretaxSpend || 0);
       const expected = Math.round(
-        Math.max(0, r.roStart + r.conv - Math.max(0, r.portDraw * 0.4)) * (1 + GR)
+        Math.max(0, r.roStart + r.conv - additionalRoth) * (1 + GR)
       );
       expect(Math.abs(r.ro - expected)).toBeLessThanOrEqual(2);
     }

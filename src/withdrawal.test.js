@@ -1,0 +1,152 @@
+import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
+
+const BASE = {
+  currentAge: 65,
+  retireAge: 65,
+  endAge: 90,
+  sp: 80_000,
+  ssAge: 67,
+  ssb: 24_000,
+  ssCola: 2.4,
+  ab: 0,
+  inf: 2.5,
+  filingStatus: "mfj",
+  stateOfResidence: "FL",
+  twoHousehold: false,
+  useJointRmdTable: false,
+  gkFloor: 48_000,
+  gkCeiling: 115_000,
+  withdrawalBracketTarget: "22",
+  irmaaGuard: false,
+  ssTorpedoGuard: true,
+  rothEmergencyReserve: 0,
+  gr: 0.07,
+  accounts: [
+    { id: "t1", category: "pretax",  name: "401k",    balance: 1_000_000 },
+    { id: "t2", category: "roth",    name: "Roth",    balance:   400_000 },
+    { id: "t3", category: "taxable", name: "Taxable", balance:   150_000 },
+    { id: "t4", category: "cash",    name: "Cash",    balance:    50_000 },
+  ],
+};
+
+// ─── Output structure ──────────────────────────────────────────────────────────
+
+describe("buildWithdrawalWaterfall — output structure", () => {
+  test("returns { smart, naive, summary } with rows arrays", () => {
+    const result = buildWithdrawalWaterfall(BASE);
+    expect(result).toHaveProperty("smart");
+    expect(result).toHaveProperty("naive");
+    expect(result).toHaveProperty("summary");
+    expect(Array.isArray(result.smart.rows)).toBe(true);
+    expect(Array.isArray(result.naive.rows)).toBe(true);
+  });
+
+  test("rows length equals endAge - retireAge + 1", () => {
+    const result = buildWithdrawalWaterfall(BASE);
+    const expected = BASE.endAge - BASE.retireAge + 1; // 26
+    expect(result.smart.rows.length).toBe(expected);
+    expect(result.naive.rows.length).toBe(expected);
+  });
+});
+
+// ─── RMD logic ────────────────────────────────────────────────────────────────
+
+describe("buildWithdrawalWaterfall — RMD logic", () => {
+  // RMD start age 75 for born 1960+ (currentAge 65, BASE_YEAR ~2026 → born ~1961)
+  test("age 75 row has rmd > 0 and rmdActive = true", () => {
+    const result = buildWithdrawalWaterfall(BASE);
+    const row = result.smart.rows.find(r => r.age === 75);
+    expect(row).toBeDefined();
+    expect(row.rmd).toBeGreaterThan(0);
+    expect(row.rmdActive).toBe(true);
+  });
+
+  test("age 74 row has rmd = 0 (RMD starts at 75 for born 1960+)", () => {
+    const result = buildWithdrawalWaterfall(BASE);
+    const row = result.smart.rows.find(r => r.age === 74);
+    expect(row).toBeDefined();
+    expect(row.rmd).toBe(0);
+  });
+});
+
+// ─── Bracket ceiling (smart mode) ─────────────────────────────────────────────
+
+describe("buildWithdrawalWaterfall — bracket ceiling (smart mode)", () => {
+  test("smart year-1 fromPretax stays within 22% bracket room", () => {
+    // Year 1 (age 65): no SS yet (ssAge=67), no RMD yet
+    // std deduction MFJ 2026: 32200 + 3300 (age65) = 35500
+    // 22% bracket ceiling (taxable income): ~211400
+    // taxableIncomeSoFar = 0 → room = ~211400
+    // need from port = sp=80000 (no fixed income at 65)
+    // fromPretax should be ≤ 211400 but also ≤ need
+    const result = buildWithdrawalWaterfall(BASE);
+    const row0 = result.smart.rows[0]; // age 65
+    // MFJ 22% taxable ceiling is 211400 (2026), room >> sp, so fromPretax limited by need not bracket
+    // Just confirm it doesn't exceed the 22% taxable income ceiling
+    const ceiling22_approx = 211_400; // rough
+    expect(row0.fromPretax).toBeLessThanOrEqual(ceiling22_approx);
+  });
+
+  test("naive year-1 fromPretax >= smart year-1 fromPretax", () => {
+    // Smart caps pretax at bracket; naive takes as much as needed from pretax first
+    // In year 1 with no SS, cash covers $50K, taxable covers $150K — both strategies may
+    // use those first. The key is that naive won't cap at the bracket ceiling.
+    const result = buildWithdrawalWaterfall(BASE);
+    const smartRow = result.smart.rows[0];
+    const naiveRow = result.naive.rows[0];
+    expect(naiveRow.fromPretax).toBeGreaterThanOrEqual(smartRow.fromPretax);
+  });
+});
+
+// ─── Roth emergency reserve ────────────────────────────────────────────────────
+
+describe("buildWithdrawalWaterfall — Roth emergency reserve", () => {
+  test("rothEnd never drops below reserve unless portfolio fully exhausted", () => {
+    const reserve = 200_000;
+    const result = buildWithdrawalWaterfall({ ...BASE, rothEmergencyReserve: reserve });
+    result.smart.rows.forEach(row => {
+      // rothEnd can only go below reserve if ALL buckets are depleted
+      const totalPfEnd = row.cashEnd + row.taxableEnd + row.pretaxEnd + row.rothEnd;
+      if (totalPfEnd > reserve) {
+        expect(row.rothEnd).toBeGreaterThanOrEqual(reserve - 1); // allow $1 rounding
+      }
+    });
+  });
+});
+
+// ─── Landmine detection ────────────────────────────────────────────────────────
+
+describe("buildWithdrawalWaterfall — landmine detection", () => {
+  test("ssTorpedo flag appears in SS years when provisional income exceeds threshold", () => {
+    // ssAge=67; provisional = ss*0.5 + rmd + fromPretax + annuity
+    // With $24K SS: ss*0.5 = $12K, plus pretax draws of ~$80K → provisional ~$92K >> $44K MFJ threshold
+    const result = buildWithdrawalWaterfall({ ...BASE, ssTorpedoGuard: true });
+    const ssRows = result.smart.rows.filter(r => r.age >= BASE.ssAge);
+    const torpedoRows = ssRows.filter(r => r.landmines.ssTorpedo);
+    expect(torpedoRows.length).toBeGreaterThan(0);
+  });
+
+  test("irmaaTriggered is false when MAGI < $218K tier-1 threshold", () => {
+    // BASE has sp=$80K, small portfolio — total income well below $218K IRMAA tier-1
+    // Only ages 65+ get IRMAA at all
+    const result = buildWithdrawalWaterfall({ ...BASE, sp: 60_000 });
+    const earlyRows = result.smart.rows.filter(r => r.age <= 68);
+    earlyRows.forEach(row => {
+      // With $60K spend and low pretax draws, MAGI should be < $218K
+      expect(row.landmines.irmaaTriggered).toBe(false);
+    });
+  });
+});
+
+// ─── Summary totals ────────────────────────────────────────────────────────────
+
+describe("buildWithdrawalWaterfall — summary", () => {
+  test("smart lifetime tax <= naive lifetime tax with large pretax balance", () => {
+    // Smart waterfall limits pretax draws to bracket ceiling → less ordinary income → lower tax
+    // Naive draws pretax first → more ordinary income → higher tax
+    const result = buildWithdrawalWaterfall(BASE);
+    // Smart tax should be <= naive tax (or equal if portfolio is small enough that
+    // pretax runs out in both scenarios)
+    expect(result.summary.lifetimeTaxSmart).toBeLessThanOrEqual(result.summary.lifetimeTaxNaive);
+  });
+});

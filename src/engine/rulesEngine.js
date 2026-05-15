@@ -110,17 +110,29 @@ export const RULES = [
     id: "portfolio-underfunded-60",
     category: "Savings",
     priority: "red",
-    condition: ({ params, assumptions }) => {
+    condition: ({ params, assumptions, r90 }) => {
+      // Fire if MC rate is critically low, OR if no MC has been run yet and portfolio is severely underfunded
+      if (r90) return r90.rate < 0.70;
       const goal = assumptions?.portfolioGoal || 1_000_000;
       return (params.port / goal) * 100 < 60;
     },
-    action: ({ params, assumptions }) => {
+    action: ({ params, r90 }) =>
+      r90
+        ? `MC success rate critically low — ${(r90.rate * 100).toFixed(1)}%`
+        : "Portfolio severely underfunded",
+    reason: ({ params, assumptions, r90 }) => {
       const goal = assumptions?.portfolioGoal || 1_000_000;
-      return `Portfolio below 60% of goal (${((params.port / goal) * 100).toFixed(0)}%)`;
-    },
-    reason: ({ params, assumptions }) => {
-      const goal = assumptions?.portfolioGoal || 1_000_000;
-      return `$${(goal - params.port).toLocaleString()} gap remaining`;
+      const fmt = v => v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : `$${Math.round(v / 1e3)}K`;
+      if (!r90) {
+        return `$${Math.round(goal - params.port).toLocaleString()} gap to ${fmt(goal)} Reassess goal — run Monte Carlo to assess real risk`;
+      }
+      const retRow = r90.pcts?.find(d => d.age === params.retireAge);
+      const p25 = retRow?.p25, p50 = retRow?.p50;
+      let msg = `Only ${(r90.rate * 100).toFixed(1)}% of 3,000 paths reach age ${params.endAge || 90} — plan failure is likely`;
+      if (p25 && p50) {
+        msg += `. At retirement (age ${params.retireAge}): median ${fmt(p50)}, worst-25% scenario only ${fmt(p25)}`;
+      }
+      return msg;
     },
     deadline: "Now",
   },
@@ -190,18 +202,33 @@ export const RULES = [
     id: "portfolio-underfunded-75",
     category: "Savings",
     priority: "yellow",
-    condition: ({ params, assumptions }) => {
-      const goal = assumptions?.portfolioGoal || 1_000_000;
-      const pct = (params.port / goal) * 100;
-      return pct >= 60 && pct < 75;
+    condition: ({ params, r90 }) => {
+      // Only fire when MC has been run and success rate is below 85%
+      // Suppresses when the plan is healthy regardless of funding ratio vs goal
+      if (!r90) return false;
+      return r90.rate >= 0.70 && r90.rate < 0.85;
     },
     action: "Increase contributions or reduce spend",
-    reason: ({ params, assumptions }) => {
+    reason: ({ params, assumptions, r90 }) => {
+      const fmt = v => v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : `$${Math.round(v / 1e3)}K`;
+      const rate = (r90.rate * 100).toFixed(1);
+      const retRow = r90.pcts?.find(d => d.age === params.retireAge);
+      const p25 = retRow?.p25, p50 = retRow?.p50;
       const goal = assumptions?.portfolioGoal || 1_000_000;
-      const pct = (params.port / goal) * 100;
-      return `${pct.toFixed(0)}% funded — ${params.retireAge - params.currentAge} years to D-Day`;
+      const pct = params.port > 0 && goal > 0 ? Math.round(params.port / goal * 100) : null;
+
+      let msg = `MC success rate ${rate}% — below the 85% threshold. `;
+      if (p50 && p25) {
+        msg += `At retirement (age ${params.retireAge}): median path ${fmt(p50)}, but the 25th-percentile scenario (worst 1-in-4 outcome) reaches only ${fmt(p25)}. `;
+      }
+      msg += `Boost contributions, delay retirement, or trim spending to close the gap.`;
+      if (pct !== null) msg += ` Portfolio is currently ${pct}% toward your ${fmt(goal)} Reassess goal.`;
+      return msg;
     },
-    deadline: "D-Day",
+    deadline: ({ params }) =>
+      params.retireAge > params.currentAge
+        ? `${params.retireAge - params.currentAge} yr${params.retireAge - params.currentAge !== 1 ? "s" : ""} to D-Day`
+        : "Now",
   },
   {
     id: "mortgage-outlasts-retire",
@@ -343,6 +370,61 @@ export const RULES = [
     },
     deadline: "D-Day",
   },
+  // ── WITHDRAWAL ORDER ────────────────────────────────────────────────────────
+
+  {
+    id: "irmaa-guard-off",
+    category: "Medicare / IRMAA",
+    priority: "yellow",
+    condition: ({ params, currentYear }) =>
+      preTaxTotal(params) > 200_000 &&
+      !params.irmaaGuard &&
+      (currentYear - params.currentAge) >= -5 && // within 5 years of retirement or past
+      params.currentAge >= 55,
+    action: "Enable IRMAA guard in Withdrawal Order settings",
+    reason: ({ params }) =>
+      `$${(preTaxTotal(params) / 1e6).toFixed(1)}M pretax — unguarded withdrawals may cross Medicare IRMAA Tier 1 ($218K MFJ), adding $2,160–$11,130/yr in surcharges`,
+    deadline: "Before age 63",
+  },
+  {
+    id: "no-bracket-ceiling",
+    category: "Tax",
+    priority: "yellow",
+    condition: ({ params }) =>
+      preTaxTotal(params) > 300_000 &&
+      (!params.withdrawalBracketTarget || params.withdrawalBracketTarget === "off"),
+    action: "Set a pretax bracket ceiling in Withdrawal Order settings",
+    reason: ({ params }) =>
+      `$${(preTaxTotal(params) / 1e6).toFixed(1)}M pretax with no ceiling — naive ordering drains pretax first, pushing income into higher brackets and exhausting tax-deferred shelter early`,
+    deadline: "At retirement",
+  },
+  {
+    id: "roth-reserve-not-set",
+    category: "Roth",
+    priority: "yellow",
+    condition: ({ params }) =>
+      rothTotal(params) > 100_000 &&
+      (params.rothEmergencyReserve || 0) === 0,
+    action: "Set a Roth emergency reserve floor",
+    reason: ({ params }) =>
+      `$${(rothTotal(params) / 1e3).toFixed(0)}K Roth with no reserve — a bad sequence-of-returns year could force full Roth depletion, eliminating your only tax-free spending bucket`,
+    deadline: "At retirement",
+  },
+  {
+    id: "smart-waterfall-inactive",
+    category: "Withdrawal Order",
+    priority: "yellow",
+    condition: ({ params }) =>
+      preTaxTotal(params) > 200_000 &&
+      params.withdrawalStrategy !== "smart",
+    action: "Consider Smart Waterfall withdrawal strategy",
+    reason: ({ params }) => {
+      const pretax = preTaxTotal(params);
+      return `$${(pretax / 1e6).toFixed(1)}M pretax balance — naive ordering drains it first and pushes income into higher brackets. To enable: (1) Forecast sidebar → Withdrawal Strategy → select "📋 Smart Waterfall (Tax-Optimal)", then re-run Monte Carlo. (2) Profile → Assumptions → Withdrawal Order → configure your bracket ceiling and IRMAA guard. (3) Scenarios → 📋 Withdrawal Plan to compare Smart vs Naive lifetime taxes.`;
+    },
+    deadline: "At retirement",
+  },
+
 ];
 
 // ─── Evaluator ─────────────────────────────────────────────────────────────────
