@@ -89,9 +89,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.8.7";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.7 — Tax treatment matrix embedded in About → How It Works → Tax Modeling.";
-export const BUILD_TIME = "2026-05-13T00:00:00Z";
+const APP_VERSION = "1.0.8.8";
+export const BUILD_TAG = "[main] v1.0.8.8 — Net Worth tab label updates to ex. RE when real estate toggle is off.";
+export const BUILD_TIME = "2026-05-14T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -5381,7 +5381,7 @@ function NetWorthTab({ p, results90, inf }) {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div className="ct" style={{ margin: 0 }}>
-              Net Worth Projection · 5‑year Intervals to Age {planAge} · Median MC Path
+              {showRE ? "Net Worth Projection" : "Portfolio Projection (ex. Real Estate)"} · 5‑year Intervals to Age {planAge} · Median MC Path
             </div>
             <span
               style={{ cursor: "pointer", color: "#64748b", fontSize: 12 }}
@@ -5456,7 +5456,7 @@ function NetWorthTab({ p, results90, inf }) {
           <div className="li"><div className="ll" style={{ background: "#0ea5e9" }} />Liquid Portfolio</div>
           <div className="li"><div className="ll" style={{ background: "#f87171", borderTop: "1px dashed #f87171", height: 2 }} />Mortgage Debt (dashed)</div>
           {showRE && <div className="li"><div className="ll" style={{ background: "#fbbf24" }} />Real Estate</div>}
-          <div className="li"><div className="ll" style={{ background: "#10b981" }} />Net Worth</div>
+          <div className="li"><div className="ll" style={{ background: "#10b981" }} />{showRE ? "Net Worth" : "Portfolio (ex. RE)"}</div>
         </div>
 
         {/* Footnote about peak age */}
@@ -7305,10 +7305,10 @@ function AssumptionsPanel({ values, onChange }) {
         >
           Monte Carlo Model Parameters
         </div>
-        <ARow label="Target Portfolio Value for Early Retirement" desc="This number is a hypothetical value you have set that 'If you hit this number, would you retire?'. This is where you are in the monte carlo curve. You can view this as a line on the Monte Carlo simulation.">
+        <ARow label="Target Portfolio Value for Early Retirement" desc="This is your retirement goal. This is the number that answers, What number do I need to retire? What is my retirement $$$ where no matter what, I RETIRE!!.">
           <CleanNumberInput value={values.earlyRetireTarget} onChange={(v) => onChange("earlyRetireTarget", v)} min={0} max={10000000} step={50000} />
         </ARow>
-        <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is your internal Portfolio Goal and where if you hit this number before you have accomplished your retirement goal. It's your minimal goal and anything above this number is extra beyond what is your ultimate goal. (default $3.2M)">
+        <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is a number where, if you hit this, would reconsider your target goal? This is a number that is a secondary decision. If you hit this, would you be ok with this goal if something caused a change in your plan,">
           <CleanNumberInput value={values.portfolioGoal} onChange={(v) => onChange("portfolioGoal", v)} min={0} max={10000000} step={50000} />
         </ARow>
         <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
