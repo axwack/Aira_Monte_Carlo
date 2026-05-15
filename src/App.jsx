@@ -89,9 +89,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.8.5";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.5 — Disabled Gemini 2.5 thinking mode on function calls (thinkingBudget: 0). Fixes MALFORMED_FUNCTION_CALL where 2.5-flash emitted Python-style print(default_api.foo()) instead of structured output. No-op for non-thinking models.";
-export const BUILD_TIME = "2026-05-08T17:00:00Z";
+const APP_VERSION = "1.0.8.7";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.7 — Tax treatment matrix embedded in About → How It Works → Tax Modeling.";
+export const BUILD_TIME = "2026-05-13T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1801,6 +1801,35 @@ function Toggle({ val, onChange, label, accent = "#0d9488" }) {
 // No component changes needed: just update the objects and arrays.
 // ═══════════════════════════════════════════════════════════════════════════
 
+function CollapsibleAboutCard({ entry, defaultOpen = false }) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div style={{ background:"rgba(255,255,255,0.03)",
+      border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, overflow:"hidden" }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{ width:"100%", display:"flex", alignItems:"center",
+          justifyContent:"space-between", gap:8, padding:"13px 15px",
+          background:"transparent", border:"none", cursor:"pointer",
+          fontSize:13, fontWeight:700, color:"#e2e8f0", textAlign:"left",
+          fontFamily:"inherit" }}
+        aria-expanded={open}
+      >
+        <span>{entry.icon} {entry.title}</span>
+        <span style={{ color:"#64748b", fontSize:10, lineHeight:1,
+          display:"inline-block", transition:"transform 0.15s",
+          transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+      </button>
+      {open && (
+        <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7,
+          padding:"0 15px 13px" }}
+          dangerouslySetInnerHTML={{ __html: entry.body }} />
+      )}
+    </div>
+  );
+}
+
 function AboutButton() {
   const [open, setOpen] = React.useState(false);
   const [tab, setTab] = React.useState(0);
@@ -1920,29 +1949,13 @@ function AboutButton() {
                         textTransform:"uppercase", marginBottom:9 }}>{g}</div>
                       <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
                         {ABOUT_FEATURES.filter(e => e.group === g).map(e => (
-                          <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
-                            border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"13px 15px" }}>
-                            <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
-                              {e.icon} {e.title}
-                            </div>
-                            {/* dangerousHTML – self‑closing with backslash */}
-                            <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}
-                                dangerouslySetInnerHTML={{ __html: e.body }} />
-                          </div>
+                          <CollapsibleAboutCard key={e.id} entry={e} />
                         ))}
                       </div>
                     </div>
                   ))}
                   {ungrouped.map(e => (
-                    <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
-                      border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"13px 15px" }}>
-                      <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
-                        {e.icon} {e.title}
-                      </div>
-                      {/* dangerousHTML for ungrouped entries as well */}
-                      <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}
-                          dangerouslySetInnerHTML={{ __html: e.body }} />
-                    </div>
+                    <CollapsibleAboutCard key={e.id} entry={e} />
                   ))}
                 </>
               );
@@ -5260,23 +5273,36 @@ function NetWorthTab({ p, results90, inf }) {
 
   const nwData = useMemo(() => {
     if (!results90) return [];
-    
-    // Build ages dynamically: from current age to plan end age, step 5
+
+    // Current liquid portfolio from accounts (matches home page sidebar)
+    const currentPort = (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0) || p.port || 0;
+    const preReturnRate = expectedReturn(p.preRetireEq ?? 91) / 100;
+
     const maxChartAge = p.endAge;
     const step = 1;
     const ages = [];
     for (let age = p.currentAge; age <= maxChartAge; age += step) {
       ages.push(age);
     }
-    
+
     return ages.map((age, idx) => {
       const yr = new Date().getFullYear() + idx * step;
-      // Map age to closest index in results90.pcts (which goes to age 90)
-      const pctIndex = Math.min(
-        Math.max(0, age - p.retireAge),
-        results90.pcts.length - 1
-      );
-      const port = results90.pcts[pctIndex]?.p50 || 0;
+
+      let port;
+      if (age < p.retireAge) {
+        // Accumulation phase: grow from current portfolio deterministically
+        const yearsToAge = age - p.currentAge;
+        let acc = currentPort;
+        for (let y = 0; y < yearsToAge; y++) {
+          acc = acc * (1 + preReturnRate) + (p.contrib || 0);
+        }
+        port = Math.round(acc);
+      } else {
+        // Retirement phase: use MC median percentile
+        const pctIndex = Math.min(age - p.retireAge, results90.pcts.length - 1);
+        port = results90.pcts[pctIndex]?.p50 || 0;
+      }
+
       const mortEntry = mortSched.years.find((y) => y.yr === yr);
       const mortBal = mortEntry ? mortEntry.bal : 0;
       const yearsFromNow = yr - new Date().getFullYear();
@@ -7342,13 +7368,13 @@ function ContribPanel({ values, onChange }) {
   const matchAmount = Math.round((annual401k * employerMatch) / 100);
   const totalSavings = annual401k + hsaAnnual + matchAmount;
 
-
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+      {/* ── Contributions ── */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
-          ANNUAL CONTRIBUTIONS - Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
+          ANNUAL CONTRIBUTIONS — Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
         </div>
         <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
@@ -7361,6 +7387,7 @@ function ContribPanel({ values, onChange }) {
         </WFieldRow>
       </div>
 
+      {/* ── Summary grid ── */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
         {[
           { label: "401(k) Contribution", val: annual401k, color: "#0ea5e9" },
@@ -7376,6 +7403,7 @@ function ContribPanel({ values, onChange }) {
         ))}
       </div>
 
+      {/* ── Total savings banner ── */}
       <div style={{ background: "linear-gradient(135deg, #0d948818, #14b8a618)", border: "1px solid #0d948844", borderRadius: 10, padding: 18, textAlign: "center" }}>
         <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>💰 Total Annual Savings Rate</div>
         <div style={{ fontSize: 36, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>
@@ -7384,6 +7412,29 @@ function ContribPanel({ values, onChange }) {
         </div>
         <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Including employer match and HSA</div>
       </div>
+
+      {/* ── Other income sources ── */}
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 10, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
+          OTHER INCOME (pension, part-time, royalties…) — reduces portfolio draw
+        </div>
+        {(values.otherIncomes || []).map((inc, idx) => (
+          <OtherIncomeCard
+            key={inc.id}
+            inc={inc}
+            autoFocus={idx === (values.otherIncomes || []).length - 1 && !inc.annual}
+            onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
+            onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
+          />
+        ))}
+        <button
+          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthRate: 0, growthCapYears: null, taxable: true }])}
+          style={{ background: "transparent", border: "1px dashed rgba(14,165,233,0.35)", borderRadius: 4, color: "#38bdf8", fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.7, marginTop: 2 }}
+          onMouseEnter={e => e.currentTarget.style.opacity = 1}
+          onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
+        >+ Add income source</button>
+      </div>
+
     </div>
   );
 }
@@ -7544,25 +7595,6 @@ function RetirementPanel({ values, onChange }) {
             width:80, textAlign:"right" }}
             /> year
         </WFieldRow>
-      </div>
-
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 10, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>OTHER INCOME (pension, royalties, part-time…)</div>
-        {(values.otherIncomes || []).map((inc, idx) => (
-          <OtherIncomeCard
-            key={inc.id}
-            inc={inc}
-            autoFocus={idx === (values.otherIncomes || []).length - 1 && !inc.annual}
-            onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
-            onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
-          />
-        ))}
-        <button
-          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthRate: 0, growthCapYears: null, taxable: true }])}
-          style={{ background: "transparent", border: "1px dashed rgba(14,165,233,0.35)", borderRadius: 4, color: "#38bdf8", fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.7, marginTop: 2 }}
-          onMouseEnter={e => e.currentTarget.style.opacity = 1}
-          onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
-        >+ Add income source</button>
       </div>
 
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
@@ -8587,7 +8619,30 @@ export default function AiRAForecaster() {
             <div className="sb-card">
               <div className="sb-title">Options</div>
               <Toggle val={smile} onChange={setSmile} label="🙂 Smile spending" />
-              <Toggle val={tax} onChange={setTax} label="🏛 Tax drag" accent="#d97706" />
+              <div className="tog-row">
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span className="tog-label">🏛 Tax drag</span>
+                  <InfoModal title="🏛 Tax Drag Adjustment — How It Works" accent="#d97706">
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> Tax drag scales up each year's portfolio withdrawal so the <em>after-tax</em> amount you keep matches your spending target. Without it, the engine would draw exactly your spend number and silently underfund you by whatever taxes are owed.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>How it changes by life stage:</strong> The drag percentage rises as your tax exposure grows over retirement:</p>
+                    <ul style={{ margin:"0 0 10px 18px", padding:0, color:"#94a3b8" }}>
+                      <li><strong style={{ color:"#e2e8f0" }}>Before SS</strong> — lowest drag (mostly taxable / Roth draws, no SS income).</li>
+                      <li><strong style={{ color:"#e2e8f0" }}>SS started, pre-RMD</strong> — moderate drag (SS becomes partially taxable).</li>
+                      <li><strong style={{ color:"#e2e8f0" }}>RMD age and beyond</strong> — highest drag (forced pre-tax draws + SS torpedo + IRMAA exposure).</li>
+                    </ul>
+                    <p style={{ margin:"0 0 10px" }}>Single filers see higher drag than MFJ at every stage because of halved brackets and standard deduction.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON (default):</strong> Withdrawals are grossed up by the stage-appropriate drag rate. More realistic — what you'll actually need to pull.</p>
+                    <p style={{ margin:0 }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF:</strong> Pure pre-tax view. Useful for sanity-checking the underlying portfolio dynamics without tax noise, but it overstates how long your money lasts.</p>
+                  </InfoModal>
+                </div>
+                <div
+                  className="tog"
+                  onClick={() => setTax(!tax)}
+                  style={{ background: tax ? "#d97706" : "rgba(255,255,255,0.1)" }}
+                >
+                  <div className="tok" style={{ left: tax ? 18 : 2 }} />
+                </div>
+              </div>
               <Toggle val={real} onChange={setReal} label="📉 Real dollars" accent="#0ea5e9" />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

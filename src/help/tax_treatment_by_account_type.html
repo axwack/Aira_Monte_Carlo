@@ -1,0 +1,188 @@
+
+<h2 class="sr-only">Tax treatment comparison across account types and income types for 2026 MFJ</h2>
+
+<style>
+.tax-wrap { padding: 1rem 0; font-size: 13px; }
+.tax-title { font-size: 18px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 4px; }
+.tax-sub { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 1.5rem; }
+.section-label { font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-tertiary); margin: 1.5rem 0 .5rem; }
+.acct-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-bottom: 1.5rem; }
+.acct-card { background: var(--color-background-secondary); border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-tertiary); padding: 12px 14px; }
+.acct-card.vin-yes { border: 1.5px solid #1D9E75; }
+.acct-card.vin-no { opacity: .65; }
+.acct-name { font-weight: 500; font-size: 13px; color: var(--color-text-primary); margin-bottom: 2px; }
+.acct-badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 10px; margin-bottom: 8px; font-weight: 500; }
+.badge-green { background: #E1F5EE; color: #0F6E56; }
+.badge-gray { background: var(--color-background-tertiary); color: var(--color-text-tertiary); }
+.acct-detail { font-size: 11px; color: var(--color-text-secondary); line-height: 1.6; }
+.matrix { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
+.matrix th { font-size: 11px; font-weight: 500; color: var(--color-text-secondary); text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--color-border-tertiary); white-space: nowrap; }
+.matrix td { font-size: 12px; padding: 7px 10px; border-bottom: 0.5px solid var(--color-border-tertiary); vertical-align: middle; color: var(--color-text-primary); }
+.matrix tr:last-child td { border-bottom: none; }
+.matrix .row-label { font-weight: 500; color: var(--color-text-secondary); font-size: 12px; }
+.rate-pill { display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.r-zero { background: #E1F5EE; color: #0F6E56; }
+.r-low { background: #EAF3DE; color: #3B6D11; }
+.r-mid { background: #FAEEDA; color: #854F0B; }
+.r-high { background: #FAECE7; color: #993C1D; }
+.r-max { background: #FCEBEB; color: #A32D2D; }
+.r-na { background: var(--color-background-tertiary); color: var(--color-text-tertiary); }
+.flag-box { background: #FAEEDA; border-left: 3px solid #EF9F27; border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0; padding: 10px 14px; margin-bottom: 10px; font-size: 12px; color: var(--color-text-primary); line-height: 1.6; }
+.warn-box { background: #FCEBEB; border-left: 3px solid #E24B4A; border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0; padding: 10px 14px; margin-bottom: 10px; font-size: 12px; color: var(--color-text-primary); line-height: 1.6; }
+.nj-note { font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; }
+.matrix .col-taxable { background: rgba(179,195,179,.07); }
+.legend-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1rem; }
+</style>
+
+<div class="tax-wrap">
+  <p class="tax-title">Tax treatment by account type — 2026 MFJ</p>
+  <p class="tax-sub">Federal rates + NJ state. Confirmed via IRS Rev. Proc. 2025-32.</p>
+
+  <p class="section-label">Your accounts (green border = you own this)</p>
+  <div class="acct-grid">
+    <div class="acct-card vin-no">
+      <div class="acct-name">Taxable brokerage</div>
+      <span class="acct-badge badge-gray">You don't have this</span>
+      <div class="acct-detail">After-tax contributions. Gains taxed annually on dividends/interest and at sale. Most flexible but most tax-exposed.</div>
+    </div>
+    <div class="acct-card vin-yes">
+      <div class="acct-name">Pre-tax 401k / IRA</div>
+      <span class="acct-badge badge-green">Solo 401k ✓</span>
+      <div class="acct-detail">Pre-tax contributions. Grows tax-deferred. All withdrawals = ordinary income. No capital gains treatment — ever.</div>
+    </div>
+    <div class="acct-card vin-yes">
+      <div class="acct-name">Roth IRA</div>
+      <span class="acct-badge badge-green">Roth IRA ✓</span>
+      <div class="acct-detail">After-tax contributions. Grows tax-free. Qualified withdrawals (59½ + 5yr) = 0% federal and most states. Best account in existence.</div>
+    </div>
+    <div class="acct-card vin-yes">
+      <div class="acct-name">HSA</div>
+      <span class="acct-badge badge-green">HSA ✓</span>
+      <div class="acct-detail">Pre-tax contributions. Tax-free for qualified medical. After 65: non-medical = ordinary income (like 401k). Triple tax advantage.</div>
+    </div>
+  </div>
+
+  <p class="section-label">Income type tax matrix</p>
+
+  <div class="legend-row">
+    <span class="rate-pill r-zero">0%</span>
+    <span class="rate-pill r-low">low (&lt;10%)</span>
+    <span class="rate-pill r-mid">mid (10–20%)</span>
+    <span class="rate-pill r-high">high (20–35%)</span>
+    <span class="rate-pill r-max">max (35%+)</span>
+    <span class="rate-pill r-na">N/A</span>
+  </div>
+
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th style="width:22%">Income type</th>
+        <th style="width:20%" class="col-taxable">Taxable brokerage<br><span class="nj-note">(federal + NJ)</span></th>
+        <th style="width:20%">Pre-tax 401k<br><span class="nj-note">withdrawal</span></th>
+        <th style="width:19%">Roth IRA<br><span class="nj-note">qualified</span></th>
+        <th style="width:19%">HSA<br><span class="nj-note">qualified med</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="row-label">LTCG (held &gt;1yr)<br><span class="nj-note">stocks, ETFs at sale</span></td>
+        <td class="col-taxable">
+          <span class="rate-pill r-zero">0% fed</span> up to $98,900<br>
+          <span class="rate-pill r-mid">15% fed</span> $98K–$613K<br>
+          <span class="rate-pill r-high">20% fed</span> $613K+<br>
+          <span class="rate-pill r-high">+NJ: 6.37%</span> ordinary<br>
+          <span class="rate-pill r-mid">+NIIT 3.8%</span> if MAGI &gt;$250K
+        </td>
+        <td><span class="rate-pill r-high">ordinary income</span><br><span class="nj-note">No LTCG treatment. All withdrawals = wages equivalent.</span></td>
+        <td><span class="rate-pill r-zero">0%</span><br><span class="nj-note">No tax event inside or at withdrawal.</span></td>
+        <td><span class="rate-pill r-zero">0%</span><br><span class="nj-note">No tax event inside or at withdrawal if medical.</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Qualified dividends<br><span class="nj-note">VOO, AAPL, MSFT</span></td>
+        <td class="col-taxable">
+          <span class="rate-pill r-zero">0% fed</span> up to $98,900<br>
+          <span class="rate-pill r-mid">15% fed</span> $98K–$613K<br>
+          <span class="rate-pill r-high">+NJ: 6.37%</span> ordinary
+        </td>
+        <td><span class="rate-pill r-high">ordinary income</span><br><span class="nj-note">DRIP reinvests inside — tax-deferred until withdrawal.</span></td>
+        <td><span class="rate-pill r-zero">0%</span><br><span class="nj-note">DRIP compounds tax-free forever.</span></td>
+        <td><span class="rate-pill r-zero">0%</span><br><span class="nj-note">Tax-free inside account.</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Ordinary dividends<br><span class="nj-note">REITs, non-qual</span></td>
+        <td class="col-taxable">
+          <span class="rate-pill r-high">ordinary income fed</span><br>
+          <span class="rate-pill r-high">+NJ: 6.37%</span><br>
+          <span class="nj-note">Up to 40.8% combined worst case</span>
+        </td>
+        <td><span class="rate-pill r-high">ordinary income</span><br><span class="nj-note">Deferred — paid at withdrawal not now.</span></td>
+        <td><span class="rate-pill r-zero">0%</span></td>
+        <td><span class="rate-pill r-zero">0%</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Interest income<br><span class="nj-note">SGOV, bonds, CDs</span></td>
+        <td class="col-taxable">
+          <span class="rate-pill r-high">ordinary income fed</span><br>
+          <span class="rate-pill r-high">+NJ: 6.37%</span><br>
+          <span class="nj-note">SGOV: NJ-exempt (US govt)</span>
+        </td>
+        <td><span class="rate-pill r-high">ordinary income</span><br><span class="nj-note">Deferred until withdrawal.</span></td>
+        <td><span class="rate-pill r-zero">0%</span></td>
+        <td><span class="rate-pill r-zero">0%</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Short-term cap gains<br><span class="nj-note">held ≤1yr</span></td>
+        <td class="col-taxable">
+          <span class="rate-pill r-max">ordinary income fed</span><br>
+          <span class="rate-pill r-high">+NJ: 6.37%</span><br>
+          <span class="nj-note">No preferential rate. Worst tax outcome.</span>
+        </td>
+        <td><span class="rate-pill r-high">ordinary income</span><br><span class="nj-note">Deferred.</span></td>
+        <td><span class="rate-pill r-zero">0%</span></td>
+        <td><span class="rate-pill r-zero">0%</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Return of capital (ROC)<br><span class="nj-note">SPYI, covered calls</span></td>
+        <td class="col-taxable">
+          <span class="rate-pill r-zero">0% now</span><br>
+          <span class="nj-note">Reduces cost basis. Taxed as LTCG/STCG at sale. Deferred but not forgiven.</span>
+        </td>
+        <td><span class="rate-pill r-na">irrelevant</span><br><span class="nj-note">Everything = ordinary income at withdrawal regardless.</span></td>
+        <td><span class="rate-pill r-zero">0%</span></td>
+        <td><span class="rate-pill r-zero">0%</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Withdrawal / distribution<br><span class="nj-note">at retirement</span></td>
+        <td class="col-taxable">
+          <span class="rate-pill r-zero">basis: 0%</span><br>
+          <span class="rate-pill r-low">gains: LTCG rate</span>
+        </td>
+        <td>
+          <span class="rate-pill r-high">22–24% fed</span> likely bracket<br>
+          <span class="rate-pill r-mid">+NJ: 0–6.37%</span><br>
+          <span class="nj-note">NJ exempts first $75K–100K pension income (MFJ, income limits)</span>
+        </td>
+        <td><span class="rate-pill r-zero">0% federal</span><br><span class="rate-pill r-zero">0% NJ</span><br><span class="nj-note">NJ follows federal Roth treatment.</span></td>
+        <td>
+          <span class="rate-pill r-zero">0% if medical</span><br>
+          <span class="rate-pill r-high">ordinary income if not</span><br>
+          <span class="nj-note">After age 65: non-medical = same as 401k.</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="section-label">The critical issue with the advice you received</p>
+  <div class="warn-box">
+    <strong>"Spend taxable first"</strong> — you have no taxable brokerage account. Every dollar you own is in Solo 401k (pre-tax), Roth IRA, or HSA. The 0% LTCG opportunity at $98,900 MFJ does not apply to any of your current accounts. Pre-tax 401k withdrawals are always ordinary income — there is no capital gains treatment available, no matter how long you held VOO inside it.
+  </div>
+  <div class="flag-box">
+    <strong>NJ kills the 0% LTCG advantage anyway.</strong> NJ taxes capital gains as ordinary income — no preferential rate. A MFJ couple at $98,900 income in NJ pays 0% federal LTCG but ~6.37% NJ on those same gains. FL or Thailand domicile = true 0% (federal + state). This is why your domicile decision before retirement is your single highest-leverage tax move.
+  </div>
+  <div class="flag-box">
+    <strong>Your actual highest-tax outcome:</strong> Pre-tax Solo 401k withdrawals in NJ at retirement — ~22–24% federal + ~6.37% NJ = ~28–30% combined on every dollar. Your Roth conversion ladder targets this exact problem.
+  </div>
+  <div class="flag-box">
+    <strong>Your actual lowest-tax outcome:</strong> Roth IRA withdrawals anywhere = 0% federal, 0% NJ, no NIIT, no RMD, no state. Then HSA (medical). Then Airbnb income (partially sheltered by depreciation). Then SS (partially excluded). Pre-tax 401k is last resort in the withdrawal waterfall.
+  </div>
+</div>
