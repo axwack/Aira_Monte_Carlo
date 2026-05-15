@@ -245,9 +245,6 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   return 72;
 }
 
-// KNOWN LIMITATION: Spending withdrawals use a fixed 60/40 pretax/Roth split for simplicity.
-// Pre-tax portfolio draws are not added to taxable income in this explorer.
-// Conversion tax deltas remain valid; absolute effective rates are understated.
 function buildRothExplorer(params = {}) {
   console.log("[buildRothExplorer] taxFunding =", params.taxFunding);
   const {
@@ -380,7 +377,18 @@ function buildRothExplorer(params = {}) {
         const divisor = rmdTable[age] || 15.0;
         rmd = Math.round(pT / divisor);
       }
-      const incBC = baseInc + rmd;
+      // Dynamic withdrawal ratio: derive pretax/Roth split from actual balances each year.
+      // As Roth grows from conversions the ratio naturally shifts toward tax-free draws.
+      const pretaxShare = totalPort > 0 ? pT / totalPort : 0;
+      const additionalNeeded = Math.max(0, portDraw - rmd);
+      const additionalPretax = Math.min(
+        Math.round(additionalNeeded * pretaxShare),
+        Math.max(0, pT - rmd)
+      );
+      const additionalRoth = additionalNeeded - additionalPretax;
+      // Pre-tax draws beyond the forced RMD are ordinary income (traditional IRA/401k withdrawals)
+      const pretaxSpend = additionalPretax;
+      const incBC = baseInc + rmd + pretaxSpend;
       const txBC = Math.max(0, incBC - stdD);
 
       let conv = 0;
@@ -464,8 +472,8 @@ function buildRothExplorer(params = {}) {
       }
       const pTStart = pT, roStart = ro;
       taxBal = Math.max(0, taxBal - taxFromTaxable) * (1 + gr);
-      pT = Math.max(0, pT - rmd - conv - Math.max(0, portDraw * 0.6)) * (1 + gr);
-      ro = Math.max(0, ro + roAdd - Math.max(0, portDraw * 0.4)) * (1 + gr);
+      pT = Math.max(0, pT - rmd - conv - additionalPretax) * (1 + gr);
+      ro = Math.max(0, ro + roAdd - additionalRoth) * (1 + gr);
       lastReturn = gr;
       cTax += totT;
       cConv += conv;
@@ -488,7 +496,7 @@ function buildRothExplorer(params = {}) {
         });
       }
       rows.push({
-        yr, age, ss, abn, rmd, conv, baseInc: incBC, totInc, txInc,
+        yr, age, ss, abn, rmd, pretaxSpend, conv, baseInc: incBC, totInc, txInc,
         fedT, stT, totT, effR, margR, irmaa, magi,
         pTStart: Math.round(pTStart), roStart: Math.round(roStart),
         pT: Math.round(pT), ro: Math.round(ro), nw: Math.round(pT + ro),
@@ -542,4 +550,9 @@ function buildRothLadder(params = {}) {
   }));
 }
 
-export { buildRothExplorer, buildRothLadder };
+export {
+  buildRothExplorer, buildRothLadder,
+  progTax, idxB, irmaaCost, getStateBrackets, getRmdStartAge,
+  FED_BRACKETS_2026_MFJ, FED_BRACKETS_2026_SINGLE,
+  STATE_BRACKETS, RMD_DIV, JOINT_RMD_DIV,
+};

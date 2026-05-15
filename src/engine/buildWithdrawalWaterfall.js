@@ -1,0 +1,322 @@
+/**
+ * buildWithdrawalWaterfall.js
+ *
+ * Tax-optimal withdrawal waterfall engine.
+ * Runs two deterministic scenarios — "smart" (bracket-ceiling-capped pretax draws)
+ * and "naive" (pretax first, no ceiling) — and returns per-year rows for both.
+ *
+ * Smart waterfall order per year:
+ *   1. Fixed income (SS + annuity/rental)
+ *   2. RMDs (forced from pretax)
+ *   3. Cash / SGOV
+ *   4. Taxable brokerage
+ *   5. Pre-tax IRA/401k — STOP at withdrawalBracketTarget bracket ceiling
+ *      (also capped at IRMAA tier-1 when irmaaGuard is enabled)
+ *   6. Roth — last resort; rothEmergencyReserve floor is always maintained
+ *   7. Tax calculation (ordinary income + IRMAA)
+ *   8. Landmine detection (SS torpedo, IRMAA triggered, RMD active)
+ */
+
+import {
+  progTax,
+  idxB,
+  irmaaCost,
+  getStateBrackets,
+  getRmdStartAge,
+  FED_BRACKETS_2026_MFJ,
+  FED_BRACKETS_2026_SINGLE,
+  RMD_DIV,
+  JOINT_RMD_DIV,
+} from "./buildRothExplorer.js";
+
+const BASE_YEAR = new Date().getFullYear();
+
+// 2026 MFJ standard deduction base + age-65 bonus
+const STD_DED_MFJ    = 32_200;
+const STD_DED_SINGLE = 16_100;
+const AGE_BONUS_MFJ    = 3_300;
+const AGE_BONUS_SINGLE = 1_650;
+
+// 2026 IRMAA Tier-1 MAGI ceiling (MFJ), inflation-adjusted in engine
+const IRMAA_TIER1_2026 = 218_000;
+
+// Bracket ceilings as taxable income (post std-deduction), 2026, inflation-indexed
+const BRACKET_CEILINGS_MFJ    = { "10": 24_800, "12": 100_800, "22": 211_400, "24": 403_550, "irmaa": 218_000 };
+const BRACKET_CEILINGS_SINGLE = { "10": 12_400, "12": 50_400,  "22": 105_700, "24": 201_800, "irmaa": 106_000 };
+
+function stdDed(age, isMFJ, inflFactor) {
+  const base  = isMFJ ? STD_DED_MFJ    : STD_DED_SINGLE;
+  const bonus = isMFJ ? AGE_BONUS_MFJ  : AGE_BONUS_SINGLE;
+  return Math.round((base + (age >= 65 ? bonus : 0)) * inflFactor);
+}
+
+function bracketCeiling(target, isMFJ, inflFactor) {
+  if (!target || target === "off") return Infinity;
+  const tbl = isMFJ ? BRACKET_CEILINGS_MFJ : BRACKET_CEILINGS_SINGLE;
+  const base = tbl[target] ?? tbl["22"];
+  return Math.round(base * inflFactor);
+}
+
+/**
+ * Main export.
+ * @param {object} params — full AiRA profile object
+ * @returns {{ smart: ScenarioResult, naive: ScenarioResult, summary: Summary }}
+ */
+export function buildWithdrawalWaterfall(params = {}) {
+  const {
+    currentAge,
+    retireAge,
+    endAge       = 90,
+    sp: baseSp   = 80_000,
+    ssAge        = 67,
+    ssb          = 0,
+    ssCola       = 2.4,
+    ab           = 0,
+    abEndYear    = null,
+    inf          = 2.5,
+    accounts     = [],
+    filingStatus = "mfj",
+    stateOfResidence = "NJ",
+    twoHousehold = false,
+    dob,
+    birthYear,
+    useJointRmdTable = false,
+    gkFloor      = 48_000,
+    gkCeiling    = 115_000,
+    // New waterfall fields
+    withdrawalBracketTarget = "22",
+    irmaaGuard           = false,
+    ssTorpedoGuard       = false,
+    rothEmergencyReserve = 0,
+    gr: grParam,
+  } = params;
+
+  if (currentAge == null || retireAge == null) {
+    const empty = { rows: [], totalTax: 0, finalPretax: 0, finalRoth: 0, finalCash: 0, finalTaxable: 0 };
+    return { smart: empty, naive: empty, summary: emptySummary() };
+  }
+
+  const isMFJ      = filingStatus !== "single";
+  const infR       = inf / 100;
+  const gr         = grParam ?? 0.07;
+  const cashGr     = 0.045; // conservative cash/SGOV return
+  const retireYear = BASE_YEAR + (retireAge - currentAge);
+  const rmdAge     = getRmdStartAge({ dob, birthYear, currentAge });
+
+  const fedBase    = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
+  const stateBr0   = twoHousehold ? null : getStateBrackets(stateOfResidence, isMFJ);
+
+  // ── Initialise buckets from accounts ──────────────────────────────────────
+  let pretax0 = 0, roth0 = 0, taxable0 = 0, cash0 = 0;
+  for (const a of accounts) {
+    const bal = a.balance || 0;
+    if      (a.category === "pretax")  pretax0  += bal;
+    else if (a.category === "roth")    roth0    += bal;
+    else if (a.category === "taxable") taxable0 += bal;
+    else                               cash0    += bal; // cash + hsa
+  }
+
+  // Accumulation phase: grow buckets from currentAge to retireAge
+  const accYrs = Math.max(0, retireAge - currentAge);
+  for (let y = 0; y < accYrs; y++) {
+    pretax0  *= (1 + gr);
+    roth0    *= (1 + gr);
+    taxable0 *= (1 + gr);
+    cash0    *= (1 + cashGr);
+  }
+
+  // ── Guyton-Klinger helper (mirrors App.jsx implementation) ─────────────────
+  function gkWithdraw(port, initWR, lastW, lastRet, inflRate, floor, ceiling) {
+    if (!port || port <= 0) return floor || 0;
+    let w = lastRet >= 0 ? lastW * (1 + inflRate) : lastW;
+    const cur = port > 0 ? w / port : 0;
+    if (cur <= initWR * 0.8) w *= 1.1;
+    else if (cur >= initWR * 1.2) w *= 0.9;
+    return Math.max(floor || 0, Math.min(ceiling || Infinity, w));
+  }
+
+  // ── Tax helpers ────────────────────────────────────────────────────────────
+  function yearTax(age, yr, fromPretax, ssGross, annuityTaxable, rmd, inflFactor) {
+    const iF  = inflFactor;
+    const fB  = idxB(fedBase, iF);
+    const nB  = stateBr0 ? idxB(stateBr0, iF) : [];
+    const sd  = stdDed(age, isMFJ, iF);
+    const taxSS = Math.round(ssGross * 0.85);
+    const totInc = taxSS + annuityTaxable + rmd + fromPretax;
+    const txInc  = Math.max(0, totInc - sd);
+    const fedT   = Math.round(progTax(txInc, fB));
+    const stT    = stateBr0 ? Math.round(progTax(txInc, idxB(stateBr0, iF))) : 0;
+    const magi   = totInc + (ssGross - taxSS);
+    const irmaa  = age >= 65 ? irmaaCost(magi, yr, infR) : 0;
+    let margR = 0;
+    for (const b of fB) { if (txInc > b.lo) margR = b.rate; else break; }
+    return { fedTax: fedT, stateTax: stT, irmaa, totalTax: fedT + stT, irmaaFull: fedT + stT + irmaa,
+             effectiveRate: totInc > 0 ? (fedT + stT) / totInc : 0, marginalBracket: margR,
+             taxableIncome: txInc, totInc };
+  }
+
+  // ── Scenario runner ────────────────────────────────────────────────────────
+  function runScenario(isSmart) {
+    let pretax = pretax0, roth = roth0, taxable = taxable0, cash = cash0;
+    const rows = [];
+    let sp = baseSp, lastRet = gr;
+    const totalPort0 = pretax + roth + taxable + cash;
+    const ss0 = retireAge >= ssAge ? ssb : 0;
+    const ab0 = ab > 0 ? ab : 0;
+    const initDraw = Math.max(0, baseSp - ss0 - ab0);
+    const initWR = totalPort0 > 0 ? initDraw / totalPort0 : 0.04;
+    let cTax = 0;
+
+    for (let age = retireAge; age <= endAge; age++) {
+      const yr  = retireYear + (age - retireAge);
+      const iF  = Math.pow(1 + infR, yr - BASE_YEAR);
+      const adjFloor   = Math.round(gkFloor   * iF);
+      const adjCeiling = Math.round(gkCeiling * iF);
+
+      // Guyton-Klinger spend adjustment (every year after first)
+      const totalPort = pretax + roth + taxable + cash;
+      if (age > retireAge && totalPort > 0) {
+        sp = gkWithdraw(totalPort, initWR, sp, lastRet, infR, adjFloor, adjCeiling);
+      }
+
+      // ── Step 1: Fixed income ────────────────────────────────────────────
+      const ss = age >= ssAge
+        ? Math.round(ssb * Math.pow(1 + (ssCola || 2.4) / 100, age - ssAge))
+        : 0;
+      const annuity = ab > 0 && (abEndYear == null || yr <= abEndYear) && age <= 80
+        ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
+        : 0;
+      const fixedIncome = ss + annuity;
+
+      // ── Step 2: RMD (forced) ────────────────────────────────────────────
+      let rmd = 0;
+      if (age >= rmdAge && pretax > 0) {
+        const tbl     = useJointRmdTable ? JOINT_RMD_DIV : RMD_DIV;
+        const divisor = tbl[age] || 15.0;
+        rmd = Math.round(pretax / divisor);
+        pretax -= rmd;
+      }
+
+      // ── Steps 3-6: Portfolio draws ──────────────────────────────────────
+      let need = Math.max(0, sp - fixedIncome);
+
+      // Step 3 — Cash
+      const fromCash = Math.min(need, cash);
+      need -= fromCash;
+
+      // Step 4 — Taxable
+      const fromTaxable = Math.min(need, taxable);
+      need -= fromTaxable;
+
+      // Step 5 — Pretax (bracket-capped in smart mode)
+      let pretaxAllowed = need;
+      let pretaxCapReason = "uncapped";
+
+      if (isSmart && withdrawalBracketTarget && withdrawalBracketTarget !== "off") {
+        const sd      = stdDed(age, isMFJ, iF);
+        const taxSoFar = Math.max(0, Math.round(ss * 0.85) + rmd + annuity - sd);
+        let ceiling = bracketCeiling(withdrawalBracketTarget, isMFJ, iF);
+
+        if (irmaaGuard && age >= 63) {
+          const irmaaCap = Math.round(IRMAA_TIER1_2026 * iF) - sd;
+          if (irmaaCap < ceiling) {
+            ceiling = irmaaCap;
+            pretaxCapReason = "irmaa_ceil";
+          }
+        }
+
+        const room = Math.max(0, ceiling - taxSoFar);
+        pretaxAllowed = Math.min(need, room);
+        if (pretaxCapReason !== "irmaa_ceil") {
+          pretaxCapReason = pretaxAllowed < need
+            ? `bracket_${withdrawalBracketTarget}`
+            : "uncapped";
+        }
+      }
+
+      const fromPretax = Math.min(pretaxAllowed, pretax);
+      if (pretax <= pretaxAllowed) pretaxCapReason = "exhausted";
+      need -= fromPretax;
+
+      // Step 6 — Roth (last resort, reserve respected in smart mode)
+      const rothFloor = isSmart ? (rothEmergencyReserve || 0) : 0;
+      const rothAvail = Math.max(0, roth - rothFloor);
+      const fromRoth  = Math.min(need, rothAvail);
+      const rothReserveHeld = Math.max(0, roth - rothFloor - fromRoth);
+      need -= fromRoth;
+
+      // ── Step 7: Tax calculation ─────────────────────────────────────────
+      const tax = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF);
+
+      // ── Step 8: Landmine detection ──────────────────────────────────────
+      const provisional = ss * 0.5 + rmd + fromPretax + annuity;
+      const torpedoThresh = isMFJ ? 44_000 : 34_000;
+      const ssTorpedo     = ssTorpedoGuard && ss > 0 && provisional > torpedoThresh;
+      const irmaaTriggered = tax.irmaa > 0;
+      const rmdActive     = age >= rmdAge && (pretax + rmd + fromPretax) > 0;
+
+      // ── Update buckets ──────────────────────────────────────────────────
+      cash    = Math.max(0, cash    - fromCash)    * (1 + cashGr);
+      taxable = Math.max(0, taxable - fromTaxable) * (1 + gr);
+      pretax  = Math.max(0, pretax  - fromPretax)  * (1 + gr);
+      roth    = Math.max(0, roth    - fromRoth)    * (1 + gr);
+
+      lastRet = gr;
+      cTax += tax.totalTax;
+
+      rows.push({
+        age, yr,
+        ss, annuityRental: annuity, fixedIncomeTotal: fixedIncome,
+        rmd, rmdActive,
+        fromCash, fromTaxable, fromPretax, pretaxCapReason,
+        fromRoth, rothReserveHeld,
+        fedTax: tax.fedTax, stateTax: tax.stateTax, irmaa: tax.irmaa,
+        totalTax: tax.totalTax, irmaaFull: tax.irmaaFull,
+        effectiveRate: tax.effectiveRate, marginalBracket: tax.marginalBracket,
+        taxableIncome: tax.taxableIncome,
+        landmines: { ssTorpedo, irmaaTriggered, rmdActive },
+        cashEnd:    Math.round(cash),
+        taxableEnd: Math.round(taxable),
+        pretaxEnd:  Math.round(pretax),
+        rothEnd:    Math.round(roth),
+        totalPort:  Math.round(cash + taxable + pretax + roth),
+        spending:   Math.round(sp),
+        needFromPort: Math.round(Math.max(0, sp - fixedIncome)),
+        totalWithdrawal: Math.round(fromCash + fromTaxable + fromPretax + fromRoth + tax.totalTax),
+      });
+    }
+
+    const last = rows[rows.length - 1] || {};
+    return {
+      rows,
+      totalTax:     cTax,
+      finalPretax:  last.pretaxEnd  || 0,
+      finalRoth:    last.rothEnd    || 0,
+      finalCash:    last.cashEnd    || 0,
+      finalTaxable: last.taxableEnd || 0,
+    };
+  }
+
+  const smart = runScenario(true);
+  const naive = runScenario(false);
+
+  const summary = {
+    lifetimeTaxSmart:    smart.totalTax,
+    lifetimeTaxNaive:    naive.totalTax,
+    taxSavings:          naive.totalTax - smart.totalTax,
+    finalRothSmart:      smart.finalRoth,
+    finalRothNaive:      naive.finalRoth,
+    irmaaYearsTriggered: smart.rows.filter(r => r.landmines.irmaaTriggered).length,
+    ssTorpedoYears:      smart.rows.filter(r => r.landmines.ssTorpedo).length,
+  };
+
+  return { smart, naive, summary };
+}
+
+function emptySummary() {
+  return {
+    lifetimeTaxSmart: 0, lifetimeTaxNaive: 0, taxSavings: 0,
+    finalRothSmart: 0, finalRothNaive: 0,
+    irmaaYearsTriggered: 0, ssTorpedoYears: 0,
+  };
+}

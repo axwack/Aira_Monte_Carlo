@@ -63,6 +63,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
+import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
@@ -270,6 +271,7 @@ function getStateBrackets(state, isMFJ) {
 
 export const getStrategyLabel = (strategy) => {
   const labels = {
+    smart: "Smart Waterfall",
     gk: "Guyton‑Klinger",
     fixed: "Fixed Percentage",
     vanguard: "Vanguard Dynamic Spending",
@@ -286,6 +288,7 @@ export const getStrategyLabel = (strategy) => {
 
 export const getStrategyDescription = (strategy) => {
   const descriptions = {
+    smart: "Smart Waterfall — tax-optimal bucket sequencing. Spending is sourced cash → taxable → pre-tax (capped at your chosen bracket ceiling) → Roth last. Preserves Roth, reduces IRMAA exposure, and cuts lifetime taxes vs naive pretax-first ordering. Configure the bracket ceiling and guards in Profile → Withdrawal Order.",
     gk: "Guyton‑Klinger guardrails — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.",
     fixed: "Fixed Percentage Withdrawal — you withdraw a constant percentage of your portfolio each year, adjusting automatically with market movements.",
     vanguard: "Vanguard Dynamic Spending — spending adjusts within a ceiling and floor based on market performance and inflation.",
@@ -381,6 +384,10 @@ export const BLANK_PROFILE = {
   checkpoints: [],          // each: { id, date, value, note }
   earlyRetireTarget: 2_000_000,
   withdrawalStrategy: "gk",
+  withdrawalBracketTarget: "22",  // "10"|"12"|"22"|"24"|"irmaa"|"off" — pretax ceiling in smart mode
+  irmaaGuard: false,              // cap pretax draws below IRMAA tier-1 ceiling (ages 63+)
+  ssTorpedoGuard: false,          // show SS torpedo landmine warnings in Withdrawal Plan tab
+  rothEmergencyReserve: 0,        // never draw Roth below this $ floor
   geminiApiKey: "",
   geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
 };
@@ -764,6 +771,10 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           }
           sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
         }
+        else if (withdrawalStrategy === "smart") {
+          // Smart waterfall uses GK guardrails for spend amount; bucket sourcing is handled below
+          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+        }
       }
       lastReturn = r;
 
@@ -818,14 +829,32 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       const totalWithdrawalNeeded = totalNeed + totalTax;
 
       // Withdraw from buckets in order: cash → taxable → pretax → roth
+      // Smart waterfall mode caps pretax at bracket ceiling; respects Roth reserve floor.
+      const useSmartWF = withdrawalStrategy === "smart";
       let remaining = totalWithdrawalNeeded;
       let fromCash = Math.min(remaining, cash);
       remaining -= fromCash;
       let fromTaxable = Math.min(remaining, taxable);
       remaining -= fromTaxable;
-      let fromPretax = Math.min(remaining, pretax);
+
+      let pretaxAllowedMC = remaining;
+      if (useSmartWF && p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off") {
+        const inflFactorMC = Math.pow(1 + (p.inf || 2.5) / 100, Math.max(0, yr - 2026));
+        const isMFJmc = filingStatus !== "single";
+        const sdMC = Math.round(((isMFJmc ? 32_200 : 16_100) + (age >= 65 ? (isMFJmc ? 3_300 : 1_650) : 0)) * inflFactorMC);
+        const taxableSoFarMC = Math.max(0, Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable) - sdMC);
+        let ceilMC = getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC);
+        if (p.irmaaGuard && age >= 63) {
+          ceilMC = Math.min(ceilMC, Math.round(218_000 * inflFactorMC) - sdMC);
+        }
+        pretaxAllowedMC = Math.min(remaining, Math.max(0, ceilMC - taxableSoFarMC));
+      }
+
+      let fromPretax = Math.min(pretaxAllowedMC, pretax);
       remaining -= fromPretax;
-      let fromRoth = Math.min(remaining, roth);
+
+      const rothFloorMC = useSmartWF ? (p.rothEmergencyReserve || 0) : 0;
+      let fromRoth = Math.min(remaining, Math.max(0, roth - rothFloorMC));
       remaining -= fromRoth;
 
       if (remaining > 0.01) {
@@ -852,7 +881,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         const bracketCeiling = getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor);
         const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
         if (room > 500) {
-          const convAmt = Math.min(room, pretax * 0.4);
+          const convAmt = Math.min(room, pretax);
           const convTax = Math.round(convAmt * (taxResult.marginalBracket || 0.22));
           const totalCost = convAmt + convTax;
           if (pretax >= totalCost) {
@@ -1735,9 +1764,9 @@ const TaxYearTip = ({ active, payload, label }) => {
 const IncYearTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   const get = key => payload.find(p => p.dataKey === key)?.value || 0;
-  const oSS = get("opt_ss"), oAb = get("opt_ab"), oRmd = get("opt_rmd"), oConv = get("opt_conv");
-  const cSS = get("cur_ss"), cAb = get("cur_ab"), cRmd = get("cur_rmd");
-  const oTotal = oSS + oAb + oRmd + oConv, cTotal = cSS + cAb + cRmd;
+  const oSS = get("opt_ss"), oAb = get("opt_ab"), oRmd = get("opt_rmd"), oConv = get("opt_conv"), oPxs = get("opt_pxs");
+  const cSS = get("cur_ss"), cAb = get("cur_ab"), cRmd = get("cur_rmd"), cPxs = get("cur_pxs");
+  const oTotal = oSS + oAb + oRmd + oConv + oPxs, cTotal = cSS + cAb + cRmd + cPxs;
   const N = v => `$${Math.round(v).toLocaleString()}`;
   const tipRow = (swatch, lbl, optV, curV) => (optV > 0 || curV > 0) ? (
     <tr key={lbl} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
@@ -1768,6 +1797,7 @@ const IncYearTip = ({ active, payload, label }) => {
           {tipRow("#5eead4", "Social Security (85%)", oSS, cSS)}
           {tipRow("#fbbf24", "Annuity / Benefit", oAb, cAb)}
           {tipRow("#a78bfa", "Required Min. Dist.", oRmd, cRmd)}
+          {tipRow("#60a5fa", "Pretax Withdrawal", oPxs, cPxs)}
           {tipRow("#34d399", "Roth Conversion", oConv, 0)}
         </tbody>
         <tfoot>
@@ -2473,22 +2503,51 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           </span>
         </div>
       )}
-      {showTargets && (
-        <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
-          <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 3 }}>🎯 Reassess — ${(portfolioGoal/1e6).toFixed(1)}M</div>
-            <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
-              Your minimum acceptable goal. When the median MC path crosses this line, your plan is already viable — anything above is upside. Use it as a "stop worrying" threshold: if you hit this before your planned retirement date, it's worth reassessing whether you can retire sooner or spend more.
+      {showTargets && (() => {
+        const currentYear   = new Date().getFullYear();
+        const pctsData      = pcts || [];
+        const reassessCross = pctsData.find(d => d.p50 >= portfolioGoal);
+        const triggerCross  = pctsData.find(d => d.p50 >= earlyRetireTarget);
+
+        const crossBadge = (cross, accentColor) => {
+          if (!cross) return <span style={{ fontSize: 10, color: "#475569", fontStyle: "italic" }}>Not reached on median path</span>;
+          const crossYear = currentYear + (cross.age - (currentAge || 60));
+          const diff = cross.age - (retireAge || 65);
+          const timing = diff < 0
+            ? <span style={{ color: "#34d399" }}>{Math.abs(diff)} yr{Math.abs(diff) !== 1 ? "s" : ""} before D‑Day ✅</span>
+            : diff === 0
+            ? <span style={{ color: "#fbbf24" }}>At retirement ✅</span>
+            : <span style={{ color: "#fb923c" }}>{diff} yr{diff !== 1 ? "s" : ""} after D‑Day</span>;
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+              <div style={{ background: `${accentColor}22`, border: `1px solid ${accentColor}55`, borderRadius: 6, padding: "3px 10px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: accentColor, fontFamily: "'DM Mono',monospace" }}>Age {cross.age} · {crossYear}</span>
+                <span style={{ fontSize: 10, color: "#64748b" }}>·</span>
+                <span style={{ fontSize: 11 }}>{timing}</span>
+              </div>
             </div>
-          </div>
+          );
+        };
+
+        return (
+          <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
           <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#8b5cf6", marginBottom: 3 }}>🚀 Trigger — ${(earlyRetireTarget/1e6).toFixed(1)}M</div>
-            <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
-              Your early-exit number. If the portfolio hits this level at any point before D-Day, it's a pre-set signal to pull the trigger on early retirement — regardless of your original timeline. Think of it as a permission slip: the math says you're done, even if the calendar doesn't.
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#8b5cf6", marginBottom: 3 }}>🚀 Trigger — ${(earlyRetireTarget/1e6).toFixed(1)}M</div>
+              <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
+                Your early-exit number. If the median hits this before D-Day, the math says you're done — regardless of your original timeline.
+              </div>
+              {crossBadge(triggerCross, "#8b5cf6")}
+            </div>
+            <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 3 }}>🎯 Reassess — ${(portfolioGoal/1e6).toFixed(1)}M</div>
+              <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
+                Your minimum acceptable goal. When the median MC path crosses this line, your plan is already viable — anything above is upside.
+              </div>
+              {crossBadge(reassessCross, "#f59e0b")}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       <ResponsiveContainer width="100%" height={640}>
         <ComposedChart
           data={dataWithMortality}
@@ -2666,6 +2725,31 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
               style: { background: "#8b5cf6", padding: "4px 8px", borderRadius: 4, boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }
             }}
           />}
+          {showTargets && (() => {
+            const pctsForDots   = pcts || [];
+            const reassessCross = pctsForDots.find(d => d.p50 >= portfolioGoal);
+            const triggerCross  = pctsForDots.find(d => d.p50 >= earlyRetireTarget);
+            return (
+              <>
+                {reassessCross && (
+                  <ReferenceDot
+                    yAxisId="port"
+                    x={reassessCross.age} y={portfolioGoal}
+                    r={6} fill="#f59e0b" stroke="#0a0f1e" strokeWidth={2}
+                    label={{ value: `Age ${reassessCross.age}`, fill: "#f59e0b", fontSize: 9, position: "top" }}
+                  />
+                )}
+                {triggerCross && (
+                  <ReferenceDot
+                    yAxisId="port"
+                    x={triggerCross.age} y={earlyRetireTarget}
+                    r={6} fill="#8b5cf6" stroke="#0a0f1e" strokeWidth={2}
+                    label={{ value: `Age ${triggerCross.age}`, fill: "#8b5cf6", fontSize: 9, position: "top" }}
+                  />
+                )}
+              </>
+            );
+          })()}
         </ComposedChart>
       </ResponsiveContainer>
 
@@ -4020,12 +4104,14 @@ const modeDescs = {
         const optStTotal   = opt.rows.reduce((s, r) => s + (r.stT   || 0), 0);
         const curFedTotal  = cur.rows.reduce((s, r) => s + (r.fedT  || 0), 0);
         const curStTotal   = cur.rows.reduce((s, r) => s + (r.stT   || 0), 0);
-        const optAbTotal   = opt.rows.reduce((s, r) => s + (r.abn   || 0), 0);
-        const curAbTotal   = cur.rows.reduce((s, r) => s + (r.abn   || 0), 0);
+        const optAbTotal   = opt.rows.reduce((s, r) => s + (r.abn         || 0), 0);
+        const curAbTotal   = cur.rows.reduce((s, r) => s + (r.abn         || 0), 0);
         const optSSTotal   = Math.round(opt.rows.reduce((s, r) => s + (r.ss || 0), 0) * 0.85);
         const curSSTotal   = Math.round(cur.rows.reduce((s, r) => s + (r.ss || 0), 0) * 0.85);
-        const optTotInc    = opt.rows.reduce((s, r) => s + (r.totInc || 0), 0);
-        const curTotInc    = cur.rows.reduce((s, r) => s + (r.totInc || 0), 0);
+        const optPxsTotal  = opt.rows.reduce((s, r) => s + (r.pretaxSpend  || 0), 0);
+        const curPxsTotal  = cur.rows.reduce((s, r) => s + (r.pretaxSpend  || 0), 0);
+        const optTotInc    = opt.rows.reduce((s, r) => s + (r.totInc       || 0), 0);
+        const curTotInc    = cur.rows.reduce((s, r) => s + (r.totInc       || 0), 0);
 
         const taxChartData = opt.rows
           .filter(r => r.age >= (params.retireAge || 60) && r.age <= 90)
@@ -4051,12 +4137,14 @@ const modeDescs = {
             return {
               age: r.age,
               opt_ss:   Math.round((r.ss  || 0) * 0.85),
-              opt_ab:   r.abn   || 0,
-              opt_rmd:  r.rmd   || 0,
-              opt_conv: r.conv  || 0,
+              opt_ab:   r.abn          || 0,
+              opt_rmd:  r.rmd          || 0,
+              opt_pxs:  r.pretaxSpend  || 0,
+              opt_conv: r.conv         || 0,
               cur_ss:   Math.round((c.ss  || 0) * 0.85),
-              cur_ab:   c.abn   || 0,
-              cur_rmd:  c.rmd   || 0,
+              cur_ab:   c.abn          || 0,
+              cur_rmd:  c.rmd          || 0,
+              cur_pxs:  c.pretaxSpend  || 0,
             };
           });
 
@@ -4140,10 +4228,12 @@ const modeDescs = {
                       <Bar dataKey="opt_ss"   stackId="opt" fill="#5eead4"                  name="OPT Social Sec." />
                       <Bar dataKey="opt_ab"   stackId="opt" fill="#fbbf24"                  name="OPT Annuity" />
                       <Bar dataKey="opt_rmd"  stackId="opt" fill="#a78bfa"                  name="OPT RMD" />
+                      <Bar dataKey="opt_pxs"  stackId="opt" fill="#60a5fa"                  name="OPT Pretax Draw" />
                       <Bar dataKey="opt_conv" stackId="opt" fill="#34d399"                  name="OPT Conversion"  radius={[2,2,0,0]} />
                       <Bar dataKey="cur_ss"   stackId="cur" fill="rgba(94,234,212,0.3)"     name="CUR Social Sec." />
                       <Bar dataKey="cur_ab"   stackId="cur" fill="rgba(251,191,36,0.3)"     name="CUR Annuity" />
-                      <Bar dataKey="cur_rmd"  stackId="cur" fill="rgba(167,139,250,0.3)"    name="CUR RMD"         radius={[2,2,0,0]} />
+                      <Bar dataKey="cur_rmd"  stackId="cur" fill="rgba(167,139,250,0.3)"    name="CUR RMD" />
+                      <Bar dataKey="cur_pxs"  stackId="cur" fill="rgba(96,165,250,0.3)"     name="CUR Pretax Draw" radius={[2,2,0,0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -4160,6 +4250,7 @@ const modeDescs = {
                       {ltRow("#5eead4", "Social Security (85%)", optSSTotal, curSSTotal)}
                       {(optAbTotal > 0 || curAbTotal > 0) && ltRow("#fbbf24", "Annuity / Benefit", optAbTotal, curAbTotal)}
                       {ltRow("#a78bfa", "Required Min. Dist.", opt.cRmd || 0, cur.cRmd || 0)}
+                      {(optPxsTotal > 0 || curPxsTotal > 0) && ltRow("#60a5fa", "Pretax Withdrawals", optPxsTotal, curPxsTotal)}
                       {(opt.cConv || 0) > 0 && ltRow("#34d399", "Roth Conversions", opt.cConv || 0, 0)}
                       <tr style={{ borderTop: "2px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)" }}>
                         <td style={{ padding: "6px 8px", fontSize: 11, fontWeight: 700, color: "#e2e8f0" }}>Total Taxable Inc.</td>
@@ -4358,6 +4449,211 @@ const modeDescs = {
   );
 }
 
+function LandmineTip({ emoji, label, detail, color }) {
+  const [show, setShow] = React.useState(false);
+  return (
+    <span
+      style={{ position: "relative", cursor: "help", marginRight: 3, display: "inline-block" }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {emoji}
+      {show && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 8px)", left: "50%",
+          transform: "translateX(-50%)", background: "#0f172a",
+          border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8,
+          padding: "9px 13px", minWidth: 230, maxWidth: 290,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.7)", zIndex: 200, pointerEvents: "none",
+          whiteSpace: "normal", textAlign: "left",
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: color || "#e2e8f0", marginBottom: 5 }}>
+            {emoji} {label}
+          </div>
+          <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>{detail}</div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+function WaterfallPlanView({ p }) {
+  const [mode, setMode] = useState("smart");
+  const result = useMemo(() => buildWithdrawalWaterfall(p), [p]);
+  const { smart, naive, summary } = result;
+  const rows = mode === "smart" ? smart.rows : naive.rows;
+
+  const btnStyle = (active) => ({
+    padding: "5px 14px", fontSize: 12, borderRadius: 6, border: "none",
+    cursor: "pointer",
+    background: active ? "rgba(13,148,136,0.25)" : "transparent",
+    color: active ? "#5eead4" : "#475569",
+  });
+
+  const chartData = rows.map(r => ({
+    age: r.age,
+    Cash:    Math.round(r.fromCash),
+    Taxable: Math.round(r.fromTaxable),
+    "Pre-Tax": Math.round(r.fromPretax),
+    Roth:    Math.round(r.fromRoth),
+    Tax:     Math.round(r.totalTax),
+  }));
+
+  const anyLandmine = (r) => r.landmines.ssTorpedo || r.landmines.irmaaTriggered || r.landmines.rmdActive;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Summary cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+        <div className="met">
+          <div className="ml">Smart Lifetime Tax</div>
+          <div className="mv" style={{ color: "#34d399", fontSize: 16 }}>{fmtM(summary.lifetimeTaxSmart)}</div>
+          <div className="ms">tax-optimal waterfall</div>
+        </div>
+        <div className="met">
+          <div className="ml">Tax Savings vs Naive</div>
+          <div className="mv" style={{ color: summary.taxSavings > 0 ? "#34d399" : "#f87171", fontSize: 16 }}>
+            {summary.taxSavings >= 0 ? "+" : ""}{fmtM(summary.taxSavings)}
+          </div>
+          <div className="ms">vs pretax-first ordering</div>
+        </div>
+        <div className="met">
+          <div className="ml">Roth at Age {p.endAge || 90}</div>
+          <div className="mv" style={{ color: "#a78bfa", fontSize: 16 }}>{fmtM(summary.finalRothSmart)}</div>
+          <div className="ms">smart · {fmtM(summary.finalRothNaive)} naive</div>
+        </div>
+        <div className="met">
+          <div className="ml">IRMAA Years Triggered</div>
+          <div className="mv" style={{ color: summary.irmaaYearsTriggered > 0 ? "#fb923c" : "#34d399", fontSize: 16 }}>
+            {summary.irmaaYearsTriggered}
+          </div>
+          <div className="ms">{summary.ssTorpedoYears} SS torpedo yrs</div>
+        </div>
+      </div>
+
+      {/* Toggle */}
+      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        <span style={{ fontSize: 11, color: "#475569", marginRight: 4 }}>View:</span>
+        <button style={btnStyle(mode === "smart")} onClick={() => setMode("smart")}>📋 Smart Waterfall</button>
+        <button style={btnStyle(mode === "naive")} onClick={() => setMode("naive")}>⚠️ Naive (Pretax First)</button>
+        {mode === "naive" && (
+          <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
+            No bracket ceiling — pretax drains first, Roth used last
+          </span>
+        )}
+      </div>
+
+      {/* Stacked bar chart */}
+      <div className="chart-card">
+        <div className="ct">Annual Withdrawals by Source — {mode === "smart" ? "Smart Waterfall" : "Naive Order"}</div>
+        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
+          Stacks show where each year's spending comes from; Tax (red) sits on top
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} tickFormatter={v => fmtK(v)} width={46} />
+            <Tooltip content={<Tip />} />
+            <Legend wrapperStyle={{ fontSize: 10 }} />
+            <Bar dataKey="Cash"     stackId="a" fill="#64748b" />
+            <Bar dataKey="Taxable"  stackId="a" fill="#3b82f6" />
+            <Bar dataKey="Pre-Tax"  stackId="a" fill="#f59e0b" />
+            <Bar dataKey="Roth"     stackId="a" fill="#10b981" />
+            <Bar dataKey="Tax"      stackId="a" fill="#ef4444" radius={[2,2,0,0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Year-by-year table */}
+      <div className="chart-card" style={{ overflowX: "auto" }}>
+        <div className="ct">Year-by-Year Withdrawal Schedule</div>
+          LEGEND:
+        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8, lineHeight: 1.5 }}>
+         ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
+          Bracket cap reason shown in Pre-Tax column
+        </div>
+        <table className="roth-tbl">
+          <thead>
+            <tr>
+              <th>Age</th><th>Spending</th><th>SS</th>
+              <th>Cash</th><th>Taxable</th><th>Pre-Tax</th><th>Roth</th>
+              <th>Fed Tax</th><th>IRMAA</th><th>Eff %</th>
+              <th>
+                <LandmineTip
+                  emoji="💣"
+                  label="Tax Landmines"
+                  color="#f87171"
+                  detail="Hidden tax traps that quietly increase your bill. ⚡ SS Torpedo — too much income makes 85% of Social Security taxable. 💊 IRMAA — income above ~$218K MFJ triggers Medicare premium surcharges. 📋 RMD — forced pretax distributions create mandatory taxable income you cannot defer. Hover each row icon for year-specific details."
+                />
+                {" "}Landmines
+              </th>
+              <th>Port End</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
+                <td>{r.age}</td>
+                <td style={{ textAlign: "right" }}>{fmtK(r.spending)}</td>
+                <td style={{ textAlign: "right", color: "#5eead4" }}>{r.ss > 0 ? fmtK(r.ss) : "—"}</td>
+                <td style={{ textAlign: "right", color: "#64748b" }}>{r.fromCash > 0 ? fmtK(r.fromCash) : "—"}</td>
+                <td style={{ textAlign: "right", color: "#3b82f6" }}>{r.fromTaxable > 0 ? fmtK(r.fromTaxable) : "—"}</td>
+                <td style={{ textAlign: "right", color: "#f59e0b" }} title={r.pretaxCapReason}>
+                  {r.rmd > 0 && <span style={{ fontSize: 9, color: "#a78bfa", marginRight: 2 }}>RMD {fmtK(r.rmd)}</span>}
+                  {r.fromPretax > 0 ? fmtK(r.fromPretax) : "—"}
+                </td>
+                <td style={{ textAlign: "right", color: "#10b981" }}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
+                <td style={{ textAlign: "right", color: "#f87171" }}>{fmtK(r.fedTax)}</td>
+                <td style={{ textAlign: "right", color: r.irmaa > 0 ? "#fb923c" : "#475569" }}>
+                  {r.irmaa > 0 ? fmtK(r.irmaa) : "—"}
+                </td>
+                <td style={{ textAlign: "right" }}>{(r.effectiveRate * 100).toFixed(1)}%</td>
+                <td style={{ textAlign: "center", fontSize: 14 }}>
+                  {r.landmines.ssTorpedo && (() => {
+                    const provisional = Math.round((r.ss || 0) * 0.5 + (r.rmd || 0) + (r.fromPretax || 0) + (r.annuityRental || 0));
+                    const thresh = (p?.filingStatus || "mfj") !== "single" ? 44_000 : 34_000;
+                    return (
+                      <LandmineTip
+                        emoji="⚡"
+                        label="SS Torpedo"
+                        color="#fbbf24"
+                        detail={`85% of your Social Security (${fmtK(r.ss)}/yr) is taxable because provisional income $${provisional.toLocaleString()} exceeds the $${thresh.toLocaleString()} threshold. Provisional = SS×50% + RMD + pretax draws + annuity. Consider drawing from Roth instead to keep provisional income below the threshold.`}
+                      />
+                    );
+                  })()}
+                  {r.landmines.irmaaTriggered && (() => {
+                    return (
+                      <LandmineTip
+                        emoji="💊"
+                        label="IRMAA Surcharge"
+                        color="#fb923c"
+                        detail={`Medicare premium surcharge: ${fmtK(r.irmaa)}/yr this year. Your income crossed the IRMAA Tier 1 threshold (~$218K MFJ). IRMAA uses a 2-year lookback — income this year affects Medicare premiums in ${r.yr + 2}. Enable IRMAA Guard in Profile → Withdrawal Order to cap pretax draws before this threshold.`}
+                      />
+                    );
+                  })()}
+                  {r.landmines.rmdActive && (() => {
+                    return (
+                      <LandmineTip
+                        emoji="📋"
+                        label="RMDs Active"
+                        color="#a78bfa"
+                        detail={`Required Minimum Distribution: ${fmtK(r.rmd)}/yr — forced withdrawal from your pretax account (IRS Pub 590-B). This is ordinary income you cannot defer or avoid. Roth conversions before RMD age reduce the pretax balance and shrink future RMDs.`}
+                      />
+                    );
+                  })()}
+                  {!anyLandmine(r) && <span style={{ color: "#34d399", fontSize: 10 }}>✓</span>}
+                </td>
+                <td style={{ textAlign: "right", color: "#94a3b8" }}>{fmtM(r.totalPort)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
   const [showTable, setShowTable] = useState(false);
   const data = useMemo(
@@ -4377,8 +4673,8 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
   }
 
   const strategyLabel = {
-    gk: "Guyton‑Klinger", fixed: "Fixed %", vanguard: "Vanguard Dynamic",
-    risk: "Risk‑Based", kitces: "Kitces Ratcheting",
+    smart: "Smart Waterfall", gk: "Guyton‑Klinger", fixed: "Fixed %",
+    vanguard: "Vanguard Dynamic", risk: "Risk‑Based", kitces: "Kitces Ratcheting",
     vpw: "VPW", cape: "CAPE‑Based", endowment: "Endowment (Yale)",
     one_n: "1/N", ninety_five_rule: "95% Rule",
   }[withdrawalStrategy] || withdrawalStrategy;
@@ -4599,6 +4895,7 @@ function ScenariosTab({
 
   const SCENARIO_SUBTABS = [
     ["roth", "🔄 ROTH CONVERSIONS"],
+    ["waterfall", "📋 WITHDRAWAL PLAN"],
     ["withdrawal", "💸 WITHDRAWAL ANALYSIS"],
     ["stress", "🔶 STRESS TEST"],
     ["buckets", "🪣 BUCKETS"],
@@ -4711,6 +5008,10 @@ function ScenariosTab({
         </div>
       )}
 
+      {scenarioSubTab === "waterfall" && (
+        <WaterfallPlanView p={baseParams} />
+      )}
+
       {scenarioSubTab === "withdrawal" && (
         <DeterministicWithdrawalView p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} />
       )}
@@ -4727,6 +5028,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
   const [showHow, setShowHow] = useState(false);
   const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [expandedCpId, setExpandedCpId] = useState(null);
   const [newCpDate, setNewCpDate] = useState("");
   const [newCpValue, setNewCpValue] = useState("");
   const [newCpNote, setNewCpNote] = useState("");
@@ -4920,7 +5222,10 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
           <div style={{ overflowX: "auto", marginTop: 12 }}>
             <table className="nw-table" style={{ fontSize: 14 }}>
               <thead>
-                <tr><th>Date</th><th>Actual ($M)</th><th>MC Median ($M)</th><th>Delta</th><th>Status</th><th></th></tr>
+                <tr>
+                  <th>Date</th><th>Actual</th><th>MC Median</th><th>vs Forecast</th>
+                  <th>Growth Since</th><th>Status</th><th></th>
+                </tr>
               </thead>
               <tbody>
                 {[...checkpoints].reverse().slice(0, 6).map(cp => {
@@ -4930,28 +5235,99 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
                     const cd = new Date(cp.date);
                     if (!isNaN(birth) && !isNaN(cd)) {
                       age = cd.getFullYear() - birth.getFullYear();
-                      const cdMonthDay = `${cd.getMonth()}-${cd.getDate()}`;
-                      const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
-                      if (cdMonthDay < birthMonthDay) age--;
+                      if (`${cd.getMonth()}-${cd.getDate()}` < `${birth.getMonth()}-${birth.getDate()}`) age--;
                     }
                   }
-                  const p50AtAge = (age !== null && r90?.pcts) ? (r90.pcts.find(d => d.age === age)?.p50 || 0) : 0;
-                  const delta = p50AtAge > 0 ? cp.value - p50AtAge : null;
-                  const status = p50AtAge > 0 ? (delta > 0 ? "Ahead" : delta < 0 ? "Behind" : "On track") : "Pre‑retirement";
+                  const p50AtAge  = (age !== null && r90?.pcts) ? (r90.pcts.find(d => d.age === age)?.p50 || 0) : 0;
+                  const delta     = p50AtAge > 0 ? cp.value - p50AtAge : null;
+                  const status    = p50AtAge > 0 ? (delta > 0 ? "Ahead" : delta < 0 ? "Behind" : "On track") : "Pre‑retirement";
+                  const deltaColor = delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8";
+
+                  // Growth from this checkpoint to NOW
+                  const currentPort  = params?.port || 0;
+                  const growthAbs    = currentPort - cp.value;
+                  const growthPct    = cp.value > 0 ? growthAbs / cp.value : 0;
+                  const growthColor  = growthAbs >= 0 ? "#34d399" : "#f87171";
+
+                  const isExpanded = expandedCpId === cp.id;
+
+                  // Auto-generated narrative
+                  const narrativeAge  = age !== null ? `age ${age}` : "that date";
+                  const vsText        = delta !== null
+                    ? `${Math.abs(delta / cp.value * 100).toFixed(1)}% ${delta >= 0 ? "ahead of" : "behind"} the median forecast (${fmtM(p50AtAge)})`
+                    : "before the retirement simulation begins";
+                  const growthText    = `Since this snapshot, the portfolio has ${growthAbs >= 0 ? "grown" : "declined"} ${growthAbs >= 0 ? "+" : ""}${fmtM(growthAbs)} (${growthAbs >= 0 ? "+" : ""}${(growthPct * 100).toFixed(1)}%) to today's ${fmtM(currentPort)}.`;
+                  const noteText      = cp.note ? ` Note: "${cp.note}".` : "";
+                  const narrative     = `At ${narrativeAge} on ${cp.date ? new Date(cp.date + "T00:00:00").toLocaleDateString() : "—"}, your portfolio was ${fmtM(cp.value)} — ${vsText}.${noteText} ${growthText}`;
+
                   return (
-                    <tr key={cp.id}>
-                      <td>{cp.date ? new Date(cp.date + "T00:00:00").toLocaleDateString() : "—"}</td>
-                      <td>{fmtM(cp.value)}</td>
-                      <td>{p50AtAge > 0 ? fmtM(p50AtAge) : "—"}</td>
-                      <td style={{ color: delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8" }}>
-                        {delta !== null ? (delta > 0 ? "+" : "") + fmtM(delta) : "—"}
-                      </td>
-                      <td style={{ color: delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8" }}>{status}</td>
-                      <td>
-                        <button onClick={() => startEdit(cp)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", marginRight: 4 }}>✏️</button>
-                        <button onClick={() => onDeleteCheckpoint(cp.id)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer" }}>🗑️</button>
-                       <button onClick={() => onSetBaselineFromCheckpoint(cp.value)} style={{ background: "none", border: "none", color: "#5eead4", cursor: "pointer", marginLeft: 4 }}title="Roll forward to this value">📍</button></td>
-                    </tr>
+                    <React.Fragment key={cp.id}>
+                      <tr
+                        onClick={() => setExpandedCpId(isExpanded ? null : cp.id)}
+                        style={{ cursor: "pointer", background: isExpanded ? "rgba(99,102,241,0.08)" : undefined }}
+                      >
+                        <td>
+                          <span style={{ marginRight: 4, fontSize: 10, color: "#475569" }}>{isExpanded ? "▼" : "▶"}</span>
+                          {cp.date ? new Date(cp.date + "T00:00:00").toLocaleDateString() : "—"}
+                          {cp.note && <span style={{ marginLeft: 6, fontSize: 10, color: "#64748b" }}>· {cp.note}</span>}
+                        </td>
+                        <td style={{ fontFamily: "'DM Mono',monospace" }}>{fmtM(cp.value)}</td>
+                        <td style={{ color: "#64748b" }}>{p50AtAge > 0 ? fmtM(p50AtAge) : "—"}</td>
+                        <td style={{ color: deltaColor, fontFamily: "'DM Mono',monospace" }}>
+                          {delta !== null ? (delta >= 0 ? "+" : "") + fmtM(delta) : "—"}
+                          {delta !== null && p50AtAge > 0 && (
+                            <span style={{ fontSize: 10, marginLeft: 4 }}>
+                              ({delta >= 0 ? "+" : ""}{(delta / p50AtAge * 100).toFixed(1)}%)
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ color: growthColor, fontFamily: "'DM Mono',monospace" }}>
+                          {(growthAbs >= 0 ? "+" : "") + fmtM(growthAbs)}
+                          <span style={{ fontSize: 10, marginLeft: 4 }}>
+                            ({growthAbs >= 0 ? "+" : ""}{(growthPct * 100).toFixed(1)}%)
+                          </span>
+                        </td>
+                        <td style={{ color: deltaColor }}>{status}</td>
+                        <td onClick={e => e.stopPropagation()}>
+                          <button onClick={() => startEdit(cp)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", marginRight: 4 }}>✏️</button>
+                          <button onClick={() => onDeleteCheckpoint(cp.id)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer" }}>🗑️</button>
+                          <button onClick={() => onSetBaselineFromCheckpoint(cp.value)} style={{ background: "none", border: "none", color: "#5eead4", cursor: "pointer", marginLeft: 4 }} title="Roll forward to this value">📍</button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr style={{ background: "rgba(99,102,241,0.05)" }}>
+                          <td colSpan={7} style={{ padding: "10px 16px" }}>
+                            <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7, fontStyle: "italic", borderLeft: "3px solid rgba(99,102,241,0.4)", paddingLeft: 12 }}>
+                              {narrative}
+                            </div>
+                            <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
+                              <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                                <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Snapshot value</div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>{fmtM(cp.value)}</div>
+                              </div>
+                              {p50AtAge > 0 && (
+                                <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                                  <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>vs Median forecast</div>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: deltaColor, fontFamily: "'DM Mono',monospace" }}>
+                                    {delta >= 0 ? "+" : ""}{fmtM(delta)} ({delta >= 0 ? "+" : ""}{(delta / p50AtAge * 100).toFixed(1)}%)
+                                  </div>
+                                </div>
+                              )}
+                              <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                                <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Growth since snapshot</div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: growthColor, fontFamily: "'DM Mono',monospace" }}>
+                                  {growthAbs >= 0 ? "+" : ""}{fmtM(growthAbs)} ({growthAbs >= 0 ? "+" : ""}{(growthPct * 100).toFixed(1)}%)
+                                </div>
+                              </div>
+                              <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                                <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Current portfolio</div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>{fmtM(currentPort)}</div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -7284,6 +7660,56 @@ function AssumptionsPanel({ values, onChange }) {
 
       </div>
 
+      {/* WITHDRAWAL ORDER CARD */}
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#5eead4", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
+          Withdrawal Order
+        </div>
+        <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
+          Controls how AiRA sources each year's spending in <strong style={{ color: "#5eead4" }}>Smart Waterfall</strong> mode
+          (Scenarios → 📋 Withdrawal Plan). Cash → Taxable → Pre-Tax (to bracket) → Roth last.
+        </div>
+        <ARow label="Pretax bracket ceiling" desc="Stop pre-tax draws when ordinary income would hit this bracket. Roth covers the rest. Set 'off' to use naive ordering (pretax first, no ceiling).">
+          <select
+            value={values.withdrawalBracketTarget || "22"}
+            onChange={(e) => onChange("withdrawalBracketTarget", e.target.value)}
+            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
+          >
+            <option value="off">Off — pretax first (naive)</option>
+            <option value="10">Stop at 10% bracket</option>
+            <option value="12">Stop at 12% bracket</option>
+            <option value="22">Stop at 22% bracket (recommended)</option>
+            <option value="24">Stop at 24% bracket</option>
+            <option value="irmaa">IRMAA-safe (stay below tier-1)</option>
+          </select>
+        </ARow>
+        <ARow label="IRMAA guard" desc="Caps pre-tax draws to stay below Medicare IRMAA Tier 1 MAGI (~$218K MFJ) at ages 63+. Prevents $2,160–$11,130/yr Medicare surcharges.">
+          <input
+            type="checkbox"
+            checked={values.irmaaGuard || false}
+            onChange={(e) => onChange("irmaaGuard", e.target.checked)}
+            style={{ cursor: "pointer", width: 16, height: 16 }}
+          />
+        </ARow>
+        <ARow label="Roth emergency reserve" desc="AiRA will not draw Roth below this balance. Protects tax-free funds during sequence-of-returns downturns.">
+          <input
+            type="number"
+            value={values.rothEmergencyReserve ?? 0}
+            onChange={(e) => onChange("rothEmergencyReserve", Number(e.target.value) || 0)}
+            min={0} max={2_000_000} step={10_000}
+            style={{ width: 120, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
+          />
+        </ARow>
+        <ARow label="Show SS torpedo warnings" desc="Flags years where provisional income pushes Social Security taxation to 85% (thresholds not inflation-adjusted since 1980s).">
+          <input
+            type="checkbox"
+            checked={values.ssTorpedoGuard ?? false}
+            onChange={(e) => onChange("ssTorpedoGuard", e.target.checked)}
+            style={{ cursor: "pointer", width: 16, height: 16 }}
+          />
+        </ARow>
+      </div>
+
       {/* MONTE CARLO MODEL PARAMETERS CARD */}
       <div
         style={{
@@ -8679,6 +9105,7 @@ export default function AiRAForecaster() {
                     fontFamily: "'Inter',sans-serif",
                   }}
                 >
+                  <option value="smart">📋 Smart Waterfall (Tax-Optimal)</option>
                   <option value="gk">Guyton‑Klinger (Dynamic)</option>
                   <option value="fixed">Fixed % of Portfolio</option>
                   <option value="vanguard">Vanguard Dynamic Spending</option>
