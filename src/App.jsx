@@ -63,6 +63,9 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
+import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
+import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
+import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -85,10 +88,10 @@ if (typeof document !== "undefined") {
  */
 
 
-/* ════ REFERENCE DATA ════ updated to 12/20/2026*/
-const APP_VERSION = "1.0.7.5";
-export const BUILD_TAG = "Collapsible MC Panel. Changes to Roth Explorer. V 1.0.7.5. Major bugs in imports.";
-export const BUILD_TIME = "05-2026-06-05T12:00:00Z-2026";
+/* ════ REFERENCE DATA ════ updated to 2026-05-08 */
+const APP_VERSION = "1.0.8.8";
+export const BUILD_TAG = "[main] v1.0.8.8 — Net Worth tab label updates to ex. RE when real estate toggle is off.";
+export const BUILD_TIME = "2026-05-14T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -379,6 +382,7 @@ export const BLANK_PROFILE = {
   earlyRetireTarget: 2_000_000,
   withdrawalStrategy: "gk",
   geminiApiKey: "",
+  geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
 };
 
 const ANALOGUES = [
@@ -1691,6 +1695,35 @@ function Toggle({ val, onChange, label, accent = "#0d9488" }) {
 // No component changes needed: just update the objects and arrays.
 // ═══════════════════════════════════════════════════════════════════════════
 
+function CollapsibleAboutCard({ entry, defaultOpen = false }) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div style={{ background:"rgba(255,255,255,0.03)",
+      border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, overflow:"hidden" }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{ width:"100%", display:"flex", alignItems:"center",
+          justifyContent:"space-between", gap:8, padding:"13px 15px",
+          background:"transparent", border:"none", cursor:"pointer",
+          fontSize:13, fontWeight:700, color:"#e2e8f0", textAlign:"left",
+          fontFamily:"inherit" }}
+        aria-expanded={open}
+      >
+        <span>{entry.icon} {entry.title}</span>
+        <span style={{ color:"#64748b", fontSize:10, lineHeight:1,
+          display:"inline-block", transition:"transform 0.15s",
+          transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+      </button>
+      {open && (
+        <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7,
+          padding:"0 15px 13px" }}
+          dangerouslySetInnerHTML={{ __html: entry.body }} />
+      )}
+    </div>
+  );
+}
+
 function AboutButton() {
   const [open, setOpen] = React.useState(false);
   const [tab, setTab] = React.useState(0);
@@ -1810,29 +1843,13 @@ function AboutButton() {
                         textTransform:"uppercase", marginBottom:9 }}>{g}</div>
                       <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
                         {ABOUT_FEATURES.filter(e => e.group === g).map(e => (
-                          <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
-                            border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"13px 15px" }}>
-                            <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
-                              {e.icon} {e.title}
-                            </div>
-                            {/* dangerousHTML – self‑closing with backslash */}
-                            <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}
-                                dangerouslySetInnerHTML={{ __html: e.body }} />
-                          </div>
+                          <CollapsibleAboutCard key={e.id} entry={e} />
                         ))}
                       </div>
                     </div>
                   ))}
                   {ungrouped.map(e => (
-                    <div key={e.id} style={{ background:"rgba(255,255,255,0.03)",
-                      border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:"13px 15px" }}>
-                      <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:6 }}>
-                        {e.icon} {e.title}
-                      </div>
-                      {/* dangerousHTML for ungrouped entries as well */}
-                      <div style={{ fontSize:12, color:"#94a3b8", lineHeight:1.7 }}
-                          dangerouslySetInnerHTML={{ __html: e.body }} />
-                    </div>
+                    <CollapsibleAboutCard key={e.id} entry={e} />
                   ))}
                 </>
               );
@@ -4288,52 +4305,75 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
 }
 
 function BucketsTab({ params = {} }) {
-  const port = params.port || 0;
-  const retireAge = params.retireAge || 60;
-  const currentAge = params.currentAge || 50;
+  const port        = params.port       || 0;
+  const retireAge   = params.retireAge  || 60;
+  const currentAge  = params.currentAge || 50;
+  const ssAge       = params.ssAge      || 67;
   const yrsToRetire = Math.max(0, retireAge - currentAge);
-  const retireYear = new Date().getFullYear() + yrsToRetire;
-  const bucketPcts = [6, 16, 78];
-  const bucketTargets = bucketPcts.map((pct) =>
-    port > 0 ? fmtM((port * pct) / 100) : `${pct}%`
-  );
+  const retireYear  = new Date().getFullYear() + yrsToRetire;
+
+  // Annual mortgage P&I (matches runMC logic)
+  const mortAnnualPI = (() => {
+    if (!params.mortBalance || params.mortBalance <= 0) return 0;
+    const ms = mortgageSchedule(
+      params.mortBalance,
+      params.mortRate  || 6.5,
+      params.mortStart || "2020-01",
+      params.mortTerm  || 30,
+      params.mortExtra || 0
+    );
+    return ms.pmt * 12;
+  })();
+
+  // Dynamic allocation — derived from actual spending data
+  const RUNWAY_YEARS = 3;
+  const propIncome   = params.propIncome || 0;
+  const netDraw      = Math.max(0, (params.sp || 0) + mortAnnualPI - propIncome);
+  const ssGapYears   = Math.max(0, ssAge - retireAge);
+  const fmtK         = (n) => `$${Math.round(n / 1000)}K`;
+
+  const b1 = Math.round(RUNWAY_YEARS * netDraw);
+  const b2 = Math.round(ssGapYears   * netDraw);
+  const b3 = Math.max(0, port - b1 - b2);
+  const pct = (n) => port > 0 ? Math.round((n / port) * 100) : 0;
+
   const buckets = [
     {
-      name: "Bucket 1 — Cash / Short-term",
-      target: bucketTargets[0],
-      pct: bucketPcts[0],
-      color: "#0ea5e9",
-      purpose:
-        "Living expenses 3-5yr runway.  NEVER dual-purpose.",
-      holdings: "Cash · Money market · Short-term Treasuries",
-      locked: `Draws begin at retirement (age ${retireAge})`,
+      name:     "Bucket 1 — Cash",
+      horizon:  "1–3 years",
+      amount:   b1,
+      pct:      pct(b1),
+      color:    "#0ea5e9",
+      purpose:  `Day-to-day expenses & safety net. ${RUNWAY_YEARS}-year runway at ${fmtK(netDraw)}/yr net draw. NEVER dual-purpose.`,
+      holdings: "100% Cash / Cash Equivalents · HYSA · Money market · T-bills · CDs",
+      locked:   `Draws begin at retirement (age ${retireAge})`,
     },
     {
-      name: "Bucket 2 — Income Sleeve",
-      target: bucketTargets[1],
-      pct: bucketPcts[1],
-      color: "#a78bfa",
-      purpose:
-        "Dividend/income generation. Starts AT retirement. Reduces portfolio WR.",
-      holdings: "Dividend equities · Covered-call income · REITs",
-      locked: `Activates at retirement (${retireYear})`,
+      name:     "Bucket 2 — Income & Stability",
+      horizon:  "3–10 years",
+      amount:   b2,
+      pct:      pct(b2),
+      color:    "#a78bfa",
+      purpose:  `Intermediate-term needs. Bridges ${ssGapYears}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`,
+      holdings: "30–50% Equities · 50–70% Fixed Income · Dividend stocks · Bonds · REITs",
+      locked:   `Activates at retirement (${retireYear})`,
     },
     {
-      name: "Bucket 3 — Growth",
-      target: bucketTargets[2],
-      pct: bucketPcts[2],
-      color: "#10b981",
-      purpose:
-        "Never touch 7-10 years. Compounding engine. Draw only when Bucket 1 depleted.",
-      holdings: "Broad-market equity · Momentum · International",
-      locked: `Never before age ${retireAge + 7}`,
+      name:     "Bucket 3 — Long-Term Growth",
+      horizon:  "10+ years",
+      amount:   b3,
+      pct:      pct(b3),
+      color:    "#10b981",
+      purpose:  "Protects against inflation & grows wealth. Won't be needed for a decade or more. Refills Bucket 2 when markets are favorable.",
+      holdings: "50–100% Equities · 0–50% Fixed Income · Broad-market equity · Momentum · International",
+      locked:   `Never before age ${retireAge + 7}`,
     },
   ];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="chart-card">
         <div className="ct">
-          3-Bucket Strategy · Section 0.G ·
+          3-Bucket Strategy
         </div>
         {buckets.map((b) => (
           <div
@@ -4354,17 +4394,19 @@ function BucketsTab({ params = {} }) {
                 marginBottom: 6,
               }}
             >
-              <div style={{ fontSize: 15, fontWeight: 600, color: b.color }}>
-                {b.name}
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: b.color }}>{b.name}</div>
+                <div style={{ fontSize: 10, color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 1 }}>{b.horizon}</div>
               </div>
               <div
                 style={{
                   fontSize: 15,
                   color: b.color,
                   fontFamily: "'DM Mono',monospace",
+                  textAlign: "right",
                 }}
               >
-                {b.target} · {b.pct}%
+                {port > 0 ? fmtM(b.amount) : "—"} · {b.pct}%
               </div>
             </div>
             <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>
@@ -5086,23 +5128,36 @@ function NetWorthTab({ p, results90, inf }) {
 
   const nwData = useMemo(() => {
     if (!results90) return [];
-    
-    // Build ages dynamically: from current age to plan end age, step 5
+
+    // Current liquid portfolio from accounts (matches home page sidebar)
+    const currentPort = (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0) || p.port || 0;
+    const preReturnRate = expectedReturn(p.preRetireEq ?? 91) / 100;
+
     const maxChartAge = p.endAge;
     const step = 1;
     const ages = [];
     for (let age = p.currentAge; age <= maxChartAge; age += step) {
       ages.push(age);
     }
-    
+
     return ages.map((age, idx) => {
       const yr = new Date().getFullYear() + idx * step;
-      // Map age to closest index in results90.pcts (which goes to age 90)
-      const pctIndex = Math.min(
-        Math.max(0, age - p.retireAge),
-        results90.pcts.length - 1
-      );
-      const port = results90.pcts[pctIndex]?.p50 || 0;
+
+      let port;
+      if (age < p.retireAge) {
+        // Accumulation phase: grow from current portfolio deterministically
+        const yearsToAge = age - p.currentAge;
+        let acc = currentPort;
+        for (let y = 0; y < yearsToAge; y++) {
+          acc = acc * (1 + preReturnRate) + (p.contrib || 0);
+        }
+        port = Math.round(acc);
+      } else {
+        // Retirement phase: use MC median percentile
+        const pctIndex = Math.min(age - p.retireAge, results90.pcts.length - 1);
+        port = results90.pcts[pctIndex]?.p50 || 0;
+      }
+
       const mortEntry = mortSched.years.find((y) => y.yr === yr);
       const mortBal = mortEntry ? mortEntry.bal : 0;
       const yearsFromNow = yr - new Date().getFullYear();
@@ -5181,7 +5236,7 @@ function NetWorthTab({ p, results90, inf }) {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div className="ct" style={{ margin: 0 }}>
-              Net Worth Projection · 5‑year Intervals to Age {planAge} · Median MC Path
+              {showRE ? "Net Worth Projection" : "Portfolio Projection (ex. Real Estate)"} · 5‑year Intervals to Age {planAge} · Median MC Path
             </div>
             <span
               style={{ cursor: "pointer", color: "#64748b", fontSize: 12 }}
@@ -5256,7 +5311,7 @@ function NetWorthTab({ p, results90, inf }) {
           <div className="li"><div className="ll" style={{ background: "#0ea5e9" }} />Liquid Portfolio</div>
           <div className="li"><div className="ll" style={{ background: "#f87171", borderTop: "1px dashed #f87171", height: 2 }} />Mortgage Debt (dashed)</div>
           {showRE && <div className="li"><div className="ll" style={{ background: "#fbbf24" }} />Real Estate</div>}
-          <div className="li"><div className="ll" style={{ background: "#10b981" }} />Net Worth</div>
+          <div className="li"><div className="ll" style={{ background: "#10b981" }} />{showRE ? "Net Worth" : "Portfolio (ex. RE)"}</div>
         </div>
 
         {/* Footnote about peak age */}
@@ -5491,70 +5546,444 @@ function generateActions({
     return order[a.priority] - order[b.priority];
   });
 }
-// Replace the existing ActionPlanTab with this dynamic version
-function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
+// ─── ActionTile ───────────────────────────────────────────────────────────────
+const PRIORITY_COLOR = {
+  red:    { border: "#ef4444", bg: "rgba(239,68,68,0.07)",  label: "#f87171", dot: "🔴" },
+  yellow: { border: "#f59e0b", bg: "rgba(245,158,11,0.07)", label: "#fbbf24", dot: "🟡" },
+  green:  { border: "#10b981", bg: "rgba(16,185,129,0.07)", label: "#34d399", dot: "🟢" },
+};
+
+function ActionTile({ card }) {
+  const [open, setOpen] = useState(false);
+  const C = PRIORITY_COLOR[card.priority] || PRIORITY_COLOR.yellow;
+  return (
+    <div
+      onClick={() => setOpen(v => !v)}
+      style={{
+        background:   C.bg,
+        border:       `1px solid rgba(255,255,255,0.08)`,
+        borderLeft:   `3px solid ${C.border}`,
+        borderRadius: 8,
+        padding:      "11px 13px",
+        cursor:       "pointer",
+        display:      "flex",
+        flexDirection:"column",
+        gap:          6,
+        minHeight:    110,
+        transition:   "box-shadow 0.15s",
+      }}
+      onMouseEnter={e => e.currentTarget.style.boxShadow = `0 0 0 1px ${C.border}40`}
+      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+    >
+      <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: C.label, display: "flex", alignItems: "center", gap: 5 }}>
+        {card.category}
+        {card.isLiveData  && <span style={{ color: "#22d3ee", fontSize: 9 }}>🌐 LIVE</span>}
+        {card.aiGenerated && !card.isLiveData && <span style={{ color: "#a78bfa", fontSize: 9 }}>✦ AI</span>}
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#f1f5f9", lineHeight: 1.45, flex: 1 }}>
+        {card.action}
+      </div>
+      <div style={{ fontSize: 10, color: "#475569", display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 6 }}>
+        <span>⏱ {card.deadline}</span>
+        {card.aiNote && <span style={{ color: "#6366f1", fontSize: 9 }}>▾ insight</span>}
+      </div>
+      {card.aiNote && (
+        <div style={{ fontSize: 10, color: "#a78bfa", lineHeight: 1.45, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
+          🤖 {card.aiNote}
+        </div>
+      )}
+      {card.source && (
+        <div style={{ fontSize: 9, color: "#22d3ee", marginTop: 2 }}>📡 {card.source}</div>
+      )}
+    </div>
+  );
+}
+
+// ─── Milestone timeline ───────────────────────────────────────────────────────
+function buildMilestones(params, rmdAge) {
+  const age       = params?.currentAge  || 56;
+  const retireAge = params?.retireAge   || 65;
+  const ssAge     = params?.ssAge       || 67;
+  const yr        = new Date().getFullYear();
+  const hasPreTax = (params?.accounts || []).some(a => a.category === "pretax" && (a.balance || 0) > 0);
+  const rmd       = rmdAge || getRmdStartAge({ currentAge: age });
+
+  const all = [
+    {
+      age: age, label: "Now", year: yr,
+      items: [
+        "Review your withdrawal rate — target below 4%",
+        "Ensure emergency fund covers 6 months of expenses",
+        "Verify beneficiary designations on all accounts",
+      ],
+    },
+    age < 50 && {
+      age: 50, label: "Catch-Up Contributions", year: yr + (50 - age),
+      items: [
+        "401k limit increases by $7,500/yr (catch-up)",
+        "IRA limit increases by $1,000/yr",
+        "Review asset allocation — consider gradual de-risking",
+      ],
+    },
+    age < 55 && {
+      age: 55, label: "Age 55 Benefits", year: yr + (55 - age),
+      items: [
+        "HSA catch-up increases by $1,000/yr",
+        "Rule of 55 — penalty-free 401k withdrawals if retiring this year",
+        "Start projecting Medicare bridge costs if retiring before 65",
+      ],
+    },
+    age < 60 && {
+      age: 60, label: "Super Catch-Up (SECURE 2.0)", year: yr + (60 - age),
+      items: [
+        "401k limit rises to $34,750/yr for ages 60–63 only",
+        "Maximize this 4-year window — largest single tax-shelter opportunity",
+        "Consider Roth conversion ladder if retiring at 60",
+      ],
+    },
+    {
+      age: retireAge, label: "Retirement", year: yr + (retireAge - age),
+      items: [
+        "Begin tax-optimal withdrawal: HSA first (medical) → taxable → pre-tax → Roth last",
+        "Shift to inflation-adjusted withdrawal strategy",
+        retireAge < 65 ? `Bridge to Medicare — budget for ACA marketplace until age 65` : "Enroll in Medicare Parts A and B",
+        `Social Security: ${ssAge > retireAge ? `consider delaying to age ${ssAge} for higher benefit` : "claim at retirement"}`,
+      ],
+    },
+    retireAge < 65 && {
+      age: 65, label: "Medicare Enrollment", year: yr + (65 - age),
+      items: [
+        "Enroll during 7-month Initial Enrollment Period (3 months before 65)",
+        "IRMAA surcharge if income >$103K single or >$206K MFJ",
+        "Stop HSA contributions at 65 (Medicare makes you ineligible)",
+        "Compare Original Medicare vs Medicare Advantage",
+      ],
+    },
+    ssAge !== retireAge && {
+      age: ssAge, label: `Social Security — Age ${ssAge}`, year: yr + (ssAge - age),
+      items: [
+        `Claim SS benefit — delayed past FRA earns +8%/yr in higher lifetime income`,
+        "Coordinate SS timing with Roth conversions to minimize IRMAA",
+        "File for Medicare 3 months before 65 even if delaying SS",
+      ],
+    },
+    hasPreTax && age < rmd && {
+      age: rmd, label: "Required Minimum Distributions", year: yr + (rmd - age),
+      items: [
+        `RMDs begin at age ${rmd} — distributions from 401k/IRA are fully taxable ordinary income`,
+        "25% penalty on any missed RMD amount",
+        `Do Roth conversions before age ${rmd} to shrink the pre-tax balance`,
+        "QCDs (qualified charitable distributions) offset RMDs tax-free if charitably inclined",
+      ],
+    },
+  ].filter(Boolean).sort((a, b) => a.age - b.age);
+
+  return all;
+}
+
+function MilestonesSection({ params, rmdAge }) {
+  const [open, setOpen] = useState(false);
+  const milestones = buildMilestones(params, rmdAge);
+  if (!milestones.length) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          background: "none", border: "none", cursor: "pointer", padding: 0, width: "100%",
+          marginBottom: open ? 12 : 0,
+        }}
+      >
+        <span style={{ fontSize: 11, color: "#6366f1", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6366f1" }}>
+          📅 Age Milestones
+        </span>
+        <span style={{ fontSize: 10, color: "#475569", marginLeft: 4 }}>({milestones.length} milestones)</span>
+      </button>
+      {open && (
+      <div style={{ position: "relative" }}>
+        {milestones.map((m, idx) => (
+          <div key={m.age} style={{ display: "flex", gap: 14, marginBottom: 14 }}>
+            {/* Timeline spine */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 36, flexShrink: 0 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: "50%",
+                background: "rgba(99,102,241,0.15)", border: "2px solid rgba(99,102,241,0.4)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 700, color: "#818cf8", flexShrink: 0,
+              }}>
+                {m.age === (params?.currentAge || 56) ? "Now" : m.age}
+              </div>
+              {idx < milestones.length - 1 && (
+                <div style={{ width: 2, flex: 1, minHeight: 16, background: "rgba(99,102,241,0.2)", marginTop: 4 }} />
+              )}
+            </div>
+            {/* Milestone card */}
+            <div style={{
+              flex: 1, background: "rgba(99,102,241,0.04)", border: "1px solid rgba(99,102,241,0.15)",
+              borderRadius: 9, padding: "10px 14px", marginBottom: 2,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc", marginBottom: 6 }}>
+                {m.label}
+                <span style={{ fontWeight: 400, color: "#475569", marginLeft: 8 }}>{m.year}</span>
+              </div>
+              {m.items.map((item, j) => (
+                <div key={j} style={{ fontSize: 11, color: "#94a3b8", marginBottom: 3, display: "flex", gap: 6 }}>
+                  <span style={{ color: "#6366f1", flexShrink: 0 }}>•</span>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Card step lookup ─────────────────────────────────────────────────────────
+function getCardSteps(card) {
+  if (card.steps?.length) return card.steps;
+  const a = (card.action   || "").toLowerCase();
+  const c = (card.category || "").toLowerCase();
+  if (a.includes("roth") || c.includes("roth")) return [
+    "Calculate your current marginal tax bracket for this year",
+    "Convert up to the top of your bracket — stop before jumping to the next",
+    "Model the conversion in AiRA's Tax Room tab to see the IRMAA impact",
+    "Pay the conversion tax from taxable cash, not from the IRA itself",
+  ];
+  if (a.includes("withdrawal rate") || a.includes("swr") || a.includes("spending")) return [
+    "Target a sustainable rate — 3.5–4% is the historical safe zone",
+    "Switch to a dynamic strategy (Guardrails, VPW) to flex with markets",
+    "Build a 1–2 year cash buffer so you never sell equities in a downturn",
+    "Re-run Monte Carlo in AiRA after any spending or portfolio change",
+  ];
+  if (a.includes("social security") || c.includes("social security")) return [
+    "Get your personalized estimate at SSA.gov → my Social Security",
+    "Each year of delay past 62 adds roughly 6–8% to your monthly benefit",
+    "Run the breakeven analysis — typically breaks even around age 79–82",
+    "Coordinate timing with your spouse to maximize survivor benefit",
+  ];
+  if (a.includes("rmd") || a.includes("required minimum")) return [
+    "Calculate this year's RMD using the IRS Uniform Lifetime Table",
+    "Do Roth conversions now to reduce the pre-tax balance before RMDs begin",
+    "Set up automatic distributions so you never miss the year-end deadline",
+    "Consider QCDs (Qualified Charitable Distributions) to offset RMD income tax-free",
+  ];
+  if (a.includes("irmaa") || a.includes("medicare")) return [
+    "Check the IRMAA brackets — Medicare uses your MAGI from 2 years ago",
+    "Keep MAGI below the first cliff ($103K single / $206K MFJ) when possible",
+    "Roth conversions this year affect Medicare premiums in two years — plan ahead",
+    "If income dropped (retirement, death of spouse), file for IRMAA appeal (SSA-44)",
+  ];
+  if (a.includes("emergency") || a.includes("cash reserve") || a.includes("liquidity")) return [
+    "Target 6 months of essential expenses in a high-yield savings account",
+    "Current HYSA rates are 4%+ — don't leave this in a checking account",
+    "Keep this separate from your investment portfolio — don't count brokerage cash",
+    "Replenish immediately after any large withdrawal",
+  ];
+  if (a.includes("beneficiar")) return [
+    "Log into each account (401k, IRA, life insurance) and check current beneficiaries",
+    "Ensure primary and contingent beneficiaries are named — don't leave it blank",
+    "Update after major life events: marriage, divorce, death, new children",
+    "Confirm beneficiary designations override your will — they're separate legal documents",
+  ];
+  return [];
+}
+
+// ─── Action plan row ──────────────────────────────────────────────────────────
+function ActionPlanRow({ card, isSelected, onClick }) {
+  const C = PRIORITY_COLOR[card.priority] || PRIORITY_COLOR.yellow;
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display:      "flex",
+        alignItems:   "center",
+        gap:          12,
+        padding:      "10px 14px",
+        borderRadius: 8,
+        background:   isSelected ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)",
+        border:       `1px solid ${isSelected ? "rgba(99,102,241,0.4)" : "rgba(255,255,255,0.06)"}`,
+        cursor:       "pointer",
+        transition:   "all 0.12s",
+        marginBottom: 4,
+      }}
+      onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+      onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
+    >
+      <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.border, flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.label, marginBottom: 1 }}>
+          {card.category}
+          {card.isLiveData  && <span style={{ color: "#22d3ee",  marginLeft: 6, fontSize: 9 }}>🌐 LIVE</span>}
+          {card.aiGenerated && !card.isLiveData && <span style={{ color: "#a78bfa", marginLeft: 6, fontSize: 9 }}>✦ AI</span>}
+        </div>
+        <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {card.action}
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: "#475569", flexShrink: 0, whiteSpace: "nowrap" }}>{card.deadline}</div>
+      <div style={{ fontSize: 14, color: isSelected ? "#818cf8" : "#334155", flexShrink: 0 }}>›</div>
+    </div>
+  );
+}
+
+// ─── Card detail panel ────────────────────────────────────────────────────────
+function CardDetailPanel({ card, onClose }) {
+  const C     = PRIORITY_COLOR[card.priority] || PRIORITY_COLOR.yellow;
+  const steps = getCardSteps(card);
+  const label = card.priority === "red" ? "CRITICAL" : card.priority === "yellow" ? "IMPORTANT" : "ON TRACK";
+
+  return (
+    <div style={{
+      background:   "rgba(15,23,42,0.98)",
+      border:       `1px solid ${C.border}40`,
+      borderTop:    `3px solid ${C.border}`,
+      borderRadius: 10,
+      padding:      "20px",
+      position:     "sticky",
+      top:          8,
+      maxHeight:    "80vh",
+      overflowY:    "auto",
+    }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <div style={{ flex: 1, paddingRight: 12 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            <span style={{
+              background: C.bg, border: `1px solid ${C.border}`, color: C.label,
+              borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 700,
+            }}>{label}</span>
+            <span style={{
+              background: "rgba(255,255,255,0.06)", color: "#94a3b8",
+              borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 600,
+            }}>{card.category}</span>
+            {card.isLiveData  && <span style={{ background: "rgba(6,182,212,0.1)", color: "#22d3ee", borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>🌐 LIVE</span>}
+            {card.aiGenerated && !card.isLiveData && <span style={{ background: "rgba(167,139,250,0.1)", color: "#a78bfa", borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>✦ AI</span>}
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.4 }}>{card.action}</div>
+        </div>
+        <button onClick={onClose} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 20, lineHeight: 1, flexShrink: 0 }}>×</button>
+      </div>
+
+      {/* Details */}
+      {card.reason && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#475569", marginBottom: 6 }}>DETAILS</div>
+          <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.65 }}>{card.reason}</div>
+        </div>
+      )}
+
+      {/* What to do */}
+      {steps.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#475569", marginBottom: 8 }}>WHAT TO DO</div>
+          {steps.map((step, i) => (
+            <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 700, color: "#818cf8",
+              }}>{i + 1}</div>
+              <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.55, paddingTop: 2 }}>{step}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* AI insight */}
+      {card.aiNote && (
+        <div style={{
+          background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)",
+          borderRadius: 8, padding: "10px 14px", marginBottom: 14,
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#818cf8", marginBottom: 4 }}>🤖 AI INSIGHT</div>
+          <div style={{ fontSize: 12, color: "#a78bfa", lineHeight: 1.55 }}>{card.aiNote}</div>
+        </div>
+      )}
+
+      {/* Source */}
+      {card.source && (
+        <div style={{ fontSize: 11, color: "#22d3ee", marginBottom: 12 }}>📡 Source: {card.source}</div>
+      )}
+
+      {/* Deadline */}
+      <div style={{ fontSize: 12, color: "#475569", display: "flex", alignItems: "center", gap: 6, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        ⏱ <span style={{ color: "#64748b" }}>{card.deadline}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── ActionPlanTab ────────────────────────────────────────────────────────────
+function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdAge: rmdAgeProp }) {
   const currentYear = new Date().getFullYear();
   const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
   const daysToRetire = Math.max(0,
     Math.floor((new Date(`${retireYear}-03-15`) - new Date()) / 86400000)
   );
 
-  const [aiAnalysis, setAiAnalysis] = useState('');
-  const [loadingAI, setLoadingAI] = useState(false);
+  const [cards, setCards]               = useState(null);
+  const [loadingAI, setLoadingAI]       = useState(false);
+  const [aiError, setAiError]           = useState(null);
+  const [showBuyModal, setShowBuyModal] = useState(false);
+  const [liveCards, setLiveCards]       = useState(null);
+  const [loadingLive, setLoadingLive]   = useState(false);
+  const [liveError, setLiveError]       = useState(null);
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [filterPriority, setFilter]     = useState("all");
+  const creditBalance                    = useCreditBalance();
 
-  const runAIAnalysis = async () => {
-    const apiKey = assumptions.geminiApiKey;
-    if (!apiKey) {
-      alert('Please enter your Gemini API key in the Profile → Assumptions tab.');
+  const runAI = async (baseCards) => {
+    const { runAIActionPlan, profileIsComplete } = await import("./ai/ai-analysis.js");
+    console.log("[AI] runAI called. profileIsComplete:", profileIsComplete(params, r90));
+    console.log("[AI] geminiApiKey present:", !!assumptions?.geminiApiKey, "model:", assumptions?.geminiModel || "default");
+    console.log("[AI] baseCards count:", baseCards?.length, "ids:", baseCards?.map(c => c.id));
+    if (!profileIsComplete(params, r90)) {
+      console.warn("[AI] Profile incomplete — runAI exiting silently. Need: port>50K, sp>0, mcResults.rate>0, ≥1 funded account.");
       return;
     }
-
-  setLoadingAI(true);
-  setAiAnalysis('');
-
-  const successRate = r90?.rate ? (r90.rate * 100).toFixed(1) : 'N/A';
-  const withdrawalRate = params?.sp && params?.port ? ((params.sp / params.port) * 100).toFixed(1) : 'N/A';
-  const portfolioGoal = assumptions.portfolioGoal ? (assumptions.portfolioGoal / 1_000_000).toFixed(1) : '3.2';
-
-  const prompt = `You are AiRA, an AI retirement planning assistant. Analyze the following retirement plan and provide a complete, well-formed paragraph (4-6 sentences) with one specific recommendation. Do not stop mid-sentence. Be conversational and reference the numbers provided.
-
-                Plan Summary:
-                - Success Rate (Monte Carlo): ${successRate}% to age ${params.endAge || 90}
-                - Current Portfolio: $${(params.port / 1_000_000).toFixed(2)}M
-                - Target Portfolio: $${portfolioGoal}M
-                - Annual Spending: $${(params.sp / 1000).toFixed(0)}K
-                - Withdrawal Rate: ${withdrawalRate}%
-                - Withdrawal Strategy: ${getStrategyLabel(assumptions.withdrawalStrategy)}
-                - State of Residence: ${assumptions.stateOfResidence || 'FL'}
-
-                Begin your response with "I am AiRA. I have analyzed your plan." and then provide the analysis.`;
-
-   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
-      }),
-    });
-
-    const data = await response.json();
-    if (data.error) {
-      throw new Error(data.error.message);
+    setLoadingAI(true);
+    setAiError(null);
+    try {
+      console.log("[AI] Calling runAIActionPlan…");
+      const merged = await runAIActionPlan({ ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel }, r90, baseCards);
+      console.log("[AI] Merged result:", merged);
+      console.log("[AI] Cards with aiNote:", merged?.filter(c => c.aiNote).length, "/ total:", merged?.length);
+      console.log("[AI] AI-generated new cards:", merged?.filter(c => c.aiGenerated).length);
+      setCards(merged);
+    } catch (e) {
+      console.error("[AI] action plan error:", e);
+      if (BILLING_ENABLED && e.message?.toLowerCase().includes("credit")) {
+        setShowBuyModal(true);
+      } else {
+        setAiError(e.message || "AI unavailable — check that your Gemini API_KEY is set in the UI in the Profile Section.");
+      }
+    } finally {
+      setLoadingAI(false);
     }
-    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response from Gemini.';
-    setAiAnalysis(aiText);
-  } catch (err) {
-    console.error('Gemini API error:', err);
-    setAiAnalysis('AI analysis failed. Please check your API key and try again.');
-  } finally {
-    setLoadingAI(false);
-  }
-};
+  };
+
+  const runLiveSearch = async () => {
+    const { generateTimeSensitiveCards } = await import("./ai/ai-analysis.js");
+    setLoadingLive(true);
+    setLiveError(null);
+    try {
+      const found = await generateTimeSensitiveCards(
+        { ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel },
+        r90
+      );
+      setLiveCards(found);
+    } catch (e) {
+      setLiveError(e.message);
+    } finally {
+      setLoadingLive(false);
+    }
+  };
 
   if (!params || !r90) {
     return (
@@ -5565,13 +5994,32 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
     );
   }
 
-  const dynActions = generateActions({
-    params, r90, r85, assumptions, mortgagePayoffYear,
+  // Evaluate declarative rules engine
+  const baseCards = evaluateRulesEngine({
+    params, r90, r85, assumptions,
     currentYear, retireYear, daysToRetire,
-    goal: assumptions?.portfolioGoal || 3_200_000,
   });
 
-  const colors = {
+  // Display AI-annotated cards if available, else base cards
+  const displayCards = cards || baseCards;
+
+  // Gate: AI button only enabled when profile has real data AND either credits (billing) or Gemini key (BYOK)
+  const hasGeminiKey = !!(assumptions?.geminiApiKey?.trim());
+  const profileReady = (params.port || 0) > 50_000 &&
+    (params.sp  || 0) > 0 &&
+    r90?.rate > 0 &&
+    (params.accounts || []).some(a => (a.balance || 0) > 0);
+  const hasAiAccess  = BILLING_ENABLED ? creditBalance >= 5 : hasGeminiKey;
+  const canRunAI     = !loadingAI && !cards && profileReady && hasAiAccess;
+  const aiDisabledReason = !profileReady
+    ? "Complete your profile and run Monte Carlo first"
+    : BILLING_ENABLED && creditBalance < 5
+    ? "Buy AiRA credits to run AI analysis"
+    : !hasGeminiKey && !BILLING_ENABLED
+    ? "Add a free Gemini API key in Profile → Assumptions to enable AI"
+    : "Run AI analysis on your plan";
+
+  const COLORS = {
     red:    { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.25)",   label: "#f87171", badge: "🔴 Critical" },
     yellow: { bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.25)",  label: "#fbbf24", badge: "🟡 Important" },
     green:  { bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.25)",  label: "#34d399", badge: "🟢 On Track" },
@@ -5579,88 +6027,273 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {/* AI Analysis Button */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-        <button
-          onClick={""}
-          disabled={"true"}
-          style={{
-            padding: "8px 18px",
-            borderRadius: 8,
-            border: "none",
-            background: loadingAI
-              ? "rgba(255,255,255,0.05)"
-              : "linear-gradient(135deg, #7c3aed, #a78bfa)",
-            color: "white",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: loadingAI ? "not-allowed" : "pointer",
-            fontFamily: "'Inter', sans-serif",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            boxShadow: loadingAI ? "none" : "0 2px 8px rgba(124,58,237,0.3)",
-            transition: "all 0.2s",
-          }}
-        >
-          {loadingAI ? "Analyzing..." : "🤖 Run AI Analysis {Stay Tuned}"}
-        </button>
-        {loadingAI && (
-          <span style={{ color: "#a78bfa", fontSize: 12 }}>Thinking...</span>
-        )}
+
+      {/* ── AI controls ────────────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, flexWrap: "wrap" }}>
+
+        {/* Left — action button + status */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+          <button
+            onClick={() => runAI(baseCards)}
+            disabled={!canRunAI}
+            title={aiDisabledReason}
+            style={{
+              padding: "8px 18px", borderRadius: 8, border: "none", flexShrink: 0,
+              background: canRunAI ? "linear-gradient(135deg, #7c3aed, #a78bfa)" : "rgba(255,255,255,0.05)",
+              color: canRunAI ? "white" : "#475569",
+              fontSize: 13, fontWeight: 600,
+              cursor: canRunAI ? "pointer" : "not-allowed",
+              display: "flex", alignItems: "center", gap: 6,
+              boxShadow: canRunAI ? "0 2px 8px rgba(124,58,237,0.3)" : "none",
+              transition: "all 0.2s",
+            }}
+          >
+            {loadingAI ? "Analyzing…" : cards ? "✓ AI Applied" : "🤖 Run AI Analysis"}
+          </button>
+
+          {loadingAI && (
+            <span style={{ color: "#a78bfa", fontSize: 12 }}>Aira is thinking…</span>
+          )}
+          {!loadingAI && !cards && profileReady && !hasAiAccess && !BILLING_ENABLED && (
+            <span style={{ fontSize: 11, color: "#fbbf24" }}>
+              🔒 Add a free Gemini key in Profile → Assumptions ·{" "}
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "#fbbf24", textDecoration: "underline" }}>
+                Get one here
+              </a>
+            </span>
+          )}
+          {(cards || aiError) && !loadingAI && (
+            <button
+              onClick={() => { setCards(null); setAiError(null); }}
+              style={{ fontSize: 11, color: "#64748b", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+            >
+              Reset
+            </button>
+          )}
+        </div>
+
+        {/* Right — credit panel */}
+        <div style={{
+          display:      "flex",
+          alignItems:   "center",
+          gap:          16,
+          background:   creditBalance < 500 ? "rgba(239,68,68,0.06)" : "rgba(124,58,237,0.06)",
+          border:       `1px solid ${creditBalance < 500 ? "rgba(239,68,68,0.25)" : "rgba(124,58,237,0.2)"}`,
+          borderRadius: 10,
+          padding:      "10px 16px",
+          flexShrink:   0,
+        }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+              AiRA Credits
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: creditBalance < 500 ? "#f87171" : "#e2e8f0", lineHeight: 1 }}>
+              {creditBalance.toLocaleString()}
+            </div>
+          </div>
+          <button
+            onClick={() => setShowBuyModal(true)}
+            style={{
+              background:   "linear-gradient(135deg, #7c3aed, #a78bfa)",
+              border:       "none", color: "white",
+              borderRadius: 8, padding: "8px 16px",
+              fontSize:     13, fontWeight: 600, cursor: "pointer",
+              boxShadow:    "0 2px 8px rgba(124,58,237,0.3)",
+              whiteSpace:   "nowrap",
+            }}
+          >
+            💳 Buy Credits
+          </button>
+        </div>
       </div>
 
-      {/* AI Response Card */}
-      {aiAnalysis && (
-        <div
-          style={{
-            background: "rgba(124,58,237,0.06)",
-            border: "1px solid rgba(124,58,237,0.25)",
-            borderRadius: 10,
-            padding: "16px 18px",
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa", marginBottom: 8 }}>
-            🤖 AI Insights
-          </div>
-          <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-            {aiAnalysis}
-          </div>
+      {/* Session token usage — shown for BYOK users after any AI call */}
+      <AiUsageBadge style={{ marginBottom: 4 }} />
+
+      {showBuyModal && <CreditPackModal onClose={() => setShowBuyModal(false)} />}
+
+      {aiError && (
+        <div style={{
+          background: "rgba(239,68,68,0.08)",
+          border: "1px solid rgba(239,68,68,0.25)",
+          borderRadius: 8,
+          padding: "10px 14px",
+          fontSize: 12,
+          color: "#f87171",
+        }}>
+          ⚠ AI unavailable: {aiError}
         </div>
       )}
 
-      {/* Existing Action Cards */}
-      {dynActions.map((a, i) => {
-        const c = colors[a.priority];
+      {/* Retirement Date Solver */}
+      {(() => {
+        const solver = solveRetirementDate(params);
+        const { target, currentPort, currentAge, results } = solver;
+        const fmtM = (n) => `$${(n / 1_000_000).toFixed(2)}M`;
+        const retireAge = params.retireAge || 60;
+        const rowColor = (age) => {
+          if (age == null) return "#f87171";
+          if (age <= retireAge) return "#34d399";
+          if (age <= retireAge + 3) return "#fbbf24";
+          return "#f87171";
+        };
         return (
-          <div
-            key={i}
-            style={{
-              background: c.bg,
-              border: `1px solid ${c.border}`,
-              borderRadius: 9,
-              padding: "11px 15px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start"
-            }}
-          >
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: c.label, marginBottom: 3 }}>
-                {c.badge} · {a.category}
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
-                {a.action}
-              </div>
-              <div style={{ fontSize: 11, color: "#64748b" }}>{a.reason}</div>
+          <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 9, padding: "12px 15px", marginBottom: 4 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#818cf8", marginBottom: 8 }}>
+              🎯 Retirement Date Solver — Target {fmtM(target)}
             </div>
-            <div style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap", marginLeft: 16, paddingTop: 2 }}>
-              ⏱ {a.deadline}
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
+              Portfolio today: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>{fmtM(currentPort)}</span>
+              &nbsp;·&nbsp;Planned retirement: <span style={{ color: "#e2e8f0" }}>age {retireAge}</span>
+              &nbsp;·&nbsp;Annual contrib: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>${(params.contrib || 0).toLocaleString()}</span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <th style={{ textAlign: "left", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Scenario</th>
+                  <th style={{ textAlign: "center", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Return</th>
+                  <th style={{ textAlign: "right", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>Hits {fmtM(target)}</th>
+                  <th style={{ textAlign: "right", color: "#475569", fontWeight: 600, paddingBottom: 4 }}>vs. Plan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r) => {
+                  const diff = r.crossoverAge != null ? r.crossoverAge - retireAge : null;
+                  const color = rowColor(r.crossoverAge);
+                  return (
+                    <tr key={r.label} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                      <td style={{ color: "#cbd5e1", padding: "4px 0" }}>{r.label}</td>
+                      <td style={{ textAlign: "center", color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>{(r.rate * 100).toFixed(1)}%</td>
+                      <td style={{ textAlign: "right", color, fontWeight: 600, fontFamily: "'DM Mono',monospace" }}>
+                        {r.crossoverAge != null ? `Age ${r.crossoverAge}` : "> 80"}
+                      </td>
+                      <td style={{ textAlign: "right", color, fontFamily: "'DM Mono',monospace" }}>
+                        {diff == null ? "—" : diff === 0 ? "On target" : diff < 0 ? `${Math.abs(diff)}yr early` : `${diff}yr late`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 8 }}>
+              Update your portfolio balance in the profile to keep this projection current.
             </div>
           </div>
         );
-      })}
+      })()}
+
+      {/* ── Summary bar + filter ─────────────────────────────────────────────── */}
+      {(() => {
+        const allCards     = [...displayCards, ...(liveCards || [])];
+        const counts       = { all: allCards.length, red: 0, yellow: 0, green: 0 };
+        allCards.forEach(c => { if (counts[c.priority] !== undefined) counts[c.priority]++; });
+        const filtered     = filterPriority === "all" ? allCards : allCards.filter(c => c.priority === filterPriority);
+        const canLive      = !loadingLive && (!!(assumptions?.geminiApiKey?.trim()) || BILLING_ENABLED);
+
+        const FILTER_OPTS = [
+          { key: "all",    label: `All`,       count: counts.all,    color: "#64748b",  active: "#e2e8f0" },
+          { key: "red",    label: `Critical`,  count: counts.red,    color: "#f87171",  active: "#fca5a5" },
+          { key: "yellow", label: `Important`, count: counts.yellow, color: "#fbbf24",  active: "#fde68a" },
+          { key: "green",  label: `On Track`,  count: counts.green,  color: "#34d399",  active: "#6ee7b7" },
+        ];
+
+        return (
+          <div>
+            {/* Filter row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+              {FILTER_OPTS.map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => { setFilter(f.key); setSelectedCard(null); }}
+                  style={{
+                    background:   filterPriority === f.key ? "rgba(255,255,255,0.08)" : "transparent",
+                    border:       `1px solid ${filterPriority === f.key ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.07)"}`,
+                    color:        filterPriority === f.key ? (f.key === "all" ? "#e2e8f0" : f.active) : f.color,
+                    borderRadius: 6, padding: "4px 12px",
+                    fontSize:     12, fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  {f.label} <span style={{ opacity: 0.7, fontSize: 11 }}>{f.count}</span>
+                </button>
+              ))}
+              <div style={{ flex: 1 }} />
+              <button
+                onClick={runLiveSearch}
+                disabled={!canLive}
+                title={canLive ? "Search the web for current IRS limits, SS COLA, Medicare premiums, and more" : "Add a Gemini API key to enable live search"}
+                style={{
+                  background:   !canLive ? "rgba(255,255,255,0.03)" : loadingLive ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg, #0e7490, #22d3ee)",
+                  border:       "none", color: !canLive || loadingLive ? "#475569" : "white",
+                  borderRadius: 7, padding: "5px 14px",
+                  fontSize:     12, fontWeight: 600, cursor: canLive && !loadingLive ? "pointer" : "not-allowed",
+                  whiteSpace:   "nowrap",
+                  boxShadow:    canLive && !loadingLive ? "0 2px 8px rgba(6,182,212,0.25)" : "none",
+                }}
+              >
+                {loadingLive ? "Searching…" : liveCards ? "🔄 Refresh Live" : "🌐 Live Updates"}
+              </button>
+            </div>
+
+            {liveError && <div style={{ fontSize: 11, color: "#f87171", marginBottom: 8 }}>⚠ {liveError}</div>}
+
+            {/* Master-detail layout */}
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+
+              {/* Left — list of rows */}
+              <div style={{ flex: selectedCard ? "0 0 46%" : 1, minWidth: 0, transition: "flex 0.2s" }}>
+                {filtered.length === 0 && (
+                  <div style={{ fontSize: 12, color: "#475569", padding: "20px 0", textAlign: "center" }}>
+                    No cards for this filter.
+                  </div>
+                )}
+
+                {/* Regular cards */}
+                {filtered.filter(c => !c.isLiveData).map((card, i) => (
+                  <ActionPlanRow
+                    key={card.id || i}
+                    card={card}
+                    isSelected={selectedCard?.id === card.id}
+                    onClick={() => setSelectedCard(prev => prev?.id === card.id ? null : card)}
+                  />
+                ))}
+
+                {/* Live cards — separated with a label */}
+                {filtered.some(c => c.isLiveData) && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#22d3ee", margin: "12px 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
+                      🌐 Live Updates
+                    </div>
+                    {filtered.filter(c => c.isLiveData).map((card, i) => (
+                      <ActionPlanRow
+                        key={card.id || i}
+                        card={card}
+                        isSelected={selectedCard?.id === card.id}
+                        onClick={() => setSelectedCard(prev => prev?.id === card.id ? null : card)}
+                      />
+                    ))}
+                  </>
+                )}
+
+                {/* Milestones — inside the list column */}
+                <div style={{ marginTop: 16 }}>
+                  <MilestonesSection params={params} rmdAge={rmdAgeProp} />
+                </div>
+              </div>
+
+              {/* Right — detail panel */}
+              {selectedCard && (
+                <div style={{ flex: "0 0 51%", minWidth: 0 }}>
+                  <CardDetailPanel
+                    card={selectedCard}
+                    onClose={() => setSelectedCard(null)}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
@@ -6343,6 +6976,20 @@ function AssumptionsPanel({ values, onChange }) {
           />
           <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#60a5fa", marginLeft: 8 }}>Get free key →</a>
         </ARow>
+        <ARow label="AI Model" desc="Select the Gemini model for AI features. If a model becomes unavailable (Google deprecates often), pick another from the dropdown.">
+          <select
+            value={values.geminiModel || DEFAULT_GEMINI_MODEL}
+            onChange={(e) => onChange('geminiModel', e.target.value)}
+            style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
+          >
+            {GEMINI_MODELS.map(m => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+          <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
+            {(GEMINI_MODELS.find(m => m.id === (values.geminiModel || DEFAULT_GEMINI_MODEL))?.note) || ""}
+          </span>
+        </ARow>
       </div>
 
       {/* EXPENSE MODEL CARD */}
@@ -6513,10 +7160,10 @@ function AssumptionsPanel({ values, onChange }) {
         >
           Monte Carlo Model Parameters
         </div>
-        <ARow label="Target Portfolio Value for Early Retirement" desc="This number is a hypothetical value you have set that 'If you hit this number, would you retire?'. This is where you are in the monte carlo curve. You can view this as a line on the Monte Carlo simulation.">
+        <ARow label="Target Portfolio Value for Early Retirement" desc="This is your retirement goal. This is the number that answers, What number do I need to retire? What is my retirement $$$ where no matter what, I RETIRE!!.">
           <CleanNumberInput value={values.earlyRetireTarget} onChange={(v) => onChange("earlyRetireTarget", v)} min={0} max={10000000} step={50000} />
         </ARow>
-        <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is your internal Portfolio Goal and where if you hit this number before you have accomplished your retirement goal. It's your minimal goal and anything above this number is extra beyond what is your ultimate goal. (default $3.2M)">
+        <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is a number where, if you hit this, would reconsider your target goal? This is a number that is a secondary decision. If you hit this, would you be ok with this goal if something caused a change in your plan,">
           <CleanNumberInput value={values.portfolioGoal} onChange={(v) => onChange("portfolioGoal", v)} min={0} max={10000000} step={50000} />
         </ARow>
         <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
@@ -6576,13 +7223,13 @@ function ContribPanel({ values, onChange }) {
   const matchAmount = Math.round((annual401k * employerMatch) / 100);
   const totalSavings = annual401k + hsaAnnual + matchAmount;
 
-
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+      {/* ── Contributions ── */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
-          ANNUAL CONTRIBUTIONS - Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
+          ANNUAL CONTRIBUTIONS — Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
         </div>
         <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
@@ -6595,6 +7242,7 @@ function ContribPanel({ values, onChange }) {
         </WFieldRow>
       </div>
 
+      {/* ── Summary grid ── */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
         {[
           { label: "401(k) Contribution", val: annual401k, color: "#0ea5e9" },
@@ -6610,6 +7258,7 @@ function ContribPanel({ values, onChange }) {
         ))}
       </div>
 
+      {/* ── Total savings banner ── */}
       <div style={{ background: "linear-gradient(135deg, #0d948818, #14b8a618)", border: "1px solid #0d948844", borderRadius: 10, padding: 18, textAlign: "center" }}>
         <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>💰 Total Annual Savings Rate</div>
         <div style={{ fontSize: 36, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>
@@ -6618,6 +7267,29 @@ function ContribPanel({ values, onChange }) {
         </div>
         <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Including employer match and HSA</div>
       </div>
+
+      {/* ── Other income sources ── */}
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 10, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
+          OTHER INCOME (pension, part-time, royalties…) — reduces portfolio draw
+        </div>
+        {(values.otherIncomes || []).map((inc, idx) => (
+          <OtherIncomeCard
+            key={inc.id}
+            inc={inc}
+            autoFocus={idx === (values.otherIncomes || []).length - 1 && !inc.annual}
+            onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
+            onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
+          />
+        ))}
+        <button
+          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthRate: 0, growthCapYears: null, taxable: true }])}
+          style={{ background: "transparent", border: "1px dashed rgba(14,165,233,0.35)", borderRadius: 4, color: "#38bdf8", fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.7, marginTop: 2 }}
+          onMouseEnter={e => e.currentTarget.style.opacity = 1}
+          onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
+        >+ Add income source</button>
+      </div>
+
     </div>
   );
 }
@@ -6778,25 +7450,6 @@ function RetirementPanel({ values, onChange }) {
             width:80, textAlign:"right" }}
             /> year
         </WFieldRow>
-      </div>
-
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 10, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>OTHER INCOME (pension, royalties, part-time…)</div>
-        {(values.otherIncomes || []).map((inc, idx) => (
-          <OtherIncomeCard
-            key={inc.id}
-            inc={inc}
-            autoFocus={idx === (values.otherIncomes || []).length - 1 && !inc.annual}
-            onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
-            onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
-          />
-        ))}
-        <button
-          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthRate: 0, growthCapYears: null, taxable: true }])}
-          style={{ background: "transparent", border: "1px dashed rgba(14,165,233,0.35)", borderRadius: 4, color: "#38bdf8", fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.7, marginTop: 2 }}
-          onMouseEnter={e => e.currentTarget.style.opacity = 1}
-          onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
-        >+ Add income source</button>
       </div>
 
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
@@ -7006,6 +7659,15 @@ export default function AiRAForecaster() {
   const [showEngineCard, setShowEngineCard] = useState(
     () => localStorage.getItem("aira_engine_open") === "true"
   );
+  const [stripeToast, setStripeToast] = useState(null);
+  const stripeReturn = useStripeReturn();
+  useEffect(() => {
+    if (stripeReturn?.success) {
+      setStripeToast(`✓ ${stripeReturn.credits.toLocaleString()} credits added to your account`);
+      const t = setTimeout(() => setStripeToast(null), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [stripeReturn]);
   const isFirst = useRef(true);
 
   // Slider states – initialized from BLANK_PROFILE
@@ -7229,6 +7891,7 @@ export default function AiRAForecaster() {
     ["income", "💵 Income"],
     ["mortgage", "🏠 Real Estate"],
     ["actionplan", "✅ Action Plan"],
+    // ["airaai", "🤖 Aira AI"],  // DO NOT RE-ADD — AiraAITab is being integrated INSIDE ActionPlanTab on a separate branch (per user: no tab sprawl).
     ["assumptions", "👤 Profile"],
   ];
 
@@ -7303,6 +7966,7 @@ export default function AiRAForecaster() {
                     rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
                     fafsaEndYear: assumptions.fafsaEndYear || null,
                     cssEndYear: assumptions.cssEndYear || null,
+                    geminiApiKey: assumptions.geminiApiKey || "",
                     savedAt: new Date().toISOString(),
                     exportedAt: new Date().toISOString(),
                     appVersion: APP_VERSION,
@@ -7411,6 +8075,8 @@ export default function AiRAForecaster() {
                     rothConversionTarget: rawRct.startsWith("fill_") ? rawRct.replace("fill_", "") : rawRct,
                     fafsaEndYear: data.fafsaEndYear || null,
                     cssEndYear: data.cssEndYear || null,
+                    // Preserve existing API key if imported file has empty/missing key
+                    geminiApiKey: data.geminiApiKey || prev.geminiApiKey || "",
                   }));
 
                   setStale(true);
@@ -7643,7 +8309,7 @@ export default function AiRAForecaster() {
               >
                 <span style={{ fontSize: 10, color: "#64748b" }}>Liquid Portfolio</span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace", letterSpacing: "-0.5px" }}>
-                  {fmtM(port)}
+                  {fmtDollar(port)}
                 </span>
               </div>
               {(() => {
@@ -7808,7 +8474,30 @@ export default function AiRAForecaster() {
             <div className="sb-card">
               <div className="sb-title">Options</div>
               <Toggle val={smile} onChange={setSmile} label="🙂 Smile spending" />
-              <Toggle val={tax} onChange={setTax} label="🏛 Tax drag" accent="#d97706" />
+              <div className="tog-row">
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span className="tog-label">🏛 Tax drag</span>
+                  <InfoModal title="🏛 Tax Drag Adjustment — How It Works" accent="#d97706">
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> Tax drag scales up each year's portfolio withdrawal so the <em>after-tax</em> amount you keep matches your spending target. Without it, the engine would draw exactly your spend number and silently underfund you by whatever taxes are owed.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>How it changes by life stage:</strong> The drag percentage rises as your tax exposure grows over retirement:</p>
+                    <ul style={{ margin:"0 0 10px 18px", padding:0, color:"#94a3b8" }}>
+                      <li><strong style={{ color:"#e2e8f0" }}>Before SS</strong> — lowest drag (mostly taxable / Roth draws, no SS income).</li>
+                      <li><strong style={{ color:"#e2e8f0" }}>SS started, pre-RMD</strong> — moderate drag (SS becomes partially taxable).</li>
+                      <li><strong style={{ color:"#e2e8f0" }}>RMD age and beyond</strong> — highest drag (forced pre-tax draws + SS torpedo + IRMAA exposure).</li>
+                    </ul>
+                    <p style={{ margin:"0 0 10px" }}>Single filers see higher drag than MFJ at every stage because of halved brackets and standard deduction.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON (default):</strong> Withdrawals are grossed up by the stage-appropriate drag rate. More realistic — what you'll actually need to pull.</p>
+                    <p style={{ margin:0 }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF:</strong> Pure pre-tax view. Useful for sanity-checking the underlying portfolio dynamics without tax noise, but it overstates how long your money lasts.</p>
+                  </InfoModal>
+                </div>
+                <div
+                  className="tog"
+                  onClick={() => setTax(!tax)}
+                  style={{ background: tax ? "#d97706" : "rgba(255,255,255,0.1)" }}
+                >
+                  <div className="tok" style={{ left: tax ? 18 : 2 }} />
+                </div>
+              </div>
               <Toggle val={real} onChange={setReal} label="📉 Real dollars" accent="#0ea5e9" />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -8221,8 +8910,10 @@ export default function AiRAForecaster() {
                     r85={r85}
                     assumptions={assumptions}
                     mortgagePayoffYear={mortgagePayoffYear}
+                    rmdAge={rmdAge}
                   />
                 )}
+                {/* AiraAITab is dormant — integration target is INSIDE ActionPlanTab (above), not as its own tab. See memory/project_aira_ai_tab.md. */}
                 {activeTab === "assumptions" && (
                   <>
                   {showWelcome && (
@@ -8321,6 +9012,19 @@ export default function AiRAForecaster() {
           </div>
         </div>
       </div>
+
+      {/* ── Stripe purchase success toast ── */}
+      {stripeToast && (
+        <div style={{
+          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          background: "rgba(16,185,129,0.95)", color: "white",
+          borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 600,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.4)", zIndex: 99999,
+          pointerEvents: "none",
+        }}>
+          {stripeToast}
+        </div>
+      )}
 
       {/* ── Terms of Service Modal ── */}
       {showTerms && (

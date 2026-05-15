@@ -1,0 +1,25 @@
+name                  = "aira-monte-carlo"
+compatibility_date    = "2024-09-23"
+pages_build_output_dir = "build"
+
+# ─── D1 database — uncomment when ready to activate billing ──────────────────
+# Step 1: wrangler d1 create aira-credits   → paste the UUID into database_id
+# Step 2: wrangler d1 execute aira-credits --file=db/schema.sql --remote
+# Step 3: flip BILLING_ENABLED = true in src/ai/ai-analysis.js
+#
+# [[d1_databases]]
+# binding       = "DB"
+# database_name = "aira-credits"
+# database_id   = ""
+
+# ─── Required environment variables ──────────────────────────────────────────
+# Set in Cloudflare Dashboard → Pages → aira-monte-carlo → Settings → Env Vars
+# (never commit real values here)
+#
+#   GEMINI_API_KEY         AIza...    (server-side key for billing mode)
+#   JWT_SECRET             32+ random bytes: openssl rand -hex 32
+#   STRIPE_SECRET_KEY      sk_live_...  or  sk_test_...
+#   STRIPE_WEBHOOK_SECRET  whsec_...
+#   STRIPE_PRICE_STARTER   price_...
+#   STRIPE_PRICE_VALUE     price_...
+#   STRIPE_PRICE_PRO       price_...
