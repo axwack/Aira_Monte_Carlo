@@ -1675,6 +1675,112 @@ const RateTip = ({ active, payload, label }) => {
     </div>
   );
 };
+const TaxYearTip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  const get = key => payload.find(p => p.dataKey === key)?.value || 0;
+  const oF = get("opt_fed"), oS = get("opt_st"), oI = get("opt_irmaa");
+  const cF = get("cur_fed"), cS = get("cur_st"), cI = get("cur_irmaa");
+  const oTotal = oF + oS + oI, cTotal = cF + cS + cI;
+  const delta = oTotal - cTotal;
+  const hasState = oS > 0 || cS > 0;
+  const hasIrmaa = oI > 0 || cI > 0;
+  const N = v => `$${Math.round(v).toLocaleString()}`;
+  const tipRow = (swatch, lbl, optV, curV, note) => (
+    <tr key={lbl} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+      <td style={{ padding: "4px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: swatch, display: "inline-block", flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>{lbl}</span>
+        </div>
+      </td>
+      <td style={{ padding: "4px 0 4px 12px", textAlign: "right", fontSize: 11, color: note ? "#374151" : "#e2e8f0" }}>
+        {note ? <em style={{ fontSize: 10, color: "#334155" }}>{note}</em> : N(optV)}
+      </td>
+      <td style={{ padding: "4px 0 4px 8px", textAlign: "right", fontSize: 11, color: "#64748b" }}>
+        {note ? "" : N(curV)}
+      </td>
+    </tr>
+  );
+  return (
+    <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "10px 14px", minWidth: 280, boxShadow: "0 4px 20px rgba(0,0,0,0.6)" }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        Age {label} — Tax Breakdown
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th style={{ fontSize: 10, color: "#475569", textAlign: "left", paddingBottom: 4, fontWeight: 500 }}>Type</th>
+            <th style={{ fontSize: 10, color: "#6366f1", textAlign: "right", paddingBottom: 4, fontWeight: 500, paddingLeft: 12 }}>With Conv</th>
+            <th style={{ fontSize: 10, color: "#475569", textAlign: "right", paddingBottom: 4, fontWeight: 500, paddingLeft: 8 }}>Without</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tipRow("#6366f1", "Federal Income Tax", oF, cF)}
+          {hasState && tipRow("#fb923c", "State Income Tax", oS, cS)}
+          {hasIrmaa && tipRow("#f87171", "IRMAA Surcharge", oI, cI)}
+          {tipRow("#334155", "FICA (payroll tax)", 0, 0, "not applicable — retired")}
+          {tipRow("#334155", "Capital Gains Tax", 0, 0, "not modeled here")}
+        </tbody>
+        <tfoot>
+          <tr style={{ borderTop: "2px solid rgba(255,255,255,0.1)" }}>
+            <td style={{ paddingTop: 5, fontSize: 11, fontWeight: 700, color: "#e2e8f0" }}>Total</td>
+            <td style={{ paddingTop: 5, textAlign: "right", fontSize: 12, fontWeight: 700, paddingLeft: 12, color: delta > 0 ? "#fb923c" : delta < 0 ? "#34d399" : "#94a3b8" }}>{N(oTotal)}</td>
+            <td style={{ paddingTop: 5, textAlign: "right", fontSize: 12, fontWeight: 700, paddingLeft: 8, color: "#94a3b8" }}>{N(cTotal)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+};
+const IncYearTip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  const get = key => payload.find(p => p.dataKey === key)?.value || 0;
+  const oSS = get("opt_ss"), oAb = get("opt_ab"), oRmd = get("opt_rmd"), oConv = get("opt_conv");
+  const cSS = get("cur_ss"), cAb = get("cur_ab"), cRmd = get("cur_rmd");
+  const oTotal = oSS + oAb + oRmd + oConv, cTotal = cSS + cAb + cRmd;
+  const N = v => `$${Math.round(v).toLocaleString()}`;
+  const tipRow = (swatch, lbl, optV, curV) => (optV > 0 || curV > 0) ? (
+    <tr key={lbl} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+      <td style={{ padding: "4px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: swatch, display: "inline-block", flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>{lbl}</span>
+        </div>
+      </td>
+      <td style={{ padding: "4px 0 4px 12px", textAlign: "right", fontSize: 11, color: "#e2e8f0" }}>{N(optV)}</td>
+      <td style={{ padding: "4px 0 4px 8px", textAlign: "right", fontSize: 11, color: "#64748b" }}>{N(curV)}</td>
+    </tr>
+  ) : null;
+  return (
+    <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "10px 14px", minWidth: 280, boxShadow: "0 4px 20px rgba(0,0,0,0.6)" }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        Age {label} — Taxable Income Sources
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th style={{ fontSize: 10, color: "#475569", textAlign: "left", paddingBottom: 4, fontWeight: 500 }}>Source</th>
+            <th style={{ fontSize: 10, color: "#5eead4", textAlign: "right", paddingBottom: 4, fontWeight: 500, paddingLeft: 12 }}>With Conv</th>
+            <th style={{ fontSize: 10, color: "#475569", textAlign: "right", paddingBottom: 4, fontWeight: 500, paddingLeft: 8 }}>Without</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tipRow("#5eead4", "Social Security (85%)", oSS, cSS)}
+          {tipRow("#fbbf24", "Annuity / Benefit", oAb, cAb)}
+          {tipRow("#a78bfa", "Required Min. Dist.", oRmd, cRmd)}
+          {tipRow("#34d399", "Roth Conversion", oConv, 0)}
+        </tbody>
+        <tfoot>
+          <tr style={{ borderTop: "2px solid rgba(255,255,255,0.1)" }}>
+            <td style={{ paddingTop: 5, fontSize: 11, fontWeight: 700, color: "#e2e8f0" }}>Total Taxable</td>
+            <td style={{ paddingTop: 5, textAlign: "right", fontSize: 12, fontWeight: 700, color: "#5eead4", paddingLeft: 12 }}>{N(oTotal)}</td>
+            <td style={{ paddingTop: 5, textAlign: "right", fontSize: 12, fontWeight: 700, color: "#94a3b8", paddingLeft: 8 }}>{N(cTotal)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+};
 function Toggle({ val, onChange, label, accent = "#0d9488" }) {
   return (
     <div className="tog-row">
@@ -3896,147 +4002,186 @@ const modeDescs = {
           })()}
         </>
       )}
-      {view === "comparison" && (
-        <>
-          <div className="chart-card">
-            <div className="ct">Effective Tax Rate · Optimized vs Current Plan</div>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart
-                data={opt.rows
-                  .filter((_, i) => i % 2 === 0)
-                  .map(r => {
+      {view === "comparison" && (() => {
+        const optFedTotal  = opt.rows.reduce((s, r) => s + (r.fedT  || 0), 0);
+        const optStTotal   = opt.rows.reduce((s, r) => s + (r.stT   || 0), 0);
+        const curFedTotal  = cur.rows.reduce((s, r) => s + (r.fedT  || 0), 0);
+        const curStTotal   = cur.rows.reduce((s, r) => s + (r.stT   || 0), 0);
+        const optAbTotal   = opt.rows.reduce((s, r) => s + (r.abn   || 0), 0);
+        const curAbTotal   = cur.rows.reduce((s, r) => s + (r.abn   || 0), 0);
+        const optSSTotal   = Math.round(opt.rows.reduce((s, r) => s + (r.ss || 0), 0) * 0.85);
+        const curSSTotal   = Math.round(cur.rows.reduce((s, r) => s + (r.ss || 0), 0) * 0.85);
+        const optTotInc    = opt.rows.reduce((s, r) => s + (r.totInc || 0), 0);
+        const curTotInc    = cur.rows.reduce((s, r) => s + (r.totInc || 0), 0);
+
+        const taxChartData = opt.rows
+          .filter(r => r.age >= (params.retireAge || 60) && r.age <= 90)
+          .filter((_, i) => i % 2 === 0 || i < 6)
+          .map(r => {
+            const c = cur.rows.find(cr => cr.yr === r.yr) || {};
+            return {
+              age: r.age,
+              opt_fed:   r.fedT   || 0,
+              opt_st:    r.stT    || 0,
+              opt_irmaa: r.irmaa  || 0,
+              cur_fed:   c.fedT   || 0,
+              cur_st:    c.stT    || 0,
+              cur_irmaa: c.irmaa  || 0,
+            };
+          });
+
+        const incChartData = opt.rows
+          .filter(r => r.age >= (params.retireAge || 60) && r.age <= 90)
+          .filter((_, i) => i % 2 === 0 || i < 6)
+          .map(r => {
+            const c = cur.rows.find(cr => cr.yr === r.yr) || {};
+            return {
+              age: r.age,
+              opt_ss:   Math.round((r.ss  || 0) * 0.85),
+              opt_ab:   r.abn   || 0,
+              opt_rmd:  r.rmd   || 0,
+              opt_conv: r.conv  || 0,
+              cur_ss:   Math.round((c.ss  || 0) * 0.85),
+              cur_ab:   c.abn   || 0,
+              cur_rmd:  c.rmd   || 0,
+            };
+          });
+
+        const tblBox  = { flex: "0 0 250px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.07)", overflow: "hidden" };
+        const tblHead = { padding: "7px 10px", borderBottom: "1px solid rgba(255,255,255,0.07)", fontSize: 11, fontWeight: 600, color: "#94a3b8", display: "flex", justifyContent: "space-between" };
+
+        const ltRow = (color, label, optVal, curVal) => (
+          <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+            <td style={{ padding: "5px 8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: "inline-block", flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>{label}</span>
+              </div>
+            </td>
+            <td style={{ padding: "5px 8px", textAlign: "right", fontSize: 12, color: "#e2e8f0", fontWeight: 500 }}>{fmtM(optVal)}</td>
+            <td style={{ padding: "5px 8px", textAlign: "right", fontSize: 12, color: "#64748b" }}>{fmtM(curVal)}</td>
+          </tr>
+        );
+
+        return (
+          <>
+            <div className="chart-card">
+              <div className="ct">Estimated Taxes</div>
+              <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>
+                Annual tax by type — bright bars = with conversions (OPT), muted bars = without (CUR)
+              </div>
+              <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                <div style={{ flex: "1 1 0", minWidth: 0 }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={taxChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%" barGap={2}>
+                      <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+                      <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} />
+                      <YAxis stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} tickFormatter={v => fmtK(v)} width={46} />
+                      <Tooltip content={<TaxYearTip />} />
+                      <Bar dataKey="opt_fed"   stackId="opt" fill="#6366f1"                name="OPT Federal" />
+                      <Bar dataKey="opt_st"    stackId="opt" fill="#fb923c"                name="OPT State" />
+                      <Bar dataKey="opt_irmaa" stackId="opt" fill="#f87171"                name="OPT IRMAA"  radius={[2,2,0,0]} />
+                      <Bar dataKey="cur_fed"   stackId="cur" fill="rgba(99,102,241,0.3)"   name="CUR Federal" />
+                      <Bar dataKey="cur_st"    stackId="cur" fill="rgba(251,146,60,0.3)"   name="CUR State" />
+                      <Bar dataKey="cur_irmaa" stackId="cur" fill="rgba(248,113,113,0.3)"  name="CUR IRMAA"  radius={[2,2,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={tblBox}>
+                  <div style={tblHead}>
+                    <span>Lifetime</span>
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <span style={{ color: "#6366f1" }}>With Conv</span>
+                      <span style={{ color: "#475569" }}>Without</span>
+                    </div>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <tbody>
+                      {ltRow("#6366f1", "Federal Income Tax", optFedTotal, curFedTotal)}
+                      {!isNoTaxState && ltRow("#fb923c", "State Income Tax", optStTotal, curStTotal)}
+                      {ltRow("#f87171", "IRMAA Surcharges", opt.cIrmaa || 0, cur.cIrmaa || 0)}
+                      <tr style={{ borderTop: "2px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)" }}>
+                        <td style={{ padding: "6px 8px", fontSize: 11, fontWeight: 700, color: "#e2e8f0" }}>Total</td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", fontSize: 12, fontWeight: 700, color: taxD > 0 ? "#fb923c" : "#34d399" }}>{fmtM(opt.cTax)}</td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", fontSize: 12, fontWeight: 700, color: "#94a3b8" }}>{fmtM(cur.cTax)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="chart-card">
+              <div className="ct">Gross Taxable Income by Source</div>
+              <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>
+                What generates taxable income each year — bright bars = with conversions, muted = without
+              </div>
+              <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                <div style={{ flex: "1 1 0", minWidth: 0 }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={incChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%" barGap={2}>
+                      <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+                      <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} />
+                      <YAxis stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} tickFormatter={v => fmtK(v)} width={46} />
+                      <Tooltip content={<IncYearTip />} />
+                      <Bar dataKey="opt_ss"   stackId="opt" fill="#5eead4"                  name="OPT Social Sec." />
+                      <Bar dataKey="opt_ab"   stackId="opt" fill="#fbbf24"                  name="OPT Annuity" />
+                      <Bar dataKey="opt_rmd"  stackId="opt" fill="#a78bfa"                  name="OPT RMD" />
+                      <Bar dataKey="opt_conv" stackId="opt" fill="#34d399"                  name="OPT Conversion"  radius={[2,2,0,0]} />
+                      <Bar dataKey="cur_ss"   stackId="cur" fill="rgba(94,234,212,0.3)"     name="CUR Social Sec." />
+                      <Bar dataKey="cur_ab"   stackId="cur" fill="rgba(251,191,36,0.3)"     name="CUR Annuity" />
+                      <Bar dataKey="cur_rmd"  stackId="cur" fill="rgba(167,139,250,0.3)"    name="CUR RMD"         radius={[2,2,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={tblBox}>
+                  <div style={tblHead}>
+                    <span>Lifetime</span>
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <span style={{ color: "#5eead4" }}>With Conv</span>
+                      <span style={{ color: "#475569" }}>Without</span>
+                    </div>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <tbody>
+                      {ltRow("#5eead4", "Social Security (85%)", optSSTotal, curSSTotal)}
+                      {(optAbTotal > 0 || curAbTotal > 0) && ltRow("#fbbf24", "Annuity / Benefit", optAbTotal, curAbTotal)}
+                      {ltRow("#a78bfa", "Required Min. Dist.", opt.cRmd || 0, cur.cRmd || 0)}
+                      {(opt.cConv || 0) > 0 && ltRow("#34d399", "Roth Conversions", opt.cConv || 0, 0)}
+                      <tr style={{ borderTop: "2px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)" }}>
+                        <td style={{ padding: "6px 8px", fontSize: 11, fontWeight: 700, color: "#e2e8f0" }}>Total Taxable Inc.</td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", fontSize: 12, fontWeight: 700, color: "#5eead4" }}>{fmtM(optTotInc)}</td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", fontSize: 12, fontWeight: 700, color: "#94a3b8" }}>{fmtM(curTotInc)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="chart-card">
+              <div className="ct">Effective Tax Rate · Optimized vs Current Plan</div>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart
+                  data={opt.rows.filter((_, i) => i % 2 === 0).map(r => {
                     const c = cur.rows.find(cr => cr.yr === r.yr);
                     return { age: r.age, "OPT Rate": r.effR, "CUR Rate": c ? c.effR : 0 };
                   })}
-                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="2 4"
-                  stroke="rgba(255,255,255,0.05)"
-                />
-                <XAxis
-                  dataKey="age"
-                  stroke="#1e3a5f"
-                  tick={{ fill: "#475569", fontSize: 9 }}
-                />
-                <YAxis
-                  stroke="#1e3a5f"
-                  tick={{ fill: "#475569", fontSize: 9 }}
-                  tickFormatter={(v) => (v * 100).toFixed(0) + "%"}
-                  width={36}
-                />
-                <Tooltip content={<RateTip />} />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Line
-                  type="monotone"
-                  dataKey="OPT Rate"
-                  stroke="#0d9488"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="CUR Rate"
-                  stroke="#f87171"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 3"
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="chart-card">
-            <div className="ct">
-              Tax Liability Comparison · Optimized vs Current Plan
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
-                marginBottom: 10,
-              }}
-            >
-              <div className="met">
-                <div className="ml">Lifetime Taxes — Without</div>
-                <div className="mv" style={{ color: "#94a3b8", fontSize: 16 }}>
-                  {fmtM(cur.cTax)}
-                </div>
-              </div>
-              <div className="met">
-                <div className="ml">Lifetime Taxes — With Conversions</div>
-                <div
-                  className="mv"
-                  style={{
-                    color: taxD > 0 ? "#fb923c" : "#34d399",
-                    fontSize: 16,
-                  }}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                 >
-                  {fmtM(opt.cTax)}
-                </div>
-              </div>
+                  <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} />
+                  <YAxis stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} tickFormatter={v => (v * 100).toFixed(0) + "%"} width={36} />
+                  <Tooltip content={<RateTip />} />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  <Line type="monotone" dataKey="OPT Rate" stroke="#0d9488" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="CUR Rate" stroke="#f87171" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
-              Year-by-year tax paid — red spike = conversion tax years, green relief = lower RMD taxes
-            </div>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart
-                data={opt.rows
-                  .filter(r => r.age >= (params.retireAge || 60) && r.age <= 90)
-                  .filter((_, i) => i % 2 === 0 || i < 10)
-                  .map(r => {
-                    const c = cur.rows.find(cr => cr.yr === r.yr);
-                    return { age: r.age, "OPT Tax": r.totT, "CUR Tax": c ? c.totT : 0 };
-                  })}
-                margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} />
-                <YAxis stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 9 }} tickFormatter={v => fmtK(v)} width={46} />
-                <Tooltip content={<Tip />} />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Bar dataKey="OPT Tax" fill="rgba(13,148,136,0.55)" radius={[2,2,0,0]} />
-                <Bar dataKey="CUR Tax" fill="rgba(239,68,68,0.4)" radius={[2,2,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="chart-card">
-            <div className="ct">IRMAA Fees · Medicare Premium Surcharges</div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
-              }}
-            >
-              <div className="met">
-                <div className="ml">Lifetime IRMAA — Without</div>
-                <div className="mv" style={{ fontSize: 16 }}>
-                  {cur.cIrmaa > 0 ? fmtM(cur.cIrmaa) : "$0"}
-                </div>
-              </div>
-              <div className="met">
-                <div className="ml">Lifetime IRMAA — With Conversions</div>
-                <div className="mv" style={{ fontSize: 16 }}>
-                  {opt.cIrmaa > 0 ? fmtM(opt.cIrmaa) : "$0"}
-                </div>
-              </div>
-            </div>
-            {opt.cIrmaa === 0 && cur.cIrmaa === 0 && (
-              <div
-                style={{
-                  marginTop: 8,
-                  fontSize: 11,
-                  color: "#475569",
-                  textAlign: "center",
-                }}
-              >
-                ✅ No IRMAA surcharges projected in either scenario
-              </div>
-            )}
-          </div>
-        </>
-      )}
+          </>
+        );
+      })()}
       {view === "table" && (
         <div className="chart-card" style={{ overflowX: "auto" }}>
           <div className="ct">Year-by-Year Comparison Table</div>
