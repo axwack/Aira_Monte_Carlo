@@ -90,9 +90,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.8.8";
-export const BUILD_TAG = "[main] v1.0.8.8 — Net Worth tab label updates to ex. RE when real estate toggle is off.";
-export const BUILD_TIME = "2026-05-14T00:00:00Z";
+const APP_VERSION = "1.0.8.9";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.9 — Hash index, branch cleanup, build tag corrected.";
+export const BUILD_TIME = "2026-05-21T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
