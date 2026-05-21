@@ -45,7 +45,7 @@ export const FREE_STARTER_CREDITS = 5_000;
 // 1 AiRA credit = 1,000 raw Gemini tokens (must match analyze.js RAW_TOKENS_PER_CREDIT)
 export const RAW_TOKENS_PER_CREDIT = 1_000;
 
-// ─── JWT management ───────────────────────────────────────────────────────────
+// ─── JWT management ─────────────────────────────────────────────────────────
 
 const JWT_KEY = "airaJWT.v1";
 
@@ -68,7 +68,7 @@ export function isAuthenticated() {
   return !!getStoredJWT();
 }
 
-// ─── Balance — pub/sub ────────────────────────────────────────────────────────
+// ─── Balance — pub/sub ────────────────────────────────────────────────────────────
 
 const CACHED_BALANCE_KEY = "airaCachedBalance.v1";
 const STUB_BALANCE_KEY   = "airaCredits.v1";
@@ -198,7 +198,6 @@ export async function purchaseCreditPack(packId) {
   }
 
   // Real billing: call our Worker which creates a Stripe Checkout session
-  const jwt = getStoredJWT();
   const res = await fetch("/api/checkout", {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
@@ -212,7 +211,7 @@ export async function purchaseCreditPack(packId) {
   window.location.href = url; // redirect to Stripe — page unloads here
 }
 
-// ─── Post-purchase: verify Stripe session → issue JWT ────────────────────────
+// ─── Post-purchase: verify Stripe session → issue JWT ──────────────────────
 
 /**
  * Called once when Stripe redirects back to /?session_id=xxx.
@@ -228,14 +227,24 @@ export async function verifyStripeSession(sessionId) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || "Session verification failed");
   }
-  const { token, credits } = await res.json();
+  const { token, credits: initialCredits } = await res.json();
   setStoredJWT(token);
-  try { localStorage.setItem(CACHED_BALANCE_KEY, String(credits)); } catch {}
-  _notifyListeners(credits);
-  return { credits };
+  try { localStorage.setItem(CACHED_BALANCE_KEY, String(initialCredits)); } catch {}
+  _notifyListeners(initialCredits);
+
+  // If credits are 0 the webhook hasn’t fired yet — poll /api/balance for up to 12s
+  if (initialCredits === 0) {
+    for (let i = 0; i < 6; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const polled = await fetchCreditBalance();
+      if (polled > 0) return { credits: polled };
+    }
+  }
+
+  return { credits: initialCredits };
 }
 
-// ─── Hook: detect Stripe return URL ──────────────────────────────────────────
+// ─── Hook: detect Stripe return URL ────────────────────────────────────────────
 
 /**
  * Mount this hook near the top of App.jsx.
@@ -264,7 +273,7 @@ export function useStripeReturn() {
   return status;
 }
 
-// ─── UI — Credit Balance Badge ────────────────────────────────────────────────
+// ─── UI — Credit Balance Badge ────────────────────────────────────────────────────
 
 export function CreditBalanceBadge({ style, onBuyClick }) {
   const balance = useCreditBalance();
@@ -302,7 +311,7 @@ export function CreditBalanceBadge({ style, onBuyClick }) {
   );
 }
 
-// ─── UI — Credit Pack Modal ───────────────────────────────────────────────────
+// ─── UI — Credit Pack Modal ─────────────────────────────────────────────────────
 
 export function CreditPackModal({ onClose }) {
   const [purchasing, setPurchasing] = useState(null);
