@@ -28,6 +28,11 @@ export async function onRequestPost({ request, env }) {
   const rawBody = await request.text();
   const sigHeader = request.headers.get("Stripe-Signature");
 
+  console.log("[webhook-body-debug]",
+    "bodyLen=", rawBody.length,
+    "bodyStart=", JSON.stringify(rawBody.slice(0, 40)),
+    "sigHeader=", sigHeader?.slice(0, 40));
+
   try {
     await verifyStripeWebhook(rawBody, sigHeader, env.STRIPE_WEBHOOK_SECRET);
   } catch (e) {
