@@ -116,6 +116,7 @@ export async function stripeGet(secretKey, path) {
  */
 export async function verifyStripeWebhook(rawBody, sigHeader, secret) {
   if (!sigHeader) throw new Error("Missing Stripe-Signature header");
+  if (!secret)    throw new Error("STRIPE_WEBHOOK_SECRET is not configured");
 
   const parts = Object.fromEntries(
     sigHeader.split(",").map(p => {
@@ -130,7 +131,13 @@ export async function verifyStripeWebhook(rawBody, sigHeader, secret) {
   const age = Math.abs(Date.now() / 1000 - parseInt(timestamp, 10));
   if (age > 300) throw new Error("Webhook timestamp too old — possible replay attack");
 
-  const key      = await _hmacKey(secret, "sign");
+  // Stripe secrets are "whsec_<base64-encoded-key>" — strip prefix and decode
+  const b64 = secret.startsWith("whsec_") ? secret.slice(6) : secret;
+  const rawKeyBytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    "raw", rawKeyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+
   const toSign   = `${timestamp}.${rawBody}`;
   const expected = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(toSign));
   const expectedHex = Array.from(new Uint8Array(expected))
