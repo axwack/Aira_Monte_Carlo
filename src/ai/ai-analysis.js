@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { hasEnoughCredits, deductCredits, ESTIMATED_CREDITS_PER_CALL, getStoredJWT, fetchCreditBalance } from "../billing/credits.js";
+import { hasEnoughCredits, deductCredits, ESTIMATED_CREDITS_PER_CALL, getStoredJWT, fetchCreditBalance, syncCreditBalance } from "../billing/credits.js";
 
 // ─── Billing mode flag ────────────────────────────────────────────────────────
 // Flip to true when Path A (token-resale) goes live.
@@ -38,9 +38,16 @@ async function callViaProxy(type, data) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `API error ${res.status}`);
   }
-  // Refresh cached balance in the background after each successful call
-  fetchCreditBalance();
-  return res.json();
+  const result = await res.json();
+  // Sync balance from the server's response to avoid a second round-trip.
+  // Fall back to a live fetch if the server didn't include the remaining balance
+  // (e.g. BYOK mode or deduction failed non-fatally).
+  if (typeof result._credits_remaining === "number") {
+    syncCreditBalance(result._credits_remaining);
+  } else {
+    fetchCreditBalance();
+  }
+  return result;
 }
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
