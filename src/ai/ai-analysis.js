@@ -12,12 +12,12 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { hasEnoughCredits, deductCredits, ESTIMATED_CREDITS_PER_CALL, getStoredJWT, fetchCreditBalance } from "../billing/credits.js";
+import { hasEnoughCredits, deductCredits, ESTIMATED_CREDITS_PER_CALL, getStoredJWT, fetchCreditBalance, syncCreditBalance } from "../billing/credits.js";
 
 // ─── Billing mode flag ────────────────────────────────────────────────────────
 // Flip to true when Path A (token-resale) goes live.
 // When false, all credit logic is bypassed — pure BYOK, no code path changes.
-export const BILLING_ENABLED = false;
+export const BILLING_ENABLED = true;
 
 // ─── Billing proxy ────────────────────────────────────────────────────────────
 // Routes all AI calls through /api/analyze when BILLING_ENABLED = true.
@@ -38,9 +38,16 @@ async function callViaProxy(type, data) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `API error ${res.status}`);
   }
-  // Refresh cached balance in the background after each successful call
-  fetchCreditBalance();
-  return res.json();
+  const result = await res.json();
+  // Sync balance from the server's response to avoid a second round-trip.
+  // Fall back to a live fetch if the server didn't include the remaining balance
+  // (e.g. BYOK mode or deduction failed non-fatally).
+  if (typeof result._credits_remaining === "number") {
+    syncCreditBalance(result._credits_remaining);
+  } else {
+    fetchCreditBalance();
+  }
+  return result;
 }
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -181,7 +188,7 @@ function fnCall(apiKey, maxTokens, systemText, userText, fnDecl, model = DEFAULT
     tools: [{ functionDeclarations: [fnDecl] }],
     toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [fnDecl.name] } },
     // Disable thinking for function calls — Gemini 2.5 thinking mode emits
-    // function calls as Python-style code (`print(default_api.foo(...))`)
+    // function calls as Python-style code (`print(default_api.foo(...))`) 
     // which the API rejects as MALFORMED_FUNCTION_CALL. No-op for non-thinking models.
     generationConfig: { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } },
   }, model, fnLabel);
@@ -628,35 +635,7 @@ export async function generateTimeSensitiveCards(values, mcResults) {
     `Pre-tax: $${((values.accounts||[]).filter(a=>a.category==="pretax").reduce((s,a)=>s+(a.balance||0),0)/1000).toFixed(0)}K | Roth: $${((values.accounts||[]).filter(a=>a.category==="roth").reduce((s,a)=>s+(a.balance||0),0)/1000).toFixed(0)}K`,
   ].join("\n");
 
-  const prompt = `You are Aira, a fiduciary retirement planning AI.
-
-USER PROFILE:
-${profileCtx}
-
-Use Google Search to find CURRENT information on these topics. Only create a card when you find specific, current numbers or thresholds directly actionable for this user.
-
-SEARCH TOPICS:
-${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}
-
-Return ONLY a valid JSON array between <cards> and </cards> tags. Each object:
-{
-  "priority": "red|yellow|green",
-  "category": "short category name",
-  "action": "specific action sentence tailored to this user",
-  "reason": "why this matters given their numbers",
-  "deadline": "when to act",
-  "aiNote": "key current number or threshold found (dollar amount, percentage, date)",
-  "source": "website or publication name"
-}
-
-Rules:
-- Only include cards with real current numbers you found via search
-- Skip topics where you only have general/training knowledge
-- Set priority by financial impact urgency for this user
-- Maximum 12 cards
-
-<cards>
-</cards>`;
+  const prompt = `You are Aira, a fiduciary retirement planning AI.\n\nUSER PROFILE:\n${profileCtx}\n\nUse Google Search to find CURRENT information on these topics. Only create a card when you find specific, current numbers or thresholds directly actionable for this user.\n\nSEARCH TOPICS:\n${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\nReturn ONLY a valid JSON array between <cards> and </cards> tags. Each object:\n{\n  "priority": "red|yellow|green",\n  "category": "short category name",\n  "action": "specific action sentence tailored to this user",\n  "reason": "why this matters given their numbers",\n  "deadline": "when to act",\n  "aiNote": "key current number or threshold found (dollar amount, percentage, date)",\n  "source": "website or publication name"\n}\n\nRules:\n- Only include cards with real current numbers you found via search\n- Skip topics where you only have general/training knowledge\n- Set priority by financial impact urgency for this user\n- Maximum 12 cards\n\n<cards>\n</cards>`;
 
   const res = await callGemini(apiKey, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
