@@ -121,7 +121,7 @@ export async function verifyStripeWebhook(rawBody, sigHeader, secret) {
   const parts = Object.fromEntries(
     sigHeader.split(",").map(p => {
       const i = p.indexOf("=");
-      return [p.slice(0, i), p.slice(i + 1)];
+      return [p.slice(0, i).trim(), p.slice(i + 1).trim()];
     })
   );
   const timestamp = parts.t;
@@ -131,8 +131,10 @@ export async function verifyStripeWebhook(rawBody, sigHeader, secret) {
   const age = Math.abs(Date.now() / 1000 - parseInt(timestamp, 10));
   if (age > 300) throw new Error("Webhook timestamp too old — possible replay attack");
 
-  // Stripe secrets are "whsec_<base64-encoded-key>" — strip prefix and decode
-  const b64 = secret.startsWith("whsec_") ? secret.slice(6) : secret;
+  // Strip "whsec_" prefix, normalize URL-safe base64, add padding, then decode
+  const b64raw = (secret.startsWith("whsec_") ? secret.slice(6) : secret).trim();
+  const b64std = b64raw.replace(/-/g, "+").replace(/_/g, "/");
+  const b64    = b64std + "==".slice(0, (4 - b64std.length % 4) % 4);
   const rawKeyBytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
   const key = await crypto.subtle.importKey(
     "raw", rawKeyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
