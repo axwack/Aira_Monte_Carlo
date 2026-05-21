@@ -26,12 +26,21 @@ export async function onRequestGet({ request, env }) {
     return json({ error: "Invalid or expired token" }, 401);
   }
 
-  const customer = await env.DB.prepare(
-    "SELECT credits FROM customers WHERE stripe_customer_id = ?"
-  ).bind(payload.customerId).first();
+  if (!env.DB) return json({ error: "D1 database not bound — check Pages bindings" }, 500);
+
+  let credits = 0;
+  try {
+    const customer = await env.DB.prepare(
+      "SELECT credits FROM customers WHERE stripe_customer_id = ?"
+    ).bind(payload.customerId).first();
+    credits = customer?.credits ?? 0;
+  } catch (e) {
+    console.error("[balance] D1 query failed:", e.message);
+    return json({ error: "Database error: " + e.message }, 500);
+  }
 
   return json({
-    credits:    customer?.credits ?? 0,
+    credits,
     customerId: payload.customerId,
   });
 }
