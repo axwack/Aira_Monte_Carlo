@@ -228,11 +228,21 @@ export async function verifyStripeSession(sessionId) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || "Session verification failed");
   }
-  const { token, credits } = await res.json();
+  const { token, credits: initialCredits } = await res.json();
   setStoredJWT(token);
-  try { localStorage.setItem(CACHED_BALANCE_KEY, String(credits)); } catch {}
-  _notifyListeners(credits);
-  return { credits };
+  try { localStorage.setItem(CACHED_BALANCE_KEY, String(initialCredits)); } catch {}
+  _notifyListeners(initialCredits);
+
+  // If credits are 0 the webhook hasn't fired yet — poll /api/balance for up to 12s
+  if (initialCredits === 0) {
+    for (let i = 0; i < 6; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const polled = await fetchCreditBalance();
+      if (polled > 0) return { credits: polled };
+    }
+  }
+
+  return { credits: initialCredits };
 }
 
 // ─── Hook: detect Stripe return URL ──────────────────────────────────────────
