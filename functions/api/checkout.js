@@ -35,13 +35,14 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const session = await stripePost(env.STRIPE_SECRET_KEY, "/checkout/sessions", {
-      "payment_method_types[]":   "card",
-      "line_items[0][price]":     priceId,
-      "line_items[0][quantity]":  "1",
-      mode:                       "payment",
-      success_url:                `${origin}/?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url:                 `${origin}/`,
-      "metadata[packId]":         packId,
+      "payment_method_types[]": "card",
+      "line_items[0][price]":   priceId,
+      "line_items[0][quantity]": "1",
+      mode:                     "payment",
+      customer_creation:        "always",
+      success_url:              `${origin}/?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url:               `${origin}/`,
+      "metadata[packId]":       packId,
       ...(email ? { customer_email: email } : {}),
     });
     return json({ url: session.url });
