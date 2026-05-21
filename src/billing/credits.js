@@ -97,6 +97,21 @@ export function getCreditBalance() {
   return _readCachedBalance();
 }
 
+/**
+ * Synchronously push a server-known balance into the cache and notify listeners.
+ * Call this when the server returns a fresh balance in an API response, avoiding
+ * a second round-trip to /api/balance.
+ */
+export function syncCreditBalance(credits) {
+  const n = Math.max(0, credits);
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(BILLING_ENABLED ? CACHED_BALANCE_KEY : STUB_BALANCE_KEY, String(n));
+    }
+  } catch {}
+  _notifyListeners(n);
+}
+
 /** Async — fetches live balance from /api/balance and updates the cache. */
 export async function fetchCreditBalance() {
   if (!BILLING_ENABLED) return getCreditBalance();

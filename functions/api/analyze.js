@@ -311,23 +311,7 @@ async function handleTimeSensitive(apiKey, values, mcResults, usageBucket) {
     `MC success: ${mcResults ? (mcResults.rate * 100).toFixed(1) : "N/A"}%`,
   ].join("\n");
 
-  const prompt = `You are Aira, a fiduciary retirement planning AI.
-
-USER PROFILE:
-${profileCtx}
-
-Use Google Search to find CURRENT information on these topics. Only create a card when you find specific current numbers actionable for this user.
-
-SEARCH TOPICS:
-${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}
-
-Return ONLY a valid JSON array between <cards> and </cards> tags:
-[{ "priority": "red|yellow|green", "category": "string", "action": "string", "reason": "string", "deadline": "string", "aiNote": "current number/threshold found", "source": "website name" }]
-
-Rules: real current numbers only, max 12 cards, skip topics with only general knowledge.
-
-<cards>
-</cards>`;
+  const prompt = `You are Aira, a fiduciary retirement planning AI.\n\nUSER PROFILE:\n${profileCtx}\n\nUse Google Search to find CURRENT information on these topics. Only create a card when you find specific current numbers actionable for this user.\n\nSEARCH TOPICS:\n${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\nReturn ONLY a valid JSON array between <cards> and </cards> tags:\n[{ "priority": "red|yellow|green", "category": "string", "action": "string", "reason": "string", "deadline": "string", "aiNote": "current number/threshold found", "source": "website name" }]\n\nRules: real current numbers only, max 12 cards, skip topics with only general knowledge.\n\n<cards>\n</cards>`;
 
   const res = await callGemini(apiKey, MODEL_STANDARD, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -351,7 +335,7 @@ Rules: real current numbers only, max 12 cards, skip topics with only general kn
 
 async function deductD1Credits(db, customerId, rawTokens) {
   const creditCost = Math.ceil(rawTokens / RAW_TOKENS_PER_CREDIT);
-  if (creditCost <= 0) return 0;
+  if (creditCost <= 0) return { creditsUsed: 0, creditsRemaining: null };
 
   await db.batch([
     // Deduct, floored at 0 — prevents negative balances
@@ -368,7 +352,11 @@ async function deductD1Credits(db, customerId, rawTokens) {
     `).bind(customerId, -creditCost, rawTokens),
   ]);
 
-  return creditCost;
+  const row = await db.prepare(
+    "SELECT credits FROM customers WHERE stripe_customer_id = ?"
+  ).bind(customerId).first();
+
+  return { creditsUsed: creditCost, creditsRemaining: row?.credits ?? null };
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
@@ -440,15 +428,16 @@ export async function onRequestPost({ request, env }) {
 
   // ── Post-call credit deduction (billing mode only) ────────────────────────
   let creditsUsed = 0;
+  let creditsRemaining = null;
   if (customerId && env.DB && usageBucket.length > 0) {
     const rawTokens = usageBucket.reduce((sum, u) => sum + (u.totalTokenCount || 0), 0);
     try {
-      creditsUsed = await deductD1Credits(env.DB, customerId, rawTokens);
+      ({ creditsUsed, creditsRemaining } = await deductD1Credits(env.DB, customerId, rawTokens));
     } catch (e) {
       // Non-fatal: user still gets their response; log the accounting failure
       console.error("[analyze] D1 deduction failed:", e.message);
     }
   }
 
-  return json({ ...result, _credits_used: creditsUsed });
+  return json({ ...result, _credits_used: creditsUsed, _credits_remaining: creditsRemaining });
 }
