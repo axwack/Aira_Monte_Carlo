@@ -145,6 +145,15 @@ export async function verifyStripeWebhook(rawBody, sigHeader, secret) {
   const expectedHex = Array.from(new Uint8Array(expected))
     .map(b => b.toString(16).padStart(2, "0")).join("");
 
+  // Debug: log enough to diagnose mismatch without leaking full key
+  console.log("[webhook-sig-debug] secretLen=", secret.length,
+    "b64rawLen=", b64raw.length,
+    "keyBytesLen=", rawKeyBytes.length,
+    "tsAge=", Math.round(age),
+    "sigHead=", sig.slice(0, 12),
+    "sigCalc=", expectedHex.slice(0, 12),
+    "match=", expectedHex === sig);
+
   if (expectedHex !== sig) throw new Error("Webhook signature mismatch");
 }
 
