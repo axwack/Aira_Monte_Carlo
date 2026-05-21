@@ -45,12 +45,20 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "No Stripe customer on session — contact support" }, 400);
   }
 
-  // Look up current balance (webhook may have already credited by now)
-  const customer = await env.DB.prepare(
-    "SELECT credits FROM customers WHERE stripe_customer_id = ?"
-  ).bind(customerId).first();
+  if (!env.JWT_SECRET) return json({ error: "JWT_SECRET env var not configured" }, 500);
+  if (!env.DB)         return json({ error: "D1 database not bound — check Pages bindings" }, 500);
 
-  const credits = customer?.credits ?? 0;
+  // Look up current balance (webhook may have already credited by now)
+  let credits = 0;
+  try {
+    const customer = await env.DB.prepare(
+      "SELECT credits FROM customers WHERE stripe_customer_id = ?"
+    ).bind(customerId).first();
+    credits = customer?.credits ?? 0;
+  } catch (e) {
+    // Table may not exist yet — still issue the JWT so client can poll later
+    console.error("[verify-session] D1 query failed:", e.message);
+  }
 
   // Issue a signed JWT containing only the Stripe customer ID
   const token = await signJWT(
