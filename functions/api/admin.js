@@ -112,7 +112,7 @@ export async function onRequestPost({ request, env }) {
         `).bind(customerId, email || null, credits),
         env.DB.prepare(`
           INSERT INTO credit_transactions (customer_id, type, amount, stripe_session_id)
-          VALUES (?, 'admin_grant', ?, ?)
+          VALUES (?, 'free_grant', ?, ?)
         `).bind(customerId, credits, sessionId),
       ]);
       const row = await env.DB.prepare(
@@ -149,7 +149,7 @@ export async function onRequestPost({ request, env }) {
         `).bind(customerId, email, credits),
         env.DB.prepare(`
           INSERT INTO credit_transactions (customer_id, type, amount, stripe_session_id)
-          VALUES (?, 'admin_sim_purchase', ?, ?)
+          VALUES (?, 'purchase', ?, ?)
         `).bind(customerId, credits, sessionId),
       ]);
       const token = await signJWT(

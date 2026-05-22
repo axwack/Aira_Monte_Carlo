@@ -8,10 +8,25 @@
  * as a Cloudflare Pages env var (or in .dev.vars locally).
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { syncCreditBalance, getStoredJWT } from "./credits.js";
 
-const JWT_KEY = "airaJWT.v1";
+const JWT_KEY        = "airaJWT.v1";
+const ADMIN_CFG_KEY  = "aira_admin_cfg.v1";  // localStorage only — never committed
+
+function loadAdminCfg() {
+  try {
+    const raw = localStorage.getItem(ADMIN_CFG_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveAdminCfg(patch) {
+  try {
+    const current = loadAdminCfg();
+    localStorage.setItem(ADMIN_CFG_KEY, JSON.stringify({ ...current, ...patch }));
+  } catch {}
+}
 
 export function useAdminMode() {
   if (typeof window === "undefined") return false;
@@ -150,10 +165,13 @@ function StripePingSection({ secret, disabled }) {
 // ── Section: Simulate Purchase ────────────────────────────────────────────────
 
 function SimulatePurchaseSection({ secret, disabled }) {
-  const [email, setEmail]   = useState("");
-  const [packId, setPackId] = useState("starter");
-  const [result, setResult] = useState(null);
+  const [email, setEmail]     = useState(() => loadAdminCfg().testEmail || "");
+  const [packId, setPackId]   = useState(() => loadAdminCfg().testPack  || "starter");
+  const [result, setResult]   = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const handleEmail = v => { setEmail(v); saveAdminCfg({ testEmail: v }); };
+  const handlePack  = v => { setPackId(v); saveAdminCfg({ testPack: v }); };
 
   const run = async () => {
     setLoading(true); setResult(null);
@@ -171,10 +189,10 @@ function SimulatePurchaseSection({ secret, disabled }) {
         Simulate Purchase (writes D1 + issues JWT)
       </div>
       <div style={S.row}>
-        <Field label="Email" value={email} onChange={setEmail} placeholder="test@example.com" />
+        <Field label="Email" value={email} onChange={handleEmail} placeholder="test@example.com" />
         <div style={{ minWidth: 90 }}>
           <div style={S.label}>Pack</div>
-          <select value={packId} onChange={e => setPackId(e.target.value)} style={{ ...S.input, padding: "6px 6px" }}>
+          <select value={packId} onChange={e => handlePack(e.target.value)} style={{ ...S.input, padding: "6px 6px" }}>
             <option value="starter">Starter 5K</option>
             <option value="value">Value 10K</option>
             <option value="pro">Pro 15K</option>
@@ -197,10 +215,12 @@ function SimulatePurchaseSection({ secret, disabled }) {
 // ── Section: Grant Credits ────────────────────────────────────────────────────
 
 function GrantCreditsSection({ secret, disabled }) {
-  const [email, setEmail]     = useState("");
+  const [email, setEmail]     = useState(() => loadAdminCfg().testEmail || "");
   const [credits, setCredits] = useState("5000");
   const [result, setResult]   = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const handleEmail = v => { setEmail(v); saveAdminCfg({ testEmail: v }); };
 
   const run = async () => {
     setLoading(true); setResult(null);
@@ -215,7 +235,7 @@ function GrantCreditsSection({ secret, disabled }) {
         Grant Credits (no Stripe required)
       </div>
       <div style={S.row}>
-        <Field label="Email" value={email} onChange={setEmail} placeholder="test@example.com" />
+        <Field label="Email" value={email} onChange={handleEmail} placeholder="test@example.com" />
         <Field label="Credits" value={credits} onChange={setCredits} type="number" placeholder="5000" />
         <button onClick={run} disabled={disabled || loading || !email} style={S.btn("#d97706")}>
           {loading ? "…" : "Grant"}
@@ -229,9 +249,11 @@ function GrantCreditsSection({ secret, disabled }) {
 // ── Section: Inspect ──────────────────────────────────────────────────────────
 
 function InspectSection({ secret, disabled }) {
-  const [email, setEmail] = useState("");
+  const [email, setEmail]   = useState(() => loadAdminCfg().testEmail || "");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const handleEmail = v => { setEmail(v); saveAdminCfg({ testEmail: v }); };
 
   const run = async () => {
     setLoading(true); setResult(null);
@@ -245,7 +267,7 @@ function InspectSection({ secret, disabled }) {
         Inspect D1 Customer
       </div>
       <div style={S.row}>
-        <Field label="Email" value={email} onChange={setEmail} placeholder="test@example.com" />
+        <Field label="Email" value={email} onChange={handleEmail} placeholder="test@example.com" />
         <button onClick={run} disabled={disabled || loading || !email} style={S.btn("#475569")}>
           {loading ? "…" : "Inspect"}
         </button>
@@ -268,6 +290,12 @@ function LocalStateSection() {
       setMsg("Local state cleared — reload to see fresh state.");
     } catch (e) { setMsg("Error: " + e.message); }
   };
+  const clearAdminCfg = () => {
+    try {
+      localStorage.removeItem(ADMIN_CFG_KEY);
+      setMsg("Admin config cleared — secret and email wiped.");
+    } catch (e) { setMsg("Error: " + e.message); }
+  };
   const showJwt = () => {
     const jwt = getStoredJWT();
     setMsg(jwt ? `JWT: ${jwt.slice(0, 40)}…` : "No JWT in localStorage");
@@ -279,7 +307,8 @@ function LocalStateSection() {
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <button onClick={showJwt} style={S.btn("#475569")}>Show JWT</button>
-        <button onClick={clearAll} style={S.btn("#991b1b")}>Clear all (JWT + balance)</button>
+        <button onClick={clearAll} style={S.btn("#991b1b")}>Clear JWT + balance</button>
+        <button onClick={clearAdminCfg} style={S.btn("#7f1d1d")}>Forget saved secret</button>
       </div>
       {msg && <div style={{ marginTop: 6, fontSize: 11, color: "#94a3b8" }}>{msg}</div>}
     </div>
@@ -290,17 +319,27 @@ function LocalStateSection() {
 
 export function AdminPanel() {
   const active = useAdminMode();
-  const [open, setOpen]         = useState(true);
-  const [secret, setSecret]     = useState("");
-  const [authed, setAuthed]     = useState(false);
+  const [open, setOpen]             = useState(true);
+  const [secret, setSecret]         = useState(() => loadAdminCfg().adminSecret || "");
+  const [authed, setAuthed]         = useState(false);
   const [pingResult, setPingResult] = useState(null);
-  const [pinging, setPinging]   = useState(false);
+  const [pinging, setPinging]       = useState(false);
+
+  const handleSecret = v => { setSecret(v); saveAdminCfg({ adminSecret: v }); };
+
+  // Auto-connect on mount if a saved secret exists
+  useEffect(() => {
+    const saved = loadAdminCfg().adminSecret;
+    if (saved && active) {
+      adminCall(saved, "ping").then(r => { if (r.ok) setAuthed(true); });
+    }
+  }, [active]);
 
   const ping = useCallback(async () => {
     setPinging(true); setPingResult(null);
     const r = await adminCall(secret, "ping");
     setPingResult(r);
-    if (r.ok) setAuthed(true);
+    if (r.ok) { setAuthed(true); saveAdminCfg({ adminSecret: secret }); }
     setPinging(false);
   }, [secret]);
 
@@ -319,7 +358,7 @@ export function AdminPanel() {
       {open && (
         <div style={S.body}>
           <AuthSection
-            secret={secret} setSecret={setSecret}
+            secret={secret} setSecret={handleSecret}
             onPing={ping} loading={pinging} result={pingResult}
           />
           <StripePingSection   secret={secret} disabled={!authed} />
