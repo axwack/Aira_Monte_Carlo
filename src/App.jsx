@@ -67,6 +67,7 @@ import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
+import { AdminPanel } from "./billing/admin-panel.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -90,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.8.9";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.9 — Hash index, branch cleanup, build tag corrected.";
-export const BUILD_TIME = "2026-05-21T00:00:00Z";
+const APP_VERSION = "1.0.9.0";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.0 — Add hidden admin panel for Stripe billing test (by config).";
+export const BUILD_TIME = "2026-05-22T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -9584,6 +9585,9 @@ export default function AiRAForecaster() {
           </div>
         </div>
       </div>
+
+      {/* ── Admin panel (hidden; activate via ?aira_admin=1) ── */}
+      <AdminPanel />
 
       {/* ── Stripe purchase success toast ── */}
       {stripeToast && (
