@@ -22,7 +22,7 @@ function base64urlDecode(str) {
   return atob(padded);
 }
 
-// ─── JWT ─────────────────────────────────────────────────────────────────────
+// ─── JWT ──────────────────────────────────────────────────────────────────
 
 async function _hmacKey(secret, usage) {
   return crypto.subtle.importKey(
@@ -73,10 +73,12 @@ export async function verifyJWT(token, secret) {
   return payload;
 }
 
-// ─── Stripe API helpers ───────────────────────────────────────────────────────
+// ─── Stripe API helpers ──────────────────────────────────────────────────────────
 
 const STRIPE_BASE = "https://api.stripe.com/v1";
 
+// Stripe REST API uses flat URL-encoded bodies (not JSON).
+// Pass keys exactly as Stripe expects, e.g. "line_items[0][price]".
 function formEncode(params) {
   return Object.entries(params)
     .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -107,7 +109,44 @@ export async function stripeGet(secretKey, path) {
   return data;
 }
 
-// ─── Shared HTTP helpers ──────────────────────────────────────────────────────
+/**
+ * Verify a Stripe webhook signature.
+ * rawBody must be the raw request body string (before JSON.parse).
+ * Throws if invalid or replay attack detected (>5 min old).
+ */
+export async function verifyStripeWebhook(rawBody, sigHeader, secret) {
+  if (!sigHeader) throw new Error("Missing Stripe-Signature header");
+  if (!secret)    throw new Error("STRIPE_WEBHOOK_SECRET is not configured");
+
+  const parts = Object.fromEntries(
+    sigHeader.split(",").map(p => {
+      const i = p.indexOf("=");
+      return [p.slice(0, i), p.slice(i + 1)];
+    })
+  );
+  const timestamp = parts.t;
+  const sig       = parts.v1;
+  if (!timestamp || !sig) throw new Error("Invalid Stripe-Signature format");
+
+  const age = Math.abs(Date.now() / 1000 - parseInt(timestamp, 10));
+  if (age > 300) throw new Error("Webhook timestamp too old — possible replay attack");
+
+  // Stripe secrets are "whsec_<base64-encoded-key>" — strip prefix and decode
+  const b64 = secret.startsWith("whsec_") ? secret.slice(6) : secret;
+  const rawKeyBytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    "raw", rawKeyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+
+  const toSign   = `${timestamp}.${rawBody}`;
+  const expected = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(toSign));
+  const expectedHex = Array.from(new Uint8Array(expected))
+    .map(b => b.toString(16).padStart(2, "0")).join("");
+
+  if (expectedHex !== sig) throw new Error("Webhook signature mismatch");
+}
+
+// ─── Shared HTTP helpers ──────────────────────────────────────────────────────────
 
 export const CORS = {
   "Access-Control-Allow-Origin":  "*",

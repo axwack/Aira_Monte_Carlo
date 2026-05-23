@@ -1,0 +1,30 @@
+# .dev.vars — local secrets for Cloudflare Pages dev server (wrangler pages dev)
+# Copy this file to .dev.vars and fill in your values.
+# .dev.vars is gitignored — NEVER commit it.
+#
+# Usage:
+#   cp .dev.vars.example .dev.vars
+#   # edit .dev.vars with your test keys
+#   wrangler pages dev build --compatibility-date=2024-09-23
+#
+# Cloudflare Pages picks up .dev.vars automatically when running locally.
+# Set the same vars in the Cloudflare Dashboard for production.
+
+# ── Required for billing ──────────────────────────────────────────────────────
+STRIPE_SECRET_KEY=sk_test_YOUR_KEY_HERE
+STRIPE_WEBHOOK_SECRET=whsec_YOUR_WEBHOOK_SECRET_HERE
+STRIPE_PRICE_STARTER=price_YOUR_STARTER_PRICE_ID
+STRIPE_PRICE_VALUE=price_YOUR_VALUE_PRICE_ID
+STRIPE_PRICE_PRO=price_YOUR_PRO_PRICE_ID
+
+# ── Required for JWT ──────────────────────────────────────────────────────────
+# Generate with: openssl rand -hex 32
+JWT_SECRET=REPLACE_WITH_32_PLUS_RANDOM_BYTES
+
+# ── Required for AI proxy ─────────────────────────────────────────────────────
+GEMINI_API_KEY=AIzaSy_YOUR_GEMINI_KEY_HERE
+
+# ── Admin testing (enables /api/admin endpoint) ───────────────────────────────
+# Set this to any secret string. Use it as the password in the admin panel.
+# Access the admin panel by adding ?aira_admin=1 to the app URL.
+ADMIN_SECRET=REPLACE_WITH_YOUR_ADMIN_SECRET
