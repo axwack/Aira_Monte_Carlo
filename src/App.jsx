@@ -67,6 +67,7 @@ import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
+import { AdminPanel } from "./billing/admin-panel.js";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -90,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.8.9";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.8.9 — Hash index, branch cleanup, build tag corrected.";
-export const BUILD_TIME = "2026-05-21T00:00:00Z";
+const APP_VERSION = "1.0.9.0";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.0 — BYOK key illuminates AI button and bypasses billing proxy";
+export const BUILD_TIME = "2026-05-23T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -6530,14 +6531,12 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
     (params.sp  || 0) > 0 &&
     r90?.rate > 0 &&
     (params.accounts || []).some(a => (a.balance || 0) > 0);
-  const hasAiAccess  = BILLING_ENABLED ? creditBalance >= 5 : hasGeminiKey;
+  const hasAiAccess  = BILLING_ENABLED ? (creditBalance >= 5 || hasGeminiKey) : hasGeminiKey;
   const canRunAI     = !loadingAI && !cards && profileReady && hasAiAccess;
   const aiDisabledReason = !profileReady
     ? "Complete your profile and run Monte Carlo first"
-    : BILLING_ENABLED && creditBalance < 5
-    ? "Buy AiRA credits to run AI analysis"
-    : !hasGeminiKey && !BILLING_ENABLED
-    ? "Add a free Gemini API key in Profile → Assumptions to enable AI"
+    : !hasAiAccess
+    ? "Buy AiRA credits or add a free Gemini API key in Profile → Assumptions"
     : "Run AI analysis on your plan";
 
   const COLORS = {
@@ -9584,6 +9583,9 @@ export default function AiRAForecaster() {
           </div>
         </div>
       </div>
+
+      {/* ── Admin panel (hidden; activate via ?aira_admin=1) ── */}
+      <AdminPanel />
 
       {/* ── Stripe purchase success toast ── */}
       {stripeToast && (

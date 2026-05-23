@@ -10,6 +10,7 @@ main*
 Archive
 /netlify
 .wrangler
+.dev.vars
 aira-forecaster-agents
 
 # Markdown docs — only README tracked (CLAUDE.md is private, synced manually)
