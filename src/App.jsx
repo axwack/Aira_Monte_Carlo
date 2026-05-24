@@ -398,7 +398,7 @@ export const BLANK_PROFILE = {
   // Expense model
   housingType: "own",           // "own" | "rent" | "none"
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
-  carveouts: [],                // [{id, label, annual, endYear}] fixed obligations (car, HOA, etc.)
+  carveouts: [],                // [{id, label, annual, endYear}] Other Expenses (HOA, Insurance, etc.) in today's dollars; endYear = null for indefinite
   rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
   fafsaGuard: false,            // cap Roth conversions during college aid years — set true + fafsaEndYear to activate
   fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window); e.g. 2034
@@ -7596,7 +7596,7 @@ function AssumptionsPanel({ values, onChange }) {
         )}
         <div style={{ marginTop: 12 }}>
           <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, marginBottom: 8 }}>
-            Fixed Obligations (car loans, HOA, etc.)
+            Other Expenses or One Time Obligations (HOA fees, subscriptions, etc. )
           </div>
           {(values.carveouts || []).map((c, idx) => (
             <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 80px 28px", gap: 6, marginBottom: 6, alignItems: "center" }}>
@@ -9179,14 +9179,25 @@ export default function AiRAForecaster() {
                 onChange={setEndAge}
               />
               <Slider
-                label="Annual spend"
+                label="US spend"
                 value={sp}
-                min={30000}
-                max={200000}
+                min={0}
+                max={300000}
                 step={1000}
                 format={(v) => fmtK(v) + "/yr"}
                 onChange={setSp}
               />
+              {assumptions.twoHousehold && (
+                <Slider
+                  label="Out-of-country"
+                  value={assumptions.spOutOfCountry ?? 0}
+                  min={0}
+                  max={150000}
+                  step={1000}
+                  format={(v) => fmtK(v) + "/yr"}
+                  onChange={(v) => updateAssumption("spOutOfCountry", v)}
+                />
+              )}
               <Slider
                 key={`ssAge-${assumptions.ssAge}`}
                 label="SS start age"
