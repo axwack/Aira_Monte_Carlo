@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.1";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.1 — GK floor 65%→80%, add employerContrib+hsaContrib to MC accumulation, fix employerStartDate default";
-export const BUILD_TIME = "2026-05-24T00:00:00Z";
+const APP_VERSION = "1.0.9.2";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.2 — make GK floor/ceiling % configurable per-user; add employerContrib + hsaContrib to MC accumulation";
+export const BUILD_TIME = "2026-05-24T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -332,7 +332,7 @@ export const BLANK_PROFILE = {
   tax: true,
   real: true,
   twoHousehold: false,
-  employerStartDate: "2026-03-02",
+  employerStartDate: "",
   gkFloor: 48_000,
   gkFloorSpendOutofState: 48_000,
   gkFloorPct: 65,               // floor as % of core spend (default 65%)
