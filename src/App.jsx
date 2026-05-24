@@ -140,6 +140,38 @@ function expectedReturn(eqPct) {
   return parseFloat((w * SP500_MEAN * 100 + (1 - w) * BONDS_MEAN * 100).toFixed(2));
 }
 
+/**
+ * Initial withdrawal rate diagnostic.
+ * Projects portfolio to retirement using REAL return (so result stays in today's dollars).
+ * Returns { initWRpct, projectedPort, initDrawEst, baseSpend, ssAtRetire, rentalAtRetire,
+ * annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } so callers can show the math.
+ * Accepts either a profile shape (values from RetirementPanel) or the assembled params shape.
+ */
+function computeInitialWR(p) {
+  const currentAge = p.currentAge || 35;
+  const retireAge = p.retireAge || 65;
+  const ssAge = p.ssAge || 67;
+  const yrsToRetire = Math.max(0, retireAge - currentAge);
+  const eqPct = p.preRetireEq ?? 91;
+  const nominalRate = expectedReturn(eqPct) / 100;
+  const inflRate = (p.inf || 2.5) / 100;
+  const accumRate = nominalRate - inflRate;
+  const hsaAnnual = p.hsaContrib != null ? p.hsaContrib : (p.hsaMonthly || 0) * 12;
+  const annualAdds = (p.contrib || 0) + (p.employerContrib || 0) + hsaAnnual;
+  const growth = (yrs) => Math.pow(1 + accumRate, yrs);
+  const projectedPort = (p.port || 0) * growth(yrsToRetire) +
+    (yrsToRetire > 0 && accumRate > 0
+      ? annualAdds * (growth(yrsToRetire) - 1) / accumRate
+      : annualAdds * yrsToRetire);
+  const baseSpend = p.twoHousehold ? (p.spSpendOutofState || p.sp || 0) : (p.sp || 0);
+  const ssAtRetire = retireAge >= ssAge ? (p.ssb || 0) : 0;
+  const rentalAtRetire = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
+  const initDrawEst = Math.max(0, baseSpend - ssAtRetire - rentalAtRetire);
+  const initWRpct = projectedPort > 0 ? (initDrawEst / projectedPort) * 100 : 0;
+  return { initWRpct, projectedPort, initDrawEst, baseSpend, ssAtRetire, rentalAtRetire,
+    annualAdds, accumRate, nominalRate, inflRate, yrsToRetire };
+}
+
 const JOINT_RMD_TABLE = {
   // Joint & Last Survivor — assumes spouse is 10 years younger (IRS Pub 590-B Table II excerpt)
   73: 25.3, 74: 24.6, 75: 24.0, 76: 23.4, 77: 22.8,
@@ -7992,27 +8024,12 @@ function RetirementPanel({ values, onChange }) {
   const ceiling = Math.round(baseSpend * (ceilingPct / 100));
   const strategy = values.withdrawalStrategy || "gk";
 
-  // Estimate initial withdrawal rate at retirement (read-only diagnostic for GK card).
-  // Projects portfolio using REAL return (nominal − inflation) so it stays in today's dollars,
-  // matching the spending input which is also in today's dollars.
-  const currentAge = values.currentAge || 35;
+  // Initial WR diagnostic — uses the shared helper so the GK card, the metrics WR badge,
+  // and the gk-bar strategy strap all show the same number.
+  const wr = computeInitialWR(values);
+  const { initWRpct, projectedPort, initDrawEst, ssAtRetire, rentalAtRetire,
+    annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } = wr;
   const retireAge = values.retireAge || 65;
-  const ssAge = values.ssAge || 67;
-  const yrsToRetire = Math.max(0, retireAge - currentAge);
-  const eqPct = values.preRetireEq ?? 91;
-  const nominalRate = expectedReturn(eqPct) / 100;
-  const inflRate = (values.inf || 2.5) / 100;
-  const accumRate = nominalRate - inflRate;
-  const annualAdds = (values.contrib || 0) + (values.employerContrib || 0) + (values.hsaMonthly || 0) * 12;
-  const growth = (yrs) => Math.pow(1 + accumRate, yrs);
-  const projectedPort = (values.port || 0) * growth(yrsToRetire) +
-    (yrsToRetire > 0 && accumRate > 0
-      ? annualAdds * (growth(yrsToRetire) - 1) / accumRate
-      : annualAdds * yrsToRetire);
-  const ssAtRetire = retireAge >= ssAge ? (values.ssb || 0) : 0;
-  const rentalAtRetire = (values.ab > 0 ? values.ab : 0);
-  const initDrawEst = Math.max(0, baseSpend - ssAtRetire - rentalAtRetire);
-  const initWRpct = projectedPort > 0 ? (initDrawEst / projectedPort) * 100 : 0;
   const inSafeBand = initWRpct >= 5.0 && initWRpct <= 5.5;
   const wrColor = inSafeBand ? "#34d399" : (initWRpct > 5.5 ? "#f87171" : "#fbbf24");
 
@@ -8556,7 +8573,7 @@ export default function AiRAForecaster() {
     if (r85 || r90) setStale(true);
   }, [params]);
 
-  const swr = (port > 0 ? (params.sp / port) * 100 : 0).toFixed(1);
+  const swr = computeInitialWR(params).initWRpct.toFixed(1);
 
   const runSimulation = useCallback(() => {
     setRunning(true);
