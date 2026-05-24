@@ -124,6 +124,10 @@ const INFL = [
   0.1, 1.3, 2.1, 2.4, 1.8, 1.2, 4.7, 8.0, 4.1, 2.9,
 ].map((r) => Math.max(0.5, Math.min(7.0, r)) / 100);
 
+// GK paper: cap CPI pass-through in Guyton-Klinger withdrawal adjustments at 6%.
+// Distinct from the INFL data clamp above (which bounds the historical CPI bootstrap).
+const GK_INFLATION_CAP = 0.06;
+
 const SEQ_2000_2012 = [
   -0.091, -0.119, -0.221, 0.287, 0.109, 0.048, 0.158, 0.055, -0.37, 0.265,
   0.151, 0.021, 0.16,
@@ -494,7 +498,8 @@ function guytonKlingerWithdrawal(
     lastReturn,
     inflationRate,
     floor,
-    ceiling
+    ceiling,
+    yearsRemaining = Infinity
   ) {
     // NaN guards – fall back to safe values if any parameter is invalid
     if (isNaN(portfolioValue) || portfolioValue <= 0) return floor || 0;
@@ -503,14 +508,20 @@ function guytonKlingerWithdrawal(
     if (isNaN(inflationRate)) inflationRate = 0.02;
     if (isNaN(initialWR)) initialWR = 0.04;
 
+    // GK Rule: Withdrawal/Inflation — adjust by CPI only when prior-year return ≥ 0,
+    // and cap the inflation pass-through per the original paper.
+    const cappedInfl = Math.min(GK_INFLATION_CAP, inflationRate);
     let w =
-      lastReturn >= 0 ? lastWithdrawal * (1 + inflationRate) : lastWithdrawal;
+      lastReturn >= 0 ? lastWithdrawal * (1 + cappedInfl) : lastWithdrawal;
     const currentWR = portfolioValue !== 0 ? w / portfolioValue : 0;
 
+    // GK Prosperity Rule: WR drops 20% below initial → +10%
     if (currentWR <= initialWR * 0.8) w *= 1.1;
-    else if (currentWR >= initialWR * 1.2) w *= 0.9;
+    // GK Capital Preservation Rule: WR rises 20% above initial → -10%.
+    // GK Longevity Rule: skip the cut when ≤15 years remaining.
+    else if (currentWR >= initialWR * 1.2 && yearsRemaining > 15) w *= 0.9;
 
-    // Clamp to floor/ceiling (floor & ceiling themselves are always numbers)
+    // Custom safety belt (not from the GK paper): clamp to floor/ceiling.
     return Math.max(floor || 0, Math.min(ceiling || Infinity, w));
 }
 
@@ -688,7 +699,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         // First year: use target spend (p.sp)
       } else {
         if (withdrawalStrategy === "gk") {
-          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
         }
         else if (withdrawalStrategy === "fixed") {
           // Pure fixed %: draw = rate × port. No GK clamp — that defeats the purpose.
@@ -777,7 +788,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         }
         else if (withdrawalStrategy === "smart") {
           // Smart waterfall uses GK guardrails for spend amount; bucket sourcing is handled below
-          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
         }
       }
       lastReturn = r;
@@ -972,7 +983,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
       const adjFloor = gkFloor * cumInfl;
       const adjCeiling = gkCeiling * cumInfl;
       if (y > 0 && port > 0) {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
       }
       lastReturn = r;
 
@@ -1060,7 +1071,7 @@ function simulateDeterministic(p, inf) {
     // ========== WITHDRAWAL STRATEGY (mirrors runMC) ==========
     if (y > 0 && port > 0) {
       if (strategy === "gk") {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
       } else if (strategy === "fixed") {
         const fixedRate = p.fixedWithdrawalRate ?? 0.04;
         sp = Math.max(adjFloor, Math.min(adjCeiling, port * fixedRate));
@@ -1171,7 +1182,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       // first year: use target spend
     } else {
       if (withdrawalStrategy === "gk") {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
       }
       else if (withdrawalStrategy === "fixed") {
         // Pure fixed %: draw = rate × port. No GK clamp.
@@ -8033,7 +8044,7 @@ function RetirementPanel({ values, onChange }) {
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
         {strategy === "gk" && (
           <>
-            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails (Auto‑calculated)</div>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = {floorPct}% of core spend · Ceiling = {ceilingPct}% of core spend</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
               <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>{floorPct}%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div></div>
@@ -8041,14 +8052,25 @@ function RetirementPanel({ values, onChange }) {
               <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>{ceilingPct}%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div></div>
             </div>
             <div style={{ marginTop: 14, display: "flex", gap: 16, justifyContent: "center" }}>
-              <WFieldRow label="Floor %" helper="Minimum spending floor as % of core spend (default 65%).">
+              <WFieldRow label="Floor %" helper="Hard floor on real spending. Spending will never drop below this even after multiple GK cuts. Lower % = willing to belt-tighten more in bad markets.">
                 <ANumInput value={values.gkFloorPct ?? 65} onSet={(v) => onChange("gkFloorPct", v)} min={50} max={95} step={5} suffix="%" />
               </WFieldRow>
-              <WFieldRow label="Ceiling %" helper="Maximum spending ceiling as % of core spend (default 135%).">
+              <WFieldRow label="Ceiling %" helper="Cap on lifestyle creep. Spending will never rise above this even after multiple GK raises. Higher % = willing to spend more freely in bull markets.">
                 <ANumInput value={values.gkCeilingPct ?? 135} onSet={(v) => onChange("gkCeilingPct", v)} min={105} max={200} step={5} suffix="%" />
               </WFieldRow>
             </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>Spending adjusts ±10% when withdrawal rate deviates 20% from initial.</div>
+            <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(14,165,233,0.06)", border: "1px solid rgba(14,165,233,0.18)", borderRadius: 8, fontSize: 11, color: "#94a3b8", lineHeight: 1.55 }}>
+              <div style={{ fontWeight: 700, color: "#7dd3fc", marginBottom: 6 }}>Guyton‑Klinger — the 5 rules</div>
+              <div style={{ marginLeft: 8, marginBottom: 6 }}>
+                <strong>1. Initial draw.</strong> Start near 5–5.5% of portfolio (the paper's safe band).<br/>
+                <strong>2. Capital Preservation.</strong> If WR rises 20% above initial → cut spending 10%.<br/>
+                <strong>3. Prosperity.</strong> If WR falls 20% below initial → raise spending 10%.<br/>
+                <strong>4. Inflation rule.</strong> Adjust spending by CPI only after positive-return years, capped at 6%.<br/>
+                <strong>5. Longevity rule.</strong> Skip the −10% cut when ≤15 years remain to your end-age.
+              </div>
+              <div style={{ marginBottom: 4 }}>The <strong style={{ color: "#fbbf24" }}>Floor</strong> and <strong style={{ color: "#34d399" }}>Ceiling</strong> sliders above are a safety belt on top of the paper rules — spending can drift within those bands but never past them.</div>
+              <div style={{ fontStyle: "italic", color: "#64748b" }}>Defaults (65 / 135) match the original GK paper. Tighten (e.g. 80 / 120) to keep spending closer to plan; widen (e.g. 55 / 150) to allow larger swings.</div>
+            </div>
           </>
         )}
         {strategy === "fixed" && (
