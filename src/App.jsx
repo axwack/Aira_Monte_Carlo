@@ -2308,11 +2308,11 @@ const LS_PROFILE_KEY = "aira_profile_v1";
 function saveProfileToLocal(values) {
   try {
     const hasPropIncome = (values.properties || []).some(pr => Number(pr.income) > 0);
-    const rct = values.rothConversionTarget || "off";
     const payload = {
       ...values,
       ab: hasPropIncome ? 0 : (values.ab || 0),
-      rothConversionTarget: rct.startsWith("fill_") ? rct.replace("fill_", "") : rct,
+      // rothConversionTarget preserves its raw value (e.g. "fill_22") so the dropdown
+      // round-trips correctly. Engine strips "fill_" at the params boundary.
       fafsaEndYear: values.fafsaEndYear || null,
       cssEndYear: values.cssEndYear || null,
       savedAt: new Date().toISOString(),
@@ -2330,10 +2330,13 @@ function loadProfileFromLocal() {
     if (!raw) return null;
     const data = JSON.parse(raw);
     // Migration: spSpendOutofState (legacy scenario-swap field) -> spOutOfCountry (additive).
-    // Old semantics: spSpendOutofState replaced sp when Solo Mode was ON.
-    // New semantics: spOutOfCountry sums with sp regardless of state-tax toggle.
     if (data && data.spOutOfCountry == null && data.spSpendOutofState) {
       data.spOutOfCountry = data.spSpendOutofState;
+    }
+    // Migration: legacy saves stripped the "fill_" prefix from rothConversionTarget.
+    // Restore it so the dropdown matches an option again.
+    if (data && data.rothConversionTarget && /^\d+$/.test(data.rothConversionTarget)) {
+      data.rothConversionTarget = "fill_" + data.rothConversionTarget;
     }
     return data;
   } catch {
@@ -8691,7 +8694,7 @@ export default function AiRAForecaster() {
                     smile,
                     tax,
                     real,
-                    rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
+                    rothConversionTarget: assumptions.rothConversionTarget || "off",
                     fafsaEndYear: assumptions.fafsaEndYear || null,
                     cssEndYear: assumptions.cssEndYear || null,
                     geminiApiKey: assumptions.geminiApiKey || "",
@@ -8783,7 +8786,11 @@ export default function AiRAForecaster() {
                   }
 
                   const hasPropIncome = (data.properties || []).some(pr => Number(pr.income) > 0);
+                  // rothConversionTarget round-trips as "fill_22"/"off"/"irmaa". Legacy exports
+                  // (pre-fix) stripped to bare bracket numbers like "22" -- re-prefix them so
+                  // the dropdown finds a matching option.
                   const rawRct = data.rothConversionTarget || "off";
+                  const restoredRct = /^\d+$/.test(rawRct) ? "fill_" + rawRct : rawRct;
                   setAssumptions((prev) => ({
                     ...prev,
                     ...data,
@@ -8800,7 +8807,7 @@ export default function AiRAForecaster() {
                     carveouts: data.carveouts,
                     otherIncomes: data.otherIncomes,
                     ab: hasPropIncome ? 0 : (data.ab || 0),
-                    rothConversionTarget: rawRct.startsWith("fill_") ? rawRct.replace("fill_", "") : rawRct,
+                    rothConversionTarget: restoredRct,
                     fafsaEndYear: data.fafsaEndYear || null,
                     cssEndYear: data.cssEndYear || null,
                     // Preserve existing API key if imported file has empty/missing key
