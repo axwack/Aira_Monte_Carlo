@@ -163,7 +163,9 @@ function computeInitialWR(p) {
     (yrsToRetire > 0 && accumRate > 0
       ? annualAdds * (growth(yrsToRetire) - 1) / accumRate
       : annualAdds * yrsToRetire);
-  const baseSpend = p.twoHousehold ? (p.spSpendOutofState || p.sp || 0) : (p.sp || 0);
+  // p.sp must be the total combined household spending (US + out-of-country).
+  // The params useMemo already sums these; raw-profile callers must sum before calling.
+  const baseSpend = p.sp || 0;
   const ssAtRetire = retireAge >= ssAge ? (p.ssb || 0) : 0;
   const rentalAtRetire = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const initDrawEst = Math.max(0, baseSpend - ssAtRetire - rentalAtRetire);
@@ -357,8 +359,9 @@ export const BLANK_PROFILE = {
   contrib: 20,
   employerContrib: 0,           // annual employer contribution (fixed dollar amount, e.g. 401k match + profit sharing)
   inf: 2.5,
-  sp: 10_000,
-  spSpendOutofState: 0,
+  sp: 10_000,                   // US-domestic annual spending (subject to state tax when applicable)
+  spOutOfCountry: 0,            // additive out-of-country annual spending (never state-taxed)
+  spSpendOutofState: 0,         // legacy field — kept for profile-load migration; superseded by spOutOfCountry
   portfolioGoal: 1_000_000,
   ssAge: 67,
   ssb: 24_000,
@@ -2324,7 +2327,15 @@ function saveProfileToLocal(values) {
 function loadProfileFromLocal() {
   try {
     const raw = localStorage.getItem(LS_PROFILE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    // Migration: spSpendOutofState (legacy scenario-swap field) -> spOutOfCountry (additive).
+    // Old semantics: spSpendOutofState replaced sp when Solo Mode was ON.
+    // New semantics: spOutOfCountry sums with sp regardless of state-tax toggle.
+    if (data && data.spOutOfCountry == null && data.spSpendOutofState) {
+      data.spOutOfCountry = data.spSpendOutofState;
+    }
+    return data;
   } catch {
     return null;
   }
@@ -8015,18 +8026,20 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
 }
 
 function RetirementPanel({ values, onChange }) {
-  const spend = values.sp || 100000;
-  const twoHousehold = values.twoHousehold ?? true;
-  const baseSpend = twoHousehold ? (values.spSpendOutofState || spend) : spend;
+  const usSp = values.sp || 0;
+  const outOfCountrySp = values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0);
+  const combinedSp = usSp + outOfCountrySp;
+  const twoHousehold = values.twoHousehold ?? false;   // toggle ONLY controls state tax now
+  const baseSpend = combinedSp || 100000;
   const floorPct = values.gkFloorPct ?? 65;
   const ceilingPct = values.gkCeilingPct ?? 135;
   const floor = Math.round(baseSpend * (floorPct / 100));
   const ceiling = Math.round(baseSpend * (ceilingPct / 100));
   const strategy = values.withdrawalStrategy || "gk";
 
-  // Initial WR diagnostic — uses the shared helper so the GK card, the metrics WR badge,
-  // and the gk-bar strategy strap all show the same number.
-  const wr = computeInitialWR(values);
+  // Initial WR diagnostic — pass combined sp so the helper, the GK card, the metrics WR
+  // badge, and the gk-bar strategy strap all show the same number.
+  const wr = computeInitialWR({ ...values, sp: combinedSp });
   const { initWRpct, projectedPort, initDrawEst, ssAtRetire, rentalAtRetire,
     annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } = wr;
   const retireAge = values.retireAge || 65;
@@ -8034,13 +8047,13 @@ function RetirementPanel({ values, onChange }) {
   const wrColor = inSafeBand ? "#34d399" : (initWRpct > 5.5 ? "#f87171" : "#fbbf24");
 
   const activeScenario = twoHousehold
-    ? "🌴 Out‑of‑State / Offshore (No state income tax)"
-    : `🏠 Both in ${values.stateOfResidence || "your state"} (State tax applies)`;
+    ? "🌴 Claiming non-residency — no state income tax"
+    : `🏠 Resident of ${values.stateOfResidence || "your state"} — state tax applies`;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#7dd3fc" }}>
-        <strong>Current scenario:</strong> {activeScenario} · Toggle in sidebar → "Solo / Low‑Tax Mode"
+        <strong>State tax:</strong> {activeScenario} · Sidebar toggle → "Non-resident (no state tax)"
       </div>
 
       <div>
@@ -8078,12 +8091,16 @@ function RetirementPanel({ values, onChange }) {
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
-        <WFieldRow label="Primary Annual Spending" helper="Our main household spending target. Used when living in NJ (state tax applies).">
+        <WFieldRow label="US Spending (annual)" helper="Domestic household spending in today's dollars. Subject to state income tax when residing in-state.">
           <ANumInput value={values.sp || 0} onSet={(v) => onChange("sp", v)} min={0} max={500000} step={1000} suffix="/yr" />
         </WFieldRow>
-        <WFieldRow label="Secondary Spending (No State Tax)" helper="Optional lower spending for travel or zero‑tax locations. Used when 'Solo Mode' toggle is ON.">
-          <ANumInput value={values.spSpendOutofState || 0} onSet={(v) => onChange("spSpendOutofState", v)} min={0} max={500000} step={1000} suffix="/yr" />
+        <WFieldRow label="Out-of-Country Spending (annual)" helper="Spending that occurs abroad in today's dollars. Always drawn from the portfolio but never subject to US state tax.">
+          <ANumInput value={values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={500000} step={1000} suffix="/yr" />
         </WFieldRow>
+        <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span>Total combined annual spending (used for portfolio draw)</span>
+          <strong style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace", fontSize: 14 }}>{fmtK(combinedSp)}/yr</strong>
+        </div>
       </div>
 
       <div>
@@ -8488,10 +8505,14 @@ export default function AiRAForecaster() {
       employerContrib: assumptions.employerContrib || 0,
       hsaContrib: Math.round((assumptions.hsaMonthly || 0) * 12),
       accounts: assumptions.accounts,
-      sp: assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp,
-      spSpendOutofState: assumptions.spSpendOutofState,
-      gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * ((assumptions.gkFloorPct ?? 65) / 100)),
-      gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * ((assumptions.gkCeilingPct ?? 135) / 100)),
+      // Portfolio draw = US + out-of-country (always combined). State-tax toggle is now
+      // independent: twoHousehold ON means "claiming non-residency" and skips state tax,
+      // but does NOT swap the spending value.
+      sp: (sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0),
+      spOutOfCountry: assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0,
+      spSpendOutofState: assumptions.spSpendOutofState,   // legacy passthrough
+      gkFloor: Math.round(((sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0)) * ((assumptions.gkFloorPct ?? 65) / 100)),
+      gkCeiling: Math.round(((sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0)) * ((assumptions.gkCeilingPct ?? 135) / 100)),
       ssb,
       propIncome: (() => {
          const raw = (assumptions.properties || []).reduce((s, pr) => s + (Number(pr.income) || 0), 0);
@@ -9208,12 +9229,12 @@ export default function AiRAForecaster() {
               <Toggle val={real} onChange={setReal} label="📉 Real dollars" accent="#0ea5e9" />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tog-label">🌴 Solo Mode</span>
-                  <InfoModal title="🌴 Solo Mode — How It Works" accent="#a78bfa">
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> Solo Mode switches the simulation to your out-of-state spending budget and removes state income tax from the calculation.</p>
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF (default):</strong> Uses your <em>Primary Annual Spending</em> with full state income tax. This is your normal at-home scenario.</p>
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON:</strong> Uses your <em>Out-of-State Spending</em> budget with no state income tax. Useful if you plan to spend time abroad or in a no-tax state.</p>
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Portfolio withdrawals:</strong> The total amount withdrawn from your portfolio is the same math either way — GK guardrails, Fixed %, and all other strategies apply normally. The only differences are the spending target and whether state tax is applied.</p>
+                  <span className="tog-label">🌴 Non-resident (no state tax)</span>
+                  <InfoModal title="🌴 Non-Resident State Tax — How It Works" accent="#a78bfa">
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> Removes state income tax from every year of the simulation. Use this if you (or you and your spouse) qualify as a non-resident of your listed state for the year.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF (default):</strong> State tax applies to all taxable income. Use this if you're a resident of your listed state.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON:</strong> State tax zeroed out. Use this if you've broken residency (e.g. spending most of the year abroad and meeting your state's non-residency rules).</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Spending is independent:</strong> Total portfolio draw = US Spending + Out-of-Country Spending regardless of this toggle. The toggle only changes whether the US-domestic portion is state-taxed. Check your state's non-residency rules before turning this on — every state defines it differently (number of days, place of work, family location, etc.).</p>
                     <p style={{ margin:0 }}><strong style={{ color:"#e2e8f0" }}>Set it up:</strong> In your Profile → Spending, set <em>Primary Annual Spending</em> for your at-home budget and <em>Out-of-State Spending</em> for your travel/abroad budget. If Out-of-State Spending is left at $0, it falls back to your primary spending.</p>
                   </InfoModal>
                 </div>
@@ -9425,7 +9446,7 @@ export default function AiRAForecaster() {
               <strong style={{ color: "#5eead4" }}>{getStrategyLabel(assumptions.withdrawalStrategy)} Strategy:</strong>{" "}
               {assumptions.withdrawalStrategy === "gk" ? (
                 <>
-                  Floor {fmtM(params.gkFloor)} ({assumptions.twoHousehold ? "solo" : "both"}) · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}%.
+                  Floor {fmtM(params.gkFloor)} · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}% · State tax {assumptions.twoHousehold ? "OFF (non-resident)" : "ON (resident)"}.
                 </>
               ) : assumptions.withdrawalStrategy === "fixed" ? (
                 <>Withdrawal rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
