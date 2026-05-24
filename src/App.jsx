@@ -7759,9 +7759,6 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Post-retirement equity weight" desc="Equity % after retirement age (default 70%)">
           <CleanNumberInput value={values.postRetireEq} onChange={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} />
         </ARow>
-        <ARow label="Fixed Withdrawal Rate" desc="Annual percentage of portfolio to withdraw when using 'Fixed %' strategy (default 4%).">
-          <CleanNumberInput value={values.fixedWithdrawalRate} onChange={(v) => onChange("fixedWithdrawalRate", v)} min={2} max={10} step={0.1} />
-        </ARow>
       </div>
 
       {/* HEALTHCARE SHOCK CARD */}
@@ -7995,6 +7992,30 @@ function RetirementPanel({ values, onChange }) {
   const ceiling = Math.round(baseSpend * (ceilingPct / 100));
   const strategy = values.withdrawalStrategy || "gk";
 
+  // Estimate initial withdrawal rate at retirement (read-only diagnostic for GK card).
+  // Projects portfolio using REAL return (nominal − inflation) so it stays in today's dollars,
+  // matching the spending input which is also in today's dollars.
+  const currentAge = values.currentAge || 35;
+  const retireAge = values.retireAge || 65;
+  const ssAge = values.ssAge || 67;
+  const yrsToRetire = Math.max(0, retireAge - currentAge);
+  const eqPct = values.preRetireEq ?? 91;
+  const nominalRate = expectedReturn(eqPct) / 100;
+  const inflRate = (values.inf || 2.5) / 100;
+  const accumRate = nominalRate - inflRate;
+  const annualAdds = (values.contrib || 0) + (values.employerContrib || 0) + (values.hsaMonthly || 0) * 12;
+  const growth = (yrs) => Math.pow(1 + accumRate, yrs);
+  const projectedPort = (values.port || 0) * growth(yrsToRetire) +
+    (yrsToRetire > 0 && accumRate > 0
+      ? annualAdds * (growth(yrsToRetire) - 1) / accumRate
+      : annualAdds * yrsToRetire);
+  const ssAtRetire = retireAge >= ssAge ? (values.ssb || 0) : 0;
+  const rentalAtRetire = (values.ab > 0 ? values.ab : 0);
+  const initDrawEst = Math.max(0, baseSpend - ssAtRetire - rentalAtRetire);
+  const initWRpct = projectedPort > 0 ? (initDrawEst / projectedPort) * 100 : 0;
+  const inSafeBand = initWRpct >= 5.0 && initWRpct <= 5.5;
+  const wrColor = inSafeBand ? "#34d399" : (initWRpct > 5.5 ? "#f87171" : "#fbbf24");
+
   const activeScenario = twoHousehold
     ? "🌴 Out‑of‑State / Offshore (No state income tax)"
     : `🏠 Both in ${values.stateOfResidence || "your state"} (State tax applies)`;
@@ -8003,6 +8024,39 @@ function RetirementPanel({ values, onChange }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#7dd3fc" }}>
         <strong>Current scenario:</strong> {activeScenario} · Toggle in sidebar → "Solo / Low‑Tax Mode"
+      </div>
+
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>WITHDRAWAL STRATEGY</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <select
+            value={strategy}
+            onChange={(e) => onChange("withdrawalStrategy", e.target.value)}
+            style={{
+              width: "100%",
+              background: "#0d1b2a",
+              border: "1px solid #1e3a5f",
+              color: "#e2e8f0",
+              borderRadius: 6,
+              padding: "8px 10px",
+              fontSize: 13,
+              fontFamily: "'Inter',sans-serif",
+            }}
+          >
+            <option value="smart">📋 Smart Waterfall (Tax-Optimal)</option>
+            <option value="gk">Guyton‑Klinger (Dynamic)</option>
+            <option value="fixed">Fixed % of Portfolio</option>
+            <option value="vanguard">Vanguard Dynamic Spending</option>
+            <option value="risk">Risk‑Based Guardrails</option>
+            <option value="kitces">Kitces Ratcheting</option>
+            <option value="vpw">VPW (Variable Percentage)</option>
+            <option value="cape">CAPE‑Based</option>
+            <option value="endowment">Endowment (Yale) Model</option>
+            <option value="one_n">1/N (Remaining Years)</option>
+            <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
+          </select>
+          <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(strategy)}</div>
+        </div>
       </div>
 
       <div>
@@ -8045,6 +8099,27 @@ function RetirementPanel({ values, onChange }) {
         {strategy === "gk" && (
           <>
             <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails</div>
+            <div style={{
+              marginBottom: 14,
+              padding: "10px 12px",
+              background: inSafeBand ? "rgba(52,211,153,0.08)" : "rgba(251,191,36,0.08)",
+              border: `1px solid ${wrColor}40`,
+              borderRadius: 8,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#94a3b8" }}>Initial portfolio draw rate</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: wrColor, fontFamily: "'DM Mono',monospace" }}>{initWRpct.toFixed(1)}%</div>
+                <div style={{ fontSize: 11, color: "#64748b", marginLeft: "auto", fontStyle: "italic" }}>
+                  {inSafeBand ? "in 5–5.5% safe band" : initWRpct > 5.5 ? "above safe band — consider lower spend or later retirement" : "below safe band — room to spend more or retire earlier"}
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: "#64748b", fontFamily: "'DM Mono',monospace", lineHeight: 1.5 }}>
+                spend {fmtK(baseSpend)} − SS {fmtK(ssAtRetire)} − rental {fmtK(rentalAtRetire)} = portfolio draw {fmtK(initDrawEst)}<br/>
+                projected portfolio at age {retireAge} (today's dollars): {fmtK(projectedPort)}<br/>
+                = current {fmtK(values.port || 0)} grown {yrsToRetire}yr @ {(accumRate * 100).toFixed(1)}% real ({(nominalRate * 100).toFixed(1)}% nominal − {(inflRate * 100).toFixed(1)}% infl) + {fmtK(annualAdds)}/yr contrib<br/>
+                ⇒ {fmtK(initDrawEst)} ÷ {fmtK(projectedPort)} = <strong style={{ color: wrColor }}>{initWRpct.toFixed(1)}%</strong>
+              </div>
+            </div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = {floorPct}% of core spend · Ceiling = {ceilingPct}% of core spend</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
               <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>{floorPct}%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div></div>
@@ -8062,14 +8137,14 @@ function RetirementPanel({ values, onChange }) {
             <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(14,165,233,0.06)", border: "1px solid rgba(14,165,233,0.18)", borderRadius: 8, fontSize: 11, color: "#94a3b8", lineHeight: 1.55 }}>
               <div style={{ fontWeight: 700, color: "#7dd3fc", marginBottom: 6 }}>Guyton‑Klinger — the 5 rules</div>
               <div style={{ marginLeft: 8, marginBottom: 6 }}>
-                <strong>1. Initial draw.</strong> Start near 5–5.5% of portfolio (the paper's safe band).<br/>
+                <strong>1. Initial draw.</strong> Derived from your spending ÷ portfolio at retirement. Safe range is 5–5.5%.<br/>
                 <strong>2. Capital Preservation.</strong> If WR rises 20% above initial → cut spending 10%.<br/>
                 <strong>3. Prosperity.</strong> If WR falls 20% below initial → raise spending 10%.<br/>
                 <strong>4. Inflation rule.</strong> Adjust spending by CPI only after positive-return years, capped at 6%.<br/>
                 <strong>5. Longevity rule.</strong> Skip the −10% cut when ≤15 years remain to your end-age.
               </div>
-              <div style={{ marginBottom: 4 }}>The <strong style={{ color: "#fbbf24" }}>Floor</strong> and <strong style={{ color: "#34d399" }}>Ceiling</strong> sliders above are a safety belt on top of the paper rules — spending can drift within those bands but never past them.</div>
-              <div style={{ fontStyle: "italic", color: "#64748b" }}>Defaults (65 / 135) match the original GK paper. Tighten (e.g. 80 / 120) to keep spending closer to plan; widen (e.g. 55 / 150) to allow larger swings.</div>
+              <div style={{ marginBottom: 4 }}>The <strong style={{ color: "#fbbf24" }}>Floor</strong> and <strong style={{ color: "#34d399" }}>Ceiling</strong> sliders above are a safety belt on top of the 5 rules — spending can drift within those bands but never past them.</div>
+              <div style={{ fontStyle: "italic", color: "#64748b" }}>Defaults: 65 / 135. Tighten (e.g. 80 / 120) to keep spending closer to plan; widen (e.g. 55 / 150) to allow larger swings.</div>
             </div>
           </>
         )}
@@ -8077,7 +8152,12 @@ function RetirementPanel({ values, onChange }) {
           <>
             <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>📊 Fixed Percentage Withdrawal</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Each year, withdraw a fixed percentage of the current portfolio balance.</div>
-            <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569" }}>Withdrawal Rate</div><div style={{ fontSize: 32, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>{values.fixedWithdrawalRate || 4.0}%</div><div style={{ fontSize: 10, color: "#334155" }}>of portfolio balance each year</div></div>
+            <div style={{ textAlign: "center", marginBottom: 14 }}><div style={{ fontSize: 11, color: "#475569" }}>Withdrawal Rate</div><div style={{ fontSize: 32, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>{values.fixedWithdrawalRate || 4.0}%</div><div style={{ fontSize: 10, color: "#334155" }}>of portfolio balance each year</div></div>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <WFieldRow label="Withdrawal Rate" helper="Annual percentage of portfolio to withdraw (default 4%).">
+                <ANumInput value={values.fixedWithdrawalRate ?? 4.0} onSet={(v) => onChange("fixedWithdrawalRate", v)} min={2} max={10} step={0.1} suffix="%" />
+              </WFieldRow>
+            </div>
             <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>Spending will fluctuate with portfolio value.</div>
           </>
         )}
@@ -9127,35 +9207,6 @@ export default function AiRAForecaster() {
                 >
                   <div className="tok" style={{ left: assumptions.twoHousehold ? 18 : 2 }} />
                 </div>
-              </div>
-              <div className="sb-card">
-                <div className="sb-title">Withdrawal Strategy</div>
-                <select
-                  value={assumptions.withdrawalStrategy}
-                  onChange={(e) => updateAssumption("withdrawalStrategy", e.target.value)}
-                  style={{
-                    width: "100%",
-                    background: "#0d1b2a",
-                    border: "1px solid #1e3a5f",
-                    color: "#e2e8f0",
-                    borderRadius: 6,
-                    padding: "6px 10px",
-                    fontSize: 12,
-                    fontFamily: "'Inter',sans-serif",
-                  }}
-                >
-                  <option value="smart">📋 Smart Waterfall (Tax-Optimal)</option>
-                  <option value="gk">Guyton‑Klinger (Dynamic)</option>
-                  <option value="fixed">Fixed % of Portfolio</option>
-                  <option value="vanguard">Vanguard Dynamic Spending</option>
-                  <option value="risk">Risk‑Based Guardrails</option>
-                  <option value="kitces">Kitces Ratcheting</option>
-                  <option value="vpw">VPW (Variable Percentage)</option>
-                  <option value="cape">CAPE‑Based</option>
-                  <option value="endowment">Endowment (Yale) Model</option>
-                  <option value="one_n">1/N (Remaining Years)</option>
-                  <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
-                </select>
               </div>
             </div>
 
