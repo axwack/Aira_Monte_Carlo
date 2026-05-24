@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.0";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.0 — BYOK key illuminates AI button and bypasses billing proxy";
-export const BUILD_TIME = "2026-05-23T00:00:00Z";
+const APP_VERSION = "1.0.9.1";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.1 — GK floor 65%→80%, add employerContrib+hsaContrib to MC accumulation, fix employerStartDate default";
+export const BUILD_TIME = "2026-05-24T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -319,6 +319,7 @@ export const BLANK_PROFILE = {
   endAge: 85,
   port: 1_000_000,
   contrib: 20,
+  employerContrib: 0,           // annual employer contribution (fixed dollar amount, e.g. 401k match + profit sharing)
   inf: 2.5,
   sp: 10_000,
   spSpendOutofState: 0,
@@ -331,11 +332,13 @@ export const BLANK_PROFILE = {
   tax: true,
   real: true,
   twoHousehold: false,
-  employerStartDate: "2030-03-02",
+  employerStartDate: "2026-03-02",
   gkFloor: 48_000,
   gkFloorSpendOutofState: 48_000,
+  gkFloorPct: 65,               // floor as % of core spend (default 65%)
   gkTarget: 72_000,
   gkCeiling: 100_000,
+  gkCeilingPct: 135,            // ceiling as % of core spend (default 135%)
   // Mortgage
   mortBalance: 0,
   mortRate: 5.0,
@@ -358,8 +361,8 @@ export const BLANK_PROFILE = {
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
   carveouts: [],                // [{id, label, annual, endYear}] fixed obligations (car, HOA, etc.)
   rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
-  fafsaGuard: false,            // cap Roth conversions during college aid years
-  fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window)
+  fafsaGuard: false,            // cap Roth conversions during college aid years — set true + fafsaEndYear to activate
+  fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window); e.g. 2034
   cssEndYear: null,             // last year to cap at 22% (CSS Profile window)
   conversionOverrides: [],      // [{id, year, amount}] manual per-year conversion amounts — populated in user's exported JSON
   // Account breakdown (feeds port total)
@@ -649,7 +652,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
       cash     = Math.max(0, cash     * (1 + ret));
-      pretax += p.contrib;
+      pretax += (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
       totalPort = pretax + roth + taxable + cash;
     }
 
@@ -945,7 +948,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
   for (let i = 0; i < N; i++) {
     let port = p.port;
     for (let y = 0; y < accYrs; y++) {
-      port = port * (1 + portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq)) + p.contrib;
+      port = port * (1 + portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq)) + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
     }
     const portAtRetire = Math.round(port);
     const path = [portAtRetire];
@@ -1029,7 +1032,7 @@ function simulateDeterministic(p, inf) {
   // Accumulation phase — deterministic median return
   for (let y = 0; y < accYrs; y++) {
     const ret = expectedReturn(p.preRetireEq ?? 91) / 100;
-    port = port * (1 + ret) + p.contrib;
+    port = port * (1 + ret) + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
   }
 
   const portAtRetire = port;
@@ -1139,7 +1142,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   // Accumulation using median returns
   for (let y = 0; y < accYrs; y++) {
     const ret = expectedReturn(p.preRetireEq ?? 91) / 100;
-    port = port * (1 + ret) + p.contrib;
+    port = port * (1 + ret) + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
   }
 
   const portAtRetire = port;
@@ -7810,6 +7813,9 @@ function ContribPanel({ values, onChange }) {
         <WFieldRow label="Employer Match (%)" helper="Percentage of your 401(k) contribution matched.">
           <ANumInput value={employerMatch} onSet={(v) => onChange("employerMatch", v)} min={0} max={10} step={0.5} suffix="%" />
         </WFieldRow>
+        <WFieldRow label="Employer Contribution ($/yr)" helper="Fixed annual employer contribution (e.g. 401k match + profit sharing in dollars). Used in Monte Carlo accumulation.">
+          <ANumInput value={values.employerContrib || 0} onSet={(v) => onChange("employerContrib", v)} min={0} max={100_000} step={500} suffix="/yr" />
+        </WFieldRow>
       </div>
 
       {/* ── Summary grid ── */}
@@ -7972,8 +7978,10 @@ function RetirementPanel({ values, onChange }) {
   const spend = values.sp || 100000;
   const twoHousehold = values.twoHousehold ?? true;
   const baseSpend = twoHousehold ? (values.spSpendOutofState || spend) : spend;
-  const floor = Math.round(baseSpend * 0.65);
-  const ceiling = Math.round(baseSpend * 1.35);
+  const floorPct = values.gkFloorPct ?? 65;
+  const ceilingPct = values.gkCeilingPct ?? 135;
+  const floor = Math.round(baseSpend * (floorPct / 100));
+  const ceiling = Math.round(baseSpend * (ceilingPct / 100));
   const strategy = values.withdrawalStrategy || "gk";
 
   const activeScenario = twoHousehold
@@ -8026,11 +8034,19 @@ function RetirementPanel({ values, onChange }) {
         {strategy === "gk" && (
           <>
             <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails (Auto‑calculated)</div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = 65% of core spend · Ceiling = 135% of core spend</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = {floorPct}% of core spend · Ceiling = {ceilingPct}% of core spend</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>65%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>{floorPct}%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div></div>
               <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>135%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>{ceilingPct}%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div></div>
+            </div>
+            <div style={{ marginTop: 14, display: "flex", gap: 16, justifyContent: "center" }}>
+              <WFieldRow label="Floor %" helper="Minimum spending floor as % of core spend (default 65%).">
+                <ANumInput value={values.gkFloorPct ?? 65} onSet={(v) => onChange("gkFloorPct", v)} min={50} max={95} step={5} suffix="%" />
+              </WFieldRow>
+              <WFieldRow label="Ceiling %" helper="Maximum spending ceiling as % of core spend (default 135%).">
+                <ANumInput value={values.gkCeilingPct ?? 135} onSet={(v) => onChange("gkCeilingPct", v)} min={105} max={200} step={5} suffix="%" />
+              </WFieldRow>
             </div>
             <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>Spending adjusts ±10% when withdrawal rate deviates 20% from initial.</div>
           </>
@@ -8350,11 +8366,13 @@ export default function AiRAForecaster() {
       ssAge: assumptions.ssAge,
       port,
       contrib,
+      employerContrib: assumptions.employerContrib || 0,
+      hsaContrib: Math.round((assumptions.hsaMonthly || 0) * 12),
       accounts: assumptions.accounts,
       sp: assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp,
       spSpendOutofState: assumptions.spSpendOutofState,
-      gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 0.65),
-      gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 1.35),
+      gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * ((assumptions.gkFloorPct ?? 65) / 100)),
+      gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * ((assumptions.gkCeilingPct ?? 135) / 100)),
       ssb,
       propIncome: (() => {
          const raw = (assumptions.properties || []).reduce((s, pr) => s + (Number(pr.income) || 0), 0);
