@@ -984,9 +984,13 @@ describe("Full scenario: single filer, age 65, FL, $500K IRA, $40K GK spend", ()
     expect(yr3.portfolioDraw).toBeLessThan(yr3.spending);
   });
 
-  test("MC: scenario runs successfully and rate is between 50–95% (not trivially safe or failed)", () => {
+  // Aggressive 8% WR scenario ($40K spend / $500K). After Rule 5 (longevity) was added,
+  // the −10% capital-preservation cut is disabled from age 76 onward (≤15 yrs to endAge 90),
+  // so this stress case now succeeds far less than it did under classical-GK-minus-longevity.
+  // Bounds widened: still asserts engine runs and produces a non-trivial result.
+  test("MC: scenario runs successfully and rate is between 10–95% (not trivially safe or failed)", () => {
     const r = runMC(SINGLE_FL, 90, 1000, 42, true);
-    expect(r.rate).toBeGreaterThan(0.50);
+    expect(r.rate).toBeGreaterThan(0.10);
     expect(r.rate).toBeLessThan(0.95);
   });
 
