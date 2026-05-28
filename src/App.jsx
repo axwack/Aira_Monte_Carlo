@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.0";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.0 — Add hidden admin panel for Stripe billing test (by config).";
-export const BUILD_TIME = "2026-05-22T00:00:00Z";
+const APP_VERSION = "1.0.9.2";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.2 — make GK floor/ceiling % configurable per-user; add employerContrib + hsaContrib to MC accumulation";
+export const BUILD_TIME = "2026-05-24T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -123,6 +123,10 @@ const INFL = [
   3.4, 2.8, 1.6, 2.3, 2.7, 3.4, 3.2, 2.8, 3.8, -0.4, 1.6, 3.2, 2.1, 1.5, 1.6,
   0.1, 1.3, 2.1, 2.4, 1.8, 1.2, 4.7, 8.0, 4.1, 2.9,
 ].map((r) => Math.max(0.5, Math.min(7.0, r)) / 100);
+
+// GK paper: cap CPI pass-through in Guyton-Klinger withdrawal adjustments at 6%.
+// Distinct from the INFL data clamp above (which bounds the historical CPI bootstrap).
+const GK_INFLATION_CAP = 0.06;
 
 const SEQ_2000_2012 = [
   -0.091, -0.119, -0.221, 0.287, 0.109, 0.048, 0.158, 0.055, -0.37, 0.265,
@@ -319,6 +323,7 @@ export const BLANK_PROFILE = {
   endAge: 85,
   port: 1_000_000,
   contrib: 20,
+  employerContrib: 0,           // annual employer contribution (fixed dollar amount, e.g. 401k match + profit sharing)
   inf: 2.5,
   sp: 10_000,
   spSpendOutofState: 0,
@@ -331,11 +336,13 @@ export const BLANK_PROFILE = {
   tax: true,
   real: true,
   twoHousehold: false,
-  employerStartDate: "2030-03-02",
+  employerStartDate: "",
   gkFloor: 48_000,
   gkFloorSpendOutofState: 48_000,
+  gkFloorPct: 65,               // floor as % of core spend (default 65%)
   gkTarget: 72_000,
   gkCeiling: 100_000,
+  gkCeilingPct: 135,            // ceiling as % of core spend (default 135%)
   // Mortgage
   mortBalance: 0,
   mortRate: 5.0,
@@ -358,8 +365,8 @@ export const BLANK_PROFILE = {
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
   carveouts: [],                // [{id, label, annual, endYear}] fixed obligations (car, HOA, etc.)
   rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
-  fafsaGuard: false,            // cap Roth conversions during college aid years
-  fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window)
+  fafsaGuard: false,            // cap Roth conversions during college aid years — set true + fafsaEndYear to activate
+  fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window); e.g. 2034
   cssEndYear: null,             // last year to cap at 22% (CSS Profile window)
   conversionOverrides: [],      // [{id, year, amount}] manual per-year conversion amounts — populated in user's exported JSON
   // Account breakdown (feeds port total)
@@ -491,7 +498,8 @@ function guytonKlingerWithdrawal(
     lastReturn,
     inflationRate,
     floor,
-    ceiling
+    ceiling,
+    yearsRemaining = Infinity
   ) {
     // NaN guards – fall back to safe values if any parameter is invalid
     if (isNaN(portfolioValue) || portfolioValue <= 0) return floor || 0;
@@ -500,14 +508,20 @@ function guytonKlingerWithdrawal(
     if (isNaN(inflationRate)) inflationRate = 0.02;
     if (isNaN(initialWR)) initialWR = 0.04;
 
+    // GK Rule: Withdrawal/Inflation — adjust by CPI only when prior-year return ≥ 0,
+    // and cap the inflation pass-through per the original paper.
+    const cappedInfl = Math.min(GK_INFLATION_CAP, inflationRate);
     let w =
-      lastReturn >= 0 ? lastWithdrawal * (1 + inflationRate) : lastWithdrawal;
+      lastReturn >= 0 ? lastWithdrawal * (1 + cappedInfl) : lastWithdrawal;
     const currentWR = portfolioValue !== 0 ? w / portfolioValue : 0;
 
+    // GK Prosperity Rule: WR drops 20% below initial → +10%
     if (currentWR <= initialWR * 0.8) w *= 1.1;
-    else if (currentWR >= initialWR * 1.2) w *= 0.9;
+    // GK Capital Preservation Rule: WR rises 20% above initial → -10%.
+    // GK Longevity Rule: skip the cut when ≤15 years remaining.
+    else if (currentWR >= initialWR * 1.2 && yearsRemaining > 15) w *= 0.9;
 
-    // Clamp to floor/ceiling (floor & ceiling themselves are always numbers)
+    // Custom safety belt (not from the GK paper): clamp to floor/ceiling.
     return Math.max(floor || 0, Math.min(ceiling || Infinity, w));
 }
 
@@ -649,7 +663,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
       cash     = Math.max(0, cash     * (1 + ret));
-      pretax += p.contrib;
+      pretax += (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
       totalPort = pretax + roth + taxable + cash;
     }
 
@@ -685,7 +699,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         // First year: use target spend (p.sp)
       } else {
         if (withdrawalStrategy === "gk") {
-          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
         }
         else if (withdrawalStrategy === "fixed") {
           // Pure fixed %: draw = rate × port. No GK clamp — that defeats the purpose.
@@ -774,7 +788,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         }
         else if (withdrawalStrategy === "smart") {
           // Smart waterfall uses GK guardrails for spend amount; bucket sourcing is handled below
-          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
         }
       }
       lastReturn = r;
@@ -945,7 +959,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
   for (let i = 0; i < N; i++) {
     let port = p.port;
     for (let y = 0; y < accYrs; y++) {
-      port = port * (1 + portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq)) + p.contrib;
+      port = port * (1 + portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq)) + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
     }
     const portAtRetire = Math.round(port);
     const path = [portAtRetire];
@@ -969,7 +983,7 @@ function runStress(p, endAge, N = 2000, seed = 99) {
       const adjFloor = gkFloor * cumInfl;
       const adjCeiling = gkCeiling * cumInfl;
       if (y > 0 && port > 0) {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
       }
       lastReturn = r;
 
@@ -1029,7 +1043,7 @@ function simulateDeterministic(p, inf) {
   // Accumulation phase — deterministic median return
   for (let y = 0; y < accYrs; y++) {
     const ret = expectedReturn(p.preRetireEq ?? 91) / 100;
-    port = port * (1 + ret) + p.contrib;
+    port = port * (1 + ret) + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
   }
 
   const portAtRetire = port;
@@ -1057,7 +1071,7 @@ function simulateDeterministic(p, inf) {
     // ========== WITHDRAWAL STRATEGY (mirrors runMC) ==========
     if (y > 0 && port > 0) {
       if (strategy === "gk") {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
       } else if (strategy === "fixed") {
         const fixedRate = p.fixedWithdrawalRate ?? 0.04;
         sp = Math.max(adjFloor, Math.min(adjCeiling, port * fixedRate));
@@ -1139,7 +1153,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   // Accumulation using median returns
   for (let y = 0; y < accYrs; y++) {
     const ret = expectedReturn(p.preRetireEq ?? 91) / 100;
-    port = port * (1 + ret) + p.contrib;
+    port = port * (1 + ret) + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
   }
 
   const portAtRetire = port;
@@ -1168,7 +1182,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       // first year: use target spend
     } else {
       if (withdrawalStrategy === "gk") {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling);
+        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
       }
       else if (withdrawalStrategy === "fixed") {
         // Pure fixed %: draw = rate × port. No GK clamp.
@@ -6531,14 +6545,12 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
     (params.sp  || 0) > 0 &&
     r90?.rate > 0 &&
     (params.accounts || []).some(a => (a.balance || 0) > 0);
-  const hasAiAccess  = BILLING_ENABLED ? creditBalance >= 5 : hasGeminiKey;
+  const hasAiAccess  = BILLING_ENABLED ? (creditBalance >= 5 || hasGeminiKey) : hasGeminiKey;
   const canRunAI     = !loadingAI && !cards && profileReady && hasAiAccess;
   const aiDisabledReason = !profileReady
     ? "Complete your profile and run Monte Carlo first"
-    : BILLING_ENABLED && creditBalance < 5
-    ? "Buy AiRA credits to run AI analysis"
-    : !hasGeminiKey && !BILLING_ENABLED
-    ? "Add a free Gemini API key in Profile → Assumptions to enable AI"
+    : !hasAiAccess
+    ? "Buy AiRA credits or add a free Gemini API key in Profile → Assumptions"
     : "Run AI analysis on your plan";
 
   const COLORS = {
@@ -7812,6 +7824,9 @@ function ContribPanel({ values, onChange }) {
         <WFieldRow label="Employer Match (%)" helper="Percentage of your 401(k) contribution matched.">
           <ANumInput value={employerMatch} onSet={(v) => onChange("employerMatch", v)} min={0} max={10} step={0.5} suffix="%" />
         </WFieldRow>
+        <WFieldRow label="Employer Contribution ($/yr)" helper="Fixed annual employer contribution (e.g. 401k match + profit sharing in dollars). Used in Monte Carlo accumulation.">
+          <ANumInput value={values.employerContrib || 0} onSet={(v) => onChange("employerContrib", v)} min={0} max={100_000} step={500} suffix="/yr" />
+        </WFieldRow>
       </div>
 
       {/* ── Summary grid ── */}
@@ -7974,8 +7989,10 @@ function RetirementPanel({ values, onChange }) {
   const spend = values.sp || 100000;
   const twoHousehold = values.twoHousehold ?? true;
   const baseSpend = twoHousehold ? (values.spSpendOutofState || spend) : spend;
-  const floor = Math.round(baseSpend * 0.65);
-  const ceiling = Math.round(baseSpend * 1.35);
+  const floorPct = values.gkFloorPct ?? 65;
+  const ceilingPct = values.gkCeilingPct ?? 135;
+  const floor = Math.round(baseSpend * (floorPct / 100));
+  const ceiling = Math.round(baseSpend * (ceilingPct / 100));
   const strategy = values.withdrawalStrategy || "gk";
 
   const activeScenario = twoHousehold
@@ -8027,14 +8044,33 @@ function RetirementPanel({ values, onChange }) {
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
         {strategy === "gk" && (
           <>
-            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails (Auto‑calculated)</div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = 65% of core spend · Ceiling = 135% of core spend</div>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = {floorPct}% of core spend · Ceiling = {ceilingPct}% of core spend</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>65%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>{floorPct}%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div></div>
               <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>135%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>{ceilingPct}%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div></div>
             </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>Spending adjusts ±10% when withdrawal rate deviates 20% from initial.</div>
+            <div style={{ marginTop: 14, display: "flex", gap: 16, justifyContent: "center" }}>
+              <WFieldRow label="Floor %" helper="Hard floor on real spending. Spending will never drop below this even after multiple GK cuts. Lower % = willing to belt-tighten more in bad markets.">
+                <ANumInput value={values.gkFloorPct ?? 65} onSet={(v) => onChange("gkFloorPct", v)} min={50} max={95} step={5} suffix="%" />
+              </WFieldRow>
+              <WFieldRow label="Ceiling %" helper="Cap on lifestyle creep. Spending will never rise above this even after multiple GK raises. Higher % = willing to spend more freely in bull markets.">
+                <ANumInput value={values.gkCeilingPct ?? 135} onSet={(v) => onChange("gkCeilingPct", v)} min={105} max={200} step={5} suffix="%" />
+              </WFieldRow>
+            </div>
+            <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(14,165,233,0.06)", border: "1px solid rgba(14,165,233,0.18)", borderRadius: 8, fontSize: 11, color: "#94a3b8", lineHeight: 1.55 }}>
+              <div style={{ fontWeight: 700, color: "#7dd3fc", marginBottom: 6 }}>Guyton‑Klinger — the 5 rules</div>
+              <div style={{ marginLeft: 8, marginBottom: 6 }}>
+                <strong>1. Initial draw.</strong> Start near 5–5.5% of portfolio (the paper's safe band).<br/>
+                <strong>2. Capital Preservation.</strong> If WR rises 20% above initial → cut spending 10%.<br/>
+                <strong>3. Prosperity.</strong> If WR falls 20% below initial → raise spending 10%.<br/>
+                <strong>4. Inflation rule.</strong> Adjust spending by CPI only after positive-return years, capped at 6%.<br/>
+                <strong>5. Longevity rule.</strong> Skip the −10% cut when ≤15 years remain to your end-age.
+              </div>
+              <div style={{ marginBottom: 4 }}>The <strong style={{ color: "#fbbf24" }}>Floor</strong> and <strong style={{ color: "#34d399" }}>Ceiling</strong> sliders above are a safety belt on top of the paper rules — spending can drift within those bands but never past them.</div>
+              <div style={{ fontStyle: "italic", color: "#64748b" }}>Defaults (65 / 135) match the original GK paper. Tighten (e.g. 80 / 120) to keep spending closer to plan; widen (e.g. 55 / 150) to allow larger swings.</div>
+            </div>
           </>
         )}
         {strategy === "fixed" && (
@@ -8352,11 +8388,13 @@ export default function AiRAForecaster() {
       ssAge: assumptions.ssAge,
       port,
       contrib,
+      employerContrib: assumptions.employerContrib || 0,
+      hsaContrib: Math.round((assumptions.hsaMonthly || 0) * 12),
       accounts: assumptions.accounts,
       sp: assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp,
       spSpendOutofState: assumptions.spSpendOutofState,
-      gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 0.65),
-      gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * 1.35),
+      gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * ((assumptions.gkFloorPct ?? 65) / 100)),
+      gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * ((assumptions.gkCeilingPct ?? 135) / 100)),
       ssb,
       propIncome: (() => {
          const raw = (assumptions.properties || []).reduce((s, pr) => s + (Number(pr.income) || 0), 0);

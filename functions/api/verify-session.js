@@ -19,44 +19,57 @@ export function onRequestOptions() {
 }
 
 export async function onRequestPost({ request, env }) {
-  let body;
-  try { body = await request.json(); }
-  catch { return json({ error: "Invalid JSON" }, 400); }
-
-  const { sessionId } = body;
-  if (!sessionId || typeof sessionId !== "string") {
-    return json({ error: "Missing or invalid sessionId" }, 400);
-  }
-
-  // Retrieve the Stripe checkout session to confirm payment
-  let session;
   try {
-    session = await stripeGet(env.STRIPE_SECRET_KEY, `/checkout/sessions/${sessionId}`);
+    let body;
+    try { body = await request.json(); }
+    catch { return json({ error: "Invalid JSON" }, 400); }
+
+    const { sessionId } = body;
+    if (!sessionId || typeof sessionId !== "string") {
+      return json({ error: "Missing or invalid sessionId" }, 400);
+    }
+
+    if (!env.STRIPE_SECRET_KEY) return json({ error: "STRIPE_SECRET_KEY not configured" }, 500);
+    if (!env.JWT_SECRET)        return json({ error: "JWT_SECRET not configured" }, 500);
+    if (!env.DB)                return json({ error: "D1 database not bound" }, 500);
+
+    // Retrieve the Stripe checkout session to confirm payment
+    let session;
+    try {
+      session = await stripeGet(env.STRIPE_SECRET_KEY, `/checkout/sessions/${sessionId}`);
+    } catch (e) {
+      return json({ error: `Stripe error: ${e.message}` }, 400);
+    }
+
+    if (session.payment_status !== "paid") {
+      return json({ error: "Payment not completed" }, 402);
+    }
+
+    const customerId = session.customer;
+    if (!customerId) {
+      return json({ error: "No Stripe customer on session" }, 400);
+    }
+
+    // Look up current balance (webhook may have already credited by now)
+    let credits = 0;
+    try {
+      const customer = await env.DB.prepare(
+        "SELECT credits FROM customers WHERE stripe_customer_id = ?"
+      ).bind(customerId).first();
+      credits = customer?.credits ?? 0;
+    } catch (e) {
+      console.error("[verify-session] D1 query failed:", e.message);
+    }
+
+    const token = await signJWT(
+      { customerId, exp: Math.floor(Date.now() / 1000) + JWT_TTL_SECONDS },
+      env.JWT_SECRET
+    );
+
+    return json({ token, credits, customerId });
+
   } catch (e) {
-    return json({ error: `Stripe error: ${e.message}` }, 400);
+    console.error("[verify-session] unhandled exception:", e.message, e.stack);
+    return json({ error: "Internal error: " + e.message }, 500);
   }
-
-  if (session.payment_status !== "paid") {
-    return json({ error: "Payment not completed" }, 402);
-  }
-
-  const customerId = session.customer;
-  if (!customerId) {
-    return json({ error: "No Stripe customer on session — contact support" }, 400);
-  }
-
-  // Look up current balance (webhook may have already credited by now)
-  const customer = await env.DB.prepare(
-    "SELECT credits FROM customers WHERE stripe_customer_id = ?"
-  ).bind(customerId).first();
-
-  const credits = customer?.credits ?? 0;
-
-  // Issue a signed JWT containing only the Stripe customer ID
-  const token = await signJWT(
-    { customerId, exp: Math.floor(Date.now() / 1000) + JWT_TTL_SECONDS },
-    env.JWT_SECRET
-  );
-
-  return json({ token, credits, customerId });
 }
