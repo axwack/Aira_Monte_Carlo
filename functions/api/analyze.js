@@ -119,7 +119,7 @@ function ctxWithdrawal(values, mcResults) {
   ].join("\n");
 }
 
-// ─── Handlers ─────────────────────────────────────────────────────────────────
+// ─── Handlers ───────────────────────────────────────────────────────────────
 
 async function handleActionPlan(apiKey, values, mcResults, cards, usageBucket) {
   const ctx      = ctxActionPlan(values, mcResults, cards);
@@ -338,14 +338,12 @@ async function deductD1Credits(db, customerId, rawTokens) {
   if (creditCost <= 0) return { creditsUsed: 0, creditsRemaining: null };
 
   await db.batch([
-    // Deduct, floored at 0 — prevents negative balances
     db.prepare(`
       UPDATE customers
       SET credits    = MAX(0, credits - ?),
           updated_at = unixepoch()
       WHERE stripe_customer_id = ?
     `).bind(creditCost, customerId),
-    // Audit log
     db.prepare(`
       INSERT INTO credit_transactions (customer_id, type, amount, raw_tokens)
       VALUES (?, 'deduct', ?, ?)
@@ -359,7 +357,7 @@ async function deductD1Credits(db, customerId, rawTokens) {
   return { creditsUsed: creditCost, creditsRemaining: row?.credits ?? null };
 }
 
-// ─── Main handler ─────────────────────────────────────────────────────────────
+// ─── Main handler ────────────────────────────────────────────────────────────
 
 export function onRequestOptions() {
   return handleOptions();
@@ -370,7 +368,7 @@ export async function onRequestPost({ request, env }) {
   try { body = await request.json(); }
   catch { return json({ error: "Invalid JSON" }, 400); }
 
-  // ── Auth: try to extract JWT for billing mode ──────────────────────────────
+  // ── Auth: try to extract JWT for billing mode ──────────────────────────
   const authHeader = request.headers.get("Authorization") || "";
   let customerId  = null;
 
@@ -392,7 +390,7 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "No API key — add your Gemini API key in Profile → Assumptions" }, 500);
   }
 
-  // ── Pre-call balance check (billing mode only) ─────────────────────────────
+  // ── Pre-call balance check (billing mode only) ─────────────────────────
   if (customerId && env.DB) {
     const customer = await env.DB.prepare(
       "SELECT credits FROM customers WHERE stripe_customer_id = ?"
@@ -406,8 +404,8 @@ export async function onRequestPost({ request, env }) {
   const { type, values, mcResults, question, history, cards } = body;
   if (!type || !values) return json({ error: "Missing type or values" }, 400);
 
-  // ── Gemini call ───────────────────────────────────────────────────────────
-  const usageBucket = []; // per-request usage accumulator
+  // ── Gemini call ──────────────────────────────────────────────────
+  const usageBucket = [];
   let result;
 
   try {
@@ -426,7 +424,7 @@ export async function onRequestPost({ request, env }) {
     return json({ error: err.message }, 502);
   }
 
-  // ── Post-call credit deduction (billing mode only) ────────────────────────
+  // ── Post-call credit deduction (billing mode only) ────────────────────
   let creditsUsed = 0;
   let creditsRemaining = null;
   if (customerId && env.DB && usageBucket.length > 0) {
@@ -434,7 +432,6 @@ export async function onRequestPost({ request, env }) {
     try {
       ({ creditsUsed, creditsRemaining } = await deductD1Credits(env.DB, customerId, rawTokens));
     } catch (e) {
-      // Non-fatal: user still gets their response; log the accounting failure
       console.error("[analyze] D1 deduction failed:", e.message);
     }
   }

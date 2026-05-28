@@ -156,11 +156,8 @@ function resolveModel(values) {
 // ─── Gemini helpers ───────────────────────────────────────────────────────────
 
 async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel = "unknown") {
-  // Path A credit guard — only active when BILLING_ENABLED = true
-  if (BILLING_ENABLED && !hasEnoughCredits(ESTIMATED_CREDITS_PER_CALL)) {
-    throw new Error("Insufficient AiRA credits. Please purchase a credit pack to continue.");
-  }
-
+  // callGemini is the BYOK path only — the billing/proxy path uses callViaProxy.
+  // No credit guards here; credits are managed server-side for proxy calls.
   const res = await fetch(`${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -171,13 +168,7 @@ async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel
     throw new Error(err.error?.message || `Gemini HTTP ${res.status}`);
   }
   const data = await res.json();
-  const rec = recordUsage(model, fnLabel, data.usageMetadata);
-
-  // Path A credit deduction — deduct actual tokens used, not the estimate
-  if (BILLING_ENABLED && rec?.totalTokens) {
-    deductCredits(rec.totalTokens);
-  }
-
+  recordUsage(model, fnLabel, data.usageMetadata);
   return data;
 }
 
@@ -295,7 +286,7 @@ function healthFallback(values, mcResults) {
 // ─── 1. Retirement Health Score ───────────────────────────────────────────────
 
 export async function analyzeRetirementHealth(values, mcResults) {
-  if (BILLING_ENABLED) {
+  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
     try { return await callViaProxy("health", { values, mcResults }); }
     catch { return healthFallback(values, mcResults); }
   }
@@ -331,7 +322,7 @@ export async function analyzeRetirementHealth(values, mcResults) {
 // ─── 2. Narrative Summary ─────────────────────────────────────────────────────
 
 export async function generateNarrativeSummary(values, mcResults) {
-  if (BILLING_ENABLED) {
+  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
     const rate = mcResults?.rate ?? 0;
     const fallback = `**Aira Narrative (unavailable)**\n\n${(rate * 100).toFixed(1)}% success rate.`;
     try {
@@ -359,7 +350,7 @@ export async function generateNarrativeSummary(values, mcResults) {
 
 export async function suggestWithdrawalOptimization(values, mcResults) {
   const current = values.withdrawalStrategy || "gk";
-  if (BILLING_ENABLED) {
+  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
     try { return await callViaProxy("withdrawal", { values, mcResults }); }
     catch { return { recommended: current, reason: "AI unavailable.", projectedRateImprovement: "N/A" }; }
   }
@@ -395,7 +386,7 @@ export async function suggestWithdrawalOptimization(values, mcResults) {
 // ─── 4. Roth Conversion Strategy ─────────────────────────────────────────────
 
 export async function evaluateRothStrategy(values) {
-  if (BILLING_ENABLED) {
+  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
     try { return await callViaProxy("roth", { values }); }
     catch { /* fall through to rules fallback */ }
   }
@@ -440,7 +431,7 @@ export async function evaluateRothStrategy(values) {
 // ─── 5. Conversational Chat Response ─────────────────────────────────────────
 
 export async function generateChatResponse(values, mcResults, question, history = []) {
-  if (BILLING_ENABLED) {
+  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
     try {
       const result = await callViaProxy("chat", { values, mcResults, question, history });
       return result.text;
@@ -490,7 +481,7 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
     })),
   };
 
-  if (BILLING_ENABLED) {
+  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
     const result = await callViaProxy("actionplan", { values: slimValues, mcResults, cards });
     return result.cards;
   }
@@ -614,7 +605,7 @@ function getSearchTopics(values) {
 }
 
 export async function generateTimeSensitiveCards(values, mcResults) {
-  if (BILLING_ENABLED) {
+  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
     try {
       const result = await callViaProxy("timesensitive", { values, mcResults });
       return result.cards || [];
@@ -635,35 +626,7 @@ export async function generateTimeSensitiveCards(values, mcResults) {
     `Pre-tax: $${((values.accounts||[]).filter(a=>a.category==="pretax").reduce((s,a)=>s+(a.balance||0),0)/1000).toFixed(0)}K | Roth: $${((values.accounts||[]).filter(a=>a.category==="roth").reduce((s,a)=>s+(a.balance||0),0)/1000).toFixed(0)}K`,
   ].join("\n");
 
-  const prompt = `You are Aira, a fiduciary retirement planning AI.
-
-USER PROFILE:
-${profileCtx}
-
-Use Google Search to find CURRENT information on these topics. Only create a card when you find specific, current numbers or thresholds directly actionable for this user.
-
-SEARCH TOPICS:
-${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}
-
-Return ONLY a valid JSON array between <cards> and </cards> tags. Each object:
-{
-  "priority": "red|yellow|green",
-  "category": "short category name",
-  "action": "specific action sentence tailored to this user",
-  "reason": "why this matters given their numbers",
-  "deadline": "when to act",
-  "aiNote": "key current number or threshold found (dollar amount, percentage, date)",
-  "source": "website or publication name"
-}
-
-Rules:
-- Only include cards with real current numbers you found via search
-- Skip topics where you only have general/training knowledge
-- Set priority by financial impact urgency for this user
-- Maximum 12 cards
-
-<cards>
-</cards>`;
+  const prompt = `You are Aira, a fiduciary retirement planning AI.\n\nUSER PROFILE:\n${profileCtx}\n\nUse Google Search to find CURRENT information on these topics. Only create a card when you find specific, current numbers or thresholds directly actionable for this user.\n\nSEARCH TOPICS:\n${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\nReturn ONLY a valid JSON array between <cards> and </cards> tags. Each object:\n{\n  "priority": "red|yellow|green",\n  "category": "short category name",\n  "action": "specific action sentence tailored to this user",\n  "reason": "why this matters given their numbers",\n  "deadline": "when to act",\n  "aiNote": "key current number or threshold found (dollar amount, percentage, date)",\n  "source": "website or publication name"\n}\n\nRules:\n- Only include cards with real current numbers you found via search\n- Skip topics where you only have general/training knowledge\n- Set priority by financial impact urgency for this user\n- Maximum 12 cards\n\n<cards>\n</cards>`;
 
   const res = await callGemini(apiKey, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
