@@ -316,19 +316,35 @@ async function handleTimeSensitive(apiKey, values, mcResults, usageBucket) {
   const res = await callGemini(apiKey, MODEL_STANDARD, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     tools:    [{ google_search: {} }],
-    generationConfig: { maxOutputTokens: 2048 },
+    generationConfig: {
+      maxOutputTokens: 4096,
+      thinkingConfig:  { thinkingBudget: 0 },
+    },
   }, usageBucket);
 
-  const text  = res.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
-  const match = text.match(/<cards>([\s\S]*?)<\/cards>/);
-  if (!match) return { cards: [] };
+  const text = res.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+  console.log("[timesensitive] raw text length:", text.length, "| finish:", res.candidates?.[0]?.finishReason);
+
+  // Primary: look for <cards>...</cards> wrapper
+  const tagged = text.match(/<cards>([\s\S]*?)<\/cards>/);
+  // Fallback: look for a bare JSON array if the model skipped the wrapper
+  const raw = tagged?.[1]?.trim() ?? text.match(/\[\s*\{[\s\S]*?\}\s*\]/)?.[0];
+
+  if (!raw) {
+    console.warn("[timesensitive] no card JSON found in response");
+    return { cards: [] };
+  }
   try {
-    const parsed = JSON.parse(match[1].trim());
+    const parsed = JSON.parse(raw);
     const cards  = (Array.isArray(parsed) ? parsed : []).map((c, i) => ({
       ...c, id: `live-${i}`, isLiveData: true, aiGenerated: true,
     }));
+    console.log("[timesensitive] parsed", cards.length, "cards");
     return { cards };
-  } catch { return { cards: [] }; }
+  } catch (e) {
+    console.warn("[timesensitive] JSON parse failed:", e.message, "| raw snippet:", raw.slice(0, 200));
+    return { cards: [] };
+  }
 }
 
 // ─── D1 credit deduction ──────────────────────────────────────────────────────
