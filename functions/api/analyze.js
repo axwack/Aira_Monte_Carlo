@@ -172,8 +172,8 @@ async function handleActionPlan(apiKey, values, mcResults, cards, usageBucket) {
   const newCards  = (toolInput.new_cards || []).slice(0, 2);
 
   const merged = [
-    ...cards.map(c => ({ ...c, aiNote: noteMap[c.id] || null })),
-    ...newCards.map(c => ({ ...c, id: `ai-${c.category.toLowerCase().replace(/\s+/g, "-")}`, aiGenerated: true })),
+    ...cards.map(c => ({ ...c, aiChecked: true, aiNote: noteMap[c.id] || null })),
+    ...newCards.map(c => ({ ...c, id: `ai-${c.category.toLowerCase().replace(/\s+/g, "-")}`, aiGenerated: true, aiChecked: true })),
   ];
   merged.sort((a, b) => ({ red: 0, yellow: 1, green: 2 }[a.priority] - { red: 0, yellow: 1, green: 2 }[b.priority]));
   return { cards: merged };

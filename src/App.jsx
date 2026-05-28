@@ -6121,13 +6121,21 @@ function ActionTile({ card }) {
       </div>
       <div style={{ fontSize: 10, color: "#475569", display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 6 }}>
         <span>⏱ {card.deadline}</span>
-        {card.aiNote && <span style={{ color: "#6366f1", fontSize: 9 }}>▾ insight</span>}
+        {card.aiNote
+          ? <span style={{ color: "#6366f1", fontSize: 9 }}>▾ insight</span>
+          : card.aiChecked
+          ? <span style={{ color: "#475569", fontSize: 9 }}>✓ reviewed</span>
+          : null}
       </div>
-      {card.aiNote && (
+      {card.aiNote ? (
         <div style={{ fontSize: 10, color: "#a78bfa", lineHeight: 1.45, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
           🤖 {card.aiNote}
         </div>
-      )}
+      ) : card.aiChecked ? (
+        <div style={{ fontSize: 9, color: "#475569", lineHeight: 1.45, borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: 5 }}>
+          ✓ AI reviewed — nothing to add
+        </div>
+      ) : null}
       {card.source && (
         <div style={{ fontSize: 9, color: "#22d3ee", marginTop: 2 }}>📡 {card.source}</div>
       )}
@@ -6432,7 +6440,7 @@ function CardDetailPanel({ card, onClose }) {
       )}
 
       {/* AI insight */}
-      {card.aiNote && (
+      {card.aiNote ? (
         <div style={{
           background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)",
           borderRadius: 8, padding: "10px 14px", marginBottom: 14,
@@ -6440,7 +6448,16 @@ function CardDetailPanel({ card, onClose }) {
           <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#818cf8", marginBottom: 4 }}>🤖 AI INSIGHT</div>
           <div style={{ fontSize: 12, color: "#a78bfa", lineHeight: 1.55 }}>{card.aiNote}</div>
         </div>
-      )}
+      ) : card.aiChecked ? (
+        <div style={{
+          background: "rgba(71,85,105,0.08)", border: "1px solid rgba(71,85,105,0.2)",
+          borderRadius: 8, padding: "8px 14px", marginBottom: 14,
+          display: "flex", alignItems: "center", gap: 6,
+        }}>
+          <span style={{ fontSize: 11, color: "#64748b" }}>✓</span>
+          <span style={{ fontSize: 11, color: "#64748b" }}>AI reviewed — this card is already comprehensive, nothing to add.</span>
+        </div>
+      ) : null}
 
       {/* Source */}
       {card.source && (
