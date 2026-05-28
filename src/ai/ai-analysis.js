@@ -631,15 +631,16 @@ export async function generateTimeSensitiveCards(values, mcResults) {
   const res = await callGemini(apiKey, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     tools:    [{ google_search: {} }],
-    generationConfig: { maxOutputTokens: 2048 },
+    generationConfig: { maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
   }, model, "time_sensitive");
 
   const text  = res.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
-  const match = text.match(/<cards>([\s\S]*?)<\/cards>/);
-  if (!match) return [];
+  const tagged = text.match(/<cards>([\s\S]*?)<\/cards>/);
+  const raw    = tagged?.[1]?.trim() ?? text.match(/\[\s*\{[\s\S]*?\}\s*\]/)?.[0];
+  if (!raw) return [];
 
   try {
-    const parsed = JSON.parse(match[1].trim());
+    const parsed = JSON.parse(raw);
     return (Array.isArray(parsed) ? parsed : []).map((c, i) => ({
       ...c,
       id:           `live-${i}-${Date.now()}`,

@@ -287,17 +287,49 @@ export const ABOUT_FEATURES = [
     group: "Roth Conversions",
     icon:  "🎯",
     title: "Using Tax Room",
-    body:  `Tax Room is the amount of taxable income you can add in a given year without pushing yourself into a higher tax bracket. 
-    AiRA's Roth conversion tool uses this concept to optimize how much of your traditional assets to convert each year, 
-    aiming to fill up your current tax bracket without spilling into the next one. 
-    By strategically using your Tax Room, you can minimize the total taxes paid over time 
-    and maximize the amount growing tax-free in your Roth account. 
+    body:  `Tax Room is the amount of taxable income you can add in a given year without pushing yourself into a higher tax bracket.
+    AiRA's Roth conversion tool uses this concept to optimize how much of your traditional assets to convert each year,
+    aiming to fill up your current tax bracket without spilling into the next one.
+    By strategically using your Tax Room, you can minimize the total taxes paid over time
+    and maximize the amount growing tax-free in your Roth account.
     It's like packing a suitcase for a trip—you want to fill it up as much as possible without going over the weight limit.
      AiRA helps you find that sweet spot for your retirement tax strategy. And remember, the goal isn't just to
-      convert as much as possible—it's to convert smartly, 
-      using your Tax Room to your advantage while keeping an eye on the overall tax picture. Once you understand how to 
+      convert as much as possible—it's to convert smartly,
+      using your Tax Room to your advantage while keeping an eye on the overall tax picture. Once you understand how to
       use Tax Room effectively, you can make informed decisions about your Roth conversions and optimize your retirement income strategy. Save
-      the amount and it will automatically be factored in the Roth Conversion forecast for the year you selected. This allows Aira to 
+      the amount and it will automatically be factored in the Roth Conversion forecast for the year you selected. This allows Aira to
       create a better RMD and Roth conversion schedule for the years after, since it knows how much of your tax bracket you used in the year you made the conversion.`,
      },
+
+  // ── AI Action Plan ────────────────────────────────────────
+  {
+    id:    "ai-analysis",
+    group: "AI Action Plan",
+    icon:  "🤖",
+    title: "AI Analysis — What the Badges Mean",
+    body:  `After you click <strong style="color:#e2e8f0;">Run AI</strong> on the Action Plan tab, AiRA sends your profile and Monte Carlo results to Gemini and asks it to review every card on your plan. Two indicators appear on each card once that review is complete:<br/><br/>
+<strong style="color:#818cf8;">🤖 AI insight</strong> — Gemini found something specific and quantitative to add for this card. The insight appears directly on the card face and in full detail when you open the card. Examples: the exact dollar amount you'd save by claiming SS at 70 vs 62 given your balance, the specific IRMAA threshold your projected MAGI is approaching, or the Roth conversion amount that fills your 12% bracket this year.<br/><br/>
+<strong style="color:#64748b;">🤖 AI reviewed</strong> — Gemini reviewed this card and agreed it is already comprehensive — there was nothing specific to add beyond what the rules engine already flagged. This confirms the card was not skipped.<br/><br/>
+Cards with no badge have not yet been reviewed by AI. Run AI again at any time to refresh — insights update based on your current profile and latest Monte Carlo run.<br/><br/>
+<strong style="color:#e2e8f0;">Note:</strong> AI analysis uses AiRA credits (powered by Google Gemini). Each run costs approximately 5 credits. Credits are deducted only after a successful response.`,
+  },
+  {
+    id:    "live-search",
+    group: "AI Action Plan",
+    icon:  "🌐",
+    title: "Live Search — Real-Time Market & Tax Data",
+    body:  `The <strong style="color:#22d3ee;">🌐 Live Updates</strong> button on the Action Plan tab triggers a separate AI call that uses <strong style="color:#e2e8f0;">Google Search grounding</strong> — Gemini searches the web in real time before generating cards. This is different from the standard AI analysis, which works entirely from your profile data.<br/><br/>
+<strong style="color:#e2e8f0;">What it searches for:</strong><br/>
+• Current IRS contribution limits (401k, IRA, HSA) and catch-up amounts<br/>
+• Federal tax bracket and standard deduction updates for the current year<br/>
+• Long-term capital gains thresholds and NIIT changes<br/>
+• Social Security COLA announcements and trust fund solvency news<br/>
+• Medicare Part B premiums and IRMAA surcharge thresholds<br/>
+• Safe withdrawal rate research updates<br/>
+• Current 10-year Treasury yield and I-Bond rates<br/>
+• State-specific retirement income tax rules (based on your domicile)<br/>
+• SECURE 2.0 provisions taking effect this year<br/><br/>
+<strong style="color:#e2e8f0;">How to read Live cards:</strong> Each card carries a <strong style="color:#22d3ee;">🌐 LIVE</strong> badge and a source field showing which website or publication the data came from. Only cards with specific current numbers are created — if a search returns only general knowledge, no card is generated for that topic.<br/><br/>
+<strong style="color:#e2e8f0;">When to use it:</strong> Run Live Updates at the start of each year (after IRS announcements in November/December) or any time you suspect a tax law or benefit change may affect your plan. The standard AI analysis does not search the web — these two features complement each other.`,
+  },
 ]

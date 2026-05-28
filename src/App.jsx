@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.2";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.2 — make GK floor/ceiling % configurable per-user; add employerContrib + hsaContrib to MC accumulation";
-export const BUILD_TIME = "2026-05-24T12:00:00Z";
+const APP_VERSION = "1.0.9.3";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.3 — AI Reviewed badge on action plan card tiles.";
+export const BUILD_TIME = "2026-05-28T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -6115,6 +6115,17 @@ function ActionTile({ card }) {
         {card.category}
         {card.isLiveData  && <span style={{ color: "#22d3ee", fontSize: 9 }}>🌐 LIVE</span>}
         {card.aiGenerated && !card.isLiveData && <span style={{ color: "#a78bfa", fontSize: 9 }}>✦ AI</span>}
+        {card.aiChecked && (
+          <span style={{
+            background: card.aiNote ? "rgba(99,102,241,0.15)" : "rgba(71,85,105,0.18)",
+            color:      card.aiNote ? "#818cf8"                : "#64748b",
+            border:     `1px solid ${card.aiNote ? "rgba(99,102,241,0.3)" : "rgba(71,85,105,0.3)"}`,
+            borderRadius: 4, padding: "1px 5px", fontSize: 8, fontWeight: 700,
+            letterSpacing: "0.04em", textTransform: "uppercase",
+          }}>
+            🤖 {card.aiNote ? "AI insight" : "AI reviewed"}
+          </span>
+        )}
       </div>
       <div style={{ fontSize: 12, fontWeight: 600, color: "#f1f5f9", lineHeight: 1.45, flex: 1 }}>
         {card.action}
@@ -6360,10 +6371,21 @@ function ActionPlanRow({ card, isSelected, onClick }) {
     >
       <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.border, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.label, marginBottom: 1 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.label, marginBottom: 1, display: "flex", alignItems: "center", gap: 5 }}>
           {card.category}
-          {card.isLiveData  && <span style={{ color: "#22d3ee",  marginLeft: 6, fontSize: 9 }}>🌐 LIVE</span>}
-          {card.aiGenerated && !card.isLiveData && <span style={{ color: "#a78bfa", marginLeft: 6, fontSize: 9 }}>✦ AI</span>}
+          {card.isLiveData  && <span style={{ color: "#22d3ee",  fontSize: 9 }}>🌐 LIVE</span>}
+          {card.aiGenerated && !card.isLiveData && <span style={{ color: "#a78bfa", fontSize: 9 }}>✦ AI</span>}
+          {card.aiChecked && (
+            <span style={{
+              background: card.aiNote ? "rgba(99,102,241,0.15)" : "rgba(71,85,105,0.18)",
+              color:      card.aiNote ? "#818cf8"                : "#64748b",
+              border:     `1px solid ${card.aiNote ? "rgba(99,102,241,0.3)" : "rgba(71,85,105,0.3)"}`,
+              borderRadius: 4, padding: "1px 5px", fontSize: 8, fontWeight: 700,
+              letterSpacing: "0.04em", textTransform: "uppercase",
+            }}>
+              🤖 {card.aiNote ? "AI insight" : "AI reviewed"}
+            </span>
+          )}
         </div>
         <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {card.action}
