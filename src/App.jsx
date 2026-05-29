@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.4";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.4 — Bucket 1 runway tracker in Withdrawal Plan tab.";
+const APP_VERSION = "1.0.9.5";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.5 — Bucket 1 auto-derives from profile, overrides optional.";
 export const BUILD_TIME = "2026-05-29T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -4503,15 +4503,37 @@ function Bucket1Panel({ p, rows }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({});
 
-  const openEdit  = () => { setDraft({ ...cfg }); setEditing(true); };
+  // ── Profile-derived defaults ──────────────────────────────────────────────
+  const cashFromAccounts = (p.accounts || [])
+    .filter(a => a.category === "cash")
+    .reduce((sum, a) => sum + (a.balance || 0), 0);
+  const profileDefaults = {
+    balance: cashFromAccounts,
+    monthly: p.sp ? Math.round(p.sp / 12) : 0,
+    floor:   p.gkFloor ? Math.round(p.gkFloor) : 0,
+    target:  p.sp ? Math.round(p.sp * 2) : 0,
+  };
+
+  // Stored overrides take precedence; fall back to profile-derived value
+  const balance = "balance" in cfg ? cfg.balance : profileDefaults.balance;
+  const monthly = "monthly" in cfg ? cfg.monthly : profileDefaults.monthly;
+  const floor   = "floor"   in cfg ? cfg.floor   : profileDefaults.floor;
+  const target  = "target"  in cfg ? cfg.target  : profileDefaults.target;
+  const hasOverrides = Object.keys(cfg).length > 0;
+
+  const openEdit   = () => { setDraft({ balance, monthly, floor, target }); setEditing(true); };
   const cancelEdit = () => setEditing(false);
-  const saveEdit  = () => {
+  const saveEdit   = () => {
     try { localStorage.setItem(_B1_KEY, JSON.stringify(draft)); } catch {}
     setCfg(draft); setEditing(false);
   };
+  const resetToProfile = () => {
+    try { localStorage.removeItem(_B1_KEY); } catch {}
+    setCfg({}); setEditing(false);
+  };
   const draftNum = (k) => (e) => setDraft(d => ({ ...d, [k]: Number(e.target.value) || 0 }));
 
-  const { balance = 0, monthly = 0, floor = 0, target = 0 } = cfg;
+  // ── Derived metrics ───────────────────────────────────────────────────────
   const firstRow    = rows?.[0];
   const runway      = monthly > 0 ? (balance / monthly) : null;
   const annualDraw  = monthly * 12;
@@ -4534,59 +4556,73 @@ function Bucket1Panel({ p, rows }) {
   const barPct   = barRange > 0 ? Math.max(0, Math.min(100, (balance - floor) / barRange * 100)) : (target > 0 ? Math.min(100, balance / target * 100) : 0);
   const barColor = balance > 0 && floor > 0 && balance < floor ? "#f87171" : balance >= (target || Infinity) ? "#34d399" : "#fbbf24";
 
+  // ── Styles ────────────────────────────────────────────────────────────────
   const IS  = { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "5px 8px", color: "#e2e8f0", fontSize: 12, width: "100%", boxSizing: "border-box" };
   const LS  = { fontSize: 10, color: "#64748b", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.06em" };
   const BTN = (col) => ({ background: col, border: "none", color: "white", borderRadius: 6, padding: "6px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer" });
 
   if (editing) return (
     <div className="chart-card" style={{ marginBottom: 4 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>💰 Bucket 1 — Configure</div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>💰 Bucket 1 — Override</div>
         <button onClick={cancelEdit} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16 }}>✕</button>
       </div>
+      <div style={{ fontSize: 10, color: "#475569", marginBottom: 12 }}>
+        Leave a field blank to use the profile-derived value shown as placeholder.
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-        {[["balance","Current Balance (today)", "e.g. 248000"],["monthly","Monthly Draw (SWP)","e.g. 18000"],["floor","Floor — minimum balance","e.g. 200000"],["target","Target — replenishment goal","e.g. 275000"]].map(([k, lbl, ph]) => (
+        {[
+          ["balance", "Current Balance (today)",    profileDefaults.balance],
+          ["monthly", "Monthly Draw (SWP)",          profileDefaults.monthly],
+          ["floor",   "Floor — minimum balance",     profileDefaults.floor],
+          ["target",  "Target — replenishment goal", profileDefaults.target],
+        ].map(([k, lbl, def]) => (
           <div key={k}>
             <div style={LS}>{lbl}</div>
-            <input type="number" style={IS} value={draft[k] || ""} onChange={draftNum(k)} placeholder={ph} />
+            <input type="number" style={IS}
+              value={draft[k] !== undefined && draft[k] !== 0 ? draft[k] : ""}
+              onChange={draftNum(k)}
+              placeholder={`Profile: ${fmtK(def)}`}
+            />
           </div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={saveEdit} style={BTN("linear-gradient(135deg,#0e7490,#22d3ee)")}>Save</button>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={saveEdit} style={BTN("linear-gradient(135deg,#0e7490,#22d3ee)")}>Save overrides</button>
+        {hasOverrides && (
+          <button onClick={resetToProfile} style={{ ...BTN("rgba(255,255,255,0.05)"), color: "#94a3b8", border: "1px solid rgba(255,255,255,0.1)" }}>
+            Reset to profile
+          </button>
+        )}
         <button onClick={cancelEdit} style={{ ...BTN("rgba(255,255,255,0.05)"), color: "#64748b", border: "1px solid rgba(255,255,255,0.1)" }}>Cancel</button>
       </div>
-      <div style={{ marginTop: 8, fontSize: 10, color: "#475569" }}>Saved to this browser only. Update monthly — takes 2 minutes.</div>
-    </div>
-  );
-
-  if (!balance && !monthly && !floor && !target) return (
-    <div className="chart-card" style={{ marginBottom: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 2 }}>💰 Bucket 1 — Cash Runway Tracker</div>
-        <div style={{ fontSize: 11, color: "#64748b" }}>Track your actual Bucket 1 balance against your withdrawal plan. Update monthly.</div>
-      </div>
-      <button onClick={openEdit} style={{ ...BTN("linear-gradient(135deg,#0e7490,#22d3ee)"), whiteSpace: "nowrap", marginLeft: 16 }}>⚙ Set up →</button>
     </div>
   );
 
   return (
     <div className="chart-card" style={{ marginBottom: 4 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>💰 Bucket 1 — Cash Runway</div>
-        <button onClick={openEdit} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", borderRadius: 5, padding: "3px 10px", fontSize: 10, cursor: "pointer" }}>⚙ edit</button>
+        <div>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>💰 Bucket 1 — Cash Runway</span>
+          <span style={{ fontSize: 9, color: hasOverrides ? "#f59e0b" : "#475569", marginLeft: 8 }}>
+            {hasOverrides ? "⚙ overridden" : "auto from profile"}
+          </span>
+        </div>
+        <button onClick={openEdit} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", borderRadius: 5, padding: "3px 10px", fontSize: 10, cursor: "pointer" }}>
+          {hasOverrides ? "⚙ edit overrides" : "⚙ override"}
+        </button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 }}>
         <div className="met">
           <div className="ml">Balance Today</div>
-          <div className="mv" style={{ fontSize: 16, color: barColor }}>{fmtM(balance)}</div>
-          <div className="ms">{runway !== null ? `${runway.toFixed(1)} mo runway` : "set monthly draw"}</div>
+          <div className="mv" style={{ fontSize: 16, color: balance > 0 ? barColor : "#475569" }}>{balance > 0 ? fmtM(balance) : "—"}</div>
+          <div className="ms">{runway !== null && balance > 0 ? `${runway.toFixed(1)} mo runway` : balance === 0 ? "add cash account" : "—"}</div>
         </div>
         <div className="met">
           <div className="ml">Monthly Draw</div>
           <div className="mv" style={{ fontSize: 16 }}>{monthly > 0 ? fmtK(monthly) : "—"}</div>
-          <div className="ms">{annualDraw > 0 ? `${fmtK(annualDraw)}/yr total` : "not set"}</div>
+          <div className="ms">{annualDraw > 0 ? `${fmtK(annualDraw)}/yr · sp÷12` : "set sp in profile"}</div>
         </div>
         <div className="met">
           <div className="ml">Fixed Income</div>
@@ -4603,12 +4639,12 @@ function Bucket1Panel({ p, rows }) {
       {(floor > 0 || target > 0) && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#475569", marginBottom: 4 }}>
-            <span>Floor {fmtK(floor)}</span>
-            <span style={{ color: barColor, fontWeight: 700 }}>{fmtK(balance)} today</span>
-            <span>Target {fmtK(target)}</span>
+            <span>Floor {fmtK(floor)} <span style={{ color: "#334155" }}>(GK min)</span></span>
+            <span style={{ color: balance > 0 ? barColor : "#475569", fontWeight: 700 }}>{balance > 0 ? fmtK(balance) + " today" : "balance not set"}</span>
+            <span>Target {fmtK(target)} <span style={{ color: "#334155" }}>(2× sp)</span></span>
           </div>
           <div style={{ height: 8, background: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${barPct}%`, background: barColor, borderRadius: 4, transition: "width 0.4s" }} />
+            <div style={{ height: "100%", width: `${barPct}%`, background: balance > 0 ? barColor : "rgba(255,255,255,0.1)", borderRadius: 4, transition: "width 0.4s" }} />
           </div>
           {balance > 0 && floor > 0 && balance < floor && (
             <div style={{ fontSize: 10, color: "#f87171", marginTop: 4 }}>⚠ Below floor — replenishment needed: {fmtK(floor - balance)}</div>
