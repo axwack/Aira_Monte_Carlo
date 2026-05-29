@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.3";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.3 — AI Reviewed badge on action plan card tiles.";
-export const BUILD_TIME = "2026-05-28T00:00:00Z";
+const APP_VERSION = "1.0.9.4";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.4 — Bucket 1 runway tracker in Withdrawal Plan tab.";
+export const BUILD_TIME = "2026-05-29T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -4492,6 +4492,135 @@ function LandmineTip({ emoji, label, detail, color }) {
   );
 }
 
+// ─── Bucket 1 Runway Tracker ──────────────────────────────────────────────────
+const _B1_KEY = "aira_b1.v1";
+function _loadB1() {
+  try { return JSON.parse(localStorage.getItem(_B1_KEY) || "null") || {}; } catch { return {}; }
+}
+
+function Bucket1Panel({ p, rows }) {
+  const [cfg, setCfg] = useState(_loadB1);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({});
+
+  const openEdit  = () => { setDraft({ ...cfg }); setEditing(true); };
+  const cancelEdit = () => setEditing(false);
+  const saveEdit  = () => {
+    try { localStorage.setItem(_B1_KEY, JSON.stringify(draft)); } catch {}
+    setCfg(draft); setEditing(false);
+  };
+  const draftNum = (k) => (e) => setDraft(d => ({ ...d, [k]: Number(e.target.value) || 0 }));
+
+  const { balance = 0, monthly = 0, floor = 0, target = 0 } = cfg;
+  const firstRow    = rows?.[0];
+  const runway      = monthly > 0 ? (balance / monthly) : null;
+  const annualDraw  = monthly * 12;
+  const ssIncome    = firstRow?.ss || 0;
+  const rentalInc   = firstRow?.annuityRental || 0;
+  const fixedIncome = ssIncome + rentalInc;
+  const netFromPort = Math.max(0, annualDraw - fixedIncome);
+  const portValue   = firstRow?.totalPort || p.port || 0;
+  const wdRate      = portValue > 0 && annualDraw > 0 ? (annualDraw / portValue * 100) : null;
+  const initialWR   = (p.sp > 0 && p.port > 0) ? (p.sp / p.port * 100) : 4;
+  const gkHigh      = wdRate !== null && wdRate > initialWR * 1.2;
+  const gkLow       = wdRate !== null && wdRate < initialWR * 0.8;
+  const gkColor     = gkHigh ? "#f87171" : gkLow ? "#fbbf24" : "#34d399";
+  const gkText      = wdRate === null ? null
+    : gkHigh ? `🔴 Preservation — WR ${wdRate.toFixed(1)}% is above guardrail, consider reducing draws`
+    : gkLow  ? `🟡 Prosperity — WR ${wdRate.toFixed(1)}% is low, spending may be conservative`
+    :          `🟢 Green — WR ${wdRate.toFixed(1)}%, within Guyton-Klinger guardrails`;
+
+  const barRange = target > floor ? target - floor : target;
+  const barPct   = barRange > 0 ? Math.max(0, Math.min(100, (balance - floor) / barRange * 100)) : (target > 0 ? Math.min(100, balance / target * 100) : 0);
+  const barColor = balance > 0 && floor > 0 && balance < floor ? "#f87171" : balance >= (target || Infinity) ? "#34d399" : "#fbbf24";
+
+  const IS  = { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "5px 8px", color: "#e2e8f0", fontSize: 12, width: "100%", boxSizing: "border-box" };
+  const LS  = { fontSize: 10, color: "#64748b", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.06em" };
+  const BTN = (col) => ({ background: col, border: "none", color: "white", borderRadius: 6, padding: "6px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer" });
+
+  if (editing) return (
+    <div className="chart-card" style={{ marginBottom: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>💰 Bucket 1 — Configure</div>
+        <button onClick={cancelEdit} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16 }}>✕</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+        {[["balance","Current Balance (today)", "e.g. 248000"],["monthly","Monthly Draw (SWP)","e.g. 18000"],["floor","Floor — minimum balance","e.g. 200000"],["target","Target — replenishment goal","e.g. 275000"]].map(([k, lbl, ph]) => (
+          <div key={k}>
+            <div style={LS}>{lbl}</div>
+            <input type="number" style={IS} value={draft[k] || ""} onChange={draftNum(k)} placeholder={ph} />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={saveEdit} style={BTN("linear-gradient(135deg,#0e7490,#22d3ee)")}>Save</button>
+        <button onClick={cancelEdit} style={{ ...BTN("rgba(255,255,255,0.05)"), color: "#64748b", border: "1px solid rgba(255,255,255,0.1)" }}>Cancel</button>
+      </div>
+      <div style={{ marginTop: 8, fontSize: 10, color: "#475569" }}>Saved to this browser only. Update monthly — takes 2 minutes.</div>
+    </div>
+  );
+
+  if (!balance && !monthly && !floor && !target) return (
+    <div className="chart-card" style={{ marginBottom: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 2 }}>💰 Bucket 1 — Cash Runway Tracker</div>
+        <div style={{ fontSize: 11, color: "#64748b" }}>Track your actual Bucket 1 balance against your withdrawal plan. Update monthly.</div>
+      </div>
+      <button onClick={openEdit} style={{ ...BTN("linear-gradient(135deg,#0e7490,#22d3ee)"), whiteSpace: "nowrap", marginLeft: 16 }}>⚙ Set up →</button>
+    </div>
+  );
+
+  return (
+    <div className="chart-card" style={{ marginBottom: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>💰 Bucket 1 — Cash Runway</div>
+        <button onClick={openEdit} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", borderRadius: 5, padding: "3px 10px", fontSize: 10, cursor: "pointer" }}>⚙ edit</button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 }}>
+        <div className="met">
+          <div className="ml">Balance Today</div>
+          <div className="mv" style={{ fontSize: 16, color: barColor }}>{fmtM(balance)}</div>
+          <div className="ms">{runway !== null ? `${runway.toFixed(1)} mo runway` : "set monthly draw"}</div>
+        </div>
+        <div className="met">
+          <div className="ml">Monthly Draw</div>
+          <div className="mv" style={{ fontSize: 16 }}>{monthly > 0 ? fmtK(monthly) : "—"}</div>
+          <div className="ms">{annualDraw > 0 ? `${fmtK(annualDraw)}/yr total` : "not set"}</div>
+        </div>
+        <div className="met">
+          <div className="ml">Fixed Income</div>
+          <div className="mv" style={{ fontSize: 16, color: "#5eead4" }}>{fixedIncome > 0 ? fmtK(fixedIncome) : "—"}</div>
+          <div className="ms">{ssIncome > 0 ? `SS ${fmtK(ssIncome)}` : "no SS yet"}{rentalInc > 0 ? ` · ${fmtK(rentalInc)} rental` : ""}</div>
+        </div>
+        <div className="met">
+          <div className="ml">Net from Portfolio</div>
+          <div className="mv" style={{ fontSize: 16, color: "#f59e0b" }}>{netFromPort > 0 ? fmtK(netFromPort) : "—"}</div>
+          <div className="ms">after fixed income offset</div>
+        </div>
+      </div>
+
+      {(floor > 0 || target > 0) && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#475569", marginBottom: 4 }}>
+            <span>Floor {fmtK(floor)}</span>
+            <span style={{ color: barColor, fontWeight: 700 }}>{fmtK(balance)} today</span>
+            <span>Target {fmtK(target)}</span>
+          </div>
+          <div style={{ height: 8, background: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${barPct}%`, background: barColor, borderRadius: 4, transition: "width 0.4s" }} />
+          </div>
+          {balance > 0 && floor > 0 && balance < floor && (
+            <div style={{ fontSize: 10, color: "#f87171", marginTop: 4 }}>⚠ Below floor — replenishment needed: {fmtK(floor - balance)}</div>
+          )}
+        </div>
+      )}
+
+      {gkText && <div style={{ fontSize: 11, color: gkColor, fontWeight: 600, marginTop: 4 }}>{gkText}</div>}
+    </div>
+  );
+}
+
 function WaterfallPlanView({ p }) {
   const [mode, setMode] = useState("smart");
   const result = useMemo(() => buildWithdrawalWaterfall(p), [p]);
@@ -4515,9 +4644,18 @@ function WaterfallPlanView({ p }) {
   }));
 
   const anyLandmine = (r) => r.landmines.ssTorpedo || r.landmines.irmaaTriggered || r.landmines.rmdActive;
+  const initialWR   = (p.sp > 0 && p.port > 0) ? p.sp / p.port : 0.04;
+  const rowWRColor  = (r) => {
+    if (!r.totalPort) return "#94a3b8";
+    const wr = r.spending / r.totalPort;
+    return wr > initialWR * 1.2 ? "#f87171" : wr < initialWR * 0.8 ? "#fbbf24" : "#34d399";
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Bucket 1 runway tracker */}
+      <Bucket1Panel p={p} rows={smart.rows} />
+
       {/* Summary cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
         <div className="met">
@@ -4592,8 +4730,8 @@ function WaterfallPlanView({ p }) {
           <thead>
             <tr>
               <th>Age</th><th>Spending</th><th>SS</th>
-              <th>Cash</th><th>Taxable</th><th>Pre-Tax</th><th>Roth</th>
-              <th>Fed Tax</th><th>IRMAA</th><th>Eff %</th>
+              <th>Cash</th><th title="Bucket 1 ending balance this year">B1 End</th><th>Taxable</th><th>Pre-Tax</th><th>Roth</th>
+              <th>Fed Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR</th>
               <th>
                 <LandmineTip
                   emoji="💣"
@@ -4613,6 +4751,7 @@ function WaterfallPlanView({ p }) {
                 <td style={{ textAlign: "right" }}>{fmtK(r.spending)}</td>
                 <td style={{ textAlign: "right", color: "#5eead4" }}>{r.ss > 0 ? fmtK(r.ss) : "—"}</td>
                 <td style={{ textAlign: "right", color: "#64748b" }}>{r.fromCash > 0 ? fmtK(r.fromCash) : "—"}</td>
+                <td style={{ textAlign: "right", color: r.cashEnd < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11 }}>{r.cashEnd > 0 ? fmtK(r.cashEnd) : "—"}</td>
                 <td style={{ textAlign: "right", color: "#3b82f6" }}>{r.fromTaxable > 0 ? fmtK(r.fromTaxable) : "—"}</td>
                 <td style={{ textAlign: "right", color: "#f59e0b" }} title={r.pretaxCapReason}>
                   {r.rmd > 0 && <span style={{ fontSize: 9, color: "#a78bfa", marginRight: 2 }}>RMD {fmtK(r.rmd)}</span>}
@@ -4624,6 +4763,9 @@ function WaterfallPlanView({ p }) {
                   {r.irmaa > 0 ? fmtK(r.irmaa) : "—"}
                 </td>
                 <td style={{ textAlign: "right" }}>{(r.effectiveRate * 100).toFixed(1)}%</td>
+                <td style={{ textAlign: "right", color: rowWRColor(r), fontWeight: 600, fontSize: 11 }}>
+                  {r.totalPort > 0 ? (r.spending / r.totalPort * 100).toFixed(1) + "%" : "—"}
+                </td>
                 <td style={{ textAlign: "center", fontSize: 14 }}>
                   {r.landmines.ssTorpedo && (() => {
                     const provisional = Math.round((r.ss || 0) * 0.5 + (r.rmd || 0) + (r.fromPretax || 0) + (r.annuityRental || 0));
