@@ -308,12 +308,12 @@ export const ABOUT_FEATURES = [
     icon:  "🪣",
     title: "What Are the 3 Buckets?",
     body:  `The 3-bucket strategy organizes your retirement assets by <em>when</em> you need them, not just what they are. Each bucket has a specific job and a rule about when it can be touched.<br/><br/>
-<strong style="color:#0ea5e9;">Bucket 1 — Cash (0–2 years)</strong><br/>
-Your checking account for retirement. This is the money that pays your bills right now — HYSA, money market, SGOV, short-term T-bills. It should hold 1–2 years of spending so a market crash never forces you to sell stocks at the worst moment. <em>Never invest this bucket in anything that can lose value.</em><br/><br/>
-<strong style="color:#a78bfa;">Bucket 2 — Income &amp; Stability (2–7 years)</strong><br/>
-The bridge bucket. Bonds, balanced funds, dividend-paying stocks, REITs — conservative investments that can be liquidated safely when markets are down. When Bucket 1 runs low, you sell from here to refill it. This bucket should hold 3–7 years of spending so you're never forced to touch Bucket 3 during a downturn. In AiRA, your taxable brokerage and pre-tax IRA default to Bucket 2.<br/><br/>
-<strong style="color:#10b981;">Bucket 3 — Long-Term Growth (7+ years)</strong><br/>
-The engine room. Stocks, growth funds, international equity — assets that can drop 40% and you don't care, because you don't need this money for a decade. This is where your Roth IRA lives. Let it compound. In AiRA, Roth and HSA accounts default to Bucket 3.<br/><br/>
+<strong style="color:#0ea5e9;">Bucket 1 — Cash (0–3 years)</strong><br/>
+Your checking account for retirement. This is the money that pays your bills right now — HYSA, money market, SGOV, short-term T-bills. It should hold 3 years of spending so a market crash never forces you to sell stocks at the worst moment. Target return: 2–4%. <em>Never invest this bucket in anything that can lose value.</em><br/><br/>
+<strong style="color:#a78bfa;">Bucket 2 — Income &amp; Stability (3–10 years)</strong><br/>
+The bridge bucket. Bonds, balanced funds, dividend-paying stocks, REITs — conservative investments that can be liquidated safely when markets are down. When Bucket 1 runs low, you sell from here to refill it. Hold 5–10 years of spending here so you're never forced to touch Bucket 3 during a downturn. Target return: 3–5%. In AiRA, your taxable brokerage and pre-tax IRA default to Bucket 2.<br/><br/>
+<strong style="color:#10b981;">Bucket 3 — Long-Term Growth (10+ years)</strong><br/>
+The engine room. Stocks, ETFs, growth funds, international equity — assets that can drop 40% and you don't care, because you don't need this money for a decade or more. Target return: 6–8%. This is where your Roth IRA lives. Let it compound. In AiRA, Roth and HSA accounts default to Bucket 3.<br/><br/>
 <strong style="color:#e2e8f0;">Why it works:</strong> Sequence-of-returns risk — a crash in your first few years of retirement — is the biggest threat to a retirement plan. Buckets eliminate the problem by ensuring you always have 1–2 years of cash on hand. You never sell stocks when they're down 40%. You wait, draw from cash, and refill when the market recovers.`,
   },
   {
@@ -350,11 +350,12 @@ Act on this. The directive shows step-by-step which account to sell from, how mu
 &nbsp;&nbsp;<strong>Step 1</strong> — Sell from your taxable brokerage (0% LTCG if you're in a low bracket)<br/>
 &nbsp;&nbsp;<strong>Step 2</strong> — Withdraw from your pre-tax IRA / 401(k), limited to stay within your current bracket<br/>
 &nbsp;&nbsp;<strong>Step 3</strong> — Roth only as an emergency (never touch this if B2 has anything left)<br/><br/>
-<strong style="color:#e2e8f0;">Floor and target thresholds:</strong><br/>
-• B1 Floor = your GK minimum annual spend (1 year at the belt-tightening rate)<br/>
-• B1 Target = 2× your planned annual spending (2-year buffer)<br/>
-• B2 Floor = 3× your annual spending<br/>
-• B2 Target = years until Social Security × annual spending<br/><br/>
+<strong style="color:#e2e8f0;">Floor and target thresholds (adjustable in the Buckets tab):</strong><br/>
+• B1 Floor = 1 year of planned spending (replenishment trigger)<br/>
+• B1 Target = your chosen years × annual spend (default 3 years)<br/>
+• B2 Floor = 5 years of spending (default)<br/>
+• B2 Target = max(your chosen years, SS-gap years) × annual spend<br/><br/>
+<strong style="color:#e2e8f0;">AiRA uses threshold-based replenishment, not sequential depletion.</strong> Some bucket calculators deplete B1 completely before touching B2. AiRA instead refills B1 from B2 before it runs dry — this is more tax-optimal because it lets you control the timing and tax bracket of each draw.<br/><br/>
 <strong style="color:#e2e8f0;">Tax guidance is live:</strong> The tax estimate in each step comes from AiRA's waterfall simulation — it uses your actual projected income in the first year of retirement to determine your marginal bracket and whether you're in the 0% LTCG zone.`,
   },
 
