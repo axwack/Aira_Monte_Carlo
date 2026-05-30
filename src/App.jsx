@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.0";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.0 — Clearer B1 empty state; directive shows actual vs target explicitly.";
+const APP_VERSION = "1.1.0.1";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.1 — Rename Scenarios→Analysis; Income and Real Estate moved to sub-tabs.";
 export const BUILD_TIME = "2026-05-29T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -5271,7 +5271,7 @@ function BucketsTab({ params = {} }) {
   );
 }
 function ScenariosTab({
- baseParams,
+  baseParams,
   r90,
   stress,
   retireAge,
@@ -5292,6 +5292,8 @@ function ScenariosTab({
   portfolioGoal,
   dob,
   sex,
+  assumptions,
+  onAssumptionChange,
   onSaveConversionOverride,
   onRemoveConversionOverride,
 }) {
@@ -5299,12 +5301,14 @@ function ScenariosTab({
   const [scenarioSubTab, setScenarioSubTab] = useState("roth");
 
   const SCENARIO_SUBTABS = [
-    ["roth", "🔄 ROTH CONVERSIONS"],
-    ["waterfall", "📋 WITHDRAWAL PLAN"],
+    ["roth",       "🔄 ROTH CONVERSIONS"],
+    ["waterfall",  "📋 WITHDRAWAL PLAN"],
     ["withdrawal", "💸 WITHDRAWAL ANALYSIS"],
-    ["stress", "🔶 STRESS TEST"],
-    ["buckets", "🪣 BUCKETS"],
-    ["smile", "🙂 SMILE"],
+    ["stress",     "🔶 STRESS TEST"],
+    ["buckets",    "🪣 BUCKETS"],
+    ["income",     "💵 INCOME"],
+    ["realestate", "🏠 REAL ESTATE"],
+    ["smile",      "🙂 SMILE"],
   ];
 
   return (
@@ -5422,8 +5426,10 @@ function ScenariosTab({
       )}
 
       {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} />}
-      {scenarioSubTab === "buckets" && <BucketsTab params={baseParams} />}
-      {scenarioSubTab === "smile" && <SmileChart p={baseParams} inf={inf} />}
+      {scenarioSubTab === "buckets"    && <BucketsTab params={baseParams} />}
+      {scenarioSubTab === "income"     && <IncomeMap p={baseParams} inf={inf} />}
+      {scenarioSubTab === "realestate" && <MortgageTab values={assumptions ?? baseParams} onChange={onAssumptionChange ?? (() => {})} />}
+      {scenarioSubTab === "smile"      && <SmileChart p={baseParams} inf={inf} />}
     </div>
   );
 }
@@ -8939,9 +8945,7 @@ export default function AiRAForecaster() {
   const TABS = [
     ["networth", "📊 Net Worth"],
     ["montecarlo", "🎲 Forecast"],
-    ["scenarios", "🎯 Scenarios"],
-    ["income", "💵 Income"],
-    ["mortgage", "🏠 Real Estate"],
+    ["scenarios", "📋 Analysis"],
     ["actionplan", "✅ Action Plan"],
     // ["airaai", "🤖 Aira AI"],  // DO NOT RE-ADD — AiraAITab is being integrated INSIDE ActionPlanTab on a separate branch (per user: no tab sprawl).
     ["assumptions", "👤 Profile"],
@@ -9936,6 +9940,8 @@ export default function AiRAForecaster() {
                     checkpoints={assumptions.checkpoints}
                     dob={assumptions.dob}
                     sex={assumptions.sex}
+                    assumptions={assumptions}
+                    onAssumptionChange={updateAssumption}
                     onSaveConversionOverride={(year, amount, income) => {
                       setAssumptions(prev => ({
                         ...prev,
@@ -9953,8 +9959,6 @@ export default function AiRAForecaster() {
                     }}
                   />
                 )}
-                {activeTab === "income" && <IncomeMap p={params} inf={inf} />}
-                {activeTab === "mortgage" && <MortgageTab values={assumptions} onChange={updateAssumption} />}
                 {activeTab === "networth" && <NetWorthTab p={params} results90={r90} inf={inf} />}
                 {activeTab === "actionplan" && (
                   <ActionPlanTab
