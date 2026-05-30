@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.8";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.8 — Bucket logic validated: floor fix, market-condition warning, Roth instruction fix.";
+const APP_VERSION = "1.0.9.9";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.9 — Bucket year targets user-configurable; validated vs published strategy.";
 export const BUILD_TIME = "2026-05-29T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -4945,8 +4945,21 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
   );
 }
 
+const _BCFG_KEY = "aira_buckets_cfg.v1";
+function _loadBCfg() {
+  try { return JSON.parse(localStorage.getItem(_BCFG_KEY) || "null") || {}; } catch { return {}; }
+}
+
 function BucketsTab({ params = {} }) {
   const [showPlanning, setShowPlanning] = useState(false);
+  const [bCfg, setBCfg] = useState(_loadBCfg);
+  const saveBCfg = (patch) => {
+    const next = { ..._loadBCfg(), ...patch };
+    try { localStorage.setItem(_BCFG_KEY, JSON.stringify(next)); } catch {}
+    setBCfg(next);
+  };
+  const b1Years = bCfg.b1Years ?? 3;   // user-adjustable, default 3yr
+  const b2Years = bCfg.b2Years ?? 5;   // user-adjustable, default 5yr
 
   // ── Core params ───────────────────────────────────────────────────────────
   const sp         = params.sp        || 0;
@@ -4971,12 +4984,11 @@ function BucketsTab({ params = {} }) {
   const hasAccounts = (b1Actual + b2Actual + b3Actual) > 0;
 
   // ── Thresholds ────────────────────────────────────────────────────────────
-  // B1 floor = 1 year of PLANNED spend (not gkFloor which is the distress minimum).
-  // Canonical rule: replenish when 1 full year of normal spending remains.
-  const b1Floor    = sp;                               // 1yr planned spend
-  const b1Target   = sp * 2;                           // 2yr spend
-  const ssGapYears = Math.max(3, ssAge - retireAge);   // at least 3yr bridge
-  const b2Floor    = sp * 3;
+  // Thresholds driven by user-configured year targets (b1Years, b2Years).
+  const b1Floor    = sp;                                          // 1yr — always the replenish trigger
+  const b1Target   = sp * b1Years;                               // user-set (default 3yr)
+  const ssGapYears = Math.max(b2Years, ssAge - retireAge);       // at least b2Years bridge
+  const b2Floor    = sp * b2Years;
   const b2Target   = Math.max(b2Floor, Math.round(ssGapYears * sp));
 
   // ── Simulation row for tax guidance ──────────────────────────────────────
@@ -5187,13 +5199,30 @@ function BucketsTab({ params = {} }) {
         )}
       </div>
 
+      {/* ── Year selectors ────────────────────────────────────────────── */}
+      <div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px" }}>
+        <span style={{ fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>Buffer targets:</span>
+        {[
+          { label: "B1 years", key: "b1Years", val: b1Years, min: 1, max: 7, hint: "3–5 recommended" },
+          { label: "B2 years", key: "b2Years", val: b2Years, min: 3, max: 12, hint: "5–10 recommended" },
+        ].map(({ label, key, val, min, max, hint }) => (
+          <div key={key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 11, color: "#64748b" }}>{label}:</span>
+            <button onClick={() => saveBCfg({ [key]: Math.max(min, val - 1) })} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>−</button>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", minWidth: 14, textAlign: "center" }}>{val}</span>
+            <button onClick={() => saveBCfg({ [key]: Math.min(max, val + 1) })} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>+</button>
+            <span style={{ fontSize: 9, color: "#334155" }}>{hint}</span>
+          </div>
+        ))}
+      </div>
+
       {/* ── Bucket status cards ───────────────────────────────────────── */}
       <div style={{ display: "flex", gap: 10 }}>
-        <BucketCard num={1} color="#0ea5e9" label="Bucket 1 — Cash" horizon="0–2 years · pay bills now"
+        <BucketCard num={1} color="#0ea5e9" label="Bucket 1 — Cash" horizon={`0–${b1Years} years · pay bills now`}
           actual={b1Actual} floor={b1Floor} target={b1Target} accounts={b1Accts} />
-        <BucketCard num={2} color="#a78bfa" label="Bucket 2 — Income" horizon="2–7 years · refills B1"
+        <BucketCard num={2} color="#a78bfa" label="Bucket 2 — Income" horizon={`${b1Years}–${b1Years + b2Years} years · refills B1`}
           actual={b2Actual} floor={b2Floor} target={b2Target} accounts={b2Accts} />
-        <BucketCard num={3} color="#10b981" label="Bucket 3 — Growth" horizon="7+ years · last resort"
+        <BucketCard num={3} color="#10b981" label="Bucket 3 — Growth" horizon={`${b1Years + b2Years}+ years · last resort`}
           actual={b3Actual} floor={0} target={0} accounts={b3Accts} />
       </div>
 
