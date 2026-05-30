@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.2";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.2 — Safe spending target uses actual strategy, not hardcoded 4%.";
+const APP_VERSION = "1.1.0.3";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.3 — Fix fixedWithdrawalRate decimal/% normalization in params and spending card.";
 export const BUILD_TIME = "2026-05-29T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -6152,10 +6152,11 @@ function NetWorthTab({ p, results90, inf }) {
           <div className="ml">Safe spending target</div>
           <div className="mv" style={{ color: "#4ade80", fontSize: 18 }}>
             {(() => {
-              const port = (p.accounts||[]).reduce((s,a)=>s+(a.balance||0),0) || p.port || 0;
+              const port     = (p.accounts||[]).reduce((s,a)=>s+(a.balance||0),0) || p.port || 0;
               const strategy = p.withdrawalStrategy || "gk";
-              const monthly = strategy === "fixed"
-                ? Math.round(port * (p.fixedWithdrawalRate || 4) / 100 / 12)
+              const rate     = p.fixedWithdrawalRate || 0.04; // always decimal in params
+              const monthly  = strategy === "fixed"
+                ? Math.round(port * rate / 12)
                 : p.sp > 0
                   ? Math.round(p.sp / 12)
                   : Math.round(port * 0.04 / 12);
@@ -6164,8 +6165,10 @@ function NetWorthTab({ p, results90, inf }) {
           </div>
           <div className="ms">
             {(() => {
-              const s = p.withdrawalStrategy || "gk";
-              const labels = { gk:"GK guardrails", fixed:`Fixed ${p.fixedWithdrawalRate||4}%`, vanguard:"Vanguard dynamic", vpw:"VPW", kitces:"Kitces ratchet", cape:"CAPE-based", endowment:"Endowment", risk:"Risk-based", one_n:"1/N rule", ninety_five_rule:"95% rule" };
+              const s    = p.withdrawalStrategy || "gk";
+              const rate = p.fixedWithdrawalRate || 0.04;
+              const pct  = (rate * 100).toFixed(1).replace(/\.0$/, ""); // "4" not "4.0"
+              const labels = { gk:"GK guardrails", fixed:`Fixed ${pct}%`, vanguard:"Vanguard dynamic", vpw:"VPW", kitces:"Kitces ratchet", cape:"CAPE-based", endowment:"Endowment", risk:"Risk-based", one_n:"1/N rule", ninety_five_rule:"95% rule" };
               return `${labels[s] || s} · per month`;
             })()}
           </div>
@@ -8900,7 +8903,7 @@ export default function AiRAForecaster() {
       cashRealReturn: assumptions.cashRealReturn ?? 1.0,
       useJointRmdTable: assumptions.useJointRmdTable || false,
       withdrawalStrategy: assumptions.withdrawalStrategy,
-      fixedWithdrawalRate: (assumptions.fixedWithdrawalRate || 4.0) / 100,
+      fixedWithdrawalRate: (() => { const r = assumptions.fixedWithdrawalRate || 4.0; return r < 1 ? r : r / 100; })(), // normalize: stored as % (4) or decimal (0.04) → always decimal
       vanguardInitialRate: 0.04,
       vanguardCap: 0.05,
       vanguardFloor: -0.025,
