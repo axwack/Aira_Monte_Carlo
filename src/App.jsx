@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.7";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.7 — Dynamic account names in directive; bucket How-To in About.";
+const APP_VERSION = "1.0.9.8";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.8 — Bucket logic validated: floor fix, market-condition warning, Roth instruction fix.";
 export const BUILD_TIME = "2026-05-29T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -4971,11 +4971,13 @@ function BucketsTab({ params = {} }) {
   const hasAccounts = (b1Actual + b2Actual + b3Actual) > 0;
 
   // ── Thresholds ────────────────────────────────────────────────────────────
-  const b1Floor  = gkFloor > 0 ? gkFloor : sp;      // 1yr minimum spend
-  const b1Target = sp * 2;                           // 2yr spend
-  const ssGapYears = Math.max(3, ssAge - retireAge); // at least 3yr bridge
-  const b2Floor  = sp * 3;
-  const b2Target = Math.max(b2Floor, Math.round(ssGapYears * sp));
+  // B1 floor = 1 year of PLANNED spend (not gkFloor which is the distress minimum).
+  // Canonical rule: replenish when 1 full year of normal spending remains.
+  const b1Floor    = sp;                               // 1yr planned spend
+  const b1Target   = sp * 2;                           // 2yr spend
+  const ssGapYears = Math.max(3, ssAge - retireAge);   // at least 3yr bridge
+  const b2Floor    = sp * 3;
+  const b2Target   = Math.max(b2Floor, Math.round(ssGapYears * sp));
 
   // ── Simulation row for tax guidance ──────────────────────────────────────
   const simRow = useMemo(() => {
@@ -5041,14 +5043,15 @@ function BucketsTab({ params = {} }) {
       const preAvail = b3Pretax.reduce((s, a) => s + (a.balance || 0), 0);
       if (preAvail > 0) {
         const amt = Math.min(rem, preAvail);
-        steps.push({ label: `Withdraw from ${acctLabel(b3Pretax, "pre-tax accounts")} (B3)`, accounts: b3Pretax, amount: amt, tax: `${marginalRate}% ordinary income`, note: `Within ${marginalRate}% bracket — move to bonds/balanced in taxable` });
+        steps.push({ label: `Withdraw from ${acctLabel(b3Pretax, "pre-tax accounts")} (B3)`, accounts: b3Pretax, amount: amt, tax: `${marginalRate}% ordinary income`, note: `Within ${marginalRate}% bracket — move proceeds into bonds/balanced fund in taxable (B2)` });
         rem -= amt;
       }
       if (rem > 0 && b3Roth.length > 0) {
         const amt = Math.min(rem, b3Roth.reduce((s, a) => s + (a.balance || 0), 0));
-        steps.push({ label: `Rebalance ${acctLabel(b3Roth, "Roth accounts")} to conservative allocation (B3)`, accounts: b3Roth, amount: amt, tax: "Tax-free", note: "Shift to lower-risk holdings within Roth" });
+        steps.push({ label: `Sell equity in ${acctLabel(b3Roth, "Roth accounts")} — transfer cash to B2`, accounts: b3Roth, amount: amt, tax: "Tax-free", note: "Sell equity holdings inside Roth; move the cash proceeds to your B2 bond/stable-value account" });
       }
-      return { type: "warning", title: "Bucket 2 below floor — replenish from Bucket 3", needed, steps };
+      // Canonical rule: only replenish B2 from B3 when markets are favorable.
+      return { type: "warning", title: "Bucket 2 below floor — replenish from Bucket 3", needed, steps, marketWarning: true };
     }
     const monthsToFloor = monthly > 0 ? Math.round((b1Actual - b1Floor) / monthly) : null;
     return { type: "ok", title: "All buckets healthy — no action needed", nextReview: monthsToFloor };
@@ -5146,6 +5149,11 @@ function BucketsTab({ params = {} }) {
           </div>
         )}
 
+        {directive.marketWarning && (
+          <div style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 11, color: "#fbbf24", lineHeight: 1.5 }}>
+            ⚠ <strong>Market condition check required:</strong> Only move money from Bucket 3 into Bucket 2 when markets are <em>up or neutral</em>. If stocks are down significantly (&gt;15%), wait — let Bucket 2 cover you until markets recover. Selling growth assets in a downturn defeats the purpose of the bucket strategy.
+          </div>
+        )}
         {directive.steps?.length > 0 && (
           <>
             <div style={{ fontSize: 11, color: "#475569", marginBottom: 8 }}>
