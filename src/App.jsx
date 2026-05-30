@@ -2961,85 +2961,6 @@ function IncomeMap({ p, inf }) {
   );
 }
 
-function SmileChart({ p, inf }) {
-  const data = useMemo(
-    () =>
-      Array.from({ length: 31 }, (_, i) => {
-        const age = p.retireAge + i;
-        const infR = inf / 100;
-        let smile = p.sp,
-          flat = p.sp;
-        for (let j = 1; j <= i; j++) {
-          const a = p.retireAge + j;
-          smile *= 1 + smileMult(a) * 0.028;
-          flat *= 1 + infR;
-        }
-        return {
-          age,
-          Flat: Math.round(flat),
-          "Smile (Blanchett)": Math.round(smile),
-        };
-      }),
-    [p, inf]
-  );
-  return (
-    <div className="chart-card">
-      <div className="ct">
-        Retirement Smile · Go-go 115% → Slow-go 85% → Healthcare tail 90% ·
-        Blanchett/Morningstar
-      </div>
-      <ResponsiveContainer width="100%" height={540}>
-        <LineChart
-          data={data}
-          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-        >
-          <CartesianGrid
-            strokeDasharray="2 4"
-            stroke="rgba(255,255,255,0.05)"
-          />
-          <XAxis
-            dataKey="age"
-            stroke="#1e3a5f"
-            tick={{ fill: "#475569", fontSize: 9 }}
-          />
-          <YAxis
-            stroke="#1e3a5f"
-            tick={{ fill: "#475569", fontSize: 9 }}
-            tickFormatter={(v) => fmtK(v)}
-            width={46}
-          />
-          <Tooltip content={<Tip />} />
-          <ReferenceLine
-            x={65}
-            stroke="rgba(251,191,36,0.35)"
-            strokeDasharray="3 3"
-          />
-          <ReferenceLine
-            x={75}
-            stroke="rgba(249,115,22,0.35)"
-            strokeDasharray="3 3"
-          />
-          <Line
-            type="monotone"
-            dataKey="Flat"
-            stroke="#475569"
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="Smile (Blanchett)"
-            stroke="#a78bfa"
-            strokeWidth={2.5}
-            dot={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverride }) {
 
   const [showInputs, setShowInputs] = useState(false);
@@ -4996,6 +4917,95 @@ function _loadBCfg() {
   try { return JSON.parse(localStorage.getItem(_BCFG_KEY) || "null") || {}; } catch { return {}; }
 }
 
+// ── Bucket status card — hoisted to module scope so React doesn't unmount it on
+// every BucketsTab re-render (which would kill the tooltip hover state). ─────
+function BucketCard({ num, color, label, horizon, actual, floor, target, accounts: acctList, role, holdings, monthly }) {
+  const [showInfo, setShowInfo] = useState(false);
+  const hideTimer = useRef(null);
+  const openTip = () => {
+    if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; }
+    setShowInfo(true);
+  };
+  const closeTipSoon = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setShowInfo(false), 180);
+  };
+  useEffect(() => () => { if (hideTimer.current) clearTimeout(hideTimer.current); }, []);
+
+  const barPct = target > 0 ? Math.min(100, actual / target * 100) : 0;
+  const status = actual < floor ? "below" : actual < target ? "ok" : "full";
+  const barClr = status === "below" ? "#f87171" : status === "full" ? "#34d399" : color;
+  const runway = monthly > 0 && num === 1 ? (actual / monthly).toFixed(1) : null;
+  return (
+    <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1, position: "relative" }}>
+      {(role || holdings) && (
+        <div
+          onMouseEnter={openTip}
+          onMouseLeave={closeTipSoon}
+          style={{ position: "absolute", top: 0, right: 0, paddingTop: 6, paddingRight: 6, paddingLeft: 10, paddingBottom: showInfo ? 8 : 4, cursor: "help" }}
+          aria-label="Bucket role and recommended holdings"
+        >
+          <span style={{ color: showInfo ? color : "#475569", fontSize: 11, userSelect: "none", transition: "color 0.15s" }}>ⓘ</span>
+          {showInfo && (
+            <div
+              onMouseEnter={openTip}
+              onMouseLeave={closeTipSoon}
+              style={{ position: "absolute", top: "100%", right: 0, background: "rgba(15,23,42,0.98)", border: `1px solid ${color}66`, borderRadius: 6, padding: 10, fontSize: 11, color: "#cbd5e1", zIndex: 20, width: 240, lineHeight: 1.5, boxShadow: "0 6px 16px rgba(0,0,0,0.5)", cursor: "default" }}
+            >
+              {role && (
+                <>
+                  <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Role</div>
+                  <div style={{ marginBottom: holdings ? 8 : 0 }}>{role}</div>
+                </>
+              )}
+              {holdings && (
+                <>
+                  <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Recommended holdings</div>
+                  <div>{holdings}</div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color }}>{label}</div>
+          <div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>{horizon}</div>
+        </div>
+        <div style={{ textAlign: "right", paddingRight: role || holdings ? 16 : 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: barClr, fontFamily: "'DM Mono',monospace" }}>{actual > 0 ? fmtM(actual) : "—"}</div>
+          {runway && <div style={{ fontSize: 9, color: "#64748b" }}>{runway} mo runway</div>}
+        </div>
+      </div>
+      {(floor > 0 || target > 0) && (
+        <>
+          <div style={{ height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden", marginBottom: 4 }}>
+            <div style={{ height: "100%", width: `${barPct}%`, background: barClr, borderRadius: 3, transition: "width 0.4s" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#475569" }}>
+            <span>Floor {fmtK(floor)}</span>
+            <span>Target {fmtK(target)}</span>
+          </div>
+        </>
+      )}
+      {acctList.length > 0 && (
+        <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
+          {acctList.map(a => (
+            <div key={a.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#475569", marginBottom: 2 }}>
+              <span>{a.name}</span>
+              <span style={{ color: "#64748b", fontFamily: "'DM Mono',monospace" }}>{fmtK(a.balance || 0)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {acctList.length === 0 && (
+        <div style={{ marginTop: 8, fontSize: 10, color: "#334155", fontStyle: "italic" }}>No accounts assigned — use B{num} chips in Profile → Savings</div>
+      )}
+    </div>
+  );
+}
+
 function BucketsTab({ params = {} }) {
   const [bCfg, setBCfg] = useState(_loadBCfg);
   const saveBCfg = (patch) => {
@@ -5136,78 +5146,6 @@ function BucketsTab({ params = {} }) {
   const now = new Date();
   const monthName = now.toLocaleString("default", { month: "long" });
 
-  // ── Bucket status card helper ─────────────────────────────────────────────
-  function BucketCard({ num, color, label, horizon, actual, floor, target, accounts: acctList, role, holdings }) {
-    const [showInfo, setShowInfo] = useState(false);
-    const barPct  = target > 0 ? Math.min(100, actual / target * 100) : 0;
-    const status  = actual < floor ? "below" : actual < target ? "ok" : "full";
-    const barClr  = status === "below" ? "#f87171" : status === "full" ? "#34d399" : color;
-    const runway  = monthly > 0 && num === 1 ? (actual / monthly).toFixed(1) : null;
-    return (
-      <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1, position: "relative" }}>
-        {(role || holdings) && (
-          <div
-            onMouseEnter={() => setShowInfo(true)}
-            onMouseLeave={() => setShowInfo(false)}
-            style={{ position: "absolute", top: 0, right: 0, paddingTop: 6, paddingRight: 6, paddingLeft: 10, paddingBottom: showInfo ? 8 : 4, cursor: "help" }}
-            aria-label="Bucket role and recommended holdings"
-          >
-            <span style={{ color: showInfo ? color : "#475569", fontSize: 11, userSelect: "none", transition: "color 0.15s" }}>ⓘ</span>
-            {showInfo && (
-              <div style={{ position: "absolute", top: "100%", right: 0, background: "rgba(15,23,42,0.98)", border: `1px solid ${color}66`, borderRadius: 6, padding: 10, fontSize: 11, color: "#cbd5e1", zIndex: 20, width: 240, lineHeight: 1.5, boxShadow: "0 6px 16px rgba(0,0,0,0.5)", cursor: "default" }}>
-                {role && (
-                  <>
-                    <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Role</div>
-                    <div style={{ marginBottom: holdings ? 8 : 0 }}>{role}</div>
-                  </>
-                )}
-                {holdings && (
-                  <>
-                    <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Recommended holdings</div>
-                    <div>{holdings}</div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color }}>{label}</div>
-            <div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>{horizon}</div>
-          </div>
-          <div style={{ textAlign: "right", paddingRight: role || holdings ? 16 : 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: barClr, fontFamily: "'DM Mono',monospace" }}>{actual > 0 ? fmtM(actual) : "—"}</div>
-            {runway && <div style={{ fontSize: 9, color: "#64748b" }}>{runway} mo runway</div>}
-          </div>
-        </div>
-        {(floor > 0 || target > 0) && (
-          <>
-            <div style={{ height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden", marginBottom: 4 }}>
-              <div style={{ height: "100%", width: `${barPct}%`, background: barClr, borderRadius: 3, transition: "width 0.4s" }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#475569" }}>
-              <span>Floor {fmtK(floor)}</span>
-              <span>Target {fmtK(target)}</span>
-            </div>
-          </>
-        )}
-        {acctList.length > 0 && (
-          <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
-            {acctList.map(a => (
-              <div key={a.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#475569", marginBottom: 2 }}>
-                <span>{a.name}</span>
-                <span style={{ color: "#64748b", fontFamily: "'DM Mono',monospace" }}>{fmtK(a.balance || 0)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        {acctList.length === 0 && (
-          <div style={{ marginTop: 8, fontSize: 10, color: "#334155", fontStyle: "italic" }}>No accounts assigned — use B{num} chips in Profile → Savings</div>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -5326,15 +5264,15 @@ function BucketsTab({ params = {} }) {
       {/* ── Bucket status cards ───────────────────────────────────────── */}
       <div style={{ display: "flex", gap: 10 }}>
         <BucketCard num={1} color="#0ea5e9" label="Bucket 1 — Cash" horizon={`0–${b1Years} years · pay bills now`}
-          actual={b1Actual} floor={b1Floor} target={b1Target} accounts={b1Accts}
+          actual={b1Actual} floor={b1Floor} target={b1Target} accounts={b1Accts} monthly={monthly}
           role={`${b1Years}-year runway at ${fmtK(spendBasis)}/yr ${drawMode === "net" ? "net draw" : "gross spend"}. Pays bills now — NEVER dual-purpose.`}
           holdings="HYSA · Money market · T-bills · CDs" />
         <BucketCard num={2} color="#a78bfa" label="Bucket 2 — Income" horizon={`${b1Years}–${b1Years + b2Years} years · refills B1`}
-          actual={b2Actual} floor={b2Floor} target={b2Target} accounts={b2Accts}
+          actual={b2Actual} floor={b2Floor} target={b2Target} accounts={b2Accts} monthly={monthly}
           role={`Bridges ${ssGapYears}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`}
           holdings="30–50% Equities · 50–70% Fixed Income · Bonds · REITs" />
         <BucketCard num={3} color="#10b981" label="Bucket 3 — Growth" horizon={`${b1Years + b2Years}+ years · last resort`}
-          actual={b3Actual} floor={0} target={0} accounts={b3Accts}
+          actual={b3Actual} floor={0} target={0} accounts={b3Accts} monthly={monthly}
           role="Protects against inflation & grows wealth for a decade or more."
           holdings="50–100% Equities · Broad-market equity · International" />
       </div>
@@ -5356,7 +5294,6 @@ function ScenariosTab({
   DeterministicWithdrawalView,
   RothLadder,
   BucketsTab,
-  SmileChart,
   withdrawalStrategy,
   checkpoints,
   earlyRetireTarget,
@@ -5379,7 +5316,6 @@ function ScenariosTab({
     ["buckets",    "🪣 BUCKETS"],
     ["income",     "💵 INCOME"],
     ["realestate", "🏠 REAL ESTATE"],
-    ["smile",      "🙂 SMILE"],
   ];
 
   return (
@@ -5500,7 +5436,6 @@ function ScenariosTab({
       {scenarioSubTab === "buckets"    && <BucketsTab params={baseParams} />}
       {scenarioSubTab === "income"     && <IncomeMap p={baseParams} inf={inf} />}
       {scenarioSubTab === "realestate" && <MortgageTab values={assumptions ?? baseParams} onChange={onAssumptionChange ?? (() => {})} />}
-      {scenarioSubTab === "smile"      && <SmileChart p={baseParams} inf={inf} />}
     </div>
   );
 }
@@ -10083,7 +10018,6 @@ export default function AiRAForecaster() {
                     DeterministicWithdrawalView={DeterministicWithdrawalView}
                     RothLadder={RothLadder}
                     BucketsTab={BucketsTab}
-                    SmileChart={SmileChart}
                     portfolioGoal={assumptions.portfolioGoal}
                     earlyRetireTarget={assumptions.earlyRetireTarget}
                     withdrawalStrategy={assumptions.withdrawalStrategy}
