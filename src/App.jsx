@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.9";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.9 — Bucket year targets user-configurable; validated vs published strategy.";
+const APP_VERSION = "1.1.0.0";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.0 — Clearer B1 empty state; directive shows actual vs target explicitly.";
 export const BUILD_TIME = "2026-05-29T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -5040,11 +5040,15 @@ function BucketsTab({ params = {} }) {
 
     if (b1Actual < b1Floor) {
       const needed = b1Target - b1Actual;
-      return { type: "critical", title: "Bucket 1 below floor — replenish now", needed, steps: buildSteps(needed, b2Taxable, b2Pretax, b3All) };
+      const b1Empty  = b1Accts.length === 0;
+      const title    = b1Empty
+        ? `Bucket 1 is empty — create a cash account and fund it with ${fmtM(needed)}`
+        : `Bucket 1 has ${fmtM(b1Actual)} — below ${fmtM(b1Floor)} floor, replenish now`;
+      return { type: "critical", title, needed, b1Actual, b1Empty, steps: buildSteps(needed, b2Taxable, b2Pretax, b3All) };
     }
     if (b1Actual < b1Target) {
       const needed = b1Target - b1Actual;
-      return { type: "warning", title: "Bucket 1 below target — consider topping up", needed, optional: true, steps: buildSteps(needed, b2Taxable, b2Pretax, []) };
+      return { type: "warning", title: `Bucket 1 has ${fmtM(b1Actual)} — ${fmtM(needed)} below ${b1Years}-yr target of ${fmtM(b1Target)}`, needed, optional: true, steps: buildSteps(needed, b2Taxable, b2Pretax, []) };
     }
     if (b2Actual < b2Floor) {
       const needed = b2Target - b2Actual;
@@ -5166,10 +5170,17 @@ function BucketsTab({ params = {} }) {
             ⚠ <strong>Market condition check required:</strong> Only move money from Bucket 3 into Bucket 2 when markets are <em>up or neutral</em>. If stocks are down significantly (&gt;15%), wait — let Bucket 2 cover you until markets recover. Selling growth assets in a downturn defeats the purpose of the bucket strategy.
           </div>
         )}
+        {directive.b1Empty && (
+          <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 11, color: "#7dd3fc", lineHeight: 1.6 }}>
+            <strong>No B1 account assigned yet.</strong> Bucket 1 currently holds <strong>$0</strong>. To receive this transfer you need a cash account (HYSA, money market, SGOV) tagged as B1 in <strong>Profile → Savings</strong>. The steps below show which B2 accounts to sell — the proceeds go into that new B1 account.
+          </div>
+        )}
         {directive.steps?.length > 0 && (
           <>
             <div style={{ fontSize: 11, color: "#475569", marginBottom: 8 }}>
-              {directive.optional ? "Optional top-up:" : "Move"} {fmtM(directive.needed)} into Bucket 1:
+              {directive.optional
+                ? `Optional top-up — Bucket 1 currently has ${fmtM(directive.b1Actual ?? 0)}, target is ${fmtM(directive.needed + (directive.b1Actual ?? 0))}:`
+                : `Transfer ${fmtM(directive.needed)} from Bucket 2 → into your Bucket 1 cash account:`}
             </div>
             {directive.steps.map((step, i) => (
               <div key={i} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "10px 14px", marginBottom: 8 }}>
