@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.5";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.5 — Bucket 1 auto-derives from profile, overrides optional.";
+const APP_VERSION = "1.0.9.6";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.6 — 3-bucket operational directive in Buckets tab.";
 export const BUILD_TIME = "2026-05-29T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -312,6 +312,16 @@ export const getStrategyDescription = (strategy) => {
 /* Personal data lives in AiRA_Profile.json — never hardcoded here */
 /* Use Export button to save your data. Use Import to load it back. */
 
+// Default bucket assignment by account category (user can override per account)
+export function _defaultBucket(category) {
+  if (category === "cash")    return 1;
+  if (category === "taxable") return 2;
+  if (category === "pretax")  return 2;
+  if (category === "hsa")     return 3;
+  if (category === "roth")    return 3;
+  return 2;
+}
+
 export const BLANK_PROFILE = {
   label: "My Plan",
   name: "",
@@ -371,11 +381,11 @@ export const BLANK_PROFILE = {
   conversionOverrides: [],      // [{id, year, amount}] manual per-year conversion amounts — populated in user's exported JSON
   // Account breakdown (feeds port total)
   accounts: [
-    { id: "1", category: "pretax", name: "401(k)", balance: 0 },
-    { id: "2", category: "roth", name: "Roth IRA", balance: 0 },
-    { id: "3", category: "taxable", name: "Brokerage", balance: 0 },
-    { id: "4", category: "hsa", name: "HSA", balance: 0 },
-    { id: "5", category: "cash", name: "Cash/Savings", balance: 0 },
+    { id: "1", category: "pretax", name: "401(k)",      balance: 0, bucket: 2 },
+    { id: "2", category: "roth",   name: "Roth IRA",    balance: 0, bucket: 3 },
+    { id: "3", category: "taxable",name: "Brokerage",   balance: 0, bucket: 2 },
+    { id: "4", category: "hsa",    name: "HSA",         balance: 0, bucket: 3 },
+    { id: "5", category: "cash",   name: "Cash/Savings",balance: 0, bucket: 1 },
   ],
   // MC assumptions
   abReliability: 80,
@@ -4689,9 +4699,6 @@ function WaterfallPlanView({ p }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Bucket 1 runway tracker */}
-      <Bucket1Panel p={p} rows={smart.rows} />
-
       {/* Summary cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
         <div className="met">
@@ -4939,121 +4946,272 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
 }
 
 function BucketsTab({ params = {} }) {
-  const port        = params.port       || 0;
-  const retireAge   = params.retireAge  || 60;
-  const currentAge  = params.currentAge || 50;
-  const ssAge       = params.ssAge      || 67;
+  const [showPlanning, setShowPlanning] = useState(false);
+
+  // ── Core params ───────────────────────────────────────────────────────────
+  const sp         = params.sp        || 0;
+  const port       = params.port      || 0;
+  const retireAge  = params.retireAge || 60;
+  const currentAge = params.currentAge|| 50;
+  const ssAge      = params.ssAge     || 67;
+  const gkFloor    = params.gkFloor   || 0;
   const yrsToRetire = Math.max(0, retireAge - currentAge);
   const retireYear  = new Date().getFullYear() + yrsToRetire;
+  const monthly     = sp > 0 ? Math.round(sp / 12) : 0;
 
-  // Annual mortgage P&I (matches runMC logic)
+  // ── Actual balances from designated accounts ──────────────────────────────
+  const accts  = params.accounts || [];
+  const bNum   = (a) => a.bucket ?? _defaultBucket(a.category);
+  const b1Accts = accts.filter(a => bNum(a) === 1);
+  const b2Accts = accts.filter(a => bNum(a) === 2);
+  const b3Accts = accts.filter(a => bNum(a) === 3);
+  const b1Actual = b1Accts.reduce((s, a) => s + (a.balance || 0), 0);
+  const b2Actual = b2Accts.reduce((s, a) => s + (a.balance || 0), 0);
+  const b3Actual = b3Accts.reduce((s, a) => s + (a.balance || 0), 0);
+  const hasAccounts = (b1Actual + b2Actual + b3Actual) > 0;
+
+  // ── Thresholds ────────────────────────────────────────────────────────────
+  const b1Floor  = gkFloor > 0 ? gkFloor : sp;      // 1yr minimum spend
+  const b1Target = sp * 2;                           // 2yr spend
+  const ssGapYears = Math.max(3, ssAge - retireAge); // at least 3yr bridge
+  const b2Floor  = sp * 3;
+  const b2Target = Math.max(b2Floor, Math.round(ssGapYears * sp));
+
+  // ── Simulation row for tax guidance ──────────────────────────────────────
+  const simRow = useMemo(() => {
+    if (!sp || !port) return null;
+    try { return buildWithdrawalWaterfall(params)?.smart?.rows?.[0] ?? null; }
+    catch { return null; }
+  }, [params]);
+  const marginalRate = simRow?.marginalBracket ?? 12;
+  const irmaaRisk    = simRow?.landmines?.irmaaTriggered ?? false;
+
+  // ── Directive logic ───────────────────────────────────────────────────────
+  const directive = useMemo(() => {
+    if (!hasAccounts || !sp) return { type: "setup" };
+
+    const b2Taxable = b2Accts.filter(a => a.category === "taxable");
+    const b2Pretax  = b2Accts.filter(a => a.category === "pretax");
+    const b3All     = b3Accts;
+
+    function buildSteps(needed, taxablePool, pretaxPool, rothPool) {
+      const steps = [];
+      let rem = needed;
+      const taxAvail = taxablePool.reduce((s, a) => s + (a.balance || 0), 0);
+      if (taxAvail > 0 && rem > 0) {
+        const amt = Math.min(rem, taxAvail);
+        steps.push({ label: "Sell from taxable (Bucket 2)", accounts: taxablePool, amount: amt, tax: "0% LTCG estimated", note: "Lowest-tax source — use first" });
+        rem -= amt;
+      }
+      const preAvail = pretaxPool.reduce((s, a) => s + (a.balance || 0), 0);
+      if (preAvail > 0 && rem > 0) {
+        const amt = Math.min(rem, preAvail);
+        const taxCost = Math.round(amt * marginalRate / 100);
+        steps.push({ label: "Withdraw from pre-tax IRA (Bucket 2)", accounts: pretaxPool, amount: amt, tax: `${marginalRate}% ordinary income (~${fmtK(taxCost)} tax)`, note: irmaaRisk ? "⚠ Monitor MAGI — IRMAA risk" : `Stays within ${marginalRate}% bracket` });
+        rem -= amt;
+      }
+      if (rem > 0 && rothPool.length > 0) {
+        const rothAvail = rothPool.reduce((s, a) => s + (a.balance || 0), 0);
+        const amt = Math.min(rem, rothAvail);
+        steps.push({ label: "⚠ Emergency — draw from Roth (Bucket 3)", accounts: rothPool, amount: amt, tax: "Tax-free", note: "Last resort — Roth grows tax-free, avoid if possible" });
+      }
+      return steps;
+    }
+
+    if (b1Actual < b1Floor) {
+      const needed = b1Target - b1Actual;
+      return { type: "critical", title: "Bucket 1 below floor — replenish now", needed, steps: buildSteps(needed, b2Taxable, b2Pretax, b3All) };
+    }
+    if (b1Actual < b1Target) {
+      const needed = b1Target - b1Actual;
+      return { type: "warning", title: "Bucket 1 below target — consider topping up", needed, optional: true, steps: buildSteps(needed, b2Taxable, b2Pretax, []) };
+    }
+    if (b2Actual < b2Floor) {
+      const needed = b2Target - b2Actual;
+      const b3Pretax = b3All.filter(a => a.category === "pretax");
+      const b3Roth   = b3All.filter(a => a.category === "roth");
+      const steps = [];
+      let rem = needed;
+      const preAvail = b3Pretax.reduce((s, a) => s + (a.balance || 0), 0);
+      if (preAvail > 0) {
+        const amt = Math.min(rem, preAvail);
+        steps.push({ label: "Withdraw from pre-tax IRA (Bucket 3)", accounts: b3Pretax, amount: amt, tax: `${marginalRate}% ordinary income`, note: `Within ${marginalRate}% bracket — move to bonds/balanced in taxable` });
+        rem -= amt;
+      }
+      if (rem > 0 && b3Roth.length > 0) {
+        const amt = Math.min(rem, b3Roth.reduce((s, a) => s + (a.balance || 0), 0));
+        steps.push({ label: "Convert Roth to Bucket 2 allocation", accounts: b3Roth, amount: amt, tax: "Tax-free", note: "Shift to lower-risk holdings within Roth" });
+      }
+      return { type: "warning", title: "Bucket 2 below floor — replenish from Bucket 3", needed, steps };
+    }
+    const monthsToFloor = monthly > 0 ? Math.round((b1Actual - b1Floor) / monthly) : null;
+    return { type: "ok", title: "All buckets healthy — no action needed", nextReview: monthsToFloor };
+  }, [b1Actual, b2Actual, b1Floor, b1Target, b2Floor, b2Target, b2Accts, b3Accts, marginalRate, irmaaRisk, hasAccounts, sp, monthly]);
+
+  // ── Styles ────────────────────────────────────────────────────────────────
+  const DC = { critical: "#f87171", warning: "#fbbf24", ok: "#34d399", setup: "#475569" };
+  const DI = { critical: "🔴", warning: "🟡", ok: "✅", setup: "⚙" };
+  const now = new Date();
+  const monthName = now.toLocaleString("default", { month: "long" });
+
+  // ── Bucket status card helper ─────────────────────────────────────────────
+  function BucketCard({ num, color, label, horizon, actual, floor, target, accounts: acctList }) {
+    const barPct  = target > 0 ? Math.min(100, actual / target * 100) : 0;
+    const status  = actual < floor ? "below" : actual < target ? "ok" : "full";
+    const barClr  = status === "below" ? "#f87171" : status === "full" ? "#34d399" : color;
+    const runway  = monthly > 0 && num === 1 ? (actual / monthly).toFixed(1) : null;
+    return (
+      <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color }}>{label}</div>
+            <div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>{horizon}</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: barClr, fontFamily: "'DM Mono',monospace" }}>{actual > 0 ? fmtM(actual) : "—"}</div>
+            {runway && <div style={{ fontSize: 9, color: "#64748b" }}>{runway} mo runway</div>}
+          </div>
+        </div>
+        {(floor > 0 || target > 0) && (
+          <>
+            <div style={{ height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden", marginBottom: 4 }}>
+              <div style={{ height: "100%", width: `${barPct}%`, background: barClr, borderRadius: 3, transition: "width 0.4s" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#475569" }}>
+              <span>Floor {fmtK(floor)}</span>
+              <span>Target {fmtK(target)}</span>
+            </div>
+          </>
+        )}
+        {acctList.length > 0 && (
+          <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
+            {acctList.map(a => (
+              <div key={a.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#475569", marginBottom: 2 }}>
+                <span>{a.name}</span>
+                <span style={{ color: "#64748b", fontFamily: "'DM Mono',monospace" }}>{fmtK(a.balance || 0)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {acctList.length === 0 && (
+          <div style={{ marginTop: 8, fontSize: 10, color: "#334155", fontStyle: "italic" }}>No accounts assigned — use B{num} chips in Profile → Savings</div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Planning targets (old BucketsTab content) ─────────────────────────────
   const mortAnnualPI = (() => {
     if (!params.mortBalance || params.mortBalance <= 0) return 0;
-    const ms = mortgageSchedule(
-      params.mortBalance,
-      params.mortRate  || 6.5,
-      params.mortStart || "2020-01",
-      params.mortTerm  || 30,
-      params.mortExtra || 0
-    );
+    const ms = mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0);
     return ms.pmt * 12;
   })();
+  const propIncome = params.propIncome || 0;
+  const netDraw    = Math.max(0, sp + mortAnnualPI - propIncome);
+  const pt1 = Math.round(3 * netDraw);
+  const pt2 = Math.round(Math.max(3, ssAge - retireAge) * netDraw);
+  const pt3 = Math.max(0, port - pt1 - pt2);
 
-  // Dynamic allocation — derived from actual spending data
-  const RUNWAY_YEARS = 3;
-  const propIncome   = params.propIncome || 0;
-  const netDraw      = Math.max(0, (params.sp || 0) + mortAnnualPI - propIncome);
-  const ssGapYears   = Math.max(0, ssAge - retireAge);
-  const fmtK         = (n) => `$${Math.round(n / 1000)}K`;
-
-  const b1 = Math.round(RUNWAY_YEARS * netDraw);
-  const b2 = Math.round(ssGapYears   * netDraw);
-  const b3 = Math.max(0, port - b1 - b2);
-  const pct = (n) => port > 0 ? Math.round((n / port) * 100) : 0;
-
-  const buckets = [
-    {
-      name:     "Bucket 1 — Cash",
-      horizon:  "1–3 years",
-      amount:   b1,
-      pct:      pct(b1),
-      color:    "#0ea5e9",
-      purpose:  `Day-to-day expenses & safety net. ${RUNWAY_YEARS}-year runway at ${fmtK(netDraw)}/yr net draw. NEVER dual-purpose.`,
-      holdings: "100% Cash / Cash Equivalents · HYSA · Money market · T-bills · CDs",
-      locked:   `Draws begin at retirement (age ${retireAge})`,
-    },
-    {
-      name:     "Bucket 2 — Income & Stability",
-      horizon:  "3–10 years",
-      amount:   b2,
-      pct:      pct(b2),
-      color:    "#a78bfa",
-      purpose:  `Intermediate-term needs. Bridges ${ssGapYears}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`,
-      holdings: "30–50% Equities · 50–70% Fixed Income · Dividend stocks · Bonds · REITs",
-      locked:   `Activates at retirement (${retireYear})`,
-    },
-    {
-      name:     "Bucket 3 — Long-Term Growth",
-      horizon:  "10+ years",
-      amount:   b3,
-      pct:      pct(b3),
-      color:    "#10b981",
-      purpose:  "Protects against inflation & grows wealth. Won't be needed for a decade or more. Refills Bucket 2 when markets are favorable.",
-      holdings: "50–100% Equities · 0–50% Fixed Income · Broad-market equity · Momentum · International",
-      locked:   `Never before age ${retireAge + 7}`,
-    },
-  ];
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div className="chart-card">
-        <div className="ct">
-          3-Bucket Strategy
-        </div>
-        {buckets.map((b) => (
-          <div
-            key={b.name}
-            style={{
-              marginBottom: 12,
-              background: "rgba(255,255,255,0.02)",
-              border: `1px solid ${b.color}33`,
-              borderRadius: 9,
-              padding: 12,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 6,
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: b.color }}>{b.name}</div>
-                <div style={{ fontSize: 10, color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 1 }}>{b.horizon}</div>
-              </div>
-              <div
-                style={{
-                  fontSize: 15,
-                  color: b.color,
-                  fontFamily: "'DM Mono',monospace",
-                  textAlign: "right",
-                }}
-              >
-                {port > 0 ? fmtM(b.amount) : "—"} · {b.pct}%
-              </div>
-            </div>
-            <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>
-              {b.purpose}
-            </div>
-            <div style={{ fontSize: 12, color: "#475569" }}>
-              <span style={{ color: b.color }}>Holdings:</span> {b.holdings}
-            </div>
-            <div style={{ fontSize: 11, color: "#334155", marginTop: 3 }}>
-              🔒 {b.locked}
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+
+      {/* ── Monthly directive ─────────────────────────────────────────── */}
+      <div className="chart-card" style={{ borderLeft: `3px solid ${DC[directive.type]}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>📋 {monthName} {now.getFullYear()} — Retirement Directive</div>
+            <div style={{ fontSize: 12, color: DC[directive.type], fontWeight: 600, marginTop: 3 }}>
+              {DI[directive.type]} {directive.title}
             </div>
           </div>
-        ))}
+          {directive.type === "ok" && directive.nextReview && (
+            <div style={{ fontSize: 10, color: "#475569", textAlign: "right" }}>
+              Next review<br/>~{directive.nextReview} mo
+            </div>
+          )}
+        </div>
+
+        {directive.type === "setup" && (
+          <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+            To get a directive:<br/>
+            1. Enter your account balances in <strong style={{ color: "#e2e8f0" }}>Profile → Savings</strong><br/>
+            2. Use the <strong style={{ color: "#e2e8f0" }}>[B1] [B2] [B3]</strong> buttons to assign each account to a bucket<br/>
+            3. Enter your annual spending in <strong style={{ color: "#e2e8f0" }}>Profile → Spending</strong>
+          </div>
+        )}
+
+        {directive.steps?.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, color: "#475569", marginBottom: 8 }}>
+              {directive.optional ? "Optional top-up:" : "Move"} {fmtM(directive.needed)} into Bucket 1:
+            </div>
+            {directive.steps.map((step, i) => (
+              <div key={i} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "10px 14px", marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>Step {i + 1} — {step.label}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>{fmtM(step.amount)}</span>
+                </div>
+                {step.accounts.map(a => (
+                  <div key={a.id} style={{ fontSize: 11, color: "#64748b", marginBottom: 1 }}>
+                    → {a.name}: {fmtM(a.balance || 0)} available
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, marginTop: 5, display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  <span style={{ color: "#94a3b8" }}>Tax: {step.tax}</span>
+                  {step.note && <span style={{ color: step.note.startsWith("⚠") ? "#fbbf24" : "#475569" }}>{step.note}</span>}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+
+        {directive.type === "ok" && (
+          <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.6 }}>
+            Bucket 1 will approach floor in ~{directive.nextReview ?? "?"} months at current draw rate.<br/>
+            Check back then — or sooner if spending increases or markets fall significantly.
+          </div>
+        )}
+      </div>
+
+      {/* ── Bucket status cards ───────────────────────────────────────── */}
+      <div style={{ display: "flex", gap: 10 }}>
+        <BucketCard num={1} color="#0ea5e9" label="Bucket 1 — Cash" horizon="0–2 years · pay bills now"
+          actual={b1Actual} floor={b1Floor} target={b1Target} accounts={b1Accts} />
+        <BucketCard num={2} color="#a78bfa" label="Bucket 2 — Income" horizon="2–7 years · refills B1"
+          actual={b2Actual} floor={b2Floor} target={b2Target} accounts={b2Accts} />
+        <BucketCard num={3} color="#10b981" label="Bucket 3 — Growth" horizon="7+ years · last resort"
+          actual={b3Actual} floor={0} target={0} accounts={b3Accts} />
+      </div>
+
+      {/* ── Planning targets (collapsible) ───────────────────────────── */}
+      <div className="chart-card" style={{ padding: "10px 14px" }}>
+        <button onClick={() => setShowPlanning(v => !v)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 12, width: "100%", textAlign: "left", padding: 0 }}>
+          {showPlanning ? "▾" : "▸"} SS-Gap Planning Targets {port > 0 ? `(B1 ${fmtM(pt1)} · B2 ${fmtM(pt2)} · B3 ${fmtM(pt3)})` : ""}
+        </button>
+        {showPlanning && (
+          <div style={{ marginTop: 10 }}>
+            {[
+              { name: "Bucket 1 — Cash", horizon: "1–3 years", amount: pt1, color: "#0ea5e9",
+                purpose: `3-year runway at ${fmtK(netDraw)}/yr net draw. NEVER dual-purpose.`,
+                holdings: "HYSA · Money market · T-bills · CDs" },
+              { name: "Bucket 2 — Income & Stability", horizon: "3–10 years", amount: pt2, color: "#a78bfa",
+                purpose: `Bridges ${Math.max(3, ssAge - retireAge)}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`,
+                holdings: "30–50% Equities · 50–70% Fixed Income · Bonds · REITs" },
+              { name: "Bucket 3 — Long-Term Growth", horizon: "10+ years", amount: pt3, color: "#10b981",
+                purpose: "Protects against inflation & grows wealth for a decade or more.",
+                holdings: "50–100% Equities · Broad-market equity · International" },
+            ].map(b => (
+              <div key={b.name} style={{ marginBottom: 10, border: `1px solid ${b.color}33`, borderRadius: 8, padding: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: b.color }}>{b.name} <span style={{ fontSize: 9, color: "#475569", fontWeight: 400 }}>{b.horizon}</span></div>
+                  <div style={{ fontSize: 13, color: b.color, fontFamily: "'DM Mono',monospace" }}>{port > 0 ? fmtM(b.amount) : "—"}</div>
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>{b.purpose}</div>
+                <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}><span style={{ color: b.color }}>Holdings:</span> {b.holdings}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -7368,9 +7526,11 @@ function SavingsPanel({ values, onChange }) {
 
   const addAccount = (cat) => {
     const def = CATEGORIES.find(c => c.key === cat);
-    const newAccounts = [...accounts, { id: Date.now().toString(), category: cat, name: def ? def.defaultName : cat, balance: 0 }];
+    const newAccounts = [...accounts, { id: Date.now().toString(), category: cat, name: def ? def.defaultName : cat, balance: 0, bucket: _defaultBucket(cat) }];
     onChange("accounts", newAccounts);
   };
+
+  const setBucket = (id, b) => onChange("accounts", accounts.map(a => a.id === id ? { ...a, bucket: b } : a));
 
   const removeAccount = (id) => {
     const newAccounts = accounts.filter(a => a.id !== id);
@@ -7399,6 +7559,17 @@ function SavingsPanel({ values, onChange }) {
                 <div style={{ flex: 1 }}>
                   <ANumInput value={acct.balance || 0} onSet={(v) => handleBalance(acct.id, v)} min={0} max={5_000_000} step={5000} />
                 </div>
+                {[1,2,3].map(b => {
+                  const active = (acct.bucket ?? _defaultBucket(acct.category)) === b;
+                  return (
+                    <button key={b} onClick={() => setBucket(acct.id, b)} title={`Assign to Bucket ${b}`} style={{
+                      background: active ? cat.color + "33" : "transparent",
+                      border: `1px solid ${active ? cat.color : "rgba(255,255,255,0.1)"}`,
+                      color: active ? cat.color : "#334155",
+                      borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 700, cursor: "pointer", lineHeight: 1.4,
+                    }}>B{b}</button>
+                  );
+                })}
                 <button
                   onClick={() => removeAccount(acct.id)}
                   style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14, padding: "2px 4px", opacity: 0.5 }}
