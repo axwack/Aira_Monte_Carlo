@@ -4997,15 +4997,15 @@ function _loadBCfg() {
 }
 
 function BucketsTab({ params = {} }) {
-  const [showPlanning, setShowPlanning] = useState(false);
   const [bCfg, setBCfg] = useState(_loadBCfg);
   const saveBCfg = (patch) => {
     const next = { ..._loadBCfg(), ...patch };
     try { localStorage.setItem(_BCFG_KEY, JSON.stringify(next)); } catch {}
     setBCfg(next);
   };
-  const b1Years = bCfg.b1Years ?? 3;   // user-adjustable, default 3yr
-  const b2Years = bCfg.b2Years ?? 5;   // user-adjustable, default 5yr
+  const b1Years  = bCfg.b1Years ?? 3;       // user-adjustable, default 3yr
+  const b2Years  = bCfg.b2Years ?? 5;       // user-adjustable, default 5yr
+  const drawMode = bCfg.drawMode ?? "net";  // 'net' (default) or 'gross'
 
   // ── Core params ───────────────────────────────────────────────────────────
   const sp         = params.sp        || 0;
@@ -5016,7 +5016,17 @@ function BucketsTab({ params = {} }) {
   const gkFloor    = params.gkFloor   || 0;
   const yrsToRetire = Math.max(0, retireAge - currentAge);
   const retireYear  = new Date().getFullYear() + yrsToRetire;
-  const monthly     = sp > 0 ? Math.round(sp / 12) : 0;
+
+  // ── Net draw: gross spend + mortgage P&I − rental/property income ─────────
+  const mortAnnualPI = (() => {
+    if (!params.mortBalance || params.mortBalance <= 0) return 0;
+    const ms = mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0);
+    return ms.pmt * 12;
+  })();
+  const propIncome  = params.propIncome || 0;
+  const netDraw     = Math.max(0, sp + mortAnnualPI - propIncome);
+  const spendBasis  = drawMode === "gross" ? sp : netDraw;   // what bucket targets sit on
+  const monthly     = spendBasis > 0 ? Math.round(spendBasis / 12) : 0;
 
   // ── Actual balances from designated accounts ──────────────────────────────
   const accts  = params.accounts || [];
@@ -5030,12 +5040,13 @@ function BucketsTab({ params = {} }) {
   const hasAccounts = (b1Actual + b2Actual + b3Actual) > 0;
 
   // ── Thresholds ────────────────────────────────────────────────────────────
-  // Thresholds driven by user-configured year targets (b1Years, b2Years).
-  const b1Floor    = sp;                                          // 1yr — always the replenish trigger
-  const b1Target   = sp * b1Years;                               // user-set (default 3yr)
-  const ssGapYears = Math.max(b2Years, ssAge - retireAge);       // at least b2Years bridge
-  const b2Floor    = sp * b2Years;
-  const b2Target   = Math.max(b2Floor, Math.round(ssGapYears * sp));
+  // Thresholds driven by user-configured year targets (b1Years, b2Years) and
+  // the active spend basis (net draw by default; gross spend if user opts in).
+  const b1Floor    = spendBasis;                                       // 1yr — always the replenish trigger
+  const b1Target   = spendBasis * b1Years;                             // user-set (default 3yr)
+  const ssGapYears = Math.max(b2Years, ssAge - retireAge);             // at least b2Years bridge
+  const b2Floor    = spendBasis * b2Years;
+  const b2Target   = Math.max(b2Floor, Math.round(ssGapYears * spendBasis));
 
   // ── Simulation row for tax guidance ──────────────────────────────────────
   const simRow = useMemo(() => {
@@ -5126,19 +5137,46 @@ function BucketsTab({ params = {} }) {
   const monthName = now.toLocaleString("default", { month: "long" });
 
   // ── Bucket status card helper ─────────────────────────────────────────────
-  function BucketCard({ num, color, label, horizon, actual, floor, target, accounts: acctList }) {
+  function BucketCard({ num, color, label, horizon, actual, floor, target, accounts: acctList, role, holdings }) {
+    const [showInfo, setShowInfo] = useState(false);
     const barPct  = target > 0 ? Math.min(100, actual / target * 100) : 0;
     const status  = actual < floor ? "below" : actual < target ? "ok" : "full";
     const barClr  = status === "below" ? "#f87171" : status === "full" ? "#34d399" : color;
     const runway  = monthly > 0 && num === 1 ? (actual / monthly).toFixed(1) : null;
     return (
-      <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1 }}>
+      <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1, position: "relative" }}>
+        {(role || holdings) && (
+          <div
+            onMouseEnter={() => setShowInfo(true)}
+            onMouseLeave={() => setShowInfo(false)}
+            style={{ position: "absolute", top: 0, right: 0, paddingTop: 6, paddingRight: 6, paddingLeft: 10, paddingBottom: showInfo ? 8 : 4, cursor: "help" }}
+            aria-label="Bucket role and recommended holdings"
+          >
+            <span style={{ color: showInfo ? color : "#475569", fontSize: 11, userSelect: "none", transition: "color 0.15s" }}>ⓘ</span>
+            {showInfo && (
+              <div style={{ position: "absolute", top: "100%", right: 0, background: "rgba(15,23,42,0.98)", border: `1px solid ${color}66`, borderRadius: 6, padding: 10, fontSize: 11, color: "#cbd5e1", zIndex: 20, width: 240, lineHeight: 1.5, boxShadow: "0 6px 16px rgba(0,0,0,0.5)", cursor: "default" }}>
+                {role && (
+                  <>
+                    <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Role</div>
+                    <div style={{ marginBottom: holdings ? 8 : 0 }}>{role}</div>
+                  </>
+                )}
+                {holdings && (
+                  <>
+                    <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Recommended holdings</div>
+                    <div>{holdings}</div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color }}>{label}</div>
             <div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>{horizon}</div>
           </div>
-          <div style={{ textAlign: "right" }}>
+          <div style={{ textAlign: "right", paddingRight: role || holdings ? 16 : 0 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: barClr, fontFamily: "'DM Mono',monospace" }}>{actual > 0 ? fmtM(actual) : "—"}</div>
             {runway && <div style={{ fontSize: 9, color: "#64748b" }}>{runway} mo runway</div>}
           </div>
@@ -5170,18 +5208,6 @@ function BucketsTab({ params = {} }) {
       </div>
     );
   }
-
-  // ── Planning targets (old BucketsTab content) ─────────────────────────────
-  const mortAnnualPI = (() => {
-    if (!params.mortBalance || params.mortBalance <= 0) return 0;
-    const ms = mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0);
-    return ms.pmt * 12;
-  })();
-  const propIncome = params.propIncome || 0;
-  const netDraw    = Math.max(0, sp + mortAnnualPI - propIncome);
-  const pt1 = Math.round(3 * netDraw);
-  const pt2 = Math.round(Math.max(3, ssAge - retireAge) * netDraw);
-  const pt3 = Math.max(0, port - pt1 - pt2);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -5256,8 +5282,8 @@ function BucketsTab({ params = {} }) {
         )}
       </div>
 
-      {/* ── Year selectors ────────────────────────────────────────────── */}
-      <div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px" }}>
+      {/* ── Buffer + draw-mode controls ──────────────────────────────── */}
+      <div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px", flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>Buffer targets:</span>
         {[
           { label: "B1 years", key: "b1Years", val: b1Years, min: 1, max: 7, hint: "3–5 recommended" },
@@ -5271,47 +5297,46 @@ function BucketsTab({ params = {} }) {
             <span style={{ fontSize: 9, color: "#334155" }}>{hint}</span>
           </div>
         ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+          <span
+            style={{ fontSize: 11, color: "#64748b", cursor: "help" }}
+            title={`Net (${fmtK(netDraw)}/yr) = spending + mortgage P&I − rental income — what the portfolio actually has to fund.\nGross (${fmtK(sp)}/yr) = headline spend, ignoring rental offsets and mortgage.`}
+          >Draw basis:</span>
+          {[
+            { val: "net",   label: `Net ${fmtK(netDraw)}/yr` },
+            { val: "gross", label: `Gross ${fmtK(sp)}/yr` },
+          ].map(opt => {
+            const active = drawMode === opt.val;
+            return (
+              <button
+                key={opt.val}
+                onClick={() => saveBCfg({ drawMode: opt.val })}
+                style={{
+                  background: active ? "rgba(14,165,233,0.18)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${active ? "#0ea5e9" : "rgba(255,255,255,0.1)"}`,
+                  color: active ? "#0ea5e9" : "#94a3b8",
+                  borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontWeight: active ? 600 : 400,
+                }}
+              >{opt.label}</button>
+            );
+          })}
+        </div>
       </div>
 
       {/* ── Bucket status cards ───────────────────────────────────────── */}
       <div style={{ display: "flex", gap: 10 }}>
         <BucketCard num={1} color="#0ea5e9" label="Bucket 1 — Cash" horizon={`0–${b1Years} years · pay bills now`}
-          actual={b1Actual} floor={b1Floor} target={b1Target} accounts={b1Accts} />
+          actual={b1Actual} floor={b1Floor} target={b1Target} accounts={b1Accts}
+          role={`${b1Years}-year runway at ${fmtK(spendBasis)}/yr ${drawMode === "net" ? "net draw" : "gross spend"}. Pays bills now — NEVER dual-purpose.`}
+          holdings="HYSA · Money market · T-bills · CDs" />
         <BucketCard num={2} color="#a78bfa" label="Bucket 2 — Income" horizon={`${b1Years}–${b1Years + b2Years} years · refills B1`}
-          actual={b2Actual} floor={b2Floor} target={b2Target} accounts={b2Accts} />
+          actual={b2Actual} floor={b2Floor} target={b2Target} accounts={b2Accts}
+          role={`Bridges ${ssGapYears}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`}
+          holdings="30–50% Equities · 50–70% Fixed Income · Bonds · REITs" />
         <BucketCard num={3} color="#10b981" label="Bucket 3 — Growth" horizon={`${b1Years + b2Years}+ years · last resort`}
-          actual={b3Actual} floor={0} target={0} accounts={b3Accts} />
-      </div>
-
-      {/* ── Planning targets (collapsible) ───────────────────────────── */}
-      <div className="chart-card" style={{ padding: "10px 14px" }}>
-        <button onClick={() => setShowPlanning(v => !v)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 12, width: "100%", textAlign: "left", padding: 0 }}>
-          {showPlanning ? "▾" : "▸"} SS-Gap Planning Targets {port > 0 ? `(B1 ${fmtM(pt1)} · B2 ${fmtM(pt2)} · B3 ${fmtM(pt3)})` : ""}
-        </button>
-        {showPlanning && (
-          <div style={{ marginTop: 10 }}>
-            {[
-              { name: "Bucket 1 — Cash", horizon: "1–3 years", amount: pt1, color: "#0ea5e9",
-                purpose: `3-year runway at ${fmtK(netDraw)}/yr net draw. NEVER dual-purpose.`,
-                holdings: "HYSA · Money market · T-bills · CDs" },
-              { name: "Bucket 2 — Income & Stability", horizon: "3–10 years", amount: pt2, color: "#a78bfa",
-                purpose: `Bridges ${Math.max(3, ssAge - retireAge)}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`,
-                holdings: "30–50% Equities · 50–70% Fixed Income · Bonds · REITs" },
-              { name: "Bucket 3 — Long-Term Growth", horizon: "10+ years", amount: pt3, color: "#10b981",
-                purpose: "Protects against inflation & grows wealth for a decade or more.",
-                holdings: "50–100% Equities · Broad-market equity · International" },
-            ].map(b => (
-              <div key={b.name} style={{ marginBottom: 10, border: `1px solid ${b.color}33`, borderRadius: 8, padding: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: b.color }}>{b.name} <span style={{ fontSize: 9, color: "#475569", fontWeight: 400 }}>{b.horizon}</span></div>
-                  <div style={{ fontSize: 13, color: b.color, fontFamily: "'DM Mono',monospace" }}>{port > 0 ? fmtM(b.amount) : "—"}</div>
-                </div>
-                <div style={{ fontSize: 11, color: "#64748b" }}>{b.purpose}</div>
-                <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}><span style={{ color: b.color }}>Holdings:</span> {b.holdings}</div>
-              </div>
-            ))}
-          </div>
-        )}
+          actual={b3Actual} floor={0} target={0} accounts={b3Accts}
+          role="Protects against inflation & grows wealth for a decade or more."
+          holdings="50–100% Equities · Broad-market equity · International" />
       </div>
     </div>
   );
