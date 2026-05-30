@@ -301,6 +301,63 @@ export const ABOUT_FEATURES = [
       create a better RMD and Roth conversion schedule for the years after, since it knows how much of your tax bracket you used in the year you made the conversion.`,
      },
 
+  // ── 3-Bucket Strategy ────────────────────────────────────
+  {
+    id:    "bucket-overview",
+    group: "3-Bucket Strategy",
+    icon:  "🪣",
+    title: "What Are the 3 Buckets?",
+    body:  `The 3-bucket strategy organizes your retirement assets by <em>when</em> you need them, not just what they are. Each bucket has a specific job and a rule about when it can be touched.<br/><br/>
+<strong style="color:#0ea5e9;">Bucket 1 — Cash (0–2 years)</strong><br/>
+Your checking account for retirement. This is the money that pays your bills right now — HYSA, money market, SGOV, short-term T-bills. It should hold 1–2 years of spending so a market crash never forces you to sell stocks at the worst moment. <em>Never invest this bucket in anything that can lose value.</em><br/><br/>
+<strong style="color:#a78bfa;">Bucket 2 — Income &amp; Stability (2–7 years)</strong><br/>
+The bridge bucket. Bonds, balanced funds, dividend-paying stocks, REITs — conservative investments that can be liquidated safely when markets are down. When Bucket 1 runs low, you sell from here to refill it. This bucket should hold 3–7 years of spending so you're never forced to touch Bucket 3 during a downturn. In AiRA, your taxable brokerage and pre-tax IRA default to Bucket 2.<br/><br/>
+<strong style="color:#10b981;">Bucket 3 — Long-Term Growth (7+ years)</strong><br/>
+The engine room. Stocks, growth funds, international equity — assets that can drop 40% and you don't care, because you don't need this money for a decade. This is where your Roth IRA lives. Let it compound. In AiRA, Roth and HSA accounts default to Bucket 3.<br/><br/>
+<strong style="color:#e2e8f0;">Why it works:</strong> Sequence-of-returns risk — a crash in your first few years of retirement — is the biggest threat to a retirement plan. Buckets eliminate the problem by ensuring you always have 1–2 years of cash on hand. You never sell stocks when they're down 40%. You wait, draw from cash, and refill when the market recovers.`,
+  },
+  {
+    id:    "bucket-setup",
+    group: "3-Bucket Strategy",
+    icon:  "⚙",
+    title: "Setting Up Your Buckets",
+    body:  `AiRA assigns each account to a bucket automatically based on account type, but you can override any assignment.<br/><br/>
+<strong style="color:#e2e8f0;">Default assignments:</strong><br/>
+• <strong style="color:#94a3b8;">Cash / Savings</strong> → Bucket 1 (your spending runway)<br/>
+• <strong style="color:#fbbf24;">Taxable Brokerage</strong> → Bucket 2 (sell here first when B1 runs low)<br/>
+• <strong style="color:#0ea5e9;">Pre-Tax IRA / 401(k)</strong> → Bucket 2 (bracket-limited draws)<br/>
+• <strong style="color:#a78bfa;">Roth IRA</strong> → Bucket 3 (last resort, let it grow)<br/>
+• <strong style="color:#34d399;">HSA</strong> → Bucket 3 (tax-free for medical, treat as growth)<br/><br/>
+<strong style="color:#e2e8f0;">To override:</strong> Go to <strong>Profile → Savings</strong>. Each account row has <strong>[B1] [B2] [B3]</strong> buttons. Click the button for the bucket you want that account assigned to. The button highlights when active.<br/><br/>
+<strong style="color:#e2e8f0;">Common override scenarios:</strong><br/>
+• You hold bonds <em>inside</em> your Roth → reassign that Roth account to B2<br/>
+• You have a Solo 401(k) you want to keep as long-term growth → reassign to B3<br/>
+• You have a money market inside a taxable account → reassign to B1<br/><br/>
+Once your accounts are assigned, the <strong>🪣 Buckets tab</strong> automatically shows your live balances, progress toward floor/target for each bucket, and a monthly directive telling you exactly what to do.`,
+  },
+  {
+    id:    "bucket-directive",
+    group: "3-Bucket Strategy",
+    icon:  "📋",
+    title: "Reading the Monthly Directive",
+    body:  `The <strong>📋 Monthly Directive</strong> at the top of the Buckets tab is the operational heart of the bucket system. It checks your actual account balances against your floor and target thresholds and gives you a specific instruction.<br/><br/>
+<strong style="color:#34d399;">✅ All buckets healthy — no action needed</strong><br/>
+Everything is within range. The directive shows how many months until Bucket 1 approaches its floor so you know when to check back.<br/><br/>
+<strong style="color:#fbbf24;">🟡 Bucket 1 below target — consider topping up</strong><br/>
+You're above the floor (safe) but below the 2-year target. No urgency, but the directive shows you which account to pull from and how much if you want to restore the buffer now.<br/><br/>
+<strong style="color:#f87171;">🔴 Bucket 1 below floor — replenish now</strong><br/>
+Act on this. The directive shows step-by-step which account to sell from, how much, and the estimated tax on each move — in order of lowest-tax-first:<br/>
+&nbsp;&nbsp;<strong>Step 1</strong> — Sell from your taxable brokerage (0% LTCG if you're in a low bracket)<br/>
+&nbsp;&nbsp;<strong>Step 2</strong> — Withdraw from your pre-tax IRA / 401(k), limited to stay within your current bracket<br/>
+&nbsp;&nbsp;<strong>Step 3</strong> — Roth only as an emergency (never touch this if B2 has anything left)<br/><br/>
+<strong style="color:#e2e8f0;">Floor and target thresholds:</strong><br/>
+• B1 Floor = your GK minimum annual spend (1 year at the belt-tightening rate)<br/>
+• B1 Target = 2× your planned annual spending (2-year buffer)<br/>
+• B2 Floor = 3× your annual spending<br/>
+• B2 Target = years until Social Security × annual spending<br/><br/>
+<strong style="color:#e2e8f0;">Tax guidance is live:</strong> The tax estimate in each step comes from AiRA's waterfall simulation — it uses your actual projected income in the first year of retirement to determine your marginal bracket and whether you're in the 0% LTCG zone.`,
+  },
+
   // ── AI Action Plan ────────────────────────────────────────
   {
     id:    "ai-analysis",
