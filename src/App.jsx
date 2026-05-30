@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.0.9.6";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.6 — 3-bucket operational directive in Buckets tab.";
+const APP_VERSION = "1.0.9.7";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.0.9.7 — Dynamic account names in directive; bucket How-To in About.";
 export const BUILD_TIME = "2026-05-29T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
