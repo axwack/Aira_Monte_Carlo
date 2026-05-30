@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.1";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.1 — Rename Scenarios→Analysis; Income and Real Estate moved to sub-tabs.";
+const APP_VERSION = "1.1.0.2";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.2 — Safe spending target uses actual strategy, not hardcoded 4%.";
 export const BUILD_TIME = "2026-05-29T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -6151,9 +6151,24 @@ function NetWorthTab({ p, results90, inf }) {
         <div className="met">
           <div className="ml">Safe spending target</div>
           <div className="mv" style={{ color: "#4ade80", fontSize: 18 }}>
-            ${Math.round(((p.accounts||[]).reduce((s,a)=>s+(a.balance||0),0)||p.port||0) * 0.04 / 12).toLocaleString()}
+            {(() => {
+              const port = (p.accounts||[]).reduce((s,a)=>s+(a.balance||0),0) || p.port || 0;
+              const strategy = p.withdrawalStrategy || "gk";
+              const monthly = strategy === "fixed"
+                ? Math.round(port * (p.fixedWithdrawalRate || 4) / 100 / 12)
+                : p.sp > 0
+                  ? Math.round(p.sp / 12)
+                  : Math.round(port * 0.04 / 12);
+              return `$${monthly.toLocaleString()}`;
+            })()}
           </div>
-          <div className="ms">4% rule · per month</div>
+          <div className="ms">
+            {(() => {
+              const s = p.withdrawalStrategy || "gk";
+              const labels = { gk:"GK guardrails", fixed:`Fixed ${p.fixedWithdrawalRate||4}%`, vanguard:"Vanguard dynamic", vpw:"VPW", kitces:"Kitces ratchet", cape:"CAPE-based", endowment:"Endowment", risk:"Risk-based", one_n:"1/N rule", ninety_five_rule:"95% rule" };
+              return `${labels[s] || s} · per month`;
+            })()}
+          </div>
         </div>
       </div>
 
