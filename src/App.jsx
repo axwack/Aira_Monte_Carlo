@@ -140,6 +140,40 @@ function expectedReturn(eqPct) {
   return parseFloat((w * SP500_MEAN * 100 + (1 - w) * BONDS_MEAN * 100).toFixed(2));
 }
 
+/**
+ * Initial withdrawal rate diagnostic.
+ * Projects portfolio to retirement using REAL return (so result stays in today's dollars).
+ * Returns { initWRpct, projectedPort, initDrawEst, baseSpend, ssAtRetire, rentalAtRetire,
+ * annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } so callers can show the math.
+ * Accepts either a profile shape (values from RetirementPanel) or the assembled params shape.
+ */
+function computeInitialWR(p) {
+  const currentAge = p.currentAge || 35;
+  const retireAge = p.retireAge || 65;
+  const ssAge = p.ssAge || 67;
+  const yrsToRetire = Math.max(0, retireAge - currentAge);
+  const eqPct = p.preRetireEq ?? 91;
+  const nominalRate = expectedReturn(eqPct) / 100;
+  const inflRate = (p.inf || 2.5) / 100;
+  const accumRate = nominalRate - inflRate;
+  const hsaAnnual = p.hsaContrib != null ? p.hsaContrib : (p.hsaMonthly || 0) * 12;
+  const annualAdds = (p.contrib || 0) + (p.employerContrib || 0) + hsaAnnual;
+  const growth = (yrs) => Math.pow(1 + accumRate, yrs);
+  const projectedPort = (p.port || 0) * growth(yrsToRetire) +
+    (yrsToRetire > 0 && accumRate > 0
+      ? annualAdds * (growth(yrsToRetire) - 1) / accumRate
+      : annualAdds * yrsToRetire);
+  // p.sp must be the total combined household spending (US + out-of-country).
+  // The params useMemo already sums these; raw-profile callers must sum before calling.
+  const baseSpend = p.sp || 0;
+  const ssAtRetire = retireAge >= ssAge ? (p.ssb || 0) : 0;
+  const rentalAtRetire = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
+  const initDrawEst = Math.max(0, baseSpend - ssAtRetire - rentalAtRetire);
+  const initWRpct = projectedPort > 0 ? (initDrawEst / projectedPort) * 100 : 0;
+  return { initWRpct, projectedPort, initDrawEst, baseSpend, ssAtRetire, rentalAtRetire,
+    annualAdds, accumRate, nominalRate, inflRate, yrsToRetire };
+}
+
 const JOINT_RMD_TABLE = {
   // Joint & Last Survivor — assumes spouse is 10 years younger (IRS Pub 590-B Table II excerpt)
   73: 25.3, 74: 24.6, 75: 24.0, 76: 23.4, 77: 22.8,
@@ -335,8 +369,9 @@ export const BLANK_PROFILE = {
   contrib: 20,
   employerContrib: 0,           // annual employer contribution (fixed dollar amount, e.g. 401k match + profit sharing)
   inf: 2.5,
-  sp: 10_000,
-  spSpendOutofState: 0,
+  sp: 10_000,                   // US-domestic annual spending (subject to state tax when applicable)
+  spOutOfCountry: 0,            // additive out-of-country annual spending (never state-taxed)
+  spSpendOutofState: 0,         // legacy field — kept for profile-load migration; superseded by spOutOfCountry
   portfolioGoal: 1_000_000,
   ssAge: 67,
   ssb: 24_000,
@@ -373,7 +408,7 @@ export const BLANK_PROFILE = {
   // Expense model
   housingType: "own",           // "own" | "rent" | "none"
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
-  carveouts: [],                // [{id, label, annual, endYear}] fixed obligations (car, HOA, etc.)
+  carveouts: [],                // [{id, label, annual, endYear}] Other Expenses (HOA, Insurance, etc.) in today's dollars; endYear = null for indefinite
   rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
   fafsaGuard: false,            // cap Roth conversions during college aid years — set true + fafsaEndYear to activate
   fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window); e.g. 2034
@@ -2283,11 +2318,11 @@ const LS_PROFILE_KEY = "aira_profile_v1";
 function saveProfileToLocal(values) {
   try {
     const hasPropIncome = (values.properties || []).some(pr => Number(pr.income) > 0);
-    const rct = values.rothConversionTarget || "off";
     const payload = {
       ...values,
       ab: hasPropIncome ? 0 : (values.ab || 0),
-      rothConversionTarget: rct.startsWith("fill_") ? rct.replace("fill_", "") : rct,
+      // rothConversionTarget preserves its raw value (e.g. "fill_22") so the dropdown
+      // round-trips correctly. Engine strips "fill_" at the params boundary.
       fafsaEndYear: values.fafsaEndYear || null,
       cssEndYear: values.cssEndYear || null,
       savedAt: new Date().toISOString(),
@@ -2302,7 +2337,18 @@ function saveProfileToLocal(values) {
 function loadProfileFromLocal() {
   try {
     const raw = localStorage.getItem(LS_PROFILE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    // Migration: spSpendOutofState (legacy scenario-swap field) -> spOutOfCountry (additive).
+    if (data && data.spOutOfCountry == null && data.spSpendOutofState) {
+      data.spOutOfCountry = data.spSpendOutofState;
+    }
+    // Migration: legacy saves stripped the "fill_" prefix from rothConversionTarget.
+    // Restore it so the dropdown matches an option again.
+    if (data && data.rothConversionTarget && /^\d+$/.test(data.rothConversionTarget)) {
+      data.rothConversionTarget = "fill_" + data.rothConversionTarget;
+    }
+    return data;
   } catch {
     return null;
   }
@@ -8019,7 +8065,7 @@ function AssumptionsPanel({ values, onChange }) {
         )}
         <div style={{ marginTop: 12 }}>
           <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, marginBottom: 8 }}>
-            Fixed Obligations (car loans, HOA, etc.)
+            Other Expenses or One Time Obligations (HOA fees, subscriptions, etc. )
           </div>
           {(values.carveouts || []).map((c, idx) => (
             <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 80px 28px", gap: 6, marginBottom: 6, alignItems: "center" }}>
@@ -8224,9 +8270,6 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
         <ARow label="Post-retirement equity weight" desc="Equity % after retirement age (default 70%)">
           <CleanNumberInput value={values.postRetireEq} onChange={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} />
-        </ARow>
-        <ARow label="Fixed Withdrawal Rate" desc="Annual percentage of portfolio to withdraw when using 'Fixed %' strategy (default 4%).">
-          <CleanNumberInput value={values.fixedWithdrawalRate} onChange={(v) => onChange("fixedWithdrawalRate", v)} min={2} max={10} step={0.1} />
         </ARow>
       </div>
 
@@ -8452,33 +8495,81 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
 }
 
 function RetirementPanel({ values, onChange }) {
-  const spend = values.sp || 100000;
-  const twoHousehold = values.twoHousehold ?? true;
-  const baseSpend = twoHousehold ? (values.spSpendOutofState || spend) : spend;
+  const usSp = values.sp || 0;
+  const outOfCountrySp = values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0);
+  const combinedSp = usSp + outOfCountrySp;
+  const twoHousehold = values.twoHousehold ?? false;   // toggle ONLY controls state tax now
+  const baseSpend = combinedSp || 100000;
   const floorPct = values.gkFloorPct ?? 65;
   const ceilingPct = values.gkCeilingPct ?? 135;
   const floor = Math.round(baseSpend * (floorPct / 100));
   const ceiling = Math.round(baseSpend * (ceilingPct / 100));
   const strategy = values.withdrawalStrategy || "gk";
 
+  // Initial WR diagnostic — pass combined sp so the helper, the GK card, the metrics WR
+  // badge, and the gk-bar strategy strap all show the same number.
+  const wr = computeInitialWR({ ...values, sp: combinedSp });
+  const { initWRpct, projectedPort, initDrawEst, ssAtRetire, rentalAtRetire,
+    annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } = wr;
+  const retireAge = values.retireAge || 65;
+  const inSafeBand = initWRpct >= 5.0 && initWRpct <= 5.5;
+  const wrColor = inSafeBand ? "#34d399" : (initWRpct > 5.5 ? "#f87171" : "#fbbf24");
+
   const activeScenario = twoHousehold
-    ? "🌴 Out‑of‑State / Offshore (No state income tax)"
-    : `🏠 Both in ${values.stateOfResidence || "your state"} (State tax applies)`;
+    ? "🌴 Claiming non-residency — no state income tax"
+    : `🏠 Resident of ${values.stateOfResidence || "your state"} — state tax applies`;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#7dd3fc" }}>
-        <strong>Current scenario:</strong> {activeScenario} · Toggle in sidebar → "Solo / Low‑Tax Mode"
+        <strong>State tax:</strong> {activeScenario} · Sidebar toggle → "Non-resident (no state tax)"
+      </div>
+
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>WITHDRAWAL STRATEGY</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <select
+            value={strategy}
+            onChange={(e) => onChange("withdrawalStrategy", e.target.value)}
+            style={{
+              width: "100%",
+              background: "#0d1b2a",
+              border: "1px solid #1e3a5f",
+              color: "#e2e8f0",
+              borderRadius: 6,
+              padding: "8px 10px",
+              fontSize: 13,
+              fontFamily: "'Inter',sans-serif",
+            }}
+          >
+            <option value="smart">📋 Smart Waterfall (Tax-Optimal)</option>
+            <option value="gk">Guyton‑Klinger (Dynamic)</option>
+            <option value="fixed">Fixed % of Portfolio</option>
+            <option value="vanguard">Vanguard Dynamic Spending</option>
+            <option value="risk">Risk‑Based Guardrails</option>
+            <option value="kitces">Kitces Ratcheting</option>
+            <option value="vpw">VPW (Variable Percentage)</option>
+            <option value="cape">CAPE‑Based</option>
+            <option value="endowment">Endowment (Yale) Model</option>
+            <option value="one_n">1/N (Remaining Years)</option>
+            <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
+          </select>
+          <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(strategy)}</div>
+        </div>
       </div>
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
-        <WFieldRow label="Primary Annual Spending" helper="Our main household spending target. Used when living in NJ (state tax applies).">
+        <WFieldRow label="US Spending (annual)" helper="Domestic household spending in today's dollars. Subject to state income tax when residing in-state.">
           <ANumInput value={values.sp || 0} onSet={(v) => onChange("sp", v)} min={0} max={500000} step={1000} suffix="/yr" />
         </WFieldRow>
-        <WFieldRow label="Secondary Spending (No State Tax)" helper="Optional lower spending for travel or zero‑tax locations. Used when 'Solo Mode' toggle is ON.">
-          <ANumInput value={values.spSpendOutofState || 0} onSet={(v) => onChange("spSpendOutofState", v)} min={0} max={500000} step={1000} suffix="/yr" />
+        <WFieldRow label="Out-of-Country Spending (annual)" helper="Spending that occurs abroad in today's dollars. Always drawn from the portfolio but never subject to US state tax.">
+          <ANumInput value={values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={500000} step={1000} suffix="/yr" />
         </WFieldRow>
+        <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span>Total combined annual spending (used for portfolio draw)</span>
+          <strong style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace", fontSize: 14 }}>{fmtK(combinedSp)}/yr</strong>
+        </div>
       </div>
 
       <div>
@@ -8511,6 +8602,27 @@ function RetirementPanel({ values, onChange }) {
         {strategy === "gk" && (
           <>
             <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails</div>
+            <div style={{
+              marginBottom: 14,
+              padding: "10px 12px",
+              background: inSafeBand ? "rgba(52,211,153,0.08)" : "rgba(251,191,36,0.08)",
+              border: `1px solid ${wrColor}40`,
+              borderRadius: 8,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#94a3b8" }}>Initial portfolio draw rate</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: wrColor, fontFamily: "'DM Mono',monospace" }}>{initWRpct.toFixed(1)}%</div>
+                <div style={{ fontSize: 11, color: "#64748b", marginLeft: "auto", fontStyle: "italic" }}>
+                  {inSafeBand ? "in 5–5.5% safe band" : initWRpct > 5.5 ? "above safe band — consider lower spend or later retirement" : "below safe band — room to spend more or retire earlier"}
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: "#64748b", fontFamily: "'DM Mono',monospace", lineHeight: 1.5 }}>
+                spend {fmtK(baseSpend)} − SS {fmtK(ssAtRetire)} − rental {fmtK(rentalAtRetire)} = portfolio draw {fmtK(initDrawEst)}<br/>
+                projected portfolio at age {retireAge} (today's dollars): {fmtK(projectedPort)}<br/>
+                = current {fmtK(values.port || 0)} grown {yrsToRetire}yr @ {(accumRate * 100).toFixed(1)}% real ({(nominalRate * 100).toFixed(1)}% nominal − {(inflRate * 100).toFixed(1)}% infl) + {fmtK(annualAdds)}/yr contrib<br/>
+                ⇒ {fmtK(initDrawEst)} ÷ {fmtK(projectedPort)} = <strong style={{ color: wrColor }}>{initWRpct.toFixed(1)}%</strong>
+              </div>
+            </div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = {floorPct}% of core spend · Ceiling = {ceilingPct}% of core spend</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
               <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>{floorPct}%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div></div>
@@ -8528,14 +8640,14 @@ function RetirementPanel({ values, onChange }) {
             <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(14,165,233,0.06)", border: "1px solid rgba(14,165,233,0.18)", borderRadius: 8, fontSize: 11, color: "#94a3b8", lineHeight: 1.55 }}>
               <div style={{ fontWeight: 700, color: "#7dd3fc", marginBottom: 6 }}>Guyton‑Klinger — the 5 rules</div>
               <div style={{ marginLeft: 8, marginBottom: 6 }}>
-                <strong>1. Initial draw.</strong> Start near 5–5.5% of portfolio (the paper's safe band).<br/>
+                <strong>1. Initial draw.</strong> Derived from your spending ÷ portfolio at retirement. Safe range is 5–5.5%.<br/>
                 <strong>2. Capital Preservation.</strong> If WR rises 20% above initial → cut spending 10%.<br/>
                 <strong>3. Prosperity.</strong> If WR falls 20% below initial → raise spending 10%.<br/>
                 <strong>4. Inflation rule.</strong> Adjust spending by CPI only after positive-return years, capped at 6%.<br/>
                 <strong>5. Longevity rule.</strong> Skip the −10% cut when ≤15 years remain to your end-age.
               </div>
-              <div style={{ marginBottom: 4 }}>The <strong style={{ color: "#fbbf24" }}>Floor</strong> and <strong style={{ color: "#34d399" }}>Ceiling</strong> sliders above are a safety belt on top of the paper rules — spending can drift within those bands but never past them.</div>
-              <div style={{ fontStyle: "italic", color: "#64748b" }}>Defaults (65 / 135) match the original GK paper. Tighten (e.g. 80 / 120) to keep spending closer to plan; widen (e.g. 55 / 150) to allow larger swings.</div>
+              <div style={{ marginBottom: 4 }}>The <strong style={{ color: "#fbbf24" }}>Floor</strong> and <strong style={{ color: "#34d399" }}>Ceiling</strong> sliders above are a safety belt on top of the 5 rules — spending can drift within those bands but never past them.</div>
+              <div style={{ fontStyle: "italic", color: "#64748b" }}>Defaults: 65 / 135. Tighten (e.g. 80 / 120) to keep spending closer to plan; widen (e.g. 55 / 150) to allow larger swings.</div>
             </div>
           </>
         )}
@@ -8543,7 +8655,12 @@ function RetirementPanel({ values, onChange }) {
           <>
             <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>📊 Fixed Percentage Withdrawal</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Each year, withdraw a fixed percentage of the current portfolio balance.</div>
-            <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569" }}>Withdrawal Rate</div><div style={{ fontSize: 32, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>{values.fixedWithdrawalRate || 4.0}%</div><div style={{ fontSize: 10, color: "#334155" }}>of portfolio balance each year</div></div>
+            <div style={{ textAlign: "center", marginBottom: 14 }}><div style={{ fontSize: 11, color: "#475569" }}>Withdrawal Rate</div><div style={{ fontSize: 32, fontWeight: 700, color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>{values.fixedWithdrawalRate || 4.0}%</div><div style={{ fontSize: 10, color: "#334155" }}>of portfolio balance each year</div></div>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <WFieldRow label="Withdrawal Rate" helper="Annual percentage of portfolio to withdraw (default 4%).">
+                <ANumInput value={values.fixedWithdrawalRate ?? 4.0} onSet={(v) => onChange("fixedWithdrawalRate", v)} min={2} max={10} step={0.1} suffix="%" />
+              </WFieldRow>
+            </div>
             <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>Spending will fluctuate with portfolio value.</div>
           </>
         )}
@@ -8857,10 +8974,14 @@ export default function AiRAForecaster() {
       employerContrib: assumptions.employerContrib || 0,
       hsaContrib: Math.round((assumptions.hsaMonthly || 0) * 12),
       accounts: assumptions.accounts,
-      sp: assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp,
-      spSpendOutofState: assumptions.spSpendOutofState,
-      gkFloor: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * ((assumptions.gkFloorPct ?? 65) / 100)),
-      gkCeiling: Math.round((assumptions.twoHousehold ? (assumptions.spSpendOutofState || sp) : sp) * ((assumptions.gkCeilingPct ?? 135) / 100)),
+      // Portfolio draw = US + out-of-country (always combined). State-tax toggle is now
+      // independent: twoHousehold ON means "claiming non-residency" and skips state tax,
+      // but does NOT swap the spending value.
+      sp: (sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0),
+      spOutOfCountry: assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0,
+      spSpendOutofState: assumptions.spSpendOutofState,   // legacy passthrough
+      gkFloor: Math.round(((sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0)) * ((assumptions.gkFloorPct ?? 65) / 100)),
+      gkCeiling: Math.round(((sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0)) * ((assumptions.gkCeilingPct ?? 135) / 100)),
       ssb,
       propIncome: (() => {
          const raw = (assumptions.properties || []).reduce((s, pr) => s + (Number(pr.income) || 0), 0);
@@ -8942,7 +9063,7 @@ export default function AiRAForecaster() {
     if (r85 || r90) setStale(true);
   }, [params]);
 
-  const swr = (port > 0 ? (params.sp / port) * 100 : 0).toFixed(1);
+  const swr = computeInitialWR(params).initWRpct.toFixed(1);
 
   const runSimulation = useCallback(() => {
     setRunning(true);
@@ -9037,7 +9158,7 @@ export default function AiRAForecaster() {
                     smile,
                     tax,
                     real,
-                    rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
+                    rothConversionTarget: assumptions.rothConversionTarget || "off",
                     fafsaEndYear: assumptions.fafsaEndYear || null,
                     cssEndYear: assumptions.cssEndYear || null,
                     geminiApiKey: assumptions.geminiApiKey || "",
@@ -9129,7 +9250,11 @@ export default function AiRAForecaster() {
                   }
 
                   const hasPropIncome = (data.properties || []).some(pr => Number(pr.income) > 0);
+                  // rothConversionTarget round-trips as "fill_22"/"off"/"irmaa". Legacy exports
+                  // (pre-fix) stripped to bare bracket numbers like "22" -- re-prefix them so
+                  // the dropdown finds a matching option.
                   const rawRct = data.rothConversionTarget || "off";
+                  const restoredRct = /^\d+$/.test(rawRct) ? "fill_" + rawRct : rawRct;
                   setAssumptions((prev) => ({
                     ...prev,
                     ...data,
@@ -9146,7 +9271,7 @@ export default function AiRAForecaster() {
                     carveouts: data.carveouts,
                     otherIncomes: data.otherIncomes,
                     ab: hasPropIncome ? 0 : (data.ab || 0),
-                    rothConversionTarget: rawRct.startsWith("fill_") ? rawRct.replace("fill_", "") : rawRct,
+                    rothConversionTarget: restoredRct,
                     fafsaEndYear: data.fafsaEndYear || null,
                     cssEndYear: data.cssEndYear || null,
                     // Preserve existing API key if imported file has empty/missing key
@@ -9525,14 +9650,25 @@ export default function AiRAForecaster() {
                 onChange={setEndAge}
               />
               <Slider
-                label="Annual spend"
+                label="US spend"
                 value={sp}
-                min={30000}
-                max={200000}
+                min={0}
+                max={300000}
                 step={1000}
                 format={(v) => fmtK(v) + "/yr"}
                 onChange={setSp}
               />
+              {assumptions.twoHousehold && (
+                <Slider
+                  label="Out-of-country"
+                  value={assumptions.spOutOfCountry ?? 0}
+                  min={0}
+                  max={150000}
+                  step={1000}
+                  format={(v) => fmtK(v) + "/yr"}
+                  onChange={(v) => updateAssumption("spOutOfCountry", v)}
+                />
+              )}
               <Slider
                 key={`ssAge-${assumptions.ssAge}`}
                 label="SS start age"
@@ -9575,12 +9711,12 @@ export default function AiRAForecaster() {
               <Toggle val={real} onChange={setReal} label="📉 Real dollars" accent="#0ea5e9" />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tog-label">🌴 Solo Mode</span>
-                  <InfoModal title="🌴 Solo Mode — How It Works" accent="#a78bfa">
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> Solo Mode switches the simulation to your out-of-state spending budget and removes state income tax from the calculation.</p>
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF (default):</strong> Uses your <em>Primary Annual Spending</em> with full state income tax. This is your normal at-home scenario.</p>
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON:</strong> Uses your <em>Out-of-State Spending</em> budget with no state income tax. Useful if you plan to spend time abroad or in a no-tax state.</p>
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Portfolio withdrawals:</strong> The total amount withdrawn from your portfolio is the same math either way — GK guardrails, Fixed %, and all other strategies apply normally. The only differences are the spending target and whether state tax is applied.</p>
+                  <span className="tog-label">🌴 Non-resident (no state tax)</span>
+                  <InfoModal title="🌴 Non-Resident State Tax — How It Works" accent="#a78bfa">
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> Removes state income tax from every year of the simulation. Use this if you (or you and your spouse) qualify as a non-resident of your listed state for the year.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF (default):</strong> State tax applies to all taxable income. Use this if you're a resident of your listed state.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON:</strong> State tax zeroed out. Use this if you've broken residency (e.g. spending most of the year abroad and meeting your state's non-residency rules).</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Spending is independent:</strong> Total portfolio draw = US Spending + Out-of-Country Spending regardless of this toggle. The toggle only changes whether the US-domestic portion is state-taxed. Check your state's non-residency rules before turning this on — every state defines it differently (number of days, place of work, family location, etc.).</p>
                     <p style={{ margin:0 }}><strong style={{ color:"#e2e8f0" }}>Set it up:</strong> In your Profile → Spending, set <em>Primary Annual Spending</em> for your at-home budget and <em>Out-of-State Spending</em> for your travel/abroad budget. If Out-of-State Spending is left at $0, it falls back to your primary spending.</p>
                   </InfoModal>
                 </div>
@@ -9591,35 +9727,6 @@ export default function AiRAForecaster() {
                 >
                   <div className="tok" style={{ left: assumptions.twoHousehold ? 18 : 2 }} />
                 </div>
-              </div>
-              <div className="sb-card">
-                <div className="sb-title">Withdrawal Strategy</div>
-                <select
-                  value={assumptions.withdrawalStrategy}
-                  onChange={(e) => updateAssumption("withdrawalStrategy", e.target.value)}
-                  style={{
-                    width: "100%",
-                    background: "#0d1b2a",
-                    border: "1px solid #1e3a5f",
-                    color: "#e2e8f0",
-                    borderRadius: 6,
-                    padding: "6px 10px",
-                    fontSize: 12,
-                    fontFamily: "'Inter',sans-serif",
-                  }}
-                >
-                  <option value="smart">📋 Smart Waterfall (Tax-Optimal)</option>
-                  <option value="gk">Guyton‑Klinger (Dynamic)</option>
-                  <option value="fixed">Fixed % of Portfolio</option>
-                  <option value="vanguard">Vanguard Dynamic Spending</option>
-                  <option value="risk">Risk‑Based Guardrails</option>
-                  <option value="kitces">Kitces Ratcheting</option>
-                  <option value="vpw">VPW (Variable Percentage)</option>
-                  <option value="cape">CAPE‑Based</option>
-                  <option value="endowment">Endowment (Yale) Model</option>
-                  <option value="one_n">1/N (Remaining Years)</option>
-                  <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
-                </select>
               </div>
             </div>
 
@@ -9821,7 +9928,7 @@ export default function AiRAForecaster() {
               <strong style={{ color: "#5eead4" }}>{getStrategyLabel(assumptions.withdrawalStrategy)} Strategy:</strong>{" "}
               {assumptions.withdrawalStrategy === "gk" ? (
                 <>
-                  Floor {fmtM(params.gkFloor)} ({assumptions.twoHousehold ? "solo" : "both"}) · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}%.
+                  Floor {fmtM(params.gkFloor)} · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}% · State tax {assumptions.twoHousehold ? "OFF (non-resident)" : "ON (resident)"}.
                 </>
               ) : assumptions.withdrawalStrategy === "fixed" ? (
                 <>Withdrawal rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
