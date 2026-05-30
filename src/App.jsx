@@ -4994,26 +4994,32 @@ function BucketsTab({ params = {} }) {
     const b2Pretax  = b2Accts.filter(a => a.category === "pretax");
     const b3All     = b3Accts;
 
+    // Dynamic label: single account → its name; multiple → comma list
+    const acctLabel = (pool, fallback) =>
+      pool.length === 1 ? pool[0].name
+      : pool.length > 1 ? pool.map(a => a.name).join(" + ")
+      : fallback;
+
     function buildSteps(needed, taxablePool, pretaxPool, rothPool) {
       const steps = [];
       let rem = needed;
       const taxAvail = taxablePool.reduce((s, a) => s + (a.balance || 0), 0);
       if (taxAvail > 0 && rem > 0) {
         const amt = Math.min(rem, taxAvail);
-        steps.push({ label: "Sell from taxable (Bucket 2)", accounts: taxablePool, amount: amt, tax: "0% LTCG estimated", note: "Lowest-tax source — use first" });
+        steps.push({ label: `Sell from ${acctLabel(taxablePool, "taxable accounts")} (B2)`, accounts: taxablePool, amount: amt, tax: "0% LTCG estimated", note: "Lowest-tax source — use first" });
         rem -= amt;
       }
       const preAvail = pretaxPool.reduce((s, a) => s + (a.balance || 0), 0);
       if (preAvail > 0 && rem > 0) {
         const amt = Math.min(rem, preAvail);
         const taxCost = Math.round(amt * marginalRate / 100);
-        steps.push({ label: "Withdraw from pre-tax IRA (Bucket 2)", accounts: pretaxPool, amount: amt, tax: `${marginalRate}% ordinary income (~${fmtK(taxCost)} tax)`, note: irmaaRisk ? "⚠ Monitor MAGI — IRMAA risk" : `Stays within ${marginalRate}% bracket` });
+        steps.push({ label: `Withdraw from ${acctLabel(pretaxPool, "pre-tax accounts")} (B2)`, accounts: pretaxPool, amount: amt, tax: `${marginalRate}% ordinary income (~${fmtK(taxCost)} tax)`, note: irmaaRisk ? "⚠ Monitor MAGI — IRMAA risk" : `Stays within ${marginalRate}% bracket` });
         rem -= amt;
       }
       if (rem > 0 && rothPool.length > 0) {
         const rothAvail = rothPool.reduce((s, a) => s + (a.balance || 0), 0);
         const amt = Math.min(rem, rothAvail);
-        steps.push({ label: "⚠ Emergency — draw from Roth (Bucket 3)", accounts: rothPool, amount: amt, tax: "Tax-free", note: "Last resort — Roth grows tax-free, avoid if possible" });
+        steps.push({ label: `⚠ Emergency — draw from ${acctLabel(rothPool, "Roth accounts")} (B3)`, accounts: rothPool, amount: amt, tax: "Tax-free", note: "Last resort — Roth grows tax-free, avoid if possible" });
       }
       return steps;
     }
@@ -5035,12 +5041,12 @@ function BucketsTab({ params = {} }) {
       const preAvail = b3Pretax.reduce((s, a) => s + (a.balance || 0), 0);
       if (preAvail > 0) {
         const amt = Math.min(rem, preAvail);
-        steps.push({ label: "Withdraw from pre-tax IRA (Bucket 3)", accounts: b3Pretax, amount: amt, tax: `${marginalRate}% ordinary income`, note: `Within ${marginalRate}% bracket — move to bonds/balanced in taxable` });
+        steps.push({ label: `Withdraw from ${acctLabel(b3Pretax, "pre-tax accounts")} (B3)`, accounts: b3Pretax, amount: amt, tax: `${marginalRate}% ordinary income`, note: `Within ${marginalRate}% bracket — move to bonds/balanced in taxable` });
         rem -= amt;
       }
       if (rem > 0 && b3Roth.length > 0) {
         const amt = Math.min(rem, b3Roth.reduce((s, a) => s + (a.balance || 0), 0));
-        steps.push({ label: "Convert Roth to Bucket 2 allocation", accounts: b3Roth, amount: amt, tax: "Tax-free", note: "Shift to lower-risk holdings within Roth" });
+        steps.push({ label: `Rebalance ${acctLabel(b3Roth, "Roth accounts")} to conservative allocation (B3)`, accounts: b3Roth, amount: amt, tax: "Tax-free", note: "Shift to lower-risk holdings within Roth" });
       }
       return { type: "warning", title: "Bucket 2 below floor — replenish from Bucket 3", needed, steps };
     }
