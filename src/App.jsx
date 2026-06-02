@@ -5624,7 +5624,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
             <input type="date" value={newCpDate} onChange={e => setNewCpDate(e.target.value)} style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
             <input type="number" placeholder="Portfolio value ($)" value={newCpValue} onChange={e => setNewCpValue(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
-            <input type="text" placeholder="Note (optional)" value={newCpNote} onChange={e => setNewCpNote(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
+            <input type="text" placeholder="Note (optional)" value={newCpNote} onChange={e => setNewCpNote(e.target.value)} style={{ width: 240, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
             <button onClick={handleSaveCheckpoint} style={{ background: "#0d9488", border: "none", borderRadius: 6, padding: "6px 16px", color: "white", cursor: "pointer" }}>
               {editingId ? "Update Checkpoint" : "Save Checkpoint"}
             </button>
@@ -5686,7 +5686,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
                         <td>
                           <span style={{ marginRight: 4, fontSize: 10, color: "#475569" }}>{isExpanded ? "▼" : "▶"}</span>
                           {cp.date ? new Date(cp.date + "T00:00:00").toLocaleDateString() : "—"}
-                          {cp.note && <span style={{ marginLeft: 6, fontSize: 10, color: "#64748b" }}>· {cp.note}</span>}
+                          {cp.note && <span style={{ marginLeft: 6, fontSize: 14, color: "#64748b" }}>· {cp.note}</span>}
                         </td>
                         <td style={{ fontFamily: "'DM Mono',monospace" }}>{fmtM(cp.value)}</td>
                         <td style={{ color: "#64748b" }}>{p50AtAge > 0 ? fmtM(p50AtAge) : "—"}</td>
