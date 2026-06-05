@@ -2149,6 +2149,7 @@ function Slider({ label, value, min, max, step, format, onChange }) {
     },
     [min, max, step, onChange]
   );
+
   const handleDrag = useCallback(
     (e) => {
       e.preventDefault();
@@ -7744,10 +7745,10 @@ function AboutYouPanel({ values, onChange }) {
           RETIREMENT TIMELINE
         </div>
         <WFieldRow label="Retirement Age" helper="Age at which you plan to retire (D‑Day).">
-          <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={50} max={75} step={1} />
+          <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={50} max={100} step={1} />
         </WFieldRow>
         <WFieldRow label="Planning Horizon" helper="Age through which you want the plan to last.">
-          <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={75} max={100} step={1} />
+          <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={40} max={100} step={1} />
         </WFieldRow>
         <WFieldRow label="Sex" helper="Used for SSA mortality overlay on the fan chart (male/female life expectancy tables, or blended average).">
           <select
@@ -9594,7 +9595,7 @@ export default function AiRAForecaster() {
               <Slider
                 label="Retire age"
                 value={retAge}
-                min={55}
+                min={50}
                 max={68}
                 step={1}
                 format={(v) => "Age " + v}
@@ -9603,7 +9604,7 @@ export default function AiRAForecaster() {
               <Slider
                 label="Plan to age"
                 value={endAge}
-                min={80}
+                min={40}
                 max={100}
                 step={1}
                 format={(v) => "Age " + v}
