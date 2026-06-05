@@ -544,7 +544,6 @@ const USER_PROFILE = {
   port:        266_000,
   contrib:         200,  // $200/yr as given (likely should be $2,400 or $20,000 — see test below)
   hsaMonthly:       10,  // $10/mo = $120/yr
-  employerMatch:   1.5,  // 1.5% of 401k contribution
   inf:             2.5,
   sp:           72_000,  // spending target (not what Fixed % will deliver)
   ssAge:            67,
