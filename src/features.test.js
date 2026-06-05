@@ -156,7 +156,7 @@ describe('Bucket Tab Sliders', () => {
 describe('Rental Reliability Display', () => {
   test('IncomeMap title includes rental reliability percentage', () => {
     const p = { abReliability: 85 };
-    const title = `Annual Income Coverage · Rental ${p.abReliability || 80}% reliability modeled`;
+    const title = `Annual Income Coverage · Rental net shown at ${p.abReliability ?? 80}% expected reliability`;
     expect(title).toContain('85%');
   });
 });
