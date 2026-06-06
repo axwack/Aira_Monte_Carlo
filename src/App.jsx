@@ -5433,7 +5433,7 @@ function BucketsTab({ params = {} }) {
 }
 function ScenariosTab({
   baseParams,
-  r90,
+  mc,
   stress,
   retireAge,
   ssAge,
@@ -5541,10 +5541,10 @@ function ScenariosTab({
               <div
                 className="mv"
                 style={{
-                  color: r90 && stress.rate >= r90.rate ? "#0d9488" : "#ef4444",
+                  color: mc && stress.rate >= mc.rate ? "#0d9488" : "#ef4444",
                 }}
               >
-                {r90 ? `${((stress.rate - r90.rate) * 100).toFixed(1)}pp` : "—"}
+                {mc ? `${((stress.rate - mc.rate) * 100).toFixed(1)}pp` : "—"}
               </div>
             </div>
           </div>
@@ -5587,7 +5587,7 @@ function ScenariosTab({
   );
 }
 
-function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy }) {
+function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy }) {
   const [showInputs, setShowInputs] = useState(false);
   const [showHow, setShowHow] = useState(false);
   const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
@@ -5724,7 +5724,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <InputCard title="Return Distribution" rows={[["Model", "Historical bootstrap"], ["Equity data", "99yr S&P 500 (1928–2026)"], [`Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`, "Equity / Bonds"], [`Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`, "Equity / Bonds"]]} />
                 <InputCard title="Inflation & Guardrails" rows={[["Inflation", "Historical bootstrap"], ["Inflation source", "2000–2024 actual CPI"], ["GK floor", fmtM(params.gkFloor) + "/yr"], ["GK ceiling", fmtM(params.gkCeiling) + "/yr"]]} />
-                <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizons", `Age 85 + Age ${params.endAge || 90}`], ["Withdrawal", "Guyton-Klinger"], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
+                <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizon", `Age ${params.endAge || 90}`], ["Withdrawal", getStrategyLabel(params.withdrawalStrategy || "smart")], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
               </div>
             </div>
           </>
@@ -5802,7 +5802,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
                       if (`${cd.getMonth()}-${cd.getDate()}` < `${birth.getMonth()}-${birth.getDate()}`) age--;
                     }
                   }
-                  const p50AtAge  = (age !== null && r90?.pcts) ? (r90.pcts.find(d => d.age === age)?.p50 || 0) : 0;
+                  const p50AtAge  = (age !== null && mc?.pcts) ? (mc.pcts.find(d => d.age === age)?.p50 || 0) : 0;
                   const delta     = p50AtAge > 0 ? cp.value - p50AtAge : null;
                   const status    = p50AtAge > 0 ? (delta > 0 ? "Ahead" : delta < 0 ? "Behind" : "On track") : "Pre‑retirement";
                   const deltaColor = delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8";
@@ -5901,26 +5901,25 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
       </div>
 
       {/* Results panel */}
-      {!r90 && <div style={{ textAlign: "center", padding: "20px", color: "#475569", fontSize: 13 }}>{running ? "Running 3,000 paths..." : "Run Monte Carlo from the sidebar to see results here."}</div>}
-      {r90 && (
+      {!mc && <div style={{ textAlign: "center", padding: "20px", color: "#475569", fontSize: 13 }}>{running ? "Running 3,000 paths..." : "Run Monte Carlo from the sidebar to see results here."}</div>}
+      {mc && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-          <div style={{ background: `${rateColor(r90.rate)}12`, border: `1.5px solid ${rateColor(r90.rate)}44`, borderRadius: 10, padding: 18 }}>
+          <div style={{ background: `${rateColor(mc.rate)}12`, border: `1.5px solid ${rateColor(mc.rate)}44`, borderRadius: 10, padding: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>SUCCESS RATE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
-            <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(r90.rate), fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(r90.rate)}</div>
+            <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(mc.rate), fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(mc.rate)}</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>of 3,000 simulations last to age {params.endAge}</div>
-            <div style={{ fontSize: 12, color: rateColor(r90.rate), marginBottom: 14, lineHeight: 1.5 }}>{riskLabel(r90.rate)}</div>
+            <div style={{ fontSize: 12, color: rateColor(mc.rate), marginBottom: 14, lineHeight: 1.5 }}>{riskLabel(mc.rate)}</div>
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10, display: "flex", gap: 12 }}>
-              <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>To age 85</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(r85?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{r85 ? fmtPct(r85.rate) : "—"}</div></div>
-              <div style={{ flex: 1, textAlign: "center", borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Stress test</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(stress?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{stress ? fmtPct(stress.rate) : "—"}</div></div>
+              <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Stress test (2000–2012)</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(stress?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{stress ? fmtPct(stress.rate) : "—"}</div></div>
             </div>
           </div>
           <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>MEDIAN FINAL BALANCE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
-            <div style={{ fontSize: 42, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtM(r90.term.p50)}</div>
+            <div style={{ fontSize: 42, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtM(mc.term.p50)}</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>50th percentile at age {params.endAge}</div>
             <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 14 }}>Half of all simulations end above this. A higher balance cushions against sequence-of-returns risk.</div>
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10 }}>
-              {[{ l: "10th (near-worst)", v: r90.term.p10, c: "#f87171" }, { l: "25th (cautious)", v: r90.term.p25, c: "#fbbf24" }, { l: "75th (good case)", v: r90.term.p75, c: "#34d399" }, { l: "90th (best 10%)", v: r90.term.p90, c: "#5eead4" }].map(({ l, v, c }) => (
+              {[{ l: "10th (near-worst)", v: mc.term.p10, c: "#f87171" }, { l: "25th (cautious)", v: mc.term.p25, c: "#fbbf24" }, { l: "75th (good case)", v: mc.term.p75, c: "#34d399" }, { l: "90th (best 10%)", v: mc.term.p90, c: "#5eead4" }].map(({ l, v, c }) => (
                 <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 11 }}>
                   <span style={{ color: "#475569" }}>{l}</span><span style={{ color: c, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmtM(v)}</span>
                 </div>
@@ -6434,8 +6433,7 @@ function NetWorthTab({ p, results90, inf }) {
 
 function generateActions({
   params,
-  r90,
-  r85,
+  mc,
   assumptions,
   mortgagePayoffYear,
   currentYear,
@@ -6452,11 +6450,11 @@ function generateActions({
   const _rothTotal = _accts.filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
   const rothPct = params.port > 0 ? _rothTotal / params.port : 0;
   const preTaxPct = params.port > 0 ? preTaxTotal / params.port : 0;
-  const successRate = r90 ? r90.rate : 0;
+  const successRate = mc ? mc.rate : 0;
   const portFundedPct = (params.port / goal) * 100;
 
   // 🔴 RED rules
-  if (r90 && successRate < 0.80) {
+  if (mc && successRate < 0.80) {
     actions.push({
       priority: "red",
       category: "Monte Carlo",
@@ -6465,7 +6463,7 @@ function generateActions({
       deadline: "Now",
     });
   }
-  if (r90 && successRate < 0.70) {
+  if (mc && successRate < 0.70) {
     actions.push({
       priority: "red",
       category: "Monte Carlo",
@@ -6588,7 +6586,7 @@ function generateActions({
   }
 
   // 🟢 GREEN rules
-  if (r90 && successRate >= 0.90) {
+  if (mc && successRate >= 0.90) {
     actions.push({
       priority: "green",
       category: "Monte Carlo",
@@ -6615,7 +6613,7 @@ function generateActions({
       deadline: "✅ Done",
     });
   }
-  if (r90 && successRate >= 0.85 && swr <= 4) {
+  if (mc && successRate >= 0.85 && swr <= 4) {
     actions.push({
       priority: "green",
       category: "Guardrails",
@@ -7062,7 +7060,7 @@ function CardDetailPanel({ card, onClose }) {
 }
 
 // ─── ActionPlanTab ────────────────────────────────────────────────────────────
-function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdAge: rmdAgeProp }) {
+function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rmdAgeProp }) {
   const currentYear = new Date().getFullYear();
   const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
   const daysToRetire = Math.max(0,
@@ -7082,10 +7080,10 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
 
   const runAI = async (baseCards) => {
     const { runAIActionPlan, profileIsComplete } = await import("./ai/ai-analysis.js");
-    console.log("[AI] runAI called. profileIsComplete:", profileIsComplete(params, r90));
+    console.log("[AI] runAI called. profileIsComplete:", profileIsComplete(params, mc));
     console.log("[AI] geminiApiKey present:", !!assumptions?.geminiApiKey, "model:", assumptions?.geminiModel || "default");
     console.log("[AI] baseCards count:", baseCards?.length, "ids:", baseCards?.map(c => c.id));
-    if (!profileIsComplete(params, r90)) {
+    if (!profileIsComplete(params, mc)) {
       console.warn("[AI] Profile incomplete — runAI exiting silently. Need: port>50K, sp>0, mcResults.rate>0, ≥1 funded account.");
       return;
     }
@@ -7093,7 +7091,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
     setAiError(null);
     try {
       console.log("[AI] Calling runAIActionPlan…");
-      const merged = await runAIActionPlan({ ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel }, r90, baseCards);
+      const merged = await runAIActionPlan({ ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel }, mc, baseCards);
       console.log("[AI] Merged result:", merged);
       console.log("[AI] Cards with aiNote:", merged?.filter(c => c.aiNote).length, "/ total:", merged?.length);
       console.log("[AI] AI-generated new cards:", merged?.filter(c => c.aiGenerated).length);
@@ -7117,7 +7115,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
     try {
       const found = await generateTimeSensitiveCards(
         { ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel },
-        r90
+        mc
       );
       setLiveCards(found);
     } catch (e) {
@@ -7127,7 +7125,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
     }
   };
 
-  if (!params || !r90) {
+  if (!params || !mc) {
     return (
       <div className="chart-card" style={{ textAlign: "center", padding: "40px 20px" }}>
         <div style={{ fontSize: 14, color: "#94a3b8", marginBottom: 8 }}>🎲 Monte Carlo not run yet</div>
@@ -7138,7 +7136,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
 
   // Evaluate declarative rules engine
   const baseCards = evaluateRulesEngine({
-    params, r90, r85, assumptions,
+    params, mc, assumptions,
     currentYear, retireYear, daysToRetire,
   });
 
@@ -7149,7 +7147,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
   const hasGeminiKey = !!(assumptions?.geminiApiKey?.trim());
   const profileReady = (params.port || 0) > 50_000 &&
     (params.sp  || 0) > 0 &&
-    r90?.rate > 0 &&
+    mc?.rate > 0 &&
     (params.accounts || []).some(a => (a.balance || 0) > 0);
   const hasAiAccess  = BILLING_ENABLED ? (creditBalance >= 5 || hasGeminiKey) : hasGeminiKey;
   const canRunAI     = !loadingAI && !cards && profileReady && hasAiAccess;
@@ -8946,8 +8944,7 @@ export default function AiRAForecaster() {
   );
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
-  const [r85, setR85] = useState(null);
-  const [r90, setR90] = useState(null);
+  const [mc, setMc] = useState(null);
   const [stress, setStress] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackType, setFeedbackType] = useState(null);
@@ -9168,7 +9165,7 @@ export default function AiRAForecaster() {
       isFirst.current = false;
       return;
     }
-    if (r85 || r90) setStale(true);
+    if (mc) setStale(true);
   }, [params]);
 
   const swr = computeInitialWR(params).initWRpct.toFixed(1);
@@ -9177,17 +9174,16 @@ export default function AiRAForecaster() {
     setRunning(true);
     setStale(false);
     setTimeout(() => {
-      const r85_ = runMC(params, 85, 3000, 42, true);
-      const r90_ = runMC(params, 90, 3000, 43, true);
-      const str = runStress(params, params.endAge, 2000, 99);
-      setR85(r85_);
-      setR90(r90_);
+      const planAge = params.endAge || 90;
+      const mc_ = runMC(params, planAge, 3000, 42, true);
+      const str = runStress(params, planAge, 2000, 99);
+      setMc(mc_);
       setStress(str);
       setRunning(false);
     }, 40);
   }, [params]);
 
-  const analogue = r90 ? getAnalogue(r90.rate) : null;
+  const analogue = mc ? getAnalogue(mc.rate) : null;
 
   const TABS = [
     ["networth", "📊 Net Worth"],
@@ -9199,7 +9195,7 @@ export default function AiRAForecaster() {
   ];
 
   const needsMC = ["montecarlo", "networth", "fan"];
-  const hasMC = !!r90;
+  const hasMC = !!mc;
 
   const handleSendFeedback = async () => {
     if (!feedbackType) {
@@ -9893,17 +9889,17 @@ export default function AiRAForecaster() {
                 <div
                   className="mv"
                   style={{
-                    color: r90 ? (r90.rate >= 0.85 ? "#0d9488" : r90.rate >= 0.7 ? "#f59e0b" : "#ef4444") : "#334155",
+                    color: mc ? (mc.rate >= 0.85 ? "#0d9488" : mc.rate >= 0.7 ? "#f59e0b" : "#ef4444") : "#334155",
                   }}
                 >
-                  {r90 ? fmtPct(r90.rate) : "—"}
+                  {mc ? fmtPct(mc.rate) : "—"}
                 </div>
                 <div className="ms">3,000 paths · {getStrategyLabel(withdrawalStrategy)}</div>
               </div>
               <div className="met">
                 <div className="ml">Portfolio at D-Day</div>
                 <div className="mv" style={{ color: "#94a3b8", fontSize: 18 }}>
-                  {r90 ? fmtM(r90.medR) : "—"}
+                  {mc ? fmtM(mc.medR) : "—"}
                 </div>
                 <div className="ms">Median projected</div>
               </div>
@@ -9977,15 +9973,15 @@ export default function AiRAForecaster() {
             {analogue && (
               <div className="analogue" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>
-                  {analogue.emoji} "{analogue.text}." — {fmtPct(r90.rate)} to age {endAge}.
+                  {analogue.emoji} "{analogue.text}." — {fmtPct(mc.rate)} to age {endAge}.
                 </span>
                 <SectorBadge age={currentAge} />
               </div>
             )}
 
-            {r90 &&
+            {mc &&
               (() => {
-                const success = Math.round(r90.rate * 26);
+                const success = Math.round(mc.rate * 26);
                 const fail = 26 - success;
                 return (
                   <div
@@ -10071,9 +10067,9 @@ export default function AiRAForecaster() {
               </div>
             ) : (
               <>
-                {activeTab === "fan" && r90 && (
+                {activeTab === "fan" && mc && (
                   <FanChart
-                    pcts={r90.pcts}
+                    pcts={mc.pcts}
                     retireAge={retAge}
                     ssAge={assumptions.ssAge}
                     rmdAge={rmdAge}
@@ -10095,8 +10091,7 @@ export default function AiRAForecaster() {
                   <>
                     <MCTab
                       params={params}
-                      r85={r85}
-                      r90={r90}
+                      mc={mc}
                       stress={stress}
                       running={running}
                       onRun={runSimulation}
@@ -10128,9 +10123,9 @@ export default function AiRAForecaster() {
                         setTimeout(runSimulation, 100);
                       }}
                     />
-                    {r90 && (
+                    {mc && (
                       <FanChart
-                        pcts={r90.pcts}
+                        pcts={mc.pcts}
                         retireAge={retAge}
                         ssAge={assumptions.ssAge}
                         rmdAge={rmdAge}
@@ -10153,7 +10148,7 @@ export default function AiRAForecaster() {
                 {activeTab === "scenarios" && (
                   <ScenariosTab
                     baseParams={params}
-                    r90={r90}
+                    mc={mc}
                     fmtPct={fmtPct}
                     stress={stress}
                     retireAge={retAge}
@@ -10191,12 +10186,11 @@ export default function AiRAForecaster() {
                     }}
                   />
                 )}
-                {activeTab === "networth" && <NetWorthTab p={params} results90={r90} inf={inf} />}
+                {activeTab === "networth" && <NetWorthTab p={params} results90={mc} inf={inf} />}
                 {activeTab === "actionplan" && (
                   <ActionPlanTab
                     params={params}
-                    r90={r90}
-                    r85={r85}
+                    mc={mc}
                     assumptions={assumptions}
                     mortgagePayoffYear={mortgagePayoffYear}
                     rmdAge={rmdAge}
