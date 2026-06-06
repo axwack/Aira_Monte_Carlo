@@ -13,7 +13,7 @@
  *   reason    — string OR (ctx) => string
  *   deadline  — string OR (ctx) => string
  *
- * ctx = { params, r90, r85, assumptions, currentYear, retireYear, daysToRetire }
+ * ctx = { params, mc, assumptions, currentYear, retireYear, daysToRetire }
  */
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
@@ -61,18 +61,18 @@ export const RULES = [
     id: "mc-below-80",
     category: "Monte Carlo",
     priority: "red",
-    condition: ({ r90 }) => r90 && r90.rate < 0.80,
+    condition: ({ mc }) => mc && mc.rate < 0.80,
     action: "Success rate below 80%",
-    reason: ({ r90 }) => `${(r90.rate * 100).toFixed(1)}% — plan needs restructuring`,
+    reason: ({ mc }) => `${(mc.rate * 100).toFixed(1)}% — plan needs restructuring`,
     deadline: "Now",
   },
   {
     id: "mc-critical",
     category: "Monte Carlo",
     priority: "red",
-    condition: ({ r90, params }) => r90 && r90.rate < 0.70,
+    condition: ({ mc, params }) => mc && mc.rate < 0.70,
     action: "Plan failure risk — urgent review",
-    reason: ({ r90, params }) => `Less than 70% success to age ${params.endAge}`,
+    reason: ({ mc, params }) => `Less than 70% success to age ${params.endAge}`,
     deadline: "Now",
   },
   {
@@ -110,25 +110,25 @@ export const RULES = [
     id: "portfolio-underfunded-60",
     category: "Savings",
     priority: "red",
-    condition: ({ params, assumptions, r90 }) => {
+    condition: ({ params, assumptions, mc }) => {
       // Fire if MC rate is critically low, OR if no MC has been run yet and portfolio is severely underfunded
-      if (r90) return r90.rate < 0.70;
+      if (mc) return mc.rate < 0.70;
       const goal = assumptions?.portfolioGoal || 1_000_000;
       return (params.port / goal) * 100 < 60;
     },
-    action: ({ params, r90 }) =>
-      r90
-        ? `MC success rate critically low — ${(r90.rate * 100).toFixed(1)}%`
+    action: ({ params, mc }) =>
+      mc
+        ? `MC success rate critically low — ${(mc.rate * 100).toFixed(1)}%`
         : "Portfolio severely underfunded",
-    reason: ({ params, assumptions, r90 }) => {
+    reason: ({ params, assumptions, mc }) => {
       const goal = assumptions?.portfolioGoal || 1_000_000;
       const fmt = v => v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : `$${Math.round(v / 1e3)}K`;
-      if (!r90) {
+      if (!mc) {
         return `$${Math.round(goal - params.port).toLocaleString()} gap to ${fmt(goal)} Reassess goal — run Monte Carlo to assess real risk`;
       }
-      const retRow = r90.pcts?.find(d => d.age === params.retireAge);
+      const retRow = mc.pcts?.find(d => d.age === params.retireAge);
       const p25 = retRow?.p25, p50 = retRow?.p50;
-      let msg = `Only ${(r90.rate * 100).toFixed(1)}% of 3,000 paths reach age ${params.endAge || 90} — plan failure is likely`;
+      let msg = `Only ${(mc.rate * 100).toFixed(1)}% of 3,000 paths reach age ${params.endAge || 90} — plan failure is likely`;
       if (p25 && p50) {
         msg += `. At retirement (age ${params.retireAge}): median ${fmt(p50)}, worst-25% scenario only ${fmt(p25)}`;
       }
@@ -202,17 +202,17 @@ export const RULES = [
     id: "portfolio-underfunded-75",
     category: "Savings",
     priority: "yellow",
-    condition: ({ params, r90 }) => {
+    condition: ({ params, mc }) => {
       // Only fire when MC has been run and success rate is below 85%
       // Suppresses when the plan is healthy regardless of funding ratio vs goal
-      if (!r90) return false;
-      return r90.rate >= 0.70 && r90.rate < 0.85;
+      if (!mc) return false;
+      return mc.rate >= 0.70 && mc.rate < 0.85;
     },
     action: "Increase contributions or reduce spend",
-    reason: ({ params, assumptions, r90 }) => {
+    reason: ({ params, assumptions, mc }) => {
       const fmt = v => v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : `$${Math.round(v / 1e3)}K`;
-      const rate = (r90.rate * 100).toFixed(1);
-      const retRow = r90.pcts?.find(d => d.age === params.retireAge);
+      const rate = (mc.rate * 100).toFixed(1);
+      const retRow = mc.pcts?.find(d => d.age === params.retireAge);
       const p25 = retRow?.p25, p50 = retRow?.p50;
       const goal = assumptions?.portfolioGoal || 1_000_000;
       const pct = params.port > 0 && goal > 0 ? Math.round(params.port / goal * 100) : null;
@@ -303,10 +303,10 @@ export const RULES = [
     id: "mc-healthy",
     category: "Monte Carlo",
     priority: "green",
-    condition: ({ r90 }) => r90 && r90.rate >= 0.90,
+    condition: ({ mc }) => mc && mc.rate >= 0.90,
     action: "Plan on track — stay the course",
-    reason: ({ r90 }) =>
-      `${(r90.rate * 100).toFixed(1)}% success — JL Collins would approve`,
+    reason: ({ mc }) =>
+      `${(mc.rate * 100).toFixed(1)}% success — JL Collins would approve`,
     deadline: "Ongoing",
   },
   {
@@ -333,7 +333,7 @@ export const RULES = [
     id: "guardrails-healthy",
     category: "Guardrails",
     priority: "green",
-    condition: ({ r90, params }) => r90 && r90.rate >= 0.85 && swr(params) <= 4,
+    condition: ({ mc, params }) => mc && mc.rate >= 0.85 && swr(params) <= 4,
     action: "Guyton-Klinger guardrails healthy",
     reason: ({ params }) =>
       `Floor $${(params.gkFloor || 0).toLocaleString()} · Ceiling $${(params.gkCeiling || 0).toLocaleString()} · WR ${swr(params).toFixed(1)}%`,
