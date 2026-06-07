@@ -4936,29 +4936,30 @@ function WaterfallPlanView({ p }) {
               return (
               <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
                 <td>{r.age}</td>
-                <td style={{ textAlign: "right" }}>{fmtK(r.spending)}</td>
+                <td style={{ textAlign: "right" }} title={fmtDollar(r.spending)}>{fmtK(r.spending)}</td>
                 <td style={opTdStyle}>=</td>
                 <td style={{ textAlign: "right", color: "#5eead4" }}
-                    title={r.annuityRental > 0 ? `SS ${fmtK(r.ss)} + Annuity/Rental ${fmtK(r.annuityRental)}` : "Social Security"}>
+                    title={r.annuityRental > 0 ? `SS ${fmtDollar(r.ss)} + Annuity/Rental ${fmtDollar(r.annuityRental)} = ${fmtDollar(r.fixedIncomeTotal)}` : `Social Security: ${fmtDollar(r.ss)}`}>
                   {r.fixedIncomeTotal > 0 ? fmtK(r.fixedIncomeTotal) : "—"}
                 </td>
                 <td style={opTdStyle}>+</td>
-                <td style={{ textAlign: "right", color: "#64748b" }}>{r.fromCash > 0 ? fmtK(r.fromCash) : "—"}</td>
+                <td style={{ textAlign: "right", color: "#64748b" }} title={fmtDollar(r.fromCash)}>{r.fromCash > 0 ? fmtK(r.fromCash) : "—"}</td>
                 <td style={opTdStyle}>+</td>
-                <td style={{ textAlign: "right", color: "#3b82f6" }}>{r.fromTaxable > 0 ? fmtK(r.fromTaxable) : "—"}</td>
+                <td style={{ textAlign: "right", color: "#3b82f6" }} title={fmtDollar(r.fromTaxable)}>{r.fromTaxable > 0 ? fmtK(r.fromTaxable) : "—"}</td>
                 <td style={opTdStyle}>+</td>
-                <td style={{ textAlign: "right", color: "#f59e0b" }} title={r.pretaxCapReason}>
+                <td style={{ textAlign: "right", color: "#f59e0b" }}
+                    title={r.rmd > 0 ? `${fmtDollar(r.fromPretax)} (incl. RMD ${fmtDollar(r.rmd)}) — ${r.pretaxCapReason}` : `${fmtDollar(r.fromPretax)} — ${r.pretaxCapReason}`}>
                   {r.rmd > 0 && <span style={{ fontSize: 9, color: "#a78bfa", marginRight: 2 }}>RMD {fmtK(r.rmd)}</span>}
                   {r.fromPretax > 0 ? fmtK(r.fromPretax) : "—"}
                 </td>
                 <td style={opTdStyle}>+</td>
-                <td style={{ textAlign: "right", color: "#10b981" }}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
-                <td style={{ textAlign: "right", color: b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }}>{b1End > 0 ? fmtK(b1End) : "—"}</td>
-                <td style={{ textAlign: "right", color: "#f87171" }}>{fmtK(r.fedTax)}</td>
-                <td style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "#475569" }}>
+                <td style={{ textAlign: "right", color: "#10b981" }} title={fmtDollar(r.fromRoth)}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
+                <td style={{ textAlign: "right", color: b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }} title={fmtDollar(b1End)}>{b1End > 0 ? fmtK(b1End) : "—"}</td>
+                <td style={{ textAlign: "right", color: "#f87171" }} title={fmtDollar(r.fedTax)}>{fmtK(r.fedTax)}</td>
+                <td style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "#475569" }} title={fmtDollar(r.stateTax)}>
                   {r.stateTax > 0 ? fmtK(r.stateTax) : "—"}
                 </td>
-                <td style={{ textAlign: "right", color: r.irmaa > 0 ? "#fb923c" : "#475569" }}>
+                <td style={{ textAlign: "right", color: r.irmaa > 0 ? "#fb923c" : "#475569" }} title={fmtDollar(r.irmaa)}>
                   {r.irmaa > 0 ? fmtK(r.irmaa) : "—"}
                 </td>
                 <td style={{ textAlign: "right" }}>{(r.effectiveRate * 100).toFixed(1)}%</td>
@@ -5000,7 +5001,7 @@ function WaterfallPlanView({ p }) {
                   })()}
                   {!anyLandmine(r) && <span style={{ color: "#34d399", fontSize: 10 }}>✓</span>}
                 </td>
-                <td style={{ textAlign: "right", color: "#94a3b8" }}>{fmtM(r.totalPort)}</td>
+                <td style={{ textAlign: "right", color: "#94a3b8" }} title={fmtDollar(r.totalPort)}>{fmtM(r.totalPort)}</td>
               </tr>
               );
             })}
