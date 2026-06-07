@@ -4789,6 +4789,17 @@ function WaterfallPlanView({ p }) {
   const { smart, naive, summary } = result;
   const rows = mode === "smart" ? smart.rows : naive.rows;
 
+  // Bucket 1 may be composed of any account category — match the table column to it
+  const b1Cats = new Set(
+    (p.accounts || [])
+      .filter(a => (a.bucket ?? _defaultBucket(a.category)) === 1)
+      .map(a => a.category || "cash")
+  );
+
+  // Operator cells — visually wire the withdrawal columns into the equation they satisfy
+  const opThStyle = { padding: "0 3px", color: "#475569", fontWeight: 400, fontSize: 11, textAlign: "center" };
+  const opTdStyle = { padding: "0 3px", color: "#475569", fontWeight: 600, fontSize: 12, textAlign: "center" };
+
   const btnStyle = (active) => ({
     padding: "5px 14px", fontSize: 12, borderRadius: 6, border: "none",
     cursor: "pointer",
@@ -4884,12 +4895,24 @@ function WaterfallPlanView({ p }) {
         <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8, lineHeight: 1.5 }}>
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
           Bracket cap reason shown in Pre-Tax column
+          <br />
+          Columns read left→right as the draw order &amp; equation: <strong>Spending = Fixed Income + Cash + Taxable + Pre-Tax + Roth</strong>
         </div>
         <table className="roth-tbl">
           <thead>
             <tr>
-              <th>Age</th><th>Spending</th><th>SS</th>
-              <th>Cash</th><th title="Bucket 1 ending balance this year">B1 End</th><th>Taxable</th><th>Pre-Tax</th><th>Roth</th>
+              <th>Age</th><th>Spending</th>
+              <th style={opThStyle}>=</th>
+              <th title="Social Security + annuity/rental income — covered first, before any portfolio draw">Fixed Income</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 3 — drawn first from the portfolio">Cash</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 4 — drawn after cash is exhausted">Taxable</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 5 — drawn after taxable, capped at your bracket-ceiling target (RMD shown when forced)">Pre-Tax</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 6 — last resort; emergency reserve floor maintained">Roth</th>
+              <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End</th>
               <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR</th>
               <th>
                 <LandmineTip
@@ -4904,19 +4927,33 @@ function WaterfallPlanView({ p }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
+            {rows.map(r => {
+              const b1End = b1Cats.has("cash")    ? r.cashEnd
+                          : b1Cats.has("taxable") ? r.taxableEnd
+                          : b1Cats.has("pretax")  ? r.pretaxEnd
+                          : b1Cats.has("roth")    ? r.rothEnd
+                          : 0;
+              return (
               <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
                 <td>{r.age}</td>
                 <td style={{ textAlign: "right" }}>{fmtK(r.spending)}</td>
-                <td style={{ textAlign: "right", color: "#5eead4" }}>{r.ss > 0 ? fmtK(r.ss) : "—"}</td>
+                <td style={opTdStyle}>=</td>
+                <td style={{ textAlign: "right", color: "#5eead4" }}
+                    title={r.annuityRental > 0 ? `SS ${fmtK(r.ss)} + Annuity/Rental ${fmtK(r.annuityRental)}` : "Social Security"}>
+                  {r.fixedIncomeTotal > 0 ? fmtK(r.fixedIncomeTotal) : "—"}
+                </td>
+                <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#64748b" }}>{r.fromCash > 0 ? fmtK(r.fromCash) : "—"}</td>
-                <td style={{ textAlign: "right", color: r.cashEnd < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11 }}>{r.cashEnd > 0 ? fmtK(r.cashEnd) : "—"}</td>
+                <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#3b82f6" }}>{r.fromTaxable > 0 ? fmtK(r.fromTaxable) : "—"}</td>
+                <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#f59e0b" }} title={r.pretaxCapReason}>
                   {r.rmd > 0 && <span style={{ fontSize: 9, color: "#a78bfa", marginRight: 2 }}>RMD {fmtK(r.rmd)}</span>}
                   {r.fromPretax > 0 ? fmtK(r.fromPretax) : "—"}
                 </td>
+                <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#10b981" }}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
+                <td style={{ textAlign: "right", color: b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }}>{b1End > 0 ? fmtK(b1End) : "—"}</td>
                 <td style={{ textAlign: "right", color: "#f87171" }}>{fmtK(r.fedTax)}</td>
                 <td style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "#475569" }}>
                   {r.stateTax > 0 ? fmtK(r.stateTax) : "—"}
@@ -4965,7 +5002,8 @@ function WaterfallPlanView({ p }) {
                 </td>
                 <td style={{ textAlign: "right", color: "#94a3b8" }}>{fmtM(r.totalPort)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
