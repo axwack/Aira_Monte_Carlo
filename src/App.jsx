@@ -842,24 +842,19 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           sp = sp * (1 + inflY);
         }
         else if (withdrawalStrategy === "smart") {
-<<<<<<< HEAD
-          // Smart waterfall uses GK guardrails for spend amount; bucket sourcing is handled below.
-          // Years remaining uses the simulated horizon (`endAge`), not p.endAge — see gk note above.
-          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age);
-=======
           // Smart Waterfall hybrid:
           //   yearsRemaining > 15  → GK guardrails (adaptive, paper-faithful)
           //   yearsRemaining ≤ 15  → Bengen (inflation-only, no portfolio reaction)
           // The split point matches GK's own longevity-clause threshold so we
           // exit GK exactly where its safety brake would have been disabled.
+          // Years remaining uses the simulated horizon (`endAge`), not p.endAge — see gk note above.
           // Bucket sourcing is handled below regardless.
-          const yrsRemaining = p.endAge - age;
+          const yrsRemaining = endAge - age;
           if (yrsRemaining > 15) {
             sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining);
           } else {
             sp = sp * (1 + inflY);
           }
->>>>>>> e88597167bdc01213571548d6dd03d55a6725b91
         }
       }
       lastReturn = r;
@@ -5729,11 +5724,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <InputCard title="Return Distribution" rows={[["Model", "Historical bootstrap"], ["Equity data", "99yr S&P 500 (1928–2026)"], [`Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`, "Equity / Bonds"], [`Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`, "Equity / Bonds"]]} />
                 <InputCard title="Inflation & Guardrails" rows={[["Inflation", "Historical bootstrap"], ["Inflation source", "2000–2024 actual CPI"], ["GK floor", fmtM(params.gkFloor) + "/yr"], ["GK ceiling", fmtM(params.gkCeiling) + "/yr"]]} />
-<<<<<<< HEAD
-                <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizon", `Age ${params.endAge || 90} (your plan age)`], ["Withdrawal", "Guyton-Klinger"], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
-=======
-                <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizon", `Age ${params.endAge || 90}`], ["Withdrawal", getStrategyLabel(params.withdrawalStrategy || "smart")], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
->>>>>>> e88597167bdc01213571548d6dd03d55a6725b91
+                <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizon", `Age ${params.endAge || 90} (your plan age)`], ["Withdrawal", getStrategyLabel(params.withdrawalStrategy || "smart")], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
               </div>
             </div>
           </>
@@ -5919,12 +5910,8 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>of 3,000 simulations last to age {params.endAge}</div>
             <div style={{ fontSize: 12, color: rateColor(mc.rate), marginBottom: 14, lineHeight: 1.5 }}>{riskLabel(mc.rate)}</div>
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10, display: "flex", gap: 12 }}>
-<<<<<<< HEAD
               <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Plan age</div><div style={{ fontSize: 18, fontWeight: 700, color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>Age {params.endAge}</div></div>
-              <div style={{ flex: 1, textAlign: "center", borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Stress test</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(stress?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{stress ? fmtPct(stress.rate) : "—"}</div></div>
-=======
-              <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Stress test (2000–2012)</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(stress?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{stress ? fmtPct(stress.rate) : "—"}</div></div>
->>>>>>> e88597167bdc01213571548d6dd03d55a6725b91
+              <div style={{ flex: 1, textAlign: "center", borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Stress test (2000–2012)</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(stress?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{stress ? fmtPct(stress.rate) : "—"}</div></div>
             </div>
           </div>
           <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
@@ -9054,19 +9041,13 @@ export default function AiRAForecaster() {
     setRunning(true);
     setStale(false);
     setTimeout(() => {
-<<<<<<< HEAD
       // Single horizon: every simulation is graded to the profile's own plan age
       // (params.endAge). No hardcoded reference ages. A shorter runway with the same
       // funds correctly scores HIGHER, and the stress test shares the same horizon.
-      const rEnd_ = runMC(params, params.endAge, 3000, 43, true);
-      const str = runStress(params, params.endAge, 2000, 99);
-      setMc(rEnd_);
-=======
       const planAge = params.endAge || 90;
-      const mc_ = runMC(params, planAge, 3000, 42, true);
+      const rEnd_ = runMC(params, planAge, 3000, 43, true);
       const str = runStress(params, planAge, 2000, 99);
-      setMc(mc_);
->>>>>>> e88597167bdc01213571548d6dd03d55a6725b91
+      setMc(rEnd_);
       setStress(str);
       setRunning(false);
     }, 40);
@@ -10075,11 +10056,7 @@ export default function AiRAForecaster() {
                     }}
                   />
                 )}
-<<<<<<< HEAD
                 {activeTab === "networth" && <NetWorthTab p={params} mc={mc} inf={inf} />}
-=======
-                {activeTab === "networth" && <NetWorthTab p={params} results90={mc} inf={inf} />}
->>>>>>> e88597167bdc01213571548d6dd03d55a6725b91
                 {activeTab === "actionplan" && (
                   <ActionPlanTab
                     params={params}
