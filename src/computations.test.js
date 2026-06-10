@@ -203,11 +203,27 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
     expect(r.fedTax).toBeCloseTo(2_840, 0);
   });
 
-  test("85% of Social Security income is taxable", () => {
-    // $24K SS → taxableSS = 20400; withdrawal = 20000
-    // totalIncome = 40400; taxableIncome = max(0, 40400 - 32200) = 8200
+  test("SS not taxable when provisional income ≤ $32K MFJ lower threshold (IRC §86)", () => {
+    // $24K SS + $20K withdrawal → provisional = 20000 + 12000 = 32000 ≤ 32000 → taxableSS = 0
+    // totalIncome = 20000; taxableIncome = max(0, 20000 - 32200) = 0
     const r = taxFL(60, 20_000, { ss: 24_000 });
-    expect(r.taxableIncome).toBe(8_200);
+    expect(r.taxableIncome).toBe(0);
+  });
+
+  test("85% of SS taxable at high income (provisional far above $44K MFJ)", () => {
+    // $24K SS + $100K withdrawal → provisional = 112000 >> 44000 → taxableSS = 20400 (85% cap)
+    // totalIncome = 120400; taxableIncome = 120400 - 32200 = 88200
+    const r = taxFL(60, 100_000, { ss: 24_000 });
+    expect(r.taxableIncome).toBe(88_200);
+  });
+
+  test("50% tier: provisional income between MFJ thresholds taxes half the excess", () => {
+    // $24K SS + $26K withdrawal → provisional = 26000 + 12000 = 38000 (between 32K and 44K)
+    // taxableSS = min(0.5 × (38000 − 32000), 0.5 × 24000) = 3000
+    // totalIncome = 29000; taxableIncome = max(0, 29000 - 32200) = 0
+    const r = taxFL(60, 26_000, { ss: 24_000 });
+    expect(r.taxableIncome).toBe(0);
+    expect(r.fedTax).toBe(0);
   });
 
   test("Florida state tax = 0 regardless of income", () => {
@@ -475,12 +491,11 @@ describe("runMC — Monte Carlo integration", () => {
   });
 
   test("joint RMD table gives lower RMD draw than uniform table (divisors are higher)", () => {
-    // Larger divisors → smaller RMD → slightly less forced withdrawal
     const uniform = runMC({ ...BASE, stateOfResidence: "CA", useJointRmdTable: false }, 90, 1000, 42, true);
     const joint   = runMC({ ...BASE, stateOfResidence: "CA", useJointRmdTable: true  }, 90, 1000, 42, true);
-    // Joint table has smaller divisors (25.3 vs 30.4 at age 73), so HIGHER RMD
-    // That means joint should have lower or equal success rate vs uniform
-    // Just verify both return valid results (the directional difference depends on divisor values)
+    // Joint Table II (spouse >10y younger) has LARGER divisors than Uniform Table III
+    // at most ages (e.g. 26.5 uniform vs 25.3 joint at 73 — joint is smaller there, but
+    // crosses over by ~80), so direction varies by age mix; just verify both run validly.
     expect(uniform.rate).toBeGreaterThanOrEqual(0);
     expect(joint.rate).toBeGreaterThanOrEqual(0);
   });
@@ -762,12 +777,14 @@ describe("Net income = gross withdrawal − total taxes", () => {
     expect(50_000 - rFL.totalTax).toBeGreaterThan(50_000 - rNJ.totalTax);
   });
 
-  // 85% SS rule: $30K draw + $24K SS → taxableSS=20,400 → totalIncome=50,400
-  // Single 65+ std ded=17,750 → taxable=32,650
-  test("Single, age 68, FL: 85% of SS is taxable, correct taxableIncome with SS", () => {
+  // IRC §86: $30K draw + $24K SS → provisional = 30000 + 12000 = 42000 (single, above $34K)
+  // taxableSS = min(0.85 × (42000 − 34000) + min(0.5 × 9000, 12000), 20400) = 6800 + 4500 = 11300
+  // totalIncome = 41,300; single 65+ std ded = 17,750 → taxable = 23,550
+  // fedTax = 12400 × 10% + (23550 − 12400) × 12% = 1240 + 1338 = 2578
+  test("Single, age 68, FL: SS taxed per provisional-income tiers, correct taxableIncome", () => {
     const r = calcYearTax(68, 2026, 30_000, 24_000, 0, 0, 0, false, 0.025, "single", "FL");
-    expect(r.taxableIncome).toBe(32_650);
-    expect(r.fedTax).toBeCloseTo(3_670, 0);
+    expect(r.taxableIncome).toBe(23_550);
+    expect(r.fedTax).toBeCloseTo(2_578, 0);
   });
 
   test("totalTax === fedTax + stateTax + irmaa for single filer", () => {
@@ -781,16 +798,17 @@ describe("Net income = gross withdrawal − total taxes", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("RMD calculations — SECURE Act 2.0 divisors and tax impact", () => {
 
-  test("RMD at age 73: $1M / 30.4 = $32,895", () => {
-    expect(Math.round(1_000_000 / 30.4)).toBe(32_895);
+  // Divisors from IRS Pub 590-B Table III (Uniform Lifetime), 2022+ table
+  test("RMD at age 73: $1M / 26.5 = $37,736", () => {
+    expect(Math.round(1_000_000 / 26.5)).toBe(37_736);
   });
 
-  test("RMD at age 80: $500K / 23.8 = $21,008", () => {
-    expect(Math.round(500_000 / 23.8)).toBe(21_008);
+  test("RMD at age 80: $500K / 20.2 = $24,752", () => {
+    expect(Math.round(500_000 / 20.2)).toBe(24_752);
   });
 
-  test("RMD at age 90: $200K / 15.3 = $13,072", () => {
-    expect(Math.round(200_000 / 15.3)).toBe(13_072);
+  test("RMD at age 90: $200K / 12.2 = $16,393", () => {
+    expect(Math.round(200_000 / 12.2)).toBe(16_393);
   });
 
   test("RMD in calcYearTax raises taxable income vs no RMD (single filer, age 73)", () => {

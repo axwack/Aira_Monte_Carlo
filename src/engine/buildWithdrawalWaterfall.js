@@ -21,6 +21,7 @@ import {
   progTax,
   idxB,
   irmaaCost,
+  taxableSocialSecurity,
   getStateBrackets,
   getRmdStartAge,
   FED_BRACKETS_2026_MFJ,
@@ -37,12 +38,13 @@ const STD_DED_SINGLE = 16_100;
 const AGE_BONUS_MFJ    = 3_300;
 const AGE_BONUS_SINGLE = 1_650;
 
-// 2026 IRMAA Tier-1 MAGI ceiling (MFJ), inflation-adjusted in engine
-const IRMAA_TIER1_2026 = 218_000;
+// 2026 IRMAA Tier-1 MAGI ceiling, inflation-adjusted in engine
+const IRMAA_TIER1_2026_MFJ    = 218_000;
+const IRMAA_TIER1_2026_SINGLE = 109_000;
 
 // Bracket ceilings as taxable income (post std-deduction), 2026, inflation-indexed
 const BRACKET_CEILINGS_MFJ    = { "10": 24_800, "12": 100_800, "22": 211_400, "24": 403_550, "irmaa": 218_000 };
-const BRACKET_CEILINGS_SINGLE = { "10": 12_400, "12": 50_400,  "22": 105_700, "24": 201_800, "irmaa": 106_000 };
+const BRACKET_CEILINGS_SINGLE = { "10": 12_400, "12": 50_400,  "22": 105_700, "24": 201_800, "irmaa": 109_000 };
 
 function stdDed(age, isMFJ, inflFactor) {
   const base  = isMFJ ? STD_DED_MFJ    : STD_DED_SINGLE;
@@ -80,6 +82,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     twoHousehold = false,
     dob,
     birthYear,
+    rmdStartAge,
     useJointRmdTable = false,
     gkFloor      = 48_000,
     gkCeiling    = 115_000,
@@ -101,7 +104,9 @@ export function buildWithdrawalWaterfall(params = {}) {
   const gr         = grParam ?? 0.07;
   const cashGr     = 0.045; // conservative cash/SGOV return
   const retireYear = BASE_YEAR + (retireAge - currentAge);
-  const rmdAge     = getRmdStartAge({ dob, birthYear, currentAge });
+  const rmdAge     = (typeof rmdStartAge === "number" && rmdStartAge > 0)
+    ? rmdStartAge
+    : getRmdStartAge({ dob, birthYear, currentAge });
 
   const fedBase    = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
   const stateBr0   = twoHousehold ? null : getStateBrackets(stateOfResidence, isMFJ);
@@ -139,20 +144,22 @@ export function buildWithdrawalWaterfall(params = {}) {
   function yearTax(age, yr, fromPretax, ssGross, annuityTaxable, rmd, inflFactor) {
     const iF  = inflFactor;
     const fB  = idxB(fedBase, iF);
-    const nB  = stateBr0 ? idxB(stateBr0, iF) : [];
     const sd  = stdDed(age, isMFJ, iF);
-    const taxSS = Math.round(ssGross * 0.85);
-    const totInc = taxSS + annuityTaxable + rmd + fromPretax;
+    // IRC §86 provisional-income tiers (0% / 50% / 85% of SS taxable)
+    const otherOrdInc = annuityTaxable + rmd + fromPretax;
+    const taxSS = Math.round(taxableSocialSecurity(ssGross, otherOrdInc, isMFJ));
+    const totInc = taxSS + otherOrdInc;
     const txInc  = Math.max(0, totInc - sd);
     const fedT   = Math.round(progTax(txInc, fB));
     const stT    = stateBr0 ? Math.round(progTax(txInc, idxB(stateBr0, iF))) : 0;
-    const magi   = totInc + (ssGross - taxSS);
-    const irmaa  = age >= 65 ? irmaaCost(magi, yr, infR) : 0;
+    // IRMAA MAGI = AGI + tax-exempt interest; untaxed SS is NOT added back
+    const magi   = totInc;
+    const irmaa  = age >= 65 ? irmaaCost(magi, yr, infR, isMFJ) : 0;
     let margR = 0;
     for (const b of fB) { if (txInc > b.lo) margR = b.rate; else break; }
     return { fedTax: fedT, stateTax: stT, irmaa, totalTax: fedT + stT, irmaaFull: fedT + stT + irmaa,
              effectiveRate: totInc > 0 ? (fedT + stT) / totInc : 0, marginalBracket: margR,
-             taxableIncome: txInc, totInc };
+             taxableIncome: txInc, totInc, taxSS };
   }
 
   // ── Scenario runner ────────────────────────────────────────────────────────
@@ -214,11 +221,15 @@ export function buildWithdrawalWaterfall(params = {}) {
 
       if (isSmart && withdrawalBracketTarget && withdrawalBracketTarget !== "off") {
         const sd      = stdDed(age, isMFJ, iF);
+        // 85% SS inclusion here is a deliberate worst-case estimate: the pretax draw
+        // being sized below itself raises provisional income, so assuming max inclusion
+        // keeps the bracket cap conservative (never overshoots the target ceiling).
         const taxSoFar = Math.max(0, Math.round(ss * 0.85) + rmd + annuity - sd);
         let ceiling = bracketCeiling(withdrawalBracketTarget, isMFJ, iF);
 
         if (irmaaGuard && age >= 63) {
-          const irmaaCap = Math.round(IRMAA_TIER1_2026 * iF) - sd;
+          const irmaaTier1 = isMFJ ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
+          const irmaaCap = Math.round(irmaaTier1 * iF) - sd;
           if (irmaaCap < ceiling) {
             ceiling = irmaaCap;
             pretaxCapReason = "irmaa_ceil";
@@ -249,9 +260,13 @@ export function buildWithdrawalWaterfall(params = {}) {
       const tax = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF);
 
       // ── Step 8: Landmine detection ──────────────────────────────────────
+      // SS torpedo: other ordinary income has pushed provisional income past the
+      // IRC §86 lower threshold ($32K MFJ / $25K single), dragging SS benefits
+      // into taxation (up to $0.85 per extra $1 in the phase-in range).
       const provisional = ss * 0.5 + rmd + fromPretax + annuity;
-      const torpedoThresh = isMFJ ? 44_000 : 34_000;
-      const ssTorpedo     = ssTorpedoGuard && ss > 0 && provisional > torpedoThresh;
+      const torpedoThresh = isMFJ ? 32_000 : 25_000;
+      const ssTorpedo     = ssTorpedoGuard && ss > 0 && provisional > torpedoThresh
+        && tax.taxSS > 0;
       const irmaaTriggered = tax.irmaa > 0;
       const rmdActive     = age >= rmdAge && (pretax + rmd + fromPretax) > 0;
 
