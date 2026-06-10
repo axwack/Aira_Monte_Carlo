@@ -226,6 +226,19 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
     expect(r.fedTax).toBe(0);
   });
 
+  test("Low-income: SS is the only income, spending funded by cash/Roth → ~$0 tax", () => {
+    // Cash and Roth withdrawals are non-taxable, so they are NOT passed as ordinary
+    // income (withdrawalAmount = 0). SS is the only income source.
+    // provisional = ½ × $24K = $12K < $32K MFJ lower threshold → taxableSS = 0
+    // → taxableIncome = 0 → fedTax = 0.
+    // Regression: before the IRC §86 fix, SS was always taxed at 85% ($20,400 of
+    // taxable income), producing a nonzero federal tax even with no real income.
+    const r = taxFL(70, 0, { ss: 24_000 });
+    expect(r.taxableIncome).toBe(0);
+    expect(r.fedTax).toBe(0);
+    expect(r.stateTax).toBe(0); // FL has no state income tax
+  });
+
   test("Florida state tax = 0 regardless of income", () => {
     const r = taxFL(60, 100_000);
     expect(r.stateTax).toBe(0);
