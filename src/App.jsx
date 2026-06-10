@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.8";
-export const BUILD_TAG = "[main] v1.1.0.8 — Merge tax/RMD logic fixes: IRC §86 SS taxation, SECURE 2.0 RMD age, Uniform Lifetime table, IRMAA/inflation indexing.";
-export const BUILD_TIME = "2026-06-10T00:00:00Z";
+const APP_VERSION = "1.1.0.9";
+export const BUILD_TAG = "[main] v1.1.0.9 — Withdrawal engine: decouple sourcing guardrails from distribution strategy, fix VPW PMT formula, centralize std-deduction/IRMAA constants in helpers.";
+export const BUILD_TIME = "2026-06-10T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -604,11 +604,9 @@ function calcYearTax(
   const totalIncome = taxableSS + otherIncome;
   const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - 2026));
 
-  // Standard deduction: MFJ $32,200 / Single $16,100 (2026 est.), inflation-adjusted forward
-  let stdDeduction = Math.round((isMFJ ? 32200 : 16100) * inflationFactor);
-
-  // Additional deduction for age 65+: MFJ adds $3,300, Single adds $1,650
-  if (age >= 65) stdDeduction += Math.round((isMFJ ? 3300 : 1650) * inflationFactor);
+  // Standard deduction (incl. age-65+ add-on), inflation-adjusted forward.
+  // Single source: getStandardDeduction → TAX_REFERENCE.md (CLAUDE.md Rule 6).
+  const stdDeduction = getStandardDeduction(age, filingStatus, inflationFactor);
   const taxableIncome = Math.max(0, totalIncome - stdDeduction);
 
   // Select federal brackets by filing status
@@ -636,14 +634,40 @@ function calcYearTax(
 }
 
 /**
+ * Standard deduction (MFJ/Single), with the age-65+ add-on, inflated forward.
+ * Canonical source: TAX_REFERENCE.md → "Standard Deduction (MFJ 2026)".
+ * Single source of truth — calcYearTax and the sourcing waterfall both call this
+ * instead of re-declaring the literals (CLAUDE.md Rule 6).
+ */
+function getStandardDeduction(age, filingStatus, inflFactor) {
+  const mfj = filingStatus !== "single";
+  let sd = mfj ? 32_200 : 16_100;          // base, 2026
+  if (age >= 65) sd += mfj ? 3_300 : 1_650; // +$1,650 per spouse at 65+
+  return Math.round(sd * inflFactor);
+}
+
+/**
+ * IRMAA MAGI ceiling for a given tier, inflated forward.
+ * Canonical source: TAX_REFERENCE.md → "IRMAA Thresholds (MFJ 2026)".
+ * tier 1 = base tier below which there is no Medicare surcharge.
+ */
+function getIrmaaCeiling(tier, filingStatus, inflFactor) {
+  const mfj = filingStatus !== "single";
+  const base = mfj ? 218_000 : 109_000;    // tier-1 MAGI ceiling, 2026
+  return Math.round(base * inflFactor);
+}
+
+/**
  * Returns the TAXABLE INCOME ceiling (after std deduction) for a given bracket target.
  * Values are 2026 estimates, inflated by inflFactor for future years.
+ * The "irmaa" target delegates to getIrmaaCeiling so the threshold has one home.
  */
 function getBracketCeiling(target, filingStatus, inflFactor) {
+  if (target === "irmaa") return getIrmaaCeiling(1, filingStatus, inflFactor);
   const mfj = filingStatus !== "single";
   const ceilings = mfj
-    ? { "12": 100_800, "22": 211_400, "24": 403_550, "irmaa": 218_000 }
-    : { "12":  50_400, "22": 105_700, "24": 201_800, "irmaa": 109_000 };
+    ? { "12": 100_800, "22": 211_400, "24": 403_550 }
+    : { "12":  50_400, "22": 105_700, "24": 201_800 };
   return Math.round((ceilings[target] ?? ceilings["22"]) * inflFactor);
 }
 
@@ -807,9 +831,12 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
         }
         else if (withdrawalStrategy === "vpw") {
-          const maxAge = 100;
-          const n = Math.max(1, maxAge - age);
-          const rateVPW = (n <= 1) ? 1 : (0.0376) / (1 - Math.pow(1 + 0.0376, -n + 1)) + 0.0376;
+          // VPW = portfolio amortized over remaining years at an assumed return.
+          // Canonical PMT payout rate: r / (1 - (1+r)^(-n)), n = years of payments
+          // left. r is a fixed assumption (VPW's defining feature), profile-overridable.
+          const rVPW = p.vpwRealReturn ?? 0.0376;
+          const n = Math.max(1, (p.vpwEndAge ?? 100) - age);
+          const rateVPW = rVPW === 0 ? 1 / n : rVPW / (1 - Math.pow(1 + rVPW, -n));
           const newSp = totalPort * Math.min(0.10, rateVPW);
           sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
         }
@@ -920,9 +947,10 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       const totalTax = taxResult.totalTax;
       const totalWithdrawalNeeded = totalNeed + totalTax;
 
-      // Withdraw from buckets in order: cash → taxable → pretax → roth
-      // Smart waterfall mode caps pretax at bracket ceiling; respects Roth reserve floor.
-      const useSmartWF = withdrawalStrategy === "smart";
+      // Withdraw from buckets in order: cash → taxable → pretax → roth.
+      // Sourcing guardrails (bracket cap, IRMAA guard, Roth reserve) are ORTHOGONAL
+      // to the distribution strategy — they apply to any strategy once the user has
+      // chosen a bracket target. "off" opts out to naive (pretax-first, uncapped).
       let remaining = totalWithdrawalNeeded;
       let fromCash = Math.min(remaining, cash);
       remaining -= fromCash;
@@ -930,23 +958,29 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       remaining -= fromTaxable;
 
       let pretaxAllowedMC = remaining;
-      if (useSmartWF && p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off") {
+      if (p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off") {
         const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - 2026));
-        const isMFJmc = filingStatus !== "single";
-        const sdMC = Math.round(((isMFJmc ? 32_200 : 16_100) + (age >= 65 ? (isMFJmc ? 3_300 : 1_650) : 0)) * inflFactorMC);
-        // 85% SS inclusion is a deliberate worst-case estimate so the cap never overshoots
-        const taxableSoFarMC = Math.max(0, Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable) - sdMC);
-        let ceilMC = getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC);
+        const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC);
+        // 85% SS inclusion is a deliberate worst-case estimate so the cap never overshoots.
+        const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable);
+        const taxableSoFarMC = Math.max(0, ordinaryFloorMC - sdMC);
+        // Bracket room lives in taxable-income space (ceiling is post-std-deduction).
+        let bracketRoom = Math.max(0, getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC) - taxableSoFarMC);
+        // IRMAA room lives in MAGI space — do NOT subtract the std deduction. A pretax
+        // draw raises taxable income and MAGI by the same dollar, so both rooms cap the
+        // same incremental draw; take the tighter. (LTCG from the taxable draw is not
+        // yet folded into the MAGI base here — tracked as a known modeling gap.)
         if (p.irmaaGuard && age >= 63) {
-          ceilMC = Math.min(ceilMC, Math.round((isMFJmc ? 218_000 : 109_000) * inflFactorMC) - sdMC);
+          const irmaaRoom = Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactorMC) - ordinaryFloorMC);
+          bracketRoom = Math.min(bracketRoom, irmaaRoom);
         }
-        pretaxAllowedMC = Math.min(remaining, Math.max(0, ceilMC - taxableSoFarMC));
+        pretaxAllowedMC = Math.min(remaining, bracketRoom);
       }
 
       let fromPretax = Math.min(pretaxAllowedMC, pretax);
       remaining -= fromPretax;
 
-      const rothFloorMC = useSmartWF ? (p.rothEmergencyReserve || 0) : 0;
+      const rothFloorMC = p.rothEmergencyReserve || 0;
       let fromRoth = Math.min(remaining, Math.max(0, roth - rothFloorMC));
       remaining -= fromRoth;
 
@@ -1110,6 +1144,11 @@ function runStress(p, endAge, N = 2000, seed = 99) {
 }
 
 /* ════ DETERMINISTIC WITHDRAWAL SCHEDULE (median returns) ════ */
+// ⚠️ DEAD CODE (verified 2026-06-10): zero callers, not exported. The live
+// year-by-year schedule uses simulateDeterministicWithStrategy below, which
+// implements all 12 strategies. This legacy fn only covers 5 and is scheduled
+// for removal — do NOT wire anything to it. Kept this pass only to avoid a
+// fragile 115-line delete; remove in the Withdrawal-tab UI commit.
 function simulateDeterministic(p, inf) {
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
   const retYrs = p.endAge - p.retireAge;
@@ -1328,18 +1367,11 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
       }
       else if (withdrawalStrategy === "vpw") {
-        const eqPct = age < 62 ? (p.preRetireEq || 91) : (p.postRetireEq || 70);
-        const r = 0.0376;
-        const maxAge = 100;
-        const n = Math.max(1, maxAge - age);
-        let rate;
-        if (r === 0) rate = 1 / n;
-        else {
-          const term = (1 - Math.pow(1 + r, -n + 1)) / r;
-          rate = 1 / (1 + term);
-        }
-        rate = Math.min(0.10, rate);
-        let newSp = port * rate;
+        // VPW PMT payout rate: r / (1 - (1+r)^(-n)). Must match runMC exactly.
+        const rVPW = p.vpwRealReturn ?? 0.0376;
+        const n = Math.max(1, (p.vpwEndAge ?? 100) - age);
+        const rate = rVPW === 0 ? 1 / n : rVPW / (1 - Math.pow(1 + rVPW, -n));
+        const newSp = port * Math.min(0.10, rate);
         sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
       }
       else if (withdrawalStrategy === "cape") {
@@ -10357,4 +10389,4 @@ export default function AiRAForecaster() {
   );
 }
 
-export { runMC, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy };
+export { runMC, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling };
