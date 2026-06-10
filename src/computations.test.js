@@ -14,6 +14,9 @@ import {
   progTax,
   irmaaCost,
   simulateDeterministicWithStrategy,
+  accountBucketPieces,
+  expandAccountBuckets,
+  _defaultBucket,
 } from "./App";
 
 // ─── Shared MC baseline ───────────────────────────────────────────────────────
@@ -1399,5 +1402,58 @@ describe("Income flow-through — all sources must reach the withdrawal schedule
     const yr1 = schedule[0];
     const expectedDraw = Math.max(0, yr1.spending - yr1.ss - yr1.Rental - yr1.OtherIncome);
     expect(yr1.portfolioDraw).toBeCloseTo(expectedDraw, -1);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Account bucket splits (Quicken-style: one balance, many bucket allocations)
+// ───────────────────────────────────────────────────────────────────────────
+describe("account bucket splits", () => {
+  test("no splits → single piece carrying the full balance in the assigned bucket", () => {
+    const a = { id: "1", category: "pretax", balance: 100_000, bucket: 2 };
+    const pieces = accountBucketPieces(a);
+    expect(pieces).toHaveLength(1);
+    expect(pieces[0].bucket).toBe(2);
+    expect(pieces[0].balance).toBe(100_000);
+  });
+
+  test("no bucket + no splits → falls back to _defaultBucket(category)", () => {
+    const a = { id: "1", category: "cash", balance: 50_000 };
+    const pieces = accountBucketPieces(a);
+    expect(pieces[0].bucket).toBe(_defaultBucket("cash")); // cash → 1
+    expect(pieces[0].balance).toBe(50_000);
+  });
+
+  test("split distributes balance by pct and rolls up to the original total", () => {
+    const a = { id: "1", category: "pretax", balance: 100_000,
+      splits: [{ bucket: 1, pct: 30 }, { bucket: 3, pct: 70 }] };
+    const pieces = accountBucketPieces(a);
+    expect(pieces).toHaveLength(2);
+    expect(pieces.find(p => p.bucket === 1).balance).toBeCloseTo(30_000, 6);
+    expect(pieces.find(p => p.bucket === 3).balance).toBeCloseTo(70_000, 6);
+    // Rollup invariant: pieces sum back to the single account balance
+    expect(pieces.reduce((s, p) => s + p.balance, 0)).toBeCloseTo(100_000, 6);
+  });
+
+  test("pct that doesn't total 100 is normalized (still rolls up to balance)", () => {
+    const a = { id: "1", category: "pretax", balance: 100_000,
+      splits: [{ bucket: 1, pct: 1 }, { bucket: 2, pct: 3 }] }; // 1:3 ratio
+    const pieces = accountBucketPieces(a);
+    expect(pieces.find(p => p.bucket === 1).balance).toBeCloseTo(25_000, 6);
+    expect(pieces.find(p => p.bucket === 2).balance).toBeCloseTo(75_000, 6);
+    expect(pieces.reduce((s, p) => s + p.balance, 0)).toBeCloseTo(100_000, 6);
+  });
+
+  test("expandAccountBuckets flattens a mixed account list, preserving total balance", () => {
+    const accts = [
+      { id: "1", category: "pretax", balance: 100_000, splits: [{ bucket: 1, pct: 40 }, { bucket: 3, pct: 60 }] },
+      { id: "2", category: "roth",   balance: 50_000,  bucket: 3 },
+    ];
+    const pieces = expandAccountBuckets(accts);
+    expect(pieces).toHaveLength(3); // 2 from the split + 1 single
+    const total = pieces.reduce((s, p) => s + p.balance, 0);
+    expect(total).toBeCloseTo(150_000, 6);
+    const b1 = pieces.filter(p => p.bucket === 1).reduce((s, p) => s + p.balance, 0);
+    expect(b1).toBeCloseTo(40_000, 6);
   });
 });
