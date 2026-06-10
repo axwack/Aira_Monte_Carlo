@@ -14,6 +14,9 @@ import {
   progTax,
   irmaaCost,
   simulateDeterministicWithStrategy,
+  getStandardDeduction,
+  getIrmaaCeiling,
+  getBracketCeiling,
 } from "./App";
 
 // ─── Shared MC baseline ───────────────────────────────────────────────────────
@@ -1135,16 +1138,15 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
   });
 
   // ── Variable Percentage Withdrawal (VPW) ───────────────────────────────────
-  // Year 1 (age 66): n = 100 − 66 = 34, r = 3.76%
-  // rate = 1 / (1 + (1 − (1+r)^(−(n−1))) / r), capped at 10%.
-  // spending = port × rate, clamped.
+  // Year 1 (age 66): n = vpwEndAge − age = 100 − 66 = 34, r = 3.76%.
+  // Canonical PMT payout rate (fixed 2026-06-10): rate = r / (1 − (1+r)^(−n)),
+  // capped at 10%. spending = port × rate, clamped to the GK band.
   test("VPW: year-2 spending = port × vpw_rate(age=66, n=34, r=3.76%), clamped", () => {
     const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "vpw" }, "vpw");
     const port1 = schedule[0].portfolioEnd;
     const n = 100 - 66; // age=66 at y=1
     const r = 0.0376;
-    const term = (1 - Math.pow(1 + r, -(n - 1))) / r;
-    const rate = Math.min(0.10, 1 / (1 + term));
+    const rate = Math.min(0.10, r / (1 - Math.pow(1 + r, -n)));
     const expected = Math.min(adjCeiling1, Math.max(adjFloor1, Math.round(port1 * rate)));
     expect(schedule[1].spending).toBeCloseTo(expected, -2);
   });
@@ -1386,5 +1388,80 @@ describe("Income flow-through — all sources must reach the withdrawal schedule
     const yr1 = schedule[0];
     const expectedDraw = Math.max(0, yr1.spending - yr1.ss - yr1.Rental - yr1.OtherIncome);
     expect(yr1.portfolioDraw).toBeCloseTo(expectedDraw, -1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tax-constant helpers — single source of truth (TAX_REFERENCE.md, CLAUDE.md Rule 6)
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("getStandardDeduction / getIrmaaCeiling / getBracketCeiling helpers", () => {
+  // Values per TAX_REFERENCE.md "Standard Deduction (MFJ 2026)".
+  test("std deduction MFJ base (<65) = $32,200 at inflFactor 1", () => {
+    expect(getStandardDeduction(60, "mfj", 1)).toBe(32_200);
+  });
+  test("std deduction MFJ both-65+ = $35,500 (base + 2×$1,650)", () => {
+    expect(getStandardDeduction(65, "mfj", 1)).toBe(35_500);
+  });
+  test("std deduction Single base = $16,100; 65+ = $17,750", () => {
+    expect(getStandardDeduction(60, "single", 1)).toBe(16_100);
+    expect(getStandardDeduction(65, "single", 1)).toBe(17_750);
+  });
+  test("std deduction scales by inflation factor", () => {
+    expect(getStandardDeduction(60, "mfj", 1.025)).toBe(Math.round(32_200 * 1.025));
+  });
+  // Values per TAX_REFERENCE.md "IRMAA Thresholds (MFJ 2026)".
+  test("IRMAA tier-1 ceiling = $218K MFJ / $109K single", () => {
+    expect(getIrmaaCeiling(1, "mfj", 1)).toBe(218_000);
+    expect(getIrmaaCeiling(1, "single", 1)).toBe(109_000);
+  });
+  test('getBracketCeiling("irmaa") delegates to getIrmaaCeiling (one source of truth)', () => {
+    const inflF = 1.0838;
+    expect(getBracketCeiling("irmaa", "mfj", inflF)).toBe(getIrmaaCeiling(1, "mfj", inflF));
+  });
+  test('getBracketCeiling 22% top = $211,400 MFJ; unknown target defaults to 22%', () => {
+    expect(getBracketCeiling("22", "mfj", 1)).toBe(211_400);
+    expect(getBracketCeiling("bogus", "mfj", 1)).toBe(211_400);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VPW — canonical PMT payout rate: rate = r / (1 − (1+r)^(−n)), n = vpwEndAge − age
+// Regression guard for the 2026-06-10 fix (wrong exponent −(n−1) + spurious +r term).
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("VPW withdrawal — PMT amortization formula", () => {
+  // Wide GK bands so the floor/ceiling clamp never masks the raw VPW rate.
+  const VPW_BASE = {
+    ...BASE,
+    withdrawalStrategy: "vpw",
+    ssb: 0, ssAge: 99, ab: 0, propIncome: 0,   // no offsets → draw == spend
+    gkFloor: 1_000, gkCeiling: 5_000_000,
+    vpwRealReturn: 0.0376, vpwEndAge: 100,
+    accounts: [{ id: "p", category: "pretax", name: "401k", balance: 2_000_000 }],
+  };
+  const rate = (age) => {
+    const r = 0.0376, n = 100 - age;
+    return r / (1 - Math.pow(1 + r, -n));
+  };
+
+  test("year-N spend = prior-year end balance × PMT rate at that age", () => {
+    const { schedule } = simulateDeterministicWithStrategy(VPW_BASE, 2.5, "vpw");
+    // Check an interior year (y=5, age 65) — strategy applies for y>0, and the
+    // VPW rate is applied to the START-of-year balance = prior row's portfolioEnd.
+    const age = schedule[5].age;            // 65
+    const expected = schedule[4].portfolioEnd * rate(age);
+    expect(Math.abs(schedule[5].spending / expected - 1)).toBeLessThan(0.01);
+  });
+
+  test("long-horizon VPW rate stays well below the 10% cap (old bug hit the cap)", () => {
+    const { schedule } = simulateDeterministicWithStrategy(VPW_BASE, 2.5, "vpw");
+    // Age 61, n=39 → correct rate ≈ 4.9%. The pre-fix formula inflated this past 10%.
+    const impliedRate = schedule[1].spending / schedule[0].portfolioEnd;
+    expect(impliedRate).toBeLessThan(0.07);
+    expect(impliedRate).toBeCloseTo(rate(schedule[1].age), 3);
+  });
+
+  test("VPW payout rate rises monotonically with age (shorter horizon)", () => {
+    expect(rate(80)).toBeGreaterThan(rate(65));
+    expect(rate(65)).toBeGreaterThan(rate(61));
   });
 });
