@@ -62,7 +62,7 @@ consult your fiduciary, CPA or tax accountant.
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
-import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
+import { buildRothExplorer, buildRothLadder, taxableSocialSecurity } from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.7";
-export const BUILD_TAG = "[main] v1.1.0.7 — Remove dead components (IncomePanel, PeopleViz) that were never rendered and caused tracing confusion. Follows employer-match consolidation in v1.1.0.6.";
-export const BUILD_TIME = "2026-06-05T00:00:00Z";
+const APP_VERSION = "1.1.0.8";
+export const BUILD_TAG = "[main] v1.1.0.8 — Merge tax/RMD logic fixes: IRC §86 SS taxation, SECURE 2.0 RMD age, Uniform Lifetime table, IRMAA/inflation indexing.";
+export const BUILD_TIME = "2026-06-10T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -594,12 +594,13 @@ function calcYearTax(
   inflationRate = isNaN(inflationRate) ? 0.025 : inflationRate;
 
   const isMFJ = filingStatus !== "single";
-  const taxableSS = ssIncome * 0.85;
   const otherIncome =
     (withdrawalAmount || 0) +
     (RentalIncome || 0) +
     (rmdIncome || 0) +
     (conversionAmount || 0);
+  // IRC §86 provisional-income tiers: 0% / 50% / 85% of SS taxable by income level
+  const taxableSS = taxableSocialSecurity(ssIncome, otherIncome, isMFJ);
   const totalIncome = taxableSS + otherIncome;
   const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - 2026));
 
@@ -620,8 +621,9 @@ function calcYearTax(
     const stateBr = getStateBrackets(stateOfResidence, isMFJ);
     if (stateBr) stateTax = Math.round(progTax(taxableIncome, idxB(stateBr, inflationFactor)));
   }
+      // IRMAA MAGI = AGI + tax-exempt interest; untaxed SS is NOT added back
       const magi = totalIncome;
-      const irmaa = age >= 65 ? irmaaCost(magi, yr) : 0;
+      const irmaa = age >= 65 ? irmaaCost(magi, yr, inflationRate, isMFJ) : 0;
       const totalTax = fedTax + stateTax + irmaa;
       const effectiveRate = totalIncome > 0 ? totalTax / totalIncome : 0;
       let marginalBracket = 0;
@@ -640,8 +642,8 @@ function calcYearTax(
 function getBracketCeiling(target, filingStatus, inflFactor) {
   const mfj = filingStatus !== "single";
   const ceilings = mfj
-    ? { "12": 100_800, "22": 211_400, "24": 403_550, "irmaa": 212_000 }
-    : { "12":  50_400, "22": 105_700, "24": 201_800, "irmaa": 106_000 };
+    ? { "12": 100_800, "22": 211_400, "24": 403_550, "irmaa": 218_000 }
+    : { "12":  50_400, "22": 105_700, "24": 201_800, "irmaa": 109_000 };
   return Math.round((ceilings[target] ?? ceilings["22"]) * inflFactor);
 }
 
@@ -676,6 +678,15 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   const cashRealReturn = (p.cashRealReturn ?? 1.0) / 100;
   const useJointTable = (p.useJointRmdTable ?? false) && p.filingStatus !== "single";
   const UNIFORM_TABLE = RMD_DIV;
+
+  // SECURE 2.0 RMD start age (72/73/75 by birth year), user override wins
+  const rmdStartAge = (typeof p.rmdStartAge === "number" && p.rmdStartAge > 0)
+    ? p.rmdStartAge
+    : getRmdStartAge({ dob: p.dob, birthYear: p.birthYear, currentAge: p.currentAge });
+
+  // Expected inflation for tax-bracket/IRMAA indexing. Brackets must compound at the
+  // assumed long-run rate, not a single bootstrapped year's draw (see inflY below).
+  const taxInfl = (p.inf ?? 2.5) / 100;
 
   // Pre-compute annual mortgage P&I obligation (constant across all paths)
   let mortAnnualPI = 0, mortPayoffYr = 0;
@@ -875,12 +886,12 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       if (housingType === "own") {
         housingCost = mortAnnualPI > 0 && calYear < mortPayoffYr ? mortAnnualPI : 0;
       } else if (housingType === "rent") {
-        housingCost = Math.round((p.annualRent || 0) * inflY);
+        housingCost = Math.round((p.annualRent || 0) * cumInfl);
       }
 
       // Active fixed carveouts
       const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
-        return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * inflY) : 0);
+        return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * cumInfl) : 0);
       }, 0);
 
       const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, calYear);
@@ -888,7 +899,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
 
       // RMD calculation
       let rmd = 0;
-      if (age >= 73 && pretax > 0) {
+      if (age >= rmdStartAge && pretax > 0) {
         let divisor;
         if (useJointTable && JOINT_RMD_TABLE[age]) {
           divisor = JOINT_RMD_TABLE[age];
@@ -904,7 +915,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       const filingStatus = p.filingStatus || "mfj";
       const taxResult = calcYearTax(
         age, yr, totalNeed, ss, effectiveAb + otherIncTaxable, rmd, 0,
-        p.twoHousehold || false, inflY, filingStatus, p.stateOfResidence || "CA"
+        p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "CA"
       );
       const totalTax = taxResult.totalTax;
       const totalWithdrawalNeeded = totalNeed + totalTax;
@@ -920,13 +931,14 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
 
       let pretaxAllowedMC = remaining;
       if (useSmartWF && p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off") {
-        const inflFactorMC = Math.pow(1 + (p.inf || 2.5) / 100, Math.max(0, yr - 2026));
+        const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - 2026));
         const isMFJmc = filingStatus !== "single";
         const sdMC = Math.round(((isMFJmc ? 32_200 : 16_100) + (age >= 65 ? (isMFJmc ? 3_300 : 1_650) : 0)) * inflFactorMC);
+        // 85% SS inclusion is a deliberate worst-case estimate so the cap never overshoots
         const taxableSoFarMC = Math.max(0, Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable) - sdMC);
         let ceilMC = getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC);
         if (p.irmaaGuard && age >= 63) {
-          ceilMC = Math.min(ceilMC, Math.round(218_000 * inflFactorMC) - sdMC);
+          ceilMC = Math.min(ceilMC, Math.round((isMFJmc ? 218_000 : 109_000) * inflFactorMC) - sdMC);
         }
         pretaxAllowedMC = Math.min(remaining, Math.max(0, ceilMC - taxableSoFarMC));
       }
@@ -956,9 +968,12 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
       pretax  = isNaN(pretax)  ? 0 : pretax;
       roth    = isNaN(roth)    ? 0 : roth;
 
-      // Bracket-fill Roth conversion (after spending withdrawals, before growth)
+      // Bracket-fill Roth conversion (after spending withdrawals, before growth).
+      // Bracket ceilings index at the assumed long-run inflation rate, not inflY:
+      // compounding a single bootstrapped year's draw over the whole horizon would
+      // swing the ceiling wildly with RNG noise.
       if (p.rothConversionTarget && p.rothConversionTarget !== "off" && pretax > 1000) {
-        const inflFactor = Math.pow(1 + inflY, Math.max(0, yr - 2026));
+        const inflFactor = Math.pow(1 + taxInfl, Math.max(0, yr - 2026));
         const bracketCeiling = getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor);
         const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
         if (room > 500) {
@@ -1431,27 +1446,44 @@ const IRMAA_2026 = [
   { m: 410000, f: 8300 },
   { m: 750000, f: 11130 },
 ];
-// IRS Publication 590-B Table II (Joint & Last Survivor), owner age with
-// spouse ~10 years younger. Values at 75 and 76 corrected per Table II.
+// IRS Pub 590-B Table III (Uniform Lifetime) divisors, 2022+ table.
+// Default table for owners whose sole-beneficiary spouse is NOT >10 years younger.
+// (The >10-years-younger Joint & Last Survivor case uses JOINT_RMD_TABLE above.)
 const RMD_DIV = {
-  73: 30.4,
-  74: 29.5,
-  75: 28.9,  // Table II (was 28.5 Uniform)
-  76: 28.0,  // Table II (was 27.6 Uniform)
-  77: 26.6,
-  78: 25.7,
-  79: 24.7,
-  80: 23.8,
-  81: 22.9,
-  82: 22.0,
-  83: 21.1,
-  84: 20.2,
-  85: 19.4,
-  86: 18.5,
-  87: 17.7,
-  88: 16.9,
-  89: 16.1,
-  90: 15.3,
+  72: 27.4,
+  73: 26.5,
+  74: 25.5,
+  75: 24.6,
+  76: 23.7,
+  77: 22.9,
+  78: 22.0,
+  79: 21.1,
+  80: 20.2,
+  81: 19.4,
+  82: 18.5,
+  83: 17.7,
+  84: 16.8,
+  85: 16.0,
+  86: 15.2,
+  87: 14.4,
+  88: 13.7,
+  89: 12.9,
+  90: 12.2,
+  91: 11.5,
+  92: 10.8,
+  93: 10.1,
+  94: 9.5,
+  95: 8.9,
+  96: 8.4,
+  97: 7.8,
+  98: 7.3,
+  99: 6.8,
+  100: 6.4,
+  101: 6.0,
+  102: 5.6,
+  103: 5.2,
+  104: 4.9,
+  105: 4.6,
 };
 
 function progTax(ti, br) {
@@ -1469,10 +1501,15 @@ function idxB(br, f) {
     rate: b.rate,
   }));
 }
-function irmaaCost(magi, yr) {
-  const f = Math.pow(1.025, yr - 2026);
+function irmaaCost(magi, yr, infR = 0.025, isMFJ = true) {
+  const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - 2026);
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
-    if (magi >= IRMAA_2026[i].m * f) return Math.round(IRMAA_2026[i].f * f);
+    // Single tiers are half the MFJ thresholds, except the top tier ($500K vs $750K).
+    // Surcharge is per person, so single pays half the two-person MFJ amount.
+    const thresh = isMFJ ? IRMAA_2026[i].m
+      : (i === IRMAA_2026.length - 1 ? 500_000 : IRMAA_2026[i].m / 2);
+    const cost = isMFJ ? IRMAA_2026[i].f : IRMAA_2026[i].f / 2;
+    if (magi >= thresh * f) return Math.round(cost * f);
   }
   return 0;
 }
@@ -3429,10 +3466,8 @@ const modeDescs = {
         const b35t    = fB.find(b => b.rate === 0.35)?.hi ?? 0;
         const b37t    = fB.find(b => b.rate === 0.37)?.hi ?? 0;
 
-        // SS provisional income → up to 85% taxable
-        const provisional = cyW2 + cyRental + cyOther + cySS * 0.5;
-        const ssThr85 = isMFJ ? 44000 : 34000;
-        const ssTaxable = provisional > ssThr85 ? Math.min(cySS * 0.85, cySS) : cySS * 0.5;
+        // SS provisional income → 0% / 50% / 85% taxable per IRC §86 tiers
+        const ssTaxable = Math.round(taxableSocialSecurity(cySS, cyW2 + cyRental + cyOther, isMFJ));
         const grossInc  = cyW2 + ssTaxable + cyRental + cyOther;
         const taxableBC = Math.max(0, grossInc - stdD);           // taxable before conversion
         const fedTaxBC  = Math.round(progTax(taxableBC, fB));
