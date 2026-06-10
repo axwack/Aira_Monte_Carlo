@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.3";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.3 — Fix fixedWithdrawalRate decimal/% normalization in params and spending card.";
-export const BUILD_TIME = "2026-05-29T00:00:00Z";
+const APP_VERSION = "1.1.0.4";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.4 — IRC §86 SS taxation, SECURE 2.0 RMD age, Uniform Lifetime table, IRMAA/inflation indexing fixes.";
+export const BUILD_TIME = "2026-06-10T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
