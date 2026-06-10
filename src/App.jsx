@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.9";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.9 — merge main (Withdrawal Plan equation UI, Bengen rule, Plan-to-Age) + dead-code/netlify/@anthropic-ai-sdk cleanup.";
+const APP_VERSION = "1.1.0.11";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.11 — Withdrawal Plan default open (sections + year-by-year table), Header hoisted out of render body, package.json pruned.";
 export const BUILD_TIME = "2026-06-10T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -4411,11 +4411,10 @@ function LandmineTip({ emoji, label, detail, color }) {
  * and a twisty (collapsible) body. Both sections default to open so the
  * full plan is visible on first load; the user can collapse either to focus.
  */
-function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
-  const [openSourcing, setOpenSourcing] = useState(false);
-  const [openStrategy, setOpenStrategy] = useState(false);
-
-  const Header = ({ open, onToggle, color, question, subtitle }) => (
+// Hoisted out of WithdrawalPlanCombined so it isn't recreated on every render
+// (a fresh component identity each render remounts the subtree and drops focus).
+function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle }) {
+  return (
     <button
       onClick={onToggle}
       style={{
@@ -4442,6 +4441,11 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
       </div>
     </button>
   );
+}
+
+function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
+  const [openSourcing, setOpenSourcing] = useState(true);
+  const [openStrategy, setOpenStrategy] = useState(true);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -4463,7 +4467,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
 
       {/* ── Section 1: Sourcing ──────────────────────────────────────── */}
       <div>
-        <Header
+        <WithdrawalSectionHeader
           open={openSourcing}
           onToggle={() => setOpenSourcing(v => !v)}
           color="#5eead4"
@@ -4479,7 +4483,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
 
       {/* ── Section 2: Strategy pacing ───────────────────────────────── */}
       <div>
-        <Header
+        <WithdrawalSectionHeader
           open={openStrategy}
           onToggle={() => setOpenStrategy(v => !v)}
           color="#fbbf24"
@@ -4726,7 +4730,7 @@ function WaterfallPlanView({ p }) {
 }
 
 function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
-  const [showTable, setShowTable] = useState(false);
+  const [showTable, setShowTable] = useState(true);
   const data = useMemo(
     () => simulateDeterministicWithStrategy(p, inf, withdrawalStrategy),
     [p, inf, withdrawalStrategy]
