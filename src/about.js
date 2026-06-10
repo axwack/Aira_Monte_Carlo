@@ -105,6 +105,41 @@ export const ABOUT_FEATURES = [
           • <span style="color:#ef4444;">Red</span> – below the 25th percentile<br/><br/>
           This isn't just a status check. It's the foundation of adaptive distribution planning, a framework championed by financial planner Michael Kitces. Instead of blindly following a withdrawal plan made years ago, you adjust based on how your portfolio is actually performing. If you're in the green, you might spend a little more. In the red, you tighten up. Over time, checkpoints build a living history of your financial journey, turning a static retirement plan into a responsive roadmap. You're not guessing whether you're still on track—you're measuring it, one checkpoint at a time.`,
      },
+    {
+    id:    "gk-longevity-paradox",
+    group: "Reading the Charts",
+    icon:  "🧠",
+    title: "Why Smart Waterfall switches strategies at year 15 (the GK paradox)",
+    body:  `<strong>Short version:</strong> the original Guyton-Klinger (2006) safe-withdrawal rule has a clause that disables its safety brake when 15 or fewer years remain. That clause is great for 75-year-olds with 10 years left — but it does something weird when your <em>entire</em> retirement is 15 years or shorter: the safety brake is never armed at all. AiRA's <strong>Smart Waterfall</strong> strategy fixes that by switching to the Bengen 4% Rule whenever <code>yearsRemaining ≤ 15</code>. The pure "Guyton-Klinger" strategy remains faithful to the published paper, longevity clause and all — pick it explicitly if you want the original behavior.<br/><br/>
+          <strong style="color:#a78bfa;">What the GK paper actually says</strong><br/>
+          GK's Capital Preservation Rule cuts spending 10% whenever the current withdrawal rate climbs more than 20% above the initial rate. This is the "safety brake" — markets crash, your portfolio drops, your withdrawal rate spikes, GK trims spending until the rate stabilizes.<br/><br/>
+          The companion <em>Longevity Rule</em> says: skip the cut when 15 or fewer years remain. Jonathan Guyton's logic was reasonable — a 75-year-old shouldn't needlessly tighten the belt when actuarial life expectancy puts them close to the finish line. Better to spend it and enjoy the last years.<br/><br/>
+          <strong style="color:#fbbf24;">Where it breaks: short retirements</strong><br/>
+          When the <em>entire planning horizon</em> is 15 years (e.g. retire at 60, plan to 70), GK's longevity clause is active from day one. The safety brake never arms. If markets crash early, spending stays elevated, and the portfolio bleeds out. The paradoxical result: running a plan-to-70 scenario can show <em>lower</em> Monte Carlo success rates than the same setup with plan-to-87, even though the shorter retirement should be easier to fund.<br/><br/>
+          We surfaced this empirically while testing the Plan-to-Age slider at 5.7% WR: plan-to-70 scored ~75% success while plan-to-87 scored ~92% — same money, same spending, only the horizon changed.<br/><br/>
+          <strong style="color:#5eead4;">AiRA's fix — Smart Waterfall hybrid</strong><br/>
+          The Smart Waterfall strategy (default in Profile → Withdrawal) splits at the 15-year threshold:<br/>
+          • <strong>yearsRemaining &gt; 15</strong> → use Guyton-Klinger guardrails (adaptive, can cut spending in bad markets)<br/>
+          • <strong>yearsRemaining ≤ 15</strong> → use Bengen 4% rule (inflation-only, no portfolio reaction)<br/><br/>
+          The handoff happens exactly where GK's safety brake would otherwise be disabled. Long retirements still get GK's adaptive protection in the dangerous early years. Short retirements get steady real-dollar spending instead of GK's broken-safety-brake behavior.<br/><br/>
+          <strong style="color:#94a3b8;">If you want pure GK</strong><br/>
+          Pick "Guyton-Klinger (Dynamic)" in Profile → Withdrawal. That strategy is faithful to the 2006 paper — longevity clause and all. Useful if you're comparing AiRA's output to other planners that implement the original rule literally, or if you want to test the paradox yourself.<br/><br/>
+          <strong style="color:#475569;">Is the paradox widely known?</strong><br/>
+          The longevity clause is well-documented in the SWR research community (Pfau, Kitces, Big ERN, Bengen). The <em>short-horizon paradox that follows from it</em> is less discussed — most safe-withdrawal research assumes 25-30-year horizons, and FIRE/bridge-period planning rarely uses full GK simulation. We surfaced it independently by running edge cases on the Plan-to-Age slider. If you've seen it written up elsewhere, let us know — until then we'll treat it as an under-discussed corner of an otherwise well-studied rule.`,
+     },
+    {
+    id:    "withdrawal-plan-two-questions",
+    group: "Reading the Charts",
+    icon:  "💸",
+    title: "Withdrawal Plan — the two questions",
+    body:  `The <strong>💸 Withdrawal Plan</strong> tab is one tab with two collapsible sections. They show the same underlying data through two different lenses — use them together, not as alternatives. The tax math is shared: both schedules use the same source-aware engine, so per-year fed/state tax agree.<br/><br/>
+          <strong style="color:#5eead4;">Section 1 — “Where does each year's spending come from?”</strong><br/>
+          Account-by-account sourcing. The engine walks the optimal order — cash → taxable brokerage → pre-tax (capped at your chosen bracket ceiling) → Roth last — and applies tax only where it's actually owed. Taxable-brokerage draws aren't taxed as ordinary income (they're return of basis / long-term cap gains). Pre-tax draws stop at your bracket ceiling so you don't cross into a higher tier. Includes a Smart vs Naive (pretax-first) comparison showing how much tax the optimal ordering saves you, and flags landmines per year: ⚡ SS torpedo, 💊 IRMAA triggered, 📋 RMDs active.<br/><br/>
+          <strong style="color:#fbbf24;">Section 2 — “How does my chosen strategy pace spending year by year?”</strong><br/>
+          Shows the trajectory of the <em>one</em> withdrawal strategy you've picked in Profile → Withdrawal. AiRA supports ten strategies (Guyton-Klinger, Fixed %, Vanguard Dynamic, VPW, CAPE, Kitces Ratcheting, Endowment, 1/N, 95% Rule, Risk-Based), but this view runs only the one selected. To compare two strategies, swap the selection in Profile and revisit this view — the schedule recomputes live.<br/><br/>
+          <strong style="color:#94a3b8;">In short:</strong> Section 1 answers <em>where</em> the money comes from. Section 2 answers <em>how fast</em> you spend it. Both update live as you edit balances in Profile → Savings — there's no refresh button because there's no cache.<br/><br/>
+          <strong style="color:#475569;">Caveat:</strong> the sourcing engine treats taxable-brokerage withdrawals as basis (no LTCG owed). For MFJ households under ~$94K total income that's correct (you're in the 0% LTCG bracket). Once Social Security and pre-tax draws push you above that line, the model is slightly optimistic by the LTCG you'd actually owe.`,
+     },
   // ── Tax Modeling ──────────────────────────────────────────
   {
     id:    "tax-treatment-matrix",
