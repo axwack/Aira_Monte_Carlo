@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.5";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.5 — dead-code cleanup: removed ~607 dead lines (simulateDeterministic/generateActions/Bucket1Panel/ActionTile/PeopleViz/countdownDays/fan tab), gemini.local.js, netlify code, @anthropic-ai/sdk dep.";
+const APP_VERSION = "1.1.0.8";
+export const BUILD_TAG = "[main] v1.1.0.8 — Merge tax/RMD logic fixes: IRC §86 SS taxation, SECURE 2.0 RMD age, Uniform Lifetime table, IRMAA/inflation indexing.";
 export const BUILD_TIME = "2026-06-10T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -321,13 +321,14 @@ export const getStrategyLabel = (strategy) => {
     endowment: "Endowment Model",
     one_n: "1/N (Remaining Years)",
     ninety_five_rule: "95% Rule",
+    bengen: "Bengen 4% Rule",
   };
   return labels[strategy] || strategy;
 };
 
 export const getStrategyDescription = (strategy) => {
   const descriptions = {
-    smart: "Smart Waterfall — tax-optimal bucket sequencing. Spending is sourced cash → taxable → pre-tax (capped at your chosen bracket ceiling) → Roth last. Preserves Roth, reduces IRMAA exposure, and cuts lifetime taxes vs naive pretax-first ordering. Configure the bracket ceiling and guards in Profile → Withdrawal Order.",
+    smart: "Smart Waterfall — tax-optimal bucket sequencing with a horizon-aware spending rule: Guyton-Klinger guardrails when more than 15 years remain (adaptive), Bengen 4% inflation-only when 15 or fewer years remain (steady). The split matches GK's own longevity-clause threshold so we hand off exactly where GK's safety brake would otherwise be disabled. Bucket sourcing: cash → taxable → pre-tax (bracket-capped) → Roth last.",
     gk: "Guyton‑Klinger guardrails — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.",
     fixed: "Fixed Percentage Withdrawal — you withdraw a constant percentage of your portfolio each year, adjusting automatically with market movements.",
     vanguard: "Vanguard Dynamic Spending — spending adjusts within a ceiling and floor based on market performance and inflation.",
@@ -337,7 +338,8 @@ export const getStrategyDescription = (strategy) => {
     cape: "CAPE‑Based Withdrawal — uses the Shiller CAPE ratio to determine sustainable withdrawal rates.",
     endowment: "Endowment Model — smooths spending by blending inflation adjustments with a percentage of portfolio.",
     one_n: "1/N Rule — divides remaining portfolio by years left to create a spending plan.",
-    ninety_five_rule: "95% Rule — spending can only decrease to 95% of last year's amount, otherwise tracks inflation."
+    ninety_five_rule: "95% Rule — spending can only decrease to 95% of last year's amount, otherwise tracks inflation.",
+    bengen: "Bengen 4% Rule (1994) — set your initial spend, then inflation-adjust it every year and ignore the portfolio. Does NOT react to market moves. The portfolio CAN run out, making this an honest model of late-stage risk for fixed-budget retirees."
   };
   return descriptions[strategy] || descriptions.gk;
 };
@@ -755,7 +757,9 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
         // First year: use target spend (p.sp)
       } else {
         if (withdrawalStrategy === "gk") {
-          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
+          // Years remaining uses the horizon being simulated (`endAge`), NOT p.endAge —
+          // so the GK longevity rule stays consistent with this run's survival test.
+          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age);
         }
         else if (withdrawalStrategy === "fixed") {
           // Pure fixed %: draw = rate × port. No GK clamp — that defeats the purpose.
@@ -828,7 +832,7 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
         }
         else if (withdrawalStrategy === "one_n") {
-          const yearsLeft = Math.max(1, p.endAge - age);
+          const yearsLeft = Math.max(1, endAge - age);
           const newSp = totalPort / yearsLeft;
           sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
         }
@@ -842,9 +846,26 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           }
           sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
         }
+        else if (withdrawalStrategy === "bengen") {
+          // Bengen 4% rule (1994): inflation-adjusted constant spending.
+          // Does NOT react to portfolio moves — that's the defining feature.
+          // Can fail (portfolio depletes). Honest about late-stage risk.
+          sp = sp * (1 + inflY);
+        }
         else if (withdrawalStrategy === "smart") {
-          // Smart waterfall uses GK guardrails for spend amount; bucket sourcing is handled below
-          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
+          // Smart Waterfall hybrid:
+          //   yearsRemaining > 15  → GK guardrails (adaptive, paper-faithful)
+          //   yearsRemaining ≤ 15  → Bengen (inflation-only, no portfolio reaction)
+          // The split point matches GK's own longevity-clause threshold so we
+          // exit GK exactly where its safety brake would have been disabled.
+          // Years remaining uses the simulated horizon (`endAge`), not p.endAge — see gk note above.
+          // Bucket sourcing is handled below regardless.
+          const yrsRemaining = endAge - age;
+          if (yrsRemaining > 15) {
+            sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining);
+          } else {
+            sp = sp * (1 + inflY);
+          }
         }
       }
       lastReturn = r;
@@ -1089,6 +1110,121 @@ function runStress(p, endAge, N = 2000, seed = 99) {
 }
 
 /* ════ DETERMINISTIC WITHDRAWAL SCHEDULE (median returns) ════ */
+function simulateDeterministic(p, inf) {
+  const accYrs = Math.max(0, p.retireAge - p.currentAge);
+  const retYrs = p.endAge - p.retireAge;
+  const strategy = p.withdrawalStrategy || "gk";
+
+  // Sum portfolio from accounts (same as runMC)
+  let port = 0;
+  for (const acct of (p.accounts || [])) {
+    port += acct.balance || 0;
+  }
+
+  // Accumulation phase — deterministic median return
+  for (let y = 0; y < accYrs; y++) {
+    const ret = expectedReturn(p.preRetireEq ?? 91) / 100;
+    port = port * (1 + ret) + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
+  }
+
+  const portAtRetire = port;
+  let startingPort = portAtRetire;
+  const gkFloor = p.gkFloor || 48_000;
+  const gkCeiling = p.gkCeiling || 115_000;
+  const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
+  const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
+  const initDraw = Math.max(0, p.sp - ss0 - ab0);
+  const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
+
+  let sp = p.sp;
+  let lastReturn = 0;
+  const schedule = [];
+
+  for (let y = 0; y < retYrs; y++) {
+    const age = p.retireAge + y;
+    const yr = 2026 + (age - p.currentAge);
+    const ret = age < 62 ? expectedReturn(p.preRetireEq ?? 91) / 100 : expectedReturn(p.postRetireEq ?? 70) / 100;
+    const inflY = inf / 100;
+    const cumInfl = Math.pow(1 + inflY, y);
+    const adjFloor = gkFloor * cumInfl;
+    const adjCeiling = gkCeiling * cumInfl;
+
+    // ========== WITHDRAWAL STRATEGY (mirrors runMC) ==========
+    if (y > 0 && port > 0) {
+      if (strategy === "gk") {
+        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
+      } else if (strategy === "fixed") {
+        const fixedRate = p.fixedWithdrawalRate ?? 0.04;
+        sp = Math.max(adjFloor, Math.min(adjCeiling, port * fixedRate));
+      } else if (strategy === "vanguard") {
+        const initialRate = p.vanguardInitialRate ?? 0.04;
+        const cap = p.vanguardCap ?? 0.05;
+        const floorRate = p.vanguardFloor ?? -0.025;
+        const pctOfPort = port * initialRate;
+        const dynamic = y === 1
+          ? (sp * (1 + inflY) + pctOfPort) / 2
+          : sp * (1 + inflY) * (1 + (ret - inflY) * 0.5);
+        const change = (dynamic / sp) - 1;
+        const cappedChange = Math.max(floorRate, Math.min(cap, change));
+        sp = Math.max(adjFloor, Math.min(adjCeiling, sp * (1 + cappedChange)));
+      } else if (strategy === "risk") {
+        const safeWR = p.safeWithdrawalRate ?? 0.04;
+        const currentWR = sp / port;
+        
+        if (currentWR > safeWR * 1.2) 
+          sp *= 0.9;
+        else if (currentWR < safeWR * 0.8) sp *= 1.1;
+          sp = Math.max(adjFloor, Math.min(adjCeiling, sp * (1 + inflY)));
+      } else if (strategy === "kitces") {
+        if (port >= startingPort * 1.5) {
+          sp *= 1.10;
+          startingPort = port;
+        }
+        sp = Math.max(adjFloor, Math.min(adjCeiling, sp * (1 + inflY)));
+      }
+    }
+    lastReturn = ret;
+
+    const ss = age >= p.ssAge
+      ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y))
+      : 0;
+    const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
+    const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
+    const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
+    const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
+    const need = Math.max(0, sp - ss - ab - otherIncTotal);
+
+    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+    const totalDraw = need + taxResult.totalTax;
+    port = port * (1 + ret) - totalDraw;
+
+    // Determine GK band (useful for all strategies to show where spending sits)
+    const wr = port > 0 ? (sp / port) : 0;
+    let band = "normal";
+    if (wr <= initWR * 0.8) band = "prosperity";
+    else if (wr >= initWR * 1.2) band = "capital_preservation";
+
+    schedule.push({
+      age, yr,
+      spending: Math.round(sp),
+      ss, Rental: ab, OtherIncome: Math.round(otherIncTotal),
+      portfolioDraw: Math.round(need),
+      fedTax: taxResult.fedTax,
+      stateTax: taxResult.stateTax,
+      irmaa: taxResult.irmaa,
+      totalTax: taxResult.totalTax,
+      totalWithdrawal: Math.round(totalDraw),
+      portfolioEnd: Math.max(0, Math.round(port)),
+      gkFloor: Math.round(adjFloor),
+      gkCeiling: Math.round(adjCeiling),
+      withdrawalRate: port > 0 ? sp / port : 0,
+      gkBand: band,
+    });
+
+    if (port <= 0) break;
+  }
+  return { schedule, portAtRetire: Math.round(portAtRetire), initWR, strategy };
+}
 
 function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
@@ -1108,6 +1244,25 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const initDraw = Math.max(0, p.sp - ss0 - ab0);
   const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
+
+  // Source-aware tax: reuse the Smart Waterfall engine so the tax column here
+  // matches what the Waterfall tab shows for the same age. The waterfall knows
+  // each account type (cash / taxable / pretax / roth) and only treats pretax
+  // draws as ordinary income — without this override, calcYearTax would treat
+  // every portfolio draw as ordinary income, overstating fed tax dramatically
+  // for years that draw from taxable brokerage or Roth.
+  const smartTaxByAge = new Map();
+  try {
+    const wf = buildWithdrawalWaterfall(p);
+    for (const row of wf?.smart?.rows ?? []) {
+      smartTaxByAge.set(row.age, {
+        fedTax: row.fedTax || 0,
+        stateTax: row.stateTax || 0,
+        irmaa: row.irmaa || 0,
+        totalTax: row.totalTax || 0,
+      });
+    }
+  } catch { /* fall back to calcYearTax below */ }
 
   let sp = p.sp;
   let lastReturn = 0;
@@ -1217,6 +1372,21 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         }
         sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
       }
+      else if (withdrawalStrategy === "bengen") {
+        // Bengen 4% rule: inflation-adjusted constant. Does not react to portfolio.
+        sp = sp * (1 + inflY);
+      }
+      else if (withdrawalStrategy === "smart") {
+        // Smart Waterfall hybrid: GK when yearsRemaining > 15, Bengen when ≤ 15.
+        // The split matches GK's longevity-clause threshold so we exit GK
+        // exactly where its safety brake would otherwise be disabled.
+        const yrsRemaining = p.endAge - age;
+        if (yrsRemaining > 15) {
+          sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining);
+        } else {
+          sp = sp * (1 + inflY);
+        }
+      }
     }
     lastReturn = ret;
 
@@ -1226,7 +1396,12 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
     const need = Math.max(0, sp - ss - ab - otherIncTotal);
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+
+    // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab).
+    // Fall back to the legacy "treat everything as ordinary income" calc only
+    // when no waterfall row exists for this age (e.g. accounts not configured).
+    const wfTax = smartTaxByAge.get(age);
+    const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -1449,6 +1624,9 @@ const fmtPct = (v) => `${(v * 100).toFixed(1)}%`;
 function getAnalogue(rate) {
   const pct = rate * 100;
   return ANALOGUES.find((a) => pct >= a.min) || ANALOGUES[ANALOGUES.length - 1];
+}
+function countdownDays() {
+  return Math.max(0, Math.floor((DDAY - new Date()) / 86400000));
 }
 
 function useCountdown(dday, startDate) {
@@ -2068,6 +2246,7 @@ function Slider({ label, value, min, max, step, format, onChange }) {
     },
     [min, max, step, onChange]
   );
+
   const handleDrag = useCallback(
     (e) => {
       e.preventDefault();
@@ -2767,7 +2946,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
   );
 }
 
-
 function IncomeMap({ p, inf }) {
   const data = useMemo(() => {
     const yrs = Math.min(26, p.endAge - p.retireAge);
@@ -2776,8 +2954,11 @@ function IncomeMap({ p, inf }) {
       const calYear = 2026 + (age - p.currentAge);
       const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1.024, i)) : 0;
       const incGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(i, 20));
-      // Total property income (only source of rental income now)
-      let rental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * incGrowth);
+      // Total rental income = per-property income + legacy `ab` field, grown,
+      // then weighted by expected reliability so the bar matches the chart title
+      // and the Monte Carlo engine (see runMC `abReliable` gating).
+      const reliability = (p.abReliability ?? 80) / 100;
+      let rental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * incGrowth * reliability);
       // Apply end year
       if (p.abEndYear && calYear > p.abEndYear) {
         rental = 0;
@@ -2798,8 +2979,8 @@ function IncomeMap({ p, inf }) {
   return (
     <div className="chart-card">
       <div className="ct">
-          Annual Income Coverage · {p.smile ? "Smile" : "Flat"} spending · Rental{" "}
-          {p.abReliability || 80}% reliability modeled
+          Annual Income Coverage · {p.smile ? "Smile" : "Flat"} spending · Rental net{" "}
+          shown at {p.abReliability ?? 80}% expected reliability
         </div>
       <ResponsiveContainer width="100%" height={540}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -2832,85 +3013,6 @@ function IncomeMap({ p, inf }) {
         ⚠ SS gap ages {p.retireAge}–{p.ssAge - 1} — portfolio carries 100% of
         spending. Highest-risk window.
       </div>
-    </div>
-  );
-}
-
-function SmileChart({ p, inf }) {
-  const data = useMemo(
-    () =>
-      Array.from({ length: 31 }, (_, i) => {
-        const age = p.retireAge + i;
-        const infR = inf / 100;
-        let smile = p.sp,
-          flat = p.sp;
-        for (let j = 1; j <= i; j++) {
-          const a = p.retireAge + j;
-          smile *= 1 + smileMult(a) * 0.028;
-          flat *= 1 + infR;
-        }
-        return {
-          age,
-          Flat: Math.round(flat),
-          "Smile (Blanchett)": Math.round(smile),
-        };
-      }),
-    [p, inf]
-  );
-  return (
-    <div className="chart-card">
-      <div className="ct">
-        Retirement Smile · Go-go 115% → Slow-go 85% → Healthcare tail 90% ·
-        Blanchett/Morningstar
-      </div>
-      <ResponsiveContainer width="100%" height={540}>
-        <LineChart
-          data={data}
-          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-        >
-          <CartesianGrid
-            strokeDasharray="2 4"
-            stroke="rgba(255,255,255,0.05)"
-          />
-          <XAxis
-            dataKey="age"
-            stroke="#1e3a5f"
-            tick={{ fill: "#475569", fontSize: 9 }}
-          />
-          <YAxis
-            stroke="#1e3a5f"
-            tick={{ fill: "#475569", fontSize: 9 }}
-            tickFormatter={(v) => fmtK(v)}
-            width={46}
-          />
-          <Tooltip content={<Tip />} />
-          <ReferenceLine
-            x={65}
-            stroke="rgba(251,191,36,0.35)"
-            strokeDasharray="3 3"
-          />
-          <ReferenceLine
-            x={75}
-            stroke="rgba(249,115,22,0.35)"
-            strokeDasharray="3 3"
-          />
-          <Line
-            type="monotone"
-            dataKey="Flat"
-            stroke="#475569"
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="Smile (Blanchett)"
-            stroke="#a78bfa"
-            strokeWidth={2.5}
-            dot={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
     </div>
   );
 }
@@ -3147,7 +3249,7 @@ const modeDescs = {
       };
     });
   const rmdYears = opt.rows
-    .filter((r) => r.age >= rmdAge && r.age <= 90)
+    .filter((r) => r.age >= rmdAge && r.age <= (params.endAge || 90))
     .map((r) => {
       const c = cur.rows.find((cr) => cr.yr === r.yr);
       return {
@@ -4058,7 +4160,7 @@ const modeDescs = {
         const curTotInc    = cur.rows.reduce((s, r) => s + (r.totInc       || 0), 0);
 
         const taxChartData = opt.rows
-          .filter(r => r.age >= (params.retireAge || 60) && r.age <= 90)
+          .filter(r => r.age >= (params.retireAge || 60) && r.age <= (params.endAge || 90))
           .filter((_, i) => i % 2 === 0 || i < 6)
           .map(r => {
             const c = cur.rows.find(cr => cr.yr === r.yr) || {};
@@ -4074,7 +4176,7 @@ const modeDescs = {
           });
 
         const incChartData = opt.rows
-          .filter(r => r.age >= (params.retireAge || 60) && r.age <= 90)
+          .filter(r => r.age >= (params.retireAge || 60) && r.age <= (params.endAge || 90))
           .filter((_, i) => i % 2 === 0 || i < 6)
           .map(r => {
             const c = cur.rows.find(cr => cr.yr === r.yr) || {};
@@ -4251,7 +4353,7 @@ const modeDescs = {
             </thead>
             <tbody>
               {opt.rows
-                .filter((r) => r.age >= 60 && r.age <= 90)
+                .filter((r) => r.age >= (params.retireAge || 60) && r.age <= (params.endAge || 90))
                 .filter((_, i) => i % 2 === 0 || i < 12)
                 .map((r) => {
                   const c = cur.rows.find((cr) => cr.yr === r.yr);
@@ -4421,11 +4523,278 @@ function LandmineTip({ emoji, label, detail, color }) {
   );
 }
 
+// ─── Bucket 1 Runway Tracker ──────────────────────────────────────────────────
+const _B1_KEY = "aira_b1.v1";
+function _loadB1() {
+  try { return JSON.parse(localStorage.getItem(_B1_KEY) || "null") || {}; } catch { return {}; }
+}
+
+function Bucket1Panel({ p, rows }) {
+  const [cfg, setCfg] = useState(_loadB1);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({});
+
+  // ── Profile-derived defaults ──────────────────────────────────────────────
+  const cashFromAccounts = (p.accounts || [])
+    .filter(a => a.category === "cash")
+    .reduce((sum, a) => sum + (a.balance || 0), 0);
+  const profileDefaults = {
+    balance: cashFromAccounts,
+    monthly: p.sp ? Math.round(p.sp / 12) : 0,
+    floor:   p.gkFloor ? Math.round(p.gkFloor) : 0,
+    target:  p.sp ? Math.round(p.sp * 2) : 0,
+  };
+
+  // Stored overrides take precedence; fall back to profile-derived value
+  const balance = "balance" in cfg ? cfg.balance : profileDefaults.balance;
+  const monthly = "monthly" in cfg ? cfg.monthly : profileDefaults.monthly;
+  const floor   = "floor"   in cfg ? cfg.floor   : profileDefaults.floor;
+  const target  = "target"  in cfg ? cfg.target  : profileDefaults.target;
+  const hasOverrides = Object.keys(cfg).length > 0;
+
+  const openEdit   = () => { setDraft({ balance, monthly, floor, target }); setEditing(true); };
+  const cancelEdit = () => setEditing(false);
+  const saveEdit   = () => {
+    try { localStorage.setItem(_B1_KEY, JSON.stringify(draft)); } catch {}
+    setCfg(draft); setEditing(false);
+  };
+  const resetToProfile = () => {
+    try { localStorage.removeItem(_B1_KEY); } catch {}
+    setCfg({}); setEditing(false);
+  };
+  const draftNum = (k) => (e) => setDraft(d => ({ ...d, [k]: Number(e.target.value) || 0 }));
+
+  // ── Derived metrics ───────────────────────────────────────────────────────
+  const firstRow    = rows?.[0];
+  const runway      = monthly > 0 ? (balance / monthly) : null;
+  const annualDraw  = monthly * 12;
+  const ssIncome    = firstRow?.ss || 0;
+  const rentalInc   = firstRow?.annuityRental || 0;
+  const fixedIncome = ssIncome + rentalInc;
+  const netFromPort = Math.max(0, annualDraw - fixedIncome);
+  const portValue   = firstRow?.totalPort || p.port || 0;
+  const wdRate      = portValue > 0 && annualDraw > 0 ? (annualDraw / portValue * 100) : null;
+  const initialWR   = (p.sp > 0 && p.port > 0) ? (p.sp / p.port * 100) : 4;
+  const gkHigh      = wdRate !== null && wdRate > initialWR * 1.2;
+  const gkLow       = wdRate !== null && wdRate < initialWR * 0.8;
+  const gkColor     = gkHigh ? "#f87171" : gkLow ? "#fbbf24" : "#34d399";
+  const gkText      = wdRate === null ? null
+    : gkHigh ? `🔴 Preservation — WR ${wdRate.toFixed(1)}% is above guardrail, consider reducing draws`
+    : gkLow  ? `🟡 Prosperity — WR ${wdRate.toFixed(1)}% is low, spending may be conservative`
+    :          `🟢 Green — WR ${wdRate.toFixed(1)}%, within Guyton-Klinger guardrails`;
+
+  const barRange = target > floor ? target - floor : target;
+  const barPct   = barRange > 0 ? Math.max(0, Math.min(100, (balance - floor) / barRange * 100)) : (target > 0 ? Math.min(100, balance / target * 100) : 0);
+  const barColor = balance > 0 && floor > 0 && balance < floor ? "#f87171" : balance >= (target || Infinity) ? "#34d399" : "#fbbf24";
+
+  // ── Styles ────────────────────────────────────────────────────────────────
+  const IS  = { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "5px 8px", color: "#e2e8f0", fontSize: 12, width: "100%", boxSizing: "border-box" };
+  const LS  = { fontSize: 10, color: "#64748b", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.06em" };
+  const BTN = (col) => ({ background: col, border: "none", color: "white", borderRadius: 6, padding: "6px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer" });
+
+  if (editing) return (
+    <div className="chart-card" style={{ marginBottom: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>💰 Bucket 1 — Override</div>
+        <button onClick={cancelEdit} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16 }}>✕</button>
+      </div>
+      <div style={{ fontSize: 10, color: "#475569", marginBottom: 12 }}>
+        Leave a field blank to use the profile-derived value shown as placeholder.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+        {[
+          ["balance", "Current Balance (today)",    profileDefaults.balance],
+          ["monthly", "Monthly Draw (SWP)",          profileDefaults.monthly],
+          ["floor",   "Floor — minimum balance",     profileDefaults.floor],
+          ["target",  "Target — replenishment goal", profileDefaults.target],
+        ].map(([k, lbl, def]) => (
+          <div key={k}>
+            <div style={LS}>{lbl}</div>
+            <input type="number" style={IS}
+              value={draft[k] !== undefined && draft[k] !== 0 ? draft[k] : ""}
+              onChange={draftNum(k)}
+              placeholder={`Profile: ${fmtK(def)}`}
+            />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={saveEdit} style={BTN("linear-gradient(135deg,#0e7490,#22d3ee)")}>Save overrides</button>
+        {hasOverrides && (
+          <button onClick={resetToProfile} style={{ ...BTN("rgba(255,255,255,0.05)"), color: "#94a3b8", border: "1px solid rgba(255,255,255,0.1)" }}>
+            Reset to profile
+          </button>
+        )}
+        <button onClick={cancelEdit} style={{ ...BTN("rgba(255,255,255,0.05)"), color: "#64748b", border: "1px solid rgba(255,255,255,0.1)" }}>Cancel</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="chart-card" style={{ marginBottom: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>💰 Bucket 1 — Cash Runway</span>
+          <span style={{ fontSize: 9, color: hasOverrides ? "#f59e0b" : "#475569", marginLeft: 8 }}>
+            {hasOverrides ? "⚙ overridden" : "auto from profile"}
+          </span>
+        </div>
+        <button onClick={openEdit} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", borderRadius: 5, padding: "3px 10px", fontSize: 10, cursor: "pointer" }}>
+          {hasOverrides ? "⚙ edit overrides" : "⚙ override"}
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 }}>
+        <div className="met">
+          <div className="ml">Balance Today</div>
+          <div className="mv" style={{ fontSize: 16, color: balance > 0 ? barColor : "#475569" }}>{balance > 0 ? fmtM(balance) : "—"}</div>
+          <div className="ms">{runway !== null && balance > 0 ? `${runway.toFixed(1)} mo runway` : balance === 0 ? "add cash account" : "—"}</div>
+        </div>
+        <div className="met">
+          <div className="ml">Monthly Draw</div>
+          <div className="mv" style={{ fontSize: 16 }}>{monthly > 0 ? fmtK(monthly) : "—"}</div>
+          <div className="ms">{annualDraw > 0 ? `${fmtK(annualDraw)}/yr · sp÷12` : "set sp in profile"}</div>
+        </div>
+        <div className="met">
+          <div className="ml">Fixed Income</div>
+          <div className="mv" style={{ fontSize: 16, color: "#5eead4" }}>{fixedIncome > 0 ? fmtK(fixedIncome) : "—"}</div>
+          <div className="ms">{ssIncome > 0 ? `SS ${fmtK(ssIncome)}` : "no SS yet"}{rentalInc > 0 ? ` · ${fmtK(rentalInc)} rental` : ""}</div>
+        </div>
+        <div className="met">
+          <div className="ml">Net from Portfolio</div>
+          <div className="mv" style={{ fontSize: 16, color: "#f59e0b" }}>{netFromPort > 0 ? fmtK(netFromPort) : "—"}</div>
+          <div className="ms">after fixed income offset</div>
+        </div>
+      </div>
+
+      {(floor > 0 || target > 0) && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#475569", marginBottom: 4 }}>
+            <span>Floor {fmtK(floor)} <span style={{ color: "#334155" }}>(GK min)</span></span>
+            <span style={{ color: balance > 0 ? barColor : "#475569", fontWeight: 700 }}>{balance > 0 ? fmtK(balance) + " today" : "balance not set"}</span>
+            <span>Target {fmtK(target)} <span style={{ color: "#334155" }}>(2× sp)</span></span>
+          </div>
+          <div style={{ height: 8, background: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${barPct}%`, background: balance > 0 ? barColor : "rgba(255,255,255,0.1)", borderRadius: 4, transition: "width 0.4s" }} />
+          </div>
+          {balance > 0 && floor > 0 && balance < floor && (
+            <div style={{ fontSize: 10, color: "#f87171", marginTop: 4 }}>⚠ Below floor — replenishment needed: {fmtK(floor - balance)}</div>
+          )}
+        </div>
+      )}
+
+      {gkText && <div style={{ fontSize: 11, color: gkColor, fontWeight: 600, marginTop: 4 }}>{gkText}</div>}
+    </div>
+  );
+}
+
+/**
+ * Combined Withdrawal Plan tab — wraps the two views that answer the two
+ * different planning questions, with each question called out prominently
+ * and a twisty (collapsible) body. Both sections default to open so the
+ * full plan is visible on first load; the user can collapse either to focus.
+ */
+function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
+  const [openSourcing, setOpenSourcing] = useState(false);
+  const [openStrategy, setOpenStrategy] = useState(false);
+
+  const Header = ({ open, onToggle, color, question, subtitle }) => (
+    <button
+      onClick={onToggle}
+      style={{
+        width: "100%",
+        background: "rgba(255,255,255,0.025)",
+        border: `1px solid ${color}44`,
+        borderLeft: `4px solid ${color}`,
+        borderRadius: 8,
+        padding: "16px 18px",
+        textAlign: "left",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        marginBottom: open ? 10 : 0,
+      }}
+    >
+      <span style={{ color, fontSize: 18, lineHeight: 1, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s", display: "inline-block" }}>▸</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: "#e2e8f0", fontStyle: "italic", lineHeight: 1.35 }}>
+          “{question}”
+        </div>
+        <div style={{ fontSize: 13, color: "#64748b", marginTop: 5 }}>{subtitle}</div>
+      </div>
+    </button>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Orientation card — explains the two-question framing */}
+      <div style={{
+        background: "rgba(13,148,136,0.06)",
+        border: "1px solid rgba(13,148,136,0.18)",
+        borderRadius: 8,
+        padding: "10px 14px",
+        fontSize: 11,
+        color: "#94a3b8",
+        lineHeight: 1.55,
+      }}>
+        Use these two views together. Each answers a different question — same data, different lens.
+        <span style={{ display: "block", color: "#64748b", marginTop: 4 }}>
+          Tax math is shared: both schedules use the same source-aware engine, so per-year fed/state tax agree.
+        </span>
+      </div>
+
+      {/* ── Section 1: Sourcing ──────────────────────────────────────── */}
+      <div>
+        <Header
+          open={openSourcing}
+          onToggle={() => setOpenSourcing(v => !v)}
+          color="#5eead4"
+          question="Where does each year's spending come from?"
+          subtitle="Account-by-account sourcing — cash → taxable → pre-tax (bracket-capped) → Roth — with tax landmines flagged"
+        />
+        {openSourcing && (
+          <div style={{ paddingLeft: 4 }}>
+            <WaterfallPlanView p={p} />
+          </div>
+        )}
+      </div>
+
+      {/* ── Section 2: Strategy pacing ───────────────────────────────── */}
+      <div>
+        <Header
+          open={openStrategy}
+          onToggle={() => setOpenStrategy(v => !v)}
+          color="#fbbf24"
+          question="How does my chosen strategy pace spending year by year?"
+          subtitle="Runs the withdrawal strategy you picked in Profile → Withdrawal. Change it there to see a different strategy here."
+        />
+        {openStrategy && (
+          <div style={{ paddingLeft: 4 }}>
+            <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={withdrawalStrategy} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function WaterfallPlanView({ p }) {
   const [mode, setMode] = useState("smart");
   const result = useMemo(() => buildWithdrawalWaterfall(p), [p]);
   const { smart, naive, summary } = result;
   const rows = mode === "smart" ? smart.rows : naive.rows;
+
+  // Bucket 1 may be composed of any account category — match the table column to it
+  const b1Cats = new Set(
+    (p.accounts || [])
+      .filter(a => (a.bucket ?? _defaultBucket(a.category)) === 1)
+      .map(a => a.category || "cash")
+  );
+
+  // Operator cells — visually wire the withdrawal columns into the equation they satisfy
+  const opThStyle = { padding: "0 3px", color: "#475569", fontWeight: 400, fontSize: 11, textAlign: "center" };
+  const opTdStyle = { padding: "0 3px", color: "#475569", fontWeight: 600, fontSize: 12, textAlign: "center" };
 
   const btnStyle = (active) => ({
     padding: "5px 14px", fontSize: 12, borderRadius: 6, border: "none",
@@ -4522,13 +4891,25 @@ function WaterfallPlanView({ p }) {
         <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8, lineHeight: 1.5 }}>
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
           Bracket cap reason shown in Pre-Tax column
+          <br />
+          Columns read left→right as the draw order &amp; equation: <strong>Spending = Fixed Income + Cash + Taxable + Pre-Tax + Roth</strong>
         </div>
         <table className="roth-tbl">
           <thead>
             <tr>
-              <th>Age</th><th>Spending</th><th>SS</th>
-              <th>Cash</th><th title="Bucket 1 ending balance this year">B1 End</th><th>Taxable</th><th>Pre-Tax</th><th>Roth</th>
-              <th>Fed Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR</th>
+              <th>Age</th><th>Spending</th>
+              <th style={opThStyle}>=</th>
+              <th title="Social Security + annuity/rental income — covered first, before any portfolio draw">Fixed Income</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 3 — drawn first from the portfolio">Cash</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 4 — drawn after cash is exhausted">Taxable</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 5 — drawn after taxable, capped at your bracket-ceiling target (RMD shown when forced)">Pre-Tax</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 6 — last resort; emergency reserve floor maintained">Roth</th>
+              <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End</th>
+              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR</th>
               <th>
                 <LandmineTip
                   emoji="💣"
@@ -4542,21 +4923,39 @@ function WaterfallPlanView({ p }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
+            {rows.map(r => {
+              const b1End = b1Cats.has("cash")    ? r.cashEnd
+                          : b1Cats.has("taxable") ? r.taxableEnd
+                          : b1Cats.has("pretax")  ? r.pretaxEnd
+                          : b1Cats.has("roth")    ? r.rothEnd
+                          : 0;
+              return (
               <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
                 <td>{r.age}</td>
-                <td style={{ textAlign: "right" }}>{fmtK(r.spending)}</td>
-                <td style={{ textAlign: "right", color: "#5eead4" }}>{r.ss > 0 ? fmtK(r.ss) : "—"}</td>
-                <td style={{ textAlign: "right", color: "#64748b" }}>{r.fromCash > 0 ? fmtK(r.fromCash) : "—"}</td>
-                <td style={{ textAlign: "right", color: r.cashEnd < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11 }}>{r.cashEnd > 0 ? fmtK(r.cashEnd) : "—"}</td>
-                <td style={{ textAlign: "right", color: "#3b82f6" }}>{r.fromTaxable > 0 ? fmtK(r.fromTaxable) : "—"}</td>
-                <td style={{ textAlign: "right", color: "#f59e0b" }} title={r.pretaxCapReason}>
+                <td style={{ textAlign: "right" }} title={fmtDollar(r.spending)}>{fmtK(r.spending)}</td>
+                <td style={opTdStyle}>=</td>
+                <td style={{ textAlign: "right", color: "#5eead4" }}
+                    title={r.annuityRental > 0 ? `SS ${fmtDollar(r.ss)} + Annuity/Rental ${fmtDollar(r.annuityRental)} = ${fmtDollar(r.fixedIncomeTotal)}` : `Social Security: ${fmtDollar(r.ss)}`}>
+                  {r.fixedIncomeTotal > 0 ? fmtK(r.fixedIncomeTotal) : "—"}
+                </td>
+                <td style={opTdStyle}>+</td>
+                <td style={{ textAlign: "right", color: "#64748b" }} title={fmtDollar(r.fromCash)}>{r.fromCash > 0 ? fmtK(r.fromCash) : "—"}</td>
+                <td style={opTdStyle}>+</td>
+                <td style={{ textAlign: "right", color: "#3b82f6" }} title={fmtDollar(r.fromTaxable)}>{r.fromTaxable > 0 ? fmtK(r.fromTaxable) : "—"}</td>
+                <td style={opTdStyle}>+</td>
+                <td style={{ textAlign: "right", color: "#f59e0b" }}
+                    title={r.rmd > 0 ? `${fmtDollar(r.fromPretax)} (incl. RMD ${fmtDollar(r.rmd)}) — ${r.pretaxCapReason}` : `${fmtDollar(r.fromPretax)} — ${r.pretaxCapReason}`}>
                   {r.rmd > 0 && <span style={{ fontSize: 9, color: "#a78bfa", marginRight: 2 }}>RMD {fmtK(r.rmd)}</span>}
                   {r.fromPretax > 0 ? fmtK(r.fromPretax) : "—"}
                 </td>
-                <td style={{ textAlign: "right", color: "#10b981" }}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
-                <td style={{ textAlign: "right", color: "#f87171" }}>{fmtK(r.fedTax)}</td>
-                <td style={{ textAlign: "right", color: r.irmaa > 0 ? "#fb923c" : "#475569" }}>
+                <td style={opTdStyle}>+</td>
+                <td style={{ textAlign: "right", color: "#10b981" }} title={fmtDollar(r.fromRoth)}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
+                <td style={{ textAlign: "right", color: b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }} title={fmtDollar(b1End)}>{b1End > 0 ? fmtK(b1End) : "—"}</td>
+                <td style={{ textAlign: "right", color: "#f87171" }} title={fmtDollar(r.fedTax)}>{fmtK(r.fedTax)}</td>
+                <td style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "#475569" }} title={fmtDollar(r.stateTax)}>
+                  {r.stateTax > 0 ? fmtK(r.stateTax) : "—"}
+                </td>
+                <td style={{ textAlign: "right", color: r.irmaa > 0 ? "#fb923c" : "#475569" }} title={fmtDollar(r.irmaa)}>
                   {r.irmaa > 0 ? fmtK(r.irmaa) : "—"}
                 </td>
                 <td style={{ textAlign: "right" }}>{(r.effectiveRate * 100).toFixed(1)}%</td>
@@ -4598,9 +4997,10 @@ function WaterfallPlanView({ p }) {
                   })()}
                   {!anyLandmine(r) && <span style={{ color: "#34d399", fontSize: 10 }}>✓</span>}
                 </td>
-                <td style={{ textAlign: "right", color: "#94a3b8" }}>{fmtM(r.totalPort)}</td>
+                <td style={{ textAlign: "right", color: "#94a3b8" }} title={fmtDollar(r.totalPort)}>{fmtM(r.totalPort)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -4630,7 +5030,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
     smart: "Smart Waterfall", gk: "Guyton‑Klinger", fixed: "Fixed %",
     vanguard: "Vanguard Dynamic", risk: "Risk‑Based", kitces: "Kitces Ratcheting",
     vpw: "VPW", cape: "CAPE‑Based", endowment: "Endowment (Yale)",
-    one_n: "1/N", ninety_five_rule: "95% Rule",
+    one_n: "1/N", ninety_five_rule: "95% Rule", bengen: "Bengen 4% Rule",
   }[withdrawalStrategy] || withdrawalStrategy;
 
   return (
@@ -4704,16 +5104,105 @@ function _loadBCfg() {
   try { return JSON.parse(localStorage.getItem(_BCFG_KEY) || "null") || {}; } catch { return {}; }
 }
 
+// ── Bucket status card — hoisted to module scope so React doesn't unmount it on
+// every BucketsTab re-render (which would kill the tooltip hover state). ─────
+function BucketCard({ num, color, label, horizon, actual, floor, target, accounts: acctList, role, holdings, monthly }) {
+  const [showInfo, setShowInfo] = useState(false);
+  const hideTimer = useRef(null);
+  const openTip = () => {
+    if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; }
+    setShowInfo(true);
+  };
+  const closeTipSoon = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setShowInfo(false), 180);
+  };
+  useEffect(() => () => { if (hideTimer.current) clearTimeout(hideTimer.current); }, []);
+
+  const barPct = target > 0 ? Math.min(100, actual / target * 100) : 0;
+  const status = actual < floor ? "below" : actual < target ? "ok" : "full";
+  const barClr = status === "below" ? "#f87171" : status === "full" ? "#34d399" : color;
+  const runway = monthly > 0 && num === 1 ? (actual / monthly).toFixed(1) : null;
+  return (
+    <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1, position: "relative" }}>
+      {(role || holdings) && (
+        <div
+          onMouseEnter={openTip}
+          onMouseLeave={closeTipSoon}
+          style={{ position: "absolute", top: 0, right: 0, paddingTop: 6, paddingRight: 6, paddingLeft: 10, paddingBottom: showInfo ? 8 : 4, cursor: "help" }}
+          aria-label="Bucket role and recommended holdings"
+        >
+          <span style={{ color: showInfo ? color : "#475569", fontSize: 11, userSelect: "none", transition: "color 0.15s" }}>ⓘ</span>
+          {showInfo && (
+            <div
+              onMouseEnter={openTip}
+              onMouseLeave={closeTipSoon}
+              style={{ position: "absolute", top: "100%", right: 0, background: "rgba(15,23,42,0.98)", border: `1px solid ${color}66`, borderRadius: 6, padding: 10, fontSize: 11, color: "#cbd5e1", zIndex: 20, width: 240, lineHeight: 1.5, boxShadow: "0 6px 16px rgba(0,0,0,0.5)", cursor: "default" }}
+            >
+              {role && (
+                <>
+                  <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Role</div>
+                  <div style={{ marginBottom: holdings ? 8 : 0 }}>{role}</div>
+                </>
+              )}
+              {holdings && (
+                <>
+                  <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Recommended holdings</div>
+                  <div>{holdings}</div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color }}>{label}</div>
+          <div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>{horizon}</div>
+        </div>
+        <div style={{ textAlign: "right", paddingRight: role || holdings ? 16 : 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: barClr, fontFamily: "'DM Mono',monospace" }}>{actual > 0 ? fmtM(actual) : "—"}</div>
+          {runway && <div style={{ fontSize: 9, color: "#64748b" }}>{runway} mo runway</div>}
+        </div>
+      </div>
+      {(floor > 0 || target > 0) && (
+        <>
+          <div style={{ height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden", marginBottom: 4 }}>
+            <div style={{ height: "100%", width: `${barPct}%`, background: barClr, borderRadius: 3, transition: "width 0.4s" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#475569" }}>
+            <span>Floor {fmtK(floor)}</span>
+            <span>Target {fmtK(target)}</span>
+          </div>
+        </>
+      )}
+      {acctList.length > 0 && (
+        <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
+          {acctList.map(a => (
+            <div key={a.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#475569", marginBottom: 2 }}>
+              <span>{a.name}</span>
+              <span style={{ color: "#64748b", fontFamily: "'DM Mono',monospace" }}>{fmtK(a.balance || 0)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {acctList.length === 0 && (
+        <div style={{ marginTop: 8, fontSize: 10, color: "#334155", fontStyle: "italic" }}>No accounts assigned — use B{num} chips in Profile → Savings</div>
+      )}
+    </div>
+  );
+}
+
 function BucketsTab({ params = {} }) {
-  const [showPlanning, setShowPlanning] = useState(false);
   const [bCfg, setBCfg] = useState(_loadBCfg);
   const saveBCfg = (patch) => {
     const next = { ..._loadBCfg(), ...patch };
     try { localStorage.setItem(_BCFG_KEY, JSON.stringify(next)); } catch {}
     setBCfg(next);
   };
-  const b1Years = bCfg.b1Years ?? 3;   // user-adjustable, default 3yr
-  const b2Years = bCfg.b2Years ?? 5;   // user-adjustable, default 5yr
+  const b1Years  = bCfg.b1Years ?? 3;       // user-adjustable, default 3yr
+  const b2Years  = bCfg.b2Years ?? 5;       // user-adjustable, default 5yr
+  const drawMode = bCfg.drawMode ?? "net";  // 'net' (default) or 'gross'
 
   // ── Core params ───────────────────────────────────────────────────────────
   const sp         = params.sp        || 0;
@@ -4724,7 +5213,17 @@ function BucketsTab({ params = {} }) {
   const gkFloor    = params.gkFloor   || 0;
   const yrsToRetire = Math.max(0, retireAge - currentAge);
   const retireYear  = new Date().getFullYear() + yrsToRetire;
-  const monthly     = sp > 0 ? Math.round(sp / 12) : 0;
+
+  // ── Net draw: gross spend + mortgage P&I − rental/property income ─────────
+  const mortAnnualPI = (() => {
+    if (!params.mortBalance || params.mortBalance <= 0) return 0;
+    const ms = mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0);
+    return ms.pmt * 12;
+  })();
+  const propIncome  = params.propIncome || 0;
+  const netDraw     = Math.max(0, sp + mortAnnualPI - propIncome);
+  const spendBasis  = drawMode === "gross" ? sp : netDraw;   // what bucket targets sit on
+  const monthly     = spendBasis > 0 ? Math.round(spendBasis / 12) : 0;
 
   // ── Actual balances from designated accounts ──────────────────────────────
   const accts  = params.accounts || [];
@@ -4738,12 +5237,13 @@ function BucketsTab({ params = {} }) {
   const hasAccounts = (b1Actual + b2Actual + b3Actual) > 0;
 
   // ── Thresholds ────────────────────────────────────────────────────────────
-  // Thresholds driven by user-configured year targets (b1Years, b2Years).
-  const b1Floor    = sp;                                          // 1yr — always the replenish trigger
-  const b1Target   = sp * b1Years;                               // user-set (default 3yr)
-  const ssGapYears = Math.max(b2Years, ssAge - retireAge);       // at least b2Years bridge
-  const b2Floor    = sp * b2Years;
-  const b2Target   = Math.max(b2Floor, Math.round(ssGapYears * sp));
+  // Thresholds driven by user-configured year targets (b1Years, b2Years) and
+  // the active spend basis (net draw by default; gross spend if user opts in).
+  const b1Floor    = spendBasis;                                       // 1yr — always the replenish trigger
+  const b1Target   = spendBasis * b1Years;                             // user-set (default 3yr)
+  const ssGapYears = Math.max(b2Years, ssAge - retireAge);             // at least b2Years bridge
+  const b2Floor    = spendBasis * b2Years;
+  const b2Target   = Math.max(b2Floor, Math.round(ssGapYears * spendBasis));
 
   // ── Simulation row for tax guidance ──────────────────────────────────────
   const simRow = useMemo(() => {
@@ -4833,63 +5333,6 @@ function BucketsTab({ params = {} }) {
   const now = new Date();
   const monthName = now.toLocaleString("default", { month: "long" });
 
-  // ── Bucket status card helper ─────────────────────────────────────────────
-  function BucketCard({ num, color, label, horizon, actual, floor, target, accounts: acctList }) {
-    const barPct  = target > 0 ? Math.min(100, actual / target * 100) : 0;
-    const status  = actual < floor ? "below" : actual < target ? "ok" : "full";
-    const barClr  = status === "below" ? "#f87171" : status === "full" ? "#34d399" : color;
-    const runway  = monthly > 0 && num === 1 ? (actual / monthly).toFixed(1) : null;
-    return (
-      <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color }}>{label}</div>
-            <div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>{horizon}</div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: barClr, fontFamily: "'DM Mono',monospace" }}>{actual > 0 ? fmtM(actual) : "—"}</div>
-            {runway && <div style={{ fontSize: 9, color: "#64748b" }}>{runway} mo runway</div>}
-          </div>
-        </div>
-        {(floor > 0 || target > 0) && (
-          <>
-            <div style={{ height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden", marginBottom: 4 }}>
-              <div style={{ height: "100%", width: `${barPct}%`, background: barClr, borderRadius: 3, transition: "width 0.4s" }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#475569" }}>
-              <span>Floor {fmtK(floor)}</span>
-              <span>Target {fmtK(target)}</span>
-            </div>
-          </>
-        )}
-        {acctList.length > 0 && (
-          <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
-            {acctList.map(a => (
-              <div key={a.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#475569", marginBottom: 2 }}>
-                <span>{a.name}</span>
-                <span style={{ color: "#64748b", fontFamily: "'DM Mono',monospace" }}>{fmtK(a.balance || 0)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        {acctList.length === 0 && (
-          <div style={{ marginTop: 8, fontSize: 10, color: "#334155", fontStyle: "italic" }}>No accounts assigned — use B{num} chips in Profile → Savings</div>
-        )}
-      </div>
-    );
-  }
-
-  // ── Planning targets (old BucketsTab content) ─────────────────────────────
-  const mortAnnualPI = (() => {
-    if (!params.mortBalance || params.mortBalance <= 0) return 0;
-    const ms = mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0);
-    return ms.pmt * 12;
-  })();
-  const propIncome = params.propIncome || 0;
-  const netDraw    = Math.max(0, sp + mortAnnualPI - propIncome);
-  const pt1 = Math.round(3 * netDraw);
-  const pt2 = Math.round(Math.max(3, ssAge - retireAge) * netDraw);
-  const pt3 = Math.max(0, port - pt1 - pt2);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -4964,8 +5407,8 @@ function BucketsTab({ params = {} }) {
         )}
       </div>
 
-      {/* ── Year selectors ────────────────────────────────────────────── */}
-      <div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px" }}>
+      {/* ── Buffer + draw-mode controls ──────────────────────────────── */}
+      <div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px", flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>Buffer targets:</span>
         {[
           { label: "B1 years", key: "b1Years", val: b1Years, min: 1, max: 7, hint: "3–5 recommended" },
@@ -4979,54 +5422,53 @@ function BucketsTab({ params = {} }) {
             <span style={{ fontSize: 9, color: "#334155" }}>{hint}</span>
           </div>
         ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+          <span
+            style={{ fontSize: 11, color: "#64748b", cursor: "help" }}
+            title={`Net (${fmtK(netDraw)}/yr) = spending + mortgage P&I − rental income — what the portfolio actually has to fund.\nGross (${fmtK(sp)}/yr) = headline spend, ignoring rental offsets and mortgage.`}
+          >Draw basis:</span>
+          {[
+            { val: "net",   label: `Net ${fmtK(netDraw)}/yr` },
+            { val: "gross", label: `Gross ${fmtK(sp)}/yr` },
+          ].map(opt => {
+            const active = drawMode === opt.val;
+            return (
+              <button
+                key={opt.val}
+                onClick={() => saveBCfg({ drawMode: opt.val })}
+                style={{
+                  background: active ? "rgba(14,165,233,0.18)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${active ? "#0ea5e9" : "rgba(255,255,255,0.1)"}`,
+                  color: active ? "#0ea5e9" : "#94a3b8",
+                  borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontWeight: active ? 600 : 400,
+                }}
+              >{opt.label}</button>
+            );
+          })}
+        </div>
       </div>
 
       {/* ── Bucket status cards ───────────────────────────────────────── */}
       <div style={{ display: "flex", gap: 10 }}>
         <BucketCard num={1} color="#0ea5e9" label="Bucket 1 — Cash" horizon={`0–${b1Years} years · pay bills now`}
-          actual={b1Actual} floor={b1Floor} target={b1Target} accounts={b1Accts} />
+          actual={b1Actual} floor={b1Floor} target={b1Target} accounts={b1Accts} monthly={monthly}
+          role={`${b1Years}-year runway at ${fmtK(spendBasis)}/yr ${drawMode === "net" ? "net draw" : "gross spend"}. Pays bills now — NEVER dual-purpose.`}
+          holdings="HYSA · Money market · T-bills · CDs" />
         <BucketCard num={2} color="#a78bfa" label="Bucket 2 — Income" horizon={`${b1Years}–${b1Years + b2Years} years · refills B1`}
-          actual={b2Actual} floor={b2Floor} target={b2Target} accounts={b2Accts} />
+          actual={b2Actual} floor={b2Floor} target={b2Target} accounts={b2Accts} monthly={monthly}
+          role={`Bridges ${ssGapYears}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`}
+          holdings="30–50% Equities · 50–70% Fixed Income · Bonds · REITs" />
         <BucketCard num={3} color="#10b981" label="Bucket 3 — Growth" horizon={`${b1Years + b2Years}+ years · last resort`}
-          actual={b3Actual} floor={0} target={0} accounts={b3Accts} />
-      </div>
-
-      {/* ── Planning targets (collapsible) ───────────────────────────── */}
-      <div className="chart-card" style={{ padding: "10px 14px" }}>
-        <button onClick={() => setShowPlanning(v => !v)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 12, width: "100%", textAlign: "left", padding: 0 }}>
-          {showPlanning ? "▾" : "▸"} SS-Gap Planning Targets {port > 0 ? `(B1 ${fmtM(pt1)} · B2 ${fmtM(pt2)} · B3 ${fmtM(pt3)})` : ""}
-        </button>
-        {showPlanning && (
-          <div style={{ marginTop: 10 }}>
-            {[
-              { name: "Bucket 1 — Cash", horizon: "1–3 years", amount: pt1, color: "#0ea5e9",
-                purpose: `3-year runway at ${fmtK(netDraw)}/yr net draw. NEVER dual-purpose.`,
-                holdings: "HYSA · Money market · T-bills · CDs" },
-              { name: "Bucket 2 — Income & Stability", horizon: "3–10 years", amount: pt2, color: "#a78bfa",
-                purpose: `Bridges ${Math.max(3, ssAge - retireAge)}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`,
-                holdings: "30–50% Equities · 50–70% Fixed Income · Bonds · REITs" },
-              { name: "Bucket 3 — Long-Term Growth", horizon: "10+ years", amount: pt3, color: "#10b981",
-                purpose: "Protects against inflation & grows wealth for a decade or more.",
-                holdings: "50–100% Equities · Broad-market equity · International" },
-            ].map(b => (
-              <div key={b.name} style={{ marginBottom: 10, border: `1px solid ${b.color}33`, borderRadius: 8, padding: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: b.color }}>{b.name} <span style={{ fontSize: 9, color: "#475569", fontWeight: 400 }}>{b.horizon}</span></div>
-                  <div style={{ fontSize: 13, color: b.color, fontFamily: "'DM Mono',monospace" }}>{port > 0 ? fmtM(b.amount) : "—"}</div>
-                </div>
-                <div style={{ fontSize: 11, color: "#64748b" }}>{b.purpose}</div>
-                <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}><span style={{ color: b.color }}>Holdings:</span> {b.holdings}</div>
-              </div>
-            ))}
-          </div>
-        )}
+          actual={b3Actual} floor={0} target={0} accounts={b3Accts} monthly={monthly}
+          role="Protects against inflation & grows wealth for a decade or more."
+          holdings="50–100% Equities · Broad-market equity · International" />
       </div>
     </div>
   );
 }
 function ScenariosTab({
   baseParams,
-  r90,
+  mc,
   stress,
   retireAge,
   ssAge,
@@ -5039,7 +5481,6 @@ function ScenariosTab({
   DeterministicWithdrawalView,
   RothLadder,
   BucketsTab,
-  SmileChart,
   withdrawalStrategy,
   checkpoints,
   earlyRetireTarget,
@@ -5055,14 +5496,12 @@ function ScenariosTab({
   const [scenarioSubTab, setScenarioSubTab] = useState("roth");
 
   const SCENARIO_SUBTABS = [
-    ["roth",       "🔄 ROTH CONVERSIONS"],
-    ["waterfall",  "📋 WITHDRAWAL PLAN"],
-    ["withdrawal", "💸 WITHDRAWAL ANALYSIS"],
-    ["stress",     "🔶 STRESS TEST"],
-    ["buckets",    "🪣 BUCKETS"],
-    ["income",     "💵 INCOME"],
-    ["realestate", "🏠 REAL ESTATE"],
-    ["smile",      "🙂 SMILE"],
+    ["roth",        "🔄 ROTH CONVERSIONS"],
+    ["withdrawals", "💸 WITHDRAWAL PLAN"],
+    ["stress",      "🔶 STRESS TEST"],
+    ["buckets",     "🪣 BUCKETS"],
+    ["income",      "💵 INCOME"],
+    ["realestate",  "🏠 REAL ESTATE"],
   ];
 
   return (
@@ -5137,10 +5576,10 @@ function ScenariosTab({
               <div
                 className="mv"
                 style={{
-                  color: r90 && stress.rate >= r90.rate ? "#0d9488" : "#ef4444",
+                  color: mc && stress.rate >= mc.rate ? "#0d9488" : "#ef4444",
                 }}
               >
-                {r90 ? `${((stress.rate - r90.rate) * 100).toFixed(1)}pp` : "—"}
+                {mc ? `${((stress.rate - mc.rate) * 100).toFixed(1)}pp` : "—"}
               </div>
             </div>
           </div>
@@ -5171,24 +5610,19 @@ function ScenariosTab({
         </div>
       )}
 
-      {scenarioSubTab === "waterfall" && (
-        <WaterfallPlanView p={baseParams} />
-      )}
-
-      {scenarioSubTab === "withdrawal" && (
-        <DeterministicWithdrawalView p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} />
+      {scenarioSubTab === "withdrawals" && (
+        <WithdrawalPlanCombined p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} />
       )}
 
       {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} />}
       {scenarioSubTab === "buckets"    && <BucketsTab params={baseParams} />}
       {scenarioSubTab === "income"     && <IncomeMap p={baseParams} inf={inf} />}
       {scenarioSubTab === "realestate" && <MortgageTab values={assumptions ?? baseParams} onChange={onAssumptionChange ?? (() => {})} />}
-      {scenarioSubTab === "smile"      && <SmileChart p={baseParams} inf={inf} />}
     </div>
   );
 }
 
-function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy }) {
+function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy }) {
   const [showInputs, setShowInputs] = useState(false);
   const [showHow, setShowHow] = useState(false);
   const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
@@ -5325,7 +5759,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <InputCard title="Return Distribution" rows={[["Model", "Historical bootstrap"], ["Equity data", "99yr S&P 500 (1928–2026)"], [`Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`, "Equity / Bonds"], [`Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`, "Equity / Bonds"]]} />
                 <InputCard title="Inflation & Guardrails" rows={[["Inflation", "Historical bootstrap"], ["Inflation source", "2000–2024 actual CPI"], ["GK floor", fmtM(params.gkFloor) + "/yr"], ["GK ceiling", fmtM(params.gkCeiling) + "/yr"]]} />
-                <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizons", `Age 85 + Age ${params.endAge || 90}`], ["Withdrawal", "Guyton-Klinger"], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
+                <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizon", `Age ${params.endAge || 90} (your plan age)`], ["Withdrawal", getStrategyLabel(params.withdrawalStrategy || "smart")], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
               </div>
             </div>
           </>
@@ -5372,7 +5806,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
             <input type="date" value={newCpDate} onChange={e => setNewCpDate(e.target.value)} style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
             <input type="number" placeholder="Portfolio value ($)" value={newCpValue} onChange={e => setNewCpValue(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
-            <input type="text" placeholder="Note (optional)" value={newCpNote} onChange={e => setNewCpNote(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
+            <input type="text" placeholder="Note (optional)" value={newCpNote} onChange={e => setNewCpNote(e.target.value)} style={{ width: 240, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
             <button onClick={handleSaveCheckpoint} style={{ background: "#0d9488", border: "none", borderRadius: 6, padding: "6px 16px", color: "white", cursor: "pointer" }}>
               {editingId ? "Update Checkpoint" : "Save Checkpoint"}
             </button>
@@ -5403,7 +5837,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
                       if (`${cd.getMonth()}-${cd.getDate()}` < `${birth.getMonth()}-${birth.getDate()}`) age--;
                     }
                   }
-                  const p50AtAge  = (age !== null && r90?.pcts) ? (r90.pcts.find(d => d.age === age)?.p50 || 0) : 0;
+                  const p50AtAge  = (age !== null && mc?.pcts) ? (mc.pcts.find(d => d.age === age)?.p50 || 0) : 0;
                   const delta     = p50AtAge > 0 ? cp.value - p50AtAge : null;
                   const status    = p50AtAge > 0 ? (delta > 0 ? "Ahead" : delta < 0 ? "Behind" : "On track") : "Pre‑retirement";
                   const deltaColor = delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#94a3b8";
@@ -5434,7 +5868,7 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
                         <td>
                           <span style={{ marginRight: 4, fontSize: 10, color: "#475569" }}>{isExpanded ? "▼" : "▶"}</span>
                           {cp.date ? new Date(cp.date + "T00:00:00").toLocaleDateString() : "—"}
-                          {cp.note && <span style={{ marginLeft: 6, fontSize: 10, color: "#64748b" }}>· {cp.note}</span>}
+                          {cp.note && <span style={{ marginLeft: 6, fontSize: 14, color: "#64748b" }}>· {cp.note}</span>}
                         </td>
                         <td style={{ fontFamily: "'DM Mono',monospace" }}>{fmtM(cp.value)}</td>
                         <td style={{ color: "#64748b" }}>{p50AtAge > 0 ? fmtM(p50AtAge) : "—"}</td>
@@ -5502,26 +5936,26 @@ function MCTab({ params, r85, r90, stress, running, onRun, checkpoints, onUpdate
       </div>
 
       {/* Results panel */}
-      {!r90 && <div style={{ textAlign: "center", padding: "20px", color: "#475569", fontSize: 13 }}>{running ? "Running 3,000 paths..." : "Run Monte Carlo from the sidebar to see results here."}</div>}
-      {r90 && (
+      {!mc && <div style={{ textAlign: "center", padding: "20px", color: "#475569", fontSize: 13 }}>{running ? "Running 3,000 paths..." : "Run Monte Carlo from the sidebar to see results here."}</div>}
+      {mc && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-          <div style={{ background: `${rateColor(r90.rate)}12`, border: `1.5px solid ${rateColor(r90.rate)}44`, borderRadius: 10, padding: 18 }}>
+          <div style={{ background: `${rateColor(mc.rate)}12`, border: `1.5px solid ${rateColor(mc.rate)}44`, borderRadius: 10, padding: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>SUCCESS RATE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
-            <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(r90.rate), fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(r90.rate)}</div>
+            <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(mc.rate), fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(mc.rate)}</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>of 3,000 simulations last to age {params.endAge}</div>
-            <div style={{ fontSize: 12, color: rateColor(r90.rate), marginBottom: 14, lineHeight: 1.5 }}>{riskLabel(r90.rate)}</div>
+            <div style={{ fontSize: 12, color: rateColor(mc.rate), marginBottom: 14, lineHeight: 1.5 }}>{riskLabel(mc.rate)}</div>
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10, display: "flex", gap: 12 }}>
-              <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>To age 85</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(r85?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{r85 ? fmtPct(r85.rate) : "—"}</div></div>
-              <div style={{ flex: 1, textAlign: "center", borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Stress test</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(stress?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{stress ? fmtPct(stress.rate) : "—"}</div></div>
+              <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Plan age</div><div style={{ fontSize: 18, fontWeight: 700, color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>Age {params.endAge}</div></div>
+              <div style={{ flex: 1, textAlign: "center", borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Stress test (2000–2012)</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(stress?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{stress ? fmtPct(stress.rate) : "—"}</div></div>
             </div>
           </div>
           <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>MEDIAN FINAL BALANCE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
-            <div style={{ fontSize: 42, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtM(r90.term.p50)}</div>
+            <div style={{ fontSize: 42, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtM(mc.term.p50)}</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>50th percentile at age {params.endAge}</div>
             <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 14 }}>Half of all simulations end above this. A higher balance cushions against sequence-of-returns risk.</div>
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10 }}>
-              {[{ l: "10th (near-worst)", v: r90.term.p10, c: "#f87171" }, { l: "25th (cautious)", v: r90.term.p25, c: "#fbbf24" }, { l: "75th (good case)", v: r90.term.p75, c: "#34d399" }, { l: "90th (best 10%)", v: r90.term.p90, c: "#5eead4" }].map(({ l, v, c }) => (
+              {[{ l: "10th (near-worst)", v: mc.term.p10, c: "#f87171" }, { l: "25th (cautious)", v: mc.term.p25, c: "#fbbf24" }, { l: "75th (good case)", v: mc.term.p75, c: "#34d399" }, { l: "90th (best 10%)", v: mc.term.p90, c: "#5eead4" }].map(({ l, v, c }) => (
                 <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 11 }}>
                   <span style={{ color: "#475569" }}>{l}</span><span style={{ color: c, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmtM(v)}</span>
                 </div>
@@ -5794,7 +6228,7 @@ function MortgageTab({ values, onChange }) {
   );
 }
 
-function NetWorthTab({ p, results90, inf }) {
+function NetWorthTab({ p, mc, inf }) {
   const [showRE, setShowRE] = useState(false);
   const props    = p.properties || [];
   const reTotal   = props.reduce((s, pr) => s + (pr.value||0), 0);
@@ -5813,7 +6247,7 @@ function NetWorthTab({ p, results90, inf }) {
   );
 
   const nwData = useMemo(() => {
-    if (!results90) return [];
+    if (!mc) return [];
 
     // Current liquid portfolio from accounts (matches home page sidebar)
     const currentPort = (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0) || p.port || 0;
@@ -5840,8 +6274,8 @@ function NetWorthTab({ p, results90, inf }) {
         port = Math.round(acc);
       } else {
         // Retirement phase: use MC median percentile
-        const pctIndex = Math.min(age - p.retireAge, results90.pcts.length - 1);
-        port = results90.pcts[pctIndex]?.p50 || 0;
+        const pctIndex = Math.min(age - p.retireAge, mc.pcts.length - 1);
+        port = mc.pcts[pctIndex]?.p50 || 0;
       }
 
       const mortEntry = mortSched.years.find((y) => y.yr === yr);
@@ -5857,14 +6291,14 @@ function NetWorthTab({ p, results90, inf }) {
         "Net Worth": port + re - mortBal,
       };
     });
-  }, [p, results90, showRE, mortSched, reTotal]);
+  }, [p, mc, showRE, mortSched, reTotal]);
 
-  // Peak liquid portfolio (median) – from full MC horizon (age 90) – optional note
-  const peakPort = results90
-    ? Math.max(...results90.pcts.map((d) => d.p50))
+  // Peak liquid portfolio (median) – from the full MC horizon (your plan age) – optional note
+  const peakPort = mc
+    ? Math.max(...mc.pcts.map((d) => d.p50))
     : 0;
-  const peakAge = results90
-    ? p.retireAge + results90.pcts.findIndex((d) => d.p50 === peakPort)
+  const peakAge = mc
+    ? p.retireAge + mc.pcts.findIndex((d) => d.p50 === peakPort)
     : 0;
 
   // Final net worth at the user's plan age (p.endAge)
@@ -5922,7 +6356,7 @@ function NetWorthTab({ p, results90, inf }) {
               const s    = p.withdrawalStrategy || "gk";
               const rate = p.fixedWithdrawalRate || 0.04;
               const pct  = (rate * 100).toFixed(1).replace(/\.0$/, ""); // "4" not "4.0"
-              const labels = { gk:"GK guardrails", fixed:`Fixed ${pct}%`, vanguard:"Vanguard dynamic", vpw:"VPW", kitces:"Kitces ratchet", cape:"CAPE-based", endowment:"Endowment", risk:"Risk-based", one_n:"1/N rule", ninety_five_rule:"95% rule" };
+              const labels = { gk:"GK guardrails", fixed:`Fixed ${pct}%`, vanguard:"Vanguard dynamic", vpw:"VPW", kitces:"Kitces ratchet", cape:"CAPE-based", endowment:"Endowment", risk:"Risk-based", one_n:"1/N rule", ninety_five_rule:"95% rule", bengen:"Bengen 4% rule", smart:"Smart Waterfall" };
               return `${labels[s] || s} · per month`;
             })()}
           </div>
@@ -6020,11 +6454,11 @@ function NetWorthTab({ p, results90, inf }) {
 
         {/* Footnote about peak age */}
         <div style={{ fontSize: 10, color: "#64748b", marginTop: 6, textAlign: "center" }}>
-          * Peak liquid based on full Monte Carlo horizon (age 90). May exceed your plan age.
+          * Peak liquid based on the full Monte Carlo horizon (your plan age, {p.endAge}).
         </div>
       </div>
 
-      {!results90 && (
+      {!mc && (
         <div className="flag-i">
           ℹ Run Monte Carlo first to see net worth projections.
         </div>
@@ -6033,12 +6467,293 @@ function NetWorthTab({ p, results90, inf }) {
   );
 }
 
-// ─── Priority colors ──────────────────────────────────────────────────────────
+function generateActions({
+  params,
+  mc,
+  assumptions,
+  mortgagePayoffYear,
+  currentYear,
+  retireYear,
+  daysToRetire,
+  goal = 3_200_000,
+  fafsaEndYear = 2029,
+}) {
+  const actions = [];
+  const swr = (params.sp / params.port) * 100;
+  const isNoTaxState = params.twoHousehold;
+  const _accts = params.accounts || [];
+  const preTaxTotal = _accts.filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
+  const _rothTotal = _accts.filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
+  const rothPct = params.port > 0 ? _rothTotal / params.port : 0;
+  const preTaxPct = params.port > 0 ? preTaxTotal / params.port : 0;
+  const successRate = mc ? mc.rate : 0;
+  const portFundedPct = (params.port / goal) * 100;
+
+  // 🔴 RED rules
+  if (mc && successRate < 0.80) {
+    actions.push({
+      priority: "red",
+      category: "Monte Carlo",
+      action: "Success rate below 80%",
+      reason: `${(successRate * 100).toFixed(1)}% — plan needs restructuring`,
+      deadline: "Now",
+    });
+  }
+  if (mc && successRate < 0.70) {
+    actions.push({
+      priority: "red",
+      category: "Monte Carlo",
+      action: "Plan failure risk — urgent review",
+      reason: `Less than 70% success to age ${params.endAge}`,
+      deadline: "Now",
+    });
+  }
+  if (swr > 5.0) {
+    actions.push({
+      priority: "red",
+      category: "Withdrawal Rate",
+      action: "Withdrawal rate dangerously high",
+      reason: `${swr.toFixed(1)}% — safe benchmark is 4%`,
+      deadline: "Now",
+    });
+  }
+  if (preTaxPct > 0.75) {
+    actions.push({
+      priority: "red",
+      category: "Tax",
+      action: "Pre-tax concentration — RMD bomb",
+      reason: `${(preTaxPct * 100).toFixed(0)}% in taxable accounts, RMD age 73`,
+      deadline: "Before age 66",
+    });
+  }
+  if (daysToRetire < 730 && !isNoTaxState) {
+    actions.push({
+      priority: "red",
+      category: "Domicile",
+      action: "FL domicile not established",
+      reason: "NJ tax on withdrawals = ~$50K+ loss",
+      deadline: "Before D-Day",
+    });
+  }
+  if (portFundedPct < 60) {
+    actions.push({
+      priority: "red",
+      category: "Savings",
+      action: `Portfolio below 60% of goal (${(portFundedPct).toFixed(0)}%)`,
+      reason: `${(goal - params.port).toLocaleString()} gap remaining`,
+      deadline: "Now",
+    });
+  }
+
+  // 🟡 YELLOW rules
+  if (currentYear <= fafsaEndYear) {
+    actions.push({
+      priority: "yellow",
+      category: "FAFSA/CSS",
+      action: "Minimize AGI — FAFSA years active",
+      reason: `CSS/FAFSA through ${fafsaEndYear} — cap Roth conversions at 12%`,
+      deadline: `Spring ${fafsaEndYear}`,
+    });
+  }
+  if (portFundedPct < 75) {
+    actions.push({
+      priority: "yellow",
+      category: "Savings",
+      action: "Increase contributions or reduce spend",
+      reason: `${portFundedPct.toFixed(0)}% funded — ${params.retireAge - params.currentAge} years to D-Day`,
+      deadline: "D-Day",
+    });
+  }
+  if (mortgagePayoffYear > retireYear) {
+    actions.push({
+      priority: "yellow",
+      category: "Mortgage",
+      action: "Mortgage outlasts retirement date",
+      reason: `Payoff ${mortgagePayoffYear} — balance remains at D-Day`,
+      deadline: "Pre-retirement",
+    });
+  }
+  const _hsaBal = (params.accounts || []).filter(a => a.category === "hsa").reduce((s, a) => s + (a.balance || 0), 0);
+  if (_hsaBal < 50000) {
+    actions.push({
+      priority: "yellow",
+      category: "HSA",
+      action: "Maximize HSA contributions",
+      reason: `Current HSA $${_hsaBal.toLocaleString()} — triple tax advantage`,
+      deadline: "Each year",
+    });
+  }
+  if (rothPct < 0.25) {
+    actions.push({
+      priority: "yellow",
+      category: "Roth",
+      action: "Roth balance low — conversion needed",
+      reason: `${(rothPct * 100).toFixed(0)}% Roth — target 40%+ before RMDs`,
+      deadline: "Ages 61-72",
+    });
+  }
+  if (daysToRetire < 1460) {
+    actions.push({
+      priority: "yellow",
+      category: "Liquidity",
+      action: "Bucket 1 funding — confirm cash",
+      reason: `D-Day in ${Math.ceil(daysToRetire / 365)} years — need 2yr expenses liquid`,
+      deadline: "1 year before D-Day",
+    });
+  }
+  if (params.ssAge > 64) {
+    actions.push({
+      priority: "yellow",
+      category: "Social Security",
+      action: "Confirm SS claiming age",
+      reason: `Each year delay = 8% increase — verify break-even at age ${params.ssAge}`,
+      deadline: "Before retirement",
+    });
+  }
+  const taxableBrok = (params.accounts || []).filter(a => a.category === "taxable").reduce((s, a) => s + (a.balance || 0), 0);
+  if (taxableBrok < 50000) {
+    actions.push({
+      priority: "yellow",
+      category: "Emergency Fund",
+      action: "Build emergency dry powder",
+      reason: `Less than $50K liquid taxable — sequence risk`,
+      deadline: "Now",
+    });
+  }
+
+  // 🟢 GREEN rules
+  if (mc && successRate >= 0.90) {
+    actions.push({
+      priority: "green",
+      category: "Monte Carlo",
+      action: "Plan on track — stay the course",
+      reason: `${(successRate * 100).toFixed(1)}% success — JL Collins would approve`,
+      deadline: "Ongoing",
+    });
+  }
+  if (swr <= 3.5) {
+    actions.push({
+      priority: "green",
+      category: "Withdrawal Rate",
+      action: "Withdrawal rate conservative",
+      reason: `${swr.toFixed(1)}% — strong margin of safety`,
+      deadline: "Monitor",
+    });
+  }
+  if (mortgagePayoffYear <= retireYear) {
+    actions.push({
+      priority: "green",
+      category: "Mortgage",
+      action: "Mortgage paid off before retirement",
+      reason: `Payoff ${mortgagePayoffYear} — debt-free at D-Day ✅`,
+      deadline: "✅ Done",
+    });
+  }
+  if (mc && successRate >= 0.85 && swr <= 4) {
+    actions.push({
+      priority: "green",
+      category: "Guardrails",
+      action: "Guyton-Klinger guardrails healthy",
+      reason: `Floor ${params.gkFloor?.toLocaleString()} · Ceiling ${params.gkCeiling?.toLocaleString()} · WR ${swr.toFixed(1)}%`,
+      deadline: "Monitor",
+    });
+  }
+  if (rothPct >= 0.30) {
+    actions.push({
+      priority: "green",
+      category: "Roth",
+      action: "Roth allocation healthy",
+      reason: `${(rothPct * 100).toFixed(0)}% Roth — reducing future RMD exposure`,
+      deadline: "Monitor",
+    });
+  }
+  if (portFundedPct >= 85) {
+    actions.push({
+      priority: "green",
+      category: "Savings",
+      action: `On pace for ${(goal / 1e6).toFixed(1)}M goal`,
+      reason: `${portFundedPct.toFixed(0)}% funded · ${params.retireAge - params.currentAge} years remaining`,
+      deadline: "D-Day",
+    });
+  }
+
+  // Sort: red → yellow → green
+  return actions.sort((a, b) => {
+    const order = { red: 0, yellow: 1, green: 2 };
+    return order[a.priority] - order[b.priority];
+  });
+}
+// ─── ActionTile ───────────────────────────────────────────────────────────────
 const PRIORITY_COLOR = {
   red:    { border: "#ef4444", bg: "rgba(239,68,68,0.07)",  label: "#f87171", dot: "🔴" },
   yellow: { border: "#f59e0b", bg: "rgba(245,158,11,0.07)", label: "#fbbf24", dot: "🟡" },
   green:  { border: "#10b981", bg: "rgba(16,185,129,0.07)", label: "#34d399", dot: "🟢" },
 };
+
+function ActionTile({ card }) {
+  const [open, setOpen] = useState(false);
+  const C = PRIORITY_COLOR[card.priority] || PRIORITY_COLOR.yellow;
+  return (
+    <div
+      onClick={() => setOpen(v => !v)}
+      style={{
+        background:   C.bg,
+        border:       `1px solid rgba(255,255,255,0.08)`,
+        borderLeft:   `3px solid ${C.border}`,
+        borderRadius: 8,
+        padding:      "11px 13px",
+        cursor:       "pointer",
+        display:      "flex",
+        flexDirection:"column",
+        gap:          6,
+        minHeight:    110,
+        transition:   "box-shadow 0.15s",
+      }}
+      onMouseEnter={e => e.currentTarget.style.boxShadow = `0 0 0 1px ${C.border}40`}
+      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+    >
+      <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: C.label, display: "flex", alignItems: "center", gap: 5 }}>
+        {card.category}
+        {card.isLiveData  && <span style={{ color: "#22d3ee", fontSize: 9 }}>🌐 LIVE</span>}
+        {card.aiGenerated && !card.isLiveData && <span style={{ color: "#a78bfa", fontSize: 9 }}>✦ AI</span>}
+        {card.aiChecked && (
+          <span style={{
+            background: card.aiNote ? "rgba(99,102,241,0.15)" : "rgba(71,85,105,0.18)",
+            color:      card.aiNote ? "#818cf8"                : "#64748b",
+            border:     `1px solid ${card.aiNote ? "rgba(99,102,241,0.3)" : "rgba(71,85,105,0.3)"}`,
+            borderRadius: 4, padding: "1px 5px", fontSize: 8, fontWeight: 700,
+            letterSpacing: "0.04em", textTransform: "uppercase",
+          }}>
+            🤖 {card.aiNote ? "AI insight" : "AI reviewed"}
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#f1f5f9", lineHeight: 1.45, flex: 1 }}>
+        {card.action}
+      </div>
+      <div style={{ fontSize: 10, color: "#475569", display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 6 }}>
+        <span>⏱ {card.deadline}</span>
+        {card.aiNote
+          ? <span style={{ color: "#6366f1", fontSize: 9 }}>▾ insight</span>
+          : card.aiChecked
+          ? <span style={{ color: "#475569", fontSize: 9 }}>✓ reviewed</span>
+          : null}
+      </div>
+      {card.aiNote ? (
+        <div style={{ fontSize: 10, color: "#a78bfa", lineHeight: 1.45, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
+          🤖 {card.aiNote}
+        </div>
+      ) : card.aiChecked ? (
+        <div style={{ fontSize: 9, color: "#475569", lineHeight: 1.45, borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: 5 }}>
+          ✓ AI reviewed — nothing to add
+        </div>
+      ) : null}
+      {card.source && (
+        <div style={{ fontSize: 9, color: "#22d3ee", marginTop: 2 }}>📡 {card.source}</div>
+      )}
+    </div>
+  );
+}
 
 // ─── Milestone timeline ───────────────────────────────────────────────────────
 function buildMilestones(params, rmdAge) {
@@ -6381,7 +7096,7 @@ function CardDetailPanel({ card, onClose }) {
 }
 
 // ─── ActionPlanTab ────────────────────────────────────────────────────────────
-function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdAge: rmdAgeProp }) {
+function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rmdAgeProp }) {
   const currentYear = new Date().getFullYear();
   const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
   const daysToRetire = Math.max(0,
@@ -6401,10 +7116,10 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
 
   const runAI = async (baseCards) => {
     const { runAIActionPlan, profileIsComplete } = await import("./ai/ai-analysis.js");
-    console.log("[AI] runAI called. profileIsComplete:", profileIsComplete(params, r90));
+    console.log("[AI] runAI called. profileIsComplete:", profileIsComplete(params, mc));
     console.log("[AI] geminiApiKey present:", !!assumptions?.geminiApiKey, "model:", assumptions?.geminiModel || "default");
     console.log("[AI] baseCards count:", baseCards?.length, "ids:", baseCards?.map(c => c.id));
-    if (!profileIsComplete(params, r90)) {
+    if (!profileIsComplete(params, mc)) {
       console.warn("[AI] Profile incomplete — runAI exiting silently. Need: port>50K, sp>0, mcResults.rate>0, ≥1 funded account.");
       return;
     }
@@ -6412,7 +7127,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
     setAiError(null);
     try {
       console.log("[AI] Calling runAIActionPlan…");
-      const merged = await runAIActionPlan({ ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel }, r90, baseCards);
+      const merged = await runAIActionPlan({ ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel }, mc, baseCards);
       console.log("[AI] Merged result:", merged);
       console.log("[AI] Cards with aiNote:", merged?.filter(c => c.aiNote).length, "/ total:", merged?.length);
       console.log("[AI] AI-generated new cards:", merged?.filter(c => c.aiGenerated).length);
@@ -6436,7 +7151,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
     try {
       const found = await generateTimeSensitiveCards(
         { ...params, geminiApiKey: assumptions?.geminiApiKey, geminiModel: assumptions?.geminiModel },
-        r90
+        mc
       );
       setLiveCards(found);
     } catch (e) {
@@ -6446,7 +7161,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
     }
   };
 
-  if (!params || !r90) {
+  if (!params || !mc) {
     return (
       <div className="chart-card" style={{ textAlign: "center", padding: "40px 20px" }}>
         <div style={{ fontSize: 14, color: "#94a3b8", marginBottom: 8 }}>🎲 Monte Carlo not run yet</div>
@@ -6457,7 +7172,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
 
   // Evaluate declarative rules engine
   const baseCards = evaluateRulesEngine({
-    params, r90, r85, assumptions,
+    params, mc, assumptions,
     currentYear, retireYear, daysToRetire,
   });
 
@@ -6468,7 +7183,7 @@ function ActionPlanTab({ params, r90, r85, assumptions, mortgagePayoffYear, rmdA
   const hasGeminiKey = !!(assumptions?.geminiApiKey?.trim());
   const profileReady = (params.port || 0) > 50_000 &&
     (params.sp  || 0) > 0 &&
-    r90?.rate > 0 &&
+    mc?.rate > 0 &&
     (params.accounts || []).some(a => (a.balance || 0) > 0);
   const hasAiAccess  = BILLING_ENABLED ? (creditBalance >= 5 || hasGeminiKey) : hasGeminiKey;
   const canRunAI     = !loadingAI && !cards && profileReady && hasAiAccess;
@@ -7210,10 +7925,10 @@ function AboutYouPanel({ values, onChange }) {
           RETIREMENT TIMELINE
         </div>
         <WFieldRow label="Retirement Age" helper="Age at which you plan to retire (D‑Day).">
-          <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={50} max={75} step={1} />
+          <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={50} max={100} step={1} />
         </WFieldRow>
         <WFieldRow label="Planning Horizon" helper="Age through which you want the plan to last.">
-          <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={75} max={100} step={1} />
+          <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={40} max={100} step={1} />
         </WFieldRow>
         <WFieldRow label="Sex" helper="Used for SSA mortality overlay on the fan chart (male/female life expectancy tables, or blended average).">
           <select
@@ -7737,10 +8452,9 @@ function AssumptionsPanel({ values, onChange }) {
 function ContribPanel({ values, onChange }) {
   const annual401k = values.contrib || 0;
   const hsaMonthly = values.hsaMonthly || 0;
-  const employerMatch = values.employerMatch || 0;
+  const employerContrib = values.employerContrib || 0;
   const hsaAnnual = hsaMonthly * 12;
-  const matchAmount = Math.round((annual401k * employerMatch) / 100);
-  const totalSavings = annual401k + hsaAnnual + matchAmount;
+  const totalSavings = annual401k + hsaAnnual + employerContrib;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -7756,11 +8470,8 @@ function ContribPanel({ values, onChange }) {
         <WFieldRow label="HSA Monthly Contribution" helper="Family limit $8,550 + $1,000 catch‑up (2026).">
           <ANumInput value={hsaMonthly} onSet={(v) => onChange("hsaMonthly", v)} min={0} max={1_000} step={50} suffix="/mo" />
         </WFieldRow>
-        <WFieldRow label="Employer Match (%)" helper="Percentage of your 401(k) contribution matched.">
-          <ANumInput value={employerMatch} onSet={(v) => onChange("employerMatch", v)} min={0} max={10} step={0.5} suffix="%" />
-        </WFieldRow>
-        <WFieldRow label="Employer Contribution ($/yr)" helper="Fixed annual employer contribution (e.g. 401k match + profit sharing in dollars). Used in Monte Carlo accumulation.">
-          <ANumInput value={values.employerContrib || 0} onSet={(v) => onChange("employerContrib", v)} min={0} max={100_000} step={500} suffix="/yr" />
+        <WFieldRow label="Employer Contribution ($/yr)" helper="Fixed annual employer money in dollars — 401(k) match + profit sharing. Compounds in the Monte Carlo accumulation until your retirement age.">
+          <ANumInput value={employerContrib} onSet={(v) => onChange("employerContrib", v)} min={0} max={100_000} step={500} suffix="/yr" />
         </WFieldRow>
       </div>
 
@@ -7768,7 +8479,7 @@ function ContribPanel({ values, onChange }) {
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
         {[
           { label: "401(k) Contribution", val: annual401k, color: "#0ea5e9" },
-          { label: "Employer Match", val: matchAmount, color: "#34d399" },
+          { label: "Employer Contribution", val: employerContrib, color: "#34d399" },
           { label: "HSA Contribution", val: hsaAnnual, color: "#a78bfa" },
         ].map((m) => (
           <div key={m.label}>
@@ -7787,7 +8498,7 @@ function ContribPanel({ values, onChange }) {
           {fmtK(totalSavings)}
           <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>/yr</span>
         </div>
-        <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Including employer match and HSA</div>
+        <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Including employer contribution and HSA</div>
       </div>
 
       {/* ── Other income sources ── */}
@@ -7968,8 +8679,9 @@ function RetirementPanel({ values, onChange }) {
               fontFamily: "'Inter',sans-serif",
             }}
           >
-            <option value="smart">📋 Smart Waterfall (Tax-Optimal)</option>
+            <option value="smart">📋 Smart Waterfall (Tax-Optimal · GK→Bengen at 15yr)</option>
             <option value="gk">Guyton‑Klinger (Dynamic)</option>
+            <option value="bengen">Bengen 4% Rule (Fixed Real $)</option>
             <option value="fixed">Fixed % of Portfolio</option>
             <option value="vanguard">Vanguard Dynamic Spending</option>
             <option value="risk">Risk‑Based Guardrails</option>
@@ -8010,6 +8722,14 @@ function RetirementPanel({ values, onChange }) {
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>RENTAL INCOME</div>
+        <WFieldRow
+          label="Rental Net Income (annual)"
+          helper={(values.properties || []).some((pr) => Number(pr.income) > 0)
+            ? "Ignored — a property below has its own income set, which takes precedence."
+            : "Net rental / Airbnb income. Drives the “Rental Net” bar in the Income Coverage chart."}
+        >
+          <ANumInput value={values.ab || 0} onSet={(v) => onChange("ab", v)} min={0} max={200000} step={1000} suffix="/yr" />
+        </WFieldRow>
         <WFieldRow label="Rental Growth Rate" helper="Annual growth rate for rental income (default 3%).">
           <ANumInput value={values.abGrowth || 3} onSet={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} suffix="%" />
         </WFieldRow>
@@ -8109,144 +8829,6 @@ function RetirementPanel({ values, onChange }) {
   );
 }
 
-function IncomePanel({ values, onChange }) {
-  // Convert annual ssb to monthly for display
-  const ssbMonthly = (values.ssb || 0) / 12;
-  const ab = values.ab || 0;
-  const totalRetirementIncome = ab + (values.ssb || 0);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        {/* Rental Net Income */}
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-            Rental Net Income (annual)
-          </div>
-          <DualInput
-            label=""
-            value={ab}
-            min={0}
-            max={60000}
-            step={1000}
-            format={(v) => fmtK(v) + "/yr"}
-            onChange={(v) => onChange("ab", v)}
-          />
-        </div>
-
-        {/* Social Security Benefit - Monthly Input */}
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-            Social Security Benefit (monthly)
-          </div>
-          <DualInput
-            label=""
-            value={ssbMonthly}
-            min={0}
-            max={5000}
-            step={50}
-            format={(v) => fmtM(v) + "/mo"}
-            onChange={(v) => onChange("ssb", v * 12)}   // store as annual
-          />
-        </div>
-
-        {/* SS Start Age */}
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-            SS Start Age
-          </div>
-          <DualInput
-            label=""
-            value={values.ssAge || 67}
-            min={62}
-            max={70}
-            step={1}
-            format={(v) => `Age ${v}`}
-            onChange={(v) => onChange("ssAge", v)}
-          />
-        </div>
-
-        {/* Rental Reliability */}
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-            Rental Reliability
-          </div>
-          <DualInput
-            label=""
-            value={values.abReliability || 80}
-            min={0}
-            max={100}
-            step={5}
-            format={(v) => v + "%"}
-            onChange={(v) => onChange("abReliability", v)}
-          />
-        </div>
-
-        {/* Rental Growth Rate */}
-        <div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-            Rental Growth Rate
-          </div>
-          <DualInput
-            label=""
-            value={values.abGrowth || 3}
-            min={0}
-            max={10}
-            step={0.5}
-            format={(v) => v + "%/yr"}
-            onChange={(v) => onChange("abGrowth", v)}
-          />
-        </div>
-      </div>
-
-      {/* Total income at retirement */}
-      <div
-        style={{
-          background: "linear-gradient(135deg, #05966918, #0ea5e918)",
-          border: "1px solid #05966944",
-          borderRadius: 10,
-          padding: 18,
-          textAlign: "center",
-        }}
-      >
-        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
-          🏖️ Total Annual Income at Retirement (Pre-Tax)
-        </div>
-        <div
-          style={{
-            fontSize: 36,
-            fontWeight: 900,
-            color: "#34d399",
-            fontFamily: "'DM Mono',monospace",
-            lineHeight: 1,
-          }}
-        >
-          {fmtK(totalRetirementIncome)}
-          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>/yr</span>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 20,
-            marginTop: 12,
-            fontSize: 12,
-            color: "#64748b",
-          }}
-        >
-          <span>🏖 Rental: {fmtK(ab)}/yr</span>
-          <span>
-            🏛 SS: {fmtM(values.ssb || 0)}/yr (≈ {fmtM(ssbMonthly)}/mo)
-          </span>
-        </div>
-        <div style={{ fontSize: 10, color: "#334155", marginTop: 8 }}>
-          Rental reliability: {values.abReliability || 80}% · Growth: {values.abGrowth || 3}%/yr
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function formatDate(dateString) {
   if (!dateString) return "Start date";
     const d = new Date(dateString);
@@ -8264,8 +8846,7 @@ export default function AiRAForecaster() {
   );
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
-  const [r85, setR85] = useState(null);
-  const [r90, setR90] = useState(null);
+  const [mc, setMc] = useState(null);
   const [stress, setStress] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackType, setFeedbackType] = useState(null);
@@ -8486,7 +9067,7 @@ export default function AiRAForecaster() {
       isFirst.current = false;
       return;
     }
-    if (r85 || r90) setStale(true);
+    if (mc) setStale(true);
   }, [params]);
 
   const swr = computeInitialWR(params).initWRpct.toFixed(1);
@@ -8495,17 +9076,19 @@ export default function AiRAForecaster() {
     setRunning(true);
     setStale(false);
     setTimeout(() => {
-      const r85_ = runMC(params, 85, 3000, 42, true);
-      const r90_ = runMC(params, 90, 3000, 43, true);
-      const str = runStress(params, params.endAge, 2000, 99);
-      setR85(r85_);
-      setR90(r90_);
+      // Single horizon: every simulation is graded to the profile's own plan age
+      // (params.endAge). No hardcoded reference ages. A shorter runway with the same
+      // funds correctly scores HIGHER, and the stress test shares the same horizon.
+      const planAge = params.endAge || 90;
+      const rEnd_ = runMC(params, planAge, 3000, 43, true);
+      const str = runStress(params, planAge, 2000, 99);
+      setMc(rEnd_);
       setStress(str);
       setRunning(false);
     }, 40);
   }, [params]);
 
-  const analogue = r90 ? getAnalogue(r90.rate) : null;
+  const analogue = mc ? getAnalogue(mc.rate) : null;
 
   const TABS = [
     ["networth", "📊 Net Worth"],
@@ -8516,8 +9099,8 @@ export default function AiRAForecaster() {
     ["assumptions", "👤 Profile"],
   ];
 
-  const needsMC = ["montecarlo", "networth"];
-  const hasMC = !!r90;
+  const needsMC = ["montecarlo", "networth", "fan"];
+  const hasMC = !!mc;
 
   const handleSendFeedback = async () => {
     if (!feedbackType) {
@@ -9060,7 +9643,7 @@ export default function AiRAForecaster() {
               <Slider
                 label="Retire age"
                 value={retAge}
-                min={55}
+                min={50}
                 max={68}
                 step={1}
                 format={(v) => "Age " + v}
@@ -9069,7 +9652,7 @@ export default function AiRAForecaster() {
               <Slider
                 label="Plan to age"
                 value={endAge}
-                min={80}
+                min={40}
                 max={100}
                 step={1}
                 format={(v) => "Age " + v}
@@ -9211,17 +9794,17 @@ export default function AiRAForecaster() {
                 <div
                   className="mv"
                   style={{
-                    color: r90 ? (r90.rate >= 0.85 ? "#0d9488" : r90.rate >= 0.7 ? "#f59e0b" : "#ef4444") : "#334155",
+                    color: mc ? (mc.rate >= 0.85 ? "#0d9488" : mc.rate >= 0.7 ? "#f59e0b" : "#ef4444") : "#334155",
                   }}
                 >
-                  {r90 ? fmtPct(r90.rate) : "—"}
+                  {mc ? fmtPct(mc.rate) : "—"}
                 </div>
                 <div className="ms">3,000 paths · {getStrategyLabel(withdrawalStrategy)}</div>
               </div>
               <div className="met">
                 <div className="ml">Portfolio at D-Day</div>
                 <div className="mv" style={{ color: "#94a3b8", fontSize: 18 }}>
-                  {r90 ? fmtM(r90.medR) : "—"}
+                  {mc ? fmtM(mc.medR) : "—"}
                 </div>
                 <div className="ms">Median projected</div>
               </div>
@@ -9295,15 +9878,15 @@ export default function AiRAForecaster() {
             {analogue && (
               <div className="analogue" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>
-                  {analogue.emoji} "{analogue.text}." — {fmtPct(r90.rate)} to age {endAge}.
+                  {analogue.emoji} "{analogue.text}." — {fmtPct(mc.rate)} to age {endAge}.
                 </span>
                 <SectorBadge age={currentAge} />
               </div>
             )}
 
-            {r90 &&
+            {mc &&
               (() => {
-                const success = Math.round(r90.rate * 26);
+                const success = Math.round(mc.rate * 26);
                 const fail = 26 - success;
                 return (
                   <div
@@ -9389,12 +9972,31 @@ export default function AiRAForecaster() {
               </div>
             ) : (
               <>
+                {activeTab === "fan" && mc && (
+                  <FanChart
+                    pcts={mc.pcts}
+                    retireAge={retAge}
+                    ssAge={assumptions.ssAge}
+                    rmdAge={rmdAge}
+                    inf={inf}
+                    useReal={real}
+                    title={`Portfolio fan · age ${endAge} · 3,000 paths`}
+                    checkpoints={assumptions.checkpoints}
+                    earlyRetireTarget={assumptions.earlyRetireTarget}
+                    dob={assumptions.dob}
+                    portfolioGoal={assumptions.portfolioGoal}
+                    currentAge={assumptions.currentAge}
+                    currentPort={params.port}
+                    contrib={params.contrib}
+                    preRetireEq={params.preRetireEq ?? 91}
+                    sex={assumptions.sex}
+                  />
+                )}
                 {activeTab === "montecarlo" && (
                   <>
                     <MCTab
                       params={params}
-                      r85={r85}
-                      r90={r90}
+                      mc={mc}
                       stress={stress}
                       running={running}
                       onRun={runSimulation}
@@ -9426,9 +10028,9 @@ export default function AiRAForecaster() {
                         setTimeout(runSimulation, 100);
                       }}
                     />
-                    {r90 && (
+                    {mc && (
                       <FanChart
-                        pcts={r90.pcts}
+                        pcts={mc.pcts}
                         retireAge={retAge}
                         ssAge={assumptions.ssAge}
                         rmdAge={rmdAge}
@@ -9451,7 +10053,7 @@ export default function AiRAForecaster() {
                 {activeTab === "scenarios" && (
                   <ScenariosTab
                     baseParams={params}
-                    r90={r90}
+                    mc={mc}
                     fmtPct={fmtPct}
                     stress={stress}
                     retireAge={retAge}
@@ -9464,7 +10066,6 @@ export default function AiRAForecaster() {
                     DeterministicWithdrawalView={DeterministicWithdrawalView}
                     RothLadder={RothLadder}
                     BucketsTab={BucketsTab}
-                    SmileChart={SmileChart}
                     portfolioGoal={assumptions.portfolioGoal}
                     earlyRetireTarget={assumptions.earlyRetireTarget}
                     withdrawalStrategy={assumptions.withdrawalStrategy}
@@ -9490,12 +10091,11 @@ export default function AiRAForecaster() {
                     }}
                   />
                 )}
-                {activeTab === "networth" && <NetWorthTab p={params} results90={r90} inf={inf} />}
+                {activeTab === "networth" && <NetWorthTab p={params} mc={mc} inf={inf} />}
                 {activeTab === "actionplan" && (
                   <ActionPlanTab
                     params={params}
-                    r90={r90}
-                    r85={r85}
+                    mc={mc}
                     assumptions={assumptions}
                     mortgagePayoffYear={mortgagePayoffYear}
                     rmdAge={rmdAge}

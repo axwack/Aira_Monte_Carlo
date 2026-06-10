@@ -572,7 +572,6 @@ const USER_PROFILE = {
   port:        266_000,
   contrib:         200,  // $200/yr as given (likely should be $2,400 or $20,000 — see test below)
   hsaMonthly:       10,  // $10/mo = $120/yr
-  employerMatch:   1.5,  // 1.5% of 401k contribution
   inf:             2.5,
   sp:           72_000,  // spending target (not what Fixed % will deliver)
   ssAge:            67,
@@ -877,7 +876,11 @@ describe("Cash flow accuracy — portfolio draw, taxes, and spending", () => {
     const yr1 = schedule[0];
     expect(yr1.portfolioDraw).toBeCloseTo(56_000, -3);
     expect(yr1.ss).toBe(24_000);
-    expect(yr1.totalWithdrawal).toBeGreaterThan(yr1.portfolioDraw);
+    // Year 1 is funded from cash/taxable (waterfall order), so provisional income
+    // is just ½ SS = $12K — below the $25K single threshold → $0 tax is correct
+    // under IRC §86. Taxes must appear once pretax draws/RMDs kick in.
+    expect(yr1.totalWithdrawal).toBeGreaterThanOrEqual(yr1.portfolioDraw);
+    expect(schedule.some(r => r.totalTax > 0)).toBe(true);
   });
 
   // Fixed 4%: at year 0 spending = p.sp (target), SS still offsets portfolioDraw.
@@ -891,8 +894,13 @@ describe("Cash flow accuracy — portfolio draw, taxes, and spending", () => {
   });
 
   test("Total portfolio draw increases more than linearly as spending rises (progressive tax drag)", () => {
+    // Force draws from pre-tax so we actually see ordinary-income tax drag.
+    // With cash/taxable available, the Smart Waterfall correctly skips fed tax
+    // on the low-spend case, so the progressive-bracket test only holds when
+    // both years draw entirely from pre-tax.
     const base = { ...BASE, currentAge: 65, retireAge: 65, endAge: 90,
-      ssAge: 70, ssb: 0, filingStatus: "single", stateOfResidence: "FL" };
+      ssAge: 70, ssb: 0, filingStatus: "single", stateOfResidence: "FL",
+      accounts: [{ id: "p", category: "pretax", name: "401k", balance: 2_000_000 }] };
     const low  = simulateDeterministicWithStrategy({ ...base, sp:  60_000, withdrawalStrategy: "gk" }, 2.5, "gk");
     const high = simulateDeterministicWithStrategy({ ...base, sp: 120_000, withdrawalStrategy: "gk" }, 2.5, "gk");
     expect(high.schedule[0].totalWithdrawal - low.schedule[0].totalWithdrawal).toBeGreaterThan(60_000);
