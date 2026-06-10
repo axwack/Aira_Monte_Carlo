@@ -91,14 +91,28 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.12";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.12 — Quicken-style account bucket splits: one balance, % allocations across B1/B2/B3, rolls up to one value.";
-export const BUILD_TIME = "2026-06-10T00:00:00Z";
+const APP_VERSION = "1.1.0.14";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.14 — split-icon affordance + UI refactor: centralized MC/GK constants, tab font-size fix, MC Engine → info-modal, CSS design tokens + .card/.section-label.";
+export const BUILD_TIME = "2026-06-10T13:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
   console.log(`[AiRA] build ${BUILD_TAG} · ${BUILD_TIME} · v${APP_VERSION}`);
 }
+
+/* ════ SIMULATION + GUARDRAIL CONSTANTS ════
+ * Single source of truth. UI prose interpolates these — never retype the
+ * digits. Changing a value here changes the engine AND every label at once. */
+export const MC_PATHS = 3000;            // Monte Carlo stochastic paths
+export const STRESS_PATHS = 2000;        // 2000–2012 sequence-risk stress paths
+export const MC_PATHS_LABEL = MC_PATHS.toLocaleString();      // "3,000"
+export const STRESS_PATHS_LABEL = STRESS_PATHS.toLocaleString(); // "2,000"
+// Guyton-Klinger guardrails, as % of core spend
+export const GK_FLOOR_DEFAULT_PCT = 65;
+export const GK_CEILING_DEFAULT_PCT = 135;
+// Dollar fallbacks used only when a profile predates the % fields
+export const GK_FLOOR_FALLBACK = 48_000;
+export const GK_CEILING_FALLBACK = 115_000;
 
 const SP500 = [
   37.88, -11.91, -28.48, -47.07, -15.15, 46.59, -5.94, 41.37, 27.92, -38.59,
@@ -406,10 +420,10 @@ export const BLANK_PROFILE = {
   employerStartDate: "",
   gkFloor: 48_000,
   gkFloorSpendOutofState: 48_000,
-  gkFloorPct: 65,               // floor as % of core spend (default 65%)
+  gkFloorPct: GK_FLOOR_DEFAULT_PCT,    // floor as % of core spend
   gkTarget: 72_000,
   gkCeiling: 100_000,
-  gkCeilingPct: 135,            // ceiling as % of core spend (default 135%)
+  gkCeilingPct: GK_CEILING_DEFAULT_PCT, // ceiling as % of core spend
   // Mortgage
   mortBalance: 0,
   mortRate: 5.0,
@@ -685,13 +699,13 @@ function computeOtherIncome(otherIncomes, calYear) {
   return { total, totalTaxable };
 }
 
-function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
+function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
   const retYrs = endAge - p.retireAge;
   const results = [];
-  const gkFloor = p.gkFloor || 48_000;
-  const gkCeiling = p.gkCeiling || 115_000;
+  const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
+  const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
   const withdrawalStrategy = p.withdrawalStrategy || "gk";
 
   // User settings for cash return and RMD table
@@ -1049,13 +1063,13 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
   };
 }
 
-function runStress(p, endAge, N = 2000, seed = 99) {
+function runStress(p, endAge, N = STRESS_PATHS, seed = 99) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
   const retYrs = endAge - p.retireAge;
   const results = [];
-  const gkFloor = p.gkFloor || 48_000;
-  const gkCeiling = p.gkCeiling || 115_000;
+  const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
+  const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
 
   for (let i = 0; i < N; i++) {
     let port = p.port;
@@ -1143,8 +1157,8 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   }
 
   const portAtRetire = port;
-  const gkFloor = p.gkFloor || 48_000;
-  const gkCeiling = p.gkCeiling || 115_000;
+  const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
+  const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
   const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
   const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const initDraw = Math.max(0, p.sp - ss0 - ab0);
@@ -1618,7 +1632,28 @@ function SectorBadge({ age }) {
 /* ════ CSS ════ */
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+  /* ── Design tokens ── single source for the palette. Reference as var(--x)
+     in both CSS rules and inline styles (style={{ color: "var(--text-muted)" }}). */
+  :root {
+    --bg-base: #0a0f1e;
+    --card-bg: rgba(255,255,255,0.03);
+    --card-border: rgba(255,255,255,0.08);
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-faint: #475569;
+    --accent: #38bdf8;
+    --accent-teal: #5eead4;
+    --accent-purple: #a78bfa;
+    --accent-gold: #fbbf24;
+    --positive: #0d9488;
+    --negative: #ef4444;
+  }
   * { box-sizing:border-box; }
+  /* ── Reusable surfaces / labels ── prefer these over re-typing the card and
+     uppercase-label inline style objects. */
+  .card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:11px; padding:13px; }
+  .section-label { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; }
   body { margin:0; font-family:'Inter',sans-serif; background:#0a0f1e; color:#f1f5f9; font-size:13px; line-height:1.5; }
   .app { min-height:100vh; background:linear-gradient(135deg,#0a0f1e 0%,#0d1529 50%,#0a0f1e 100%); }
   .hdr { background:rgba(10,15,30,0.98); border-bottom:1px solid rgba(99,179,237,0.15); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(16px); }
@@ -1629,8 +1664,8 @@ const CSS = `
   .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
   .layout { display:grid; grid-template-columns:300px 1fr; height:calc(100vh - 56px); overflow:hidden; }
   .sidebar { border-right:1px solid rgba(255,255,255,0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
-  .sb-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:13px; }
-  .sb-title { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.12em; margin-bottom:12px; }
+  .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:11px; padding:13px; }
+  .sb-title { font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.12em; margin-bottom:12px; }
   .sl-row { display:grid; grid-template-columns:84px 1fr 58px; align-items:center; gap:8px; margin-bottom:13px; }
   .sl-label { font-size:12px; color:#cbd5e1; font-weight:500; }
   .sl-val { font-size:12px; font-weight:700; text-align:right; color:#f1f5f9; font-family:'JetBrains Mono',monospace; }
@@ -1653,7 +1688,7 @@ const CSS = `
   .ms { font-size:11px; color:#64748b; margin-top:5px; }
   .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:#cbd5e1; font-style:italic; }
   .tabs { display:flex; gap:3px; background:rgba(255,255,255,0.04); border-radius:10px; padding:3px; flex-wrap:wrap; }
-  .tab { flex:1; min-width:72px; padding:12px 6px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:18px; font-family:'Inter',sans-serif; color:#64748b; transition:all 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; }
+  .tab { flex:1; min-width:72px; padding:9px 6px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:13px; font-family:'Inter',sans-serif; color:#64748b; transition:all 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; }
   .tab:hover { color:#94a3b8; }
   .tab.on { background:rgba(255,255,255,0.09); color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); font-weight:600; }
   .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:15px 17px; }
@@ -2086,7 +2121,7 @@ function AboutButton() {
   );
 }
 
-function InfoModal({ title, children, accent = "#60a5fa" }) {
+function InfoModal({ title, children, accent = "#60a5fa", trigger }) {
   const [open, setOpen] = React.useState(false);
   const overlay = open ? ReactDOM.createPortal(
     <div
@@ -2118,14 +2153,20 @@ function InfoModal({ title, children, accent = "#60a5fa" }) {
   ) : null;
   return (
     <>
-      <span
-        onClick={() => setOpen(true)}
-        style={{ display:"inline-flex", alignItems:"center", justifyContent:"center",
-          width:16, height:16, borderRadius:"50%", background:"rgba(255,255,255,0.08)",
-          border:`1px solid ${accent}44`, color:accent, fontSize:10, fontWeight:700,
-          cursor:"pointer", flexShrink:0 }}
-        title="Click for more info"
-      >?</span>
+      {trigger ? (
+        <span onClick={() => setOpen(true)} style={{ cursor:"pointer", display:"inline-flex" }}>
+          {trigger}
+        </span>
+      ) : (
+        <span
+          onClick={() => setOpen(true)}
+          style={{ display:"inline-flex", alignItems:"center", justifyContent:"center",
+            width:16, height:16, borderRadius:"50%", background:"rgba(255,255,255,0.08)",
+            border:`1px solid ${accent}44`, color:accent, fontSize:10, fontWeight:700,
+            cursor:"pointer", flexShrink:0 }}
+          title="Click for more info"
+        >?</span>
+      )}
       {overlay}
     </>
   );
@@ -5501,7 +5542,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <InputCard title="Return Distribution" rows={[["Model", "Historical bootstrap"], ["Equity data", "99yr S&P 500 (1928–2026)"], [`Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`, "Equity / Bonds"], [`Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`, "Equity / Bonds"]]} />
                 <InputCard title="Inflation & Guardrails" rows={[["Inflation", "Historical bootstrap"], ["Inflation source", "2000–2024 actual CPI"], ["GK floor", fmtM(params.gkFloor) + "/yr"], ["GK ceiling", fmtM(params.gkCeiling) + "/yr"]]} />
-                <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizon", `Age ${params.endAge || 90} (your plan age)`], ["Withdrawal", getStrategyLabel(params.withdrawalStrategy || "smart")], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
+                <InputCard title="Simulation Parameters" rows={[["Simulations", `${MC_PATHS_LABEL} paths`], ["Horizon", `Age ${params.endAge || 90} (your plan age)`], ["Withdrawal", getStrategyLabel(params.withdrawalStrategy || "smart")], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
               </div>
             </div>
           </>
@@ -5513,7 +5554,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         <SectionHeader label="How the Simulation Works" open={showHow} onToggle={() => setShowHow(!showHow)} color="#64748b" />
         {showHow && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
-            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each of 3,000 paths independently draws a random S&P 500 year and a random bond year, blended by glide path weight. Contributions are added annually. The result is a unique portfolio value at retirement for each path.</div>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each of {MC_PATHS_LABEL} paths independently draws a random S&P 500 year and a random bond year, blended by glide path weight. Contributions are added annually. The result is a unique portfolio value at retirement for each path.</div>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>2. Retirement spending</div>Each path draws fresh random returns year by year. Spending follows the Blanchett smile curve. SS and Rental income offset draws. Rental fails 20% of years randomly. Healthcare shocks hit 3.5% of years after age 72.</div>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>3. {getStrategyLabel(withdrawalStrategy)} {withdrawalStrategy === "gk" ? "guardrails" : "strategy"}</div>{strategyHowItWorks[withdrawalStrategy] || strategyHowItWorks.gk}</div>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>4. Survival check</div>A path "succeeds" if the portfolio balance stays above $0 through the target age. The success rate is the percentage of paths that survive. The fan chart shows the 10th–90th percentile spread of all outcomes.</div>
@@ -5678,13 +5719,13 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
       </div>
 
       {/* Results panel */}
-      {!mc && <div style={{ textAlign: "center", padding: "20px", color: "#475569", fontSize: 13 }}>{running ? "Running 3,000 paths..." : "Run Monte Carlo from the sidebar to see results here."}</div>}
+      {!mc && <div style={{ textAlign: "center", padding: "20px", color: "#475569", fontSize: 13 }}>{running ? `Running ${MC_PATHS_LABEL} paths...` : "Run Monte Carlo from the sidebar to see results here."}</div>}
       {mc && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           <div style={{ background: `${rateColor(mc.rate)}12`, border: `1.5px solid ${rateColor(mc.rate)}44`, borderRadius: 10, padding: 18 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>SUCCESS RATE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
+            <div className="section-label" style={{ marginBottom: 8 }}>SUCCESS RATE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
             <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(mc.rate), fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(mc.rate)}</div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>of 3,000 simulations last to age {params.endAge}</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>of {MC_PATHS_LABEL} simulations last to age {params.endAge}</div>
             <div style={{ fontSize: 12, color: rateColor(mc.rate), marginBottom: 14, lineHeight: 1.5 }}>{riskLabel(mc.rate)}</div>
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10, display: "flex", gap: 12 }}>
               <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Plan age</div><div style={{ fontSize: 18, fontWeight: 700, color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>Age {params.endAge}</div></div>
@@ -5692,7 +5733,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             </div>
           </div>
           <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>MEDIAN FINAL BALANCE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
+            <div className="section-label" style={{ marginBottom: 8 }}>MEDIAN FINAL BALANCE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
             <div style={{ fontSize: 42, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtM(mc.term.p50)}</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>50th percentile at age {params.endAge}</div>
             <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 14 }}>Half of all simulations end above this. A higher balance cushions against sequence-of-returns risk.</div>
@@ -5705,9 +5746,9 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             </div>
           </div>
           <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
-  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>MODEL ASSUMPTIONS</div>
+  <div className="section-label" style={{ marginBottom: 12 }}>MODEL ASSUMPTIONS</div>
               {[
-                ["3,000 randomized return sequences", "#5eead4"],
+                [`${MC_PATHS_LABEL} randomized return sequences`, "#5eead4"],
                 ["99yr S&P 500 + 50yr Bloomberg Agg bootstrap", "#5eead4"],
                 ["Separate equity & bond draws each year", "#5eead4"],
                 [`Rental income fails ${100 - (params.abReliability || 80)}% of years randomly`, "#fbbf24"],
@@ -7375,10 +7416,14 @@ function SavingsPanel({ values, onChange }) {
                     })
                   )}
                   <button onClick={() => toggleSplit(acct.id)} title="Split this account across buckets" style={{
-                    background: (hasSplits || editing) ? cat.color + "33" : "transparent",
-                    border: `1px solid ${(hasSplits || editing) ? cat.color : "rgba(255,255,255,0.1)"}`,
-                    borderRadius: 4, padding: "2px 5px", fontSize: 10, cursor: "pointer", lineHeight: 1.4, filter: (hasSplits || editing) ? "none" : "grayscale(1) opacity(0.5)",
-                  }}>🔀</button>
+                    background: (hasSplits || editing) ? cat.color + "33" : cat.color + "14",
+                    border: `1px solid ${(hasSplits || editing) ? cat.color : cat.color + "55"}`,
+                    borderRadius: 4, padding: "2px 7px", fontSize: 14, cursor: "pointer", lineHeight: 1.4,
+                    filter: (hasSplits || editing) ? "none" : "opacity(0.85)",
+                  }}
+                    onMouseEnter={e => { if (!(hasSplits || editing)) { e.currentTarget.style.background = cat.color + "33"; e.currentTarget.style.filter = "none"; } }}
+                    onMouseLeave={e => { if (!(hasSplits || editing)) { e.currentTarget.style.background = cat.color + "14"; e.currentTarget.style.filter = "opacity(0.85)"; } }}
+                  >🔀</button>
                   <button
                     onClick={() => removeAccount(acct.id)}
                     style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14, padding: "2px 4px", opacity: 0.5 }}
@@ -8191,8 +8236,8 @@ function RetirementPanel({ values, onChange }) {
   const combinedSp = usSp + outOfCountrySp;
   const twoHousehold = values.twoHousehold ?? false;   // toggle ONLY controls state tax now
   const baseSpend = combinedSp || 100000;
-  const floorPct = values.gkFloorPct ?? 65;
-  const ceilingPct = values.gkCeilingPct ?? 135;
+  const floorPct = values.gkFloorPct ?? GK_FLOOR_DEFAULT_PCT;
+  const ceilingPct = values.gkCeilingPct ?? GK_CEILING_DEFAULT_PCT;
   const floor = Math.round(baseSpend * (floorPct / 100));
   const ceiling = Math.round(baseSpend * (ceilingPct / 100));
   const strategy = values.withdrawalStrategy || "gk";
@@ -8331,10 +8376,10 @@ function RetirementPanel({ values, onChange }) {
             </div>
             <div style={{ marginTop: 14, display: "flex", gap: 16, justifyContent: "center" }}>
               <WFieldRow label="Floor %" helper="Hard floor on real spending. Spending will never drop below this even after multiple GK cuts. Lower % = willing to belt-tighten more in bad markets.">
-                <ANumInput value={values.gkFloorPct ?? 65} onSet={(v) => onChange("gkFloorPct", v)} min={50} max={95} step={5} suffix="%" />
+                <ANumInput value={values.gkFloorPct ?? GK_FLOOR_DEFAULT_PCT} onSet={(v) => onChange("gkFloorPct", v)} min={50} max={95} step={5} suffix="%" />
               </WFieldRow>
               <WFieldRow label="Ceiling %" helper="Cap on lifestyle creep. Spending will never rise above this even after multiple GK raises. Higher % = willing to spend more freely in bull markets.">
-                <ANumInput value={values.gkCeilingPct ?? 135} onSet={(v) => onChange("gkCeilingPct", v)} min={105} max={200} step={5} suffix="%" />
+                <ANumInput value={values.gkCeilingPct ?? GK_CEILING_DEFAULT_PCT} onSet={(v) => onChange("gkCeilingPct", v)} min={105} max={200} step={5} suffix="%" />
               </WFieldRow>
             </div>
             <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(14,165,233,0.06)", border: "1px solid rgba(14,165,233,0.18)", borderRadius: 8, fontSize: 11, color: "#94a3b8", lineHeight: 1.55 }}>
@@ -8408,9 +8453,6 @@ export default function AiRAForecaster() {
   const [feedbackName, setFeedbackName] = useState("");
   const [feedbackEmail, setFeedbackEmail] = useState("");
   const [showTerms, setShowTerms] = useState(false);
-  const [showEngineCard, setShowEngineCard] = useState(
-    () => localStorage.getItem("aira_engine_open") === "true"
-  );
   const [stripeToast, setStripeToast] = useState(null);
   const stripeReturn = useStripeReturn();
   useEffect(() => {
@@ -8541,8 +8583,8 @@ export default function AiRAForecaster() {
       sp: (sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0),
       spOutOfCountry: assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0,
       spSpendOutofState: assumptions.spSpendOutofState,   // legacy passthrough
-      gkFloor: Math.round(((sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0)) * ((assumptions.gkFloorPct ?? 65) / 100)),
-      gkCeiling: Math.round(((sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0)) * ((assumptions.gkCeilingPct ?? 135) / 100)),
+      gkFloor: Math.round(((sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0)) * ((assumptions.gkFloorPct ?? GK_FLOOR_DEFAULT_PCT) / 100)),
+      gkCeiling: Math.round(((sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0)) * ((assumptions.gkCeilingPct ?? GK_CEILING_DEFAULT_PCT) / 100)),
       ssb,
       propIncome: (() => {
          const raw = (assumptions.properties || []).reduce((s, pr) => s + (Number(pr.income) || 0), 0);
@@ -8634,8 +8676,8 @@ export default function AiRAForecaster() {
       // (params.endAge). No hardcoded reference ages. A shorter runway with the same
       // funds correctly scores HIGHER, and the stress test shares the same horizon.
       const planAge = params.endAge || 90;
-      const rEnd_ = runMC(params, planAge, 3000, 43, true);
-      const str = runStress(params, planAge, 2000, 99);
+      const rEnd_ = runMC(params, planAge, MC_PATHS, 43, true);
+      const str = runStress(params, planAge, STRESS_PATHS, 99);
       setMc(rEnd_);
       setStress(str);
       setRunning(false);
@@ -8850,6 +8892,7 @@ export default function AiRAForecaster() {
             >
               ⬆ Import
             </button>
+            <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} title="Support & info" />
             <a
               href="https://buymeacoffee.com/axwacki"
               target="_blank"
@@ -9090,21 +9133,17 @@ export default function AiRAForecaster() {
                 );
               })()}
             </div>
-            <div className="sb-card">
-              <div
-                className="sb-title"
-                onClick={() => setShowEngineCard(v => {
-                  const next = !v;
-                  localStorage.setItem("aira_engine_open", next);
-                  return next;
-                })}
-                style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", userSelect: "none" }}
+            <div style={{ textAlign: "center", padding: "2px 0" }}>
+              <InfoModal
+                title={`MC Engine — v${APP_VERSION}`}
+                accent="#5eead4"
+                trigger={
+                  <span style={{ fontSize: 10, color: "#475569", letterSpacing: "0.04em", textDecoration: "underline dotted", textUnderlineOffset: 3 }}>
+                    ⚙ Engine &amp; assumptions · v{APP_VERSION}
+                  </span>
+                }
               >
-                <span>MC Engine — {APP_VERSION}</span>
-                <span style={{ fontSize: 14, color: "#475569" }}>{showEngineCard ? "▾" : "▸"}</span>
-              </div>
-              {showEngineCard && (
-                <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.8 }}>
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.9 }}>
                   <div>
                     📈 <span style={{ color: "#5eead4" }}>Equity:</span> 99yr S&P bootstrap [-30 / +30%]
                   </div>
@@ -9176,7 +9215,7 @@ export default function AiRAForecaster() {
                     </span>
                   </div>
                 </div>
-              )}
+              </InfoModal>
             </div>
 
             <div className="sb-card">
@@ -9301,7 +9340,7 @@ export default function AiRAForecaster() {
                 background: stale ? "linear-gradient(135deg,#b45309,#d97706)" : undefined,
               }}
             >
-              {running ? "Running 3,000 paths..." : stale ? "⚠ Inputs changed — Re-run" : "▶ Run Monte Carlo"}
+              {running ? `Running ${MC_PATHS_LABEL} paths...` : stale ? "⚠ Inputs changed — Re-run" : "▶ Run Monte Carlo"}
             </button>
           </div>
 
@@ -9353,7 +9392,7 @@ export default function AiRAForecaster() {
                 >
                   {mc ? fmtPct(mc.rate) : "—"}
                 </div>
-                <div className="ms">3,000 paths · {getStrategyLabel(withdrawalStrategy)}</div>
+                <div className="ms">{MC_PATHS_LABEL} paths · {getStrategyLabel(withdrawalStrategy)}</div>
               </div>
               <div className="met">
                 <div className="ml">Portfolio at D-Day</div>
@@ -9570,7 +9609,7 @@ export default function AiRAForecaster() {
                         rmdAge={rmdAge}
                         inf={inf}
                         useReal={real}
-                        title={`Portfolio fan · age ${endAge} · 3,000 paths`}
+                        title={`Portfolio fan · age ${endAge} · ${MC_PATHS_LABEL} paths`}
                         checkpoints={assumptions.checkpoints}
                         earlyRetireTarget={assumptions.earlyRetireTarget}
                         dob={assumptions.dob}
