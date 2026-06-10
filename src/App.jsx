@@ -321,13 +321,14 @@ export const getStrategyLabel = (strategy) => {
     endowment: "Endowment Model",
     one_n: "1/N (Remaining Years)",
     ninety_five_rule: "95% Rule",
+    bengen: "Bengen 4% Rule",
   };
   return labels[strategy] || strategy;
 };
 
 export const getStrategyDescription = (strategy) => {
   const descriptions = {
-    smart: "Smart Waterfall — tax-optimal bucket sequencing. Spending is sourced cash → taxable → pre-tax (capped at your chosen bracket ceiling) → Roth last. Preserves Roth, reduces IRMAA exposure, and cuts lifetime taxes vs naive pretax-first ordering. Configure the bracket ceiling and guards in Profile → Withdrawal Order.",
+    smart: "Smart Waterfall — tax-optimal bucket sequencing with a horizon-aware spending rule: Guyton-Klinger guardrails when more than 15 years remain (adaptive), Bengen 4% inflation-only when 15 or fewer years remain (steady). The split matches GK's own longevity-clause threshold so we hand off exactly where GK's safety brake would otherwise be disabled. Bucket sourcing: cash → taxable → pre-tax (bracket-capped) → Roth last.",
     gk: "Guyton‑Klinger guardrails — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.",
     fixed: "Fixed Percentage Withdrawal — you withdraw a constant percentage of your portfolio each year, adjusting automatically with market movements.",
     vanguard: "Vanguard Dynamic Spending — spending adjusts within a ceiling and floor based on market performance and inflation.",
@@ -337,7 +338,8 @@ export const getStrategyDescription = (strategy) => {
     cape: "CAPE‑Based Withdrawal — uses the Shiller CAPE ratio to determine sustainable withdrawal rates.",
     endowment: "Endowment Model — smooths spending by blending inflation adjustments with a percentage of portfolio.",
     one_n: "1/N Rule — divides remaining portfolio by years left to create a spending plan.",
-    ninety_five_rule: "95% Rule — spending can only decrease to 95% of last year's amount, otherwise tracks inflation."
+    ninety_five_rule: "95% Rule — spending can only decrease to 95% of last year's amount, otherwise tracks inflation.",
+    bengen: "Bengen 4% Rule (1994) — set your initial spend, then inflation-adjust it every year and ignore the portfolio. Does NOT react to market moves. The portfolio CAN run out, making this an honest model of late-stage risk for fixed-budget retirees."
   };
   return descriptions[strategy] || descriptions.gk;
 };
@@ -833,10 +835,31 @@ function runMC(p, endAge, N = 3000, seed = 42, useGK = true) {
           }
           sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
         }
+        else if (withdrawalStrategy === "bengen") {
+          // Bengen 4% rule (1994): inflation-adjusted constant spending.
+          // Does NOT react to portfolio moves — that's the defining feature.
+          // Can fail (portfolio depletes). Honest about late-stage risk.
+          sp = sp * (1 + inflY);
+        }
         else if (withdrawalStrategy === "smart") {
+<<<<<<< HEAD
           // Smart waterfall uses GK guardrails for spend amount; bucket sourcing is handled below.
           // Years remaining uses the simulated horizon (`endAge`), not p.endAge — see gk note above.
           sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age);
+=======
+          // Smart Waterfall hybrid:
+          //   yearsRemaining > 15  → GK guardrails (adaptive, paper-faithful)
+          //   yearsRemaining ≤ 15  → Bengen (inflation-only, no portfolio reaction)
+          // The split point matches GK's own longevity-clause threshold so we
+          // exit GK exactly where its safety brake would have been disabled.
+          // Bucket sourcing is handled below regardless.
+          const yrsRemaining = p.endAge - age;
+          if (yrsRemaining > 15) {
+            sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining);
+          } else {
+            sp = sp * (1 + inflY);
+          }
+>>>>>>> e88597167bdc01213571548d6dd03d55a6725b91
         }
       }
       lastReturn = r;
@@ -1212,6 +1235,25 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   const initDraw = Math.max(0, p.sp - ss0 - ab0);
   const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
+  // Source-aware tax: reuse the Smart Waterfall engine so the tax column here
+  // matches what the Waterfall tab shows for the same age. The waterfall knows
+  // each account type (cash / taxable / pretax / roth) and only treats pretax
+  // draws as ordinary income — without this override, calcYearTax would treat
+  // every portfolio draw as ordinary income, overstating fed tax dramatically
+  // for years that draw from taxable brokerage or Roth.
+  const smartTaxByAge = new Map();
+  try {
+    const wf = buildWithdrawalWaterfall(p);
+    for (const row of wf?.smart?.rows ?? []) {
+      smartTaxByAge.set(row.age, {
+        fedTax: row.fedTax || 0,
+        stateTax: row.stateTax || 0,
+        irmaa: row.irmaa || 0,
+        totalTax: row.totalTax || 0,
+      });
+    }
+  } catch { /* fall back to calcYearTax below */ }
+
   let sp = p.sp;
   let lastReturn = 0;
   const schedule = [];
@@ -1320,6 +1362,21 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         }
         sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
       }
+      else if (withdrawalStrategy === "bengen") {
+        // Bengen 4% rule: inflation-adjusted constant. Does not react to portfolio.
+        sp = sp * (1 + inflY);
+      }
+      else if (withdrawalStrategy === "smart") {
+        // Smart Waterfall hybrid: GK when yearsRemaining > 15, Bengen when ≤ 15.
+        // The split matches GK's longevity-clause threshold so we exit GK
+        // exactly where its safety brake would otherwise be disabled.
+        const yrsRemaining = p.endAge - age;
+        if (yrsRemaining > 15) {
+          sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining);
+        } else {
+          sp = sp * (1 + inflY);
+        }
+      }
     }
     lastReturn = ret;
 
@@ -1329,7 +1386,12 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
     const need = Math.max(0, sp - ss - ab - otherIncTotal);
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+
+    // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab).
+    // Fall back to the legacy "treat everything as ordinary income" calc only
+    // when no waterfall row exists for this age (e.g. accounts not configured).
+    const wfTax = smartTaxByAge.get(age);
+    const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
     const totalDraw = need + taxResult.totalTax;
     port = port * (1 + ret) - totalDraw;
 
@@ -4596,11 +4658,113 @@ function Bucket1Panel({ p, rows }) {
   );
 }
 
+/**
+ * Combined Withdrawal Plan tab — wraps the two views that answer the two
+ * different planning questions, with each question called out prominently
+ * and a twisty (collapsible) body. Both sections default to open so the
+ * full plan is visible on first load; the user can collapse either to focus.
+ */
+function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
+  const [openSourcing, setOpenSourcing] = useState(false);
+  const [openStrategy, setOpenStrategy] = useState(false);
+
+  const Header = ({ open, onToggle, color, question, subtitle }) => (
+    <button
+      onClick={onToggle}
+      style={{
+        width: "100%",
+        background: "rgba(255,255,255,0.025)",
+        border: `1px solid ${color}44`,
+        borderLeft: `4px solid ${color}`,
+        borderRadius: 8,
+        padding: "16px 18px",
+        textAlign: "left",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        marginBottom: open ? 10 : 0,
+      }}
+    >
+      <span style={{ color, fontSize: 18, lineHeight: 1, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s", display: "inline-block" }}>▸</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: "#e2e8f0", fontStyle: "italic", lineHeight: 1.35 }}>
+          “{question}”
+        </div>
+        <div style={{ fontSize: 13, color: "#64748b", marginTop: 5 }}>{subtitle}</div>
+      </div>
+    </button>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Orientation card — explains the two-question framing */}
+      <div style={{
+        background: "rgba(13,148,136,0.06)",
+        border: "1px solid rgba(13,148,136,0.18)",
+        borderRadius: 8,
+        padding: "10px 14px",
+        fontSize: 11,
+        color: "#94a3b8",
+        lineHeight: 1.55,
+      }}>
+        Use these two views together. Each answers a different question — same data, different lens.
+        <span style={{ display: "block", color: "#64748b", marginTop: 4 }}>
+          Tax math is shared: both schedules use the same source-aware engine, so per-year fed/state tax agree.
+        </span>
+      </div>
+
+      {/* ── Section 1: Sourcing ──────────────────────────────────────── */}
+      <div>
+        <Header
+          open={openSourcing}
+          onToggle={() => setOpenSourcing(v => !v)}
+          color="#5eead4"
+          question="Where does each year's spending come from?"
+          subtitle="Account-by-account sourcing — cash → taxable → pre-tax (bracket-capped) → Roth — with tax landmines flagged"
+        />
+        {openSourcing && (
+          <div style={{ paddingLeft: 4 }}>
+            <WaterfallPlanView p={p} />
+          </div>
+        )}
+      </div>
+
+      {/* ── Section 2: Strategy pacing ───────────────────────────────── */}
+      <div>
+        <Header
+          open={openStrategy}
+          onToggle={() => setOpenStrategy(v => !v)}
+          color="#fbbf24"
+          question="How does my chosen strategy pace spending year by year?"
+          subtitle="Runs the withdrawal strategy you picked in Profile → Withdrawal. Change it there to see a different strategy here."
+        />
+        {openStrategy && (
+          <div style={{ paddingLeft: 4 }}>
+            <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={withdrawalStrategy} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function WaterfallPlanView({ p }) {
   const [mode, setMode] = useState("smart");
   const result = useMemo(() => buildWithdrawalWaterfall(p), [p]);
   const { smart, naive, summary } = result;
   const rows = mode === "smart" ? smart.rows : naive.rows;
+
+  // Bucket 1 may be composed of any account category — match the table column to it
+  const b1Cats = new Set(
+    (p.accounts || [])
+      .filter(a => (a.bucket ?? _defaultBucket(a.category)) === 1)
+      .map(a => a.category || "cash")
+  );
+
+  // Operator cells — visually wire the withdrawal columns into the equation they satisfy
+  const opThStyle = { padding: "0 3px", color: "#475569", fontWeight: 400, fontSize: 11, textAlign: "center" };
+  const opTdStyle = { padding: "0 3px", color: "#475569", fontWeight: 600, fontSize: 12, textAlign: "center" };
 
   const btnStyle = (active) => ({
     padding: "5px 14px", fontSize: 12, borderRadius: 6, border: "none",
@@ -4697,13 +4861,25 @@ function WaterfallPlanView({ p }) {
         <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8, lineHeight: 1.5 }}>
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
           Bracket cap reason shown in Pre-Tax column
+          <br />
+          Columns read left→right as the draw order &amp; equation: <strong>Spending = Fixed Income + Cash + Taxable + Pre-Tax + Roth</strong>
         </div>
         <table className="roth-tbl">
           <thead>
             <tr>
-              <th>Age</th><th>Spending</th><th>SS</th>
-              <th>Cash</th><th title="Bucket 1 ending balance this year">B1 End</th><th>Taxable</th><th>Pre-Tax</th><th>Roth</th>
-              <th>Fed Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR</th>
+              <th>Age</th><th>Spending</th>
+              <th style={opThStyle}>=</th>
+              <th title="Social Security + annuity/rental income — covered first, before any portfolio draw">Fixed Income</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 3 — drawn first from the portfolio">Cash</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 4 — drawn after cash is exhausted">Taxable</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 5 — drawn after taxable, capped at your bracket-ceiling target (RMD shown when forced)">Pre-Tax</th>
+              <th style={opThStyle}>+</th>
+              <th title="Step 6 — last resort; emergency reserve floor maintained">Roth</th>
+              <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End</th>
+              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR</th>
               <th>
                 <LandmineTip
                   emoji="💣"
@@ -4717,21 +4893,39 @@ function WaterfallPlanView({ p }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
+            {rows.map(r => {
+              const b1End = b1Cats.has("cash")    ? r.cashEnd
+                          : b1Cats.has("taxable") ? r.taxableEnd
+                          : b1Cats.has("pretax")  ? r.pretaxEnd
+                          : b1Cats.has("roth")    ? r.rothEnd
+                          : 0;
+              return (
               <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
                 <td>{r.age}</td>
-                <td style={{ textAlign: "right" }}>{fmtK(r.spending)}</td>
-                <td style={{ textAlign: "right", color: "#5eead4" }}>{r.ss > 0 ? fmtK(r.ss) : "—"}</td>
-                <td style={{ textAlign: "right", color: "#64748b" }}>{r.fromCash > 0 ? fmtK(r.fromCash) : "—"}</td>
-                <td style={{ textAlign: "right", color: r.cashEnd < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11 }}>{r.cashEnd > 0 ? fmtK(r.cashEnd) : "—"}</td>
-                <td style={{ textAlign: "right", color: "#3b82f6" }}>{r.fromTaxable > 0 ? fmtK(r.fromTaxable) : "—"}</td>
-                <td style={{ textAlign: "right", color: "#f59e0b" }} title={r.pretaxCapReason}>
+                <td style={{ textAlign: "right" }} title={fmtDollar(r.spending)}>{fmtK(r.spending)}</td>
+                <td style={opTdStyle}>=</td>
+                <td style={{ textAlign: "right", color: "#5eead4" }}
+                    title={r.annuityRental > 0 ? `SS ${fmtDollar(r.ss)} + Annuity/Rental ${fmtDollar(r.annuityRental)} = ${fmtDollar(r.fixedIncomeTotal)}` : `Social Security: ${fmtDollar(r.ss)}`}>
+                  {r.fixedIncomeTotal > 0 ? fmtK(r.fixedIncomeTotal) : "—"}
+                </td>
+                <td style={opTdStyle}>+</td>
+                <td style={{ textAlign: "right", color: "#64748b" }} title={fmtDollar(r.fromCash)}>{r.fromCash > 0 ? fmtK(r.fromCash) : "—"}</td>
+                <td style={opTdStyle}>+</td>
+                <td style={{ textAlign: "right", color: "#3b82f6" }} title={fmtDollar(r.fromTaxable)}>{r.fromTaxable > 0 ? fmtK(r.fromTaxable) : "—"}</td>
+                <td style={opTdStyle}>+</td>
+                <td style={{ textAlign: "right", color: "#f59e0b" }}
+                    title={r.rmd > 0 ? `${fmtDollar(r.fromPretax)} (incl. RMD ${fmtDollar(r.rmd)}) — ${r.pretaxCapReason}` : `${fmtDollar(r.fromPretax)} — ${r.pretaxCapReason}`}>
                   {r.rmd > 0 && <span style={{ fontSize: 9, color: "#a78bfa", marginRight: 2 }}>RMD {fmtK(r.rmd)}</span>}
                   {r.fromPretax > 0 ? fmtK(r.fromPretax) : "—"}
                 </td>
-                <td style={{ textAlign: "right", color: "#10b981" }}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
-                <td style={{ textAlign: "right", color: "#f87171" }}>{fmtK(r.fedTax)}</td>
-                <td style={{ textAlign: "right", color: r.irmaa > 0 ? "#fb923c" : "#475569" }}>
+                <td style={opTdStyle}>+</td>
+                <td style={{ textAlign: "right", color: "#10b981" }} title={fmtDollar(r.fromRoth)}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
+                <td style={{ textAlign: "right", color: b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }} title={fmtDollar(b1End)}>{b1End > 0 ? fmtK(b1End) : "—"}</td>
+                <td style={{ textAlign: "right", color: "#f87171" }} title={fmtDollar(r.fedTax)}>{fmtK(r.fedTax)}</td>
+                <td style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "#475569" }} title={fmtDollar(r.stateTax)}>
+                  {r.stateTax > 0 ? fmtK(r.stateTax) : "—"}
+                </td>
+                <td style={{ textAlign: "right", color: r.irmaa > 0 ? "#fb923c" : "#475569" }} title={fmtDollar(r.irmaa)}>
                   {r.irmaa > 0 ? fmtK(r.irmaa) : "—"}
                 </td>
                 <td style={{ textAlign: "right" }}>{(r.effectiveRate * 100).toFixed(1)}%</td>
@@ -4773,9 +4967,10 @@ function WaterfallPlanView({ p }) {
                   })()}
                   {!anyLandmine(r) && <span style={{ color: "#34d399", fontSize: 10 }}>✓</span>}
                 </td>
-                <td style={{ textAlign: "right", color: "#94a3b8" }}>{fmtM(r.totalPort)}</td>
+                <td style={{ textAlign: "right", color: "#94a3b8" }} title={fmtDollar(r.totalPort)}>{fmtM(r.totalPort)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -4805,7 +5000,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
     smart: "Smart Waterfall", gk: "Guyton‑Klinger", fixed: "Fixed %",
     vanguard: "Vanguard Dynamic", risk: "Risk‑Based", kitces: "Kitces Ratcheting",
     vpw: "VPW", cape: "CAPE‑Based", endowment: "Endowment (Yale)",
-    one_n: "1/N", ninety_five_rule: "95% Rule",
+    one_n: "1/N", ninety_five_rule: "95% Rule", bengen: "Bengen 4% Rule",
   }[withdrawalStrategy] || withdrawalStrategy;
 
   return (
@@ -5271,13 +5466,12 @@ function ScenariosTab({
   const [scenarioSubTab, setScenarioSubTab] = useState("roth");
 
   const SCENARIO_SUBTABS = [
-    ["roth",       "🔄 ROTH CONVERSIONS"],
-    ["waterfall",  "📋 WITHDRAWAL PLAN"],
-    ["withdrawal", "💸 WITHDRAWAL ANALYSIS"],
-    ["stress",     "🔶 STRESS TEST"],
-    ["buckets",    "🪣 BUCKETS"],
-    ["income",     "💵 INCOME"],
-    ["realestate", "🏠 REAL ESTATE"],
+    ["roth",        "🔄 ROTH CONVERSIONS"],
+    ["withdrawals", "💸 WITHDRAWAL PLAN"],
+    ["stress",      "🔶 STRESS TEST"],
+    ["buckets",     "🪣 BUCKETS"],
+    ["income",      "💵 INCOME"],
+    ["realestate",  "🏠 REAL ESTATE"],
   ];
 
   return (
@@ -5386,12 +5580,8 @@ function ScenariosTab({
         </div>
       )}
 
-      {scenarioSubTab === "waterfall" && (
-        <WaterfallPlanView p={baseParams} />
-      )}
-
-      {scenarioSubTab === "withdrawal" && (
-        <DeterministicWithdrawalView p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} />
+      {scenarioSubTab === "withdrawals" && (
+        <WithdrawalPlanCombined p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} />
       )}
 
       {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} />}
@@ -5539,7 +5729,11 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <InputCard title="Return Distribution" rows={[["Model", "Historical bootstrap"], ["Equity data", "99yr S&P 500 (1928–2026)"], [`Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`, "Equity / Bonds"], [`Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`, "Equity / Bonds"]]} />
                 <InputCard title="Inflation & Guardrails" rows={[["Inflation", "Historical bootstrap"], ["Inflation source", "2000–2024 actual CPI"], ["GK floor", fmtM(params.gkFloor) + "/yr"], ["GK ceiling", fmtM(params.gkCeiling) + "/yr"]]} />
+<<<<<<< HEAD
                 <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizon", `Age ${params.endAge || 90} (your plan age)`], ["Withdrawal", "Guyton-Klinger"], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
+=======
+                <InputCard title="Simulation Parameters" rows={[["Simulations", "3,000 paths"], ["Horizon", `Age ${params.endAge || 90}`], ["Withdrawal", getStrategyLabel(params.withdrawalStrategy || "smart")], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
+>>>>>>> e88597167bdc01213571548d6dd03d55a6725b91
               </div>
             </div>
           </>
@@ -5725,8 +5919,12 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>of 3,000 simulations last to age {params.endAge}</div>
             <div style={{ fontSize: 12, color: rateColor(mc.rate), marginBottom: 14, lineHeight: 1.5 }}>{riskLabel(mc.rate)}</div>
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10, display: "flex", gap: 12 }}>
+<<<<<<< HEAD
               <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Plan age</div><div style={{ fontSize: 18, fontWeight: 700, color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>Age {params.endAge}</div></div>
               <div style={{ flex: 1, textAlign: "center", borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Stress test</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(stress?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{stress ? fmtPct(stress.rate) : "—"}</div></div>
+=======
+              <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Stress test (2000–2012)</div><div style={{ fontSize: 18, fontWeight: 700, color: rateColor(stress?.rate || 0), fontFamily: "'DM Mono',monospace" }}>{stress ? fmtPct(stress.rate) : "—"}</div></div>
+>>>>>>> e88597167bdc01213571548d6dd03d55a6725b91
             </div>
           </div>
           <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
@@ -6136,7 +6334,7 @@ function NetWorthTab({ p, mc, inf }) {
               const s    = p.withdrawalStrategy || "gk";
               const rate = p.fixedWithdrawalRate || 0.04;
               const pct  = (rate * 100).toFixed(1).replace(/\.0$/, ""); // "4" not "4.0"
-              const labels = { gk:"GK guardrails", fixed:`Fixed ${pct}%`, vanguard:"Vanguard dynamic", vpw:"VPW", kitces:"Kitces ratchet", cape:"CAPE-based", endowment:"Endowment", risk:"Risk-based", one_n:"1/N rule", ninety_five_rule:"95% rule" };
+              const labels = { gk:"GK guardrails", fixed:`Fixed ${pct}%`, vanguard:"Vanguard dynamic", vpw:"VPW", kitces:"Kitces ratchet", cape:"CAPE-based", endowment:"Endowment", risk:"Risk-based", one_n:"1/N rule", ninety_five_rule:"95% rule", bengen:"Bengen 4% rule", smart:"Smart Waterfall" };
               return `${labels[s] || s} · per month`;
             })()}
           </div>
@@ -8459,8 +8657,9 @@ function RetirementPanel({ values, onChange }) {
               fontFamily: "'Inter',sans-serif",
             }}
           >
-            <option value="smart">📋 Smart Waterfall (Tax-Optimal)</option>
+            <option value="smart">📋 Smart Waterfall (Tax-Optimal · GK→Bengen at 15yr)</option>
             <option value="gk">Guyton‑Klinger (Dynamic)</option>
+            <option value="bengen">Bengen 4% Rule (Fixed Real $)</option>
             <option value="fixed">Fixed % of Portfolio</option>
             <option value="vanguard">Vanguard Dynamic Spending</option>
             <option value="risk">Risk‑Based Guardrails</option>
@@ -8855,12 +9054,19 @@ export default function AiRAForecaster() {
     setRunning(true);
     setStale(false);
     setTimeout(() => {
+<<<<<<< HEAD
       // Single horizon: every simulation is graded to the profile's own plan age
       // (params.endAge). No hardcoded reference ages. A shorter runway with the same
       // funds correctly scores HIGHER, and the stress test shares the same horizon.
       const rEnd_ = runMC(params, params.endAge, 3000, 43, true);
       const str = runStress(params, params.endAge, 2000, 99);
       setMc(rEnd_);
+=======
+      const planAge = params.endAge || 90;
+      const mc_ = runMC(params, planAge, 3000, 42, true);
+      const str = runStress(params, planAge, 2000, 99);
+      setMc(mc_);
+>>>>>>> e88597167bdc01213571548d6dd03d55a6725b91
       setStress(str);
       setRunning(false);
     }, 40);
@@ -9869,7 +10075,11 @@ export default function AiRAForecaster() {
                     }}
                   />
                 )}
+<<<<<<< HEAD
                 {activeTab === "networth" && <NetWorthTab p={params} mc={mc} inf={inf} />}
+=======
+                {activeTab === "networth" && <NetWorthTab p={params} results90={mc} inf={inf} />}
+>>>>>>> e88597167bdc01213571548d6dd03d55a6725b91
                 {activeTab === "actionplan" && (
                   <ActionPlanTab
                     params={params}

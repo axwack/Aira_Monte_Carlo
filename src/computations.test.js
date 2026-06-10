@@ -859,8 +859,13 @@ describe("Cash flow accuracy — portfolio draw, taxes, and spending", () => {
   });
 
   test("Total portfolio draw increases more than linearly as spending rises (progressive tax drag)", () => {
+    // Force draws from pre-tax so we actually see ordinary-income tax drag.
+    // With cash/taxable available, the Smart Waterfall correctly skips fed tax
+    // on the low-spend case, so the progressive-bracket test only holds when
+    // both years draw entirely from pre-tax.
     const base = { ...BASE, currentAge: 65, retireAge: 65, endAge: 90,
-      ssAge: 70, ssb: 0, filingStatus: "single", stateOfResidence: "FL" };
+      ssAge: 70, ssb: 0, filingStatus: "single", stateOfResidence: "FL",
+      accounts: [{ id: "p", category: "pretax", name: "401k", balance: 2_000_000 }] };
     const low  = simulateDeterministicWithStrategy({ ...base, sp:  60_000, withdrawalStrategy: "gk" }, 2.5, "gk");
     const high = simulateDeterministicWithStrategy({ ...base, sp: 120_000, withdrawalStrategy: "gk" }, 2.5, "gk");
     expect(high.schedule[0].totalWithdrawal - low.schedule[0].totalWithdrawal).toBeGreaterThan(60_000);
