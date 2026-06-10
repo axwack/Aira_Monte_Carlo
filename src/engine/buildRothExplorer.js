@@ -173,26 +173,43 @@ const IRMAA_2026 = [
   { m: 750000, f: 11130 },
 ];
 
-// IRS Pub 590-B Table II (Joint & Last Survivor) divisors — approximate for Vin (b.1970) & Mira (b.1979, 9 years younger). These are NOT Uniform Lifetime values.
+// IRS Pub 590-B Table III (Uniform Lifetime) divisors, 2022+ table.
+// Default table for owners whose sole-beneficiary spouse is NOT >10 years younger.
 const RMD_DIV = {
-  73: 30.4,
-  74: 29.5,
-  75: 28.9,
-  76: 28.0,
-  77: 26.6,
-  78: 25.7,
-  79: 24.7,
-  80: 23.8,
-  81: 22.9,
-  82: 22.0,
-  83: 21.1,
-  84: 20.2,
-  85: 19.4,
-  86: 18.5,
-  87: 17.7,
-  88: 16.9,
-  89: 16.1,
-  90: 15.3,
+  72: 27.4,
+  73: 26.5,
+  74: 25.5,
+  75: 24.6,
+  76: 23.7,
+  77: 22.9,
+  78: 22.0,
+  79: 21.1,
+  80: 20.2,
+  81: 19.4,
+  82: 18.5,
+  83: 17.7,
+  84: 16.8,
+  85: 16.0,
+  86: 15.2,
+  87: 14.4,
+  88: 13.7,
+  89: 12.9,
+  90: 12.2,
+  91: 11.5,
+  92: 10.8,
+  93: 10.1,
+  94: 9.5,
+  95: 8.9,
+  96: 8.4,
+  97: 7.8,
+  98: 7.3,
+  99: 6.8,
+  100: 6.4,
+  101: 6.0,
+  102: 5.6,
+  103: 5.2,
+  104: 4.9,
+  105: 4.6,
 };
 
 // IRS Pub 590-B Table II (Joint & Last Survivor) — owner with sole beneficiary spouse >10 yrs younger
@@ -220,12 +237,41 @@ function idxB(br, f) {
   }));
 }
 
-function irmaaCost(magi, yr, infR = 0.025) {
+function irmaaCost(magi, yr, infR = 0.025, isMFJ = true) {
   const f = Math.pow(1 + infR, yr - 2026);
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
-    if (magi >= IRMAA_2026[i].m * f) return Math.round(IRMAA_2026[i].f * f);
+    // Single tiers are half the MFJ thresholds, except the top tier ($500K vs $750K).
+    // Surcharge is per person, so single pays half the two-person MFJ amount.
+    const thresh = isMFJ ? IRMAA_2026[i].m
+      : (i === IRMAA_2026.length - 1 ? 500_000 : IRMAA_2026[i].m / 2);
+    const cost = isMFJ ? IRMAA_2026[i].f : IRMAA_2026[i].f / 2;
+    if (magi >= thresh * f) return Math.round(cost * f);
   }
   return 0;
+}
+
+/**
+ * Taxable portion of Social Security per IRC §86 provisional-income tiers.
+ * Thresholds are statutory and NOT inflation-indexed (unchanged since 1984/1994).
+ * @param {number} ssGross    — gross SS benefits for the year
+ * @param {number} otherIncome — other ordinary income counted in provisional income
+ *                               (pretax draws, RMDs, conversions, rental, etc.)
+ * @param {boolean} isMFJ
+ * @returns {number} taxable amount of SS (0 … 0.85 × ssGross)
+ */
+function taxableSocialSecurity(ssGross, otherIncome, isMFJ = true) {
+  if (!ssGross || ssGross <= 0) return 0;
+  const base1 = isMFJ ? 32_000 : 25_000;
+  const base2 = isMFJ ? 44_000 : 34_000;
+  const provisional = (otherIncome || 0) + ssGross * 0.5;
+  if (provisional <= base1) return 0;
+  if (provisional <= base2) {
+    return Math.min(0.5 * (provisional - base1), 0.5 * ssGross);
+  }
+  return Math.min(
+    0.85 * (provisional - base2) + Math.min(0.5 * (base2 - base1), 0.5 * ssGross),
+    0.85 * ssGross
+  );
 }
 
 const ROTH_BASE_YEAR = new Date().getFullYear();
@@ -310,7 +356,7 @@ function buildRothExplorer(params = {}) {
 
   function irmaaCeiling(yr) {
     const f = Math.pow(1 + infR, yr - 2026);
-    return Math.round(218000 * f);
+    return Math.round((isMFJ ? 218_000 : 109_000) * f);
   }
 
   const gkF = params.gkFloor || 48000;
@@ -363,11 +409,9 @@ function buildRothExplorer(params = {}) {
       }
 
       const ss = age >= ssAge ? Math.round(ssb * Math.pow(1.024, age - ssAge)) : 0;
-      const ssT = Math.round(ss * 0.85);
       const abn = ab > 0 && age <= 80
         ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
         : 0;
-      const baseInc = ssT + abn;
       const portDraw = Math.max(0, sp - ss - abn);
 
       // RMD calculation — table selected by useJointRmdTable param
@@ -388,7 +432,10 @@ function buildRothExplorer(params = {}) {
       const additionalRoth = additionalNeeded - additionalPretax;
       // Pre-tax draws beyond the forced RMD are ordinary income (traditional IRA/401k withdrawals)
       const pretaxSpend = additionalPretax;
-      const incBC = baseInc + rmd + pretaxSpend;
+      // IRC §86: taxable SS depends on provisional income (other ordinary income + ½ SS)
+      const otherOrdInc = abn + rmd + pretaxSpend;
+      const ssT = Math.round(taxableSocialSecurity(ss, otherOrdInc, isMFJ));
+      const incBC = ssT + otherOrdInc;
       const txBC = Math.max(0, incBC - stdD);
 
       let conv = 0;
@@ -436,22 +483,27 @@ function buildRothExplorer(params = {}) {
         }
       }
 
-      const totInc = incBC + conv,
+      // Conversion income raises provisional income, dragging more SS into taxation
+      const ssTConv = conv > 0
+        ? Math.round(taxableSocialSecurity(ss, otherOrdInc + conv, isMFJ))
+        : ssT;
+      const totInc = ssTConv + otherOrdInc + conv,
         txInc = Math.max(0, totInc - stdD);
       const fedT = Math.round(progTax(txInc, fB));
       const stT = isNoTaxState ? 0 : Math.round(progTax(Math.max(0, txInc), nB));
       const totT = fedT + stT,
         effR = totInc > 0 ? totT / totInc : 0;
-      const magi = totInc + (ss - ssT);
-      const irmaa = age >= 65 ? irmaaCost(magi, yr, infR) : 0;
+      // IRMAA MAGI = AGI + tax-exempt interest; the untaxed portion of SS is NOT added back
+      const magi = totInc;
+      const irmaa = age >= 65 ? irmaaCost(magi, yr, infR, isMFJ) : 0;
 
       let margR = 0;
       if (conv > 0) {
         const txIncNo = Math.max(0, incBC - stdD);
         const fedTNo = Math.round(progTax(txIncNo, fB));
         const stTNo = isNoTaxState ? 0 : Math.round(progTax(txIncNo, nB));
-        const magiNo = incBC + (ss - ssT);
-        const irmaaNo = age >= 65 ? irmaaCost(magiNo, yr, infR) : 0;
+        const magiNo = incBC;
+        const irmaaNo = age >= 65 ? irmaaCost(magiNo, yr, infR, isMFJ) : 0;
         const dTax = (fedT + stT + irmaa) - (fedTNo + stTNo + irmaaNo);
         margR = dTax / conv;
       }
@@ -552,7 +604,7 @@ function buildRothLadder(params = {}) {
 
 export {
   buildRothExplorer, buildRothLadder,
-  progTax, idxB, irmaaCost, getStateBrackets, getRmdStartAge,
+  progTax, idxB, irmaaCost, taxableSocialSecurity, getStateBrackets, getRmdStartAge,
   FED_BRACKETS_2026_MFJ, FED_BRACKETS_2026_SINGLE,
   STATE_BRACKETS, RMD_DIV, JOINT_RMD_DIV,
 };
