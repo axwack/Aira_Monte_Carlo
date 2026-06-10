@@ -91,8 +91,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.11";
-export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.11 — Withdrawal Plan default open (sections + year-by-year table), Header hoisted out of render body, package.json pruned.";
+const APP_VERSION = "1.1.0.12";
+export const BUILD_TAG = "[feature/ai-action-plan-cloudflare] v1.1.0.12 — Quicken-style account bucket splits: one balance, % allocations across B1/B2/B3, rolls up to one value.";
 export const BUILD_TIME = "2026-06-10T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -356,6 +356,26 @@ export function _defaultBucket(category) {
   if (category === "hsa")     return 3;
   if (category === "roth")    return 3;
   return 2;
+}
+
+// A single account can distribute its balance across buckets (Quicken-style
+// split): `account.splits` = [{ bucket, pct }] with pct summing to 100. When
+// absent, the whole balance sits in the single `account.bucket`. These helpers
+// expand an account into per-bucket "pieces" so every consumer can treat a
+// split account as several bucket-tagged slices that still roll up to one
+// balance (the rollup is just the untouched `account.balance`).
+export function accountBucketPieces(a) {
+  const bal = a.balance || 0;
+  const splits = Array.isArray(a.splits) ? a.splits.filter(s => s && s.pct > 0) : null;
+  if (splits && splits.length) {
+    const totalPct = splits.reduce((s, x) => s + x.pct, 0) || 1;
+    return splits.map(s => ({ ...a, balance: bal * (s.pct / totalPct), bucket: s.bucket, _splitPct: s.pct }));
+  }
+  return [{ ...a, bucket: a.bucket ?? _defaultBucket(a.category) }];
+}
+
+export function expandAccountBuckets(accounts) {
+  return (accounts || []).flatMap(accountBucketPieces);
 }
 
 export const BLANK_PROFILE = {
@@ -4508,9 +4528,9 @@ function WaterfallPlanView({ p }) {
 
   // Bucket 1 may be composed of any account category — match the table column to it
   const b1Cats = new Set(
-    (p.accounts || [])
-      .filter(a => (a.bucket ?? _defaultBucket(a.category)) === 1)
-      .map(a => a.category || "cash")
+    expandAccountBuckets(p.accounts)
+      .filter(piece => piece.bucket === 1)
+      .map(piece => piece.category || "cash")
   );
 
   // Operator cells — visually wire the withdrawal columns into the equation they satisfy
@@ -4947,11 +4967,12 @@ function BucketsTab({ params = {} }) {
   const monthly     = spendBasis > 0 ? Math.round(spendBasis / 12) : 0;
 
   // ── Actual balances from designated accounts ──────────────────────────────
-  const accts  = params.accounts || [];
-  const bNum   = (a) => a.bucket ?? _defaultBucket(a.category);
-  const b1Accts = accts.filter(a => bNum(a) === 1);
-  const b2Accts = accts.filter(a => bNum(a) === 2);
-  const b3Accts = accts.filter(a => bNum(a) === 3);
+  // Expand split accounts into per-bucket pieces so a single account can feed
+  // more than one bucket (each piece carries its allocated slice of the balance).
+  const accts  = expandAccountBuckets(params.accounts);
+  const b1Accts = accts.filter(a => a.bucket === 1);
+  const b2Accts = accts.filter(a => a.bucket === 2);
+  const b3Accts = accts.filter(a => a.bucket === 3);
   const b1Actual = b1Accts.reduce((s, a) => s + (a.balance || 0), 0);
   const b2Actual = b2Accts.reduce((s, a) => s + (a.balance || 0), 0);
   const b3Actual = b3Accts.reduce((s, a) => s + (a.balance || 0), 0);
@@ -7196,9 +7217,60 @@ function WFieldRow({ label, helper, children }) {
   );
 }
 
+// Quicken-style split editor: one account, several bucket allocations by %.
+// The account keeps its single rolled-up balance; this just edits how that
+// balance is distributed across B1/B2/B3. Hoisted to module scope so it isn't
+// recreated each render (which would drop input focus while typing).
+function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
+  const splits = acct.splits || [];
+  const bal = acct.balance || 0;
+  const total = splits.reduce((s, x) => s + (Number(x.pct) || 0), 0);
+  const remaining = 100 - total;
+  const clampPct = (v) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+  const update = (i, patch) => onChangeSplits(splits.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  return (
+    <div style={{ marginLeft: 106, marginBottom: 8, padding: "8px 10px", background: "rgba(255,255,255,0.025)", border: `1px solid ${color}33`, borderRadius: 6 }}>
+      <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 6 }}>
+        Split <strong style={{ color: "#e2e8f0" }}>{acct.name}</strong> across buckets · rolls up to {fmtDollar(bal)}
+      </div>
+      {splits.map((s, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          {[1, 2, 3].map(b => (
+            <button key={b} onClick={() => update(i, { bucket: b })} title={`Bucket ${b}`} style={{
+              background: s.bucket === b ? color + "33" : "transparent",
+              border: `1px solid ${s.bucket === b ? color : "rgba(255,255,255,0.1)"}`,
+              color: s.bucket === b ? color : "#334155",
+              borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 700, cursor: "pointer", lineHeight: 1.4,
+            }}>B{b}</button>
+          ))}
+          <input
+            type="number" min={0} max={100} value={s.pct}
+            onChange={e => update(i, { pct: clampPct(e.target.value) })}
+            style={{ width: 52, fontSize: 11, color: "#e2e8f0", background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "2px 6px", textAlign: "right", outline: "none", fontFamily: "'DM Mono',monospace" }}
+          />
+          <span style={{ fontSize: 10, color: "#64748b" }}>%</span>
+          <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: "'DM Mono',monospace", minWidth: 78, textAlign: "right" }}>{fmtDollar(bal * (Number(s.pct) || 0) / 100)}</span>
+          <button onClick={() => onChangeSplits(splits.filter((_, j) => j !== i))} title="Remove this slice"
+            style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: 13, opacity: 0.6 }}>✕</button>
+        </div>
+      ))}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
+        <button onClick={() => onChangeSplits([...splits, { bucket: 2, pct: Math.max(0, remaining) }])}
+          style={{ background: "transparent", border: `1px dashed ${color}55`, borderRadius: 4, color, fontSize: 10, padding: "2px 8px", cursor: "pointer" }}>+ Add slice</button>
+        <span style={{ fontSize: 10, fontWeight: 700, color: total === 100 ? "#34d399" : "#fbbf24" }}>
+          {total === 100 ? "100% assigned ✓" : `${total}% assigned · ${remaining > 0 ? remaining + "% left" : Math.abs(remaining) + "% over"}`}
+        </span>
+        <button onClick={() => { onChangeSplits([]); onClose(); }}
+          style={{ marginLeft: "auto", background: "transparent", border: "none", color: "#64748b", fontSize: 10, cursor: "pointer", textDecoration: "underline" }}>↩ use one bucket</button>
+      </div>
+    </div>
+  );
+}
+
 function SavingsPanel({ values, onChange }) {
   const GOAL = values.earlyRetireTarget || 1_000_000;
   const accounts = values.accounts || BLANK_PROFILE.accounts;
+  const [splitEditId, setSplitEditId] = useState(null);
 
   const CATEGORIES = [
     { key: "pretax",  label: "Pre-Tax",        color: "#0ea5e9", defaultName: "401(k)" },
@@ -7237,6 +7309,23 @@ function SavingsPanel({ values, onChange }) {
 
   const setBucket = (id, b) => onChange("accounts", accounts.map(a => a.id === id ? { ...a, bucket: b } : a));
 
+  // Persist a split. Empty array reverts the account to a single bucket
+  // (strips the `splits` key) so the data model stays clean.
+  const setSplits = (id, newSplits) => onChange("accounts", accounts.map(a => {
+    if (a.id !== id) return a;
+    if (!newSplits || newSplits.length === 0) { const { splits, ...rest } = a; return rest; }
+    return { ...a, splits: newSplits };
+  }));
+
+  const toggleSplit = (id) => {
+    if (splitEditId === id) { setSplitEditId(null); return; }
+    const acct = accounts.find(a => a.id === id);
+    if (acct && !(Array.isArray(acct.splits) && acct.splits.length)) {
+      setSplits(id, [{ bucket: acct.bucket ?? _defaultBucket(acct.category), pct: 100 }]);
+    }
+    setSplitEditId(id);
+  };
+
   const removeAccount = (id) => {
     const newAccounts = accounts.filter(a => a.id !== id);
     updateAccounts(newAccounts);
@@ -7251,40 +7340,65 @@ function SavingsPanel({ values, onChange }) {
         return (
           <div key={cat.key} style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, borderLeft: `3px solid ${cat.color}`, padding: "8px 12px" }}>
             <div style={{ fontSize: 11, color: cat.color, fontWeight: 600, marginBottom: 8 }}>{cat.label}</div>
-            {catAccounts.map(acct => (
-              <div key={acct.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                <input
-                  type="text"
-                  value={acct.name}
-                  onChange={e => handleName(acct.id, e.target.value)}
-                  style={{ width: 100, fontSize: 11, color: "#e2e8f0", background: "transparent", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "2px 6px", fontFamily: "'DM Sans',sans-serif", outline: "none" }}
-                  onFocus={e => e.target.style.borderColor = cat.color + "66"}
-                  onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.06)"}
-                />
-                <div style={{ flex: 1 }}>
-                  <ANumInput value={acct.balance || 0} onSet={(v) => handleBalance(acct.id, v)} min={0} max={5_000_000} step={5000} />
+            {catAccounts.map(acct => {
+              const hasSplits = Array.isArray(acct.splits) && acct.splits.length > 0;
+              const editing = splitEditId === acct.id;
+              return (
+              <div key={acct.id}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: (hasSplits || editing) ? 2 : 6 }}>
+                  <input
+                    type="text"
+                    value={acct.name}
+                    onChange={e => handleName(acct.id, e.target.value)}
+                    style={{ width: 100, fontSize: 11, color: "#e2e8f0", background: "transparent", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "2px 6px", fontFamily: "'DM Sans',sans-serif", outline: "none" }}
+                    onFocus={e => e.target.style.borderColor = cat.color + "66"}
+                    onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.06)"}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <ANumInput value={acct.balance || 0} onSet={(v) => handleBalance(acct.id, v)} min={0} max={5_000_000} step={5000} />
+                  </div>
+                  {hasSplits ? (
+                    <span title="Split across buckets — click 🔀 to edit" style={{ fontSize: 9, fontWeight: 700, color: cat.color, fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap" }}>
+                      {acct.splits.map(s => `${s.pct}%·B${s.bucket}`).join("  ")}
+                    </span>
+                  ) : (
+                    [1,2,3].map(b => {
+                      const active = (acct.bucket ?? _defaultBucket(acct.category)) === b;
+                      return (
+                        <button key={b} onClick={() => setBucket(acct.id, b)} title={`Assign to Bucket ${b}`} style={{
+                          background: active ? cat.color + "33" : "transparent",
+                          border: `1px solid ${active ? cat.color : "rgba(255,255,255,0.1)"}`,
+                          color: active ? cat.color : "#334155",
+                          borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 700, cursor: "pointer", lineHeight: 1.4,
+                        }}>B{b}</button>
+                      );
+                    })
+                  )}
+                  <button onClick={() => toggleSplit(acct.id)} title="Split this account across buckets" style={{
+                    background: (hasSplits || editing) ? cat.color + "33" : "transparent",
+                    border: `1px solid ${(hasSplits || editing) ? cat.color : "rgba(255,255,255,0.1)"}`,
+                    borderRadius: 4, padding: "2px 5px", fontSize: 10, cursor: "pointer", lineHeight: 1.4, filter: (hasSplits || editing) ? "none" : "grayscale(1) opacity(0.5)",
+                  }}>🔀</button>
+                  <button
+                    onClick={() => removeAccount(acct.id)}
+                    style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14, padding: "2px 4px", opacity: 0.5 }}
+                    onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#f87171"; }}
+                    onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#64748b"; }}
+                  >
+                    ✕
+                  </button>
                 </div>
-                {[1,2,3].map(b => {
-                  const active = (acct.bucket ?? _defaultBucket(acct.category)) === b;
-                  return (
-                    <button key={b} onClick={() => setBucket(acct.id, b)} title={`Assign to Bucket ${b}`} style={{
-                      background: active ? cat.color + "33" : "transparent",
-                      border: `1px solid ${active ? cat.color : "rgba(255,255,255,0.1)"}`,
-                      color: active ? cat.color : "#334155",
-                      borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 700, cursor: "pointer", lineHeight: 1.4,
-                    }}>B{b}</button>
-                  );
-                })}
-                <button
-                  onClick={() => removeAccount(acct.id)}
-                  style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14, padding: "2px 4px", opacity: 0.5 }}
-                  onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#f87171"; }}
-                  onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#64748b"; }}
-                >
-                  ✕
-                </button>
+                {editing && (
+                  <AccountSplitEditor
+                    acct={acct}
+                    color={cat.color}
+                    onChangeSplits={(ns) => setSplits(acct.id, ns)}
+                    onClose={() => setSplitEditId(null)}
+                  />
+                )}
               </div>
-            ))}
+              );
+            })}
             <button
               onClick={() => addAccount(cat.key)}
               style={{ background: "transparent", border: `1px dashed ${cat.color}33`, borderRadius: 4, color: cat.color, fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.6, marginTop: 2 }}
