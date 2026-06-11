@@ -2265,11 +2265,18 @@ function DualInput({ label, value, min, max, step, format, onChange }) {
 
 function CleanNumberInput({ value, onChange, min, max, step = 1, style = {} }) {
   const [localValue, setLocalValue] = useState("");
+  // A non-integer step (e.g. 0.1, 0.5) means this field accepts decimals.
+  const allowDecimals = !Number.isInteger(step);
 
-  // Sync with external value changes (e.g., from sidebar sliders)
+  // Sync with external value changes (e.g., from sidebar sliders), but DON'T
+  // clobber what the user is mid-typing. If the incoming value already matches
+  // the number the user has entered (e.g. "2." parses to 2, value is 2), leave
+  // the raw text alone so a trailing "." or "0" survives.
   useEffect(() => {
     if (value != null && !isNaN(value)) {
-      setLocalValue(value.toString());
+      if (Number(localValue.replace(/,/g, "")) !== value) {
+        setLocalValue(value.toString());
+      }
     }
   }, [value]);
 
@@ -2293,14 +2300,18 @@ function CleanNumberInput({ value, onChange, min, max, step = 1, style = {} }) {
     }
   };
 
-  const displayValue = localValue
-    ? new Intl.NumberFormat("en-US").format(Number(localValue.replace(/,/g, "")))
-    : "";
+  // For decimal fields, show the raw text so a trailing "." or "0" isn't
+  // stripped mid-typing. For integer fields, keep the thousands-separator format.
+  const displayValue = allowDecimals
+    ? localValue
+    : localValue
+      ? new Intl.NumberFormat("en-US").format(Number(localValue.replace(/,/g, "")))
+      : "";
 
   return (
     <input
       type="text"
-      inputMode="numeric"
+      inputMode={allowDecimals ? "decimal" : "numeric"}
       value={displayValue}
       onChange={handleChange}
       onBlur={handleBlur}
