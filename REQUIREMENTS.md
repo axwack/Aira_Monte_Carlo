@@ -83,12 +83,12 @@ Prioritized; estimated ~2,500–3,000 lines removable from `src/App.jsx` (10.5K 
 
 1. **Countdown re-renders the whole app at 1 Hz** — `useCountdown` ticks state in the
    root component and nothing is memoized. Move into a self-contained component.
-2. **Delete dead code** (~640 lines in App.jsx): `simulateDeterministic` (old copy),
-   `generateActions`, `Bucket1Panel`, `ActionTile`, `PeopleViz`, `countdownDays`
-   (references nonexistent `DDAY`), unreachable `"fan"` tab branch. Plus
-   `src/ai/gemini.local.js` (273 lines, never imported) and
-   `netlify/functions/analyze.js` (316 lines, stale Anthropic-SDK fork no client
-   calls; live target is `functions/api/` on Cloudflare) → also drop
+2. ✅ **DONE** — **Delete dead code** (~590 lines removed from App.jsx):
+   `simulateDeterministic` (old copy), `generateActions`, `Bucket1Panel`
+   (+ `_B1_KEY`/`_loadB1`), `ActionTile`, `countdownDays`
+   (referenced nonexistent `DDAY`), unreachable `"fan"` tab branch.
+   `PeopleViz` was already gone in `main`. Deleted `src/ai/gemini.local.js`
+   and `netlify/functions/analyze.js` (and `netlify.toml`); dropped
    `@anthropic-ai/sdk` from package.json.
 3. **Deduplicate App.jsx against `src/engine/buildRothExplorer.js` exports** (~280
    lines): `STATE_BRACKETS`, `getStateBrackets`, fed brackets, `progTax`, `idxB`,
@@ -99,12 +99,17 @@ Prioritized; estimated ~2,500–3,000 lines removable from `src/App.jsx` (10.5K 
    `nextSpending(strategy, ctx)` helper (~150 lines, kills observed drift).
 5. **Run `runMC`/`runStress` in a Web Worker** (currently freezes UI for 5,000 paths)
    and hoist bracket-array construction out of `calcYearTax` (called ~105K times/run).
-6. **Memoize** `evaluateRulesEngine` / `solveRetirementDate` in ActionPlanTab; hoist
-   `InputsPanel` (RothLadder) and `Header` (WithdrawalPlanCombined) out of render
-   bodies (remount every render; causes input focus loss).
-7. **Prune package.json**: `moment`, `claude`, `react-is`, `@vercel/analytics`,
-   `typescript`/`@types/*` unused; `wrangler` → devDependencies; fix
-   `"main": "src/index.tsx"` (file doesn't exist).
+6. **(partial)** **Memoize** `evaluateRulesEngine` / `solveRetirementDate` in
+   ActionPlanTab; hoist `InputsPanel` (RothLadder) and `Header`
+   (WithdrawalPlanCombined) out of render bodies (remount every render; causes
+   input focus loss). ✅ `Header` hoisted to module-scope
+   `WithdrawalSectionHeader`. Still open: `InputsPanel` + the two memoizations.
+7. ✅ **DONE** — **Prune package.json**: removed unused `moment`, `claude`,
+   `@vercel/analytics`, `typescript`, `@types/react`, `@types/react-dom`;
+   moved `wrangler` → devDependencies; fixed `"main": "src/index.tsx"` →
+   `"src/index.js"`. NOTE: `react-is` is **kept** — the audit listed it as
+   unused, but `recharts` imports it and npm does not hoist it here, so
+   removing it breaks the build.
 8. **Make the AI module genuinely lazy**: App.jsx statically imports
    `ai/ai-analysis.js` (line ~68) which defeats the dynamic `import()` in
    ActionPlanTab; ~650 dormant AiraAITab lines ship in the main bundle.
