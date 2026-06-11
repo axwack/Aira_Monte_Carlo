@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.17";
-export const BUILD_TAG = "[main] v1.1.0.17 — Cash real return now uses the proven ANumInput (focus-tracking, decimal-safe) like every other panel field, so 1.5%-style values persist; CleanNumberInput also reworked to focus-based sync.";
-export const BUILD_TIME = "2026-06-11T17:00:00Z";
+const APP_VERSION = "1.1.0.18";
+export const BUILD_TAG = "[main] v1.1.0.18 — Consolidate all number inputs onto the proven ANumInput and delete the redundant CleanNumberInput; ANumInput is now decimal-keypad aware via step. All Assumptions fields are focus-tracking + decimal-safe.";
+export const BUILD_TIME = "2026-06-11T18:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2320,75 +2320,6 @@ function DualInput({ label, value, min, max, step, format, onChange }) {
       </div>
       <Slider label="" value={value} min={min} max={max} step={step} format={format} onChange={onChange} />
     </div>
-  );
-}
-
-function CleanNumberInput({ value, onChange, min, max, step = 1, style = {} }) {
-  const [localValue, setLocalValue] = useState("");
-  const [focused, setFocused] = useState(false);
-  // A non-integer step (e.g. 0.1, 0.5) means this field accepts decimals.
-  const allowDecimals = !Number.isInteger(step);
-
-  // Sync from the external value (sidebar sliders, profile load, etc.) ONLY when
-  // the field is not being actively edited. While focused, the user's raw text is
-  // the source of truth — never overwrite it, so in-progress decimals ("1.",
-  // "1.50") and trailing zeros survive every re-render until blur.
-  useEffect(() => {
-    if (focused) return;
-    if (value != null && !isNaN(value)) setLocalValue(String(value));
-    else setLocalValue("");
-  }, [value, focused]);
-
-  const handleChange = (e) => {
-    const raw = e.target.value.replace(/,/g, "");
-    setLocalValue(raw);
-    const num = Number(raw);
-    // Push valid numbers up immediately so sliders/MC stay in sync. Ignore
-    // intermediate non-numeric states ("", "1.", "-") — they resolve on blur.
-    if (raw !== "" && !isNaN(num)) onChange(num);
-  };
-
-  const handleFocus = () => setFocused(true);
-
-  const handleBlur = () => {
-    setFocused(false);
-    let num = Number(localValue.replace(/,/g, ""));
-    if (localValue === "" || isNaN(num)) num = min ?? 0;
-    const clamped = Math.max(min ?? 0, Math.min(max ?? Infinity, num));
-    onChange(clamped);
-    setLocalValue(String(clamped));
-  };
-
-  // While editing (or for decimal fields), show the raw text so a trailing "."
-  // or "0" isn't stripped. For integer fields at rest, apply thousands grouping.
-  const displayValue = (focused || allowDecimals)
-    ? localValue
-    : localValue
-      ? new Intl.NumberFormat("en-US").format(Number(localValue.replace(/,/g, "")))
-      : "";
-
-  return (
-    <input
-      type="text"
-      inputMode={allowDecimals ? "decimal" : "numeric"}
-      value={displayValue}
-      onChange={handleChange}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-      style={{
-        width: "120px",
-        maxWidth: "100%",
-        background: "#0d1b2a",
-        border: "1px solid #1e3a5f",
-        color: "#e2e8f0",
-        borderRadius: 6,
-        padding: "4px 8px",
-        fontSize: 12,
-        fontFamily: "'DM Mono',monospace",
-        textAlign: "right",
-        ...style,
-      }}
-    />
   );
 }
 
@@ -7683,6 +7614,9 @@ function ARow({ label, desc, children }) {
 function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   const [isFocused, setIsFocused] = useState(false);
   const [localValue, setLocalValue] = useState("");
+  // A fractional step (0.1, 0.5) means this field takes decimals — hint the
+  // decimal keypad on mobile (type=text already allows "." on desktop).
+  const allowDecimals = step != null && !Number.isInteger(step);
 
   // Sync local value when prop changes (e.g., after import or external update)
   useEffect(() => {
@@ -7723,7 +7657,7 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <input
         type="text"
-        inputMode="numeric"
+        inputMode={allowDecimals ? "decimal" : "numeric"}
         value={displayValue}
         onChange={handleChange}
         onFocus={() => setIsFocused(true)}
@@ -7843,7 +7777,7 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
 
         <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in Net Worth projection">
-          <CleanNumberInput value={values.reGrowthRate} onChange={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} />
+          <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
         </ARow>
 
         {(values.filingStatus || "mfj") !== "single" && (
@@ -7904,7 +7838,7 @@ function AssumptionsPanel({ values, onChange }) {
         {(values.housingType || "own") === "rent" && (
           <ARow label="Annual rent" desc="Today's dollars — inflated each year in simulation">
             {/* ✅ Fixed: Now correctly uses annualRent field */}
-            <CleanNumberInput value={values.annualRent} onChange={(v) => onChange("annualRent", v)} min={0} max={60000} step={500} />
+            <ANumInput value={values.annualRent} onSet={(v) => onChange("annualRent", v)} min={0} max={60000} step={500} />
           </ARow>
         )}
         <div style={{ marginTop: 12 }}>
@@ -8065,19 +7999,19 @@ function AssumptionsPanel({ values, onChange }) {
           Monte Carlo Model Parameters
         </div>
         <ARow label="Target Portfolio Value for Early Retirement" desc="This is your retirement goal. This is the number that answers, What number do I need to retire? What is my retirement $$$ where no matter what, I RETIRE!!.">
-          <CleanNumberInput value={values.earlyRetireTarget} onChange={(v) => onChange("earlyRetireTarget", v)} min={0} max={10000000} step={50000} />
+          <ANumInput value={values.earlyRetireTarget} onSet={(v) => onChange("earlyRetireTarget", v)} min={0} max={10000000} step={50000} />
         </ARow>
         <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is a number where, if you hit this, would reconsider your target goal? This is a number that is a secondary decision. If you hit this, would you be ok with this goal if something caused a change in your plan,">
-          <CleanNumberInput value={values.portfolioGoal} onChange={(v) => onChange("portfolioGoal", v)} min={0} max={10000000} step={50000} />
+          <ANumInput value={values.portfolioGoal} onSet={(v) => onChange("portfolioGoal", v)} min={0} max={10000000} step={50000} />
         </ARow>
         <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
-          <CleanNumberInput value={values.ssCola} onChange={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} />
+          <ANumInput value={values.ssCola} onSet={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} suffix="%" />
         </ARow>
         <ARow label="Pre-retirement equity weight" desc="Equity % before retirement age (default 91%)">
-          <CleanNumberInput value={values.preRetireEq} onChange={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} />
+          <ANumInput value={values.preRetireEq} onSet={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} suffix="%" />
         </ARow>
         <ARow label="Post-retirement equity weight" desc="Equity % after retirement age (default 70%)">
-          <CleanNumberInput value={values.postRetireEq} onChange={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} />
+          <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} suffix="%" />
         </ARow>
       </div>
 
@@ -8090,16 +8024,16 @@ function AssumptionsPanel({ values, onChange }) {
           In each simulation year after the shock age, there is a random probability of a large one-time healthcare cost.
         </div>
         <ARow label="Shock start age" desc="Age after which annual healthcare shocks can occur (default 72)">
-          <CleanNumberInput value={values.hcShockAge} onChange={(v) => onChange("hcShockAge", v)} min={60} max={85} step={1} />
+          <ANumInput value={values.hcShockAge} onSet={(v) => onChange("hcShockAge", v)} min={60} max={85} step={1} />
         </ARow>
         <ARow label="Annual shock probability" desc="Chance of a shock in any given year (default 3.5%)">
-          <CleanNumberInput value={values.hcProb} onChange={(v) => onChange("hcProb", v)} min={0} max={20} step={0.5} />
+          <ANumInput value={values.hcProb} onSet={(v) => onChange("hcProb", v)} min={0} max={20} step={0.5} suffix="%" />
         </ARow>
         <ARow label="Shock cost — minimum" desc="Low end of randomized healthcare shock cost (default $70K)">
-          <CleanNumberInput value={values.hcMin} onChange={(v) => onChange("hcMin", v)} min={0} max={200000} step={5000} />
+          <ANumInput value={values.hcMin} onSet={(v) => onChange("hcMin", v)} min={0} max={200000} step={5000} />
         </ARow>
         <ARow label="Shock cost — maximum" desc="High end of randomized healthcare shock cost (default $130K)">
-          <CleanNumberInput value={values.hcMax} onChange={(v) => onChange("hcMax", v)} min={0} max={500000} step={5000} />
+          <ANumInput value={values.hcMax} onSet={(v) => onChange("hcMax", v)} min={0} max={500000} step={5000} />
         </ARow>
       </div>
       <div
