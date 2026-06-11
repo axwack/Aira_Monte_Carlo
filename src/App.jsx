@@ -7788,6 +7788,21 @@ function WFieldRow({ label, helper, children }) {
   );
 }
 
+// Read-only mirror of a value whose authoritative editor is the sidebar slider —
+// avoids dual-state desync from editing the same field in two places.
+function SidebarLinkedValue({ display }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+      <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 14, color: "#cbd5e1" }}>
+        {display}
+      </div>
+      <div style={{ fontSize: 9, color: "#64748b", fontStyle: "italic", whiteSpace: "nowrap" }}>
+        Edit in sidebar →
+      </div>
+    </div>
+  );
+}
+
 function SavingsPanel({ values, onChange }) {
   const GOAL = values.earlyRetireTarget || 1_000_000;
   const accounts = values.accounts || BLANK_PROFILE.accounts;
@@ -7957,10 +7972,10 @@ function AboutYouPanel({ values, onChange }) {
           RETIREMENT TIMELINE
         </div>
         <WFieldRow label="Retirement Age" helper="Age at which you plan to retire (D‑Day).">
-          <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={50} max={100} step={1} />
+          <SidebarLinkedValue display={`Age ${values.retireAge}`} />
         </WFieldRow>
         <WFieldRow label="Planning Horizon" helper="Age through which you want the plan to last.">
-          <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={40} max={100} step={1} />
+          <SidebarLinkedValue display={`Age ${values.endAge}`} />
         </WFieldRow>
         <WFieldRow label="Sex" helper="Used for SSA mortality overlay on the fan chart (male/female life expectancy tables, or blended average).">
           <select
@@ -8497,7 +8512,7 @@ function ContribPanel({ values, onChange }) {
           ANNUAL CONTRIBUTIONS — Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
         </div>
         <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
-          <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
+          <SidebarLinkedValue display={`${fmtK(annual401k)}/yr`} />
         </WFieldRow>
         <WFieldRow label="HSA Monthly Contribution" helper="Family limit $8,550 + $1,000 catch‑up (2026).">
           <ANumInput value={hsaMonthly} onSet={(v) => onChange("hsaMonthly", v)} min={0} max={1_000} step={50} suffix="/mo" />
@@ -8731,10 +8746,12 @@ function RetirementPanel({ values, onChange }) {
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
         <WFieldRow label="US Spending (annual)" helper="Domestic household spending in today's dollars. Subject to state income tax when residing in-state.">
-          <ANumInput value={values.sp || 0} onSet={(v) => onChange("sp", v)} min={0} max={500000} step={1000} suffix="/yr" />
+          <SidebarLinkedValue display={`${fmtK(values.sp || 0)}/yr`} />
         </WFieldRow>
         <WFieldRow label="Out-of-Country Spending (annual)" helper="Spending that occurs abroad in today's dollars. Always drawn from the portfolio but never subject to US state tax.">
-          <ANumInput value={values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={500000} step={1000} suffix="/yr" />
+          {twoHousehold
+            ? <SidebarLinkedValue display={`${fmtK(outOfCountrySp)}/yr`} />
+            : <ANumInput value={outOfCountrySp} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={500000} step={1000} suffix="/yr" />}
         </WFieldRow>
         <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span>Total combined annual spending (used for portfolio draw)</span>
@@ -8748,7 +8765,7 @@ function RetirementPanel({ values, onChange }) {
           <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={5000} step={50} suffix="/mo" />
         </WFieldRow>
         <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
-          <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={62} max={70} step={1} suffix=" yrs"/>
+          <SidebarLinkedValue display={`${values.ssAge || 67} yrs`} />
         </WFieldRow>
       </div>
 
