@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.16";
-export const BUILD_TAG = "[main] v1.1.0.16 — CleanNumberInput: focus-based sync so decimals persist (cash real return etc.); merge cloudflare branch (Quicken-style account bucket splits 🔀, UI refactor, withdrawal-plan default-open, dead-code cleanup).";
-export const BUILD_TIME = "2026-06-11T16:00:00Z";
+const APP_VERSION = "1.1.0.17";
+export const BUILD_TAG = "[main] v1.1.0.17 — Cash real return now uses the proven ANumInput (focus-tracking, decimal-safe) like every other panel field, so 1.5%-style values persist; CleanNumberInput also reworked to focus-based sync.";
+export const BUILD_TIME = "2026-06-11T17:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -7826,7 +7826,7 @@ function AssumptionsPanel({ values, onChange }) {
           <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
         </ARow>
         <ARow label="Cash real return" desc="Annual real return on cash/savings (e.g., HYSA)">
-          <CleanNumberInput value={values.cashRealReturn} onChange={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} />
+          <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} suffix="%" />
         </ARow>
         <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
           <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
