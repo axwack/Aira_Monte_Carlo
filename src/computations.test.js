@@ -1465,3 +1465,39 @@ describe("VPW withdrawal — PMT amortization formula", () => {
     expect(rate(65)).toBeGreaterThan(rate(61));
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sourcing guardrails — decoupled from distribution strategy (2026-06-11)
+// The bracket cap / IRMAA guard / Roth reserve must affect ANY distribution
+// strategy, not just "smart". Guards both the engine decouple AND that the keys
+// reach runMC (before the fix they were never forwarded into params → no-op).
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Sourcing guardrails apply to any distribution strategy", () => {
+  // Large, sustainable portfolio (5% WR) split pretax/Roth so the bracket cap binds:
+  // a 250k draw is far above the 12%-bracket ceiling, forcing overflow to Roth.
+  const BIG = {
+    ...BASE,
+    sp: 250_000, ssb: 0, ssAge: 99, ab: 0, propIncome: 0,
+    withdrawalStrategy: "gk",          // explicitly NOT "smart"
+    gkFloor: 100_000, gkCeiling: 600_000,
+    accounts: [
+      { id: "p", category: "pretax", name: "401k", balance: 4_000_000 },
+      { id: "r", category: "roth",   name: "Roth", balance: 1_000_000 },
+    ],
+  };
+
+  test("bracket cap changes MC outcome for a gk strategy (same seed)", () => {
+    const off    = runMC({ ...BIG, withdrawalBracketTarget: "off" }, 90, 400, 7);
+    const capped = runMC({ ...BIG, withdrawalBracketTarget: "12", irmaaGuard: true }, 90, 400, 7);
+    // Identical RNG paths; only the sourcing cap differs. If guards were still gated
+    // to "smart" — or the keys never reached runMC — these would be identical.
+    expect(capped.term.p50).not.toBe(off.term.p50);
+  });
+
+  test('"off" disables the cap (naive pretax-first ordering)', () => {
+    const off1 = runMC({ ...BIG, withdrawalBracketTarget: "off" }, 90, 400, 7);
+    const off2 = runMC({ ...BIG, withdrawalBracketTarget: "off", irmaaGuard: true }, 90, 400, 7);
+    // With the cap off, the IRMAA guard has nothing to clamp → identical.
+    expect(off1.term.p50).toBe(off2.term.p50);
+  });
+});

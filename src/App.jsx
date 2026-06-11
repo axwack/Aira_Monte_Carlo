@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.9";
-export const BUILD_TAG = "[main] v1.1.0.9 — Withdrawal engine: decouple sourcing guardrails from distribution strategy, fix VPW PMT formula, centralize std-deduction/IRMAA constants in helpers.";
-export const BUILD_TIME = "2026-06-10T12:00:00Z";
+const APP_VERSION = "1.1.0.10";
+export const BUILD_TAG = "[main] v1.1.0.10 — Withdrawal UI split: sourcing guardrails moved onto the Withdrawal Plan tab (live, persisted), guardrail keys forwarded into params (were a no-op), Profile keeps a pointer, dead simulateDeterministic removed; plain-language control labels + sourcing section open by default.";
+export const BUILD_TIME = "2026-06-11T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1141,128 +1141,6 @@ function runStress(p, endAge, N = 2000, seed = 99) {
     });
   }
   return { rate: results.filter((r) => r.survived).length / N, pcts };
-}
-
-/* ════ DETERMINISTIC WITHDRAWAL SCHEDULE (median returns) ════ */
-// ⚠️ DEAD CODE (verified 2026-06-10): zero callers, not exported. The live
-// year-by-year schedule uses simulateDeterministicWithStrategy below, which
-// implements all 12 strategies. This legacy fn only covers 5 and is scheduled
-// for removal — do NOT wire anything to it. Kept this pass only to avoid a
-// fragile 115-line delete; remove in the Withdrawal-tab UI commit.
-function simulateDeterministic(p, inf) {
-  const accYrs = Math.max(0, p.retireAge - p.currentAge);
-  const retYrs = p.endAge - p.retireAge;
-  const strategy = p.withdrawalStrategy || "gk";
-
-  // Sum portfolio from accounts (same as runMC)
-  let port = 0;
-  for (const acct of (p.accounts || [])) {
-    port += acct.balance || 0;
-  }
-
-  // Accumulation phase — deterministic median return
-  for (let y = 0; y < accYrs; y++) {
-    const ret = expectedReturn(p.preRetireEq ?? 91) / 100;
-    port = port * (1 + ret) + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
-  }
-
-  const portAtRetire = port;
-  let startingPort = portAtRetire;
-  const gkFloor = p.gkFloor || 48_000;
-  const gkCeiling = p.gkCeiling || 115_000;
-  const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-  const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
-  const initDraw = Math.max(0, p.sp - ss0 - ab0);
-  const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
-
-  let sp = p.sp;
-  let lastReturn = 0;
-  const schedule = [];
-
-  for (let y = 0; y < retYrs; y++) {
-    const age = p.retireAge + y;
-    const yr = 2026 + (age - p.currentAge);
-    const ret = age < 62 ? expectedReturn(p.preRetireEq ?? 91) / 100 : expectedReturn(p.postRetireEq ?? 70) / 100;
-    const inflY = inf / 100;
-    const cumInfl = Math.pow(1 + inflY, y);
-    const adjFloor = gkFloor * cumInfl;
-    const adjCeiling = gkCeiling * cumInfl;
-
-    // ========== WITHDRAWAL STRATEGY (mirrors runMC) ==========
-    if (y > 0 && port > 0) {
-      if (strategy === "gk") {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
-      } else if (strategy === "fixed") {
-        const fixedRate = p.fixedWithdrawalRate ?? 0.04;
-        sp = Math.max(adjFloor, Math.min(adjCeiling, port * fixedRate));
-      } else if (strategy === "vanguard") {
-        const initialRate = p.vanguardInitialRate ?? 0.04;
-        const cap = p.vanguardCap ?? 0.05;
-        const floorRate = p.vanguardFloor ?? -0.025;
-        const pctOfPort = port * initialRate;
-        const dynamic = y === 1
-          ? (sp * (1 + inflY) + pctOfPort) / 2
-          : sp * (1 + inflY) * (1 + (ret - inflY) * 0.5);
-        const change = (dynamic / sp) - 1;
-        const cappedChange = Math.max(floorRate, Math.min(cap, change));
-        sp = Math.max(adjFloor, Math.min(adjCeiling, sp * (1 + cappedChange)));
-      } else if (strategy === "risk") {
-        const safeWR = p.safeWithdrawalRate ?? 0.04;
-        const currentWR = sp / port;
-        
-        if (currentWR > safeWR * 1.2) 
-          sp *= 0.9;
-        else if (currentWR < safeWR * 0.8) sp *= 1.1;
-          sp = Math.max(adjFloor, Math.min(adjCeiling, sp * (1 + inflY)));
-      } else if (strategy === "kitces") {
-        if (port >= startingPort * 1.5) {
-          sp *= 1.10;
-          startingPort = port;
-        }
-        sp = Math.max(adjFloor, Math.min(adjCeiling, sp * (1 + inflY)));
-      }
-    }
-    lastReturn = ret;
-
-    const ss = age >= p.ssAge
-      ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y))
-      : 0;
-    const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
-    const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
-    const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
-    const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
-    const need = Math.max(0, sp - ss - ab - otherIncTotal);
-
-    const taxResult = calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
-    const totalDraw = need + taxResult.totalTax;
-    port = port * (1 + ret) - totalDraw;
-
-    // Determine GK band (useful for all strategies to show where spending sits)
-    const wr = port > 0 ? (sp / port) : 0;
-    let band = "normal";
-    if (wr <= initWR * 0.8) band = "prosperity";
-    else if (wr >= initWR * 1.2) band = "capital_preservation";
-
-    schedule.push({
-      age, yr,
-      spending: Math.round(sp),
-      ss, Rental: ab, OtherIncome: Math.round(otherIncTotal),
-      portfolioDraw: Math.round(need),
-      fedTax: taxResult.fedTax,
-      stateTax: taxResult.stateTax,
-      irmaa: taxResult.irmaa,
-      totalTax: taxResult.totalTax,
-      totalWithdrawal: Math.round(totalDraw),
-      portfolioEnd: Math.max(0, Math.round(port)),
-      gkFloor: Math.round(adjFloor),
-      gkCeiling: Math.round(adjCeiling),
-      withdrawalRate: port > 0 ? sp / port : 0,
-      gkBand: band,
-    });
-
-    if (port <= 0) break;
-  }
-  return { schedule, portAtRetire: Math.round(portAtRetire), initWR, strategy };
 }
 
 function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
@@ -4726,9 +4604,54 @@ function Bucket1Panel({ p, rows }) {
  * and a twisty (collapsible) body. Both sections default to open so the
  * full plan is visible on first load; the user can collapse either to focus.
  */
-function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
-  const [openSourcing, setOpenSourcing] = useState(false);
-  const [openStrategy, setOpenStrategy] = useState(false);
+// Sourcing guardrails — the "which bucket" controls, co-located with the waterfall
+// they shape (design-authority: proximity). They persist to the profile via the same
+// onAssumptionChange setter the Profile panel uses, so the MC stale-flag fires
+// identically. Distribution strategy stays in Profile (it's global, drives MC).
+function SourcingGuardrails({ p, onAssumptionChange }) {
+  const set = onAssumptionChange ?? (() => {});
+  const ctl = { background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" };
+  const lbl = { fontSize: 11, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" };
+  return (
+    <div style={{
+      display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16,
+      background: "rgba(94,234,212,0.05)", border: "1px solid rgba(94,234,212,0.18)",
+      borderRadius: 8, padding: "10px 14px", margin: "10px 0",
+    }}>
+      <span style={{ fontSize: 10, fontWeight: 700, color: "#5eead4", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        Sourcing guardrails
+      </span>
+      <label style={lbl} title="Stop pre-tax (IRA/401k) draws when ordinary income would hit this tax bracket. Roth covers the rest. 'Off' = naive (pretax first, no ceiling).">
+        Stop pre-tax draws at
+        <select value={p.withdrawalBracketTarget || "22"} onChange={(e) => set("withdrawalBracketTarget", e.target.value)} style={ctl}>
+          <option value="off">Off — pretax first</option>
+          <option value="10">10% bracket</option>
+          <option value="12">12% bracket</option>
+          <option value="22">22% bracket (rec.)</option>
+          <option value="24">24% bracket</option>
+          <option value="irmaa">IRMAA-safe</option>
+        </select>
+      </label>
+      <label style={lbl} title="IRMAA = income-based Medicare premium surcharge. Caps pre-tax draws below the Tier-1 income limit (ages 63+) so your Medicare premiums don't spike 2 years later.">
+        <input type="checkbox" checked={p.irmaaGuard || false} onChange={(e) => set("irmaaGuard", e.target.checked)} style={{ cursor: "pointer", width: 15, height: 15 }} />
+        Avoid Medicare (IRMAA) surcharges
+      </label>
+      <label style={lbl} title="AiRA will not draw your Roth below this balance — protects tax-free funds during market downturns.">
+        Keep Roth above $
+        <input type="number" value={p.rothEmergencyReserve ?? 0} onChange={(e) => set("rothEmergencyReserve", Number(e.target.value) || 0)} min={0} max={2_000_000} step={10_000}
+          style={{ ...ctl, width: 110, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+      </label>
+      <label style={lbl} title="The 'tax torpedo': as income rises, up to 85% of your Social Security becomes taxable. This flags the years where that happens (thresholds frozen since the 1980s).">
+        <input type="checkbox" checked={p.ssTorpedoGuard ?? false} onChange={(e) => set("ssTorpedoGuard", e.target.checked)} style={{ cursor: "pointer", width: 15, height: 15 }} />
+        Flag when Social Security gets taxed at 85%
+      </label>
+    </div>
+  );
+}
+
+function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange }) {
+  const [openSourcing, setOpenSourcing] = useState(true);  // open by default — user lands on the waterfall + guardrails, not two collapsed headers
+  const [openStrategy, setOpenStrategy] = useState(false); // secondary view stays collapsed
 
   const Header = ({ open, onToggle, color, question, subtitle }) => (
     <button
@@ -4785,6 +4708,9 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
           question="Where does each year's spending come from?"
           subtitle="Account-by-account sourcing — cash → taxable → pre-tax (bracket-capped) → Roth — with tax landmines flagged"
         />
+        {/* Guardrails live here, above the collapsible, so they're visible without
+            expanding (design Finding 5) and sit next to the waterfall they shape. */}
+        <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} />
         {openSourcing && (
           <div style={{ paddingLeft: 4 }}>
             <WaterfallPlanView p={p} />
@@ -5643,7 +5569,7 @@ function ScenariosTab({
       )}
 
       {scenarioSubTab === "withdrawals" && (
-        <WithdrawalPlanCombined p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} />
+        <WithdrawalPlanCombined p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} onAssumptionChange={onAssumptionChange} />
       )}
 
       {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} />}
@@ -8358,54 +8284,18 @@ function AssumptionsPanel({ values, onChange }) {
 
       </div>
 
-      {/* WITHDRAWAL ORDER CARD */}
+      {/* WITHDRAWAL ORDER — sourcing controls moved to the Withdrawal Plan tab
+          (design-authority: single point of control + proximity to the waterfall
+          they shape). Profile keeps a read-only pointer for discoverability. */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#5eead4", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
           Withdrawal Order
         </div>
-        <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
-          Controls how AiRA sources each year's spending in <strong style={{ color: "#5eead4" }}>Smart Waterfall</strong> mode
-          (Scenarios → 📋 Withdrawal Plan). Cash → Taxable → Pre-Tax (to bracket) → Roth last.
+        <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5 }}>
+          Sourcing guardrails — pre-tax bracket ceiling, IRMAA guard, Roth reserve, and
+          SS-torpedo warnings — are set on <strong style={{ color: "#5eead4" }}>Scenarios → 📋 Withdrawal Plan</strong>,
+          right above the waterfall they shape. The distribution strategy stays here in Profile.
         </div>
-        <ARow label="Pretax bracket ceiling" desc="Stop pre-tax draws when ordinary income would hit this bracket. Roth covers the rest. Set 'off' to use naive ordering (pretax first, no ceiling).">
-          <select
-            value={values.withdrawalBracketTarget || "22"}
-            onChange={(e) => onChange("withdrawalBracketTarget", e.target.value)}
-            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
-          >
-            <option value="off">Off — pretax first (naive)</option>
-            <option value="10">Stop at 10% bracket</option>
-            <option value="12">Stop at 12% bracket</option>
-            <option value="22">Stop at 22% bracket (recommended)</option>
-            <option value="24">Stop at 24% bracket</option>
-            <option value="irmaa">IRMAA-safe (stay below tier-1)</option>
-          </select>
-        </ARow>
-        <ARow label="IRMAA guard" desc="Caps pre-tax draws to stay below Medicare IRMAA Tier 1 MAGI (~$218K MFJ) at ages 63+. Prevents $2,160–$11,130/yr Medicare surcharges.">
-          <input
-            type="checkbox"
-            checked={values.irmaaGuard || false}
-            onChange={(e) => onChange("irmaaGuard", e.target.checked)}
-            style={{ cursor: "pointer", width: 16, height: 16 }}
-          />
-        </ARow>
-        <ARow label="Roth emergency reserve" desc="AiRA will not draw Roth below this balance. Protects tax-free funds during sequence-of-returns downturns.">
-          <input
-            type="number"
-            value={values.rothEmergencyReserve ?? 0}
-            onChange={(e) => onChange("rothEmergencyReserve", Number(e.target.value) || 0)}
-            min={0} max={2_000_000} step={10_000}
-            style={{ width: 120, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
-          />
-        </ARow>
-        <ARow label="Show SS torpedo warnings" desc="Flags years where provisional income pushes Social Security taxation to 85% (thresholds not inflation-adjusted since 1980s).">
-          <input
-            type="checkbox"
-            checked={values.ssTorpedoGuard ?? false}
-            onChange={(e) => onChange("ssTorpedoGuard", e.target.checked)}
-            style={{ cursor: "pointer", width: 16, height: 16 }}
-          />
-        </ARow>
       </div>
 
       {/* MONTE CARLO MODEL PARAMETERS CARD */}
@@ -9063,6 +8953,13 @@ export default function AiRAForecaster() {
       cashRealReturn: assumptions.cashRealReturn ?? 1.0,
       useJointRmdTable: assumptions.useJointRmdTable || false,
       withdrawalStrategy: assumptions.withdrawalStrategy,
+      // Sourcing guardrails — MUST be forwarded here or runMC + the Withdrawal Plan
+      // tab never see them (they live in `assumptions`, but the engine reads `params`).
+      // Defaults mirror BLANK_PROFILE.
+      withdrawalBracketTarget: assumptions.withdrawalBracketTarget || "22",
+      irmaaGuard: assumptions.irmaaGuard || false,
+      rothEmergencyReserve: assumptions.rothEmergencyReserve || 0,
+      ssTorpedoGuard: assumptions.ssTorpedoGuard || false,
       fixedWithdrawalRate: (() => { const r = assumptions.fixedWithdrawalRate || 4.0; return r < 1 ? r : r / 100; })(), // normalize: stored as % (4) or decimal (0.04) → always decimal
       vanguardInitialRate: 0.04,
       vanguardCap: 0.05,
