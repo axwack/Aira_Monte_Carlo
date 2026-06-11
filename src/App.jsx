@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.10";
-export const BUILD_TAG = "[main] v1.1.0.10 — Withdrawal UI split: sourcing guardrails moved onto the Withdrawal Plan tab (live, persisted), guardrail keys forwarded into params (were a no-op), Profile keeps a pointer, dead simulateDeterministic removed; plain-language control labels + sourcing section open by default.";
-export const BUILD_TIME = "2026-06-11T00:00:00Z";
+const APP_VERSION = "1.1.0.11";
+export const BUILD_TAG = "[main] v1.1.0.11 — Withdrawal P1 polish: live 'tax saved vs no plan' delta on the guardrail strip, reworded 'Naive' → 'Without planning', plain-language orientation card; fix RothLadder crash (undefined 'provisional' → derive SS-inclusion % from engine).";
+export const BUILD_TIME = "2026-06-11T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -3511,7 +3511,7 @@ const modeDescs = {
                 <tbody>
                   {[
                     ["W-2 / SE income",       fmtN(cyW2),       "#e2e8f0"],
-                    ["Social Security (taxable " + (provisional > ssThr85 ? "85%" : "50%") + ")", fmtN(ssTaxable), "#e2e8f0"],
+                    ["Social Security (taxable " + (cySS > 0 ? Math.round((ssTaxable / cySS) * 100) : 0) + "%)", fmtN(ssTaxable), "#e2e8f0"],
                     ["Rental / Airbnb net",   fmtN(cyRental),   "#e2e8f0"],
                     ["Other income",          fmtN(cyOther),    "#e2e8f0"],
                     ["Gross income",          fmtN(grossInc),   "#5eead4"],
@@ -4608,8 +4608,9 @@ function Bucket1Panel({ p, rows }) {
 // they shape (design-authority: proximity). They persist to the profile via the same
 // onAssumptionChange setter the Profile panel uses, so the MC stale-flag fires
 // identically. Distribution strategy stays in Profile (it's global, drives MC).
-function SourcingGuardrails({ p, onAssumptionChange }) {
+function SourcingGuardrails({ p, onAssumptionChange, summary }) {
   const set = onAssumptionChange ?? (() => {});
+  const saved = summary?.taxSavings ?? 0;
   const ctl = { background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" };
   const lbl = { fontSize: 11, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" };
   return (
@@ -4645,6 +4646,18 @@ function SourcingGuardrails({ p, onAssumptionChange }) {
         <input type="checkbox" checked={p.ssTorpedoGuard ?? false} onChange={(e) => set("ssTorpedoGuard", e.target.checked)} style={{ cursor: "pointer", width: 15, height: 15 }} />
         Flag when Social Security gets taxed at 85%
       </label>
+      {/* Live feedback: the effect of these controls, surfaced at the strip (design #3) */}
+      <span
+        style={{
+          marginLeft: "auto", fontSize: 11, fontWeight: 700,
+          color: saved > 0 ? "#34d399" : "#94a3b8",
+          background: saved > 0 ? "rgba(52,211,153,0.10)" : "transparent",
+          borderRadius: 6, padding: "3px 9px", whiteSpace: "nowrap",
+        }}
+        title="Estimated lifetime tax saved by this sourcing plan vs. drawing pre-tax first with no guardrails. Updates as you change the controls."
+      >
+        {saved > 0 ? `≈ ${fmtM(saved)} lifetime tax saved vs no plan` : "No tax savings vs pretax-first at these settings"}
+      </span>
     </div>
   );
 }
@@ -4652,6 +4665,10 @@ function SourcingGuardrails({ p, onAssumptionChange }) {
 function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange }) {
   const [openSourcing, setOpenSourcing] = useState(true);  // open by default — user lands on the waterfall + guardrails, not two collapsed headers
   const [openStrategy, setOpenStrategy] = useState(false); // secondary view stays collapsed
+  // Compute the waterfall once here so the guardrail strip (always visible) and the
+  // table (when expanded) share it — no double compute, and the strip can show the
+  // live "tax saved vs no plan" delta from the same summary.
+  const waterfall = useMemo(() => buildWithdrawalWaterfall(p), [p]);
 
   const Header = ({ open, onToggle, color, question, subtitle }) => (
     <button
@@ -4693,9 +4710,11 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         color: "#94a3b8",
         lineHeight: 1.55,
       }}>
-        Use these two views together. Each answers a different question — same data, different lens.
+        This tab answers two questions. <strong style={{ color: "#5eead4" }}>(1) Which accounts should you draw from each year</strong> to
+        pay the least tax over your lifetime — set the guardrails below and see the plan. <strong style={{ color: "#fbbf24" }}>(2) How much
+        does your chosen strategy plan to spend</strong> year by year. Start with the first question.
         <span style={{ display: "block", color: "#64748b", marginTop: 4 }}>
-          Tax math is shared: both schedules use the same source-aware engine, so per-year fed/state tax agree.
+          Both use the same tax engine, so the per-year tax figures agree.
         </span>
       </div>
 
@@ -4710,10 +4729,10 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         />
         {/* Guardrails live here, above the collapsible, so they're visible without
             expanding (design Finding 5) and sit next to the waterfall they shape. */}
-        <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} />
+        <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} summary={waterfall.summary} />
         {openSourcing && (
           <div style={{ paddingLeft: 4 }}>
-            <WaterfallPlanView p={p} />
+            <WaterfallPlanView p={p} result={waterfall} />
           </div>
         )}
       </div>
@@ -4737,9 +4756,8 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
   );
 }
 
-function WaterfallPlanView({ p }) {
+function WaterfallPlanView({ p, result }) {
   const [mode, setMode] = useState("smart");
-  const result = useMemo(() => buildWithdrawalWaterfall(p), [p]);
   const { smart, naive, summary } = result;
   const rows = mode === "smart" ? smart.rows : naive.rows;
 
@@ -4788,7 +4806,7 @@ function WaterfallPlanView({ p }) {
           <div className="ms">tax-optimal waterfall</div>
         </div>
         <div className="met">
-          <div className="ml">Tax Savings vs Naive</div>
+          <div className="ml">Tax Savings vs No Plan</div>
           <div className="mv" style={{ color: summary.taxSavings > 0 ? "#34d399" : "#f87171", fontSize: 16 }}>
             {summary.taxSavings >= 0 ? "+" : ""}{fmtM(summary.taxSavings)}
           </div>
@@ -4797,7 +4815,7 @@ function WaterfallPlanView({ p }) {
         <div className="met">
           <div className="ml">Roth at Age {p.endAge || 90}</div>
           <div className="mv" style={{ color: "#a78bfa", fontSize: 16 }}>{fmtM(summary.finalRothSmart)}</div>
-          <div className="ms">smart · {fmtM(summary.finalRothNaive)} naive</div>
+          <div className="ms">smart · {fmtM(summary.finalRothNaive)} without plan</div>
         </div>
         <div className="met">
           <div className="ml">IRMAA Years Triggered</div>
@@ -4812,7 +4830,7 @@ function WaterfallPlanView({ p }) {
       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
         <span style={{ fontSize: 11, color: "#475569", marginRight: 4 }}>View:</span>
         <button style={btnStyle(mode === "smart")} onClick={() => setMode("smart")}>📋 Smart Waterfall</button>
-        <button style={btnStyle(mode === "naive")} onClick={() => setMode("naive")}>⚠️ Naive (Pretax First)</button>
+        <button style={btnStyle(mode === "naive")} onClick={() => setMode("naive")}>Without planning (pretax first)</button>
         {mode === "naive" && (
           <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
             No bracket ceiling — pretax drains first, Roth used last
@@ -4822,7 +4840,7 @@ function WaterfallPlanView({ p }) {
 
       {/* Stacked bar chart */}
       <div className="chart-card">
-        <div className="ct">Annual Withdrawals by Source — {mode === "smart" ? "Smart Waterfall" : "Naive Order"}</div>
+        <div className="ct">Annual Withdrawals by Source — {mode === "smart" ? "Smart Waterfall" : "Without Planning"}</div>
         <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
           Stacks show where each year's spending comes from; Tax (red) sits on top
         </div>
@@ -5687,7 +5705,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           A Monte Carlo simulation tests your retirement plan against <strong style={{ color: "#e2e8f0" }}>3,000 different market scenarios</strong> using randomized annual returns drawn from 99 years of actual S&P 500 history. Instead of assuming a single fixed growth rate, it models the real-world uncertainty of markets — some years boom, some years crash — and tells you how often your savings last through retirement. <strong style={{ color: "#5eead4" }}>A success rate above 85% is generally considered a solid plan.</strong>
         </div>
         <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-          AiRA also applies <strong style={{ color: "#fbbf24" }}>{getStrategyDescription(withdrawalStrategy)}</strong> — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.
+          AiRA also applies <strong style={{ color: "#fbbf24" }}>{getStrategyDescription(withdrawalStrategy)}</strong>
         </div>
       </div>
 
