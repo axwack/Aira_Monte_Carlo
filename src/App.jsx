@@ -91,9 +91,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.15";
-export const BUILD_TAG = "[main] v1.1.0.15 — merge cloudflare branch into main: Quicken-style account bucket splits (🔀 per-source % allocation), UI refactor (centralized MC/GK constants, MC Engine info-modal, CSS tokens), withdrawal-plan default-open + dead-code cleanup; plus CleanNumberInput decimal-input fix.";
-export const BUILD_TIME = "2026-06-11T15:00:00Z";
+const APP_VERSION = "1.1.0.16";
+export const BUILD_TAG = "[main] v1.1.0.16 — CleanNumberInput: focus-based sync so decimals persist (cash real return etc.); merge cloudflare branch (Quicken-style account bucket splits 🔀, UI refactor, withdrawal-plan default-open, dead-code cleanup).";
+export const BUILD_TIME = "2026-06-11T16:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2325,44 +2325,43 @@ function DualInput({ label, value, min, max, step, format, onChange }) {
 
 function CleanNumberInput({ value, onChange, min, max, step = 1, style = {} }) {
   const [localValue, setLocalValue] = useState("");
+  const [focused, setFocused] = useState(false);
   // A non-integer step (e.g. 0.1, 0.5) means this field accepts decimals.
   const allowDecimals = !Number.isInteger(step);
 
-  // Sync with external value changes (e.g., from sidebar sliders), but DON'T
-  // clobber what the user is mid-typing. If the incoming value already matches
-  // the number the user has entered (e.g. "2." parses to 2, value is 2), leave
-  // the raw text alone so a trailing "." or "0" survives.
+  // Sync from the external value (sidebar sliders, profile load, etc.) ONLY when
+  // the field is not being actively edited. While focused, the user's raw text is
+  // the source of truth — never overwrite it, so in-progress decimals ("1.",
+  // "1.50") and trailing zeros survive every re-render until blur.
   useEffect(() => {
-    if (value != null && !isNaN(value)) {
-      if (Number(localValue.replace(/,/g, "")) !== value) {
-        setLocalValue(value.toString());
-      }
-    }
-  }, [value]);
+    if (focused) return;
+    if (value != null && !isNaN(value)) setLocalValue(String(value));
+    else setLocalValue("");
+  }, [value, focused]);
 
   const handleChange = (e) => {
     const raw = e.target.value.replace(/,/g, "");
     setLocalValue(raw);
     const num = Number(raw);
-    if (!isNaN(num)) {
-      // Update parent immediately so sliders and other UI stay in sync
-      onChange(num);
-    }
+    // Push valid numbers up immediately so sliders/MC stay in sync. Ignore
+    // intermediate non-numeric states ("", "1.", "-") — they resolve on blur.
+    if (raw !== "" && !isNaN(num)) onChange(num);
   };
+
+  const handleFocus = () => setFocused(true);
 
   const handleBlur = () => {
+    setFocused(false);
     let num = Number(localValue.replace(/,/g, ""));
-    if (isNaN(num)) num = min || 0;
-    const clamped = Math.max(min || 0, Math.min(max || Infinity, num));
-    if (clamped !== num) {
-      onChange(clamped);
-      setLocalValue(clamped.toString());
-    }
+    if (localValue === "" || isNaN(num)) num = min ?? 0;
+    const clamped = Math.max(min ?? 0, Math.min(max ?? Infinity, num));
+    onChange(clamped);
+    setLocalValue(String(clamped));
   };
 
-  // For decimal fields, show the raw text so a trailing "." or "0" isn't
-  // stripped mid-typing. For integer fields, keep the thousands-separator format.
-  const displayValue = allowDecimals
+  // While editing (or for decimal fields), show the raw text so a trailing "."
+  // or "0" isn't stripped. For integer fields at rest, apply thousands grouping.
+  const displayValue = (focused || allowDecimals)
     ? localValue
     : localValue
       ? new Intl.NumberFormat("en-US").format(Number(localValue.replace(/,/g, "")))
@@ -2374,6 +2373,7 @@ function CleanNumberInput({ value, onChange, min, max, step = 1, style = {} }) {
       inputMode={allowDecimals ? "decimal" : "numeric"}
       value={displayValue}
       onChange={handleChange}
+      onFocus={handleFocus}
       onBlur={handleBlur}
       style={{
         width: "120px",
