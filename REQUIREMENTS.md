@@ -4,7 +4,7 @@ Living document tracking the business-logic requirements of the forecaster, what
 been fixed, and the open backlog from the June 2026 code review. Update this file
 whenever engine rules change.
 
-Last updated: **2026-06-10** (branch `feature/ai-action-plan-cloudflare`)
+Last updated: **2026-06-13** (branch `main`)
 
 ---
 
@@ -132,3 +132,106 @@ Prioritized; estimated ~2,500–3,000 lines removable from `src/App.jsx` (10.5K 
 4. Tab font-size 18px vs 13px body (looks like a typo); "MC Engine" diagnostics card
    should be an info-modal link, not a permanent sidebar card; header mixes
    export/import, donation, about, feedback in one undifferentiated row.
+
+## 6. Withdrawal logic — 2026-06-13 session
+
+### Fixed
+
+| # | What | Commit |
+|---|------|--------|
+| ✅ ENG-3 | `simulateDeterministicWithStrategy` reuses `buildWithdrawalWaterfall`'s source-aware tax via an age→tax lookup map. Before: Withdrawal Analysis treated every portfolio draw as ordinary income (overstated fed tax on taxable / Roth draws). After: Waterfall tab and Withdrawal Analysis tab agree on per-year fed/state tax. Also exposed the State Tax column that the waterfall engine already computed. | `1bff6e8` (prior) |
+| ✅ ENG-4 | New **Bengen 4% Rule** strategy: inflation-adjusted constant spending that does NOT react to portfolio. Can fail. Honest model of late-stage risk for fixed-budget retirees. Exposed in Profile → Withdrawal dropdown. | `1bff6e8` |
+| ✅ ENG-5 | **Smart Waterfall hybrid**: `yearsRemaining > 15` uses GK guardrails; `yearsRemaining ≤ 15` uses Bengen. Split point matches GK's own longevity-clause threshold so we hand off exactly where the safety brake would otherwise be disabled. Pure GK strategy is untouched — pick it directly for paper-faithful behavior including the longevity bug. | `1bff6e8` |
+| ✅ UX-5 | Withdrawal Plan tab: consolidated former Waterfall + Withdrawal Analysis subtabs into one tab with two collapsible question-framed sections ("Where does each year's spending come from?" + "How does my chosen strategy pace spending year by year?"). | `1bff6e8` |
+| ✅ ENG-6 | **MC respects Plan-to-Age slider.** Previously `runMC` was hardcoded to ages 85 and 90; the slider only affected Smart Waterfall's internal strategy split, not the simulation horizon. Now a single MC run keyed off `params.endAge`. Removed `r85`/`r90` state in favor of a single `mc`. Updated `rulesEngine.js` (8 rules) to read `ctx.mc`. UI no longer shows "To age 85" reference pill. | `9fc512e` |
+| ✅ DOC-2 | About page card: "Why Smart Waterfall switches strategies at year 15 (the GK paradox)". Documents the published GK behavior, the short-horizon paradox, AiRA's hybrid fix, and an honest framing that the short-horizon paradox is logically derivable from the paper but less discussed in the SWR community. | `1bff6e8` |
+
+### Known finding (preserved as a video idea)
+
+**The GK Longevity Paradox** — Guyton-Klinger's 2006 Capital Preservation Rule cuts spending 10% when WR exceeds 1.2× initial WR, BUT skips the cut when `yearsRemaining ≤ 15` (the Longevity Rule). When the entire planning horizon is ≤ 15 years, the safety brake is never armed → counterintuitive result that shorter retirements can have LOWER MC success than longer ones at the same draw level. The hybrid in ENG-5 sidesteps this; the pure GK strategy still exhibits it for users who want paper-faithful behavior. See `src/about.js` "gk-longevity-paradox" card for full writeup. Candidate YT video.
+
+## 7. Stripe Billing Audit & Fixes — 2026-06-13
+
+Auditor (general-purpose agent) reviewed the billing path as if `BILLING_ENABLED=true`. **Verdict: was RED; CRITICAL fixes shipped; HIGH and below still open. Do NOT flip the flag until the HIGH backlog is cleared.**
+
+### ✅ Fixed (commit `587b99b`)
+
+| # | Severity | File | Issue | Fix |
+|---|----------|------|-------|-----|
+| C1 | CRITICAL | `src/ai/ai-analysis.js` | `BILLING_ENABLED && !values?.geminiApiKey?.trim()` meant any user with a personal Gemini key bypassed the billing proxy entirely. Free calls, credits never deducted, revenue model broken. | Gate now reads `BILLING_ENABLED && getStoredJWT()`. JWT presence = paid user → always proxy. |
+| C2 | CRITICAL | `functions/api/webhook.js` | Webhook accepted ANY unsigned payload; "defense" was re-fetching the session id via Stripe API, but session ids leak. Replay-able. | Verify `Stripe-Signature` against raw body before JSON.parse. Reject 400 on mismatch. Added per-`event.id` idempotency via new `webhook_events` D1 table (also resolves H1). |
+| C3 | CRITICAL | `functions/_shared/jwt.js` | Two bugs in `verifyStripeWebhook`: (1) `whsec_` secret was base64-decoded — wrong, it's raw UTF-8; (2) hex-string comparison was timing-attack vulnerable. Real Stripe signatures would NEVER validate. | Use UTF-8 bytes of post-prefix secret as HMAC key. Use `crypto.subtle.verify` (constant-time at WebCrypto layer) instead of `sign` + string-compare. |
+| C4 | CRITICAL | `functions/api/analyze.js` | Read-balance → call Gemini → `UPDATE credits = MAX(0, credits − ?)`. Two concurrent requests both pass pre-check, both deduct, balance silently clamped to 0. **Free-credit race exploit.** | Atomic `UPDATE … WHERE credits >= ?`. Check `meta.changes`; on race-loss write an `'overdraft'` audit row so reconciliation can detect drift. Raised `MIN_CREDITS_GUARD` from 5 → 50 to bound parallel overdraft to ~1 call. |
+| C5 | CRITICAL | `functions/api/admin.js` | `authHeader.slice(7) !== env.ADMIN_SECRET` is JS short-circuit string equality — timing leak. Combined with no rate limit + admin actions like `grant-credits` and `issue-jwt`, full takeover via secret recovery. | New `constantTimeEqual` helper (XORs all bytes regardless of mismatch). Added randomized 80-120ms delay on failure to mask residual signal. |
+
+Schema migration shipped: `db/schema.sql` adds `webhook_events` table + extends `credit_transactions.type` CHECK to allow `'overdraft'`. Run:
+
+```bash
+wrangler d1 execute aira-credits --file=db/schema.sql --remote
+```
+
+### 🔴 Pre-launch BLOCKERS — still open (HIGH)
+
+| # | Severity | File | Issue | Recommended Fix |
+|---|----------|------|-------|-----------------|
+| H1 | ~~HIGH~~ ✅ | `webhook.js` | No `event.id` idempotency → async-payment edge case could double-credit. | ✅ Fixed alongside C2 via new `webhook_events` table. |
+| H2 | HIGH | `webhook.js` | `charge.refunded` / `charge.dispute.created` events not handled. User buys $15, spends $0.50, files chargeback → keeps credits + merchant pays dispute fee. Permanent profit leak. | Listen for these event types. On refund: SET credits = MAX(0, credits − amount). On dispute: lock customer (`status='disputed'`) and require manual re-enable. Add `'refund'` to txn type CHECK. |
+| H3 | HIGH | `verify-session.js`, `credits.js` | Anyone with a leaked `session_id` (browser history / referrer / screenshot) can mint a 30-day JWT for that customer. Account takeover. | Issue a one-time signed nonce from `/api/checkout`, include in `success_url`, require both at `/api/verify-session`. Burn after first use. |
+| H4 | HIGH | `admin.js` | No rate limiting; no audit log of who issued grants. Compromise of ADMIN_SECRET = invisible drain. | Cloudflare WAF rate-limit `/api/admin` (e.g. 10/min/IP). Add `admin_actor` + `admin_ip` to audit trail. |
+| H5 | ~~HIGH~~ ✅ | `analyze.js` | `MAX(0, credits − ?)` masked deduction failures. | ✅ Fixed alongside C4 via conditional UPDATE + overdraft row. |
+
+### 🟡 Recommended within 2 weeks of launch (MEDIUM)
+
+| # | File | Issue |
+|---|------|-------|
+| M1 | `credits.js` | `CACHED_BALANCE_KEY` in localStorage is user-mutable. Display-only cache is fine; ensure no spend-decision branch reads from it. |
+| M2 | `_shared/jwt.js` | Minimum `JWT_SECRET` length not enforced. Add `if (secret.length < 32) throw …` in sign + verify. |
+| M3 | `_shared/jwt.js` | `verifyJWT` doesn't validate `header.alg === "HS256"` (alg-confusion gadget if multi-alg support is ever added). Add explicit check. |
+| M4 | `_shared/jwt.js` | Stripe 5-min replay window was correct but dead code; now wired up via C2 fix. ✅ Resolved by C2. |
+| M5 | All `functions/api/*.js` | Error responses leak D1 / Stripe internals (`e.message` passed verbatim). Log server-side, return generic to client. |
+| M6 | `checkout.js` | `customer_creation: "always"` creates a new Stripe customer per checkout — same email gets multiple D1 rows + multiple JWTs + fragmented balances. Use `customer_creation: "if_required"` with email lookup, or key D1 on email and aggregate. |
+
+### 🟢 LOW priority
+
+| # | File | Issue |
+|---|------|-------|
+| L1 | `credits.js` | Stub mode is dead code when `BILLING_ENABLED=true`; add a `console.warn` if it ever runs in production. |
+| L2 | `credits.js` | `verifyStripeSession` polls 6× over 12s, then silently gives up. User has paid → 0 credits → no error. Show recovery UI with manual retry. |
+| L3 | `credits.js` | `purchaseCreditPack` doesn't pass email to `/api/checkout`. Minor UX friction — user re-types at Stripe. |
+
+### ✅ Verified correct (no action)
+
+- Pre-call balance guard returns 402 (not 500). [`analyze.js:415`]
+- JWT sign/verify symmetry: HS256 round-trip works. [`_shared/jwt.js`]
+- JWT `exp` claim checked; expired tokens rejected. [`_shared/jwt.js:72`]
+- D1 deduction skipped when Gemini errors (no usage metadata → no deduction). [`analyze.js:444-453`]
+- Per-session idempotency on `stripe_session_id` prevents Stripe retry double-credit. [`webhook.js:71-77`]
+- Admin panel never ships `ADMIN_SECRET` to clients — entered by admin into password input. [`admin-panel.js`]
+- `useStripeReturn` cleans `?session_id=` query param after one-time use. [`credits.js:262-266`]
+
+### Hidden admin panel — for ops / sandbox testing
+
+Append **`?aira_admin=1`** to the app URL. Floating overlay (bottom-right). Requires the `ADMIN_SECRET` env var (set in Cloudflare Pages or `.dev.vars`). Available actions: `ping`, `stripe-ping`, `grant-credits`, `simulate-purchase` (fakes the webhook flow end-to-end — best sandbox-test tool while real webhook setup is incomplete), `inspect`, `issue-jwt`.
+
+### Pre-launch checklist (before flipping `BILLING_ENABLED=true`)
+
+- [x] C1: invert billing gate
+- [x] C2: wire up Stripe signature verification
+- [x] C3: correct HMAC key encoding + constant-time verify
+- [x] C4: atomic credit deduction + overdraft audit row
+- [x] C5: constant-time `ADMIN_SECRET` compare
+- [x] H1: webhook event.id idempotency (resolved alongside C2)
+- [ ] H2: refund / dispute / chargeback handling
+- [ ] H3: bind `verify-session` to a one-time purchase nonce
+- [ ] H4: rate-limit `/api/admin` + admin audit trail
+- [ ] Schema migration applied: `wrangler d1 execute aira-credits --file=db/schema.sql --remote`
+- [ ] Env vars set in Cloudflare Pages: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PRO`, `GEMINI_API_KEY`, `JWT_SECRET` (32+ hex), `ADMIN_SECRET` (32+ chars)
+- [ ] Stripe webhook configured: `POST https://<domain>/api/webhook` listening for `checkout.session.completed` (and once H2 lands: `charge.refunded`, `charge.dispute.created`)
+- [ ] Sandbox tested via `simulate-purchase` admin action
+- [ ] Sandbox tested via Stripe CLI: `stripe trigger checkout.session.completed`
+
+## 8. Security note — Crestline MCP injection (2026-06-13)
+
+A claude.ai-side MCP server "Alpha Ops Intelligence" (Crestline) was loaded during this session and injected a `system-reminder` mid-tool-output attempting to redirect the auditor agent into a "reconciliation analyst" role. The agent correctly ignored it and surfaced the attempt.
+
+**Action for operator:** disconnect at https://claude.ai/settings/connectors. This is a prompt-injection vector against your dev environment regardless of how it got connected. Not a vulnerability in AiRA itself — but worth knowing because any code-context that flows through the same Claude session is exposed to the same injection.
