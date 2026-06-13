@@ -113,6 +113,13 @@ export async function stripeGet(secretKey, path) {
  * Verify a Stripe webhook signature.
  * rawBody must be the raw request body string (before JSON.parse).
  * Throws if invalid or replay attack detected (>5 min old).
+ *
+ * Implementation notes (audit fix C3):
+ *   - Stripe whsec_ secrets are NOT base64. The post-prefix portion is the
+ *     raw UTF-8 secret used directly as the HMAC key (matches Stripe's
+ *     official Node SDK: `crypto.createHmac('sha256', secret)`).
+ *   - We use crypto.subtle.verify (not sign + string compare) so the
+ *     byte comparison is constant-time at the WebCrypto level.
  */
 export async function verifyStripeWebhook(rawBody, sigHeader, secret) {
   if (!sigHeader) throw new Error("Missing Stripe-Signature header");
@@ -131,19 +138,30 @@ export async function verifyStripeWebhook(rawBody, sigHeader, secret) {
   const age = Math.abs(Date.now() / 1000 - parseInt(timestamp, 10));
   if (age > 300) throw new Error("Webhook timestamp too old — possible replay attack");
 
-  // Stripe secrets are "whsec_<base64-encoded-key>" — strip prefix and decode
-  const b64 = secret.startsWith("whsec_") ? secret.slice(6) : secret;
-  const rawKeyBytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  // Strip the "whsec_" prefix; the remainder is the raw secret in UTF-8.
+  const rawSecret = secret.startsWith("whsec_") ? secret.slice(6) : secret;
   const key = await crypto.subtle.importKey(
-    "raw", rawKeyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    "raw",
+    new TextEncoder().encode(rawSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"]
   );
 
-  const toSign   = `${timestamp}.${rawBody}`;
-  const expected = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(toSign));
-  const expectedHex = Array.from(new Uint8Array(expected))
-    .map(b => b.toString(16).padStart(2, "0")).join("");
+  // Decode the hex v1 signature to bytes so subtle.verify can compare.
+  if (!/^[0-9a-fA-F]+$/.test(sig) || sig.length % 2 !== 0) {
+    throw new Error("Webhook signature mismatch");
+  }
+  const sigBytes = new Uint8Array(sig.length / 2);
+  for (let i = 0; i < sig.length; i += 2) sigBytes[i / 2] = parseInt(sig.slice(i, i + 2), 16);
 
-  if (expectedHex !== sig) throw new Error("Webhook signature mismatch");
+  const ok = await crypto.subtle.verify(
+    "HMAC",
+    key,
+    sigBytes,
+    new TextEncoder().encode(`${timestamp}.${rawBody}`)
+  );
+  if (!ok) throw new Error("Webhook signature mismatch");
 }
 
 // ─── Shared HTTP helpers ──────────────────────────────────────────────────────────
