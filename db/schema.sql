@@ -30,3 +30,19 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   event_type   TEXT,
   received_at  INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+-- Audit fix H3: one-time purchase nonces.
+-- /api/checkout writes a row with a nonce + session_id + 30-min expiry.
+-- /api/verify-session atomically CONSUMES the row (sets consumed_at) AND
+-- validates session_id match in a single UPDATE … WHERE … check. This
+-- defeats session_id-leak based account takeover: an attacker who learns
+-- a session_id (browser history / referrer / screenshot) cannot mint a
+-- JWT without the matching nonce, and nonces are single-use + expiring.
+CREATE TABLE IF NOT EXISTS pending_checkouts (
+  nonce       TEXT    PRIMARY KEY,
+  session_id  TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  expires_at  INTEGER NOT NULL,
+  consumed_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_pending_session ON pending_checkouts(session_id);

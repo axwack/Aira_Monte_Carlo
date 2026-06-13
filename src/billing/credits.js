@@ -214,14 +214,18 @@ export async function purchaseCreditPack(packId) {
 // ─── Post-purchase: verify Stripe session → issue JWT ──────────────────────
 
 /**
- * Called once when Stripe redirects back to /?session_id=xxx.
- * Exchanges the session ID for a JWT, stores it, and returns the credit balance.
+ * Called once when Stripe redirects back to /?session_id=xxx&nonce=yyy.
+ * Exchanges the (session_id, nonce) pair for a JWT, stores it, and returns
+ * the credit balance.
+ *
+ * Audit fix H3: nonce is REQUIRED — without it the server returns 400.
+ * Each nonce is single-use and expires 30 minutes after checkout.
  */
-export async function verifyStripeSession(sessionId) {
+export async function verifyStripeSession(sessionId, nonce) {
   const res = await fetch("/api/verify-session", {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ sessionId }),
+    body:    JSON.stringify({ sessionId, nonce }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -248,8 +252,12 @@ export async function verifyStripeSession(sessionId) {
 
 /**
  * Mount this hook near the top of App.jsx.
- * When Stripe redirects back with ?session_id=..., it verifies the payment,
- * stores the JWT, and returns { success, credits } or { success: false, error }.
+ * When Stripe redirects back with ?session_id=xxx&nonce=yyy, it verifies
+ * the payment, atomically consumes the nonce, stores the JWT, and returns
+ * { success, credits } or { success: false, error }.
+ *
+ * The nonce is required (audit fix H3): if missing, we surface a friendly
+ * error so the user knows to retry from a fresh checkout link.
  */
 export function useStripeReturn() {
   const [status, setStatus] = useState(null);
@@ -258,14 +266,25 @@ export function useStripeReturn() {
     if (!BILLING_ENABLED) return;
     const params    = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
+    const nonce     = params.get("nonce");
     if (!sessionId) return;
 
-    // Clean the URL so a refresh doesn't re-verify
+    // Clean BOTH query params so a refresh doesn't re-attempt verification
+    // (the nonce is one-time-use server-side, so a retry would 401 anyway).
     const clean = new URL(window.location.href);
     clean.searchParams.delete("session_id");
+    clean.searchParams.delete("nonce");
     window.history.replaceState({}, "", clean.toString());
 
-    verifyStripeSession(sessionId)
+    if (!nonce) {
+      setStatus({
+        success: false,
+        error: "Checkout link is missing the one-time nonce. Please buy credits again from the app — your card was charged so contact support if a second purchase appears.",
+      });
+      return;
+    }
+
+    verifyStripeSession(sessionId, nonce)
       .then(({ credits }) => setStatus({ success: true, credits }))
       .catch(e => setStatus({ success: false, error: e.message }));
   }, []);
