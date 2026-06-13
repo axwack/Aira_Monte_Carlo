@@ -17,7 +17,9 @@ import { hasEnoughCredits, deductCredits, ESTIMATED_CREDITS_PER_CALL, getStoredJ
 // ─── Billing mode flag ────────────────────────────────────────────────────────
 // Flip to true when Path A (token-resale) goes live.
 // When false, all credit logic is bypassed — pure BYOK, no code path changes.
-export const BILLING_ENABLED = true;
+// CURRENTLY OFF: HIGH-severity audit findings H2/H3/H4 still open.
+// Tracked in Requirements.md §7 pre-launch checklist.
+export const BILLING_ENABLED = false;
 
 // ─── Billing proxy ────────────────────────────────────────────────────────────
 // Routes all AI calls through /api/analyze when BILLING_ENABLED = true.
