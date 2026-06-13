@@ -6783,39 +6783,69 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
           )}
         </div>
 
-        {/* Right — credit panel */}
-        <div style={{
-          display:      "flex",
-          alignItems:   "center",
-          gap:          16,
-          background:   creditBalance < 500 ? "rgba(239,68,68,0.06)" : "rgba(124,58,237,0.06)",
-          border:       `1px solid ${creditBalance < 500 ? "rgba(239,68,68,0.25)" : "rgba(124,58,237,0.2)"}`,
-          borderRadius: 10,
-          padding:      "10px 16px",
-          flexShrink:   0,
-        }}>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
-              AiRA Credits
+        {/* Right — credit panel (BILLING_ENABLED), or Coming Soon stub */}
+        {BILLING_ENABLED ? (
+          <div style={{
+            display:      "flex",
+            alignItems:   "center",
+            gap:          16,
+            background:   creditBalance < 500 ? "rgba(239,68,68,0.06)" : "rgba(124,58,237,0.06)",
+            border:       `1px solid ${creditBalance < 500 ? "rgba(239,68,68,0.25)" : "rgba(124,58,237,0.2)"}`,
+            borderRadius: 10,
+            padding:      "10px 16px",
+            flexShrink:   0,
+          }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+                AiRA Credits
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: creditBalance < 500 ? "#f87171" : "#e2e8f0", lineHeight: 1 }}>
+                {creditBalance.toLocaleString()}
+              </div>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: creditBalance < 500 ? "#f87171" : "#e2e8f0", lineHeight: 1 }}>
-              {creditBalance.toLocaleString()}
-            </div>
+            <button
+              onClick={() => setShowBuyModal(true)}
+              style={{
+                background:   "linear-gradient(135deg, #7c3aed, #a78bfa)",
+                border:       "none", color: "white",
+                borderRadius: 8, padding: "8px 16px",
+                fontSize:     13, fontWeight: 600, cursor: "pointer",
+                boxShadow:    "0 2px 8px rgba(124,58,237,0.3)",
+                whiteSpace:   "nowrap",
+              }}
+            >
+              💳 Buy Credits
+            </button>
           </div>
-          <button
-            onClick={() => setShowBuyModal(true)}
+        ) : (
+          <div
+            title="The AiRA Credits billing system is built and audited but not yet live. While in development, all AI calls use your personal Gemini API key (BYOK)."
             style={{
-              background:   "linear-gradient(135deg, #7c3aed, #a78bfa)",
-              border:       "none", color: "white",
-              borderRadius: 8, padding: "8px 16px",
-              fontSize:     13, fontWeight: 600, cursor: "pointer",
-              boxShadow:    "0 2px 8px rgba(124,58,237,0.3)",
-              whiteSpace:   "nowrap",
+              display:      "flex",
+              alignItems:   "center",
+              gap:          10,
+              background:   "rgba(251,191,36,0.06)",
+              border:       "1px solid rgba(251,191,36,0.3)",
+              borderRadius: 10,
+              padding:      "10px 16px",
+              flexShrink:   0,
+              cursor:       "help",
             }}
           >
-            💳 Buy Credits
-          </button>
-        </div>
+            <div style={{ fontSize: 22, lineHeight: 1 }}>🚧</div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+                AiRA Credits
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#fde68a", lineHeight: 1.15 }}>
+                Coming Soon
+              </div>
+              <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>
+                BYOK active · in development
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Session token usage — shown for BYOK users after any AI call */}
