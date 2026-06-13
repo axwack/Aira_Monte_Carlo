@@ -7007,6 +7007,17 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
 
             {liveError && <div style={{ fontSize: 11, color: "#f87171", marginBottom: 8 }}>⚠ {liveError}</div>}
 
+            {!liveError && liveCards && liveCards.length === 0 && (
+              <div style={{ fontSize: 11, color: "#34d399", marginBottom: 8 }}>
+                ✓ Live search complete — no new time-sensitive updates found. Your plan figures look current.
+              </div>
+            )}
+            {!liveError && liveCards && liveCards.length > 0 && (
+              <div style={{ fontSize: 11, color: "#22d3ee", marginBottom: 8 }}>
+                🌐 Found {liveCards.length} live update{liveCards.length > 1 ? "s" : ""} — see below.
+              </div>
+            )}
+
             {/* Master-detail layout */}
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
 

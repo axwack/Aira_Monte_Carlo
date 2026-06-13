@@ -409,6 +409,12 @@ export const RULES = [
     reason: ({ params }) =>
       `$${(rothTotal(params) / 1e3).toFixed(0)}K Roth with no reserve — a bad sequence-of-returns year could force full Roth depletion, eliminating your only tax-free spending bucket`,
     deadline: "At retirement",
+    steps: [
+      "Go to the Withdrawal Schedule tab, Section 1 ('Where does each year's spending come from?')",
+      "Find the 'Sourcing guardrails' strip above the waterfall table",
+      "Set 'Keep Roth above $' to a floor that preserves a tax-free buffer for bad sequence-of-returns years",
+      "Re-run Monte Carlo to confirm the floor doesn't materially reduce success probability",
+    ],
   },
   {
     id: "smart-waterfall-inactive",
