@@ -3584,7 +3584,7 @@ const modeDescs = {
                   : "From taxable / HSA bucket";
                 const cyCpaTax = cyTaxFunding === "from_conv"
                   ? `Tax cost is ${fmtN(recTax.total)} — deducted from conversion; ${fmtN(cyNetRoth)} net reaches Roth.`
-                  : `Tax cost is ${fmtN(recTax.total)} — pay from ${cyTaxFunding === "outside_cash" ? "outside cash (e.g. SGOV/HYSArea)" : "your taxable / HSA bucket"}.`;
+                  : `Tax cost is ${fmtN(recTax.total)} — pay from ${cyTaxFunding === "outside_cash" ? "outside cash (e.g. SGOV/HYSA)" : "your taxable / HSA bucket"}.`;
                 return (
                   <>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
@@ -4585,8 +4585,38 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           onToggle={() => setOpenStrategy(v => !v)}
           color="#fbbf24"
           question="How does my chosen strategy pace spending year by year?"
-          subtitle="Runs the withdrawal strategy you picked in Profile → Withdrawal. Change it there to see a different strategy here."
+          subtitle="Pick a strategy to see its year-by-year schedule below — this also updates your Profile default."
         />
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+          <select
+            value={withdrawalStrategy}
+            onChange={(e) => onAssumptionChange("withdrawalStrategy", e.target.value)}
+            style={{
+              width: "100%",
+              background: "#0d1b2a",
+              border: "1px solid #1e3a5f",
+              color: "#e2e8f0",
+              borderRadius: 6,
+              padding: "8px 10px",
+              fontSize: 13,
+              fontFamily: "'Inter',sans-serif",
+            }}
+          >
+            <option value="smart">📋 Smart Waterfall (Tax-Optimal · GK→Bengen at 15yr)</option>
+            <option value="gk">Guyton‑Klinger (Dynamic)</option>
+            <option value="bengen">Bengen 4% Rule (Fixed Real $)</option>
+            <option value="fixed">Fixed % of Portfolio</option>
+            <option value="vanguard">Vanguard Dynamic Spending</option>
+            <option value="risk">Risk‑Based Guardrails</option>
+            <option value="kitces">Kitces Ratcheting</option>
+            <option value="vpw">VPW (Variable Percentage)</option>
+            <option value="cape">CAPE‑Based</option>
+            <option value="endowment">Endowment (Yale) Model</option>
+            <option value="one_n">1/N (Remaining Years)</option>
+            <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
+          </select>
+          <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(withdrawalStrategy)}</div>
+        </div>
         {openStrategy && (
           <div style={{ paddingLeft: 4 }}>
             <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={withdrawalStrategy} />
@@ -8296,34 +8326,20 @@ function RetirementPanel({ values, onChange }) {
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>WITHDRAWAL STRATEGY</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <select
-            value={strategy}
-            onChange={(e) => onChange("withdrawalStrategy", e.target.value)}
-            style={{
-              width: "100%",
-              background: "#0d1b2a",
-              border: "1px solid #1e3a5f",
-              color: "#e2e8f0",
-              borderRadius: 6,
-              padding: "8px 10px",
-              fontSize: 13,
-              fontFamily: "'Inter',sans-serif",
-            }}
-          >
-            <option value="smart">📋 Smart Waterfall (Tax-Optimal · GK→Bengen at 15yr)</option>
-            <option value="gk">Guyton‑Klinger (Dynamic)</option>
-            <option value="bengen">Bengen 4% Rule (Fixed Real $)</option>
-            <option value="fixed">Fixed % of Portfolio</option>
-            <option value="vanguard">Vanguard Dynamic Spending</option>
-            <option value="risk">Risk‑Based Guardrails</option>
-            <option value="kitces">Kitces Ratcheting</option>
-            <option value="vpw">VPW (Variable Percentage)</option>
-            <option value="cape">CAPE‑Based</option>
-            <option value="endowment">Endowment (Yale) Model</option>
-            <option value="one_n">1/N (Remaining Years)</option>
-            <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
-          </select>
+          <div style={{
+            width: "100%",
+            background: "#0d1b2a",
+            border: "1px solid #1e3a5f",
+            color: "#e2e8f0",
+            borderRadius: 6,
+            padding: "8px 10px",
+            fontSize: 13,
+            fontFamily: "'Inter',sans-serif",
+          }}>
+            {getStrategyLabel(strategy)}
+          </div>
           <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(strategy)}</div>
+          <div style={{ fontSize: 11, color: "#5eead4" }}>Change this in the Withdrawal Schedule tab →</div>
         </div>
       </div>
 
