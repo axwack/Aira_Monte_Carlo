@@ -2,14 +2,17 @@
  * POST /api/webhook
  * Stripe webhook handler — listens for checkout.session.completed.
  *
- * Instead of signature verification (which requires exact secret sync),
- * we verify the session directly via the Stripe API before crediting.
- * Idempotency: each stripe_session_id is only credited once.
+ * Security model:
+ *   1. Reject any request without a valid Stripe v1 signature.
+ *   2. After signature passes, re-fetch the session via Stripe API
+ *      (defense in depth — confirms payment_status is "paid").
+ *   3. Per-event idempotency on event.id (Stripe retries at-least-once).
+ *   4. Per-session idempotency on stripe_session_id (extra belt + suspenders).
  *
- * Required env vars: STRIPE_SECRET_KEY, DB
+ * Required env vars: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, DB
  */
 
-import { json, handleOptions, stripeGet } from "../_shared/jwt.js";
+import { json, handleOptions, stripeGet, verifyStripeWebhook } from "../_shared/jwt.js";
 
 const PACK_CREDITS = {
   starter: 5_000,
@@ -22,11 +25,48 @@ export function onRequestOptions() {
 }
 
 export async function onRequestPost({ request, env }) {
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    console.error("[webhook] STRIPE_WEBHOOK_SECRET not configured");
+    return json({ error: "Webhook secret not configured" }, 500);
+  }
+  if (!env.STRIPE_SECRET_KEY) return json({ error: "STRIPE_SECRET_KEY not configured" }, 500);
+  if (!env.DB)                return json({ error: "D1 not bound" }, 500);
+
+  // Read raw body BEFORE JSON.parse — signature is computed against the raw bytes.
+  const rawBody  = await request.text();
+  const sigHdr   = request.headers.get("Stripe-Signature");
+
+  try {
+    await verifyStripeWebhook(rawBody, sigHdr, env.STRIPE_WEBHOOK_SECRET);
+  } catch (e) {
+    console.error("[webhook] Signature verification failed:", e.message);
+    return json({ error: "Invalid signature" }, 400);
+  }
+
   let event;
   try {
-    event = await request.json();
+    event = JSON.parse(rawBody);
   } catch {
     return json({ error: "Invalid JSON" }, 400);
+  }
+
+  // Per-event idempotency (Stripe retries event.id on transient failure).
+  // INSERT OR IGNORE is atomic in D1 — meta.changes === 0 means we already
+  // processed this exact event and should bail out before doing anything else.
+  if (event.id) {
+    try {
+      const dedup = await env.DB.prepare(
+        "INSERT OR IGNORE INTO webhook_events (event_id, event_type, received_at) VALUES (?, ?, unixepoch())"
+      ).bind(event.id, event.type || "unknown").run();
+      if (dedup.meta?.changes === 0) {
+        console.log("[webhook] Duplicate event.id, ignored:", event.id);
+        return json({ received: true, note: "duplicate event" });
+      }
+    } catch (e) {
+      // If the dedup table doesn't exist yet (pre-migration), log and continue.
+      // The session-level idempotency below is the secondary defense.
+      console.warn("[webhook] event dedup table missing or query failed:", e.message);
+    }
   }
 
   if (event.type !== "checkout.session.completed") {
@@ -35,9 +75,6 @@ export async function onRequestPost({ request, env }) {
 
   const sessionId = event.data?.object?.id;
   if (!sessionId) return json({ error: "No session ID in event" }, 400);
-
-  if (!env.STRIPE_SECRET_KEY) return json({ error: "STRIPE_SECRET_KEY not configured" }, 500);
-  if (!env.DB)                return json({ error: "D1 not bound" }, 500);
 
   // Verify payment status directly via Stripe API — cannot be faked
   let session;
