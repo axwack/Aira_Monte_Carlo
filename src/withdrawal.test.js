@@ -138,6 +138,56 @@ describe("buildWithdrawalWaterfall — landmine detection", () => {
   });
 });
 
+// ─── Real-world expenses/income feed "need" and conversion headroom ───────────
+
+describe("buildWithdrawalWaterfall — mortgage, carveouts, other income", () => {
+  test("an active mortgage raises needFromPort by the annual P&I", () => {
+    const noMort = buildWithdrawalWaterfall(BASE);
+    const withMort = buildWithdrawalWaterfall({
+      ...BASE, mortBalance: 300_000, mortRate: 6, mortStart: "2024-01", mortTerm: 30, mortExtra: 0,
+    });
+    const r0 = noMort.smart.rows[0];
+    const r1 = withMort.smart.rows[0];
+    expect(r1.housingCost).toBeGreaterThan(0);
+    expect(r1.needFromPort).toBeCloseTo(r0.needFromPort + r1.housingCost, -1);
+  });
+
+  test("a carveout (e.g. college costs) raises needFromPort while active and stops after endYear", () => {
+    const yr0 = BASE_YEAR();
+    const result = buildWithdrawalWaterfall({
+      ...BASE,
+      carveouts: [{ id: "c1", label: "College", annual: 20_000, endYear: yr0 }],
+    });
+    const activeRow = result.smart.rows.find(r => r.yr === yr0);
+    const laterRow = result.smart.rows.find(r => r.yr === yr0 + 1);
+    expect(activeRow.carveoutCost).toBe(20_000);
+    expect(laterRow.carveoutCost).toBe(0);
+    expect(activeRow.needFromPort).toBeGreaterThan(laterRow.needFromPort - 20_000);
+  });
+
+  test("taxable other income reduces conversion headroom vs. the same profile without it", () => {
+    const noOther = buildWithdrawalWaterfall({ ...BASE, rothConversionTarget: "22" });
+    const withOther = buildWithdrawalWaterfall({
+      ...BASE,
+      rothConversionTarget: "22",
+      otherIncomes: [{ id: "o1", name: "Pension", annual: 40_000, startYear: BASE_YEAR(), taxable: true }],
+    });
+    const convNo = noOther.smart.rows[0].conversionAmount;
+    const convWith = withOther.smart.rows[0].conversionAmount;
+    expect(convWith).toBeLessThan(convNo);
+  });
+
+  test("a rental/propIncome offsets need (lower fromPretax than without it)", () => {
+    const noRental = buildWithdrawalWaterfall(BASE);
+    const withRental = buildWithdrawalWaterfall({ ...BASE, propIncome: 20_000 });
+    expect(withRental.smart.rows[0].needFromPort).toBeLessThan(noRental.smart.rows[0].needFromPort);
+  });
+});
+
+function BASE_YEAR() {
+  return new Date().getFullYear();
+}
+
 // ─── Summary totals ────────────────────────────────────────────────────────────
 
 describe("buildWithdrawalWaterfall — summary", () => {
