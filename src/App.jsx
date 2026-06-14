@@ -63,7 +63,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { taxableSocialSecurity } from "./engine/buildRothExplorer.js";
-import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
+import { buildWithdrawalWaterfall, accumulateToRetirement } from "./engine/buildWithdrawalWaterfall.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, computeOtherIncome } from "./engine/expenses.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
@@ -1164,6 +1164,32 @@ function runStress(p, endAge, N = STRESS_PATHS, seed = 99) {
 /* ════ DETERMINISTIC WITHDRAWAL SCHEDULE (median returns) ════ */
 
 function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
+  // Smart Waterfall: source the schedule directly from buildWithdrawalWaterfall's
+  // "smart" scenario — the single source of truth for bucket draws, Roth
+  // conversions, mortgage/carveout costs, and source-aware tax. This is the
+  // real-life year-by-year plan, not a re-derived approximation.
+  if (withdrawalStrategy === "smart") {
+    const wf = buildWithdrawalWaterfall(p);
+    const { total: portAtRetire } = accumulateToRetirement(p);
+    const schedule = (wf?.smart?.rows ?? []).map((r) => ({
+      age: r.age, yr: r.yr,
+      spending: r.spending,
+      ss: r.ss, Rental: r.annuityRental, OtherIncome: r.otherIncome,
+      portfolioDraw: r.needFromPort,
+      housingCost: r.housingCost,
+      carveoutCost: r.carveoutCost,
+      conversionAmount: r.conversionAmount,
+      fedTax: r.fedTax,
+      stateTax: r.stateTax,
+      irmaa: r.irmaa,
+      totalTax: r.totalTax,
+      totalWithdrawal: r.totalWithdrawal,
+      portfolioEnd: r.totalPort,
+    }));
+    const initWR = portAtRetire > 0 ? Math.max(0, p.sp - (schedule[0]?.ss || 0) - (schedule[0]?.Rental || 0) - (schedule[0]?.OtherIncome || 0)) / portAtRetire : 0.04;
+    return { schedule, portAtRetire: Math.round(portAtRetire), initWR };
+  }
+
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
   const retYrs = p.endAge - p.retireAge;
   let port = p.port;
@@ -1175,6 +1201,13 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   }
 
   const portAtRetire = port;
+  // Precompute mortgage P&I obligation (constant, same model as buildWithdrawalWaterfall)
+  let mortAnnualPI = 0, mortPayoffYr = 0;
+  if (p.mortBalance > 0) {
+    const ms = mortgageSchedule(p.mortBalance, p.mortRate || 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
+    mortAnnualPI = ms.pmt * 12;
+    mortPayoffYr = ms.payoffYr;
+  }
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
   const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
@@ -1325,7 +1358,20 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
     const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
-    const need = Math.max(0, sp - ss - ab - otherIncTotal);
+
+    // Housing cost: mortgage P&I while active, or inflation-adjusted rent — same
+    // model as buildWithdrawalWaterfall's Step 1 (ENG-19).
+    let housingCost = 0;
+    if ((p.housingType || "own") === "own") {
+      housingCost = mortAnnualPI > 0 && yr < mortPayoffYr ? mortAnnualPI : 0;
+    } else if (p.housingType === "rent") {
+      housingCost = Math.round((p.annualRent || 0) * cumInfl);
+    }
+    const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
+      return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * cumInfl) : 0);
+    }, 0);
+
+    const need = Math.max(0, sp - ss - ab - otherIncTotal) + housingCost + carveoutCost;
 
     // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab).
     // Fall back to the legacy "treat everything as ordinary income" calc only
@@ -1340,6 +1386,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       spending: Math.round(sp),
       ss, Rental: ab, OtherIncome: Math.round(otherIncTotal),
       portfolioDraw: Math.round(need),
+      housingCost: Math.round(housingCost),
+      carveoutCost: Math.round(carveoutCost),
+      conversionAmount: 0,
       fedTax: taxResult.fedTax,
       stateTax: taxResult.stateTax,
       irmaa: taxResult.irmaa,
@@ -2836,6 +2885,144 @@ function IncomeMap({ p, inf }) {
         ⚠ SS gap ages {p.retireAge}–{p.ssAge - 1} — portfolio carries 100% of
         spending. Highest-risk window.
       </div>
+    </div>
+  );
+}
+
+// Splits a profile's "Other Expenses" carveouts by label into Medical /
+// Long-Term Care / Other, for the Income & Expenses breakdown below. Carveouts
+// are matched by keyword in their label so users can drive these categories
+// just by naming a carveout "Medical" or "Long-Term Care".
+function categorizeCarveouts(carveouts, yr, inf) {
+  const iF = Math.pow(1 + (inf || 2.5) / 100, yr - new Date().getFullYear());
+  let medical = 0, ltc = 0, other = 0;
+  for (const c of carveouts || []) {
+    if (yr > (c.endYear || 9999)) continue;
+    const amt = Math.round((c.annual || 0) * iF);
+    const label = (c.label || "").toLowerCase();
+    if (/medical|health/.test(label)) medical += amt;
+    else if (/long.?term|ltc|nursing/.test(label)) ltc += amt;
+    else other += amt;
+  }
+  return { medical, ltc, other };
+}
+
+const INCOME_CATS = [
+  ["Savings Drawdown", "#5eead4"],
+  ["Social Security", "#7c3aedcc"],
+  ["Rental/Passive", "#295ff1cc"],
+  ["Other Income", "#eab308cc"],
+  ["Roth Conversion", "#f59e0b"],
+];
+
+const EXPENSE_CATS = [
+  ["General/Living", "#38bdf8"],
+  ["Mortgage/Housing", "#fb923c"],
+  ["Medical", "#0d9488"],
+  ["Long-Term Care", "#a78bfa"],
+  ["Other Expenses", "#94a3b8"],
+  ["Income Tax", "#f87171"],
+  ["Capital Gains Tax", "#64748b"],
+];
+
+// "Income & Expenses" — a Boldin-style pair of stacked-bar charts sourced from
+// the Smart Waterfall plan, so the figures shown here (including Roth
+// conversions, mortgage payoff, and carveouts) match the Withdrawal Plan tab
+// by construction. Hovering a year updates the side panel from "Lifetime"
+// totals to that year's breakdown.
+function IncomeExpensesChart({ p, inf }) {
+  const rows = useMemo(() => buildWithdrawalWaterfall(p)?.smart?.rows ?? [], [p]);
+
+  const data = useMemo(() => rows.map((r) => {
+    const { medical, ltc, other } = categorizeCarveouts(p.carveouts, r.yr, inf);
+    return {
+      yr: r.yr, age: r.age,
+      "Social Security": r.ss,
+      "Rental/Passive": r.annuityRental,
+      "Other Income": r.otherIncome,
+      "Savings Drawdown": r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth,
+      "Roth Conversion": r.conversionAmount,
+      "General/Living": r.spending,
+      "Mortgage/Housing": r.housingCost,
+      "Medical": medical,
+      "Long-Term Care": ltc,
+      "Other Expenses": other,
+      "Income Tax": r.fedTax + r.stateTax + r.irmaa,
+      "Capital Gains Tax": 0,
+    };
+  }), [rows, p.carveouts, inf]);
+
+  const [hoverYr, setHoverYr] = useState(null);
+  const hoverRow = hoverYr != null ? data.find((d) => d.yr === hoverYr) : null;
+  const onMove = (e) => { if (e && e.activeLabel != null) setHoverYr(e.activeLabel); };
+  const onLeave = () => setHoverYr(null);
+
+  if (!data.length) return null;
+
+  return (
+    <>
+      <IncomeExpenseStack
+        title="📊 Estimated Income, Drawdowns & Roth Conversions"
+        subtitle="Sourced from the Smart Waterfall plan — hover a year to see its breakdown on the right"
+        data={data} categories={INCOME_CATS}
+        hoverYr={hoverYr} hoverRow={hoverRow}
+        onMove={onMove} onLeave={onLeave}
+      />
+      <IncomeExpenseStack
+        title="📉 Estimated Expenses"
+        subtitle="Living costs, housing, taxes, and carveouts (e.g. medical, long-term care) — hover a year for its breakdown"
+        data={data} categories={EXPENSE_CATS}
+        hoverYr={hoverYr} hoverRow={hoverRow}
+        onMove={onMove} onLeave={onLeave}
+        footnote="Capital Gains Tax is not yet separately modeled (shown as $0) — realized gains on taxable-account draws are folded into Income Tax. Roth conversion tax and IRMAA surcharges are funded directly from the pre-tax bucket, so totals here may differ slightly from the Income side."
+      />
+    </>
+  );
+}
+
+function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverRow, onMove, onLeave, footnote }) {
+  const rows = categories.map(([key, color]) => ({
+    key, color,
+    value: hoverRow ? (hoverRow[key] || 0) : data.reduce((s, d) => s + (d[key] || 0), 0),
+  }));
+  const total = rows.reduce((s, r) => s + r.value, 0);
+
+  return (
+    <div className="chart-card">
+      <div className="ct">{title}</div>
+      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>{subtitle}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: 12 }}>
+        <ResponsiveContainer width="100%" height={360}>
+          <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} onMouseMove={onMove} onMouseLeave={onLeave}>
+            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+            <XAxis dataKey="yr" stroke="#1e3a5f" tick={{ fill: "#71a8f7", fontSize: 10 }} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "#71a8f7", fontSize: 10 }} tickFormatter={(v) => fmtM(v)} width={54} />
+            <Tooltip content={<Tip />} />
+            {categories.map(([key, color], i) => (
+              <Bar key={key} dataKey={key} stackId="a" fill={color} radius={i === categories.length - 1 ? [2, 2, 0, 0] : undefined} />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+        <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 12, fontSize: 12, alignSelf: "start" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+            {hoverYr != null ? `Year ${hoverYr}` : "Lifetime"}
+          </div>
+          {rows.map(({ key, color, value }) => (
+            <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#cbd5e1" }}>
+                <span style={{ width: 9, height: 9, borderRadius: 2, background: color, display: "inline-block" }} />
+                {key}
+              </div>
+              <div style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(value)}</div>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 8, paddingTop: 6, fontWeight: 700 }}>
+            <div style={{ color: "#e2e8f0" }}>Total</div>
+            <div style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(total)}</div>
+          </div>
+        </div>
+      </div>
+      {footnote && <div style={{ fontSize: 10, color: "#475569", marginTop: 8, lineHeight: 1.5 }}>ℹ️ {footnote}</div>}
     </div>
   );
 }
@@ -4725,6 +4912,7 @@ function WaterfallPlanView({ p, result }) {
     "Pre-Tax": Math.round(r.fromPretax),
     Roth:    Math.round(r.fromRoth),
     Tax:     Math.round(r.totalTax),
+    "Roth Conversion": Math.round(r.conversionAmount),
   }));
 
   const anyLandmine = (r) => r.landmines.ssTorpedo || r.landmines.irmaaTriggered || r.landmines.rmdActive;
@@ -4736,10 +4924,22 @@ function WaterfallPlanView({ p, result }) {
     return wr > initialWR * 1.2 ? "#f87171" : wr < initialWR * 0.8 ? "#fbbf24" : "#34d399";
   };
 
+  // "Average retirement withdrawal rate" / "Out of money date" — Boldin-style
+  // decision metrics, computed from this scenario's own rows (no separate model).
+  const portAtRetire = accumulateToRetirement(p).total;
+  const wrSeries = rows
+    .map((r, i) => {
+      const startPort = i === 0 ? portAtRetire : rows[i - 1].totalPort;
+      return startPort > 0 ? r.totalWithdrawal / startPort : null;
+    })
+    .filter(v => v != null);
+  const avgWithdrawalRate = wrSeries.length ? wrSeries.reduce((a, b) => a + b, 0) / wrSeries.length : 0;
+  const depletionRow = rows.find(r => r.totalPort <= 0);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
         <div className="met">
           <div className="ml">Smart Lifetime Tax</div>
           <div className="mv" style={{ color: "#34d399", fontSize: 16 }}>{fmtM(summary.lifetimeTaxSmart)}</div>
@@ -4764,6 +4964,20 @@ function WaterfallPlanView({ p, result }) {
           </div>
           <div className="ms">{summary.ssTorpedoYears} SS torpedo yrs</div>
         </div>
+        <div className="met">
+          <div className="ml">Avg. Withdrawal Rate</div>
+          <div className="mv" style={{ color: avgWithdrawalRate > initialWR * 1.2 ? "#f87171" : "#5eead4", fontSize: 16 }}>
+            {(avgWithdrawalRate * 100).toFixed(1)}%
+          </div>
+          <div className="ms">total withdrawal ÷ prior-year portfolio</div>
+        </div>
+        <div className="met">
+          <div className="ml">Portfolio Depletion</div>
+          <div className="mv" style={{ color: depletionRow ? "#f87171" : "#34d399", fontSize: 16 }}>
+            {depletionRow ? `Age ${depletionRow.age}` : "Never"}
+          </div>
+          <div className="ms">{depletionRow ? `(${depletionRow.yr})` : `lasts to age ${p.endAge || 90}`}</div>
+        </div>
       </div>
 
       {/* Toggle */}
@@ -4783,6 +4997,7 @@ function WaterfallPlanView({ p, result }) {
         <div className="ct">Annual Withdrawals by Source — {mode === "smart" ? "Smart Waterfall" : "Without Planning"}</div>
         <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
           Stacks show where each year's spending comes from; Tax (red) sits on top
+          {anyConversion && mode === "smart" && <> · Roth Conversion (purple) is a pretax→Roth transfer, not spending — shown for visibility</>}
         </div>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
@@ -4795,7 +5010,8 @@ function WaterfallPlanView({ p, result }) {
             <Bar dataKey="Taxable"  stackId="a" fill="#3b82f6" />
             <Bar dataKey="Pre-Tax"  stackId="a" fill="#f59e0b" />
             <Bar dataKey="Roth"     stackId="a" fill="#10b981" />
-            <Bar dataKey="Tax"      stackId="a" fill="#ef4444" radius={[2,2,0,0]} />
+            <Bar dataKey="Tax"      stackId="a" fill="#ef4444" />
+            <Bar dataKey="Roth Conversion" stackId="a" fill="#a78bfa" radius={[2,2,0,0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -4998,13 +5214,17 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
         {showTable && (
           <div style={{ overflowX: "auto" }}>
             <table className="nw-table" style={{ fontSize: 12 }}>
-              <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>SS</th><th>Rental</th><th>Other Inc</th><th>Portfolio Draw</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
+              <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>SS</th><th>Rental</th><th>Other Inc</th><th>Housing</th><th>Carveouts</th><th>Portfolio Draw</th><th>Roth Conv.</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
               <tbody>
                 {schedule.map((s) => (
                   <tr key={s.age}>
                     <td style={{ textAlign: "left" }}>{s.age}</td><td>{s.yr}</td>
                     <td style={{ color: "#fbbf24",fontSize: 16, fontWeight: 'bold'  }}>{fmtDollar(s.spending)}</td>
-                    <td>{fmtDollar(s.ss)}</td><td>{fmtDollar(s.Rental)}</td><td style={{ color: "#eab308" }}>{fmtDollar(s.OtherIncome)}</td><td>{fmtDollar(s.portfolioDraw)}</td>
+                    <td>{fmtDollar(s.ss)}</td><td>{fmtDollar(s.Rental)}</td><td style={{ color: "#eab308" }}>{fmtDollar(s.OtherIncome)}</td>
+                    <td style={{ color: "#fb7185" }}>{fmtDollar(s.housingCost || 0)}</td>
+                    <td style={{ color: "#fb7185" }}>{fmtDollar(s.carveoutCost || 0)}</td>
+                    <td>{fmtDollar(s.portfolioDraw)}</td>
+                    <td style={{ color: "#5eead4" }}>{fmtDollar(s.conversionAmount || 0)}</td>
                     <td style={{ color: "#f87171" }}>{fmtDollar(s.fedTax)}</td>
                     <td style={{ color: "#fb923c" }}>{fmtDollar(s.stateTax)}</td>
                     <td style={{ color: "#a78bfa" }}>{fmtDollar(s.irmaa)}</td>
@@ -5542,7 +5762,12 @@ function ScenariosTab({
 
       {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} onAssumptionChange={onAssumptionChange} />}
       {scenarioSubTab === "buckets"    && <BucketsTab params={baseParams} />}
-      {scenarioSubTab === "income"     && <IncomeMap p={baseParams} inf={inf} />}
+      {scenarioSubTab === "income"     && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <IncomeExpensesChart p={baseParams} inf={inf} />
+          <IncomeMap p={baseParams} inf={inf} />
+        </div>
+      )}
       {scenarioSubTab === "realestate" && <MortgageTab values={assumptions ?? baseParams} onChange={onAssumptionChange ?? (() => {})} />}
     </div>
   );

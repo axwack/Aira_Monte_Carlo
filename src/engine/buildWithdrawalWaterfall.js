@@ -65,6 +65,39 @@ function bracketCeiling(target, isMFJ, inflFactor) {
 }
 
 /**
+ * Grows a profile's account balances from currentAge to retireAge using the
+ * same per-bucket rates buildWithdrawalWaterfall uses (gr for pretax/roth/
+ * taxable, a conservative cashGr for cash/HSA). Exported so other views
+ * (e.g. the deterministic schedule's "Portfolio at Retirement" metric) agree
+ * with the waterfall's own starting balances instead of re-deriving them.
+ * @returns {{ pretax0: number, roth0: number, taxable0: number, cash0: number, total: number }}
+ */
+export function accumulateToRetirement(params = {}) {
+  const { currentAge, retireAge, accounts = [], gr: grParam } = params;
+  const gr     = grParam ?? 0.07;
+  const cashGr = 0.045;
+
+  let pretax0 = 0, roth0 = 0, taxable0 = 0, cash0 = 0;
+  for (const a of accounts) {
+    const bal = a.balance || 0;
+    if      (a.category === "pretax")  pretax0  += bal;
+    else if (a.category === "roth")    roth0    += bal;
+    else if (a.category === "taxable") taxable0 += bal;
+    else                               cash0    += bal; // cash + hsa
+  }
+
+  const accYrs = Math.max(0, (retireAge ?? 0) - (currentAge ?? 0));
+  for (let y = 0; y < accYrs; y++) {
+    pretax0  *= (1 + gr);
+    roth0    *= (1 + gr);
+    taxable0 *= (1 + gr);
+    cash0    *= (1 + cashGr);
+  }
+
+  return { pretax0, roth0, taxable0, cash0, total: pretax0 + roth0 + taxable0 + cash0 };
+}
+
+/**
  * Main export.
  * @param {object} params — full AiRA profile object
  * @returns {{ smart: ScenarioResult, naive: ScenarioResult, summary: Summary }}
@@ -135,24 +168,8 @@ export function buildWithdrawalWaterfall(params = {}) {
     overrideMap.set(Number(o.year), Number(o.amount) || 0);
   }
 
-  // ── Initialise buckets from accounts ──────────────────────────────────────
-  let pretax0 = 0, roth0 = 0, taxable0 = 0, cash0 = 0;
-  for (const a of accounts) {
-    const bal = a.balance || 0;
-    if      (a.category === "pretax")  pretax0  += bal;
-    else if (a.category === "roth")    roth0    += bal;
-    else if (a.category === "taxable") taxable0 += bal;
-    else                               cash0    += bal; // cash + hsa
-  }
-
-  // Accumulation phase: grow buckets from currentAge to retireAge
-  const accYrs = Math.max(0, retireAge - currentAge);
-  for (let y = 0; y < accYrs; y++) {
-    pretax0  *= (1 + gr);
-    roth0    *= (1 + gr);
-    taxable0 *= (1 + gr);
-    cash0    *= (1 + cashGr);
-  }
+  // ── Initialise buckets from accounts, grown to retirement ──────────────────
+  const { pretax0, roth0, taxable0, cash0 } = accumulateToRetirement({ currentAge, retireAge, accounts, gr });
 
   // Pre-compute annual mortgage P&I obligation (constant across all years,
   // mirrors runMC) — housing cost is part of "need" until the mortgage payoff year.
