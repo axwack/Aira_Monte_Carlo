@@ -62,8 +62,10 @@ consult your fiduciary, CPA or tax accountant.
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
-import { buildRothExplorer, buildRothLadder, taxableSocialSecurity } from "./engine/buildRothExplorer.js";
+import { taxableSocialSecurity } from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
+import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
+import { mortgageSchedule, computeOtherIncome } from "./engine/expenses.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
@@ -703,24 +705,6 @@ function getBracketCeiling(target, filingStatus, inflFactor) {
     ? { "12": 100_800, "22": 211_400, "24": 403_550 }
     : { "12":  50_400, "22": 105_700, "24": 201_800 };
   return Math.round((ceilings[target] ?? ceilings["22"]) * inflFactor);
-}
-
-function computeOtherIncome(otherIncomes, calYear) {
-  let total = 0, totalTaxable = 0;
-  if (!otherIncomes?.length) return { total, totalTaxable };
-  for (const inc of otherIncomes) {
-    const start = inc.startYear || 2026;
-    const end = inc.endYear || Infinity;
-    if (calYear >= start && calYear <= end) {
-      const yearsElapsed = calYear - start;
-      const cap = inc.growthCapYears ?? Infinity;
-      const growth = Math.pow(1 + (inc.growthRate || 0) / 100, Math.min(yearsElapsed, cap));
-      const amt = (inc.annual || 0) * growth;
-      total += amt;
-      if (inc.taxable) totalTaxable += amt;
-    }
-  }
-  return { total, totalTaxable };
 }
 
 function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true) {
@@ -1484,79 +1468,6 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   return 72;
 }
 
-// buildRothExplorer and buildRothLadder imported from ./engine/buildRothExplorer.js
-
-/* ════ MORTGAGE MATH ════ */
-function mortgageSchedule(
-  balance,
-  annualRate,
-  startDate,
-  termYrs,
-  extraMonthly
-) {
-  const mRate = annualRate / 100 / 12;
-  const totalMonths = termYrs * 12;
-  const start = new Date(startDate + "-01"),
-    now = new Date();
-  const elapsed = Math.max(
-    0,
-    (now.getFullYear() - start.getFullYear()) * 12 +
-      now.getMonth() -
-      start.getMonth()
-  );
-  const remaining = Math.max(1, totalMonths - elapsed);
-  const pmt =
-    mRate === 0
-      ? balance / remaining
-      : (balance * mRate * Math.pow(1 + mRate, remaining)) /
-        (Math.pow(1 + mRate, remaining) - 1);
-  let bal = balance,
-    yr = now.getFullYear(),
-    years = [],
-    totalInt = 0,
-    totalIntNoExtra = 0;
-  while (bal > 0.01 && years.length < 35) {
-    let pPaid = 0,
-      iPaid = 0,
-      ePaid = 0,
-      balNE = bal;
-    for (let m = 0; m < 12 && bal > 0.01; m++) {
-      const intM = bal * mRate,
-        prin = Math.min(pmt - intM, bal),
-        extra = Math.min(extraMonthly, bal - prin);
-      pPaid += prin + extra;
-      iPaid += intM;
-      ePaid += extra;
-      totalInt += intM;
-      bal -= prin + extra;
-      if (bal <= 0) {
-        bal = 0;
-        break;
-      }
-      const intNE = balNE * mRate,
-        prinNE = Math.min(pmt - intNE, balNE);
-      totalIntNoExtra += intNE;
-      balNE -= prinNE;
-      if (balNE <= 0) balNE = 0;
-    }
-    years.push({
-      yr,
-      pPaid: Math.round(pPaid),
-      iPaid: Math.round(iPaid),
-      ePaid: Math.round(ePaid),
-      bal: Math.round(Math.max(0, bal)),
-    });
-    yr++;
-  }
-  return {
-    years,
-    pmt: Math.round(pmt),
-    payoffYr: years[years.length - 1]?.yr || now.getFullYear(),
-    totalInt: Math.round(totalInt),
-    interestSaved: Math.round(totalIntNoExtra - totalInt),
-  };
-}
-
 /* ════ FORMATTERS ════ */
 const fmtM = (v) =>
   v >= 1e6
@@ -1684,8 +1595,8 @@ const CSS = `
   body { margin:0; font-family:'Inter',sans-serif; background:#0a0f1e; color:#f1f5f9; font-size:13px; line-height:1.5; }
   .app { min-height:100vh; background:linear-gradient(135deg,#0a0f1e 0%,#0d1529 50%,#0a0f1e 100%); }
   .hdr { background:rgba(10,15,30,0.98); border-bottom:1px solid rgba(99,179,237,0.15); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(16px); }
-  .logo { font-size:18px; font-weight:800; letter-spacing:-0.03em; color:#f8fafc; }
-  .logo-sub { color:#38bdf8; font-weight:400; font-size:13px; margin-left:6px; }
+  .logo { font-size:25px; font-weight:800; letter-spacing:-0.03em; color:#f8fafc; }
+  .logo-sub { color:#38bdf8; font-weight:400; font-size:16px; margin-left:6px; }
   .mbtn { padding:5px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.12); cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:#94a3b8; }
   .mbtn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
   .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
@@ -2929,11 +2840,38 @@ function IncomeMap({ p, inf }) {
   );
 }
 
-function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverride }) {
+// Two-way mapping between the Conversion Plan tab's button vocabulary
+// ("fill_22", "no_convert", "irmaa_safe" — matches rothConversionPlan.js's
+// ROTH_MODE_TO_TARGET) and the persisted profile field params.rothConversionTarget
+// ("fill_22", "off", "irmaa", plus the legacy un-prefixed "37"). This keeps the
+// Conversion Plan tab's selector and the Withdrawal Plan / Monte Carlo's stored
+// setting as a single value — no separate "rothMode" state.
+const PROFILE_TO_ROTHMODE = {
+  off: "no_convert",
+  irmaa: "irmaa_safe",
+  "37": "fill_37",
+  fill_10: "fill_10", fill_12: "fill_12", fill_22: "fill_22", fill_24: "fill_24",
+  fill_32: "fill_32", fill_35: "fill_35", fill_37: "fill_37",
+};
+const ROTHMODE_TO_PROFILE = {
+  no_convert: "off",
+  irmaa_safe: "irmaa",
+  fill_10: "fill_10", fill_12: "fill_12", fill_22: "fill_22", fill_24: "fill_24",
+  fill_32: "fill_32", fill_35: "fill_35", fill_37: "fill_37",
+};
+
+function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverride, onAssumptionChange }) {
 
   const [showInputs, setShowInputs] = useState(false);
   const [view, setView] = useState("optimized");
-  const [rothMode, setRothMode] = useState("fill_22");
+  // Bracket-fill strategy is a single value, persisted to the profile as
+  // params.rothConversionTarget — the Conversion Plan tab is where it's tuned,
+  // but the Withdrawal Plan tab / Monte Carlo runs read the same stored value
+  // (no separate, disconnected "rothMode" local setting).
+  const rothMode = PROFILE_TO_ROTHMODE[params?.rothConversionTarget] ?? "fill_22";
+  const setRothMode = (mode) => {
+    if (onAssumptionChange) onAssumptionChange("rothConversionTarget", ROTHMODE_TO_PROFILE[mode] ?? "fill_22");
+  };
 
   // ── Current-Year Calculator state ──────────────────────────────────────
   const currentCalYear = new Date().getFullYear() + 1; // plan for next year by default
@@ -2942,11 +2880,20 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
   const [cySS,     setCySS]     = useState(0);
   const [cyRental, setCyRental] = useState(0);
   const [cyOther,  setCyOther]  = useState(0);
-  const [cySGOV,   setCySGOV]   = useState(0);
+  // Cash available for taxes defaults from the profile's Bucket 1 (Cash)
+  // allocation — the same "pay bills now" reserve shown on the Withdrawal
+  // Plan / Bucket Strategy tab, including any per-account splits the user
+  // has assigned to Bucket 1. A one-off override lets the user refine it
+  // for this analysis without creating a second, disconnected balance.
+  const profileCashForTaxes = expandAccountBuckets(params?.accounts || [])
+    .filter(a => a.bucket === 1)
+    .reduce((s, a) => s + (a.balance || 0), 0);
+  const [cySGOVOverride, setCySGOVOverride] = useState(null);
+  const cySGOV = cySGOVOverride ?? profileCashForTaxes;
   // ───────────────────────────────────────────────────────────────────────
 
   const ex = useMemo(
-    () => buildRothExplorer({ ...(params ?? {}), rothMode }),
+    () => buildWaterfallComparison(params ?? {}, rothMode),
     [
       params?.currentAge,
       params?.retireAge,
@@ -2972,7 +2919,7 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
 
   // No-tax state scenario: same profile but state tax zeroed out (twoHousehold flag)
   const exNoTax = useMemo(
-    () => buildRothExplorer({ ...(params ?? {}), rothMode, twoHousehold: true }),
+    () => buildWaterfallComparison({ ...(params ?? {}), twoHousehold: true }, rothMode),
     [
       params?.currentAge, params?.retireAge, params?.ssAge, params?.ab,
       params?.inf, params?.port, params?.useAb, params?.ssb, params?.accounts,
@@ -2985,7 +2932,6 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
   const {
     opt,
     cur,
-    convRows,
     taxD,
     estD,
     leOpt,
@@ -2998,6 +2944,63 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
     filingStatus,
   } = ex;
 
+  // Conversion Plan ladder — built directly from buildWithdrawalWaterfall so the
+  // "Conversion" column always equals the Withdrawal Schedule tab's "Roth Conv"
+  // figure for the same year (see rothConversionPlan.js::buildConversionLadder).
+  const convRows = useMemo(
+    () => buildConversionLadder(params ?? {}, rothMode).rows,
+    [
+      params?.currentAge,
+      params?.retireAge,
+      params?.ssAge,
+      params?.ab,
+      params?.inf,
+      params?.port,
+      params?.useAb,
+      params?.ssb,
+      params?.accounts,
+      params?.dob,
+      params?.birthYear,
+      params?.filingStatus,
+      params?.stateOfResidence,
+      params?.rmdStartAge,
+      params?.taxFunding,
+      params?.gkFloor,
+      params?.gkCeiling,
+      params?.sp,
+      params?.gr,
+      params?.irmaaGuard,
+      params?.conversionOverrides,
+      rothMode,
+    ]
+  );
+
+  // Reconciled conversion plan — single source of truth, matches the
+  // Withdrawal Schedule tab's "Roth Conv" figures (see rothConversionPlan.js).
+  const conversionPlan = useMemo(
+    () => buildConversionPlan(params ?? {}),
+    [
+      params?.currentAge,
+      params?.retireAge,
+      params?.ssAge,
+      params?.ab,
+      params?.inf,
+      params?.port,
+      params?.useAb,
+      params?.ssb,
+      params?.accounts,
+      params?.dob,
+      params?.birthYear,
+      params?.filingStatus,
+      params?.rmdStartAge,
+      params?.taxFunding,
+      params?.fafsaEndYear,
+      params?.cssEndYear,
+      params?.conversionOverrides,
+      params?.rothConversionTarget,
+    ]
+  );
+
 const state = params.stateOfResidence || "NJ";   // fallback to your actual state
 const domLabel = isNoTaxState
   ? "No Tax State Move or Out of Country"
@@ -3005,6 +3008,7 @@ const domLabel = isNoTaxState
   const domColor = isNoTaxState ? "#34d399" : "#fb923c";
   
   const modeLabels = {
+      no_convert: "Off",
       fill_10: "Fill 10%",
       fill_12: "Fill 12%",
       fill_22: "Fill 22%",
@@ -3016,6 +3020,7 @@ const domLabel = isNoTaxState
   };
 
 const modeDescs = {
+    no_convert: "No conversions — pretax stays pretax until RMDs force withdrawals.",
     fill_10: "Ultra‑conservative — stay in 10% bracket. Minimal tax, slowest conversion.",
     fill_12: "Conservative — stay in 12% bracket. Low tax, slower conversion.",
     fill_22: "Moderate — fill to top of 22%. IRMAA‑safe. AiRA default.",
@@ -3245,13 +3250,13 @@ const modeDescs = {
           {Object.entries(modeLabels).map(([k, v]) => {
             const isHigh = ["fill_32","fill_35","fill_37"].includes(k);
             const isCaution = k === "fill_24";
-            const isSafe = ["fill_10","fill_12"].includes(k);
+            const isSafe = ["no_convert","fill_10","fill_12"].includes(k);
             const isDefault = k === "fill_22";
-            
+
             let bgColor = "transparent";
             let textColor = "#64748b";
             let borderColor = "rgba(255,255,255,0.1)";
-            
+
             if (rothMode === k) {
               if (isHigh) { bgColor = "rgba(239,68,68,0.15)"; textColor = "#f87171"; borderColor = "#ef4444"; }
               else if (isCaution) { bgColor = "rgba(245,158,11,0.15)"; textColor = "#fbbf24"; borderColor = "#f59e0b"; }
@@ -3364,6 +3369,59 @@ const modeDescs = {
           <div className="ms">optimized vs current</div>
         </div>
       </div>
+      {conversionPlan.totalTraditional > 0 && (
+        <div
+          style={{
+            background: "rgba(94,234,212,0.06)",
+            border: "1px solid rgba(94,234,212,0.25)",
+            borderRadius: 8,
+            padding: "10px 12px",
+            marginTop: 8,
+            fontSize: 11,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4" }}>
+              ✅ Recommended Conversion — Year 1: {fmtM(conversionPlan.recommendedSchedule[0]?.amount || 0)}
+            </div>
+            <div style={{ color: "#64748b" }}>
+              Matches the "Roth Conv" figure for {conversionPlan.recommendedSchedule[0]?.year ?? "year 1"} on the Withdrawal Schedule tab
+            </div>
+          </div>
+          {conversionPlan.needs_schedule ? (
+            <>
+              <div style={{ color: "#fbbf24", marginTop: 6 }}>
+                ⚠️ A multi-year conversion schedule is recommended because:
+              </div>
+              <ul style={{ margin: "4px 0 6px 18px", padding: 0, color: "#94a3b8" }}>
+                {conversionPlan.reasons.headroomTooSmall && (
+                  <li>This year's conversion headroom ({fmtM(conversionPlan.headroomYear0)}) is less than 20% of your total Traditional balance ({fmtM(conversionPlan.totalTraditional)}) — converting it all at once would push you into much higher brackets.</li>
+                )}
+                {conversionPlan.reasons.cannotPayTaxFromCash && (
+                  <li>The tax owed on this year's conversion can't be covered by cash/taxable savings alone.</li>
+                )}
+                {conversionPlan.reasons.rmdBracketIncrease && (
+                  <li>Without conversions, projected RMDs at age {conversionPlan.rmdAge} would push you into a higher bracket than today.</li>
+                )}
+              </ul>
+              <div style={{ color: "#64748b" }}>
+                Recommended schedule (through age {conversionPlan.rmdAge}, {conversionPlan.recommendedSchedule.length} year{conversionPlan.recommendedSchedule.length === 1 ? "" : "s"}):{" "}
+                {conversionPlan.recommendedSchedule.slice(0, 6).map((s, i) => (
+                  <span key={s.year} style={{ color: "#5eead4" }}>
+                    {i > 0 && ", "}
+                    {s.year} (age {s.age}): {fmtM(s.amount)}
+                  </span>
+                ))}
+                {conversionPlan.recommendedSchedule.length > 6 && <span style={{ color: "#475569" }}> …</span>}
+              </div>
+            </>
+          ) : (
+            <div style={{ color: "#64748b", marginTop: 4 }}>
+              This year's headroom covers a large share of your Traditional balance — no multi-year schedule needed.
+            </div>
+          )}
+        </div>
+      )}
       {view === "thisyear" && (() => {
         const isMFJ   = (params?.filingStatus || "mfj") !== "single";
         const infRate = (params?.inf || 2.5) / 100;
@@ -3494,9 +3552,19 @@ const modeDescs = {
                     <span style={{ color: "#fbbf24" }}>Cash/Treasury/Short Term cash for Taxes</span>
                     <input
                       type="number" value={cySGOV}
-                      onChange={e => setCySGOV(Number(e.target.value) || 0)}
+                      onChange={e => setCySGOVOverride(Number(e.target.value) || 0)}
                       min={0} step={1000} style={{ ...inputStyle, borderColor: "#f59e0b" }}
                     />
+                  </div>
+                  <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
+                    {cySGOVOverride != null
+                      ? <>Overridden for this analysis · Bucket 1 (Cash) balance is {fmtN(profileCashForTaxes)}{" "}
+                          <button
+                            onClick={() => setCySGOVOverride(null)}
+                            style={{ background: "none", border: "none", color: "#5eead4", cursor: "pointer", fontSize: 10, textDecoration: "underline", padding: 0, fontFamily: "inherit" }}
+                          >↺ reset to profile</button>
+                        </>
+                      : <>From Bucket 1 — Cash ({fmtN(profileCashForTaxes)}) — edit to refine for this analysis only.</>}
                   </div>
                   <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
                     Filing: {isMFJ ? "Married Filing Jointly" : "Single"} ·{" "}
@@ -3852,7 +3920,7 @@ const modeDescs = {
                     Total
                   </td>
                   <td>—</td>
-                  <td style={{ fontWeight: 700 }}>{fmtM(opt.cConv)}</td>
+                  <td style={{ fontWeight: 700 }}>{fmtM(convRows.reduce((s, r) => s + r.conv, 0))}</td>
                   <td style={{ color: "#f87171", fontWeight: 700 }}>
                     {fmtM(convRows.reduce((s, r) => s + r.fedT, 0))}
                   </td>
@@ -4660,6 +4728,7 @@ function WaterfallPlanView({ p, result }) {
   }));
 
   const anyLandmine = (r) => r.landmines.ssTorpedo || r.landmines.irmaaTriggered || r.landmines.rmdActive;
+  const anyConversion = rows.some(r => r.conversionAmount > 0);
   const initialWR   = (p.sp > 0 && p.port > 0) ? p.sp / p.port : 0.04;
   const rowWRColor  = (r) => {
     if (!r.totalPort) return "#94a3b8";
@@ -4755,6 +4824,9 @@ function WaterfallPlanView({ p, result }) {
               <th title="Step 5 — drawn after taxable, capped at your bracket-ceiling target (RMD shown when forced)">Pre-Tax</th>
               <th style={opThStyle}>+</th>
               <th title="Step 6 — last resort; emergency reserve floor maintained">Roth</th>
+              {anyConversion && (
+                <th title="Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total.">Roth Conv</th>
+              )}
               <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End</th>
               <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR</th>
               <th>
@@ -4797,6 +4869,12 @@ function WaterfallPlanView({ p, result }) {
                 </td>
                 <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#10b981" }} title={fmtDollar(r.fromRoth)}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
+                {anyConversion && (
+                  <td style={{ textAlign: "right", color: "#a78bfa" }}
+                      title={r.conversionAmount > 0 ? `Converted ${fmtDollar(r.conversionAmount)} pretax → Roth — adds ~${fmtDollar(r.conversionTax)} to this year's tax (included in Fed/State below)` : "No conversion this year"}>
+                    {r.conversionAmount > 0 ? fmtK(r.conversionAmount) : "—"}
+                  </td>
+                )}
                 <td style={{ textAlign: "right", color: b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }} title={fmtDollar(b1End)}>{b1End > 0 ? fmtK(b1End) : "—"}</td>
                 <td style={{ textAlign: "right", color: "#f87171" }} title={fmtDollar(r.fedTax)}>{fmtK(r.fedTax)}</td>
                 <td style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "#475569" }} title={fmtDollar(r.stateTax)}>
@@ -5462,7 +5540,7 @@ function ScenariosTab({
         <WithdrawalPlanCombined p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} onAssumptionChange={onAssumptionChange} />
       )}
 
-      {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} />}
+      {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} onAssumptionChange={onAssumptionChange} />}
       {scenarioSubTab === "buckets"    && <BucketsTab params={baseParams} />}
       {scenarioSubTab === "income"     && <IncomeMap p={baseParams} inf={inf} />}
       {scenarioSubTab === "realestate" && <MortgageTab values={assumptions ?? baseParams} onChange={onAssumptionChange ?? (() => {})} />}
@@ -7978,23 +8056,11 @@ function AssumptionsPanel({ values, onChange }) {
         <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
           After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
         </div>
-        <ARow label="Bracket-fill target" desc="AiRA converts pretax → Roth up to this bracket ceiling each year (off = no conversions)">
-          <select
-            value={values.rothConversionTarget || "off"}
-            onChange={(e) => onChange("rothConversionTarget", e.target.value)}
-            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
-          >
-            <option value="off">Off — no conversions</option>
-            <option value="fill_10">Fill to top of 10% bracket</option>
-            <option value="fill_12">Fill to top of 12% bracket</option>
-            <option value="fill_22">Fill to top of 22% bracket</option>
-            <option value="fill_24">Fill to top of 24% bracket</option>
-            <option value="fill_32">Fill to top of 32% bracket</option>
-            <option value="fill_35">Fill to top of 35% bracket</option>
-            <option value="37">Fill to top of 37% bracket</option>
-            <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
-          </select>
-        </ARow>
+        <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5, marginBottom: 12 }}>
+          The bracket-fill target is set on <strong style={{ color: "#a78bfa" }}>Scenarios → 📊 Conversion Plan</strong>,
+          right above the ladder it shapes — it's saved here in your profile so the Withdrawal Plan
+          and Monte Carlo runs use the same setting.
+        </div>
         <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, marginTop: 4 }}>
           🎓 FAFSA / CSS College-Aid Protection — enter a year to cap Roth conversions during your child's college aid window. Leave blank to disable.
         </div>

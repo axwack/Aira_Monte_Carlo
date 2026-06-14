@@ -13,7 +13,11 @@
  *   5. Pre-tax IRA/401k — STOP at withdrawalBracketTarget bracket ceiling
  *      (also capped at IRMAA tier-1 when irmaaGuard is enabled)
  *   6. Roth — last resort; rothEmergencyReserve floor is always maintained
- *   7. Tax calculation (ordinary income + IRMAA)
+ *   6.5 Roth conversion (smart scenario only) — a pinned conversionOverrides
+ *      amount for this year, else fill remaining room to rothConversionTarget's
+ *      bracket ceiling. Stacks on top of the Step-5 pretax draw as ordinary
+ *      income for tax purposes (mirrors runMC's bracket-fill behavior).
+ *   7. Tax calculation (ordinary income + conversion + IRMAA)
  *   8. Landmine detection (SS torpedo, IRMAA triggered, RMD active)
  */
 
@@ -29,6 +33,7 @@ import {
   RMD_DIV,
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
+import { mortgageSchedule, computeOtherIncome } from "./expenses.js";
 
 const BASE_YEAR = new Date().getFullYear();
 
@@ -91,7 +96,20 @@ export function buildWithdrawalWaterfall(params = {}) {
     irmaaGuard           = false,
     ssTorpedoGuard       = false,
     rothEmergencyReserve = 0,
+    rothConversionTarget = "off",
+    conversionOverrides  = [],
     gr: grParam,
+    // Real-world cash needs/income — same fields runMC uses for `need`
+    mortBalance = 0,
+    mortRate,
+    mortStart,
+    mortTerm,
+    mortExtra,
+    housingType = "own",
+    annualRent  = 0,
+    propIncome  = 0,
+    carveouts   = [],
+    otherIncomes = [],
   } = params;
 
   if (currentAge == null || retireAge == null) {
@@ -110,6 +128,12 @@ export function buildWithdrawalWaterfall(params = {}) {
 
   const fedBase    = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
   const stateBr0   = twoHousehold ? null : getStateBrackets(stateOfResidence, isMFJ);
+
+  // Pinned per-year conversion amounts from the Conversion Plan tab (calendar year → $).
+  const overrideMap = new Map();
+  for (const o of conversionOverrides) {
+    overrideMap.set(Number(o.year), Number(o.amount) || 0);
+  }
 
   // ── Initialise buckets from accounts ──────────────────────────────────────
   let pretax0 = 0, roth0 = 0, taxable0 = 0, cash0 = 0;
@@ -130,6 +154,15 @@ export function buildWithdrawalWaterfall(params = {}) {
     cash0    *= (1 + cashGr);
   }
 
+  // Pre-compute annual mortgage P&I obligation (constant across all years,
+  // mirrors runMC) — housing cost is part of "need" until the mortgage payoff year.
+  let mortAnnualPI = 0, mortPayoffYr = 0;
+  if (mortBalance > 0) {
+    const ms = mortgageSchedule(mortBalance, mortRate || 6.5, mortStart || "2020-01", mortTerm || 30, mortExtra || 0);
+    mortAnnualPI = ms.pmt * 12;
+    mortPayoffYr = ms.payoffYr;
+  }
+
   // ── Guyton-Klinger helper (mirrors App.jsx implementation) ─────────────────
   function gkWithdraw(port, initWR, lastW, lastRet, inflRate, floor, ceiling) {
     if (!port || port <= 0) return floor || 0;
@@ -141,12 +174,12 @@ export function buildWithdrawalWaterfall(params = {}) {
   }
 
   // ── Tax helpers ────────────────────────────────────────────────────────────
-  function yearTax(age, yr, fromPretax, ssGross, annuityTaxable, rmd, inflFactor) {
+  function yearTax(age, yr, fromPretax, ssGross, annuityTaxable, rmd, inflFactor, otherTaxable = 0) {
     const iF  = inflFactor;
     const fB  = idxB(fedBase, iF);
     const sd  = stdDed(age, isMFJ, iF);
     // IRC §86 provisional-income tiers (0% / 50% / 85% of SS taxable)
-    const otherOrdInc = annuityTaxable + rmd + fromPretax;
+    const otherOrdInc = annuityTaxable + rmd + fromPretax + otherTaxable;
     const taxSS = Math.round(taxableSocialSecurity(ssGross, otherOrdInc, isMFJ));
     const totInc = taxSS + otherOrdInc;
     const txInc  = Math.max(0, totInc - sd);
@@ -190,10 +223,28 @@ export function buildWithdrawalWaterfall(params = {}) {
       const ss = age >= ssAge
         ? Math.round(ssb * Math.pow(1 + (ssCola || 2.4) / 100, age - ssAge))
         : 0;
-      const annuity = ab > 0 && (abEndYear == null || yr <= abEndYear) && age <= 80
+      const annuity = (ab > 0 && (abEndYear == null || yr <= abEndYear) && age <= 80
         ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
-        : 0;
+        : 0) + Math.round((propIncome || 0) * iF);
       const fixedIncome = ss + annuity;
+
+      // Other income streams (pensions, part-time work, etc.) — offset "need"
+      // and, if taxable, stack as ordinary income alongside RMDs/pretax draws.
+      const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(otherIncomes, yr);
+
+      // Housing cost: mortgage P&I while the loan is active, or inflation-adjusted
+      // rent — same model as runMC's `housingCost`.
+      let housingCost = 0;
+      if (housingType === "own") {
+        housingCost = mortAnnualPI > 0 && yr < mortPayoffYr ? mortAnnualPI : 0;
+      } else if (housingType === "rent") {
+        housingCost = Math.round((annualRent || 0) * iF);
+      }
+
+      // Other fixed expenses (HOA, insurance, college, etc.) active this year.
+      const carveoutCost = carveouts.reduce((sum, c) => {
+        return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * iF) : 0);
+      }, 0);
 
       // ── Step 2: RMD (forced) ────────────────────────────────────────────
       let rmd = 0;
@@ -205,7 +256,9 @@ export function buildWithdrawalWaterfall(params = {}) {
       }
 
       // ── Steps 3-6: Portfolio draws ──────────────────────────────────────
-      let need = Math.max(0, sp - fixedIncome);
+      // "Need" reflects the year's full cash requirement: base spending plus
+      // housing/carveout obligations, net of fixed and other income.
+      let need = Math.max(0, sp - fixedIncome - otherIncTotal) + housingCost + carveoutCost;
 
       // Step 3 — Cash
       const fromCash = Math.min(need, cash);
@@ -224,7 +277,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         // 85% SS inclusion here is a deliberate worst-case estimate: the pretax draw
         // being sized below itself raises provisional income, so assuming max inclusion
         // keeps the bracket cap conservative (never overshoots the target ceiling).
-        const taxSoFar = Math.max(0, Math.round(ss * 0.85) + rmd + annuity - sd);
+        const taxSoFar = Math.max(0, Math.round(ss * 0.85) + rmd + annuity + otherIncTaxable - sd);
         let ceiling = bracketCeiling(withdrawalBracketTarget, isMFJ, iF);
 
         if (irmaaGuard && age >= 63) {
@@ -256,14 +309,52 @@ export function buildWithdrawalWaterfall(params = {}) {
       const rothReserveHeld = Math.max(0, roth - rothFloor - fromRoth);
       need -= fromRoth;
 
-      // ── Step 7: Tax calculation ─────────────────────────────────────────
-      const tax = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF);
+      // ── Step 6.5: Roth conversion (smart scenario only) ──────────────────
+      // A pinned conversionOverrides amount wins; otherwise fill remaining room
+      // to rothConversionTarget's bracket ceiling, sized off the taxable income
+      // from the spending draw alone (mirrors runMC's bracket-fill behavior).
+      let convAmt = 0;
+      const taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable);
+      if (isSmart) {
+        const pretaxAfterDraw = Math.max(0, pretax - fromPretax);
+        const override = overrideMap.get(yr);
+        if (override != null) {
+          convAmt = Math.min(Math.max(0, override), pretaxAfterDraw);
+        } else if (rothConversionTarget && rothConversionTarget !== "off" && pretaxAfterDraw > 1000) {
+          const sdConv = stdDed(age, isMFJ, iF);
+          const ceilingConv = bracketCeiling(rothConversionTarget, isMFJ, iF);
+          const room = Math.max(0, ceilingConv + sdConv - taxNoConv.totInc);
+          if (room > 500) convAmt = Math.min(room, pretaxAfterDraw);
+        }
+      }
+
+      // ── Step 7: Tax calculation — conversion stacks as ordinary income ───
+      let tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable) : taxNoConv;
+      let convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
+
+      // Affordability: pretax must cover both the conversion and its incremental tax.
+      // Shrink (rather than zero out) when the full fill can't be afforded — converging
+      // toward the largest conversion the remaining pretax balance can self-fund.
+      if (convAmt > 0) {
+        for (let i = 0; i < 5 && convAmt > 0; i++) {
+          const shortfall = (convAmt + convTax) - (pretax - fromPretax);
+          if (shortfall <= 0) break;
+          convAmt = Math.max(0, convAmt - shortfall);
+          tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable) : taxNoConv;
+          convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
+        }
+        if (convAmt <= 500) {
+          convAmt = 0;
+          convTax = 0;
+          tax = taxNoConv;
+        }
+      }
 
       // ── Step 8: Landmine detection ──────────────────────────────────────
       // SS torpedo: other ordinary income has pushed provisional income past the
       // IRC §86 lower threshold ($32K MFJ / $25K single), dragging SS benefits
       // into taxation (up to $0.85 per extra $1 in the phase-in range).
-      const provisional = ss * 0.5 + rmd + fromPretax + annuity;
+      const provisional = ss * 0.5 + rmd + fromPretax + convAmt + annuity + otherIncTaxable;
       const torpedoThresh = isMFJ ? 32_000 : 25_000;
       const ssTorpedo     = ssTorpedoGuard && ss > 0 && provisional > torpedoThresh
         && tax.taxSS > 0;
@@ -273,8 +364,8 @@ export function buildWithdrawalWaterfall(params = {}) {
       // ── Update buckets ──────────────────────────────────────────────────
       cash    = Math.max(0, cash    - fromCash)    * (1 + cashGr);
       taxable = Math.max(0, taxable - fromTaxable) * (1 + gr);
-      pretax  = Math.max(0, pretax  - fromPretax)  * (1 + gr);
-      roth    = Math.max(0, roth    - fromRoth)    * (1 + gr);
+      pretax  = Math.max(0, pretax  - fromPretax - convAmt - convTax) * (1 + gr);
+      roth    = Math.max(0, roth    - fromRoth + convAmt) * (1 + gr);
 
       lastRet = gr;
       cTax += tax.totalTax;
@@ -285,10 +376,11 @@ export function buildWithdrawalWaterfall(params = {}) {
         rmd, rmdActive,
         fromCash, fromTaxable, fromPretax, pretaxCapReason,
         fromRoth, rothReserveHeld,
+        conversionAmount: Math.round(convAmt), conversionTax: convTax,
         fedTax: tax.fedTax, stateTax: tax.stateTax, irmaa: tax.irmaa,
         totalTax: tax.totalTax, irmaaFull: tax.irmaaFull,
         effectiveRate: tax.effectiveRate, marginalBracket: tax.marginalBracket,
-        taxableIncome: tax.taxableIncome,
+        taxableIncome: tax.taxableIncome, totInc: tax.totInc,
         landmines: { ssTorpedo, irmaaTriggered, rmdActive },
         cashEnd:    Math.round(cash),
         taxableEnd: Math.round(taxable),
@@ -296,7 +388,10 @@ export function buildWithdrawalWaterfall(params = {}) {
         rothEnd:    Math.round(roth),
         totalPort:  Math.round(cash + taxable + pretax + roth),
         spending:   Math.round(sp),
-        needFromPort: Math.round(Math.max(0, sp - fixedIncome)),
+        housingCost: Math.round(housingCost),
+        carveoutCost: Math.round(carveoutCost),
+        otherIncome: Math.round(otherIncTotal),
+        needFromPort: Math.round(Math.max(0, sp - fixedIncome - otherIncTotal) + housingCost + carveoutCost),
         totalWithdrawal: Math.round(fromCash + fromTaxable + fromPretax + fromRoth + tax.totalTax),
       });
     }
