@@ -62,8 +62,10 @@ consult your fiduciary, CPA or tax accountant.
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
-import { buildRothExplorer, buildRothLadder, taxableSocialSecurity } from "./engine/buildRothExplorer.js";
-import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
+import { taxableSocialSecurity } from "./engine/buildRothExplorer.js";
+import { buildWithdrawalWaterfall, accumulateToRetirement } from "./engine/buildWithdrawalWaterfall.js";
+import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
+import { mortgageSchedule, computeOtherIncome } from "./engine/expenses.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
@@ -91,9 +93,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.15";
-export const BUILD_TAG = "[main] v1.1.0.15 — merge: withdrawal engine guardrail/VPW/IRMAA fixes + Quicken-style account bucket splits, centralized MC/GK constants, tab font-size fix, MC Engine → info-modal, CSS design tokens, single-point-of-control profile fields.";
-export const BUILD_TIME = "2026-06-10T18:00:00Z";
+const APP_VERSION = "1.1.0.18";
+export const BUILD_TAG = "[main] v1.1.0.18 — Consolidate all number inputs onto the proven ANumInput and delete the redundant CleanNumberInput; ANumInput is now decimal-keypad aware via step. All Assumptions fields are focus-tracking + decimal-safe.";
+export const BUILD_TIME = "2026-06-11T18:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -705,24 +707,6 @@ function getBracketCeiling(target, filingStatus, inflFactor) {
   return Math.round((ceilings[target] ?? ceilings["22"]) * inflFactor);
 }
 
-function computeOtherIncome(otherIncomes, calYear) {
-  let total = 0, totalTaxable = 0;
-  if (!otherIncomes?.length) return { total, totalTaxable };
-  for (const inc of otherIncomes) {
-    const start = inc.startYear || 2026;
-    const end = inc.endYear || Infinity;
-    if (calYear >= start && calYear <= end) {
-      const yearsElapsed = calYear - start;
-      const cap = inc.growthCapYears ?? Infinity;
-      const growth = Math.pow(1 + (inc.growthRate || 0) / 100, Math.min(yearsElapsed, cap));
-      const amt = (inc.annual || 0) * growth;
-      total += amt;
-      if (inc.taxable) totalTaxable += amt;
-    }
-  }
-  return { total, totalTaxable };
-}
-
 function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true) {
   const rand = mulberry32(seed);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
@@ -1180,6 +1164,32 @@ function runStress(p, endAge, N = STRESS_PATHS, seed = 99) {
 /* ════ DETERMINISTIC WITHDRAWAL SCHEDULE (median returns) ════ */
 
 function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
+  // Smart Waterfall: source the schedule directly from buildWithdrawalWaterfall's
+  // "smart" scenario — the single source of truth for bucket draws, Roth
+  // conversions, mortgage/carveout costs, and source-aware tax. This is the
+  // real-life year-by-year plan, not a re-derived approximation.
+  if (withdrawalStrategy === "smart") {
+    const wf = buildWithdrawalWaterfall(p);
+    const { total: portAtRetire } = accumulateToRetirement(p);
+    const schedule = (wf?.smart?.rows ?? []).map((r) => ({
+      age: r.age, yr: r.yr,
+      spending: r.spending,
+      ss: r.ss, Rental: r.annuityRental, OtherIncome: r.otherIncome,
+      portfolioDraw: r.needFromPort,
+      housingCost: r.housingCost,
+      carveoutCost: r.carveoutCost,
+      conversionAmount: r.conversionAmount,
+      fedTax: r.fedTax,
+      stateTax: r.stateTax,
+      irmaa: r.irmaa,
+      totalTax: r.totalTax,
+      totalWithdrawal: r.totalWithdrawal,
+      portfolioEnd: r.totalPort,
+    }));
+    const initWR = portAtRetire > 0 ? Math.max(0, p.sp - (schedule[0]?.ss || 0) - (schedule[0]?.Rental || 0) - (schedule[0]?.OtherIncome || 0)) / portAtRetire : 0.04;
+    return { schedule, portAtRetire: Math.round(portAtRetire), initWR };
+  }
+
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
   const retYrs = p.endAge - p.retireAge;
   let port = p.port;
@@ -1191,6 +1201,13 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   }
 
   const portAtRetire = port;
+  // Precompute mortgage P&I obligation (constant, same model as buildWithdrawalWaterfall)
+  let mortAnnualPI = 0, mortPayoffYr = 0;
+  if (p.mortBalance > 0) {
+    const ms = mortgageSchedule(p.mortBalance, p.mortRate || 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
+    mortAnnualPI = ms.pmt * 12;
+    mortPayoffYr = ms.payoffYr;
+  }
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
   const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
@@ -1341,7 +1358,20 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
     const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
-    const need = Math.max(0, sp - ss - ab - otherIncTotal);
+
+    // Housing cost: mortgage P&I while active, or inflation-adjusted rent — same
+    // model as buildWithdrawalWaterfall's Step 1 (ENG-19).
+    let housingCost = 0;
+    if ((p.housingType || "own") === "own") {
+      housingCost = mortAnnualPI > 0 && yr < mortPayoffYr ? mortAnnualPI : 0;
+    } else if (p.housingType === "rent") {
+      housingCost = Math.round((p.annualRent || 0) * cumInfl);
+    }
+    const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
+      return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * cumInfl) : 0);
+    }, 0);
+
+    const need = Math.max(0, sp - ss - ab - otherIncTotal) + housingCost + carveoutCost;
 
     // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab).
     // Fall back to the legacy "treat everything as ordinary income" calc only
@@ -1356,6 +1386,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       spending: Math.round(sp),
       ss, Rental: ab, OtherIncome: Math.round(otherIncTotal),
       portfolioDraw: Math.round(need),
+      housingCost: Math.round(housingCost),
+      carveoutCost: Math.round(carveoutCost),
+      conversionAmount: 0,
       fedTax: taxResult.fedTax,
       stateTax: taxResult.stateTax,
       irmaa: taxResult.irmaa,
@@ -1482,79 +1515,6 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   if (by >= 1960) return 75;
   if (by >= 1951) return 73;
   return 72;
-}
-
-// buildRothExplorer and buildRothLadder imported from ./engine/buildRothExplorer.js
-
-/* ════ MORTGAGE MATH ════ */
-function mortgageSchedule(
-  balance,
-  annualRate,
-  startDate,
-  termYrs,
-  extraMonthly
-) {
-  const mRate = annualRate / 100 / 12;
-  const totalMonths = termYrs * 12;
-  const start = new Date(startDate + "-01"),
-    now = new Date();
-  const elapsed = Math.max(
-    0,
-    (now.getFullYear() - start.getFullYear()) * 12 +
-      now.getMonth() -
-      start.getMonth()
-  );
-  const remaining = Math.max(1, totalMonths - elapsed);
-  const pmt =
-    mRate === 0
-      ? balance / remaining
-      : (balance * mRate * Math.pow(1 + mRate, remaining)) /
-        (Math.pow(1 + mRate, remaining) - 1);
-  let bal = balance,
-    yr = now.getFullYear(),
-    years = [],
-    totalInt = 0,
-    totalIntNoExtra = 0;
-  while (bal > 0.01 && years.length < 35) {
-    let pPaid = 0,
-      iPaid = 0,
-      ePaid = 0,
-      balNE = bal;
-    for (let m = 0; m < 12 && bal > 0.01; m++) {
-      const intM = bal * mRate,
-        prin = Math.min(pmt - intM, bal),
-        extra = Math.min(extraMonthly, bal - prin);
-      pPaid += prin + extra;
-      iPaid += intM;
-      ePaid += extra;
-      totalInt += intM;
-      bal -= prin + extra;
-      if (bal <= 0) {
-        bal = 0;
-        break;
-      }
-      const intNE = balNE * mRate,
-        prinNE = Math.min(pmt - intNE, balNE);
-      totalIntNoExtra += intNE;
-      balNE -= prinNE;
-      if (balNE <= 0) balNE = 0;
-    }
-    years.push({
-      yr,
-      pPaid: Math.round(pPaid),
-      iPaid: Math.round(iPaid),
-      ePaid: Math.round(ePaid),
-      bal: Math.round(Math.max(0, bal)),
-    });
-    yr++;
-  }
-  return {
-    years,
-    pmt: Math.round(pmt),
-    payoffYr: years[years.length - 1]?.yr || now.getFullYear(),
-    totalInt: Math.round(totalInt),
-    interestSaved: Math.round(totalIntNoExtra - totalInt),
-  };
 }
 
 /* ════ FORMATTERS ════ */
@@ -1684,8 +1644,8 @@ const CSS = `
   body { margin:0; font-family:'Inter',sans-serif; background:#0a0f1e; color:#f1f5f9; font-size:13px; line-height:1.5; }
   .app { min-height:100vh; background:linear-gradient(135deg,#0a0f1e 0%,#0d1529 50%,#0a0f1e 100%); }
   .hdr { background:rgba(10,15,30,0.98); border-bottom:1px solid rgba(99,179,237,0.15); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(16px); }
-  .logo { font-size:18px; font-weight:800; letter-spacing:-0.03em; color:#f8fafc; }
-  .logo-sub { color:#38bdf8; font-weight:400; font-size:13px; margin-left:6px; }
+  .logo { font-size:25px; font-weight:800; letter-spacing:-0.03em; color:#f8fafc; }
+  .logo-sub { color:#38bdf8; font-weight:400; font-size:16px; margin-left:6px; }
   .mbtn { padding:5px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.12); cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:#94a3b8; }
   .mbtn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
   .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
@@ -2323,64 +2283,6 @@ function DualInput({ label, value, min, max, step, format, onChange }) {
   );
 }
 
-function CleanNumberInput({ value, onChange, min, max, step = 1, style = {} }) {
-  const [localValue, setLocalValue] = useState("");
-
-  // Sync with external value changes (e.g., from sidebar sliders)
-  useEffect(() => {
-    if (value != null && !isNaN(value)) {
-      setLocalValue(value.toString());
-    }
-  }, [value]);
-
-  const handleChange = (e) => {
-    const raw = e.target.value.replace(/,/g, "");
-    setLocalValue(raw);
-    const num = Number(raw);
-    if (!isNaN(num)) {
-      // Update parent immediately so sliders and other UI stay in sync
-      onChange(num);
-    }
-  };
-
-  const handleBlur = () => {
-    let num = Number(localValue.replace(/,/g, ""));
-    if (isNaN(num)) num = min || 0;
-    const clamped = Math.max(min || 0, Math.min(max || Infinity, num));
-    if (clamped !== num) {
-      onChange(clamped);
-      setLocalValue(clamped.toString());
-    }
-  };
-
-  const displayValue = localValue
-    ? new Intl.NumberFormat("en-US").format(Number(localValue.replace(/,/g, "")))
-    : "";
-
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      value={displayValue}
-      onChange={handleChange}
-      onBlur={handleBlur}
-      style={{
-        width: "120px",
-        maxWidth: "100%",
-        background: "#0d1b2a",
-        border: "1px solid #1e3a5f",
-        color: "#e2e8f0",
-        borderRadius: 6,
-        padding: "4px 8px",
-        fontSize: 12,
-        fontFamily: "'DM Mono',monospace",
-        textAlign: "right",
-        ...style,
-      }}
-    />
-  );
-}
-
 /* ════ IMPORT / EXPORT ════ */
 const LS_PROFILE_KEY = "aira_profile_v1";
 function saveProfileToLocal(values) {
@@ -2987,11 +2889,176 @@ function IncomeMap({ p, inf }) {
   );
 }
 
-function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverride }) {
+// Splits a profile's "Other Expenses" carveouts by label into Medical /
+// Long-Term Care / Other, for the Income & Expenses breakdown below. Carveouts
+// are matched by keyword in their label so users can drive these categories
+// just by naming a carveout "Medical" or "Long-Term Care".
+function categorizeCarveouts(carveouts, yr, inf) {
+  const iF = Math.pow(1 + (inf || 2.5) / 100, yr - new Date().getFullYear());
+  let medical = 0, ltc = 0, other = 0;
+  for (const c of carveouts || []) {
+    if (yr > (c.endYear || 9999)) continue;
+    const amt = Math.round((c.annual || 0) * iF);
+    const label = (c.label || "").toLowerCase();
+    if (/medical|health/.test(label)) medical += amt;
+    else if (/long.?term|ltc|nursing/.test(label)) ltc += amt;
+    else other += amt;
+  }
+  return { medical, ltc, other };
+}
+
+const INCOME_CATS = [
+  ["Savings Drawdown", "#5eead4"],
+  ["Social Security", "#7c3aedcc"],
+  ["Rental/Passive", "#295ff1cc"],
+  ["Other Income", "#eab308cc"],
+  ["Roth Conversion", "#f59e0b"],
+];
+
+const EXPENSE_CATS = [
+  ["General/Living", "#38bdf8"],
+  ["Mortgage/Housing", "#fb923c"],
+  ["Medical", "#0d9488"],
+  ["Long-Term Care", "#a78bfa"],
+  ["Other Expenses", "#94a3b8"],
+  ["Income Tax", "#f87171"],
+  ["Capital Gains Tax", "#64748b"],
+];
+
+// "Income & Expenses" — a Boldin-style pair of stacked-bar charts sourced from
+// the Smart Waterfall plan, so the figures shown here (including Roth
+// conversions, mortgage payoff, and carveouts) match the Withdrawal Plan tab
+// by construction. Hovering a year updates the side panel from "Lifetime"
+// totals to that year's breakdown.
+function IncomeExpensesChart({ p, inf }) {
+  const rows = useMemo(() => buildWithdrawalWaterfall(p)?.smart?.rows ?? [], [p]);
+
+  const data = useMemo(() => rows.map((r) => {
+    const { medical, ltc, other } = categorizeCarveouts(p.carveouts, r.yr, inf);
+    return {
+      yr: r.yr, age: r.age,
+      "Social Security": r.ss,
+      "Rental/Passive": r.annuityRental,
+      "Other Income": r.otherIncome,
+      "Savings Drawdown": r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth,
+      "Roth Conversion": r.conversionAmount,
+      "General/Living": r.spending,
+      "Mortgage/Housing": r.housingCost,
+      "Medical": medical,
+      "Long-Term Care": ltc,
+      "Other Expenses": other,
+      "Income Tax": r.fedTax + r.stateTax + r.irmaa,
+      "Capital Gains Tax": 0,
+    };
+  }), [rows, p.carveouts, inf]);
+
+  const [hoverYr, setHoverYr] = useState(null);
+  const hoverRow = hoverYr != null ? data.find((d) => d.yr === hoverYr) : null;
+  const onMove = (e) => { if (e && e.activeLabel != null) setHoverYr(e.activeLabel); };
+  const onLeave = () => setHoverYr(null);
+
+  if (!data.length) return null;
+
+  return (
+    <>
+      <IncomeExpenseStack
+        title="📊 Estimated Income, Drawdowns & Roth Conversions"
+        subtitle="Sourced from the Smart Waterfall plan — hover a year to see its breakdown on the right"
+        data={data} categories={INCOME_CATS}
+        hoverYr={hoverYr} hoverRow={hoverRow}
+        onMove={onMove} onLeave={onLeave}
+      />
+      <IncomeExpenseStack
+        title="📉 Estimated Expenses"
+        subtitle="Living costs, housing, taxes, and carveouts (e.g. medical, long-term care) — hover a year for its breakdown"
+        data={data} categories={EXPENSE_CATS}
+        hoverYr={hoverYr} hoverRow={hoverRow}
+        onMove={onMove} onLeave={onLeave}
+        footnote="Capital Gains Tax is not yet separately modeled (shown as $0) — realized gains on taxable-account draws are folded into Income Tax. Roth conversion tax and IRMAA surcharges are funded directly from the pre-tax bucket, so totals here may differ slightly from the Income side."
+      />
+    </>
+  );
+}
+
+function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverRow, onMove, onLeave, footnote }) {
+  const rows = categories.map(([key, color]) => ({
+    key, color,
+    value: hoverRow ? (hoverRow[key] || 0) : data.reduce((s, d) => s + (d[key] || 0), 0),
+  }));
+  const total = rows.reduce((s, r) => s + r.value, 0);
+
+  return (
+    <div className="chart-card">
+      <div className="ct">{title}</div>
+      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>{subtitle}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: 12 }}>
+        <ResponsiveContainer width="100%" height={360}>
+          <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} onMouseMove={onMove} onMouseLeave={onLeave}>
+            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+            <XAxis dataKey="yr" stroke="#1e3a5f" tick={{ fill: "#71a8f7", fontSize: 10 }} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "#71a8f7", fontSize: 10 }} tickFormatter={(v) => fmtM(v)} width={54} />
+            <Tooltip content={<Tip />} />
+            {categories.map(([key, color], i) => (
+              <Bar key={key} dataKey={key} stackId="a" fill={color} radius={i === categories.length - 1 ? [2, 2, 0, 0] : undefined} />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+        <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 12, fontSize: 12, alignSelf: "start" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+            {hoverYr != null ? `Year ${hoverYr}` : "Lifetime"}
+          </div>
+          {rows.map(({ key, color, value }) => (
+            <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#cbd5e1" }}>
+                <span style={{ width: 9, height: 9, borderRadius: 2, background: color, display: "inline-block" }} />
+                {key}
+              </div>
+              <div style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(value)}</div>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 8, paddingTop: 6, fontWeight: 700 }}>
+            <div style={{ color: "#e2e8f0" }}>Total</div>
+            <div style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(total)}</div>
+          </div>
+        </div>
+      </div>
+      {footnote && <div style={{ fontSize: 10, color: "#475569", marginTop: 8, lineHeight: 1.5 }}>ℹ️ {footnote}</div>}
+    </div>
+  );
+}
+
+// Two-way mapping between the Conversion Plan tab's button vocabulary
+// ("fill_22", "no_convert", "irmaa_safe" — matches rothConversionPlan.js's
+// ROTH_MODE_TO_TARGET) and the persisted profile field params.rothConversionTarget
+// ("fill_22", "off", "irmaa", plus the legacy un-prefixed "37"). This keeps the
+// Conversion Plan tab's selector and the Withdrawal Plan / Monte Carlo's stored
+// setting as a single value — no separate "rothMode" state.
+const PROFILE_TO_ROTHMODE = {
+  off: "no_convert",
+  irmaa: "irmaa_safe",
+  "37": "fill_37",
+  fill_10: "fill_10", fill_12: "fill_12", fill_22: "fill_22", fill_24: "fill_24",
+  fill_32: "fill_32", fill_35: "fill_35", fill_37: "fill_37",
+};
+const ROTHMODE_TO_PROFILE = {
+  no_convert: "off",
+  irmaa_safe: "irmaa",
+  fill_10: "fill_10", fill_12: "fill_12", fill_22: "fill_22", fill_24: "fill_24",
+  fill_32: "fill_32", fill_35: "fill_35", fill_37: "fill_37",
+};
+
+function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverride, onAssumptionChange }) {
 
   const [showInputs, setShowInputs] = useState(false);
   const [view, setView] = useState("optimized");
-  const [rothMode, setRothMode] = useState("fill_22");
+  // Bracket-fill strategy is a single value, persisted to the profile as
+  // params.rothConversionTarget — the Conversion Plan tab is where it's tuned,
+  // but the Withdrawal Plan tab / Monte Carlo runs read the same stored value
+  // (no separate, disconnected "rothMode" local setting).
+  const rothMode = PROFILE_TO_ROTHMODE[params?.rothConversionTarget] ?? "fill_22";
+  const setRothMode = (mode) => {
+    if (onAssumptionChange) onAssumptionChange("rothConversionTarget", ROTHMODE_TO_PROFILE[mode] ?? "fill_22");
+  };
 
   // ── Current-Year Calculator state ──────────────────────────────────────
   const currentCalYear = new Date().getFullYear() + 1; // plan for next year by default
@@ -3000,11 +3067,20 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
   const [cySS,     setCySS]     = useState(0);
   const [cyRental, setCyRental] = useState(0);
   const [cyOther,  setCyOther]  = useState(0);
-  const [cySGOV,   setCySGOV]   = useState(0);
+  // Cash available for taxes defaults from the profile's Bucket 1 (Cash)
+  // allocation — the same "pay bills now" reserve shown on the Withdrawal
+  // Plan / Bucket Strategy tab, including any per-account splits the user
+  // has assigned to Bucket 1. A one-off override lets the user refine it
+  // for this analysis without creating a second, disconnected balance.
+  const profileCashForTaxes = expandAccountBuckets(params?.accounts || [])
+    .filter(a => a.bucket === 1)
+    .reduce((s, a) => s + (a.balance || 0), 0);
+  const [cySGOVOverride, setCySGOVOverride] = useState(null);
+  const cySGOV = cySGOVOverride ?? profileCashForTaxes;
   // ───────────────────────────────────────────────────────────────────────
 
   const ex = useMemo(
-    () => buildRothExplorer({ ...(params ?? {}), rothMode }),
+    () => buildWaterfallComparison(params ?? {}, rothMode),
     [
       params?.currentAge,
       params?.retireAge,
@@ -3030,7 +3106,7 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
 
   // No-tax state scenario: same profile but state tax zeroed out (twoHousehold flag)
   const exNoTax = useMemo(
-    () => buildRothExplorer({ ...(params ?? {}), rothMode, twoHousehold: true }),
+    () => buildWaterfallComparison({ ...(params ?? {}), twoHousehold: true }, rothMode),
     [
       params?.currentAge, params?.retireAge, params?.ssAge, params?.ab,
       params?.inf, params?.port, params?.useAb, params?.ssb, params?.accounts,
@@ -3043,7 +3119,6 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
   const {
     opt,
     cur,
-    convRows,
     taxD,
     estD,
     leOpt,
@@ -3056,6 +3131,63 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
     filingStatus,
   } = ex;
 
+  // Conversion Plan ladder — built directly from buildWithdrawalWaterfall so the
+  // "Conversion" column always equals the Withdrawal Schedule tab's "Roth Conv"
+  // figure for the same year (see rothConversionPlan.js::buildConversionLadder).
+  const convRows = useMemo(
+    () => buildConversionLadder(params ?? {}, rothMode).rows,
+    [
+      params?.currentAge,
+      params?.retireAge,
+      params?.ssAge,
+      params?.ab,
+      params?.inf,
+      params?.port,
+      params?.useAb,
+      params?.ssb,
+      params?.accounts,
+      params?.dob,
+      params?.birthYear,
+      params?.filingStatus,
+      params?.stateOfResidence,
+      params?.rmdStartAge,
+      params?.taxFunding,
+      params?.gkFloor,
+      params?.gkCeiling,
+      params?.sp,
+      params?.gr,
+      params?.irmaaGuard,
+      params?.conversionOverrides,
+      rothMode,
+    ]
+  );
+
+  // Reconciled conversion plan — single source of truth, matches the
+  // Withdrawal Schedule tab's "Roth Conv" figures (see rothConversionPlan.js).
+  const conversionPlan = useMemo(
+    () => buildConversionPlan(params ?? {}),
+    [
+      params?.currentAge,
+      params?.retireAge,
+      params?.ssAge,
+      params?.ab,
+      params?.inf,
+      params?.port,
+      params?.useAb,
+      params?.ssb,
+      params?.accounts,
+      params?.dob,
+      params?.birthYear,
+      params?.filingStatus,
+      params?.rmdStartAge,
+      params?.taxFunding,
+      params?.fafsaEndYear,
+      params?.cssEndYear,
+      params?.conversionOverrides,
+      params?.rothConversionTarget,
+    ]
+  );
+
 const state = params.stateOfResidence || "NJ";   // fallback to your actual state
 const domLabel = isNoTaxState
   ? "No Tax State Move or Out of Country"
@@ -3063,6 +3195,7 @@ const domLabel = isNoTaxState
   const domColor = isNoTaxState ? "#34d399" : "#fb923c";
   
   const modeLabels = {
+      no_convert: "Off",
       fill_10: "Fill 10%",
       fill_12: "Fill 12%",
       fill_22: "Fill 22%",
@@ -3074,6 +3207,7 @@ const domLabel = isNoTaxState
   };
 
 const modeDescs = {
+    no_convert: "No conversions — pretax stays pretax until RMDs force withdrawals.",
     fill_10: "Ultra‑conservative — stay in 10% bracket. Minimal tax, slowest conversion.",
     fill_12: "Conservative — stay in 12% bracket. Low tax, slower conversion.",
     fill_22: "Moderate — fill to top of 22%. IRMAA‑safe. AiRA default.",
@@ -3303,13 +3437,13 @@ const modeDescs = {
           {Object.entries(modeLabels).map(([k, v]) => {
             const isHigh = ["fill_32","fill_35","fill_37"].includes(k);
             const isCaution = k === "fill_24";
-            const isSafe = ["fill_10","fill_12"].includes(k);
+            const isSafe = ["no_convert","fill_10","fill_12"].includes(k);
             const isDefault = k === "fill_22";
-            
+
             let bgColor = "transparent";
             let textColor = "#64748b";
             let borderColor = "rgba(255,255,255,0.1)";
-            
+
             if (rothMode === k) {
               if (isHigh) { bgColor = "rgba(239,68,68,0.15)"; textColor = "#f87171"; borderColor = "#ef4444"; }
               else if (isCaution) { bgColor = "rgba(245,158,11,0.15)"; textColor = "#fbbf24"; borderColor = "#f59e0b"; }
@@ -3422,6 +3556,59 @@ const modeDescs = {
           <div className="ms">optimized vs current</div>
         </div>
       </div>
+      {conversionPlan.totalTraditional > 0 && (
+        <div
+          style={{
+            background: "rgba(94,234,212,0.06)",
+            border: "1px solid rgba(94,234,212,0.25)",
+            borderRadius: 8,
+            padding: "10px 12px",
+            marginTop: 8,
+            fontSize: 11,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4" }}>
+              ✅ Recommended Conversion — Year 1: {fmtM(conversionPlan.recommendedSchedule[0]?.amount || 0)}
+            </div>
+            <div style={{ color: "#64748b" }}>
+              Matches the "Roth Conv" figure for {conversionPlan.recommendedSchedule[0]?.year ?? "year 1"} on the Withdrawal Schedule tab
+            </div>
+          </div>
+          {conversionPlan.needs_schedule ? (
+            <>
+              <div style={{ color: "#fbbf24", marginTop: 6 }}>
+                ⚠️ A multi-year conversion schedule is recommended because:
+              </div>
+              <ul style={{ margin: "4px 0 6px 18px", padding: 0, color: "#94a3b8" }}>
+                {conversionPlan.reasons.headroomTooSmall && (
+                  <li>This year's conversion headroom ({fmtM(conversionPlan.headroomYear0)}) is less than 20% of your total Traditional balance ({fmtM(conversionPlan.totalTraditional)}) — converting it all at once would push you into much higher brackets.</li>
+                )}
+                {conversionPlan.reasons.cannotPayTaxFromCash && (
+                  <li>The tax owed on this year's conversion can't be covered by cash/taxable savings alone.</li>
+                )}
+                {conversionPlan.reasons.rmdBracketIncrease && (
+                  <li>Without conversions, projected RMDs at age {conversionPlan.rmdAge} would push you into a higher bracket than today.</li>
+                )}
+              </ul>
+              <div style={{ color: "#64748b" }}>
+                Recommended schedule (through age {conversionPlan.rmdAge}, {conversionPlan.recommendedSchedule.length} year{conversionPlan.recommendedSchedule.length === 1 ? "" : "s"}):{" "}
+                {conversionPlan.recommendedSchedule.slice(0, 6).map((s, i) => (
+                  <span key={s.year} style={{ color: "#5eead4" }}>
+                    {i > 0 && ", "}
+                    {s.year} (age {s.age}): {fmtM(s.amount)}
+                  </span>
+                ))}
+                {conversionPlan.recommendedSchedule.length > 6 && <span style={{ color: "#475569" }}> …</span>}
+              </div>
+            </>
+          ) : (
+            <div style={{ color: "#64748b", marginTop: 4 }}>
+              This year's headroom covers a large share of your Traditional balance — no multi-year schedule needed.
+            </div>
+          )}
+        </div>
+      )}
       {view === "thisyear" && (() => {
         const isMFJ   = (params?.filingStatus || "mfj") !== "single";
         const infRate = (params?.inf || 2.5) / 100;
@@ -3552,9 +3739,19 @@ const modeDescs = {
                     <span style={{ color: "#fbbf24" }}>Cash/Treasury/Short Term cash for Taxes</span>
                     <input
                       type="number" value={cySGOV}
-                      onChange={e => setCySGOV(Number(e.target.value) || 0)}
+                      onChange={e => setCySGOVOverride(Number(e.target.value) || 0)}
                       min={0} step={1000} style={{ ...inputStyle, borderColor: "#f59e0b" }}
                     />
+                  </div>
+                  <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
+                    {cySGOVOverride != null
+                      ? <>Overridden for this analysis · Bucket 1 (Cash) balance is {fmtN(profileCashForTaxes)}{" "}
+                          <button
+                            onClick={() => setCySGOVOverride(null)}
+                            style={{ background: "none", border: "none", color: "#5eead4", cursor: "pointer", fontSize: 10, textDecoration: "underline", padding: 0, fontFamily: "inherit" }}
+                          >↺ reset to profile</button>
+                        </>
+                      : <>From Bucket 1 — Cash ({fmtN(profileCashForTaxes)}) — edit to refine for this analysis only.</>}
                   </div>
                   <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
                     Filing: {isMFJ ? "Married Filing Jointly" : "Single"} ·{" "}
@@ -3571,7 +3768,7 @@ const modeDescs = {
                 <tbody>
                   {[
                     ["W-2 / SE income",       fmtN(cyW2),       "#e2e8f0"],
-                    ["Social Security (taxable " + (provisional > ssThr85 ? "85%" : "50%") + ")", fmtN(ssTaxable), "#e2e8f0"],
+                    ["Social Security (taxable " + (cySS > 0 ? Math.round((ssTaxable / cySS) * 100) : 0) + "%)", fmtN(ssTaxable), "#e2e8f0"],
                     ["Rental / Airbnb net",   fmtN(cyRental),   "#e2e8f0"],
                     ["Other income",          fmtN(cyOther),    "#e2e8f0"],
                     ["Gross income",          fmtN(grossInc),   "#5eead4"],
@@ -3642,7 +3839,7 @@ const modeDescs = {
                   : "From taxable / HSA bucket";
                 const cyCpaTax = cyTaxFunding === "from_conv"
                   ? `Tax cost is ${fmtN(recTax.total)} — deducted from conversion; ${fmtN(cyNetRoth)} net reaches Roth.`
-                  : `Tax cost is ${fmtN(recTax.total)} — pay from ${cyTaxFunding === "outside_cash" ? "outside cash (e.g. SGOV/HYSArea)" : "your taxable / HSA bucket"}.`;
+                  : `Tax cost is ${fmtN(recTax.total)} — pay from ${cyTaxFunding === "outside_cash" ? "outside cash (e.g. SGOV/HYSA)" : "your taxable / HSA bucket"}.`;
                 return (
                   <>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
@@ -3910,7 +4107,7 @@ const modeDescs = {
                     Total
                   </td>
                   <td>—</td>
-                  <td style={{ fontWeight: 700 }}>{fmtM(opt.cConv)}</td>
+                  <td style={{ fontWeight: 700 }}>{fmtM(convRows.reduce((s, r) => s + r.conv, 0))}</td>
                   <td style={{ color: "#f87171", fontWeight: 700 }}>
                     {fmtM(convRows.reduce((s, r) => s + r.fedT, 0))}
                   </td>
@@ -4499,6 +4696,64 @@ function LandmineTip({ emoji, label, detail, color }) {
  * and a twisty (collapsible) body. Both sections default to open so the
  * full plan is visible on first load; the user can collapse either to focus.
  */
+// Sourcing guardrails — the "which bucket" controls, co-located with the waterfall
+// they shape (design-authority: proximity). They persist to the profile via the same
+// onAssumptionChange setter the Profile panel uses, so the MC stale-flag fires
+// identically. Distribution strategy stays in Profile (it's global, drives MC).
+function SourcingGuardrails({ p, onAssumptionChange, summary }) {
+  const set = onAssumptionChange ?? (() => {});
+  const saved = summary?.taxSavings ?? 0;
+  const ctl = { background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" };
+  const lbl = { fontSize: 11, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" };
+  return (
+    <div style={{
+      display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16,
+      background: "rgba(94,234,212,0.05)", border: "1px solid rgba(94,234,212,0.18)",
+      borderRadius: 8, padding: "10px 14px", margin: "10px 0",
+    }}>
+      <span style={{ fontSize: 10, fontWeight: 700, color: "#5eead4", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        Sourcing guardrails
+      </span>
+      <label style={lbl} title="Stop pre-tax (IRA/401k) draws when ordinary income would hit this tax bracket. Roth covers the rest. 'Off' = naive (pretax first, no ceiling).">
+        Stop pre-tax draws at
+        <select value={p.withdrawalBracketTarget || "22"} onChange={(e) => set("withdrawalBracketTarget", e.target.value)} style={ctl}>
+          <option value="off">Off — pretax first</option>
+          <option value="10">10% bracket</option>
+          <option value="12">12% bracket</option>
+          <option value="22">22% bracket (rec.)</option>
+          <option value="24">24% bracket</option>
+          <option value="irmaa">IRMAA-safe</option>
+        </select>
+      </label>
+      <label style={lbl} title="IRMAA = income-based Medicare premium surcharge. Caps pre-tax draws below the Tier-1 income limit (ages 63+) so your Medicare premiums don't spike 2 years later.">
+        <input type="checkbox" checked={p.irmaaGuard || false} onChange={(e) => set("irmaaGuard", e.target.checked)} style={{ cursor: "pointer", width: 15, height: 15 }} />
+        Avoid Medicare (IRMAA) surcharges
+      </label>
+      <label style={lbl} title="AiRA will not draw your Roth below this balance — protects tax-free funds during market downturns.">
+        Keep Roth above $
+        <input type="number" value={p.rothEmergencyReserve ?? 0} onChange={(e) => set("rothEmergencyReserve", Number(e.target.value) || 0)} min={0} max={2_000_000} step={10_000}
+          style={{ ...ctl, width: 110, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+      </label>
+      <label style={lbl} title="The 'tax torpedo': as income rises, up to 85% of your Social Security becomes taxable. This flags the years where that happens (thresholds frozen since the 1980s).">
+        <input type="checkbox" checked={p.ssTorpedoGuard ?? false} onChange={(e) => set("ssTorpedoGuard", e.target.checked)} style={{ cursor: "pointer", width: 15, height: 15 }} />
+        Flag when Social Security gets taxed at 85%
+      </label>
+      {/* Live feedback: the effect of these controls, surfaced at the strip (design #3) */}
+      <span
+        style={{
+          marginLeft: "auto", fontSize: 11, fontWeight: 700,
+          color: saved > 0 ? "#34d399" : "#94a3b8",
+          background: saved > 0 ? "rgba(52,211,153,0.10)" : "transparent",
+          borderRadius: 6, padding: "3px 9px", whiteSpace: "nowrap",
+        }}
+        title="Estimated lifetime tax saved by this sourcing plan vs. drawing pre-tax first with no guardrails. Updates as you change the controls."
+      >
+        {saved > 0 ? `≈ ${fmtM(saved)} lifetime tax saved vs no plan` : "No tax savings vs pretax-first at these settings"}
+      </span>
+    </div>
+  );
+}
+
 // Hoisted out of WithdrawalPlanCombined so it isn't recreated on every render
 // (a fresh component identity each render remounts the subtree and drops focus).
 function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle }) {
@@ -4531,9 +4786,13 @@ function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle }) 
   );
 }
 
-function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
+function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange }) {
   const [openSourcing, setOpenSourcing] = useState(true);
   const [openStrategy, setOpenStrategy] = useState(true);
+  // Compute the waterfall once here so the guardrail strip (always visible) and the
+  // table (when expanded) share it — no double compute, and the strip can show the
+  // live "tax saved vs no plan" delta from the same summary.
+  const waterfall = useMemo(() => buildWithdrawalWaterfall(p), [p]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -4547,9 +4806,11 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
         color: "#94a3b8",
         lineHeight: 1.55,
       }}>
-        Use these two views together. Each answers a different question — same data, different lens.
+        This tab answers two questions. <strong style={{ color: "#5eead4" }}>(1) Which accounts should you draw from each year</strong> to
+        pay the least tax over your lifetime — set the guardrails below and see the plan. <strong style={{ color: "#fbbf24" }}>(2) How much
+        does your chosen strategy plan to spend</strong> year by year. Start with the first question.
         <span style={{ display: "block", color: "#64748b", marginTop: 4 }}>
-          Tax math is shared: both schedules use the same source-aware engine, so per-year fed/state tax agree.
+          Both use the same tax engine, so the per-year tax figures agree.
         </span>
       </div>
 
@@ -4562,9 +4823,12 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
           question="Where does each year's spending come from?"
           subtitle="Account-by-account sourcing — cash → taxable → pre-tax (bracket-capped) → Roth — with tax landmines flagged"
         />
+        {/* Guardrails live here, above the collapsible, so they're visible without
+            expanding (design Finding 5) and sit next to the waterfall they shape. */}
+        <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} summary={waterfall.summary} />
         {openSourcing && (
           <div style={{ paddingLeft: 4 }}>
-            <WaterfallPlanView p={p} />
+            <WaterfallPlanView p={p} result={waterfall} />
           </div>
         )}
       </div>
@@ -4576,8 +4840,38 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
           onToggle={() => setOpenStrategy(v => !v)}
           color="#fbbf24"
           question="How does my chosen strategy pace spending year by year?"
-          subtitle="Runs the withdrawal strategy you picked in Profile → Withdrawal. Change it there to see a different strategy here."
+          subtitle="Pick a strategy to see its year-by-year schedule below — this also updates your Profile default."
         />
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+          <select
+            value={withdrawalStrategy}
+            onChange={(e) => onAssumptionChange("withdrawalStrategy", e.target.value)}
+            style={{
+              width: "100%",
+              background: "#0d1b2a",
+              border: "1px solid #1e3a5f",
+              color: "#e2e8f0",
+              borderRadius: 6,
+              padding: "8px 10px",
+              fontSize: 13,
+              fontFamily: "'Inter',sans-serif",
+            }}
+          >
+            <option value="smart">📋 Smart Waterfall (Tax-Optimal · GK→Bengen at 15yr)</option>
+            <option value="gk">Guyton‑Klinger (Dynamic)</option>
+            <option value="bengen">Bengen 4% Rule (Fixed Real $)</option>
+            <option value="fixed">Fixed % of Portfolio</option>
+            <option value="vanguard">Vanguard Dynamic Spending</option>
+            <option value="risk">Risk‑Based Guardrails</option>
+            <option value="kitces">Kitces Ratcheting</option>
+            <option value="vpw">VPW (Variable Percentage)</option>
+            <option value="cape">CAPE‑Based</option>
+            <option value="endowment">Endowment (Yale) Model</option>
+            <option value="one_n">1/N (Remaining Years)</option>
+            <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
+          </select>
+          <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(withdrawalStrategy)}</div>
+        </div>
         {openStrategy && (
           <div style={{ paddingLeft: 4 }}>
             <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={withdrawalStrategy} />
@@ -4588,9 +4882,8 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy }) {
   );
 }
 
-function WaterfallPlanView({ p }) {
+function WaterfallPlanView({ p, result }) {
   const [mode, setMode] = useState("smart");
-  const result = useMemo(() => buildWithdrawalWaterfall(p), [p]);
   const { smart, naive, summary } = result;
   const rows = mode === "smart" ? smart.rows : naive.rows;
 
@@ -4619,9 +4912,11 @@ function WaterfallPlanView({ p }) {
     "Pre-Tax": Math.round(r.fromPretax),
     Roth:    Math.round(r.fromRoth),
     Tax:     Math.round(r.totalTax),
+    "Roth Conversion": Math.round(r.conversionAmount),
   }));
 
   const anyLandmine = (r) => r.landmines.ssTorpedo || r.landmines.irmaaTriggered || r.landmines.rmdActive;
+  const anyConversion = rows.some(r => r.conversionAmount > 0);
   const initialWR   = (p.sp > 0 && p.port > 0) ? p.sp / p.port : 0.04;
   const rowWRColor  = (r) => {
     if (!r.totalPort) return "#94a3b8";
@@ -4629,17 +4924,29 @@ function WaterfallPlanView({ p }) {
     return wr > initialWR * 1.2 ? "#f87171" : wr < initialWR * 0.8 ? "#fbbf24" : "#34d399";
   };
 
+  // "Average retirement withdrawal rate" / "Out of money date" — Boldin-style
+  // decision metrics, computed from this scenario's own rows (no separate model).
+  const portAtRetire = accumulateToRetirement(p).total;
+  const wrSeries = rows
+    .map((r, i) => {
+      const startPort = i === 0 ? portAtRetire : rows[i - 1].totalPort;
+      return startPort > 0 ? r.totalWithdrawal / startPort : null;
+    })
+    .filter(v => v != null);
+  const avgWithdrawalRate = wrSeries.length ? wrSeries.reduce((a, b) => a + b, 0) / wrSeries.length : 0;
+  const depletionRow = rows.find(r => r.totalPort <= 0);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
         <div className="met">
           <div className="ml">Smart Lifetime Tax</div>
           <div className="mv" style={{ color: "#34d399", fontSize: 16 }}>{fmtM(summary.lifetimeTaxSmart)}</div>
           <div className="ms">tax-optimal waterfall</div>
         </div>
         <div className="met">
-          <div className="ml">Tax Savings vs Naive</div>
+          <div className="ml">Tax Savings vs No Plan</div>
           <div className="mv" style={{ color: summary.taxSavings > 0 ? "#34d399" : "#f87171", fontSize: 16 }}>
             {summary.taxSavings >= 0 ? "+" : ""}{fmtM(summary.taxSavings)}
           </div>
@@ -4648,7 +4955,7 @@ function WaterfallPlanView({ p }) {
         <div className="met">
           <div className="ml">Roth at Age {p.endAge || 90}</div>
           <div className="mv" style={{ color: "#a78bfa", fontSize: 16 }}>{fmtM(summary.finalRothSmart)}</div>
-          <div className="ms">smart · {fmtM(summary.finalRothNaive)} naive</div>
+          <div className="ms">smart · {fmtM(summary.finalRothNaive)} without plan</div>
         </div>
         <div className="met">
           <div className="ml">IRMAA Years Triggered</div>
@@ -4657,13 +4964,27 @@ function WaterfallPlanView({ p }) {
           </div>
           <div className="ms">{summary.ssTorpedoYears} SS torpedo yrs</div>
         </div>
+        <div className="met">
+          <div className="ml">Avg. Withdrawal Rate</div>
+          <div className="mv" style={{ color: avgWithdrawalRate > initialWR * 1.2 ? "#f87171" : "#5eead4", fontSize: 16 }}>
+            {(avgWithdrawalRate * 100).toFixed(1)}%
+          </div>
+          <div className="ms">total withdrawal ÷ prior-year portfolio</div>
+        </div>
+        <div className="met">
+          <div className="ml">Portfolio Depletion</div>
+          <div className="mv" style={{ color: depletionRow ? "#f87171" : "#34d399", fontSize: 16 }}>
+            {depletionRow ? `Age ${depletionRow.age}` : "Never"}
+          </div>
+          <div className="ms">{depletionRow ? `(${depletionRow.yr})` : `lasts to age ${p.endAge || 90}`}</div>
+        </div>
       </div>
 
       {/* Toggle */}
       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
         <span style={{ fontSize: 11, color: "#475569", marginRight: 4 }}>View:</span>
         <button style={btnStyle(mode === "smart")} onClick={() => setMode("smart")}>📋 Smart Waterfall</button>
-        <button style={btnStyle(mode === "naive")} onClick={() => setMode("naive")}>⚠️ Naive (Pretax First)</button>
+        <button style={btnStyle(mode === "naive")} onClick={() => setMode("naive")}>Without planning (pretax first)</button>
         {mode === "naive" && (
           <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
             No bracket ceiling — pretax drains first, Roth used last
@@ -4673,9 +4994,10 @@ function WaterfallPlanView({ p }) {
 
       {/* Stacked bar chart */}
       <div className="chart-card">
-        <div className="ct">Annual Withdrawals by Source — {mode === "smart" ? "Smart Waterfall" : "Naive Order"}</div>
+        <div className="ct">Annual Withdrawals by Source — {mode === "smart" ? "Smart Waterfall" : "Without Planning"}</div>
         <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
           Stacks show where each year's spending comes from; Tax (red) sits on top
+          {anyConversion && mode === "smart" && <> · Roth Conversion (purple) is a pretax→Roth transfer, not spending — shown for visibility</>}
         </div>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
@@ -4688,7 +5010,8 @@ function WaterfallPlanView({ p }) {
             <Bar dataKey="Taxable"  stackId="a" fill="#3b82f6" />
             <Bar dataKey="Pre-Tax"  stackId="a" fill="#f59e0b" />
             <Bar dataKey="Roth"     stackId="a" fill="#10b981" />
-            <Bar dataKey="Tax"      stackId="a" fill="#ef4444" radius={[2,2,0,0]} />
+            <Bar dataKey="Tax"      stackId="a" fill="#ef4444" />
+            <Bar dataKey="Roth Conversion" stackId="a" fill="#a78bfa" radius={[2,2,0,0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -4717,6 +5040,9 @@ function WaterfallPlanView({ p }) {
               <th title="Step 5 — drawn after taxable, capped at your bracket-ceiling target (RMD shown when forced)">Pre-Tax</th>
               <th style={opThStyle}>+</th>
               <th title="Step 6 — last resort; emergency reserve floor maintained">Roth</th>
+              {anyConversion && (
+                <th title="Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total.">Roth Conv</th>
+              )}
               <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End</th>
               <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR</th>
               <th>
@@ -4759,6 +5085,12 @@ function WaterfallPlanView({ p }) {
                 </td>
                 <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#10b981" }} title={fmtDollar(r.fromRoth)}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
+                {anyConversion && (
+                  <td style={{ textAlign: "right", color: "#a78bfa" }}
+                      title={r.conversionAmount > 0 ? `Converted ${fmtDollar(r.conversionAmount)} pretax → Roth — adds ~${fmtDollar(r.conversionTax)} to this year's tax (included in Fed/State below)` : "No conversion this year"}>
+                    {r.conversionAmount > 0 ? fmtK(r.conversionAmount) : "—"}
+                  </td>
+                )}
                 <td style={{ textAlign: "right", color: b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }} title={fmtDollar(b1End)}>{b1End > 0 ? fmtK(b1End) : "—"}</td>
                 <td style={{ textAlign: "right", color: "#f87171" }} title={fmtDollar(r.fedTax)}>{fmtK(r.fedTax)}</td>
                 <td style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "#475569" }} title={fmtDollar(r.stateTax)}>
@@ -4882,13 +5214,17 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
         {showTable && (
           <div style={{ overflowX: "auto" }}>
             <table className="nw-table" style={{ fontSize: 12 }}>
-              <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>SS</th><th>Rental</th><th>Other Inc</th><th>Portfolio Draw</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
+              <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>SS</th><th>Rental</th><th>Other Inc</th><th>Housing</th><th>Carveouts</th><th>Portfolio Draw</th><th>Roth Conv.</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
               <tbody>
                 {schedule.map((s) => (
                   <tr key={s.age}>
                     <td style={{ textAlign: "left" }}>{s.age}</td><td>{s.yr}</td>
                     <td style={{ color: "#fbbf24",fontSize: 16, fontWeight: 'bold'  }}>{fmtDollar(s.spending)}</td>
-                    <td>{fmtDollar(s.ss)}</td><td>{fmtDollar(s.Rental)}</td><td style={{ color: "#eab308" }}>{fmtDollar(s.OtherIncome)}</td><td>{fmtDollar(s.portfolioDraw)}</td>
+                    <td>{fmtDollar(s.ss)}</td><td>{fmtDollar(s.Rental)}</td><td style={{ color: "#eab308" }}>{fmtDollar(s.OtherIncome)}</td>
+                    <td style={{ color: "#fb7185" }}>{fmtDollar(s.housingCost || 0)}</td>
+                    <td style={{ color: "#fb7185" }}>{fmtDollar(s.carveoutCost || 0)}</td>
+                    <td>{fmtDollar(s.portfolioDraw)}</td>
+                    <td style={{ color: "#5eead4" }}>{fmtDollar(s.conversionAmount || 0)}</td>
                     <td style={{ color: "#f87171" }}>{fmtDollar(s.fedTax)}</td>
                     <td style={{ color: "#fb923c" }}>{fmtDollar(s.stateTax)}</td>
                     <td style={{ color: "#a78bfa" }}>{fmtDollar(s.irmaa)}</td>
@@ -5421,12 +5757,17 @@ function ScenariosTab({
       )}
 
       {scenarioSubTab === "withdrawals" && (
-        <WithdrawalPlanCombined p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} />
+        <WithdrawalPlanCombined p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} onAssumptionChange={onAssumptionChange} />
       )}
 
-      {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} />}
+      {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} onAssumptionChange={onAssumptionChange} />}
       {scenarioSubTab === "buckets"    && <BucketsTab params={baseParams} />}
-      {scenarioSubTab === "income"     && <IncomeMap p={baseParams} inf={inf} />}
+      {scenarioSubTab === "income"     && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <IncomeExpensesChart p={baseParams} inf={inf} />
+          <IncomeMap p={baseParams} inf={inf} />
+        </div>
+      )}
       {scenarioSubTab === "realestate" && <MortgageTab values={assumptions ?? baseParams} onChange={onAssumptionChange ?? (() => {})} />}
     </div>
   );
@@ -5539,7 +5880,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           A Monte Carlo simulation tests your retirement plan against <strong style={{ color: "#e2e8f0" }}>3,000 different market scenarios</strong> using randomized annual returns drawn from 99 years of actual S&P 500 history. Instead of assuming a single fixed growth rate, it models the real-world uncertainty of markets — some years boom, some years crash — and tells you how often your savings last through retirement. <strong style={{ color: "#5eead4" }}>A success rate above 85% is generally considered a solid plan.</strong>
         </div>
         <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-          AiRA also applies <strong style={{ color: "#fbbf24" }}>{getStrategyDescription(withdrawalStrategy)}</strong> — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.
+          AiRA also applies <strong style={{ color: "#fbbf24" }}>{getStrategyDescription(withdrawalStrategy)}</strong>
         </div>
       </div>
 
@@ -6775,39 +7116,69 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
           )}
         </div>
 
-        {/* Right — credit panel */}
-        <div style={{
-          display:      "flex",
-          alignItems:   "center",
-          gap:          16,
-          background:   creditBalance < 500 ? "rgba(239,68,68,0.06)" : "rgba(124,58,237,0.06)",
-          border:       `1px solid ${creditBalance < 500 ? "rgba(239,68,68,0.25)" : "rgba(124,58,237,0.2)"}`,
-          borderRadius: 10,
-          padding:      "10px 16px",
-          flexShrink:   0,
-        }}>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
-              AiRA Credits
+        {/* Right — credit panel (BILLING_ENABLED), or Coming Soon stub */}
+        {BILLING_ENABLED ? (
+          <div style={{
+            display:      "flex",
+            alignItems:   "center",
+            gap:          16,
+            background:   creditBalance < 500 ? "rgba(239,68,68,0.06)" : "rgba(124,58,237,0.06)",
+            border:       `1px solid ${creditBalance < 500 ? "rgba(239,68,68,0.25)" : "rgba(124,58,237,0.2)"}`,
+            borderRadius: 10,
+            padding:      "10px 16px",
+            flexShrink:   0,
+          }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+                AiRA Credits
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: creditBalance < 500 ? "#f87171" : "#e2e8f0", lineHeight: 1 }}>
+                {creditBalance.toLocaleString()}
+              </div>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: creditBalance < 500 ? "#f87171" : "#e2e8f0", lineHeight: 1 }}>
-              {creditBalance.toLocaleString()}
-            </div>
+            <button
+              onClick={() => setShowBuyModal(true)}
+              style={{
+                background:   "linear-gradient(135deg, #7c3aed, #a78bfa)",
+                border:       "none", color: "white",
+                borderRadius: 8, padding: "8px 16px",
+                fontSize:     13, fontWeight: 600, cursor: "pointer",
+                boxShadow:    "0 2px 8px rgba(124,58,237,0.3)",
+                whiteSpace:   "nowrap",
+              }}
+            >
+              💳 Buy Credits
+            </button>
           </div>
-          <button
-            onClick={() => setShowBuyModal(true)}
+        ) : (
+          <div
+            title="The AiRA Credits billing system is built and audited but not yet live. While in development, all AI calls use your personal Gemini API key (BYOK)."
             style={{
-              background:   "linear-gradient(135deg, #7c3aed, #a78bfa)",
-              border:       "none", color: "white",
-              borderRadius: 8, padding: "8px 16px",
-              fontSize:     13, fontWeight: 600, cursor: "pointer",
-              boxShadow:    "0 2px 8px rgba(124,58,237,0.3)",
-              whiteSpace:   "nowrap",
+              display:      "flex",
+              alignItems:   "center",
+              gap:          10,
+              background:   "rgba(251,191,36,0.06)",
+              border:       "1px solid rgba(251,191,36,0.3)",
+              borderRadius: 10,
+              padding:      "10px 16px",
+              flexShrink:   0,
+              cursor:       "help",
             }}
           >
-            💳 Buy Credits
-          </button>
-        </div>
+            <div style={{ fontSize: 22, lineHeight: 1 }}>🚧</div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+                AiRA Credits
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#fde68a", lineHeight: 1.15 }}>
+                Coming Soon
+              </div>
+              <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>
+                BYOK active · in development
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Session token usage — shown for BYOK users after any AI call */}
@@ -6938,6 +7309,17 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
             </div>
 
             {liveError && <div style={{ fontSize: 11, color: "#f87171", marginBottom: 8 }}>⚠ {liveError}</div>}
+
+            {!liveError && liveCards && liveCards.length === 0 && (
+              <div style={{ fontSize: 11, color: "#34d399", marginBottom: 8 }}>
+                ✓ Live search complete — no new time-sensitive updates found. Your plan figures look current.
+              </div>
+            )}
+            {!liveError && liveCards && liveCards.length > 0 && (
+              <div style={{ fontSize: 11, color: "#22d3ee", marginBottom: 8 }}>
+                🌐 Found {liveCards.length} live update{liveCards.length > 1 ? "s" : ""} — see below.
+              </div>
+            )}
 
             {/* Master-detail layout */}
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
@@ -7285,21 +7667,6 @@ function WFieldRow({ label, helper, children }) {
   );
 }
 
-// Read-only mirror of a value whose authoritative editor is the sidebar slider —
-// avoids dual-state desync from editing the same field in two places.
-function SidebarLinkedValue({ display }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-      <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 14, color: "#cbd5e1" }}>
-        {display}
-      </div>
-      <div style={{ fontSize: 9, color: "#64748b", fontStyle: "italic", whiteSpace: "nowrap" }}>
-        Edit in sidebar →
-      </div>
-    </div>
-  );
-}
-
 // Quicken-style split editor: one account, several bucket allocations by %.
 // The account keeps its single rolled-up balance; this just edits how that
 // balance is distributed across B1/B2/B3. Hoisted to module scope so it isn't
@@ -7566,10 +7933,10 @@ function AboutYouPanel({ values, onChange }) {
           RETIREMENT TIMELINE
         </div>
         <WFieldRow label="Retirement Age" helper="Age at which you plan to retire (D‑Day).">
-          <SidebarLinkedValue display={`Age ${values.retireAge}`} />
+          <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={50} max={100} step={1} />
         </WFieldRow>
         <WFieldRow label="Planning Horizon" helper="Age through which you want the plan to last.">
-          <SidebarLinkedValue display={`Age ${values.endAge}`} />
+          <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={40} max={100} step={1} />
         </WFieldRow>
         <WFieldRow label="Sex" helper="Used for SSA mortality overlay on the fan chart (male/female life expectancy tables, or blended average).">
           <select
@@ -7621,6 +7988,9 @@ function ARow({ label, desc, children }) {
 function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   const [isFocused, setIsFocused] = useState(false);
   const [localValue, setLocalValue] = useState("");
+  // A fractional step (0.1, 0.5) means this field takes decimals — hint the
+  // decimal keypad on mobile (type=text already allows "." on desktop).
+  const allowDecimals = step != null && !Number.isInteger(step);
 
   // Sync local value when prop changes (e.g., after import or external update)
   useEffect(() => {
@@ -7661,7 +8031,7 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <input
         type="text"
-        inputMode="numeric"
+        inputMode={allowDecimals ? "decimal" : "numeric"}
         value={displayValue}
         onChange={handleChange}
         onFocus={() => setIsFocused(true)}
@@ -7764,7 +8134,7 @@ function AssumptionsPanel({ values, onChange }) {
           <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
         </ARow>
         <ARow label="Cash real return" desc="Annual real return on cash/savings (e.g., HYSA)">
-          <CleanNumberInput value={values.cashRealReturn} onChange={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} />
+          <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} suffix="%" />
         </ARow>
         <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
           <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
@@ -7781,7 +8151,7 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
 
         <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in Net Worth projection">
-          <CleanNumberInput value={values.reGrowthRate} onChange={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} />
+          <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
         </ARow>
 
         {(values.filingStatus || "mfj") !== "single" && (
@@ -7842,7 +8212,7 @@ function AssumptionsPanel({ values, onChange }) {
         {(values.housingType || "own") === "rent" && (
           <ARow label="Annual rent" desc="Today's dollars — inflated each year in simulation">
             {/* ✅ Fixed: Now correctly uses annualRent field */}
-            <CleanNumberInput value={values.annualRent} onChange={(v) => onChange("annualRent", v)} min={0} max={60000} step={500} />
+            <ANumInput value={values.annualRent} onSet={(v) => onChange("annualRent", v)} min={0} max={60000} step={500} />
           </ARow>
         )}
         <div style={{ marginTop: 12 }}>
@@ -7911,23 +8281,11 @@ function AssumptionsPanel({ values, onChange }) {
         <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
           After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
         </div>
-        <ARow label="Bracket-fill target" desc="AiRA converts pretax → Roth up to this bracket ceiling each year (off = no conversions)">
-          <select
-            value={values.rothConversionTarget || "off"}
-            onChange={(e) => onChange("rothConversionTarget", e.target.value)}
-            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
-          >
-            <option value="off">Off — no conversions</option>
-            <option value="fill_10">Fill to top of 10% bracket</option>
-            <option value="fill_12">Fill to top of 12% bracket</option>
-            <option value="fill_22">Fill to top of 22% bracket</option>
-            <option value="fill_24">Fill to top of 24% bracket</option>
-            <option value="fill_32">Fill to top of 32% bracket</option>
-            <option value="fill_35">Fill to top of 35% bracket</option>
-            <option value="37">Fill to top of 37% bracket</option>
-            <option value="irmaa">IRMAA-safe (just below Tier 1)</option>
-          </select>
-        </ARow>
+        <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5, marginBottom: 12 }}>
+          The bracket-fill target is set on <strong style={{ color: "#a78bfa" }}>Scenarios → 📊 Conversion Plan</strong>,
+          right above the ladder it shapes — it's saved here in your profile so the Withdrawal Plan
+          and Monte Carlo runs use the same setting.
+        </div>
         <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, marginTop: 4 }}>
           🎓 FAFSA / CSS College-Aid Protection — enter a year to cap Roth conversions during your child's college aid window. Leave blank to disable.
         </div>
@@ -7967,54 +8325,18 @@ function AssumptionsPanel({ values, onChange }) {
 
       </div>
 
-      {/* WITHDRAWAL ORDER CARD */}
+      {/* WITHDRAWAL ORDER — sourcing controls moved to the Withdrawal Plan tab
+          (design-authority: single point of control + proximity to the waterfall
+          they shape). Profile keeps a read-only pointer for discoverability. */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#5eead4", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
           Withdrawal Order
         </div>
-        <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
-          Controls how AiRA sources each year's spending in <strong style={{ color: "#5eead4" }}>Smart Waterfall</strong> mode
-          (Scenarios → 📋 Withdrawal Plan). Cash → Taxable → Pre-Tax (to bracket) → Roth last.
+        <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5 }}>
+          Sourcing guardrails — pre-tax bracket ceiling, IRMAA guard, Roth reserve, and
+          SS-torpedo warnings — are set on <strong style={{ color: "#5eead4" }}>Scenarios → 📋 Withdrawal Plan</strong>,
+          right above the waterfall they shape. The distribution strategy stays here in Profile.
         </div>
-        <ARow label="Pretax bracket ceiling" desc="Stop pre-tax draws when ordinary income would hit this bracket. Roth covers the rest. Set 'off' to use naive ordering (pretax first, no ceiling).">
-          <select
-            value={values.withdrawalBracketTarget || "22"}
-            onChange={(e) => onChange("withdrawalBracketTarget", e.target.value)}
-            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
-          >
-            <option value="off">Off — pretax first (naive)</option>
-            <option value="10">Stop at 10% bracket</option>
-            <option value="12">Stop at 12% bracket</option>
-            <option value="22">Stop at 22% bracket (recommended)</option>
-            <option value="24">Stop at 24% bracket</option>
-            <option value="irmaa">IRMAA-safe (stay below tier-1)</option>
-          </select>
-        </ARow>
-        <ARow label="IRMAA guard" desc="Caps pre-tax draws to stay below Medicare IRMAA Tier 1 MAGI (~$218K MFJ) at ages 63+. Prevents $2,160–$11,130/yr Medicare surcharges.">
-          <input
-            type="checkbox"
-            checked={values.irmaaGuard || false}
-            onChange={(e) => onChange("irmaaGuard", e.target.checked)}
-            style={{ cursor: "pointer", width: 16, height: 16 }}
-          />
-        </ARow>
-        <ARow label="Roth emergency reserve" desc="AiRA will not draw Roth below this balance. Protects tax-free funds during sequence-of-returns downturns.">
-          <input
-            type="number"
-            value={values.rothEmergencyReserve ?? 0}
-            onChange={(e) => onChange("rothEmergencyReserve", Number(e.target.value) || 0)}
-            min={0} max={2_000_000} step={10_000}
-            style={{ width: 120, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
-          />
-        </ARow>
-        <ARow label="Show SS torpedo warnings" desc="Flags years where provisional income pushes Social Security taxation to 85% (thresholds not inflation-adjusted since 1980s).">
-          <input
-            type="checkbox"
-            checked={values.ssTorpedoGuard ?? false}
-            onChange={(e) => onChange("ssTorpedoGuard", e.target.checked)}
-            style={{ cursor: "pointer", width: 16, height: 16 }}
-          />
-        </ARow>
       </div>
 
       {/* MONTE CARLO MODEL PARAMETERS CARD */}
@@ -8039,19 +8361,19 @@ function AssumptionsPanel({ values, onChange }) {
           Monte Carlo Model Parameters
         </div>
         <ARow label="Target Portfolio Value for Early Retirement" desc="This is your retirement goal. This is the number that answers, What number do I need to retire? What is my retirement $$$ where no matter what, I RETIRE!!.">
-          <CleanNumberInput value={values.earlyRetireTarget} onChange={(v) => onChange("earlyRetireTarget", v)} min={0} max={10000000} step={50000} />
+          <ANumInput value={values.earlyRetireTarget} onSet={(v) => onChange("earlyRetireTarget", v)} min={0} max={10000000} step={50000} />
         </ARow>
         <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is a number where, if you hit this, would reconsider your target goal? This is a number that is a secondary decision. If you hit this, would you be ok with this goal if something caused a change in your plan,">
-          <CleanNumberInput value={values.portfolioGoal} onChange={(v) => onChange("portfolioGoal", v)} min={0} max={10000000} step={50000} />
+          <ANumInput value={values.portfolioGoal} onSet={(v) => onChange("portfolioGoal", v)} min={0} max={10000000} step={50000} />
         </ARow>
         <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
-          <CleanNumberInput value={values.ssCola} onChange={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} />
+          <ANumInput value={values.ssCola} onSet={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} suffix="%" />
         </ARow>
         <ARow label="Pre-retirement equity weight" desc="Equity % before retirement age (default 91%)">
-          <CleanNumberInput value={values.preRetireEq} onChange={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} />
+          <ANumInput value={values.preRetireEq} onSet={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} suffix="%" />
         </ARow>
         <ARow label="Post-retirement equity weight" desc="Equity % after retirement age (default 70%)">
-          <CleanNumberInput value={values.postRetireEq} onChange={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} />
+          <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} suffix="%" />
         </ARow>
       </div>
 
@@ -8064,16 +8386,16 @@ function AssumptionsPanel({ values, onChange }) {
           In each simulation year after the shock age, there is a random probability of a large one-time healthcare cost.
         </div>
         <ARow label="Shock start age" desc="Age after which annual healthcare shocks can occur (default 72)">
-          <CleanNumberInput value={values.hcShockAge} onChange={(v) => onChange("hcShockAge", v)} min={60} max={85} step={1} />
+          <ANumInput value={values.hcShockAge} onSet={(v) => onChange("hcShockAge", v)} min={60} max={85} step={1} />
         </ARow>
         <ARow label="Annual shock probability" desc="Chance of a shock in any given year (default 3.5%)">
-          <CleanNumberInput value={values.hcProb} onChange={(v) => onChange("hcProb", v)} min={0} max={20} step={0.5} />
+          <ANumInput value={values.hcProb} onSet={(v) => onChange("hcProb", v)} min={0} max={20} step={0.5} suffix="%" />
         </ARow>
         <ARow label="Shock cost — minimum" desc="Low end of randomized healthcare shock cost (default $70K)">
-          <CleanNumberInput value={values.hcMin} onChange={(v) => onChange("hcMin", v)} min={0} max={200000} step={5000} />
+          <ANumInput value={values.hcMin} onSet={(v) => onChange("hcMin", v)} min={0} max={200000} step={5000} />
         </ARow>
         <ARow label="Shock cost — maximum" desc="High end of randomized healthcare shock cost (default $130K)">
-          <CleanNumberInput value={values.hcMax} onChange={(v) => onChange("hcMax", v)} min={0} max={500000} step={5000} />
+          <ANumInput value={values.hcMax} onSet={(v) => onChange("hcMax", v)} min={0} max={500000} step={5000} />
         </ARow>
       </div>
       <div
@@ -8106,7 +8428,7 @@ function ContribPanel({ values, onChange }) {
           ANNUAL CONTRIBUTIONS — Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
         </div>
         <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
-          <SidebarLinkedValue display={`${fmtK(annual401k)}/yr`} />
+          <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="HSA Monthly Contribution" helper="Family limit $8,550 + $1,000 catch‑up (2026).">
           <ANumInput value={hsaMonthly} onSet={(v) => onChange("hsaMonthly", v)} min={0} max={1_000} step={50} suffix="/mo" />
@@ -8306,46 +8628,30 @@ function RetirementPanel({ values, onChange }) {
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>WITHDRAWAL STRATEGY</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <select
-            value={strategy}
-            onChange={(e) => onChange("withdrawalStrategy", e.target.value)}
-            style={{
-              width: "100%",
-              background: "#0d1b2a",
-              border: "1px solid #1e3a5f",
-              color: "#e2e8f0",
-              borderRadius: 6,
-              padding: "8px 10px",
-              fontSize: 13,
-              fontFamily: "'Inter',sans-serif",
-            }}
-          >
-            <option value="smart">📋 Smart Waterfall (Tax-Optimal · GK→Bengen at 15yr)</option>
-            <option value="gk">Guyton‑Klinger (Dynamic)</option>
-            <option value="bengen">Bengen 4% Rule (Fixed Real $)</option>
-            <option value="fixed">Fixed % of Portfolio</option>
-            <option value="vanguard">Vanguard Dynamic Spending</option>
-            <option value="risk">Risk‑Based Guardrails</option>
-            <option value="kitces">Kitces Ratcheting</option>
-            <option value="vpw">VPW (Variable Percentage)</option>
-            <option value="cape">CAPE‑Based</option>
-            <option value="endowment">Endowment (Yale) Model</option>
-            <option value="one_n">1/N (Remaining Years)</option>
-            <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
-          </select>
+          <div style={{
+            width: "100%",
+            background: "#0d1b2a",
+            border: "1px solid #1e3a5f",
+            color: "#e2e8f0",
+            borderRadius: 6,
+            padding: "8px 10px",
+            fontSize: 13,
+            fontFamily: "'Inter',sans-serif",
+          }}>
+            {getStrategyLabel(strategy)}
+          </div>
           <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(strategy)}</div>
+          <div style={{ fontSize: 11, color: "#5eead4" }}>Change this in the Withdrawal Schedule tab →</div>
         </div>
       </div>
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
         <WFieldRow label="US Spending (annual)" helper="Domestic household spending in today's dollars. Subject to state income tax when residing in-state.">
-          <SidebarLinkedValue display={`${fmtK(values.sp || 0)}/yr`} />
+          <ANumInput value={values.sp || 0} onSet={(v) => onChange("sp", v)} min={0} max={500000} step={1000} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="Out-of-Country Spending (annual)" helper="Spending that occurs abroad in today's dollars. Always drawn from the portfolio but never subject to US state tax.">
-          {twoHousehold
-            ? <SidebarLinkedValue display={`${fmtK(outOfCountrySp)}/yr`} />
-            : <ANumInput value={outOfCountrySp} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={500000} step={1000} suffix="/yr" />}
+          <ANumInput value={values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={500000} step={1000} suffix="/yr" />
         </WFieldRow>
         <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span>Total combined annual spending (used for portfolio draw)</span>
@@ -8359,7 +8665,7 @@ function RetirementPanel({ values, onChange }) {
           <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={5000} step={50} suffix="/mo" />
         </WFieldRow>
         <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
-          <SidebarLinkedValue display={`${values.ssAge || 67} yrs`} />
+          <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={62} max={70} step={1} suffix=" yrs"/>
         </WFieldRow>
       </div>
 
@@ -8671,6 +8977,13 @@ export default function AiRAForecaster() {
       cashRealReturn: assumptions.cashRealReturn ?? 1.0,
       useJointRmdTable: assumptions.useJointRmdTable || false,
       withdrawalStrategy: assumptions.withdrawalStrategy,
+      // Sourcing guardrails — MUST be forwarded here or runMC + the Withdrawal Plan
+      // tab never see them (they live in `assumptions`, but the engine reads `params`).
+      // Defaults mirror BLANK_PROFILE.
+      withdrawalBracketTarget: assumptions.withdrawalBracketTarget || "22",
+      irmaaGuard: assumptions.irmaaGuard || false,
+      rothEmergencyReserve: assumptions.rothEmergencyReserve || 0,
+      ssTorpedoGuard: assumptions.ssTorpedoGuard || false,
       fixedWithdrawalRate: (() => { const r = assumptions.fixedWithdrawalRate || 4.0; return r < 1 ? r : r / 100; })(), // normalize: stored as % (4) or decimal (0.04) → always decimal
       vanguardInitialRate: 0.04,
       vanguardCap: 0.05,
