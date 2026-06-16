@@ -16,7 +16,11 @@ const GEMINI_BASE        = "https://generativelanguage.googleapis.com/v1beta/mod
 const MODEL_FAST         = "gemini-2.5-flash";
 const MODEL_STANDARD     = "gemini-2.5-flash";
 const RAW_TOKENS_PER_CREDIT = 1_000;  // must match src/billing/credits.js
-const MIN_CREDITS_GUARD  = 5;         // refuse if balance below this before calling
+// Refuse calls if balance is below this. Set above the expected max single-call
+// cost so a parallel-request overdraft can't open more than one call's worth of
+// free spend. Typical Gemini health/narrative call uses ~30-60 credits; 50 here
+// caps the worst-case parallel overdraft to ~1 free call's value.
+const MIN_CREDITS_GUARD  = 50;
 
 // ─── Gemini helpers ───────────────────────────────────────────────────────────
 
@@ -353,18 +357,33 @@ async function deductD1Credits(db, customerId, rawTokens) {
   const creditCost = Math.ceil(rawTokens / RAW_TOKENS_PER_CREDIT);
   if (creditCost <= 0) return { creditsUsed: 0, creditsRemaining: null };
 
-  await db.batch([
-    db.prepare(`
-      UPDATE customers
-      SET credits    = MAX(0, credits - ?),
-          updated_at = unixepoch()
-      WHERE stripe_customer_id = ?
-    `).bind(creditCost, customerId),
-    db.prepare(`
-      INSERT INTO credit_transactions (customer_id, type, amount, raw_tokens)
-      VALUES (?, 'deduct', ?, ?)
-    `).bind(customerId, -creditCost, rawTokens),
-  ]);
+  // Audit fix C4: atomic conditional UPDATE. The WHERE clause guarantees we
+  // only deduct when balance covers the cost. meta.changes === 0 means a
+  // concurrent request already drained the balance below the threshold; we
+  // record the overdraft as an audit row so reconciliation can detect drift
+  // between customer.credits and SUM(credit_transactions.amount).
+  const upd = await db.prepare(`
+    UPDATE customers
+    SET credits    = credits - ?,
+        updated_at = unixepoch()
+    WHERE stripe_customer_id = ? AND credits >= ?
+  `).bind(creditCost, customerId, creditCost).run();
+
+  const deducted = upd.meta?.changes === 1;
+
+  await db.prepare(`
+    INSERT INTO credit_transactions (customer_id, type, amount, raw_tokens)
+    VALUES (?, ?, ?, ?)
+  `).bind(
+    customerId,
+    deducted ? "deduct" : "overdraft",
+    -creditCost,
+    rawTokens
+  ).run();
+
+  if (!deducted) {
+    console.warn(`[analyze] overdraft for ${customerId}: cost=${creditCost} raw_tokens=${rawTokens}`);
+  }
 
   const row = await db.prepare(
     "SELECT credits FROM customers WHERE stripe_customer_id = ?"

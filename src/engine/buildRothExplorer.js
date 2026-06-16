@@ -476,7 +476,9 @@ function buildRothExplorer(params = {}) {
           if (cssEndYear && yr <= cssEndYear && (!fafsaEndYear || yr > fafsaEndYear) && b22t < targetTop) {
             targetTop = b22t; capReason = `CSS Profile guard (≤${cssEndYear})`;
           }
-          const room = Math.max(0, targetTop - txBC);
+          // room is sized so post-conversion taxable income lands exactly on targetTop,
+          // even when pre-conversion income (incBC) was below stdD and txBC got floored at 0.
+          const room = Math.max(0, targetTop + stdD - incBC);
           const preCap = Math.min(room, Math.max(0, pT));
           conv = Math.round(preCap);
           if (pT < room) capReason = "pretax exhausted";
