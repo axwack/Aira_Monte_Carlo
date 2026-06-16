@@ -196,7 +196,7 @@ wrangler d1 execute aira-credits --file=db/schema.sql --remote
 | # | Severity | File | Issue | Recommended Fix |
 |---|----------|------|-------|-----------------|
 | H1 | ~~HIGH~~ ✅ | `webhook.js` | No `event.id` idempotency → async-payment edge case could double-credit. | ✅ Fixed alongside C2 via new `webhook_events` table. |
-| H2 | HIGH | `webhook.js` | `charge.refunded` / `charge.dispute.created` events not handled. User buys $15, spends $0.50, files chargeback → keeps credits + merchant pays dispute fee. Permanent profit leak. | Listen for these event types. On refund: SET credits = MAX(0, credits − amount). On dispute: lock customer (`status='disputed'`) and require manual re-enable. Add `'refund'` to txn type CHECK. |
+| H2 | ~~HIGH~~ ✅ | `webhook.js`, `analyze.js`, `db/schema.sql` | `charge.refunded` / `charge.dispute.created` events not handled. User buys $15, spends $0.50, files chargeback → keeps credits + merchant pays dispute fee. Permanent profit leak. | ✅ Fixed 2026-06-15. `charge.refunded`: deduct credits proportional to refund delta (cents→credits at 1000/dollar rate), handles partial refunds via `previous_attributes.amount_refunded` delta. `charge.dispute.created`: fetch charge to resolve customer, set `status='disputed'`, write `dispute_lock` audit row. `analyze.js` now checks `status` and returns 403 for disputed accounts. Schema: `customers.status` column added; `credit_transactions.type` CHECK expanded to include `'refund'` and `'dispute_lock'`. Migration: `db/migrations/002_h2_refund_dispute.sql`. 293/293 tests pass. |
 | H3 | ~~HIGH~~ ✅ | `checkout.js`, `verify-session.js`, `credits.js` | Session_id leak → JWT theft / account takeover. | ✅ Fixed in `c9bbe59`. `/api/checkout` generates a random UUID nonce, stores in new `pending_checkouts` D1 table (30-min TTL), embeds in success_url alongside Stripe's `{CHECKOUT_SESSION_ID}` placeholder. `/api/verify-session` requires both params and atomically consumes the nonce via conditional UPDATE (single-use + race-safe via `meta.changes === 1`). Defense-in-depth: still re-checks Stripe `payment_status === 'paid'` after nonce consume. Client `useStripeReturn` reads + cleans both URL params; if nonce missing, surfaces a recovery message pointing users to support. Fails closed if the `pending_checkouts` table is missing. Recovery for missed nonce window: webhook still credits user → ops uses admin panel `issue-jwt`. |
 | H4 | HIGH | `admin.js` | No rate limiting; no audit log of who issued grants. Compromise of ADMIN_SECRET = invisible drain. | Cloudflare WAF rate-limit `/api/admin` (e.g. 10/min/IP). Add `admin_actor` + `admin_ip` to audit trail. |
 | H5 | ~~HIGH~~ ✅ | `analyze.js` | `MAX(0, credits − ?)` masked deduction failures. | ✅ Fixed alongside C4 via conditional UPDATE + overdraft row. |
@@ -242,12 +242,12 @@ Append **`?aira_admin=1`** to the app URL. Floating overlay (bottom-right). Requ
 - [x] C4: atomic credit deduction + overdraft audit row
 - [x] C5: constant-time `ADMIN_SECRET` compare
 - [x] H1: webhook event.id idempotency (resolved alongside C2)
-- [ ] H2: refund / dispute / chargeback handling
+- [x] H2: refund / dispute / chargeback handling
 - [x] H3: bind `verify-session` to a one-time purchase nonce (`c9bbe59`)
 - [ ] H4: rate-limit `/api/admin` + admin audit trail
 - [ ] Schema migration applied: `wrangler d1 execute aira-credits --file=db/schema.sql --remote`
 - [ ] Env vars set in Cloudflare Pages: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PRO`, `GEMINI_API_KEY`, `JWT_SECRET` (32+ hex), `ADMIN_SECRET` (32+ chars)
-- [ ] Stripe webhook configured: `POST https://<domain>/api/webhook` listening for `checkout.session.completed` (and once H2 lands: `charge.refunded`, `charge.dispute.created`)
+- [ ] Stripe webhook configured: `POST https://<domain>/api/webhook` listening for `checkout.session.completed`, `charge.refunded`, `charge.dispute.created`
 - [ ] Sandbox tested via `simulate-purchase` admin action
 - [ ] Sandbox tested via Stripe CLI: `stripe trigger checkout.session.completed`
 

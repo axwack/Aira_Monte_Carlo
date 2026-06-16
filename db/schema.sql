@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS customers (
   stripe_customer_id  TEXT    PRIMARY KEY,
   email               TEXT,
   credits             INTEGER NOT NULL DEFAULT 0,
+  status              TEXT    NOT NULL DEFAULT 'active',
   created_at          INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at          INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -13,7 +14,7 @@ CREATE TABLE IF NOT EXISTS customers (
 CREATE TABLE IF NOT EXISTS credit_transactions (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_id         TEXT    NOT NULL REFERENCES customers(stripe_customer_id),
-  type                TEXT    NOT NULL CHECK(type IN ('purchase', 'deduct', 'free_grant', 'overdraft')),
+  type                TEXT    NOT NULL CHECK(type IN ('purchase', 'deduct', 'free_grant', 'overdraft', 'refund', 'dispute_lock')),
   amount              INTEGER NOT NULL,   -- positive = added, negative = deducted
   raw_tokens          INTEGER,            -- for 'deduct' rows: actual Gemini token count
   stripe_session_id   TEXT,              -- for 'purchase' rows: Stripe session id
