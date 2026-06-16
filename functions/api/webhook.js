@@ -14,15 +14,13 @@
  */
 
 import { json, handleOptions, stripeGet, verifyStripeWebhook } from "../_shared/jwt.js";
+import { refundCreditsDelta } from "../_shared/billing-math.js";
 
 const PACK_CREDITS = {
   starter: 5_000,
   value:   10_000,
   pro:     15_000,
 };
-
-// 1 000 credits per dollar — must match client-side pack definitions.
-const CREDITS_PER_DOLLAR = 1_000;
 
 export function onRequestOptions() {
   return handleOptions();
@@ -78,6 +76,8 @@ export async function onRequestPost({ request, env }) {
       return handleChargeRefunded(event, env);
     case "charge.dispute.created":
       return handleDisputeCreated(event, env);
+    case "charge.dispute.closed":
+      return handleDisputeClosed(event, env);
     default:
       return json({ received: true });
   }
@@ -164,19 +164,25 @@ async function handleChargeRefunded(event, env) {
     return json({ received: true, note: "no customer" });
   }
 
-  // Compute the credit delta for *this* event only.
-  // event.data.previous_attributes.amount_refunded is the prior cumulative total;
-  // charge.amount_refunded is the new cumulative total after this refund.
-  // The difference is the amount being refunded in this specific event.
-  const prevRefunded = event.data?.previous_attributes?.amount_refunded ?? 0;
-  const deltaCents   = (charge.amount_refunded ?? 0) - prevRefunded;
+  // Per-event idempotency, independent of the webhook_events table (which may be
+  // absent on a DB migrated before it existed). We stamp event.id into the audit
+  // row's stripe_session_id and refuse to process the same event.id twice.
+  if (await alreadyProcessed(env, event.id, "refund")) {
+    return json({ received: true, note: "duplicate refund event" });
+  }
 
-  if (deltaCents <= 0) {
+  // Credits to deduct for *this* event only (handles partial refunds via the
+  // previous_attributes delta — see refundCreditsDelta).
+  const deltaCents      = (charge.amount_refunded ?? 0) - (event.data?.previous_attributes?.amount_refunded ?? 0);
+  const creditsToDeduct = refundCreditsDelta(
+    charge.amount_refunded,
+    event.data?.previous_attributes?.amount_refunded
+  );
+
+  if (creditsToDeduct <= 0) {
     console.log("[webhook] charge.refunded: no new credit delta, skipping");
     return json({ received: true, note: "no delta" });
   }
-
-  const creditsToDeduct = Math.round((deltaCents / 100) * CREDITS_PER_DOLLAR);
 
   try {
     await env.DB.batch([
@@ -186,9 +192,9 @@ async function handleChargeRefunded(event, env) {
         WHERE stripe_customer_id = ?
       `).bind(creditsToDeduct, customerId),
       env.DB.prepare(`
-        INSERT INTO credit_transactions (customer_id, type, amount)
-        VALUES (?, 'refund', ?)
-      `).bind(customerId, -creditsToDeduct),
+        INSERT INTO credit_transactions (customer_id, type, amount, stripe_session_id)
+        VALUES (?, 'refund', ?, ?)
+      `).bind(customerId, -creditsToDeduct, event.id ?? null),
     ]);
     console.log(`[webhook] Refund: deducted ${creditsToDeduct} credits from ${customerId} ($${(deltaCents / 100).toFixed(2)} refunded)`);
   } catch (e) {
@@ -197,6 +203,22 @@ async function handleChargeRefunded(event, env) {
   }
 
   return json({ received: true });
+}
+
+// Secondary idempotency guard: has this exact event.id already produced an audit
+// row of the given type? Independent of the webhook_events dedup table so refund/
+// dispute handlers stay safe even if that table was never migrated in.
+async function alreadyProcessed(env, eventId, type) {
+  if (!eventId) return false;
+  try {
+    const row = await env.DB.prepare(
+      "SELECT id FROM credit_transactions WHERE stripe_session_id = ? AND type = ?"
+    ).bind(eventId, type).first();
+    return !!row;
+  } catch (e) {
+    console.warn("[webhook] idempotency pre-check failed:", e.message);
+    return false;
+  }
 }
 
 // ─── charge.dispute.created ───────────────────────────────────────────────────
@@ -225,6 +247,10 @@ async function handleDisputeCreated(event, env) {
     return json({ received: true, note: "no customer on charge" });
   }
 
+  if (await alreadyProcessed(env, event.id, "dispute_lock")) {
+    return json({ received: true, note: "duplicate dispute event" });
+  }
+
   try {
     await env.DB.batch([
       env.DB.prepare(`
@@ -233,13 +259,72 @@ async function handleDisputeCreated(event, env) {
         WHERE stripe_customer_id = ?
       `).bind(customerId),
       env.DB.prepare(`
-        INSERT INTO credit_transactions (customer_id, type, amount)
-        VALUES (?, 'dispute_lock', 0)
-      `).bind(customerId),
+        INSERT INTO credit_transactions (customer_id, type, amount, stripe_session_id)
+        VALUES (?, 'dispute_lock', 0, ?)
+      `).bind(customerId, event.id ?? null),
     ]);
     console.log(`[webhook] Dispute lock: suspended customer ${customerId} (charge: ${chargeId})`);
   } catch (e) {
     console.error("[webhook] charge.dispute.created D1 write failed:", e.message);
+    return json({ error: "Database error" }, 500);
+  }
+
+  return json({ received: true });
+}
+
+// ─── charge.dispute.closed ────────────────────────────────────────────────────
+// A dispute that closes in the merchant's favor ('won') should lift the account
+// lock — otherwise a customer who wins is suspended forever. A 'lost' dispute
+// leaves the account suspended (the chargeback stands). 'warning_closed' and
+// other non-final states are ignored.
+
+async function handleDisputeClosed(event, env) {
+  const dispute  = event.data?.object;
+  const chargeId = dispute?.charge;
+  const status   = dispute?.status; // 'won' | 'lost' | 'warning_closed' | ...
+
+  if (status !== "won") {
+    return json({ received: true, note: `dispute closed as '${status}' — lock unchanged` });
+  }
+  if (!chargeId) {
+    console.error("[webhook] charge.dispute.closed: no charge ID on dispute");
+    return json({ received: true, note: "no charge" });
+  }
+
+  let charge;
+  try {
+    charge = await stripeGet(env.STRIPE_SECRET_KEY, `/charges/${chargeId}`);
+  } catch (e) {
+    console.error("[webhook] charge.dispute.closed: charge lookup failed:", e.message);
+    return json({ error: "Charge lookup failed" }, 500);
+  }
+
+  const customerId = charge.customer;
+  if (!customerId) {
+    return json({ received: true, note: "no customer on charge" });
+  }
+
+  if (await alreadyProcessed(env, event.id, "dispute_release")) {
+    return json({ received: true, note: "duplicate dispute-closed event" });
+  }
+
+  try {
+    await env.DB.batch([
+      // Only lift the lock if it's still 'disputed' — never resurrect an account
+      // suspended for some other reason.
+      env.DB.prepare(`
+        UPDATE customers
+        SET status = 'active', updated_at = unixepoch()
+        WHERE stripe_customer_id = ? AND status = 'disputed'
+      `).bind(customerId),
+      env.DB.prepare(`
+        INSERT INTO credit_transactions (customer_id, type, amount, stripe_session_id)
+        VALUES (?, 'dispute_release', 0, ?)
+      `).bind(customerId, event.id ?? null),
+    ]);
+    console.log(`[webhook] Dispute won: reactivated customer ${customerId} (charge: ${chargeId})`);
+  } catch (e) {
+    console.error("[webhook] charge.dispute.closed D1 write failed:", e.message);
     return json({ error: "Database error" }, 500);
   }
 

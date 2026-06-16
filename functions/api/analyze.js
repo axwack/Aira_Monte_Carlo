@@ -431,11 +431,14 @@ export async function onRequestPost({ request, env }) {
       "SELECT credits, status FROM customers WHERE stripe_customer_id = ?"
     ).bind(customerId).first();
 
+    // Suspended-account check MUST precede the balance check: a disputed account
+    // that is also drained should see "Account suspended" (403), not the
+    // misleading "Insufficient credits" (402).
+    if (customer && customer.status === "disputed") {
+      return json({ error: "Account suspended. Please contact support." }, 403);
+    }
     if (!customer || customer.credits < MIN_CREDITS_GUARD) {
       return json({ error: "Insufficient AiRA credits. Please purchase a credit pack to continue." }, 402);
-    }
-    if (customer.status === "disputed") {
-      return json({ error: "Account suspended. Please contact support." }, 403);
     }
   }
 
