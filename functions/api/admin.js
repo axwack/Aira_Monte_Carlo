@@ -42,13 +42,32 @@ export function onRequestOptions() {
   return handleOptions();
 }
 
+// Audit fix C5: constant-time string comparison so secret bytes cannot be
+// recovered byte-by-byte via response-timing analysis. XORs every byte
+// regardless of mismatch so the loop's runtime is data-independent.
+function constantTimeEqual(a, b) {
+  const aBytes = new TextEncoder().encode(a);
+  const bBytes = new TextEncoder().encode(b);
+  // Always iterate the longer; XOR-in length difference so unequal lengths
+  // still take comparable time but fail.
+  const len = Math.max(aBytes.length, bBytes.length);
+  let diff = aBytes.length ^ bBytes.length;
+  for (let i = 0; i < len; i++) {
+    diff |= (aBytes[i] || 0) ^ (bBytes[i] || 0);
+  }
+  return diff === 0;
+}
+
 export async function onRequestPost({ request, env }) {
   // ── Auth ──────────────────────────────────────────────────────────────────
   if (!env.ADMIN_SECRET) {
     return json({ ok: false, error: "ADMIN_SECRET not configured on this deployment" }, 503);
   }
   const authHeader = request.headers.get("Authorization") || "";
-  if (!authHeader.startsWith("Bearer ") || authHeader.slice(7) !== env.ADMIN_SECRET) {
+  const presented  = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!presented || !constantTimeEqual(presented, env.ADMIN_SECRET)) {
+    // Brief constant-ish randomized delay to mask any residual timing signal.
+    await new Promise(r => setTimeout(r, 80 + Math.floor(Math.random() * 40)));
     return json({ ok: false, error: "Unauthorized" }, 401);
   }
 

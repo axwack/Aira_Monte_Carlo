@@ -17,7 +17,9 @@ import { hasEnoughCredits, deductCredits, ESTIMATED_CREDITS_PER_CALL, getStoredJ
 // ─── Billing mode flag ────────────────────────────────────────────────────────
 // Flip to true when Path A (token-resale) goes live.
 // When false, all credit logic is bypassed — pure BYOK, no code path changes.
-export const BILLING_ENABLED = true;
+// CURRENTLY OFF: HIGH-severity audit findings H2/H3/H4 still open.
+// Tracked in Requirements.md §7 pre-launch checklist.
+export const BILLING_ENABLED = false;
 
 // ─── Billing proxy ────────────────────────────────────────────────────────────
 // Routes all AI calls through /api/analyze when BILLING_ENABLED = true.
@@ -286,7 +288,7 @@ function healthFallback(values, mcResults) {
 // ─── 1. Retirement Health Score ───────────────────────────────────────────────
 
 export async function analyzeRetirementHealth(values, mcResults) {
-  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
+  if (BILLING_ENABLED && getStoredJWT()) {
     try { return await callViaProxy("health", { values, mcResults }); }
     catch { return healthFallback(values, mcResults); }
   }
@@ -322,7 +324,7 @@ export async function analyzeRetirementHealth(values, mcResults) {
 // ─── 2. Narrative Summary ─────────────────────────────────────────────────────
 
 export async function generateNarrativeSummary(values, mcResults) {
-  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
+  if (BILLING_ENABLED && getStoredJWT()) {
     const rate = mcResults?.rate ?? 0;
     const fallback = `**Aira Narrative (unavailable)**\n\n${(rate * 100).toFixed(1)}% success rate.`;
     try {
@@ -350,7 +352,7 @@ export async function generateNarrativeSummary(values, mcResults) {
 
 export async function suggestWithdrawalOptimization(values, mcResults) {
   const current = values.withdrawalStrategy || "gk";
-  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
+  if (BILLING_ENABLED && getStoredJWT()) {
     try { return await callViaProxy("withdrawal", { values, mcResults }); }
     catch { return { recommended: current, reason: "AI unavailable.", projectedRateImprovement: "N/A" }; }
   }
@@ -386,7 +388,7 @@ export async function suggestWithdrawalOptimization(values, mcResults) {
 // ─── 4. Roth Conversion Strategy ─────────────────────────────────────────────
 
 export async function evaluateRothStrategy(values) {
-  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
+  if (BILLING_ENABLED && getStoredJWT()) {
     try { return await callViaProxy("roth", { values }); }
     catch { /* fall through to rules fallback */ }
   }
@@ -431,7 +433,7 @@ export async function evaluateRothStrategy(values) {
 // ─── 5. Conversational Chat Response ─────────────────────────────────────────
 
 export async function generateChatResponse(values, mcResults, question, history = []) {
-  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
+  if (BILLING_ENABLED && getStoredJWT()) {
     try {
       const result = await callViaProxy("chat", { values, mcResults, question, history });
       return result.text;
@@ -481,7 +483,7 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
     })),
   };
 
-  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
+  if (BILLING_ENABLED && getStoredJWT()) {
     const result = await callViaProxy("actionplan", { values: slimValues, mcResults, cards });
     return result.cards;
   }
@@ -605,7 +607,7 @@ function getSearchTopics(values) {
 }
 
 export async function generateTimeSensitiveCards(values, mcResults) {
-  if (BILLING_ENABLED && !values?.geminiApiKey?.trim()) {
+  if (BILLING_ENABLED && getStoredJWT()) {
     try {
       const result = await callViaProxy("timesensitive", { values, mcResults });
       return result.cards || [];
