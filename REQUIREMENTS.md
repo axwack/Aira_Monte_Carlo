@@ -4,7 +4,7 @@ Living document tracking the business-logic requirements of the forecaster, what
 been fixed, and the open backlog from the June 2026 code review. Update this file
 whenever engine rules change.
 
-Last updated: **2026-06-13** (branch `main`)
+Last updated: **2026-06-16** (branch `main`)
 
 ---
 
@@ -196,7 +196,7 @@ wrangler d1 execute aira-credits --file=db/schema.sql --remote
 | # | Severity | File | Issue | Recommended Fix |
 |---|----------|------|-------|-----------------|
 | H1 | ~~HIGH~~ ✅ | `webhook.js` | No `event.id` idempotency → async-payment edge case could double-credit. | ✅ Fixed alongside C2 via new `webhook_events` table. |
-| H2 | ~~HIGH~~ ✅ | `webhook.js`, `analyze.js`, `db/schema.sql` | `charge.refunded` / `charge.dispute.created` events not handled. User buys $15, spends $0.50, files chargeback → keeps credits + merchant pays dispute fee. Permanent profit leak. | ✅ Fixed 2026-06-15. `charge.refunded`: deduct credits proportional to refund delta (cents→credits at 1000/dollar rate), handles partial refunds via `previous_attributes.amount_refunded` delta. `charge.dispute.created`: fetch charge to resolve customer, set `status='disputed'`, write `dispute_lock` audit row. `analyze.js` now checks `status` and returns 403 for disputed accounts. Schema: `customers.status` column added; `credit_transactions.type` CHECK expanded to include `'refund'` and `'dispute_lock'`. Migration: `db/migrations/002_h2_refund_dispute.sql`. 293/293 tests pass. |
+| H2 | ~~HIGH~~ ⚠️✅ | `webhook.js`, `analyze.js`, `db/schema.sql`, `db/migrations/` | `charge.refunded` / `charge.dispute.created` events not handled. User buys $15, spends $0.50, files chargeback → keeps credits + merchant pays dispute fee. Permanent profit leak. | **⚠️✅ Fixed 2026-06-15, audited + downgraded 2026-06-16.** Core handling shipped `c74eadf`: `charge.refunded` deducts credits proportional to the `previous_attributes.amount_refunded` delta (partial-refund safe); `charge.dispute.created` fetches the charge, sets `status='disputed'`, writes a `dispute_lock` row; `analyze.js` returns 403 for disputed accounts. **General-purpose auditor (2026-06-16) verdict: PARTIAL** — three gaps, all now fixed: (1) `analyze.js` 403/402 ordering reversed so a disputed+drained account sees "suspended" not "insufficient credits"; (2) `webhook_events` idempotency table lived only in `schema.sql`, never a migration → migration-only DBs lacked it and the dedup soft-fails open (double-deduction risk on Stripe retry); added `db/migrations/003_h2_followups.sql` to create it, PLUS a per-event idempotency guard (`alreadyProcessed`) on refund/dispute audit rows so they're safe even without that table; (3) `status='disputed'` was terminal → added `charge.dispute.closed` handler that reactivates accounts whose dispute is **won** (writes `dispute_release` audit row; CHECK + schema + migration 003 updated). Refund-delta math extracted to dependency-free `functions/_shared/billing-math.js` and unit-tested (9 cases incl. partial/incremental/idempotent/negative). **Remaining caveat (why not full ✅):** only the pure refund math is unit-tested; the D1 batch writes, dispute resolution, and the 403 path still have NO automated integration test (no D1/Stripe mock harness exists). Pre-launch ops MUST (a) subscribe the Stripe webhook to `charge.dispute.closed`, and (b) apply migration 003. 302/302 unit tests pass. |
 | H3 | ~~HIGH~~ ✅ | `checkout.js`, `verify-session.js`, `credits.js` | Session_id leak → JWT theft / account takeover. | ✅ Fixed in `c9bbe59`. `/api/checkout` generates a random UUID nonce, stores in new `pending_checkouts` D1 table (30-min TTL), embeds in success_url alongside Stripe's `{CHECKOUT_SESSION_ID}` placeholder. `/api/verify-session` requires both params and atomically consumes the nonce via conditional UPDATE (single-use + race-safe via `meta.changes === 1`). Defense-in-depth: still re-checks Stripe `payment_status === 'paid'` after nonce consume. Client `useStripeReturn` reads + cleans both URL params; if nonce missing, surfaces a recovery message pointing users to support. Fails closed if the `pending_checkouts` table is missing. Recovery for missed nonce window: webhook still credits user → ops uses admin panel `issue-jwt`. |
 | H4 | HIGH | `admin.js` | No rate limiting; no audit log of who issued grants. Compromise of ADMIN_SECRET = invisible drain. | Cloudflare WAF rate-limit `/api/admin` (e.g. 10/min/IP). Add `admin_actor` + `admin_ip` to audit trail. |
 | H5 | ~~HIGH~~ ✅ | `analyze.js` | `MAX(0, credits − ?)` masked deduction failures. | ✅ Fixed alongside C4 via conditional UPDATE + overdraft row. |
@@ -242,12 +242,12 @@ Append **`?aira_admin=1`** to the app URL. Floating overlay (bottom-right). Requ
 - [x] C4: atomic credit deduction + overdraft audit row
 - [x] C5: constant-time `ADMIN_SECRET` compare
 - [x] H1: webhook event.id idempotency (resolved alongside C2)
-- [x] H2: refund / dispute / chargeback handling
+- [x] H2: refund / dispute / chargeback handling (audited 2026-06-16; follow-up gaps fixed — see H2 row. Integration tests still absent.)
 - [x] H3: bind `verify-session` to a one-time purchase nonce (`c9bbe59`)
 - [ ] H4: rate-limit `/api/admin` + admin audit trail
-- [ ] Schema migration applied: `wrangler d1 execute aira-credits --file=db/schema.sql --remote`
+- [ ] Schema migration applied: `wrangler d1 execute aira-credits --file=db/schema.sql --remote` (fresh DB) — for existing DBs run `002_h2_refund_dispute.sql` **then** `003_h2_followups.sql`
 - [ ] Env vars set in Cloudflare Pages: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PRO`, `GEMINI_API_KEY`, `JWT_SECRET` (32+ hex), `ADMIN_SECRET` (32+ chars)
-- [ ] Stripe webhook configured: `POST https://<domain>/api/webhook` listening for `checkout.session.completed`, `charge.refunded`, `charge.dispute.created`
+- [ ] Stripe webhook configured: `POST https://<domain>/api/webhook` listening for `checkout.session.completed`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`
 - [ ] Sandbox tested via `simulate-purchase` admin action
 - [ ] Sandbox tested via Stripe CLI: `stripe trigger checkout.session.completed`
 
