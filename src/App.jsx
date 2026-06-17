@@ -66,6 +66,7 @@ import { taxableSocialSecurity } from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall, accumulateToRetirement } from "./engine/buildWithdrawalWaterfall.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, computeOtherIncome } from "./engine/expenses.js";
+import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
@@ -93,9 +94,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.18";
-export const BUILD_TAG = "[main] v1.1.0.18 — Consolidate all number inputs onto the proven ANumInput and delete the redundant CleanNumberInput; ANumInput is now decimal-keypad aware via step. All Assumptions fields are focus-tracking + decimal-safe.";
-export const BUILD_TIME = "2026-06-11T18:00:00Z";
+const APP_VERSION = "1.1.0.20";
+export const BUILD_TAG = "[main] v1.1.0.20 — Imported Must/Like budget now drives the GK guardrails: Must Spend = spend floor (essentials), Like to Spend = ceiling (full budget), overriding the % sliders when present. Single-year template upgraded to the Must/Like + Frequency format.";
+export const BUILD_TIME = "2026-06-17T13:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -447,6 +448,8 @@ export const BLANK_PROFILE = {
   housingType: "own",           // "own" | "rent" | "none"
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
   carveouts: [],                // [{id, label, annual, endYear}] Other Expenses (HOA, Insurance, etc.) in today's dollars; endYear = null for indefinite
+  spSchedule: null,             // [{year, amount}] explicit per-year core spend from a detailed CSV import; null = use sp + strategy
+  spImportMeta: null,           // { mode, fileName, importedAt, total|years, essentialTotal } — display only, for the import summary card
   rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
   fafsaGuard: false,            // cap Roth conversions during college aid years — set true + fafsaEndYear to activate
   fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window); e.g. 2034
@@ -795,7 +798,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true) {
       const adjCeiling = gkCeiling * cumInfl;
 
       // ========== WITHDRAWAL STRATEGY ==========
-      if (y === 0) {
+      if (p.spSchedule && p.spSchedule.length) {
+        // A detailed year-by-year budget IS the spending plan: it overrides the
+        // distribution strategy's spend rule. Values are nominal for each listed
+        // year; beyond the last year the last value carries forward, inflated.
+        sp = scheduleSpendForYear(p.spSchedule, calYear, p.inf || 2.5);
+      } else if (y === 0) {
         // First year: use target spend (p.sp)
       } else {
         if (withdrawalStrategy === "gk") {
@@ -1115,7 +1123,10 @@ function runStress(p, endAge, N = STRESS_PATHS, seed = 99) {
       const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
       const adjFloor = gkFloor * cumInfl;
       const adjCeiling = gkCeiling * cumInfl;
-      if (y > 0 && port > 0) {
+      if (p.spSchedule && p.spSchedule.length) {
+        // Detailed budget overrides GK for the stress scenario too.
+        sp = scheduleSpendForYear(p.spSchedule, calYear, p.inf || 2.5);
+      } else if (y > 0 && port > 0) {
         sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
       }
       lastReturn = r;
@@ -1248,7 +1259,10 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const adjCeiling = gkCeiling * cumInfl;
 
     // Apply withdrawal strategy (deterministic version)
-    if (y === 0) {
+    if (p.spSchedule && p.spSchedule.length) {
+      // Detailed budget overrides the distribution strategy (see runMC note).
+      sp = scheduleSpendForYear(p.spSchedule, yr, p.inf || 2.5);
+    } else if (y === 0) {
       // first year: use target spend
     } else {
       if (withdrawalStrategy === "gk") {
@@ -8594,6 +8608,150 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
   );
 }
 
+// Trigger a client-side download of CSV text (used for the budget templates).
+function downloadCsv(filename, text) {
+  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Detailed-expense CSV import. Sits inside the SPENDING section, beside the
+ * core-spend inputs (proximity). A one-year budget sums to the US Spending
+ * field (inflated forward like a typed number); a multi-year budget becomes an
+ * explicit per-year spend schedule that overrides the withdrawal-strategy
+ * spend rule. Follows the Boldin "Detailed Budgeter" exclusion convention:
+ * mortgage/rent, debt, medical, long-term care, and income tax are modeled
+ * elsewhere and must NOT be in the uploaded file.
+ */
+function ExpenseImport({ values, onChange }) {
+  const [error, setError] = useState("");
+  const [warnings, setWarnings] = useState([]);
+  const fileRef = useRef(null);
+  const meta = values.spImportMeta || null;
+
+  const handleFile = (file) => {
+    if (!file) return;
+    setError(""); setWarnings([]);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const r = parseExpenseCsv(String(e.target.result || ""));
+        setWarnings(r.warnings || []);
+        const importedAt = new Date().toISOString();
+        if (r.mode === "multi") {
+          onChange("spSchedule", r.schedule);
+          onChange("spImportMeta", {
+            mode: "multi", fileName: file.name, importedAt,
+            years: r.schedule.length,
+            firstYear: r.schedule[0].year, lastYear: r.schedule[r.schedule.length - 1].year,
+          });
+        } else {
+          // Single-year budget lands in the US Spending field; clear any prior schedule.
+          onChange("sp", r.total);
+          onChange("spSchedule", null);
+          onChange("spImportMeta", {
+            mode: "single", fileName: file.name, importedAt,
+            total: r.total, essentialTotal: r.essentialTotal ?? null,
+            lineCount: r.lineItems.length,
+          });
+        }
+      } catch (err) {
+        setError(err.message || "Could not read that file.");
+      }
+    };
+    reader.onerror = () => setError("Could not read that file.");
+    reader.readAsText(file);
+  };
+
+  const clearImport = () => {
+    onChange("spSchedule", null);
+    onChange("spImportMeta", null);
+    setError(""); setWarnings([]);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  return (
+    <div style={{ marginTop: 14, padding: "12px 14px", background: "rgba(168,85,247,0.06)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#c4b5fd", marginBottom: 4 }}>📄 Import detailed expenses (CSV)</div>
+      <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginBottom: 8 }}>
+        Replace the typed spend above with a line-item budget. <strong style={{ color: "#cbd5e1" }}>Exclude</strong> mortgage/rent,
+        debt, medical, long-term care, and income tax — those are modeled separately (Expense Model, carveouts, tax engine).
+        Upload <strong style={{ color: "#cbd5e1" }}>one year</strong> (summed and inflated forward) or
+        <strong style={{ color: "#cbd5e1" }}> multiple years</strong> (one column or row per year — used as the spend plan for those years).
+      </div>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".csv,text/csv"
+        onChange={(e) => handleFile(e.target.files && e.target.files[0])}
+        style={{ display: "none" }}
+      />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <button
+          onClick={() => fileRef.current && fileRef.current.click()}
+          style={{ fontSize: 12, background: "rgba(168,85,247,0.15)", border: "1px solid rgba(168,85,247,0.4)", color: "#d8b4fe", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontWeight: 600 }}
+        >⬆ Choose CSV file</button>
+        <button
+          onClick={() => downloadCsv("AiRA_budget_template_one_year.csv", SINGLE_YEAR_TEMPLATE)}
+          style={{ fontSize: 11, background: "transparent", border: "1px solid #334155", color: "#94a3b8", borderRadius: 6, padding: "6px 10px", cursor: "pointer" }}
+        >↓ One-year template</button>
+        <button
+          onClick={() => downloadCsv("AiRA_budget_template_multi_year.csv", MULTI_YEAR_TEMPLATE)}
+          style={{ fontSize: 11, background: "transparent", border: "1px solid #334155", color: "#94a3b8", borderRadius: 6, padding: "6px 10px", cursor: "pointer" }}
+        >↓ Multi-year template</button>
+      </div>
+
+      {error && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "#fca5a5", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 6, padding: "6px 10px" }}>
+          ⚠ {error}
+        </div>
+      )}
+
+      {meta && (
+        <div style={{ marginTop: 10, fontSize: 11, color: "#cbd5e1", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 6, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <div style={{ lineHeight: 1.5 }}>
+            {meta.mode === "multi" ? (
+              <>
+                <strong style={{ color: "#5eead4" }}>✓ Multi-year budget loaded</strong> — {meta.years} years
+                ({meta.firstYear}–{meta.lastYear}) from <em>{meta.fileName}</em>.
+                <div style={{ color: "#fbbf24", fontSize: 10, marginTop: 2 }}>
+                  This overrides the withdrawal-strategy spend rule. After the last year, the final amount inflates forward.
+                </div>
+              </>
+            ) : (
+              <>
+                <strong style={{ color: "#5eead4" }}>✓ One-year budget loaded</strong> — {fmtDollar(meta.total)}/yr
+                from {meta.lineCount} line item(s) in <em>{meta.fileName}</em>.
+                {meta.essentialTotal != null && (
+                  <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 2 }}>
+                    Essential (Must Spend): {fmtDollar(meta.essentialTotal)}/yr · Total (Like to Spend) set as US Spending above.
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <button
+            onClick={clearImport}
+            style={{ flexShrink: 0, fontSize: 10, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}
+          >Clear</button>
+        </div>
+      )}
+
+      {warnings.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 10, color: "#fbbf24" }}>
+          {warnings.map((w, i) => <div key={i}>• {w}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RetirementPanel({ values, onChange }) {
   const usSp = values.sp || 0;
   const outOfCountrySp = values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0);
@@ -8602,8 +8760,12 @@ function RetirementPanel({ values, onChange }) {
   const baseSpend = combinedSp || 100000;
   const floorPct = values.gkFloorPct ?? GK_FLOOR_DEFAULT_PCT;
   const ceilingPct = values.gkCeilingPct ?? GK_CEILING_DEFAULT_PCT;
-  const floor = Math.round(baseSpend * (floorPct / 100));
-  const ceiling = Math.round(baseSpend * (ceilingPct / 100));
+  // An imported Must/Like budget drives the floor/ceiling; else % of core spend
+  // (keep the 100k display fallback for the percent path when no spend is set yet).
+  const guard = resolveSpendGuardrails({ sp: usSp, spOutOfCountry: outOfCountrySp, gkFloorPct: floorPct, gkCeilingPct: ceilingPct, spImportMeta: values.spImportMeta });
+  const guardFromImport = guard.source === "import";
+  const floor = guardFromImport ? guard.gkFloor : Math.round(baseSpend * (floorPct / 100));
+  const ceiling = guardFromImport ? guard.gkCeiling : Math.round(baseSpend * (ceilingPct / 100));
   const strategy = values.withdrawalStrategy || "gk";
 
   // Initial WR diagnostic — pass combined sp so the helper, the GK card, the metrics WR
@@ -8657,6 +8819,7 @@ function RetirementPanel({ values, onChange }) {
           <span>Total combined annual spending (used for portfolio draw)</span>
           <strong style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace", fontSize: 14 }}>{fmtK(combinedSp)}/yr</strong>
         </div>
+        <ExpenseImport values={values} onChange={onChange} />
       </div>
 
       <div>
@@ -8718,11 +8881,15 @@ function RetirementPanel({ values, onChange }) {
                 ⇒ {fmtK(initDrawEst)} ÷ {fmtK(projectedPort)} = <strong style={{ color: wrColor }}>{initWRpct.toFixed(1)}%</strong>
               </div>
             </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Floor = {floorPct}% of core spend · Ceiling = {ceilingPct}% of core spend</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>
+              {guardFromImport
+                ? <>Floor = <strong style={{ color: "#cbd5e1" }}>Must Spend</strong> · Ceiling = <strong style={{ color: "#cbd5e1" }}>Like to Spend</strong> (from your imported budget — the slider %s below are ignored)</>
+                : <>Floor = {floorPct}% of core spend · Ceiling = {ceilingPct}% of core spend</>}
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>{floorPct}%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(floor)} / yr</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>{guardFromImport ? fmtK(floor) : `${floorPct}%`}</div><div style={{ fontSize: 10, color: "#334155" }}>{guardFromImport ? "essentials / yr" : `${fmtK(floor)} / yr`}</div></div>
               <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>{ceilingPct}%</div><div style={{ fontSize: 10, color: "#334155" }}>{fmtK(ceiling)} / yr</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>{guardFromImport ? fmtK(ceiling) : `${ceilingPct}%`}</div><div style={{ fontSize: 10, color: "#334155" }}>{guardFromImport ? "full budget / yr" : `${fmtK(ceiling)} / yr`}</div></div>
             </div>
             <div style={{ marginTop: 14, display: "flex", gap: 16, justifyContent: "center" }}>
               <WFieldRow label="Floor %" helper="Hard floor on real spending. Spending will never drop below this even after multiple GK cuts. Lower % = willing to belt-tighten more in bad markets.">
@@ -8933,8 +9100,14 @@ export default function AiRAForecaster() {
       sp: (sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0),
       spOutOfCountry: assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0,
       spSpendOutofState: assumptions.spSpendOutofState,   // legacy passthrough
-      gkFloor: Math.round(((sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0)) * ((assumptions.gkFloorPct ?? GK_FLOOR_DEFAULT_PCT) / 100)),
-      gkCeiling: Math.round(((sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0)) * ((assumptions.gkCeilingPct ?? GK_CEILING_DEFAULT_PCT) / 100)),
+      // Floor/ceiling: an imported Must/Like budget drives these; else % of core spend.
+      ...resolveSpendGuardrails({
+        sp,
+        spOutOfCountry: assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0,
+        gkFloorPct: assumptions.gkFloorPct ?? GK_FLOOR_DEFAULT_PCT,
+        gkCeilingPct: assumptions.gkCeilingPct ?? GK_CEILING_DEFAULT_PCT,
+        spImportMeta: assumptions.spImportMeta,
+      }),
       ssb,
       propIncome: (() => {
          const raw = (assumptions.properties || []).reduce((s, pr) => s + (Number(pr.income) || 0), 0);
@@ -8962,6 +9135,7 @@ export default function AiRAForecaster() {
       housingType: assumptions.housingType || "own",
       annualRent: assumptions.annualRent || 0,
       carveouts: assumptions.carveouts || [],
+      spSchedule: (assumptions.spSchedule && assumptions.spSchedule.length) ? assumptions.spSchedule : null,
       rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
       taxFunding: assumptions.taxFunding || "from_taxable",
       fafsaGuard: assumptions.fafsaGuard || false,
@@ -9194,6 +9368,11 @@ export default function AiRAForecaster() {
                 // --Carveouts and checkpoints should always be arrays, and checkpoints should have string IDs for React keys--
                   if (!Array.isArray(data.carveouts)) data.carveouts = [];
                   if (!Array.isArray(data.otherIncomes)) data.otherIncomes = [];
+                  // Detailed-expense import: schedule must be a non-empty [{year,amount}] array or null.
+                  if (!Array.isArray(data.spSchedule) || data.spSchedule.length === 0) {
+                    data.spSchedule = null;
+                    if (data.spImportMeta && data.spImportMeta.mode === "multi") data.spImportMeta = null;
+                  }
                   if (!Array.isArray(data.checkpoints)) {
                     data.checkpoints = [];
                   } else {
