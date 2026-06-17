@@ -4,7 +4,7 @@ Living document tracking the business-logic requirements of the forecaster, what
 been fixed, and the open backlog from the June 2026 code review. Update this file
 whenever engine rules change.
 
-Last updated: **2026-06-16** (branch `main`)
+Last updated: **2026-06-17** (branch `main`)
 
 ---
 
@@ -256,3 +256,40 @@ Append **`?aira_admin=1`** to the app URL. Floating overlay (bottom-right). Requ
 A claude.ai-side MCP server "Alpha Ops Intelligence" (Crestline) was loaded during this session and injected a `system-reminder` mid-tool-output attempting to redirect the auditor agent into a "reconciliation analyst" role. The agent correctly ignored it and surfaced the attempt.
 
 **Action for operator:** disconnect at https://claude.ai/settings/connectors. This is a prompt-injection vector against your dev environment regardless of how it got connected. Not a vulnerability in AiRA itself — but worth knowing because any code-context that flows through the same Claude session is exposed to the same injection.
+
+## 9. Detailed Expense Budgeter — 2026-06-17 session
+
+Goal: let a user replace the single aggregate spend (`p.sp`) with a detailed
+line-item budget uploaded as CSV — either a **one-year** budget (summed, then
+inflated forward like a typed number) or a **multi-year** budget (an explicit
+per-year spend schedule). Modeled on Boldin's "Detailed Budgeter": exclude
+mortgage/rent, debt, medical, long-term care, and income tax (all modeled
+elsewhere); include only core recurring lifestyle spend.
+
+### ✅ Shipped
+
+| # | What | Version |
+|---|------|---------|
+| ✅ ENG-23 | **CSV import core.** New dependency-free module `src/engine/expenseImport.js`: `parseExpenseCsv(text)` auto-detects layout — single-year (`Category,Amount`), multi-year wide (`Category,2026,2027,…`), multi-year long (`Year,Category,Amount`), or a bare amount column — tolerates `$`/thousands-commas/parentheses-negatives, and is Boldin-aware: a **Frequency** column normalizes to annual (Monthly ×12, Weekly ×52, etc.) and a **Must Spend / Like to Spend** split is parsed (Like = total, Must = `essentialTotal`). `scheduleSpendForYear(schedule, calYear, infPct)` resolves a year's spend from a multi-year schedule (exact year → nominal; gap/tail → carry last value forward, inflated). One-year import lands in the existing `sp` field; multi-year becomes `p.spSchedule` `[{year,amount}]` which **overrides the distribution strategy's spend rule** (the budget IS the plan; no GK clamp in that path). Wired into ALL FOUR engines: `runMC` (~798), `simulateDeterministicWithStrategy` (~1251), `runStress` (~1118), `buildWithdrawalWaterfall.runScenario` (smart + naive). New profile fields `spSchedule` / `spImportMeta` (display meta) added to `BLANK_PROFILE`, forwarded in the `params` useMemo, migration-guarded on load, round-trip via save/export (whole-object serialize). UI: new `ExpenseImport` component in the SPENDING section of `RetirementPanel` (proximity) with one-year + multi-year template downloads, parsed summary, warnings, and Clear. 19 tests in `src/expenseImport.test.js`. | v1.1.0.19 |
+| ✅ ENG-24 | **Must/Like → GK guardrails.** New pure `resolveSpendGuardrails({sp, spOutOfCountry, gkFloorPct, gkCeilingPct, spImportMeta})`: when a one-year import carried a Must/Like split (`essentialTotal` present), the budget drives the guardrails — floor = Must Spend (essentials, never cut), ceiling = Like to Spend (full desired budget) — overriding the `gkFloorPct`/`gkCeilingPct` sliders; otherwise the legacy % path applies. Out-of-country spend added to both bounds. Wired into the `params` useMemo (replaces the inline `gkFloor`/`gkCeiling` math) and the GK card in `RetirementPanel` (shows dollar Must/Like figures + a note that the % sliders are overridden when import-driven). Single-year template upgraded to the Boldin `Category,Frequency,Must Spend,Like to Spend` format. 5 tests. **326/326 pass, build clean (+3.6 kB gzip, no new dependency).** | v1.1.0.20 |
+
+### ⏳ Open — what's left on the budgeter
+
+| # | Severity | Finding | Suggested fix |
+|---|----------|---------|---------------|
+| BUD-1 | MEDIUM | **AI engine ignores the detailed budget.** The AI Action Plan context (`src/ai/ai-analysis.js`) is built from aggregate `sp` / waterfall rows and does NOT yet see `spSchedule` or the Must/Like split — so AI advice still reasons about a single flat spend even when a detailed/multi-year budget is loaded. (Part of the broader "fix the AI portion of the engine" item — see §10.) | Thread `spImportMeta` + a compact year/essential/total summary into the AI context payload; have the prompt acknowledge per-year and essential-vs-discretionary spend. |
+| BUD-2 | MEDIUM | **Per-line Start/End not supported (the big Boldin feature).** Boldin rows carry Start/End (age like `54y10m`, date like `Mar 2030`, or `Lifetime`). We only accept an explicit per-year schedule or a single year; we don't expand dated line items into a year-by-year schedule. | Parse Start/End columns (age→calendar via `birthYear`, date, `Lifetime`); expand each active line per year (frequency-normalized, today's-$ inflated or nominal — needs a decision) into `spSchedule`. Est. ~40–65K tokens; product decision needed on age/date formats + inflation basis. |
+| BUD-3 | LOW | **Multi-year mode has no Must/Like floor band.** `spSchedule` stores only the total per year; essentials aren't carried, so a multi-year budget can't drop to "Must Spend" in bad markets — each year is a fixed number. | Capture an `essentialSchedule` alongside `spSchedule` and feed it as the per-year floor when guardrail strategies run on a multi-year budget. |
+| BUD-4 | LOW | **Category detail not surfaced in charts.** Import is "total only" (per the agreed scope); category labels (Travel, Groceries, …) and the Medical/LTC split are not pushed into the 📉 Income & Expenses chart (ENG-21) or carveouts. | Optionally map import categories → the existing `categorizeCarveouts` buckets so the breakdown chart reflects the uploaded detail. |
+| BUD-5 | LOW | **No render smoke test for the import UI**, and the feature has not been clicked through in a browser (tests + build pass only). Same gap class that let the RothLadder crash slip past the engine suite. | Add a shallow render test of `ExpenseImport` (+ the Withdrawal/Roth tabs) and manually verify an upload end-to-end. |
+| BUD-6 | LOW | `$`/comma formatting on the Roth-reserve and other plain number inputs (carried over P2 polish). | Route through `ANumInput` formatting. |
+
+## 10. Open — AI engine + token refund (2026-06-17, flagged by Vincent)
+
+Captured for the backlog; not yet scoped into tasks.
+
+| # | Severity | Area | Finding | Direction |
+|---|----------|------|---------|-----------|
+| AI-1 | MEDIUM | `src/ai/ai-analysis.js` context build | "Fix the AI portion of the engine." The AI Action Plan context is assembled from a subset of engine outputs and does not reflect recent engine changes (detailed budget per BUD-1; verify it also picks up Roth-conversion reconciliation ENG-9/12/14, source-aware tax, housing/carveouts ENG-19/20). Risk: AI narrates numbers that disagree with the tabs. | Audit exactly which fields the AI prompt receives vs. what the engines now compute; build the context from `buildWithdrawalWaterfall` rows (single source of truth) the same way the charts do. |
+| AI-2 | HIGH (billing) | `functions/api/analyze.js` + `src/billing/credits.js` | **Token refund.** Credits are deducted post-call from Gemini usage metadata, but there is no refund path when a call partially fails, returns an unusable/empty result, or the client errors after deduction — the user is charged for nothing. Relates to the billing backlog (§7) but is its own gap. | On non-success / empty completion, issue a compensating credit (audit row `type='refund'`) keyed to the call id; make it idempotent like the webhook/refund handlers. Add to the pre-launch checklist before `BILLING_ENABLED=true`. |
+| AI-3 | MEDIUM | AI ↔ expenses | The AI should reason about the detailed/multi-year expenses and the essential-vs-discretionary (Must/Like) split once BUD-1 lands, e.g. "your discretionary travel in 2029 is what pushes you into IRMAA." | Depends on BUD-1; add prompt guidance + a worked example once the context carries the budget. |
