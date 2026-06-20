@@ -196,7 +196,7 @@ wrangler d1 execute aira-credits --file=db/schema.sql --remote
 | # | Severity | File | Issue | Recommended Fix |
 |---|----------|------|-------|-----------------|
 | H1 | ~~HIGH~~ ✅ | `webhook.js` | No `event.id` idempotency → async-payment edge case could double-credit. | ✅ Fixed alongside C2 via new `webhook_events` table. |
-| H2 | HIGH | `webhook.js` | `charge.refunded` / `charge.dispute.created` events not handled. User buys $15, spends $0.50, files chargeback → keeps credits + merchant pays dispute fee. Permanent profit leak. | Listen for these event types. On refund: SET credits = MAX(0, credits − amount). On dispute: lock customer (`status='disputed'`) and require manual re-enable. Add `'refund'` to txn type CHECK. |
+| H2 | ~~HIGH~~ ⚠️✅ | `webhook.js`, `analyze.js`, `db/schema.sql`, `db/migrations/` | `charge.refunded` / `charge.dispute.created` events not handled. User buys $15, spends $0.50, files chargeback → keeps credits + merchant pays dispute fee. Permanent profit leak. | **⚠️✅ Fixed 2026-06-15, audited + downgraded 2026-06-16.** Core handling shipped `c74eadf`: `charge.refunded` deducts credits proportional to the `previous_attributes.amount_refunded` delta (partial-refund safe); `charge.dispute.created` fetches the charge, sets `status='disputed'`, writes a `dispute_lock` row; `analyze.js` returns 403 for disputed accounts. **General-purpose auditor (2026-06-16) verdict: PARTIAL** — three gaps, all now fixed: (1) `analyze.js` 403/402 ordering reversed so a disputed+drained account sees "suspended" not "insufficient credits"; (2) `webhook_events` idempotency table lived only in `schema.sql`, never a migration → migration-only DBs lacked it and the dedup soft-fails open (double-deduction risk on Stripe retry); added `db/migrations/003_h2_followups.sql` to create it, PLUS a per-event idempotency guard (`alreadyProcessed`) on refund/dispute audit rows so they're safe even without that table; (3) `status='disputed'` was terminal → added `charge.dispute.closed` handler that reactivates accounts whose dispute is **won** (writes `dispute_release` audit row; CHECK + schema + migration 003 updated). Refund-delta math extracted to dependency-free `functions/_shared/billing-math.js` and unit-tested (9 cases incl. partial/incremental/idempotent/negative). **Remaining caveat (why not full ✅):** only the pure refund math is unit-tested; the D1 batch writes, dispute resolution, and the 403 path still have NO automated integration test (no D1/Stripe mock harness exists). Pre-launch ops MUST (a) subscribe the Stripe webhook to `charge.dispute.closed`, and (b) apply migration 003. 302/302 unit tests pass. |
 | H3 | ~~HIGH~~ ✅ | `checkout.js`, `verify-session.js`, `credits.js` | Session_id leak → JWT theft / account takeover. | ✅ Fixed in `c9bbe59`. `/api/checkout` generates a random UUID nonce, stores in new `pending_checkouts` D1 table (30-min TTL), embeds in success_url alongside Stripe's `{CHECKOUT_SESSION_ID}` placeholder. `/api/verify-session` requires both params and atomically consumes the nonce via conditional UPDATE (single-use + race-safe via `meta.changes === 1`). Defense-in-depth: still re-checks Stripe `payment_status === 'paid'` after nonce consume. Client `useStripeReturn` reads + cleans both URL params; if nonce missing, surfaces a recovery message pointing users to support. Fails closed if the `pending_checkouts` table is missing. Recovery for missed nonce window: webhook still credits user → ops uses admin panel `issue-jwt`. |
 | H4 | HIGH | `admin.js` | No rate limiting; no audit log of who issued grants. Compromise of ADMIN_SECRET = invisible drain. | Cloudflare WAF rate-limit `/api/admin` (e.g. 10/min/IP). Add `admin_actor` + `admin_ip` to audit trail. |
 | H5 | ~~HIGH~~ ✅ | `analyze.js` | `MAX(0, credits − ?)` masked deduction failures. | ✅ Fixed alongside C4 via conditional UPDATE + overdraft row. |
@@ -234,7 +234,7 @@ wrangler d1 execute aira-credits --file=db/schema.sql --remote
 
 Append **`?aira_admin=1`** to the app URL. Floating overlay (bottom-right). Requires the `ADMIN_SECRET` env var (set in Cloudflare Pages or `.dev.vars`). Available actions: `ping`, `stripe-ping`, `grant-credits`, `simulate-purchase` (fakes the webhook flow end-to-end — best sandbox-test tool while real webhook setup is incomplete), `inspect`, `issue-jwt`.
 
-### Pre-launch checklist
+### Pre-launch checklist (before flipping `BILLING_ENABLED=true`)
 
 - [x] C1: invert billing gate
 - [x] C2: wire up Stripe signature verification
@@ -242,18 +242,55 @@ Append **`?aira_admin=1`** to the app URL. Floating overlay (bottom-right). Requ
 - [x] C4: atomic credit deduction + overdraft audit row
 - [x] C5: constant-time `ADMIN_SECRET` compare
 - [x] H1: webhook event.id idempotency (resolved alongside C2)
-- [ ] **H2: refund / dispute / chargeback handling — OPEN HIGH** (see §7 table above)
+- [x] H2: refund / dispute / chargeback handling (audited 2026-06-16; follow-up gaps fixed — see H2 row. Integration tests still absent.)
 - [x] H3: bind `verify-session` to a one-time purchase nonce (`c9bbe59`)
-- [ ] **H4: rate-limit `/api/admin` + admin audit trail — OPEN HIGH** (see §7 table above)
 - [x] **`BILLING_ENABLED = true` flipped and committed to main — 2026-06-19**
-- [ ] Schema migration applied to production D1: `wrangler d1 execute aira-credits --file=db/schema.sql --remote`
-- [ ] Env vars confirmed in Cloudflare Pages (Production): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_VALUE`, `STRIPE_PRICE_PRO`, `GEMINI_API_KEY`, `JWT_SECRET` (32+ hex), `ADMIN_SECRET` (32+ chars)
-- [ ] Stripe webhook registered: `POST https://<domain>/api/webhook` → `checkout.session.completed` (add `charge.refunded` + `charge.dispute.created` once H2 is resolved)
-- [ ] Sandbox verified via `simulate-purchase` admin action (`?aira_admin=1`)
-- [ ] Sandbox verified via Stripe CLI: `stripe trigger checkout.session.completed`
+- [ ] H4: rate-limit `/api/admin` + admin audit trail
+- [ ] Schema migration applied: `wrangler d1 execute aira-credits --file=db/schema.sql --remote` (fresh DB) — for existing DBs run `002_h2_refund_dispute.sql` **then** `003_h2_followups.sql`
+- [ ] Env vars set in Cloudflare Pages: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PRO`, `GEMINI_API_KEY`, `JWT_SECRET` (32+ hex), `ADMIN_SECRET` (32+ chars)
+- [ ] Stripe webhook configured: `POST https://<domain>/api/webhook` listening for `checkout.session.completed`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`
+- [ ] Sandbox tested via `simulate-purchase` admin action
+- [ ] Sandbox tested via Stripe CLI: `stripe trigger checkout.session.completed`
 
 ## 8. Security note — Crestline MCP injection (2026-06-13)
 
 A claude.ai-side MCP server "Alpha Ops Intelligence" (Crestline) was loaded during this session and injected a `system-reminder` mid-tool-output attempting to redirect the auditor agent into a "reconciliation analyst" role. The agent correctly ignored it and surfaced the attempt.
 
 **Action for operator:** disconnect at https://claude.ai/settings/connectors. This is a prompt-injection vector against your dev environment regardless of how it got connected. Not a vulnerability in AiRA itself — but worth knowing because any code-context that flows through the same Claude session is exposed to the same injection.
+
+## 9. Detailed Expense Budgeter — 2026-06-17 session
+
+Goal: let a user replace the single aggregate spend (`p.sp`) with a detailed
+line-item budget uploaded as CSV — either a **one-year** budget (summed, then
+inflated forward like a typed number) or a **multi-year** budget (an explicit
+per-year spend schedule). Modeled on Boldin's "Detailed Budgeter": exclude
+mortgage/rent, debt, medical, long-term care, and income tax (all modeled
+elsewhere); include only core recurring lifestyle spend.
+
+### ✅ Shipped
+
+| # | What | Version |
+|---|------|---------|
+| ✅ ENG-23 | **CSV import core.** New dependency-free module `src/engine/expenseImport.js`: `parseExpenseCsv(text)` auto-detects layout — single-year (`Category,Amount`), multi-year wide (`Category,2026,2027,…`), multi-year long (`Year,Category,Amount`), or a bare amount column — tolerates `$`/thousands-commas/parentheses-negatives, and is Boldin-aware: a **Frequency** column normalizes to annual (Monthly ×12, Weekly ×52, etc.) and a **Must Spend / Like to Spend** split is parsed (Like = total, Must = `essentialTotal`). `scheduleSpendForYear(schedule, calYear, infPct)` resolves a year's spend from a multi-year schedule (exact year → nominal; gap/tail → carry last value forward, inflated). One-year import lands in the existing `sp` field; multi-year becomes `p.spSchedule` `[{year,amount}]` which **overrides the distribution strategy's spend rule** (the budget IS the plan; no GK clamp in that path). Wired into ALL FOUR engines: `runMC` (~798), `simulateDeterministicWithStrategy` (~1251), `runStress` (~1118), `buildWithdrawalWaterfall.runScenario` (smart + naive). New profile fields `spSchedule` / `spImportMeta` (display meta) added to `BLANK_PROFILE`, forwarded in the `params` useMemo, migration-guarded on load, round-trip via save/export (whole-object serialize). UI: new `ExpenseImport` component in the SPENDING section of `RetirementPanel` (proximity) with one-year + multi-year template downloads, parsed summary, warnings, and Clear. 19 tests in `src/expenseImport.test.js`. | v1.1.0.19 |
+| ✅ ENG-24 | **Must/Like → GK guardrails.** New pure `resolveSpendGuardrails({sp, spOutOfCountry, gkFloorPct, gkCeilingPct, spImportMeta})`: when a one-year import carried a Must/Like split (`essentialTotal` present), the budget drives the guardrails — floor = Must Spend (essentials, never cut), ceiling = Like to Spend (full desired budget) — overriding the `gkFloorPct`/`gkCeilingPct` sliders; otherwise the legacy % path applies. Out-of-country spend added to both bounds. Wired into the `params` useMemo (replaces the inline `gkFloor`/`gkCeiling` math) and the GK card in `RetirementPanel` (shows dollar Must/Like figures + a note that the % sliders are overridden when import-driven). Single-year template upgraded to the Boldin `Category,Frequency,Must Spend,Like to Spend` format. 5 tests. **326/326 pass, build clean (+3.6 kB gzip, no new dependency).** | v1.1.0.20 |
+
+### ⏳ Open — what's left on the budgeter
+
+| # | Severity | Finding | Suggested fix |
+|---|----------|---------|---------------|
+| BUD-1 | MEDIUM | **AI engine ignores the detailed budget.** The AI Action Plan context (`src/ai/ai-analysis.js`) is built from aggregate `sp` / waterfall rows and does NOT yet see `spSchedule` or the Must/Like split — so AI advice still reasons about a single flat spend even when a detailed/multi-year budget is loaded. (Part of the broader "fix the AI portion of the engine" item — see §10.) | Thread `spImportMeta` + a compact year/essential/total summary into the AI context payload; have the prompt acknowledge per-year and essential-vs-discretionary spend. |
+| BUD-2 | MEDIUM | **Per-line Start/End not supported (the big Boldin feature).** Boldin rows carry Start/End (age like `54y10m`, date like `Mar 2030`, or `Lifetime`). We only accept an explicit per-year schedule or a single year; we don't expand dated line items into a year-by-year schedule. | Parse Start/End columns (age→calendar via `birthYear`, date, `Lifetime`); expand each active line per year (frequency-normalized, today's-$ inflated or nominal — needs a decision) into `spSchedule`. Est. ~40–65K tokens; product decision needed on age/date formats + inflation basis. |
+| BUD-3 | LOW | **Multi-year mode has no Must/Like floor band.** `spSchedule` stores only the total per year; essentials aren't carried, so a multi-year budget can't drop to "Must Spend" in bad markets — each year is a fixed number. | Capture an `essentialSchedule` alongside `spSchedule` and feed it as the per-year floor when guardrail strategies run on a multi-year budget. |
+| BUD-4 | LOW | **Category detail not surfaced in charts.** Import is "total only" (per the agreed scope); category labels (Travel, Groceries, …) and the Medical/LTC split are not pushed into the 📉 Income & Expenses chart (ENG-21) or carveouts. | Optionally map import categories → the existing `categorizeCarveouts` buckets so the breakdown chart reflects the uploaded detail. |
+| BUD-5 | LOW | **No render smoke test for the import UI**, and the feature has not been clicked through in a browser (tests + build pass only). Same gap class that let the RothLadder crash slip past the engine suite. | Add a shallow render test of `ExpenseImport` (+ the Withdrawal/Roth tabs) and manually verify an upload end-to-end. |
+| BUD-6 | LOW | `$`/comma formatting on the Roth-reserve and other plain number inputs (carried over P2 polish). | Route through `ANumInput` formatting. |
+
+## 10. Open — AI engine + token refund (2026-06-17, flagged by Vincent)
+
+Captured for the backlog; not yet scoped into tasks.
+
+| # | Severity | Area | Finding | Direction |
+|---|----------|------|---------|-----------|
+| AI-1 | MEDIUM | `src/ai/ai-analysis.js` context build | "Fix the AI portion of the engine." The AI Action Plan context is assembled from a subset of engine outputs and does not reflect recent engine changes (detailed budget per BUD-1; verify it also picks up Roth-conversion reconciliation ENG-9/12/14, source-aware tax, housing/carveouts ENG-19/20). Risk: AI narrates numbers that disagree with the tabs. | Audit exactly which fields the AI prompt receives vs. what the engines now compute; build the context from `buildWithdrawalWaterfall` rows (single source of truth) the same way the charts do. |
+| AI-2 | HIGH (billing) | `functions/api/analyze.js` + `src/billing/credits.js` | **Token refund.** Credits are deducted post-call from Gemini usage metadata, but there is no refund path when a call partially fails, returns an unusable/empty result, or the client errors after deduction — the user is charged for nothing. Relates to the billing backlog (§7) but is its own gap. | On non-success / empty completion, issue a compensating credit (audit row `type='refund'`) keyed to the call id; make it idempotent like the webhook/refund handlers. Add to the pre-launch checklist before `BILLING_ENABLED=true`. |
+| AI-3 | MEDIUM | AI ↔ expenses | The AI should reason about the detailed/multi-year expenses and the essential-vs-discretionary (Must/Like) split once BUD-1 lands, e.g. "your discretionary travel in 2029 is what pushes you into IRMAA." | Depends on BUD-1; add prompt guidance + a worked example once the context carries the budget. |
