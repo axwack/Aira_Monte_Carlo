@@ -4,7 +4,7 @@ Living document tracking the business-logic requirements of the forecaster, what
 been fixed, and the open backlog from the June 2026 code review. Update this file
 whenever engine rules change.
 
-Last updated: **2026-06-13** (branch `main`)
+Last updated: **2026-06-19** (branch `main`)
 
 ---
 
@@ -234,7 +234,7 @@ wrangler d1 execute aira-credits --file=db/schema.sql --remote
 
 Append **`?aira_admin=1`** to the app URL. Floating overlay (bottom-right). Requires the `ADMIN_SECRET` env var (set in Cloudflare Pages or `.dev.vars`). Available actions: `ping`, `stripe-ping`, `grant-credits`, `simulate-purchase` (fakes the webhook flow end-to-end — best sandbox-test tool while real webhook setup is incomplete), `inspect`, `issue-jwt`.
 
-### Pre-launch checklist (before flipping `BILLING_ENABLED=true`)
+### Pre-launch checklist
 
 - [x] C1: invert billing gate
 - [x] C2: wire up Stripe signature verification
@@ -242,14 +242,15 @@ Append **`?aira_admin=1`** to the app URL. Floating overlay (bottom-right). Requ
 - [x] C4: atomic credit deduction + overdraft audit row
 - [x] C5: constant-time `ADMIN_SECRET` compare
 - [x] H1: webhook event.id idempotency (resolved alongside C2)
-- [ ] H2: refund / dispute / chargeback handling
+- [ ] **H2: refund / dispute / chargeback handling — OPEN HIGH** (see §7 table above)
 - [x] H3: bind `verify-session` to a one-time purchase nonce (`c9bbe59`)
-- [ ] H4: rate-limit `/api/admin` + admin audit trail
-- [ ] Schema migration applied: `wrangler d1 execute aira-credits --file=db/schema.sql --remote`
-- [ ] Env vars set in Cloudflare Pages: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PRO`, `GEMINI_API_KEY`, `JWT_SECRET` (32+ hex), `ADMIN_SECRET` (32+ chars)
-- [ ] Stripe webhook configured: `POST https://<domain>/api/webhook` listening for `checkout.session.completed` (and once H2 lands: `charge.refunded`, `charge.dispute.created`)
-- [ ] Sandbox tested via `simulate-purchase` admin action
-- [ ] Sandbox tested via Stripe CLI: `stripe trigger checkout.session.completed`
+- [ ] **H4: rate-limit `/api/admin` + admin audit trail — OPEN HIGH** (see §7 table above)
+- [x] **`BILLING_ENABLED = true` flipped and committed to main — 2026-06-19**
+- [ ] Schema migration applied to production D1: `wrangler d1 execute aira-credits --file=db/schema.sql --remote`
+- [ ] Env vars confirmed in Cloudflare Pages (Production): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_VALUE`, `STRIPE_PRICE_PRO`, `GEMINI_API_KEY`, `JWT_SECRET` (32+ hex), `ADMIN_SECRET` (32+ chars)
+- [ ] Stripe webhook registered: `POST https://<domain>/api/webhook` → `checkout.session.completed` (add `charge.refunded` + `charge.dispute.created` once H2 is resolved)
+- [ ] Sandbox verified via `simulate-purchase` admin action (`?aira_admin=1`)
+- [ ] Sandbox verified via Stripe CLI: `stripe trigger checkout.session.completed`
 
 ## 8. Security note — Crestline MCP injection (2026-06-13)
 
