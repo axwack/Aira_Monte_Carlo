@@ -34,6 +34,7 @@ import {
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
 import { mortgageSchedule, computeOtherIncome } from "./expenses.js";
+import { scheduleSpendForYear } from "./expenseImport.js";
 
 const BASE_YEAR = new Date().getFullYear();
 
@@ -143,6 +144,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     propIncome  = 0,
     carveouts   = [],
     otherIncomes = [],
+    spSchedule   = null,
   } = params;
 
   if (currentAge == null || retireAge == null) {
@@ -230,9 +232,12 @@ export function buildWithdrawalWaterfall(params = {}) {
       const adjFloor   = Math.round(gkFloor   * iF);
       const adjCeiling = Math.round(gkCeiling * iF);
 
-      // Guyton-Klinger spend adjustment (every year after first)
+      // Guyton-Klinger spend adjustment (every year after first), unless a
+      // detailed year-by-year budget was uploaded — that schedule IS the plan.
       const totalPort = pretax + roth + taxable + cash;
-      if (age > retireAge && totalPort > 0) {
+      if (spSchedule && spSchedule.length) {
+        sp = scheduleSpendForYear(spSchedule, yr, inf);
+      } else if (age > retireAge && totalPort > 0) {
         sp = gkWithdraw(totalPort, initWR, sp, lastRet, infR, adjFloor, adjCeiling);
       }
 
