@@ -8,6 +8,7 @@
 
 import {
   runMC,
+  runStress,
   calcYearTax,
   getRmdStartAge,
   guytonKlingerWithdrawal,
@@ -538,6 +539,145 @@ describe("runMC — Monte Carlo integration", () => {
     const fixedMedian = fixed.pcts[fixed.pcts.length - 1].p50;
     // The two strategies generate different wealth paths even if both succeed
     expect(gkMedian).not.toBe(fixedMedian);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// runStress — Stress Test pivot must share runMC's tax model (uniformity)
+//
+// The stress pivot delegates to runMC with the 2000–2012 equity sequence forced at
+// retirement. These tests pin the property the user cares about: every tax lever that
+// moves the Monte Carlo must move the stress number the SAME way — no pivot can read
+// differently. Regression guard for the old flat taxDragRate heuristic, which ignored
+// the non-resident (twoHousehold) toggle and state of residence entirely.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("runStress — tax model uniformity with runMC", () => {
+  // Scenario tuned to sit on the steep part of the stress survival curve (~40%), with
+  // the non-adaptive Bengen rule and uncapped sourcing so a state-tax-sized drag is
+  // visible in the success rate. (GK guardrails would absorb the crash via spending
+  // cuts and mask the tax difference; Bengen holds spending and lets tax bite.)
+  const stressBand = {
+    ...BASE, stateOfResidence: "CA", ssb: 24_000, ssAge: 62, sp: 90_000,
+    withdrawalStrategy: "bengen", withdrawalBracketTarget: "off",
+    accounts: [
+      { id: "t1", category: "pretax",  name: "401k",    balance: 1_470_000 },
+      { id: "t2", category: "roth",    name: "Roth",    balance:   420_000 },
+      { id: "t3", category: "taxable", name: "Taxable", balance:   157_500 },
+      { id: "t4", category: "cash",    name: "Cash",    balance:    52_500 },
+    ],
+  };
+
+  test("non-resident toggle (twoHousehold) raises the stress success rate — the reported bug", () => {
+    // This is the exact pivot the user flagged: flipping non-resident ON must change
+    // the stress number. Skipping CA's state tax is a real annual saving. (Empirically
+    // ~0.407 → ~0.444 at this fixture; the old taxDragRate heuristic ignored the flag.)
+    const resident    = runStress({ ...stressBand, twoHousehold: false }, 90, 2000, 99);
+    const nonResident = runStress({ ...stressBand, twoHousehold: true  }, 90, 2000, 99);
+    expect(nonResident.rate).toBeGreaterThan(resident.rate);
+  });
+
+  test("state of residence flows into the stress number (FL beats CA)", () => {
+    const fl = runStress({ ...stressBand, stateOfResidence: "FL" }, 90, 2000, 99);
+    const ca = runStress({ ...stressBand, stateOfResidence: "CA" }, 90, 2000, 99);
+    expect(fl.rate).toBeGreaterThan(ca.rate);
+  });
+
+  test("non-resident equals a no-state-tax state (both zero out state tax identically)", () => {
+    // Same engine, same seed: claiming non-residency in CA must land exactly where a
+    // genuinely tax-free state (FL) lands — proof the toggle routes through one tax path.
+    const flResident = runStress({ ...stressBand, stateOfResidence: "FL", twoHousehold: false }, 90, 2000, 99);
+    const caNonRes   = runStress({ ...stressBand, stateOfResidence: "CA", twoHousehold: true  }, 90, 2000, 99);
+    expect(caNonRes.rate).toBe(flResident.rate);
+  });
+
+  test("deterministic for a fixed seed", () => {
+    const a = runStress(stressBand, 90, 1000, 99);
+    const b = runStress(stressBand, 90, 1000, 99);
+    expect(a.rate).toBe(b.rate);
+    expect(a.pcts[a.pcts.length - 1].p50).toBe(b.pcts[b.pcts.length - 1].p50);
+  });
+
+  test("returns the runMC result shape (rate + per-age percentile bands)", () => {
+    const s = runStress(stressBand, 90, 500, 99);
+    expect(typeof s.rate).toBe("number");
+    expect(s.rate).toBeGreaterThanOrEqual(0);
+    expect(s.rate).toBeLessThanOrEqual(1);
+    expect(Array.isArray(s.pcts)).toBe(true);
+    expect(s.pcts.length).toBe(90 - stressBand.retireAge + 1);   // initial + one row per retirement year
+    const row = s.pcts[0];
+    ["age", "p10", "p25", "p50", "p75", "p90"].forEach((k) => expect(row).toHaveProperty(k));
+  });
+
+  test("2000–2012 sequence makes stress no kinder than the random MC (sequence-of-returns risk)", () => {
+    // Same engine, same seed — the only difference is the forced bad sequence at
+    // retirement. A front-loaded crash can only hurt or tie, never help.
+    const stress = runStress(stressBand, 90, 2000, 99);
+    const random = runMC(stressBand, 90, 2000, 99, true);
+    expect(stress.rate).toBeLessThanOrEqual(random.rate);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tax master toggle — p.tax === false zeroes ALL tax, uniformly across pivots
+//
+// The "🏛 Tax" toggle (OFF) must produce a genuine pre-tax view: zero federal/state/
+// IRMAA in the Monte Carlo, the Stress Test (which delegates to runMC), and the
+// deterministic year-by-year table. Only an explicit boolean false disables tax — a
+// numeric or true value (the default) keeps it on, so existing tax-ON tests are unaffected.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Tax master toggle — OFF zeroes all tax uniformly", () => {
+  const taxy = { ...BASE, stateOfResidence: "CA", ssb: 0, sp: 95_000,
+    withdrawalStrategy: "bengen", withdrawalBracketTarget: "off",
+    accounts: [
+      { id: "t1", category: "pretax",  name: "401k",    balance: 1_300_000 },
+      { id: "t2", category: "roth",    name: "Roth",    balance:   300_000 },
+      { id: "t3", category: "taxable", name: "Taxable", balance:   100_000 },
+      { id: "t4", category: "cash",    name: "Cash",    balance:    50_000 },
+    ] };
+
+  test("runMC: tax OFF survives at least as often as tax ON (no tax dollars withdrawn)", () => {
+    const taxOn  = runMC({ ...taxy, tax: true  }, 90, 2000, 42, true);
+    const taxOff = runMC({ ...taxy, tax: false }, 90, 2000, 42, true);
+    expect(taxOff.rate).toBeGreaterThan(taxOn.rate);
+  });
+
+  test("Stress Test inherits the toggle: tax OFF beats tax ON (uniform with runMC)", () => {
+    // Larger portfolio so survival sits on the steep part of the stress curve — the
+    // harsher `taxy` scenario collapses to 0% under the forced crash regardless of tax,
+    // which can't discriminate. This band (~40% with tax on) reacts to zeroing tax.
+    const band = { ...taxy, ssb: 24_000, ssAge: 62, sp: 90_000,
+      accounts: [
+        { id: "t1", category: "pretax",  name: "401k",    balance: 1_470_000 },
+        { id: "t2", category: "roth",    name: "Roth",    balance:   420_000 },
+        { id: "t3", category: "taxable", name: "Taxable", balance:   157_500 },
+        { id: "t4", category: "cash",    name: "Cash",    balance:    52_500 },
+      ] };
+    const taxOn  = runStress({ ...band, tax: true  }, 90, 2000, 99);
+    const taxOff = runStress({ ...band, tax: false }, 90, 2000, 99);
+    expect(taxOff.rate).toBeGreaterThan(taxOn.rate);
+  });
+
+  test("Deterministic table: tax OFF zeroes every tax field in the schedule", () => {
+    const { schedule } = simulateDeterministicWithStrategy({ ...taxy, tax: false }, 2.5, "bengen");
+    expect(schedule.length).toBeGreaterThan(0);
+    for (const row of schedule) {
+      expect(row.totalTax).toBe(0);
+      expect(row.fedTax).toBe(0);
+      expect(row.stateTax).toBe(0);
+      expect(row.irmaa).toBe(0);
+    }
+  });
+
+  test("Deterministic table: tax ON produces at least one taxed year (guards the OFF test)", () => {
+    const { schedule } = simulateDeterministicWithStrategy({ ...taxy, tax: true }, 2.5, "bengen");
+    expect(schedule.some(r => r.totalTax > 0)).toBe(true);
+  });
+
+  test("a numeric tax value (legacy fixtures) is treated as ON, not OFF", () => {
+    // Regression guard: the gate is `p.tax !== false`, so tax: 22 must keep tax on.
+    const num  = runMC({ ...taxy, tax: 22    }, 90, 1000, 42, true);
+    const off  = runMC({ ...taxy, tax: false }, 90, 1000, 42, true);
+    expect(num.rate).toBeLessThan(off.rate);   // numeric → taxed → lower success
   });
 });
 

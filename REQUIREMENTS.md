@@ -293,3 +293,53 @@ Captured for the backlog; not yet scoped into tasks.
 | AI-1 | MEDIUM | `src/ai/ai-analysis.js` context build | "Fix the AI portion of the engine." The AI Action Plan context is assembled from a subset of engine outputs and does not reflect recent engine changes (detailed budget per BUD-1; verify it also picks up Roth-conversion reconciliation ENG-9/12/14, source-aware tax, housing/carveouts ENG-19/20). Risk: AI narrates numbers that disagree with the tabs. | Audit exactly which fields the AI prompt receives vs. what the engines now compute; build the context from `buildWithdrawalWaterfall` rows (single source of truth) the same way the charts do. |
 | AI-2 | HIGH (billing) | `functions/api/analyze.js` + `src/billing/credits.js` | **Token refund.** Credits are deducted post-call from Gemini usage metadata, but there is no refund path when a call partially fails, returns an unusable/empty result, or the client errors after deduction — the user is charged for nothing. Relates to the billing backlog (§7) but is its own gap. | On non-success / empty completion, issue a compensating credit (audit row `type='refund'`) keyed to the call id; make it idempotent like the webhook/refund handlers. Add to the pre-launch checklist before `BILLING_ENABLED=true`. |
 | AI-3 | MEDIUM | AI ↔ expenses | The AI should reason about the detailed/multi-year expenses and the essential-vs-discretionary (Must/Like) split once BUD-1 lands, e.g. "your discretionary travel in 2029 is what pushes you into IRMAA." | Depends on BUD-1; add prompt guidance + a worked example once the context carries the budget. |
+
+## 11. Session pickup — 2026-06-17 EOD
+
+State at end of evening; resume here next session.
+
+### Shipped & pushed
+- **Detailed Expense Budgeter** (ENG-23/ENG-24, app `v1.1.0.20`) is committed and
+  pushed to `main` (commit `192e11d` "Created Detail expense budgeter version 1.0.0"
+  — note: commit message says 1.0.0, in-app `BUILD_TAG`/`APP_VERSION` is `v1.1.0.20`).
+  326/326 tests green, build clean. See §9.
+- **This `REQUIREMENTS.md`** (§9, §10, §11) — commit on next push (was uncommitted at EOD).
+
+### Local billing/Stripe test env — NOW WORKING (do not re-derive)
+- Billing/admin/AI functions only run under the Cloudflare runtime. Use
+  `npm run build && npx wrangler pages dev build` (local, ~`localhost:8788`).
+  Plain `npm start` 404s on `/api/*` — UI only.
+- Secrets live in **`.dev.vars`** (gitignored, created this session): real test-mode
+  `STRIPE_SECRET_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` (`whsec_…`), three
+  `STRIPE_PRICE_*`, `JWT_SECRET`, `ADMIN_SECRET`. `ADMIN_SECRET` = the admin-panel
+  password (open app with `?aira_admin=1`).
+- Local **D1 seeded**: `npx wrangler d1 execute aira-credits --local --file=db/schema.sql`
+  created `customers`, `credit_transactions`, `webhook_events`, `pending_checkouts`.
+- **Verified working:** Cloudflare runtime serves functions; admin auth passes;
+  D1 tables exist. (`ping` + admin actions return instead of 404 / no-such-table.)
+
+### Pick up here (test + cleanup)
+1. **Finish the end-to-end billing test** (still `BILLING_ENABLED = false`): admin
+   `simulate-purchase` → `inspect` to confirm the buy→credit→balance path. Then test
+   refund/dispute, which needs the extra columns — run
+   `npx wrangler d1 execute aira-credits --local --file=db/migrations/003_h2_followups.sql`
+   (and `002_h2_refund_dispute.sql`).
+2. **`.dev.vars` caveat:** the three `STRIPE_PRICE_*` currently all point to ONE
+   $15 price. Credits are granted by `packId` (not price), so checkout still works,
+   but Starter/Value won't charge their real amounts. Set the correct per-product
+   `price_…` IDs before any realistic pricing test.
+3. **Roll the `sk_test_` key** in Stripe (appeared in a chat transcript; test-mode, low risk).
+4. Archive the 3 throwaway "AiRA …Pack" test products created via API this session
+   (only if you want a tidy Stripe test catalog).
+
+### "Update the stuff soon" — priority backlog (from §10)
+- **AI-1** (MEDIUM): fix the AI portion of the engine — audit which fields the AI
+  Action Plan prompt receives vs. what engines now compute; build context from
+  `buildWithdrawalWaterfall` (single source of truth) like the charts do.
+- **AI-2** (HIGH, billing): **token refund** — no refund path when an AI call fails /
+  returns empty after credits were deducted. Add idempotent compensating credit
+  (`type='refund'`) before flipping `BILLING_ENABLED=true`.
+- **BUD-1** (MEDIUM): thread the detailed/multi-year budget + Must/Like split into the
+  AI context (depends on / pairs with AI-1).
+- Pre-launch billing blockers still open: **H4** (rate-limit `/api/admin` + audit trail).
+  See §7 checklist before `BILLING_ENABLED=true`.

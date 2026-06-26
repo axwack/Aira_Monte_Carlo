@@ -94,9 +94,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.20";
-export const BUILD_TAG = "[main] v1.1.0.20 — Imported Must/Like budget now drives the GK guardrails: Must Spend = spend floor (essentials), Like to Spend = ceiling (full budget), overriding the % sliders when present. Single-year template upgraded to the Must/Like + Frequency format.";
-export const BUILD_TIME = "2026-06-17T13:00:00Z";
+const APP_VERSION = "1.1.0.22";
+export const BUILD_TAG = "[main] v1.1.0.22 — Tax uniformity: (1) Stress Test now runs the SAME engine as the Monte Carlo (delegates to runMC with the 2000–2012 sequence forced at retirement), so the non-resident/state-tax toggle, IRMAA, SS torpedo, RMDs, and bracket caps flow into the stress number identically. (2) The 🏛 Tax toggle now genuinely zeroes ALL tax (federal/state/IRMAA/conversion) across MC, Stress, and the year-by-year table when OFF — previously OFF was a no-op in the MC. Relabeled + modal rewritten.";
+export const BUILD_TIME = "2026-06-26T15:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -710,8 +710,22 @@ function getBracketCeiling(target, filingStatus, inflFactor) {
   return Math.round((ceilings[target] ?? ceilings["22"]) * inflFactor);
 }
 
-function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true) {
+// seqOverride: optional array of equity returns (decimals) prescribed for the first
+// N retirement years — used by the Stress Test to force the 2000–2012 sequence at
+// retirement. When supplied, year y's equity component is seqOverride[y] (blended with
+// a bootstrapped bond draw at the same age-based equity weight portReturn uses); past
+// the array length, returns fall back to the normal bootstrap. Everything else — tax
+// (calcYearTax, incl. the non-resident/state toggle), RMDs, bucket sourcing, strategy —
+// is IDENTICAL to a normal run, so the stress pivot can never diverge from the MC.
+function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = null) {
   const rand = mulberry32(seed);
+  // "Tax drag" master toggle. OFF (p.tax === false) zeroes ALL tax — federal, state,
+  // IRMAA, and Roth-conversion cost — for a pure pre-tax view of portfolio dynamics.
+  // calcYearTax still runs (its taxableIncome / marginalBracket feed sourcing and
+  // conversion sizing), but no tax dollars are withdrawn. Because the Stress Test
+  // delegates to runMC, the toggle now governs MC and Stress identically. Only an
+  // explicit boolean false disables it — a numeric/true value (default) keeps tax on.
+  const taxEnabled = p.tax !== false;
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
   const retYrs = endAge - p.retireAge;
   const results = [];
@@ -790,7 +804,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true) {
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
       const calYear = 2026 + (age - p.currentAge);
-      const r = portReturn(age, rand, p.preRetireEq, p.postRetireEq);
+      // Stress sequence override: prescribe the equity leg for the first
+      // seqOverride.length retirement years; bond leg stays bootstrapped at the
+      // same age-based equity weight portReturn uses. No override → normal draw.
+      let r;
+      if (seqOverride && y < seqOverride.length) {
+        const eqW = age < 62 ? (p.preRetireEq || 91) / 100 : (p.postRetireEq || 70) / 100;
+        r = eqW * seqOverride[y] + (1 - eqW) * bootstrapDraw(BONDS, rand);
+      } else {
+        r = portReturn(age, rand, p.preRetireEq, p.postRetireEq);
+      }
       const inflY = bootstrapDraw(INFL, rand);
 
       const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
@@ -970,7 +993,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true) {
         age, yr, totalNeed, ss, effectiveAb + otherIncTaxable, rmd, 0,
         p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "CA"
       );
-      const totalTax = taxResult.totalTax;
+      const totalTax = taxEnabled ? taxResult.totalTax : 0;
       const totalWithdrawalNeeded = totalNeed + totalTax;
 
       // Withdraw from buckets in order: cash → taxable → pretax → roth.
@@ -1038,7 +1061,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true) {
         const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
         if (room > 500) {
           const convAmt = Math.min(room, pretax);
-          const convTax = Math.round(convAmt * (taxResult.marginalBracket || 0.22));
+          const convTax = taxEnabled ? Math.round(convAmt * (taxResult.marginalBracket || 0.22)) : 0;
           const totalCost = convAmt + convTax;
           if (pretax >= totalCost) {
             pretax -= totalCost;
@@ -1089,87 +1112,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true) {
   };
 }
 
+// Stress Test = the SAME engine as runMC, with the 2000–2012 equity sequence forced
+// at retirement (sequence-of-returns risk). Delegating to runMC — rather than carrying
+// a parallel implementation — guarantees one tax model, one sourcing waterfall, and one
+// RMD/strategy code path across the Monte Carlo, the deterministic schedule, and the
+// stress pivot. The non-resident/state-tax toggle, IRMAA, SS torpedo, and bracket caps
+// now propagate to the stress number automatically; no field can read differently here
+// than anywhere else. (Previously this used a flat taxDragRate heuristic that ignored
+// p.twoHousehold, so the toggle had no effect on the stress success rate.)
 function runStress(p, endAge, N = STRESS_PATHS, seed = 99) {
-  const rand = mulberry32(seed);
-  const accYrs = Math.max(0, p.retireAge - p.currentAge);
-  const retYrs = endAge - p.retireAge;
-  const results = [];
-  const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
-  const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
-
-  for (let i = 0; i < N; i++) {
-    let port = p.port;
-    for (let y = 0; y < accYrs; y++) {
-      port = port * (1 + portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq)) + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
-    }
-    const portAtRetire = Math.round(port);
-    const path = [portAtRetire];
-    let survived = true, sp = p.sp;
-    let lastReturn = 0;
-
-    const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
-    const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
-    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
-    const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
-
-    for (let y = 0; y < retYrs; y++) {
-      const age = p.retireAge + y;
-      const calYear = 2026 + (age - p.currentAge);   // <-- calYear computed early
-      const eqW = age < 62 ? (p.preRetireEq || 91) / 100 : (p.postRetireEq || 70) / 100;
-      const eq = y < SEQ_2000_2012.length ? SEQ_2000_2012[y] : bootstrapDraw(SP500, rand);
-      const r = eqW * eq + (1 - eqW) * bootstrapDraw(BONDS, rand);
-      const inflY = bootstrapDraw(INFL, rand);
-
-      const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
-      const adjFloor = gkFloor * cumInfl;
-      const adjCeiling = gkCeiling * cumInfl;
-      if (p.spSchedule && p.spSchedule.length) {
-        // Detailed budget overrides GK for the stress scenario too.
-        sp = scheduleSpendForYear(p.spSchedule, calYear, p.inf || 2.5);
-      } else if (y > 0 && port > 0) {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
-      }
-      lastReturn = r;
-
-      const ss = age >= p.ssAge ? p.ssb * Math.pow(1.024, y) : 0;
-      const stressGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
-      const abReliable = rand() < (p.abReliability || 80) / 100;
-      const totalRental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * stressGrowth);
-      const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 : (abReliable ? totalRental : 0);
-      const td = taxDragRate(age, p.ssAge, p.tax, p.filingStatus);
-      const hShock = age >= (p.hcShockAge || 72) && rand() < (p.hcProb || 3.5) / 100  ? (p.hcMin || 70_000) + rand() * ((p.hcMax || 130_000) - (p.hcMin || 70_000)): 0;
-      const { total: otherIncStress } = computeOtherIncome(p.otherIncomes, calYear);
-      const draw = Math.max(0, sp - ss - effectiveAb - otherIncStress) * (1 + td) + hShock;   // <-- use effectiveAb
-    
-      if (isNaN(sp)) sp = p.sp || 0;
-      if (isNaN(port)) port = 0;
-
-      port = port * (1 + r) - draw;
-      if (port <= 0 && survived) {
-        survived = false;
-        port = 0;
-      }
-      path.push(Math.max(0, Math.round(port)));
-    }
-    results.push({ path, survived });
-  }
-
-  // Aggregation (unchanged)
-  const pL = results[0].path.length;
-  const pcts = [];
-  for (let t = 0; t < pL; t++) {
-    const vals = results.map((r) => r.path[t]).sort((a, b) => a - b);
-    const q = (p) => vals[Math.floor(p * (vals.length - 1))];
-    pcts.push({
-      age: p.retireAge + t,
-      p10: q(0.1),
-      p25: q(0.25),
-      p50: q(0.5),
-      p75: q(0.75),
-      p90: q(0.9),
-    });
-  }
-  return { rate: results.filter((r) => r.survived).length / N, pcts };
+  return runMC(p, endAge, N, seed, true, SEQ_2000_2012);
 }
 
 /* ════ DETERMINISTIC WITHDRAWAL SCHEDULE (median returns) ════ */
@@ -1248,6 +1200,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   let sp = p.sp;
   let lastReturn = 0;
   const schedule = [];
+  // Same "Tax drag" master toggle as runMC — OFF zeroes all tax so the deterministic
+  // table matches the MC/Stress pivots under a pre-tax view (CLAUDE.md uniformity).
+  const taxEnabled = p.tax !== false;
 
   for (let y = 0; y < retYrs; y++) {
     const age = p.retireAge + y;
@@ -1392,7 +1347,8 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // when no waterfall row exists for this age (e.g. accounts not configured).
     const wfTax = smartTaxByAge.get(age);
     const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
-    const totalDraw = need + taxResult.totalTax;
+    const totalTax = taxEnabled ? taxResult.totalTax : 0;
+    const totalDraw = need + totalTax;
     port = port * (1 + ret) - totalDraw;
 
     schedule.push({
@@ -1403,10 +1359,10 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       housingCost: Math.round(housingCost),
       carveoutCost: Math.round(carveoutCost),
       conversionAmount: 0,
-      fedTax: taxResult.fedTax,
-      stateTax: taxResult.stateTax,
-      irmaa: taxResult.irmaa,
-      totalTax: taxResult.totalTax,
+      fedTax: taxEnabled ? taxResult.fedTax : 0,
+      stateTax: taxEnabled ? taxResult.stateTax : 0,
+      irmaa: taxEnabled ? taxResult.irmaa : 0,
+      totalTax,
       totalWithdrawal: Math.round(totalDraw),
       portfolioEnd: Math.max(0, Math.round(port)),
     });
@@ -6138,7 +6094,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                 [`${getStrategyLabel(withdrawalStrategy)} each path`, "#a78bfa"],
                 ["Blanchett smile spending (not flat)", "#a78bfa"],
                 [`SS COLA ${params.ssCola || 2.4}%/yr · Rental growth ${params.abGrowth || 3}%/yr`, "#94a3b8"],
-                [params.tax ? "Tax drag modeled (pre/post SS/RMD)" : "Tax drag OFF", "#94a3b8"],
+                [params.tax !== false ? "Full tax model: brackets, SS torpedo, IRMAA, state" : "Tax OFF — pre-tax view (no tax anywhere)", "#94a3b8"],
                 [`Glide path: ${params.preRetireEq || 91}/${100 - (params.preRetireEq || 91)} → ${params.postRetireEq || 70}/${100 - (params.postRetireEq || 70)} at age 62`, "#94a3b8"],
               ].map(([text, color]) => (
                 <div key={text} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 7, fontSize: 11 }}>
@@ -9824,18 +9780,13 @@ export default function AiRAForecaster() {
               <Toggle val={smile} onChange={setSmile} label="🙂 Smile spending" />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tog-label">🏛 Tax drag</span>
-                  <InfoModal title="🏛 Tax Drag Adjustment — How It Works" accent="#d97706">
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> Tax drag scales up each year's portfolio withdrawal so the <em>after-tax</em> amount you keep matches your spending target. Without it, the engine would draw exactly your spend number and silently underfund you by whatever taxes are owed.</p>
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>How it changes by life stage:</strong> The drag percentage rises as your tax exposure grows over retirement:</p>
-                    <ul style={{ margin:"0 0 10px 18px", padding:0, color:"#94a3b8" }}>
-                      <li><strong style={{ color:"#e2e8f0" }}>Before SS</strong> — lowest drag (mostly taxable / Roth draws, no SS income).</li>
-                      <li><strong style={{ color:"#e2e8f0" }}>SS started, pre-RMD</strong> — moderate drag (SS becomes partially taxable).</li>
-                      <li><strong style={{ color:"#e2e8f0" }}>RMD age and beyond</strong> — highest drag (forced pre-tax draws + SS torpedo + IRMAA exposure).</li>
-                    </ul>
-                    <p style={{ margin:"0 0 10px" }}>Single filers see higher drag than MFJ at every stage because of halved brackets and standard deduction.</p>
-                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON (default):</strong> Withdrawals are grossed up by the stage-appropriate drag rate. More realistic — what you'll actually need to pull.</p>
-                    <p style={{ margin:0 }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF:</strong> Pure pre-tax view. Useful for sanity-checking the underlying portfolio dynamics without tax noise, but it overstates how long your money lasts.</p>
+                  <span className="tog-label">🏛 Tax</span>
+                  <InfoModal title="🏛 Tax Modeling — How It Works" accent="#d97706">
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> When ON, every year's withdrawal is grossed up by a full tax calculation so the <em>after-tax</em> amount you keep matches your spending target. Without it, the engine would draw exactly your spend number and silently underfund you by whatever taxes are owed.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What's modeled each year:</strong> federal brackets with the standard deduction, the Social Security tax torpedo (provisional-income inclusion), IRMAA Medicare surcharges, and your state's brackets (skipped when Non-resident is on). Tax rises naturally over retirement as Social Security starts and RMDs force pre-tax draws.</p>
+                    <p style={{ margin:"0 0 10px" }}>Single filers owe more than MFJ at the same income because of halved brackets and standard deduction.</p>
+                    <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON (default):</strong> Full tax model applied. The same calculation drives the Monte Carlo, the Stress Test, and the year-by-year table — no pivot reads differently.</p>
+                    <p style={{ margin:0 }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF:</strong> Pure pre-tax view — <em>all</em> tax (federal, state, IRMAA, Roth-conversion cost) is zeroed everywhere. Useful for sanity-checking portfolio dynamics without tax noise, but it overstates how long your money lasts.</p>
                   </InfoModal>
                 </div>
                 <div
@@ -10466,4 +10417,4 @@ export default function AiRAForecaster() {
   );
 }
 
-export { runMC, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling };
