@@ -282,47 +282,60 @@ export function buildWithdrawalWaterfall(params = {}) {
       // housing/carveout obligations, net of fixed and other income.
       let need = Math.max(0, sp - fixedIncome - otherIncTotal) + housingCost + carveoutCost;
 
-      // Step 3 — Cash
-      const fromCash = Math.min(need, cash);
-      need -= fromCash;
-
-      // Step 4 — Taxable
-      const fromTaxable = Math.min(need, taxable);
-      need -= fromTaxable;
-
-      // Step 5 — Pretax (bracket-capped in smart mode)
-      let pretaxAllowed = need;
+      // Steps 3-5: portfolio draws. The draw ORDER differs by scenario:
+      //   • smart — cash → taxable → pretax (bracket-capped) → Roth (tax-optimal)
+      //   • naive — pretax (uncapped) → cash → taxable → Roth ("pretax first":
+      //     the no-planning retiree drains the 401k/IRA first, maximizing ordinary
+      //     income early; Roth is still saved for last)
+      let fromCash = 0, fromTaxable = 0, fromPretax = 0;
       let pretaxCapReason = "uncapped";
 
-      if (isSmart && withdrawalBracketTarget && withdrawalBracketTarget !== "off") {
-        const sd      = stdDed(age, isMFJ, iF);
-        // 85% SS inclusion here is a deliberate worst-case estimate: the pretax draw
-        // being sized below itself raises provisional income, so assuming max inclusion
-        // keeps the bracket cap conservative (never overshoots the target ceiling).
-        const taxSoFar = Math.max(0, Math.round(ss * 0.85) + rmd + annuity + otherIncTaxable - sd);
-        let ceiling = bracketCeiling(withdrawalBracketTarget, isMFJ, iF);
+      const drawCash    = () => { fromCash    = Math.min(need, cash);    need -= fromCash;    };
+      const drawTaxable = () => { fromTaxable = Math.min(need, taxable); need -= fromTaxable; };
 
-        if (irmaaGuard && age >= 63) {
-          const irmaaTier1 = isMFJ ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
-          const irmaaCap = Math.round(irmaaTier1 * iF) - sd;
-          if (irmaaCap < ceiling) {
-            ceiling = irmaaCap;
-            pretaxCapReason = "irmaa_ceil";
+      // Step 5 — Pretax (bracket-capped in smart mode, uncapped in naive)
+      const drawPretax = () => {
+        let pretaxAllowed = need;
+        if (isSmart && withdrawalBracketTarget && withdrawalBracketTarget !== "off") {
+          const sd      = stdDed(age, isMFJ, iF);
+          // 85% SS inclusion here is a deliberate worst-case estimate: the pretax draw
+          // being sized below itself raises provisional income, so assuming max inclusion
+          // keeps the bracket cap conservative (never overshoots the target ceiling).
+          const taxSoFar = Math.max(0, Math.round(ss * 0.85) + rmd + annuity + otherIncTaxable - sd);
+          let ceiling = bracketCeiling(withdrawalBracketTarget, isMFJ, iF);
+
+          if (irmaaGuard && age >= 63) {
+            const irmaaTier1 = isMFJ ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
+            const irmaaCap = Math.round(irmaaTier1 * iF) - sd;
+            if (irmaaCap < ceiling) {
+              ceiling = irmaaCap;
+              pretaxCapReason = "irmaa_ceil";
+            }
+          }
+
+          const room = Math.max(0, ceiling - taxSoFar);
+          pretaxAllowed = Math.min(need, room);
+          if (pretaxCapReason !== "irmaa_ceil") {
+            pretaxCapReason = pretaxAllowed < need
+              ? `bracket_${withdrawalBracketTarget}`
+              : "uncapped";
           }
         }
 
-        const room = Math.max(0, ceiling - taxSoFar);
-        pretaxAllowed = Math.min(need, room);
-        if (pretaxCapReason !== "irmaa_ceil") {
-          pretaxCapReason = pretaxAllowed < need
-            ? `bracket_${withdrawalBracketTarget}`
-            : "uncapped";
-        }
-      }
+        fromPretax = Math.min(pretaxAllowed, pretax);
+        if (pretax <= pretaxAllowed) pretaxCapReason = "exhausted";
+        need -= fromPretax;
+      };
 
-      const fromPretax = Math.min(pretaxAllowed, pretax);
-      if (pretax <= pretaxAllowed) pretaxCapReason = "exhausted";
-      need -= fromPretax;
+      if (isSmart) {
+        drawCash();
+        drawTaxable();
+        drawPretax();
+      } else {
+        drawPretax();   // pretax first — the whole point of the "without planning" view
+        drawCash();
+        drawTaxable();
+      }
 
       // Step 6 — Roth (last resort, reserve respected in smart mode)
       const rothFloor = isSmart ? (rothEmergencyReserve || 0) : 0;

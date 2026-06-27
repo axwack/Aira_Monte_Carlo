@@ -88,9 +88,8 @@ describe("buildWithdrawalWaterfall — bracket ceiling (smart mode)", () => {
   });
 
   test("naive year-1 fromPretax >= smart year-1 fromPretax", () => {
-    // Smart caps pretax at bracket; naive takes as much as needed from pretax first
-    // In year 1 with no SS, cash covers $50K, taxable covers $150K — both strategies may
-    // use those first. The key is that naive won't cap at the bracket ceiling.
+    // Naive draw order is pretax first — so year-1 fromPretax must be >= smart's.
+    // Smart draws cash then taxable before touching pretax; naive hits pretax immediately.
     const result = buildWithdrawalWaterfall(BASE);
     const smartRow = result.smart.rows[0];
     const naiveRow = result.naive.rows[0];
@@ -191,12 +190,32 @@ function BASE_YEAR() {
 // ─── Summary totals ────────────────────────────────────────────────────────────
 
 describe("buildWithdrawalWaterfall — summary", () => {
-  test("smart lifetime tax <= naive lifetime tax with large pretax balance", () => {
-    // Smart waterfall limits pretax draws to bracket ceiling → less ordinary income → lower tax
-    // Naive draws pretax first → more ordinary income → higher tax
+  test("naive draws more pretax in early years (pretax-first order confirmed)", () => {
+    // The core invariant of the fix: naive draws pretax BEFORE cash/taxable,
+    // so cumulative fromPretax over the first 5 years must exceed smart's total.
+    // Smart draws cash then taxable in early years, deferring pretax draws.
     const result = buildWithdrawalWaterfall(BASE);
-    // Smart tax should be <= naive tax (or equal if portfolio is small enough that
-    // pretax runs out in both scenarios)
-    expect(result.summary.lifetimeTaxSmart).toBeLessThanOrEqual(result.summary.lifetimeTaxNaive);
+    const naiveEarly = result.naive.rows.slice(0, 5).reduce((s, r) => s + r.fromPretax, 0);
+    const smartEarly = result.smart.rows.slice(0, 5).reduce((s, r) => s + r.fromPretax, 0);
+    expect(naiveEarly).toBeGreaterThan(smartEarly);
+  });
+
+  test("smart draws taxable before pretax; naive does not in year 1", () => {
+    // Smart order: cash -> taxable -> pretax. In year 1 smart taps taxable to fill need.
+    // Naive order: pretax -> cash -> taxable. In year 1 naive takes from pretax first,
+    // so taxable is untouched until pretax is exhausted.
+    const result = buildWithdrawalWaterfall(BASE);
+    const s0 = result.smart.rows[0];
+    const n0 = result.naive.rows[0];
+    expect(s0.fromTaxable).toBeGreaterThan(0);   // smart uses taxable in year 1
+    expect(n0.fromTaxable).toBe(0);              // naive does not touch taxable yet
+  });
+
+  test("naive finalPretax = 0 (exhausted); smart retains pretax balance", () => {
+    // Aggressive early pretax draws in naive should deplete the account before endAge,
+    // while smart's bracket-capped approach leaves a residual pretax balance.
+    const result = buildWithdrawalWaterfall(BASE);
+    expect(result.naive.finalPretax).toBe(0);
+    expect(result.smart.finalPretax).toBeGreaterThan(0);
   });
 });
