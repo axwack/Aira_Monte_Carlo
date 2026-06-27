@@ -19,7 +19,7 @@ import { hasEnoughCredits, deductCredits, ESTIMATED_CREDITS_PER_CALL, getStoredJ
 // When false, all credit logic is bypassed — pure BYOK, no code path changes.
 // CURRENTLY OFF: HIGH-severity audit findings H2/H3/H4 still open.
 // Tracked in Requirements.md §7 pre-launch checklist.
-export const BILLING_ENABLED = false;
+export const BILLING_ENABLED = true;
 
 // ─── Billing proxy ────────────────────────────────────────────────────────────
 // Routes all AI calls through /api/analyze when BILLING_ENABLED = true.

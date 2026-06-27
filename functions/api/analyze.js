@@ -355,7 +355,7 @@ async function handleTimeSensitive(apiKey, values, mcResults, usageBucket) {
 
 async function deductD1Credits(db, customerId, rawTokens) {
   const creditCost = Math.ceil(rawTokens / RAW_TOKENS_PER_CREDIT);
-  if (creditCost <= 0) return { creditsUsed: 0, creditsRemaining: null };
+  if (creditCost <= 0) return { creditsUsed: 0, creditsRemaining: null, txnId: null };
 
   // Audit fix C4: atomic conditional UPDATE. The WHERE clause guarantees we
   // only deduct when balance covers the cost. meta.changes === 0 means a
@@ -371,7 +371,8 @@ async function deductD1Credits(db, customerId, rawTokens) {
 
   const deducted = upd.meta?.changes === 1;
 
-  await db.prepare(`
+  // Capture last_row_id so AI-2 can reference this deduction row in its refund.
+  const ins = await db.prepare(`
     INSERT INTO credit_transactions (customer_id, type, amount, raw_tokens)
     VALUES (?, ?, ?, ?)
   `).bind(
@@ -389,7 +390,54 @@ async function deductD1Credits(db, customerId, rawTokens) {
     "SELECT credits FROM customers WHERE stripe_customer_id = ?"
   ).bind(customerId).first();
 
-  return { creditsUsed: creditCost, creditsRemaining: row?.credits ?? null };
+  return {
+    creditsUsed: creditCost,
+    creditsRemaining: row?.credits ?? null,
+    txnId: ins.meta?.last_row_id ?? null,
+  };
+}
+
+// ─── AI-2: Refund on empty/unusable result ────────────────────────────────────
+
+// Returns true when Gemini responded but with no usable structured data,
+// meaning the user was charged tokens but got nothing actionable.
+function isEmptyResult(type, result) {
+  if (!result) return true;
+  switch (type) {
+    case "health":        return !result.score && !result.grade;
+    case "narrative":     return !result.text;
+    case "roth":          return !result.assessment;
+    case "withdrawal":    return !result.recommended;
+    case "chat":          return !result.text;
+    case "timesensitive": return !result.cards || result.cards.length === 0;
+    // actionplan always echoes the original cards back — conservatively don't refund
+    default:              return false;
+  }
+}
+
+// Issues a compensating credit for a failed AI call. Keyed to the deduction
+// transaction id (stored in stripe_session_id column) so retries are idempotent.
+async function refundD1Credits(db, customerId, creditCost, deductTxnId) {
+  if (creditCost <= 0 || !deductTxnId) return;
+  const ref = String(deductTxnId);
+
+  const existing = await db.prepare(
+    "SELECT id FROM credit_transactions WHERE customer_id = ? AND type = 'refund' AND stripe_session_id = ?"
+  ).bind(customerId, ref).first();
+  if (existing) {
+    console.log(`[analyze] AI-2 refund already issued for deduct txn ${ref}`);
+    return;
+  }
+
+  await db.batch([
+    db.prepare(
+      "UPDATE customers SET credits = credits + ?, updated_at = unixepoch() WHERE stripe_customer_id = ?"
+    ).bind(creditCost, customerId),
+    db.prepare(
+      "INSERT INTO credit_transactions (customer_id, type, amount, stripe_session_id) VALUES (?, 'refund', ?, ?)"
+    ).bind(customerId, creditCost, ref),
+  ]);
+  console.log(`[analyze] AI-2 refunded ${creditCost} credits to ${customerId} (deduct txn ${ref})`);
 }
 
 // ─── Main handler ────────────────────────────────────────────────────────────
@@ -468,14 +516,32 @@ export async function onRequestPost({ request, env }) {
   // ── Post-call credit deduction (billing mode only) ────────────────────
   let creditsUsed = 0;
   let creditsRemaining = null;
+  let deductTxnId = null;
   if (customerId && env.DB && usageBucket.length > 0) {
     const rawTokens = usageBucket.reduce((sum, u) => sum + (u.totalTokenCount || 0), 0);
     try {
-      ({ creditsUsed, creditsRemaining } = await deductD1Credits(env.DB, customerId, rawTokens));
+      ({ creditsUsed, creditsRemaining, txnId: deductTxnId } = await deductD1Credits(env.DB, customerId, rawTokens));
     } catch (e) {
       console.error("[analyze] D1 deduction failed:", e.message);
     }
   }
 
-  return json({ ...result, _credits_used: creditsUsed, _credits_remaining: creditsRemaining });
+  // ── AI-2: Refund if result is empty/unusable ──────────────────────────
+  let refunded = false;
+  if (customerId && env.DB && creditsUsed > 0 && deductTxnId && isEmptyResult(type, result)) {
+    try {
+      await refundD1Credits(env.DB, customerId, creditsUsed, deductTxnId);
+      creditsRemaining = (creditsRemaining ?? 0) + creditsUsed;
+      refunded = true;
+    } catch (e) {
+      console.error("[analyze] AI-2 refund failed:", e.message);
+    }
+  }
+
+  return json({
+    ...result,
+    _credits_used:      refunded ? 0 : creditsUsed,
+    _credits_remaining: creditsRemaining,
+    ...(refunded && { _refunded: true }),
+  });
 }

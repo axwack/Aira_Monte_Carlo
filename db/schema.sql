@@ -47,3 +47,17 @@ CREATE TABLE IF NOT EXISTS pending_checkouts (
   consumed_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_pending_session ON pending_checkouts(session_id);
+
+-- H4: Admin audit trail and rate-limiting table.
+-- Every authenticated admin request (success or rate_limited) is logged here.
+-- Rate limiter counts rows per actor_ip in the last 60 seconds.
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  action     TEXT    NOT NULL,
+  actor_ip   TEXT,
+  result     TEXT    NOT NULL DEFAULT 'ok',   -- 'ok' | 'error' | 'rate_limited'
+  details    TEXT,                             -- JSON: { email?, customerId?, error? }
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_ip_time ON admin_audit(actor_ip, created_at);
