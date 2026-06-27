@@ -4925,7 +4925,9 @@ function WaterfallPlanView({ p, result }) {
     Taxable: Math.round(r.fromTaxable),
     "Pre-Tax": Math.round(r.fromPretax),
     Roth:    Math.round(r.fromRoth),
-    Tax:     Math.round(r.totalTax),
+    "Fed Tax":   Math.round(r.fedTax),
+    "State Tax": Math.round(r.stateTax),
+    "IRMAA":     Math.round(r.irmaa),
     "Roth Conversion": Math.round(r.conversionAmount),
   }));
 
@@ -5010,7 +5012,7 @@ function WaterfallPlanView({ p, result }) {
       <div className="chart-card">
         <div className="ct">Annual Withdrawals by Source — {mode === "smart" ? "Smart Waterfall" : "Without Planning"}</div>
         <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
-          Stacks show where each year's spending comes from; Tax (red) sits on top
+          Stacks show where each year's spending comes from; Fed Tax / State Tax / IRMAA sit on top (match the table columns exactly)
           {anyConversion && mode === "smart" && <> · Roth Conversion (purple) is a pretax→Roth transfer, not spending — shown for visibility</>}
         </div>
         <ResponsiveContainer width="100%" height={220}>
@@ -5024,7 +5026,9 @@ function WaterfallPlanView({ p, result }) {
             <Bar dataKey="Taxable"  stackId="a" fill="#3b82f6" />
             <Bar dataKey="Pre-Tax"  stackId="a" fill="#f59e0b" />
             <Bar dataKey="Roth"     stackId="a" fill="#10b981" />
-            <Bar dataKey="Tax"      stackId="a" fill="#ef4444" />
+            <Bar dataKey="Fed Tax"   stackId="a" fill="#ef4444" />
+            <Bar dataKey="State Tax" stackId="a" fill="#fb923c" />
+            <Bar dataKey="IRMAA"     stackId="a" fill="#f43f5e" />
             <Bar dataKey="Roth Conversion" stackId="a" fill="#a78bfa" radius={[2,2,0,0]} />
           </BarChart>
         </ResponsiveContainer>
