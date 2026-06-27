@@ -5027,7 +5027,7 @@ function WaterfallPlanView({ p, result }) {
             <Bar dataKey="Pre-Tax"  stackId="a" fill="#f59e0b" />
             <Bar dataKey="Roth"     stackId="a" fill="#10b981" />
             <Bar dataKey="Fed Tax"   stackId="a" fill="#ef4444" />
-            <Bar dataKey="State Tax" stackId="a" fill="#fb923c" />
+            <Bar dataKey="State Tax" stackId="a" fill="#ec4899" />
             <Bar dataKey="IRMAA"     stackId="a" fill="#f43f5e" />
             <Bar dataKey="Roth Conversion" stackId="a" fill="#a78bfa" radius={[2,2,0,0]} />
           </BarChart>
