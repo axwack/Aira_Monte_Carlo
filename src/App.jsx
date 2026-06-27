@@ -94,9 +94,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.22";
-export const BUILD_TAG = "[main] v1.1.0.23 — Tax uniformity: (1) Stress Test now runs the SAME engine as the Monte Carlo (delegates to runMC with the 2000–2012 sequence forced at retirement), so the non-resident/state-tax toggle, IRMAA, SS torpedo, RMDs, and bracket caps flow into the stress number identically. (2) The 🏛 Tax toggle now genuinely zeroes ALL tax (federal/state/IRMAA/conversion) across MC, Stress, and the year-by-year table when OFF — previously OFF was a no-op in the MC. Relabeled + modal rewritten. Changes to runmc function (gemini)";
-export const BUILD_TIME = "2026-06-26T15:00:00Z";
+const APP_VERSION = "1.1.0.24";
+export const BUILD_TAG = "[main] v1.1.0.24 — Income tab clarity: removed the redundant 'Annual Income Coverage' chart (its 'Portfolio Draw' excluded housing, carveouts & taxes, so it contradicted the Smart-Waterfall figures). The 📉 Estimated Expenses chart now shows a 'What your portfolio must cover' reconciliation — spending + housing + carveouts, less income, = the green Savings Drawdown (your true draw), with taxes shown as the extra funded from pre-tax. Deleted orphaned smileMult. (Prior: v1.1.0.22/.23 tax-uniformity — Stress shares the MC engine; 🏛 Tax toggle zeroes all tax when OFF.)";
+export const BUILD_TIME = "2026-06-26T17:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -559,14 +559,6 @@ function portReturn(age, rand, preRetireEq, postRetireEq) {
   return (
     eqW * bootstrapDraw(SP500, rand) + (1 - eqW) * bootstrapDraw(BONDS, rand)
   );
-}
-function smileMult(age) {
-  if (age < 65) return 1.15;
-  if (age < 70) return 1.05;
-  if (age < 75) return 0.95;
-  if (age < 80) return 0.85;
-  if (age < 85) return 0.8;
-  return 0.9;
 }
 
 
@@ -2796,77 +2788,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
   );
 }
 
-function IncomeMap({ p, inf }) {
-  const data = useMemo(() => {
-    const yrs = Math.min(26, p.endAge - p.retireAge);
-    return Array.from({ length: yrs }, (_, i) => {
-      const age = p.retireAge + i;
-      const calYear = 2026 + (age - p.currentAge);
-      const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1.024, i)) : 0;
-      const incGrowth = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(i, 20));
-      // Total rental income = per-property income + legacy `ab` field, grown,
-      // then weighted by expected reliability so the bar matches the chart title
-      // and the Monte Carlo engine (see runMC `abReliable` gating).
-      const reliability = (p.abReliability ?? 80) / 100;
-      let rental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * incGrowth * reliability);
-      // Apply end year
-      if (p.abEndYear && calYear > p.abEndYear) {
-        rental = 0;
-      }
-      const { total: otherInc } = computeOtherIncome(p.otherIncomes, calYear);
-      let sp = p.sp;
-      for (let j = 1; j <= i; j++)
-        sp *= p.smile ? 1 + smileMult(p.retireAge + j) * 0.03 : 1 + inf / 100;
-      return {
-        age,
-        "Portfolio Draw": Math.max(0, Math.round(sp) - ss - rental - otherInc),
-        "Social Security": ss,
-        "Rental Net": rental,
-        "Other Income": Math.round(otherInc),
-      };
-    });
-  }, [p, inf]);
-  return (
-    <div className="chart-card">
-      <div className="ct">
-          Annual Income Coverage · {p.smile ? "Smile" : "Flat"} spending · Rental net{" "}
-          shown at {p.abReliability ?? 80}% expected reliability
-        </div>
-      <ResponsiveContainer width="100%" height={540}>
-        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid
-            strokeDasharray="2 4"
-            stroke="rgba(255,255,255,0.05)"
-          />
-          <XAxis
-            dataKey="age"
-            stroke="#1e3a5f"
-            tick={{ fill: "#71a8f7", fontSize: 11 }}
-          />
-          <YAxis
-            stroke="#1e3a5f"
-            tick={{ fill: "#71a8f7", fontSize: 11}}
-            tickFormatter={(v) => fmtM(v)}
-            width={58}
-          />
-          <Tooltip content={<Tip />} />
-          <Legend
-            wrapperStyle={{ fontSize: 10, color: "#64748b", paddingTop: 6 }}
-          />
-          <Bar dataKey="Portfolio Draw" stackId="a" fill="#a9d1acee" />
-          <Bar dataKey="Social Security" stackId="a" fill="#7c3aedcc" />
-          <Bar dataKey="Rental Net" stackId="a" fill="#295ff1cc" />
-          <Bar dataKey="Other Income" stackId="a" fill="#eab308cc" radius={[2, 2, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-      <div className="flag-w" style={{ marginTop: 8, fontSize: 10 }}>
-        ⚠ SS gap ages {p.retireAge}–{p.ssAge - 1} — portfolio carries 100% of
-        spending. Highest-risk window.
-      </div>
-    </div>
-  );
-}
-
 // Splits a profile's "Other Expenses" carveouts by label into Medical /
 // Long-Term Care / Other, for the Income & Expenses breakdown below. Carveouts
 // are matched by keyword in their label so users can drive these categories
@@ -2952,18 +2873,57 @@ function IncomeExpensesChart({ p, inf }) {
         data={data} categories={EXPENSE_CATS}
         hoverYr={hoverYr} hoverRow={hoverRow}
         onMove={onMove} onLeave={onLeave}
+        reconcile
         footnote="Capital Gains Tax is not yet separately modeled (shown as $0) — realized gains on taxable-account draws are folded into Income Tax. Roth conversion tax and IRMAA surcharges are funded directly from the pre-tax bucket, so totals here may differ slightly from the Income side."
       />
+      {p.ssAge > p.retireAge && (
+        <div className="flag-w" style={{ fontSize: 11 }}>
+          ⚠ Social Security gap, ages {p.retireAge}–{p.ssAge - 1} — with no SS yet, your
+          portfolio carries the full spending need (the green Savings Drawdown above is
+          largest here). This is the highest sequence-of-returns risk window.
+        </div>
+      )}
     </>
   );
 }
 
-function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverRow, onMove, onLeave, footnote }) {
+// One row of the portfolio-draw reconciliation panel. Negative values render with a
+// leading minus and in the muted offset color; the dollar magnitude is always shown.
+function ReconLine({ label, value, color }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 0", fontSize: 11.5 }}>
+      <div style={{ color: "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: "inline-block", flexShrink: 0 }} />
+        {label}
+      </div>
+      <div style={{ color: "#cbd5e1", fontFamily: "'DM Mono',monospace" }}>
+        {value < 0 ? `−${fmtDollar(Math.abs(value))}` : fmtDollar(value)}
+      </div>
+    </div>
+  );
+}
+
+function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverRow, onMove, onLeave, footnote, reconcile }) {
   const rows = categories.map(([key, color]) => ({
     key, color,
     value: hoverRow ? (hoverRow[key] || 0) : data.reduce((s, d) => s + (d[key] || 0), 0),
   }));
   const total = rows.reduce((s, r) => s + r.value, 0);
+
+  // Portfolio-draw reconciliation (expense panel only). Pulls the SAME figures the
+  // engine produces so the numbers match the green "Savings Drawdown" income bar
+  // exactly. The draw covers spending + housing + carveouts net of guaranteed income;
+  // taxes are funded separately from the pre-tax bucket (see footnote).
+  const sumKey = (k) => hoverRow ? (hoverRow[k] || 0) : data.reduce((s, d) => s + (d[k] || 0), 0);
+  const recon = reconcile ? (() => {
+    const guaranteed   = sumKey("Social Security") + sumKey("Rental/Passive") + sumKey("Other Income");
+    const draw         = sumKey("Savings Drawdown");                 // true portfolio draw
+    const coreSpend    = sumKey("General/Living");
+    const housingCarve = sumKey("Mortgage/Housing") + sumKey("Medical") + sumKey("Long-Term Care") + sumKey("Other Expenses");
+    const taxes        = sumKey("Income Tax") + sumKey("Capital Gains Tax");
+    const spendNeed    = coreSpend + housingCarve;                   // before income offset
+    return { guaranteed, draw, coreSpend, housingCarve, taxes, spendNeed };
+  })() : null;
 
   return (
     <div className="chart-card">
@@ -2998,6 +2958,24 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
             <div style={{ color: "#e2e8f0" }}>Total</div>
             <div style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(total)}</div>
           </div>
+
+          {recon && (
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed rgba(255,255,255,0.12)" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+                What your portfolio must cover
+              </div>
+              <ReconLine label="Spending + housing + carveouts" value={recon.spendNeed} color="#cbd5e1" />
+              <ReconLine label="− Covered by income (SS / rental / other)" value={-Math.min(recon.guaranteed, recon.spendNeed)} color="#7c3aed" />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 6, paddingTop: 6, fontWeight: 700 }}>
+                <div style={{ color: "#a9d1ac" }}>= Drawn from savings</div>
+                <div style={{ color: "#a9d1ac", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(recon.draw)}</div>
+              </div>
+              <ReconLine label="Taxes (paid from pre-tax accounts)" value={recon.taxes} color="#f87171" />
+              <div style={{ fontSize: 10, color: "#64748b", marginTop: 8, lineHeight: 1.5 }}>
+                “Drawn from savings” is the green <strong style={{ color: "#a9d1ac" }}>Savings Drawdown</strong> bar above — your spending plus housing &amp; carveouts, minus the income you already receive. Taxes are the <em>extra</em> the plan must produce on top, funded from your pre-tax accounts.
+              </div>
+            </div>
+          )}
         </div>
       </div>
       {footnote && <div style={{ fontSize: 10, color: "#475569", marginTop: 8, lineHeight: 1.5 }}>ℹ️ {footnote}</div>}
@@ -5747,7 +5725,6 @@ function ScenariosTab({
       {scenarioSubTab === "income"     && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <IncomeExpensesChart p={baseParams} inf={inf} />
-          <IncomeMap p={baseParams} inf={inf} />
         </div>
       )}
       {scenarioSubTab === "realestate" && <MortgageTab values={assumptions ?? baseParams} onChange={onAssumptionChange ?? (() => {})} />}
@@ -8806,7 +8783,7 @@ function RetirementPanel({ values, onChange }) {
           label="Rental Net Income (annual)"
           helper={(values.properties || []).some((pr) => Number(pr.income) > 0)
             ? "Ignored — a property below has its own income set, which takes precedence."
-            : "Net rental / Airbnb income. Drives the “Rental Net” bar in the Income Coverage chart."}
+            : "Net rental / Airbnb income. Drives the “Rental/Passive” bar in the Income & Expenses chart."}
         >
           <ANumInput value={values.ab || 0} onSet={(v) => onChange("ab", v)} min={0} max={200000} step={1000} suffix="/yr" />
         </WFieldRow>
@@ -9963,7 +9940,7 @@ export default function AiRAForecaster() {
                 >
                  ${(Math.round(params.sp / 12)).toLocaleString()}<span style={{ fontSize: 11 }}>/mo</span>
                 </div>
-                <div className="ms">Total cash needed to cover spending = Portfolio Draw + Rental Net</div>
+                <div className="ms">Covered by Social Security, rental &amp; other income + your portfolio draw — see the Income &amp; Expenses tab</div>
               </div>
             </div>
 
