@@ -94,9 +94,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.20";
-export const BUILD_TAG = "[main] v1.1.0.20 — Imported Must/Like budget now drives the GK guardrails: Must Spend = spend floor (essentials), Like to Spend = ceiling (full budget), overriding the % sliders when present. Single-year template upgraded to the Must/Like + Frequency format.";
-export const BUILD_TIME = "2026-06-17T13:00:00Z";
+const APP_VERSION = "1.1.0.21";
+export const BUILD_TAG = "[main] v1.1.0.21 — Fixed the 'Without planning (pretax first)' withdrawal view: the naive scenario now genuinely drains pre-tax accounts first (pretax → cash → taxable → Roth), instead of mistakenly draining taxable first. The smart waterfall order is unchanged.";
+export const BUILD_TIME = "2026-06-27T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
