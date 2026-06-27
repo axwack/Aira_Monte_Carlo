@@ -95,7 +95,7 @@ if (typeof document !== "undefined") {
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
 const APP_VERSION = "1.1.0.22";
-export const BUILD_TAG = "[main] v1.1.0.22 — Tax uniformity: (1) Stress Test now runs the SAME engine as the Monte Carlo (delegates to runMC with the 2000–2012 sequence forced at retirement), so the non-resident/state-tax toggle, IRMAA, SS torpedo, RMDs, and bracket caps flow into the stress number identically. (2) The 🏛 Tax toggle now genuinely zeroes ALL tax (federal/state/IRMAA/conversion) across MC, Stress, and the year-by-year table when OFF — previously OFF was a no-op in the MC. Relabeled + modal rewritten.";
+export const BUILD_TAG = "[main] v1.1.0.23 — Tax uniformity: (1) Stress Test now runs the SAME engine as the Monte Carlo (delegates to runMC with the 2000–2012 sequence forced at retirement), so the non-resident/state-tax toggle, IRMAA, SS torpedo, RMDs, and bracket caps flow into the stress number identically. (2) The 🏛 Tax toggle now genuinely zeroes ALL tax (federal/state/IRMAA/conversion) across MC, Stress, and the year-by-year table when OFF — previously OFF was a no-op in the MC. Relabeled + modal rewritten. Changes to runmc function (gemini)";
 export const BUILD_TIME = "2026-06-26T15:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -568,14 +568,7 @@ function smileMult(age) {
   if (age < 85) return 0.8;
   return 0.9;
 }
-function taxDragRate(age, ssAge, useTax, filingStatus = "mfj") {
-  if (!useTax) return 0;
-  // Single filers hit higher brackets sooner (halved thresholds, halved deduction)
-  const single = filingStatus === "single";
-  if (age < ssAge) return single ? 0.092 : 0.072;
-  if (age < 73)    return single ? 0.115 : 0.090;
-  return                  single ? 0.162 : 0.132;
-}
+
 
 function guytonKlingerWithdrawal(
     portfolioValue,
@@ -798,7 +791,22 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
     const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
-    const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
+    //const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
+    const need0 = Math.max(0, p.sp - ss0 - ab0);
+    const initialTaxResult = calcYearTax(
+      p.retireAge, 
+      2026 + (p.retireAge - p.currentAge), 
+      need0, 
+      ss0, 
+      ab0, 
+      0, 
+      0, 
+      p.twoHousehold || false, 
+      taxInfl, 
+      p.filingStatus || "mfj", 
+      p.stateOfResidence || "NJ"
+    );
+    const initDraw = need0 + (taxEnabled ? initialTaxResult.totalTax : 0);
     const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
 
     for (let y = 0; y < retYrs; y++) {
