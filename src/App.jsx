@@ -1620,9 +1620,9 @@ const CSS = `
   .mbtn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
   .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
   .layout { display:grid; grid-template-columns:300px 1fr; height:calc(100vh - 56px); overflow:hidden; }
-  .sidebar { border-right:1px solid rgba(255,255,255,0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
+  .sidebar { border-right:1px solid rgba(228, 24, 24, 0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
   .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:11px; padding:13px; }
-  .sb-title { font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.12em; margin-bottom:12px; }
+  .sb-title { font-size:14px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.12em; margin-bottom:12px; }
   .sl-row { display:grid; grid-template-columns:84px 1fr 58px; align-items:center; gap:8px; margin-bottom:13px; }
   .sl-label { font-size:12px; color:#cbd5e1; font-weight:500; }
   .sl-val { font-size:12px; font-weight:700; text-align:right; color:#f1f5f9; font-family:'JetBrains Mono',monospace; }
@@ -1679,7 +1679,7 @@ const CSS = `
   .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); color:#cbd5e1; }
   .ms-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; margin-top:2px; }
   .ms-line { width:2px; background:rgba(255,255,255,0.08); margin:0 4px; }
-  .tip-box { background:rgba(10,15,30,0.98); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:9px 12px; font-size:12px; color:#f1f5f9; }
+  .tip-box { background:rgba(10,15,30,0.98); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:9px 12px; font-size:14px; color:#f1f5f9; }
   ::-webkit-scrollbar { width:3px; height:3px; }
   ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.12); border-radius:2px; }
 
@@ -1729,7 +1729,7 @@ const Tip = ({ active, payload, label }) => {
 
   return (
     <div className="tip-box">
-      <div style={{ color: "#64748b", marginBottom: 3 }}>Age {label}</div>
+      <div style={{ color: "#4d5c72", marginBottom: 3 }}>Age {label}</div>
       {uniquePayload
         .filter((p) => p.value > 0)
         .map((p, i) => (
@@ -7382,10 +7382,10 @@ function ProfileWizard({ values, onChange }) {
 
   const STEPS = [
     { label: "Assumptions", icon: "⚙️", sub: "Model parameters" },
-    { label: "About You", icon: "👤", sub: `${values.currentAge} yrs old` },
-    { label: "Current Savings", icon: "💰", sub: `${fmtM(values.port)} saved` },
-    { label: "Contributions", icon: "📋", sub: `${fmtK(values.contrib)}/yr` },
-    { label: "Retirement Plan", icon: "🎯", sub: `Age ${values.retireAge}` },
+    { label: "About You", icon: "👤", sub: `You are ${values.currentAge} yrs old` },
+    { label: "Current Savings", icon: "💰", sub: `Net worth of ${fmtM(values.port)} saved. Congratulations!` },
+    { label: "Contributions", icon: "📋", sub: `Total Contributions of ${fmtK(values.contrib)}/yr` },
+    { label: "Retirement Plan", icon: "🎯", sub: `Projected Retirement Age ${values.retireAge}` },
   ];
 
   const PANELS = [
@@ -7411,7 +7411,7 @@ function ProfileWizard({ values, onChange }) {
       className="wizard-grid"
       style={{
         display: "grid",
-        gridTemplateColumns: "220px 1fr",
+        gridTemplateColumns: "280px 1fr",
         background: "rgba(255,255,255,0.02)",
         border: "1px solid rgba(255,255,255,0.08)",
         borderRadius: 12,
@@ -7439,8 +7439,8 @@ function ProfileWizard({ values, onChange }) {
           >
             <div
               style={{
-                width: 11,
-                height: 11,
+                width: 14,
+                height: 14,
                 borderRadius: "50%",
                 flexShrink: 0,
                 background: i < step ? "#0d9488" : i === step ? "#14b8a6" : "rgba(255,255,255,0.1)",
@@ -7449,7 +7449,7 @@ function ProfileWizard({ values, onChange }) {
               }}
             />
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: i === step ? "#e2e8f0" : "#64748b" }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: i === step ? "#e2e8f0" : "#64748b" }}>
                 {s.icon} {s.label}
               </div>
               <div style={{ fontSize: 14, color: "#4174bd" }}>{s.sub}</div>
