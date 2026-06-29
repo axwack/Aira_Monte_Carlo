@@ -94,9 +94,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.24";
-export const BUILD_TAG = "[main] v1.1.0.24 — Income tab clarity: removed the redundant 'Annual Income Coverage' chart (its 'Portfolio Draw' excluded housing, carveouts & taxes, so it contradicted the Smart-Waterfall figures). The 📉 Estimated Expenses chart now shows a 'What your portfolio must cover' reconciliation — spending + housing + carveouts, less income, = the green Savings Drawdown (your true draw), with taxes shown as the extra funded from pre-tax. Deleted orphaned smileMult. (Prior: v1.1.0.22/.23 tax-uniformity — Stress shares the MC engine; 🏛 Tax toggle zeroes all tax when OFF.)";
-export const BUILD_TIME = "2026-06-26T17:00:00Z";
+const APP_VERSION = "1.1.0.26";
+export const BUILD_TAG = "[main] v1.1.0.26 — Header consolidation (follow-up to .25): folded the standalone strategy bar (gk-bar) into the hero card as a 3rd row; bumped the hero number to 44px and the secondary-metrics line to 14px; removed repetitive info ('3,000 paths' and the duplicate strategy name from the metrics line, 'Initial WR' from the strategy strip since WR shows once in the metrics line); moved the Sector/life-phase badge to the lower far right of the card; relocated the 'spend in the right life phase' editorial line into the collapsed 'What does this mean?' panel. (Prior: v1.1.0.25 header de-clutter — hero number + collapsible interpretive layer.)";
+export const BUILD_TIME = "2026-06-29T19:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -8909,6 +8909,7 @@ export default function AiRAForecaster() {
   const [stale, setStale] = useState(false);
   const [mc, setMc] = useState(null);
   const [stress, setStress] = useState(null);
+  const [showInterpretation, setShowInterpretation] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackType, setFeedbackType] = useState(null);
   const [feedbackText, setFeedbackText] = useState("");
@@ -9837,186 +9838,143 @@ export default function AiRAForecaster() {
               </div>
             )}
 
-            <div className="metrics">
-              <div className="met">
-                <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  Success to {endAge}
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.1)",
-                      color: "#64748b",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: "help",
-                    }}
-                    title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`}
-                  >
-                    ⓘ
-                  </span>
-                </div>
-                <div
-                  className="mv"
-                  style={{
-                    color: mc ? (mc.rate >= 0.85 ? "#0d9488" : mc.rate >= 0.7 ? "#f59e0b" : "#ef4444") : "#334155",
-                  }}
-                >
-                  {mc ? fmtPct(mc.rate) : "—"}
-                </div>
-                <div className="ms">{MC_PATHS_LABEL} paths · {getStrategyLabel(withdrawalStrategy)}</div>
-              </div>
-              <div className="met">
-                <div className="ml">Portfolio at D-Day</div>
-                <div className="mv" style={{ color: "#94a3b8", fontSize: 18 }}>
-                  {mc ? fmtM(mc.medR) : "—"}
-                </div>
-                <div className="ms">Median projected</div>
-              </div>
-              <div className="met">
-                <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  Withdrawal rate
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.1)",
-                      color: "#64748b",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: "help",
-                    }}
-                    title="Initial withdrawal rate = (First year spending - guaranteed income) ÷ Portfolio at retirement. 4% is a common benchmark for 30‑year retirements."
-                  >
-                    ⓘ
-                  </span>
-                </div>
-                <div
-                  className="mv"
-                  style={{
-                    color: +swr <= 3 ? "#0d9488" : +swr <= 4 ? "#34d399" : +swr <= 5 ? "#f59e0b" : "#ef4444",
-                    fontSize: 20,
-                  }}
-                >
-                  {swr}%
-                </div>
-                <div className="ms">4% = safe benchmark</div>
-              </div>
-              <div className="met">
-                <div className="ml" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  Safe Spending Limit
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.1)",
-                      color: "#64748b",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: "help",
-                    }}
-                    title=" The amount of Money that is Safe to Spend for Expenses. ">
-                    ⓘ
-                  </span>
-                </div>
-                <div
-                  className="mv"
-                  style={{
-                    color: "#fbbf24",
-                    fontSize: 20,
-                  }}
-                >
-                 ${(Math.round(params.sp / 12)).toLocaleString()}<span style={{ fontSize: 11 }}>/mo</span>
-                </div>
-                <div className="ms">Covered by Social Security, rental &amp; other income + your portfolio draw — see the Income &amp; Expenses tab</div>
-              </div>
-            </div>
-
-            {analogue && (
-              <div className="analogue" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>
-                  {analogue.emoji} "{analogue.text}." — {fmtPct(mc.rate)} to age {endAge}.
-                </span>
-                <SectorBadge age={currentAge} />
-              </div>
-            )}
-
-            {mc &&
-              (() => {
-                const success = Math.round(mc.rate * 26);
-                const fail = 26 - success;
-                return (
-                  <div
-                    style={{
-                      background: "rgba(255,255,255,0.03)",
-                      border: "1px solid rgba(255,255,255,0.07)",
-                      borderRadius: 10,
-                      padding: "12px 16px",
-                    }}
-                  >
-                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
-                      If 26 people had your exact plan — age {endAge} horizon
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                      {Array.from({ length: 26 }, (_, i) => (
-                        <div
-                          key={i}
-                          style={{
-                            width: 18,
-                            height: 18,
-                            borderRadius: "50%",
-                            background: i < success ? "#0d9488" : "#ef4444",
-                            opacity: i < success ? 1 : 0.4,
-                            title: i < success ? "Survives" : "Depleted",
-                          }}
-                        />
-                      ))}
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ fontSize: 12, color: "#94a3b8" }}>
-                        <span style={{ color: "#0d9488", fontWeight: 700 }}>{success}</span> make it to {endAge}.{" "}
-                        {fail > 0 && (
-                          <>
-                            <span style={{ color: "#ef4444", fontWeight: 700 }}>{fail}</span> run out.
-                          </>
-                        )}
-                        {fail === 0 && <span style={{ color: "#34d399" }}> Everyone makes it.</span>}
+            {/* Hero: one number that matters, with secondary metrics demoted to a compact
+                strip and all interpretive copy behind a "What does this mean?" toggle.
+                See requirements.md §12-adjacent design audit (2026-06-29). */}
+            {(() => {
+              const heroColor = mc ? (mc.rate >= 0.85 ? "#0d9488" : mc.rate >= 0.7 ? "#f59e0b" : "#ef4444") : "#334155";
+              const infoDot = {
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 14, height: 14, borderRadius: "50%", background: "rgba(255,255,255,0.1)",
+                color: "#64748b", fontSize: 10, fontWeight: 600, cursor: "help",
+              };
+              const sep = <span style={{ color: "#475569" }}>·</span>;
+              const strat = assumptions.withdrawalStrategy;
+              return (
+                <div className="met" style={{ borderLeft: `4px solid ${heroColor}` }}>
+                  {/* Row 1 — the one number that matters, with the disclosure toggle aligned right. */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                      <div className="mv" style={{ fontSize: 44, color: heroColor }}>
+                        {mc ? fmtPct(mc.rate) : "—"}
                       </div>
-                      <div style={{ fontSize: 11, color: "#334155", fontStyle: "italic" }}>
-                        100% doesn't exist — room for error IS the plan. — Morgan Housel
+                      <div style={{ fontSize: 15, color: "#94a3b8", display: "flex", alignItems: "center", gap: 5 }}>
+                        success to age {endAge}
+                        <span style={infoDot} title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`}>ⓘ</span>
                       </div>
                     </div>
+                    {mc && (
+                      <button
+                        onClick={() => setShowInterpretation((v) => !v)}
+                        style={{ marginLeft: "auto", background: "transparent", border: "none", color: "#5eead4", fontSize: 13, cursor: "pointer", fontFamily: "inherit", padding: "4px 6px" }}
+                      >
+                        {showInterpretation ? "Hide details ▴" : "What does this mean? ▾"}
+                      </button>
+                    )}
                   </div>
-                );
-              })()}
+                  {/* Row 2 — secondary metrics, one line (paths + strategy name removed; strategy
+                      lives in its own strip below, withdrawal rate kept here only). */}
+                  <div style={{ fontSize: 14, color: "#64748b", marginTop: 11, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 12px" }}>
+                    <span title="Median projected portfolio value at your plan age.">
+                      <strong style={{ color: "#94a3b8" }}>{mc ? fmtM(mc.medR) : "—"}</strong> at age {endAge}
+                    </span>
+                    {sep}
+                    <span title="The amount that is safe to spend on expenses — covered by Social Security, rental &amp; other income + your portfolio draw. See the Income &amp; Expenses tab.">
+                      <strong style={{ color: "#fbbf24" }}>${(Math.round(params.sp / 12)).toLocaleString()}/mo</strong> safe spend
+                    </span>
+                    {sep}
+                    <span title="Initial withdrawal rate = (First year spending − guaranteed income) ÷ Portfolio at retirement.">
+                      <strong style={{ color: +swr <= 3 ? "#0d9488" : +swr <= 4 ? "#34d399" : +swr <= 5 ? "#f59e0b" : "#ef4444" }}>{swr}%</strong> withdrawal rate ({(params.safeWithdrawalRate * 100).toFixed(0)}% benchmark)
+                    </span>
+                  </div>
+                  {/* Row 3 — strategy detail strip, pulled in from the old standalone gk-bar.
+                      Facts only; the editorial "spend in the right life phase" line moved to the
+                      collapsed panel. Withdrawal rate dropped here (shown once, in Row 2). */}
+                  <div style={{ fontSize: 13, color: "#bae6fd", marginTop: 12, paddingTop: 11, borderTop: "1px solid rgba(14,165,233,0.18)", lineHeight: 1.55 }}>
+                    <strong style={{ color: "#5eead4" }}>{getStrategyLabel(strat)} Strategy:</strong>{" "}
+                    {strat === "gk" ? (
+                      <>Floor {fmtM(params.gkFloor)} · Ceiling {fmtM(params.gkCeiling)} · State tax {assumptions.twoHousehold ? "OFF (non-resident)" : "ON (resident)"}.</>
+                    ) : strat === "fixed" ? (
+                      <>Withdrawal rate {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
+                    ) : strat === "vanguard" ? (
+                      <>Cap {params.vanguardCap * 100}% · Floor {params.vanguardFloor * 100}%.</>
+                    ) : (
+                      <>Dynamic spending based on portfolio performance.</>
+                    )}{" "}
+                    Rental modeled at {params.abReliability}% reliability. Healthcare shocks {params.hcProb}%/yr from age {params.hcShockAge}.
+                  </div>
+                  {/* Sector / life-phase badge — lower far right, aligned under the toggle. */}
+                  {analogue && (
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                      <SectorBadge age={currentAge} />
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
-            <div className="gk-bar">
-              <strong style={{ color: "#5eead4" }}>{getStrategyLabel(assumptions.withdrawalStrategy)} Strategy:</strong>{" "}
-              {assumptions.withdrawalStrategy === "gk" ? (
-                <>
-                  Floor {fmtM(params.gkFloor)} · Ceiling {fmtM(params.gkCeiling)} · Initial WR {swr}% · State tax {assumptions.twoHousehold ? "OFF (non-resident)" : "ON (resident)"}.
-                </>
-              ) : assumptions.withdrawalStrategy === "fixed" ? (
-                <>Withdrawal rate: {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
-              ) : assumptions.withdrawalStrategy === "vanguard" ? (
-                <>Cap: {params.vanguardCap * 100}% · Floor: {params.vanguardFloor * 100}%.</>
-              ) : (
-                <>Dynamic spending based on portfolio performance.</>
-              )}{" "}
-              Rental modeled at {params.abReliability}% reliability. Healthcare shocks {params.hcProb}%/yr from age {params.hcShockAge}. As Bill Perkins says — spend in the right life phase. 🌴
-            </div>
+            {/* Interpretive layer — the flight analogue + 26-person visual, available on demand
+                rather than always in your face (progressive disclosure). */}
+            {showInterpretation && (
+              <>
+                {analogue && (
+                  <div className="analogue">
+                    {analogue.emoji} "{analogue.text}." — {fmtPct(mc.rate)} to age {endAge}.
+                  </div>
+                )}
+                {mc &&
+                  (() => {
+                    const success = Math.round(mc.rate * 26);
+                    const fail = 26 - success;
+                    return (
+                      <div
+                        style={{
+                          background: "rgba(255,255,255,0.03)",
+                          border: "1px solid rgba(255,255,255,0.07)",
+                          borderRadius: 10,
+                          padding: "12px 16px",
+                        }}
+                      >
+                        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
+                          If 26 people had your exact plan — age {endAge} horizon
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                          {Array.from({ length: 26 }, (_, i) => (
+                            <div
+                              key={i}
+                              style={{
+                                width: 18,
+                                height: 18,
+                                borderRadius: "50%",
+                                background: i < success ? "#0d9488" : "#ef4444",
+                                opacity: i < success ? 1 : 0.4,
+                                title: i < success ? "Survives" : "Depleted",
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                            <span style={{ color: "#0d9488", fontWeight: 700 }}>{success}</span> make it to {endAge}.{" "}
+                            {fail > 0 && (
+                              <>
+                                <span style={{ color: "#ef4444", fontWeight: 700 }}>{fail}</span> run out.
+                              </>
+                            )}
+                            {fail === 0 && <span style={{ color: "#34d399" }}> Everyone makes it.</span>}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#334155", fontStyle: "italic" }}>
+                            100% doesn't exist — room for error IS the plan. — Morgan Housel
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                <div style={{ fontSize: 12, color: "#475569", fontStyle: "italic" }}>
+                  As Bill Perkins says — spend in the right life phase. 🌴
+                </div>
+              </>
+            )}
 
             <div className="tabs">
               {TABS.map(([k, l]) => (

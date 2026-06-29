@@ -345,3 +345,86 @@ State at end of evening; resume here next session.
   AI context (depends on / pairs with AI-1).
 - Pre-launch billing blockers still open: **H4** (rate-limit `/api/admin` + audit trail).
   See §7 checklist before `BILLING_ENABLED=true`.
+
+## 12. User-Configurable Withdrawal Order ("Custom Order" wizard) — scoped 2026-06-29
+
+Requested by Vincent. **Comparable:** Boldin's custom withdrawal-order list. **Priority:** P1.
+**Status:** Scoped, not started.
+
+### Problem
+Account drawdown order is **hardcoded** `cash → taxable → pre-tax (bracket-capped) → Roth` in
+three places, with no user control over *which bucket drains first*:
+- `runMC` — `src/App.jsx:999-1034`
+- `buildWithdrawalWaterfall` (smart + naive) — `src/engine/buildWithdrawalWaterfall.js:290-345`
+  (already uses named `drawCash()/drawTaxable()/drawPretax()` closures + a smart-vs-naive branch
+  at 331-337 — the clean insertion point)
+- `simulateDeterministicWithStrategy` sources from the waterfall, so no separate edit.
+
+The `withdrawalStrategy` dropdown (`src/App.jsx:4802`) only sets *distribution* (how much). The
+guardrails strip (`src/App.jsx:4659`) caps pre-tax *depth*, not order. Users who want explicit
+control (advisors, power users) have no lever; the "source matters" story can only be told today
+by flipping the existing Smart / "Without planning" View toggle (`src/App.jsx:4944`), not by
+setting an arbitrary order.
+
+### Goal
+Let a user choose **how accounts are drained** while keeping today's tax-reactive **Smart** order
+as the default. Distribution stays orthogonal and untouched.
+
+### Profile keys (add to `BLANK_PROFILE`, `src/App.jsx:480`)
+```jsonc
+"orderingMode": "smart",   // "smart" | "custom" | "traditional" — default "smart" = today's behavior
+"withdrawalOrder": ["cash","taxable","pretax","roth"]   // used only when orderingMode === "custom"
+```
+Defaults preserve current behavior exactly. Generic-first: no user-specific values.
+
+### Behavior
+- **smart** — current engine, tax-reactive (cash → taxable → pre-tax capped → Roth).
+- **custom** — drain in the user's `withdrawalOrder`. **Invariants that hold regardless of order:**
+  RMDs are Step 1 (legal, never reorderable); bracket cap / IRMAA guard attach to the `pretax`
+  step *wherever it sits*; `rothEmergencyReserve` floor honored even if Roth is dragged to the top.
+- **traditional** — taxable → pre-tax → Roth, no bracket cap (the existing naive baseline).
+
+### UI (📋 Withdrawal Plan tab, Sourcing section, above the guardrails strip)
+Radio: ○ Smart (recommended) · ○ Custom order · ○ Traditional. Custom reveals a reorderable
+4-bucket list. **Up/down arrows, no drag library** (no new npm dependency — project rule).
+Helper: "Earlier = drained first. RMDs are always taken first by law; the bracket cap and Roth
+reserve still apply."
+
+### Engine change
+Replace the hardcoded sequence with an array-driven loop in **both** engines: map bucket name → its
+existing `drawX()` closure, iterate `withdrawalOrder`. Roth keeps its reserve-floor special-casing
+wherever it lands. Mirror the same loop in `runMC:1004-1034`.
+
+### Tests (additive, `src/computations.test.js`)
+1. Default `smart` ⇒ byte-identical year-1 draws to current engine (regression lock).
+2. Custom `["taxable","cash","pretax","roth"]` drains taxable before cash; sum invariant holds.
+3. Roth-first custom still respects `rothEmergencyReserve`.
+4. Pre-tax bracket cap still binds when pre-tax moved to position 1.
+5. `traditional` matches the documented naive path.
+6. Cross-engine parity: `runMC` y1 and `buildWithdrawalWaterfall` agree on draw shape for a custom order.
+
+### Process
+Bump `APP_VERSION` / `BUILD_TIME` / `BUILD_TAG` (lead `[main]`). `npm test -- --watchAll=false`
+green (326 → ~332) before commit. Work on `main`.
+
+### Out of scope (v2)
+Per-year order overrides; tax-lot selection within taxable; separate Roth-conversion ordering.
+
+### Effort
+Small-to-medium. Waterfall engine pre-structured for it; the `runMC` edit is the delicate part
+(bracket-cap block is inline). ~1 focused session.
+
+### Demo workaround until built (2026-06-29 "source matters" video)
+Both paths live in the 📋 Withdrawal Plan tab → "Where does each year's spending come from?" via
+the **View** toggle (`src/App.jsx:4944`):
+- **Path 1 (ordinary income):** `Without planning (pretax first)` → the draw is a pre-tax IRA
+  withdrawal, taxed as ordinary income. (Naive scenario never runs Roth conversions, so it's clean.)
+- **Path 2 (0% LTCG):** `📋 Smart Waterfall`, with two setup steps so the 0%-bracket story holds:
+  1. **Roth conversions → Off** (Conversion Plan tab → mode "Off" → `rothConversionTarget = "off"`).
+     The smart scenario's Step 6.5 conversion (`buildWithdrawalWaterfall.js:16`) otherwise stacks
+     ordinary income that pushes total income past the LTCG-0% ceiling.
+  2. **Cash bucket ≈ $0**, so the draw lands on the taxable brokerage (smart drains cash before
+     taxable at `src/App.jsx:999`). NOTE: per §3, taxable draws are currently modeled as 100%
+     return-of-basis — the engine shows $0 federal tax on the taxable draw, which happens to match
+     the 0%-LTCG narrative, but for the right reason only by coincidence (LTCG/cost-basis not yet
+     modeled).
