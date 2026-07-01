@@ -94,8 +94,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.27";
-export const BUILD_TAG = "[main] v1.1.0.27 — Withdrawal Plan: moved the green 'Sourcing guardrails' strip inside the collapsible 'Where does each year's spending come from?' section, so it's hidden until that section is expanded (was always visible above it).";
+const APP_VERSION = "1.1.0.28";
+export const BUILD_TAG = "[main] v1.1.0.28 — Withdrawal Plan: Section-2 strategy selector is now PREVIEW-ONLY (drives the year-by-year table without overwriting the Profile default or invalidating the MC run). A new 'Set as default' / 'Reset' action commits the previewed strategy app-wide. Also (.27) moved the green 'Sourcing guardrails' strip inside the collapsible sourcing section.";
 export const BUILD_TIME = "2026-07-01T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -4745,6 +4745,13 @@ function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle }) 
 function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange }) {
   const [openSourcing, setOpenSourcing] = useState(true);
   const [openStrategy, setOpenStrategy] = useState(true);
+  // The Section-2 selector is PREVIEW-ONLY: it drives the year-by-year table below
+  // without overwriting the Profile default (which drives the whole app + MC). A
+  // separate "Set as default" action commits it. Seed from the global default and
+  // re-sync if that default changes elsewhere (e.g. the Profile panel).
+  const [previewStrategy, setPreviewStrategy] = useState(withdrawalStrategy);
+  useEffect(() => { setPreviewStrategy(withdrawalStrategy); }, [withdrawalStrategy]);
+  const previewIsDefault = previewStrategy === withdrawalStrategy;
   // Compute the waterfall once here so the guardrail strip (always visible) and the
   // table (when expanded) share it — no double compute, and the strip can show the
   // live "tax saved vs no plan" delta from the same summary.
@@ -4797,12 +4804,12 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           onToggle={() => setOpenStrategy(v => !v)}
           color="#fbbf24"
           question="How does my chosen strategy pace spending year by year?"
-          subtitle="Pick a strategy to see its year-by-year schedule below — this also updates your Profile default."
+          subtitle="Preview any strategy's year-by-year schedule below — this does NOT change your Profile default or your Monte Carlo run until you click 'Set as default'."
         />
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
           <select
-            value={withdrawalStrategy}
-            onChange={(e) => onAssumptionChange("withdrawalStrategy", e.target.value)}
+            value={previewStrategy}
+            onChange={(e) => setPreviewStrategy(e.target.value)}
             style={{
               width: "100%",
               background: "#0d1b2a",
@@ -4827,11 +4834,48 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
             <option value="one_n">1/N (Remaining Years)</option>
             <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
           </select>
-          <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(withdrawalStrategy)}</div>
+          <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(previewStrategy)}</div>
+          {/* Commit action — only shown when the preview differs from the saved default.
+              This is the single, explicit path from "previewing" to "applied app-wide". */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 24 }}>
+            {previewIsDefault ? (
+              <span style={{ fontSize: 11, color: "#64748b" }}>
+                ✓ Previewing your saved default — the whole app (including Monte Carlo) uses this strategy.
+              </span>
+            ) : (
+              <>
+                <span style={{ fontSize: 11, color: "#fbbf24" }}>
+                  Preview only — your saved default is still <strong>{getStrategyLabel(withdrawalStrategy)}</strong>.
+                </span>
+                <button
+                  onClick={() => onAssumptionChange("withdrawalStrategy", previewStrategy)}
+                  style={{
+                    padding: "4px 12px", fontSize: 11, fontWeight: 700, borderRadius: 6,
+                    border: "1px solid rgba(251,191,36,0.5)", background: "rgba(251,191,36,0.12)",
+                    color: "#fbbf24", cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                  title="Save this strategy as your Profile default. This re-runs the Monte Carlo simulation and updates every tab."
+                >
+                  Set as default
+                </button>
+                <button
+                  onClick={() => setPreviewStrategy(withdrawalStrategy)}
+                  style={{
+                    padding: "4px 10px", fontSize: 11, borderRadius: 6,
+                    border: "1px solid #1e3a5f", background: "transparent",
+                    color: "#94a3b8", cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                  title="Discard the preview and go back to your saved default."
+                >
+                  Reset
+                </button>
+              </>
+            )}
+          </div>
         </div>
         {openStrategy && (
           <div style={{ paddingLeft: 4 }}>
-            <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={withdrawalStrategy} />
+            <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={previewStrategy} />
           </div>
         )}
       </div>
