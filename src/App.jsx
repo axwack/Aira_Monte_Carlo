@@ -94,9 +94,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.26";
-export const BUILD_TAG = "[main] v1.1.0.26 — Header consolidation (follow-up to .25): folded the standalone strategy bar (gk-bar) into the hero card as a 3rd row; bumped the hero number to 44px and the secondary-metrics line to 14px; removed repetitive info ('3,000 paths' and the duplicate strategy name from the metrics line, 'Initial WR' from the strategy strip since WR shows once in the metrics line); moved the Sector/life-phase badge to the lower far right of the card; relocated the 'spend in the right life phase' editorial line into the collapsed 'What does this mean?' panel. (Prior: v1.1.0.25 header de-clutter — hero number + collapsible interpretive layer.)";
-export const BUILD_TIME = "2026-06-29T19:30:00Z";
+const APP_VERSION = "1.1.0.27";
+export const BUILD_TAG = "[main] v1.1.0.27 — Withdrawal Plan: moved the green 'Sourcing guardrails' strip inside the collapsible 'Where does each year's spending come from?' section, so it's hidden until that section is expanded (was always visible above it).";
+export const BUILD_TIME = "2026-07-01T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -4779,11 +4779,12 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           question="Where does each year's spending come from?"
           subtitle="Account-by-account sourcing — cash → taxable → pre-tax (bracket-capped) → Roth — with tax landmines flagged"
         />
-        {/* Guardrails live here, above the collapsible, so they're visible without
-            expanding (design Finding 5) and sit next to the waterfall they shape. */}
-        <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} summary={waterfall.summary} />
+        {/* Guardrails live inside the collapsible now (design update): they're
+            revealed only when the green sourcing section is expanded, alongside the
+            waterfall table they shape. */}
         {openSourcing && (
           <div style={{ paddingLeft: 4 }}>
+            <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} summary={waterfall.summary} />
             <WaterfallPlanView p={p} result={waterfall} />
           </div>
         )}
