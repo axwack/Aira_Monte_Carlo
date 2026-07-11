@@ -507,7 +507,10 @@ describe("runMC — Monte Carlo integration", () => {
       ],
     }, 90, 1000, 42, true);
 
-    expect(rothHeavy.rate).toBeGreaterThan(pretaxHeavy.rate);
+    // With source-aware taxes both variants can saturate at 100% survival on this
+    // portfolio; the RMD tax drag still shows up in median terminal wealth.
+    expect(rothHeavy.rate).toBeGreaterThanOrEqual(pretaxHeavy.rate);
+    expect(rothHeavy.term.p50).toBeGreaterThan(pretaxHeavy.term.p50);
   });
 
   test("joint RMD table gives lower RMD draw than uniform table (divisors are higher)", () => {
@@ -756,14 +759,15 @@ describe("User scenario — $266K portfolio, single filer, Fixed 4%", () => {
   });
 
   test("Fixed 4%: success rate is HIGH (portfolio never hits $0) — but income is inadequate", () => {
-    // Because sp = 4% × remaining portfolio each year, the portfolio shrinks slowly
-    // but mathematically never depletes. Expect high success rate (> 70%).
-    // This does NOT mean the plan is adequate — it means the engine won't show depletion.
+    // Because sp = 4% × remaining portfolio each year, the portfolio mathematically
+    // never depletes. Expect high success rate (> 70%). This does NOT mean the plan
+    // is adequate — 4% of ~$266K is ~$10.6K/yr vs the $72K target.
+    // With source-aware taxes the median-return path outgrows the 4% draw, so the
+    // median terminal portfolio ends ABOVE the starting $266K.
     const profile = { ...USER_PROFILE, currentAge: 65, retireAge: 65 };
     const r = runMC(profile, 90, 1000, 42, true);
     expect(r.rate).toBeGreaterThan(0.70);
-    // The median terminal portfolio should be well below the starting $266K
-    expect(r.term.p50).toBeLessThan(266_000);
+    expect(r.term.p50).toBeGreaterThan(266_000);
   });
 
   test("GK strategy on same portfolio WILL show low success rate (underfunded)", () => {
@@ -1169,12 +1173,12 @@ describe("Full scenario: single filer, age 65, FL, $500K IRA, $40K GK spend", ()
     expect(yr3.portfolioDraw).toBeLessThan(yr3.spending);
   });
 
-  // Aggressive 8% WR scenario ($40K spend / $500K). After Rule 5 (longevity) was added,
-  // the −10% capital-preservation cut is disabled from age 76 onward (≤15 yrs to endAge 90),
-  // so this stress case now succeeds far less than it did under classical-GK-minus-longevity.
-  // Bounds widened: still asserts engine runs and produces a non-trivial result.
+  // Aggressive WR stress scenario. With source-aware taxes (v1.1.0.29) the original
+  // $40K spend became safely fundable (~99.6% success), so the stress point moved:
+  // $48K (9.6% initial WR, guardrails at 65/135%) keeps this scenario in the
+  // discriminating mid-band (~87% at seed 42).
   test("MC: scenario runs successfully and rate is between 10–95% (not trivially safe or failed)", () => {
-    const r = runMC(SINGLE_FL, 90, 1000, 42, true);
+    const r = runMC({ ...SINGLE_FL, sp: 48_000, gkFloor: 31_200, gkCeiling: 64_800 }, 90, 1000, 42, true);
     expect(r.rate).toBeGreaterThan(0.10);
     expect(r.rate).toBeLessThan(0.95);
   });

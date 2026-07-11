@@ -277,79 +277,97 @@ export function buildWithdrawalWaterfall(params = {}) {
         pretax -= rmd;
       }
 
-      // ── Steps 3-6: Portfolio draws ──────────────────────────────────────
+      // ── Steps 3-6: Portfolio draws + tax funding (fixed-point) ───────────
       // "Need" reflects the year's full cash requirement: base spending plus
-      // housing/carveout obligations, net of fixed and other income.
-      let need = Math.max(0, sp - fixedIncome - otherIncTotal) + housingCost + carveoutCost;
+      // housing/carveout obligations, net of fixed and other income — PLUS the
+      // taxes the draw itself creates (fed + state + IRMAA). Taxes depend on
+      // fromPretax, which depends on the draw size, which depends on taxes —
+      // iterate to convergence. RMD proceeds fund the need first; any excess
+      // RMD is reinvested in the taxable bucket below.
+      const baseNeed = Math.max(0, sp - fixedIncome - otherIncTotal) + housingCost + carveoutCost;
 
       // Steps 3-5: portfolio draws. The draw ORDER differs by scenario:
       //   • smart — cash → taxable → pretax (bracket-capped) → Roth (tax-optimal)
       //   • naive — pretax (uncapped) → cash → taxable → Roth ("pretax first":
       //     the no-planning retiree drains the 401k/IRA first, maximizing ordinary
       //     income early; Roth is still saved for last)
-      let fromCash = 0, fromTaxable = 0, fromPretax = 0;
+      let fromCash = 0, fromTaxable = 0, fromPretax = 0, fromRoth = 0;
       let pretaxCapReason = "uncapped";
+      let rothReserveHeld = 0;
+      let taxNoConv = null;
+      let taxDue = 0;
 
-      const drawCash    = () => { fromCash    = Math.min(need, cash);    need -= fromCash;    };
-      const drawTaxable = () => { fromTaxable = Math.min(need, taxable); need -= fromTaxable; };
+      for (let pass = 0; pass < 4; pass++) {
+        let need = Math.max(0, baseNeed + taxDue - rmd); // RMD proceeds fund first
+        fromCash = 0; fromTaxable = 0; fromPretax = 0;
+        pretaxCapReason = "uncapped";
 
-      // Step 5 — Pretax (bracket-capped in smart mode, uncapped in naive)
-      const drawPretax = () => {
-        let pretaxAllowed = need;
-        if (isSmart && withdrawalBracketTarget && withdrawalBracketTarget !== "off") {
-          const sd      = stdDed(age, isMFJ, iF);
-          // 85% SS inclusion here is a deliberate worst-case estimate: the pretax draw
-          // being sized below itself raises provisional income, so assuming max inclusion
-          // keeps the bracket cap conservative (never overshoots the target ceiling).
-          const taxSoFar = Math.max(0, Math.round(ss * 0.85) + rmd + annuity + otherIncTaxable - sd);
-          let ceiling = bracketCeiling(withdrawalBracketTarget, isMFJ, iF);
+        const drawCash    = () => { fromCash    = Math.min(need, cash);    need -= fromCash;    };
+        const drawTaxable = () => { fromTaxable = Math.min(need, taxable); need -= fromTaxable; };
 
-          if (irmaaGuard && age >= 63) {
-            const irmaaTier1 = isMFJ ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
-            const irmaaCap = Math.round(irmaaTier1 * iF) - sd;
-            if (irmaaCap < ceiling) {
-              ceiling = irmaaCap;
-              pretaxCapReason = "irmaa_ceil";
+        // Step 5 — Pretax (bracket-capped in smart mode, uncapped in naive)
+        const drawPretax = () => {
+          let pretaxAllowed = need;
+          if (isSmart && withdrawalBracketTarget && withdrawalBracketTarget !== "off") {
+            const sd      = stdDed(age, isMFJ, iF);
+            // 85% SS inclusion here is a deliberate worst-case estimate: the pretax draw
+            // being sized below itself raises provisional income, so assuming max inclusion
+            // keeps the bracket cap conservative (never overshoots the target ceiling).
+            const taxSoFar = Math.max(0, Math.round(ss * 0.85) + rmd + annuity + otherIncTaxable - sd);
+            let ceiling = bracketCeiling(withdrawalBracketTarget, isMFJ, iF);
+
+            if (irmaaGuard && age >= 63) {
+              const irmaaTier1 = isMFJ ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
+              const irmaaCap = Math.round(irmaaTier1 * iF) - sd;
+              if (irmaaCap < ceiling) {
+                ceiling = irmaaCap;
+                pretaxCapReason = "irmaa_ceil";
+              }
+            }
+
+            const room = Math.max(0, ceiling - taxSoFar);
+            pretaxAllowed = Math.min(need, room);
+            if (pretaxCapReason !== "irmaa_ceil") {
+              pretaxCapReason = pretaxAllowed < need
+                ? `bracket_${withdrawalBracketTarget}`
+                : "uncapped";
             }
           }
 
-          const room = Math.max(0, ceiling - taxSoFar);
-          pretaxAllowed = Math.min(need, room);
-          if (pretaxCapReason !== "irmaa_ceil") {
-            pretaxCapReason = pretaxAllowed < need
-              ? `bracket_${withdrawalBracketTarget}`
-              : "uncapped";
-          }
+          fromPretax = Math.min(pretaxAllowed, pretax);
+          if (pretax <= pretaxAllowed) pretaxCapReason = "exhausted";
+          need -= fromPretax;
+        };
+
+        if (isSmart) {
+          drawCash();
+          drawTaxable();
+          drawPretax();
+        } else {
+          drawPretax();   // pretax first — the whole point of the "without planning" view
+          drawCash();
+          drawTaxable();
         }
 
-        fromPretax = Math.min(pretaxAllowed, pretax);
-        if (pretax <= pretaxAllowed) pretaxCapReason = "exhausted";
-        need -= fromPretax;
-      };
+        // Step 6 — Roth (last resort, reserve respected in smart mode)
+        const rothFloor = isSmart ? (rothEmergencyReserve || 0) : 0;
+        const rothAvail = Math.max(0, roth - rothFloor);
+        fromRoth = Math.min(need, rothAvail);
+        rothReserveHeld = Math.max(0, roth - rothFloor - fromRoth);
+        need -= fromRoth;
 
-      if (isSmart) {
-        drawCash();
-        drawTaxable();
-        drawPretax();
-      } else {
-        drawPretax();   // pretax first — the whole point of the "without planning" view
-        drawCash();
-        drawTaxable();
+        // Source-aware tax on this pass's draws; converge on the funded amount.
+        taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable);
+        const newTax = taxNoConv.irmaaFull; // fed + state + IRMAA are all real cash costs
+        if (Math.abs(newTax - taxDue) < 1) { taxDue = newTax; break; }
+        taxDue = newTax;
       }
-
-      // Step 6 — Roth (last resort, reserve respected in smart mode)
-      const rothFloor = isSmart ? (rothEmergencyReserve || 0) : 0;
-      const rothAvail = Math.max(0, roth - rothFloor);
-      const fromRoth  = Math.min(need, rothAvail);
-      const rothReserveHeld = Math.max(0, roth - rothFloor - fromRoth);
-      need -= fromRoth;
 
       // ── Step 6.5: Roth conversion (smart scenario only) ──────────────────
       // A pinned conversionOverrides amount wins; otherwise fill remaining room
       // to rothConversionTarget's bracket ceiling, sized off the taxable income
       // from the spending draw alone (mirrors runMC's bracket-fill behavior).
       let convAmt = 0;
-      const taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable);
       if (isSmart) {
         const pretaxAfterDraw = Math.max(0, pretax - fromPretax);
         const override = overrideMap.get(yr);
@@ -397,8 +415,11 @@ export function buildWithdrawalWaterfall(params = {}) {
       const rmdActive     = age >= rmdAge && (pretax + rmd + fromPretax) > 0;
 
       // ── Update buckets ──────────────────────────────────────────────────
+      // The cascade draws above already include the year's tax bill (taxDue).
+      // Excess RMD (forced out beyond spending + taxes) is reinvested in taxable.
+      const rmdExcess = Math.max(0, rmd - (baseNeed + taxDue));
       cash    = Math.max(0, cash    - fromCash)    * (1 + cashGr);
-      taxable = Math.max(0, taxable - fromTaxable) * (1 + gr);
+      taxable = (Math.max(0, taxable - fromTaxable) + rmdExcess) * (1 + gr);
       pretax  = Math.max(0, pretax  - fromPretax - convAmt - convTax) * (1 + gr);
       roth    = Math.max(0, roth    - fromRoth + convAmt) * (1 + gr);
 
@@ -426,8 +447,10 @@ export function buildWithdrawalWaterfall(params = {}) {
         housingCost: Math.round(housingCost),
         carveoutCost: Math.round(carveoutCost),
         otherIncome: Math.round(otherIncTotal),
-        needFromPort: Math.round(Math.max(0, sp - fixedIncome - otherIncTotal) + housingCost + carveoutCost),
-        totalWithdrawal: Math.round(fromCash + fromTaxable + fromPretax + fromRoth + tax.totalTax),
+        needFromPort: Math.round(baseNeed),
+        // Gross portfolio outflow for spending + taxes. The cascade draws already
+        // fund the tax bill, so do NOT add tax on top; RMD is a real outflow too.
+        totalWithdrawal: Math.round(rmd + fromCash + fromTaxable + fromPretax + fromRoth),
       });
     }
 
