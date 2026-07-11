@@ -94,9 +94,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.28";
-export const BUILD_TAG = "[main] v1.1.0.28 — Withdrawal Plan: Section-2 strategy selector is now PREVIEW-ONLY (drives the year-by-year table without overwriting the Profile default or invalidating the MC run). A new 'Set as default' / 'Reset' action commits the previewed strategy app-wide. Also (.27) moved the green 'Sourcing guardrails' strip inside the collapsible sourcing section.";
-export const BUILD_TIME = "2026-07-01T00:00:00Z";
+const APP_VERSION = "1.1.0.29";
+export const BUILD_TAG = "[main] v1.1.0.29 — Source-aware taxes in both engines: runMC taxes only RMD + discretionary pretax draws (was: entire draw as ordinary income with RMD double-counted); the Withdrawal Waterfall now funds fed+state+IRMAA from the bucket cascade (was: reported but never paid); RMD proceeds fund spending first with the excess reinvested in taxable (was: vaporized, and double-withdrawn in runMC).";
+export const BUILD_TIME = "2026-07-11T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -984,29 +984,20 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         }
         rmd = Math.round(pretax / divisor);
       }
-      const totalNeed = need + rmd;
-
-      // Tax calculation
+      // ── Tax + withdrawal sizing (source-aware, fixed-point) ──────────────
+      // Ordinary income = RMD + discretionary pretax draw only; cash/taxable/Roth
+      // draws are not ordinary income (LTCG on taxable draws is a documented gap).
+      // Taxes depend on the pretax draw, which depends on the total draw size
+      // (need + taxes), which depends on taxes — iterate to convergence.
+      // RMD proceeds fund spending first; any excess is reinvested in taxable.
       const yr = 2026 + (age - p.currentAge);
       const filingStatus = p.filingStatus || "mfj";
-      const taxResult = calcYearTax(
-        age, yr, totalNeed, ss, effectiveAb + otherIncTaxable, rmd, 0,
-        p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "CA"
-      );
-      const totalTax = taxEnabled ? taxResult.totalTax : 0;
-      const totalWithdrawalNeeded = totalNeed + totalTax;
 
-      // Withdraw from buckets in order: cash → taxable → pretax → roth.
       // Sourcing guardrails (bracket cap, IRMAA guard, Roth reserve) are ORTHOGONAL
       // to the distribution strategy — they apply to any strategy once the user has
       // chosen a bracket target. "off" opts out to naive (pretax-first, uncapped).
-      let remaining = totalWithdrawalNeeded;
-      let fromCash = Math.min(remaining, cash);
-      remaining -= fromCash;
-      let fromTaxable = Math.min(remaining, taxable);
-      remaining -= fromTaxable;
-
-      let pretaxAllowedMC = remaining;
+      // The rooms don't depend on the draw size, so compute them once.
+      let bracketRoomMC = Infinity;
       if (p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off") {
         const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - 2026));
         const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC);
@@ -1014,34 +1005,55 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable);
         const taxableSoFarMC = Math.max(0, ordinaryFloorMC - sdMC);
         // Bracket room lives in taxable-income space (ceiling is post-std-deduction).
-        let bracketRoom = Math.max(0, getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC) - taxableSoFarMC);
+        bracketRoomMC = Math.max(0, getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC) - taxableSoFarMC);
         // IRMAA room lives in MAGI space — do NOT subtract the std deduction. A pretax
         // draw raises taxable income and MAGI by the same dollar, so both rooms cap the
         // same incremental draw; take the tighter. (LTCG from the taxable draw is not
         // yet folded into the MAGI base here — tracked as a known modeling gap.)
         if (p.irmaaGuard && age >= 63) {
           const irmaaRoom = Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactorMC) - ordinaryFloorMC);
-          bracketRoom = Math.min(bracketRoom, irmaaRoom);
+          bracketRoomMC = Math.min(bracketRoomMC, irmaaRoom);
         }
-        pretaxAllowedMC = Math.min(remaining, bracketRoom);
       }
 
-      let fromPretax = Math.min(pretaxAllowedMC, pretax);
-      remaining -= fromPretax;
-
       const rothFloorMC = p.rothEmergencyReserve || 0;
-      let fromRoth = Math.min(remaining, Math.max(0, roth - rothFloorMC));
-      remaining -= fromRoth;
+      let taxResult = null;
+      let totalTax = 0;
+      let fromCash = 0, fromTaxable = 0, fromPretax = 0, fromRoth = 0;
+      let shortfall = 0;
+      for (let pass = 0; pass < 4; pass++) {
+        // Withdraw from buckets in order: cash → taxable → pretax (capped) → roth
+        let remaining = Math.max(0, need + totalTax - rmd); // RMD proceeds fund first
+        fromCash = Math.min(remaining, cash);
+        remaining -= fromCash;
+        fromTaxable = Math.min(remaining, taxable);
+        remaining -= fromTaxable;
+        fromPretax = Math.min(Math.min(remaining, bracketRoomMC), Math.max(0, pretax - rmd));
+        remaining -= fromPretax;
+        fromRoth = Math.min(remaining, Math.max(0, roth - rothFloorMC));
+        remaining -= fromRoth;
+        shortfall = remaining;
 
-      if (remaining > 0.01) {
+        taxResult = calcYearTax(
+          age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, 0,
+          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "CA"
+        );
+        const newTax = taxEnabled ? taxResult.totalTax : 0;
+        if (Math.abs(newTax - totalTax) < 1) { totalTax = newTax; break; }
+        totalTax = newTax;
+      }
+
+      if (shortfall > 0.01) {
         survived = false;
         exhaustAge = age;
         break;
       }
 
-      // Update bucket balances
+      // Update bucket balances. Excess RMD (forced out beyond what spending and
+      // taxes consumed) is reinvested in the taxable bucket, not vaporized.
+      const rmdExcess = Math.max(0, rmd - (need + totalTax));
       cash    = Math.max(0, cash    - fromCash);
-      taxable = Math.max(0, taxable - fromTaxable);
+      taxable = Math.max(0, taxable - fromTaxable) + rmdExcess;
       pretax  = Math.max(0, pretax  - fromPretax - rmd);
       roth    = Math.max(0, roth    - fromRoth);
 

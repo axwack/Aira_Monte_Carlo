@@ -438,14 +438,24 @@ findings below, most severe first. Verdict: **BLOCKED** on §13.1 items.
 
 ### 13.1 Logic — WRONG (screens disagree or math is wrong today)
 
-1. **runMC taxes every draw as ordinary income AND double-counts RMDs**
-   (`App.jsx:987-997`): passes `totalNeed` (= need + rmd) as withdrawalAmount PLUS
-   `rmd` again as rmdIncome → RMD counted twice; cash/taxable/Roth draws all taxed
-   as ordinary. Waterfall (`yearTax`, waterfall:196-215) is source-aware. Forecast
-   overtaxes; also `calcYearTax.totalTax` includes IRMAA, waterfall's excludes it.
-2. **Waterfall never funds its income tax from any bucket** (waterfall:400-403) —
-   tax appears in `totalWithdrawal` but no bucket pays it; runMC grosses up. The
-   Withdrawal Plan / Income / Roth tabs overstate ending balances vs Forecast.
+1. ✅ **FIXED v1.1.0.29 (2026-07-11)** — runMC taxed every draw as ordinary income
+   AND double-counted RMDs (in the tax base *and* the portfolio outflow). Now
+   source-aware: ordinary income = RMD + discretionary pretax draw only, solved by
+   fixed-point iteration (draw size ⇄ tax, ≤4 passes). RMD proceeds fund spending
+   first; excess RMD is reinvested in the taxable bucket (was vaporized AND
+   double-drawn from pretax).
+2. ✅ **FIXED v1.1.0.29 (2026-07-11)** — the Waterfall never funded its income tax
+   from any bucket. The cascade now raises need + fed + state + IRMAA (same
+   fixed-point pattern as runMC); conversion tax remains separately self-funded
+   from pretax. RMD proceeds offset need with excess swept to taxable, matching
+   runMC. `totalWithdrawal` row = gross outflow (rmd + all draws); tax is no
+   longer added on top since the draws already include it.
+   Remaining nuance: `calcYearTax.totalTax` includes IRMAA while the waterfall's
+   `totalTax` excludes it (reported via `irmaaFull`) — reporting conventions still
+   differ, but both engines now FUND fed+state+IRMAA identically.
+   Tests recalibrated (success rates legitimately rose): RMD pretax-vs-Roth test
+   compares median terminal wealth; $266K fixed-4% median now grows past start;
+   SINGLE_FL stress re-tensioned to $48K spend (~87% at seed 42). 338 passing.
 3. **Smart GK/Bengen hybrid missing from waterfall** — deterministic "smart" now
    early-returns to `buildWithdrawalWaterfall` rows (App.jsx:1134) which is pure GK
    (no ≤15-yr Bengen branch); runMC has the hybrid. The 2026-06 hybrid work is dead
