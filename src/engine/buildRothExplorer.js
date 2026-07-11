@@ -154,6 +154,8 @@ const FED_BRACKETS_2026_MFJ = [
   { lo: 100800,  hi: 211400, rate: 0.22 },
   { lo: 211400,  hi: 403550, rate: 0.24 },
   { lo: 403550,  hi: 512450, rate: 0.32 },
+  { lo: 512450,  hi: 768700, rate: 0.35 },
+  { lo: 768700,  hi: Infinity, rate: 0.37 },
 ];
 
 // 2026 Single filer federal brackets
@@ -163,6 +165,8 @@ const FED_BRACKETS_2026_SINGLE = [
   { lo: 50400,  hi: 105700, rate: 0.22 },
   { lo: 105700, hi: 201800, rate: 0.24 },
   { lo: 201800, hi: 256225, rate: 0.32 },
+  { lo: 256225, hi: 640600, rate: 0.35 },
+  { lo: 640600, hi: Infinity, rate: 0.37 },
 ];
 
 const IRMAA_2026 = [

@@ -1678,3 +1678,16 @@ describe("account bucket splits", () => {
     expect(b1).toBeCloseTo(40_000, 6);
   });
 });
+
+// ─── v1.1.0.30: 35%/37% federal brackets exist above $512K ─────────────────────
+
+describe("Federal brackets — 35% and 37% tiers (v1.1.0.30)", () => {
+  test("MFJ $1M ordinary income: taxed through 35% and 37% brackets, not capped at 32%", () => {
+    // taxable = 1,000,000 − 32,200 = 967,800
+    // 2,480 + 9,120 + 24,332 + 46,116 + 34,848 + 89,687.50 + 73,667 = 280,250.50
+    const r = calcYearTax(60, 2026, 1_000_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(r.taxableIncome).toBe(967_800);
+    expect(r.fedTax).toBeCloseTo(280_250.5, 0);
+    expect(r.marginalBracket).toBe(0.37);
+  });
+});
