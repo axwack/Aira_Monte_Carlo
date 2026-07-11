@@ -428,3 +428,92 @@ the **View** toggle (`src/App.jsx:4944`):
      return-of-basis — the engine shows $0 federal tax on the taxable draw, which happens to match
      the 0%-LTCG narrative, but for the right reason only by coincidence (LTCG/cost-basis not yet
      modeled).
+
+## 13. Full-Codebase Audit — 2026-07-11 (v1.1.0.28)
+
+Three parallel reviews: logic/IRS currency, cross-screen calculation drift, fonts/UI.
+Regression check: **R1–R10 all still hold** — no June fixes were lost. Constants tables
+(brackets, IRMAA, RMD, state) verified byte-identical between App.jsx and engine. New
+findings below, most severe first. Verdict: **BLOCKED** on §13.1 items.
+
+### 13.1 Logic — WRONG (screens disagree or math is wrong today)
+
+1. **runMC taxes every draw as ordinary income AND double-counts RMDs**
+   (`App.jsx:987-997`): passes `totalNeed` (= need + rmd) as withdrawalAmount PLUS
+   `rmd` again as rmdIncome → RMD counted twice; cash/taxable/Roth draws all taxed
+   as ordinary. Waterfall (`yearTax`, waterfall:196-215) is source-aware. Forecast
+   overtaxes; also `calcYearTax.totalTax` includes IRMAA, waterfall's excludes it.
+2. **Waterfall never funds its income tax from any bucket** (waterfall:400-403) —
+   tax appears in `totalWithdrawal` but no bucket pays it; runMC grosses up. The
+   Withdrawal Plan / Income / Roth tabs overstate ending balances vs Forecast.
+3. **Smart GK/Bengen hybrid missing from waterfall** — deterministic "smart" now
+   early-returns to `buildWithdrawalWaterfall` rows (App.jsx:1134) which is pure GK
+   (no ≤15-yr Bengen branch); runMC has the hybrid. The 2026-06 hybrid work is dead
+   code for the deterministic path; MC vs Withdrawal Plan spending disagree again.
+4. **"10% bracket" target silently becomes 22% in runMC** — `getBracketCeiling`
+   (App.jsx:689-696) has no "10" key; falls back to 22. Waterfall honors 10%
+   (waterfall:52-53). New SourcingGuardrails selector exposes "10" (App.jsx:4677).
+   Also 32/35/37 fall back to 22 in BOTH engines while UI labels say otherwise (ENG-13).
+5. **Roth Conversions tab converts at the wrong bracket for most stored targets** —
+   params strips `fill_` (App.jsx:9130) but `PROFILE_TO_ROTHMODE` (App.jsx:2992-2998)
+   only maps "37" → everything else defaults to fill_22 (App.jsx:3014).
+6. **OBBBA $6,000/person senior bonus deduction (2025–2028) absent** — only the old
+   age-65 extra standard deduction ($3,300/$1,650) is modeled. Overstates federal tax
+   (understates success/safe spending) for 65+ users below the $75K/$150K phase-out.
+7. **Kitces ratchet broken in deterministic engine** (App.jsx:1260-1264) —
+   `startingPort` re-declared inside the loop, so the high-water mark never re-bases;
+   +10% fires every year above 1.5× original. runMC (App.jsx:782) is correct.
+8. **"95% rule" is not Clyatt's rule** (App.jsx:915-923, 1298-1305) — never reads
+   portfolio value (canonical: max(0.95×prior, 4%×current port)); behaves as plain
+   Bengen. **"CAPE-based" hardcodes CAPE=20** (App.jsx:893, 1278) → permanently 4%
+   flat; UI copy claims Shiller-CAPE reactivity.
+9. **Ghost models**: `smile` (Blanchett curve) and healthcare-shock params
+   (hcShockAge/hcProb/hcMin/hcMax) are configurable, persisted, and described as
+   active in Forecast copy — but no engine reads them anymore.
+
+### 13.2 Cross-screen drift (same profile, different numbers)
+
+10. **SS COLA anchor**: MC/deterministic grow from retirement year (App.jsx:951);
+    waterfall from claim age (waterfall:246). Retire-60/claim-67 → ~18% SS gap.
+11. **Rental/annuity models differ ×3**: MC/det use abGrowth^min(y,20), reliability,
+    abEndYear, no age cap; waterfall hardcodes 1.03 growth, stops at 80, ignores
+    abGrowth/reliability, inflates propIncome at CPI separately (waterfall:248-250).
+12. **"Portfolio at Retirement" computed 5 ways** — waterfall's (waterfall:76-99)
+    ignores ALL future contributions; NetWorth omits employer/HSA contrib; sidebar
+    uses real return. Contributing households see a materially smaller waterfall.
+13. **HSA dropped from runMC buckets** (App.jsx:751-758, no hsa branch) but counted
+    in p.port, waterfall (→cash), and Net Worth → discontinuity at retirement.
+14. **GK in 3 non-identical copies**: App has 6% inflation cap + longevity rule;
+    waterfall gkWithdraw has neither; floor/ceiling inflation anchored at retirement
+    (App) vs today (waterfall:231-233) → ~28% band gap for retire-in-10-yrs.
+15. **Roth tab useMemos stale** (App.jsx:3038-3134) — dep lists omit sp, endAge,
+    gk bounds, bracket target, state, etc. Sidebar edits update Withdrawal Plan
+    but not the Roth tab. Fix: depend on `params`.
+16. **RMD age ×3**: rulesEngine getRMDAge (rulesEngine.js:42-47) ignores dob
+    precision AND the user override → Action Plan cards can show a different RMD
+    age than every engine. Also: joint-table gating and >90 fallbacks differ
+    between runMC and waterfall; rulesEngine uses hardcoded divisor 24.0.
+17. **Conversion tax funding differs**: runMC flat marginal-rate approx from pretax
+    (App.jsx:1058-1070, no irmaaGuard check) vs waterfall's exact iterative recompute.
+18. **Cash growth**: MC honors cashRealReturn (1% default); waterfall hardcodes 4.5%.
+19. **Latent**: bracket-index anchor 2026 literal (App) vs getFullYear() (engines) —
+    skews on 2027-01-01. buildRothExplorer() dead in UI but exported + tested with
+    stale physics — mark deprecated. Duplicated constants byte-identical today.
+
+### 13.3 Fonts & UI (full details in 2026-07-11 design audit)
+
+20. **Systemic**: all ~30 chart axis ticks use #475569 @9px (2.5:1 contrast — fails
+    WCAG hard). Fix once: shared `AXIS_TICK = { fill:"#94a3b8", fontSize:10 }`.
+21. **Two monospace fonts** render numbers side-by-side (JetBrains Mono in CSS
+    classes vs ~100 inline 'DM Mono') — standardize on JetBrains, drop DM request.
+22. **Data in near-invisible gray**: B1-End column (5099), optimizer cells
+    (4899-4900), bucket detail rows, "Hide/Show" toggles, mobile tab bar 9px+#64748b.
+    Token plan: text-secondary #94a3b8 (readable), text-tertiary ~#7d8fa6 (dividers),
+    #475569/#334155 decorative-only.
+23. **Year-by-Year table ~20 columns** — cut the `=`/`+` operator columns; fold
+    Fed/State/IRMAA/Eff%/WR into one "Tax & Risk" column with hover detail.
+24. **5 duplicate sidebar/Profile sliders remain** (retireAge, endAge, sp, ssAge,
+    contrib) — apply the read-only-pointer pattern already used for
+    withdrawalStrategy in RetirementPanel:8796.
+25. Passes: first-run Profile-first flow, Forecast progressive disclosure, Action
+    Plan/AI-credits UI, guardrails selector placement, Net Worth tab density.
