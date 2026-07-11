@@ -49,8 +49,8 @@ const IRMAA_TIER1_2026_MFJ    = 218_000;
 const IRMAA_TIER1_2026_SINGLE = 109_000;
 
 // Bracket ceilings as taxable income (post std-deduction), 2026, inflation-indexed
-const BRACKET_CEILINGS_MFJ    = { "10": 24_800, "12": 100_800, "22": 211_400, "24": 403_550, "irmaa": 218_000 };
-const BRACKET_CEILINGS_SINGLE = { "10": 12_400, "12": 50_400,  "22": 105_700, "24": 201_800, "irmaa": 109_000 };
+const BRACKET_CEILINGS_MFJ    = { "10": 24_800, "12": 100_800, "22": 211_400, "24": 403_550, "32": 512_450, "35": 768_700, "37": Infinity, "irmaa": 218_000 };
+const BRACKET_CEILINGS_SINGLE = { "10": 12_400, "12": 50_400,  "22": 105_700, "24": 201_800, "32": 256_225, "35": 640_600, "37": Infinity, "irmaa": 109_000 };
 
 function stdDed(age, isMFJ, inflFactor) {
   const base  = isMFJ ? STD_DED_MFJ    : STD_DED_SINGLE;
@@ -62,7 +62,7 @@ function bracketCeiling(target, isMFJ, inflFactor) {
   if (!target || target === "off") return Infinity;
   const tbl = isMFJ ? BRACKET_CEILINGS_MFJ : BRACKET_CEILINGS_SINGLE;
   const base = tbl[target] ?? tbl["22"];
-  return Math.round(base * inflFactor);
+  return base === Infinity ? Infinity : Math.round(base * inflFactor);
 }
 
 /**
@@ -232,13 +232,23 @@ export function buildWithdrawalWaterfall(params = {}) {
       const adjFloor   = Math.round(gkFloor   * iF);
       const adjCeiling = Math.round(gkCeiling * iF);
 
-      // Guyton-Klinger spend adjustment (every year after first), unless a
-      // detailed year-by-year budget was uploaded — that schedule IS the plan.
+      // Spend adjustment (every year after first), unless a detailed
+      // year-by-year budget was uploaded — that schedule IS the plan.
+      // Smart Waterfall hybrid (mirrors runMC's "smart" strategy):
+      //   yearsRemaining > 15  → GK guardrails (adaptive, paper-faithful)
+      //   yearsRemaining ≤ 15  → Bengen (inflation-only, no portfolio reaction)
+      // The split point matches GK's own longevity-clause threshold, so we exit
+      // GK exactly where its capital-preservation brake would be disabled.
       const totalPort = pretax + roth + taxable + cash;
       if (spSchedule && spSchedule.length) {
         sp = scheduleSpendForYear(spSchedule, yr, inf);
       } else if (age > retireAge && totalPort > 0) {
-        sp = gkWithdraw(totalPort, initWR, sp, lastRet, infR, adjFloor, adjCeiling);
+        const yrsRemaining = endAge - age;
+        if (yrsRemaining > 15) {
+          sp = gkWithdraw(totalPort, initWR, sp, lastRet, infR, adjFloor, adjCeiling);
+        } else {
+          sp = sp * (1 + infR);
+        }
       }
 
       // ── Step 1: Fixed income ────────────────────────────────────────────

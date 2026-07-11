@@ -456,17 +456,20 @@ findings below, most severe first. Verdict: **BLOCKED** on §13.1 items.
    Tests recalibrated (success rates legitimately rose): RMD pretax-vs-Roth test
    compares median terminal wealth; $266K fixed-4% median now grows past start;
    SINGLE_FL stress re-tensioned to $48K spend (~87% at seed 42). 338 passing.
-3. **Smart GK/Bengen hybrid missing from waterfall** — deterministic "smart" now
-   early-returns to `buildWithdrawalWaterfall` rows (App.jsx:1134) which is pure GK
-   (no ≤15-yr Bengen branch); runMC has the hybrid. The 2026-06 hybrid work is dead
-   code for the deterministic path; MC vs Withdrawal Plan spending disagree again.
-4. **"10% bracket" target silently becomes 22% in runMC** — `getBracketCeiling`
-   (App.jsx:689-696) has no "10" key; falls back to 22. Waterfall honors 10%
-   (waterfall:52-53). New SourcingGuardrails selector exposes "10" (App.jsx:4677).
-   Also 32/35/37 fall back to 22 in BOTH engines while UI labels say otherwise (ENG-13).
-5. **Roth Conversions tab converts at the wrong bracket for most stored targets** —
-   params strips `fill_` (App.jsx:9130) but `PROFILE_TO_ROTHMODE` (App.jsx:2992-2998)
-   only maps "37" → everything else defaults to fill_22 (App.jsx:3014).
+3. ✅ **FIXED v1.1.0.30 (2026-07-11)** — the Waterfall's spend adjustment now uses
+   the smart GK/Bengen hybrid (GK guardrails while >15 years remain, inflation-only
+   inside the final 15), matching runMC. Since the deterministic "smart" schedule
+   sources from the waterfall, MC and Withdrawal Plan spending agree again.
+4. ✅ **FIXED v1.1.0.30 (2026-07-11)** — full bracket-target coverage in BOTH
+   engines: "10"/"32"/"35"/"37" ceilings added to `getBracketCeiling` (App) and
+   `BRACKET_CEILINGS_*` (waterfall); "37" = Infinity. Prerequisite: the 35%
+   (512,450–768,700 MFJ / 256,225–640,600 single) and 37% (above) federal brackets
+   were added to both copies of FED_BRACKETS_2026 — income above $512K/$256K was
+   previously untaxed beyond the 32% tier. ENG-13 comment in rothConversionPlan.js
+   updated.
+5. ✅ **FIXED v1.1.0.30 (2026-07-11)** — `PROFILE_TO_ROTHMODE` now maps the
+   un-prefixed values ("10".."37") the params memo produces, so stored
+   fill_10/12/24/32/35 targets no longer silently become fill_22 in the Roth tab.
 6. **OBBBA $6,000/person senior bonus deduction (2025–2028) absent** — only the old
    age-65 extra standard deduction ($3,300/$1,650) is modeled. Overstates federal tax
    (understates success/safe spending) for 65+ users below the $75K/$150K phase-out.

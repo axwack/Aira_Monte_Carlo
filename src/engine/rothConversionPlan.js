@@ -14,8 +14,9 @@ import { getRmdStartAge, getStateBrackets } from "./buildRothExplorer.js";
 const MIN_REMAINING_BALANCE = 10_000;
 
 // Conversion Plan tab "mode" buttons → buildWithdrawalWaterfall's rothConversionTarget.
-// Note: buildWithdrawalWaterfall only defines explicit bracket ceilings for 10/12/22/24;
-// targets above 24% currently fall back to the 22% ceiling (see ENG-13).
+// All bracket targets (10/12/22/24/32/35/37) now have explicit ceilings in both
+// buildWithdrawalWaterfall and App.jsx's getBracketCeiling ("37" = Infinity) — the
+// old fall-back-to-22% behavior (ENG-13) was fixed in v1.1.0.30.
 const ROTH_MODE_TO_TARGET = {
   fill_10: "10", fill_12: "12", fill_22: "22", fill_24: "24",
   fill_32: "32", fill_35: "35", fill_37: "37",

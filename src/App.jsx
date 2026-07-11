@@ -94,8 +94,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.29";
-export const BUILD_TAG = "[main] v1.1.0.29 — Source-aware taxes in both engines: runMC taxes only RMD + discretionary pretax draws (was: entire draw as ordinary income with RMD double-counted); the Withdrawal Waterfall now funds fed+state+IRMAA from the bucket cascade (was: reported but never paid); RMD proceeds fund spending first with the excess reinvested in taxable (was: vaporized, and double-withdrawn in runMC).";
+const APP_VERSION = "1.1.0.30";
+export const BUILD_TAG = "[main] v1.1.0.30 — Withdrawal Waterfall adopts the smart GK/Bengen hybrid (GK guardrails >15 yrs remaining, inflation-only after) so the schedule matches the Monte Carlo; full bracket-target coverage: 10/32/35/37 ceilings added to both engines (10% no longer silently acted as 22% in MC; 32/35/37 no longer fell back to 22); 35%/37% federal brackets added above $512K/$256K; Roth tab mode mapping fixed so stored fill_10..fill_35 targets no longer default to 22%.";
 export const BUILD_TIME = "2026-07-11T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -690,9 +690,10 @@ function getBracketCeiling(target, filingStatus, inflFactor) {
   if (target === "irmaa") return getIrmaaCeiling(1, filingStatus, inflFactor);
   const mfj = filingStatus !== "single";
   const ceilings = mfj
-    ? { "12": 100_800, "22": 211_400, "24": 403_550 }
-    : { "12":  50_400, "22": 105_700, "24": 201_800 };
-  return Math.round((ceilings[target] ?? ceilings["22"]) * inflFactor);
+    ? { "10": 24_800, "12": 100_800, "22": 211_400, "24": 403_550, "32": 512_450, "35": 768_700, "37": Infinity }
+    : { "10": 12_400, "12":  50_400, "22": 105_700, "24": 201_800, "32": 256_225, "35": 640_600, "37": Infinity };
+  const base = ceilings[target] ?? ceilings["22"];
+  return base === Infinity ? Infinity : Math.round(base * inflFactor);
 }
 
 // seqOverride: optional array of equity returns (decimals) prescribed for the first
@@ -1391,6 +1392,8 @@ const FED_BRACKETS_2026_MFJ = [
   { lo: 100800,  hi: 211400, rate: 0.22 },
   { lo: 211400,  hi: 403550, rate: 0.24 },
   { lo: 403550,  hi: 512450, rate: 0.32 },
+  { lo: 512450,  hi: 768700, rate: 0.35 },
+  { lo: 768700,  hi: Infinity, rate: 0.37 },
 ];
 // 2026 Single filer federal brackets (~half the MFJ thresholds)
 const FED_BRACKETS_2026_SINGLE = [
@@ -1399,6 +1402,8 @@ const FED_BRACKETS_2026_SINGLE = [
   { lo: 50400,  hi: 105700, rate: 0.22 },
   { lo: 105700, hi: 201800, rate: 0.24 },
   { lo: 201800, hi: 256225, rate: 0.32 },
+  { lo: 256225, hi: 640600, rate: 0.35 },
+  { lo: 640600, hi: Infinity, rate: 0.37 },
 ];
 const IRMAA_2026 = [
   { m: 218000, f: 0 },
@@ -3004,7 +3009,11 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
 const PROFILE_TO_ROTHMODE = {
   off: "no_convert",
   irmaa: "irmaa_safe",
-  "37": "fill_37",
+  // Un-prefixed values: the params memo strips "fill_" for the engines'
+  // getBracketCeiling lookups, so BOTH spellings must map here — otherwise a
+  // stored fill_12/24/32/35 silently falls back to fill_22 in the Roth tab.
+  "10": "fill_10", "12": "fill_12", "22": "fill_22", "24": "fill_24",
+  "32": "fill_32", "35": "fill_35", "37": "fill_37",
   fill_10: "fill_10", fill_12: "fill_12", fill_22: "fill_22", fill_24: "fill_24",
   fill_32: "fill_32", fill_35: "fill_35", fill_37: "fill_37",
 };

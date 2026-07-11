@@ -219,3 +219,39 @@ describe("buildWithdrawalWaterfall — summary", () => {
     expect(result.smart.finalPretax).toBeGreaterThan(0);
   });
 });
+
+// ─── v1.1.0.30: bracket targets 10/32/35/37 + GK/Bengen hybrid ─────────────────
+
+describe("buildWithdrawalWaterfall — full bracket-target coverage (v1.1.0.30)", () => {
+  test("'10' target caps pretax draws below the '22' target (no silent 22% fallback)", () => {
+    const ten    = buildWithdrawalWaterfall({ ...BASE, withdrawalBracketTarget: "10" });
+    const twenty = buildWithdrawalWaterfall({ ...BASE, withdrawalBracketTarget: "22" });
+    const sumPretax = r => r.smart.rows.reduce((s, x) => s + x.fromPretax, 0);
+    expect(sumPretax(ten)).toBeLessThan(sumPretax(twenty));
+  });
+
+  test("'32' target allows more pretax than '24' (previously both fell back to 22)", () => {
+    // Big spend forces the cascade deep into pretax once cash/taxable deplete,
+    // so the 24% ceiling binds in later years while 32% still has room.
+    const p = { ...BASE, sp: 400_000, gkFloor: 260_000, gkCeiling: 540_000 };
+    const t24 = buildWithdrawalWaterfall({ ...p, withdrawalBracketTarget: "24" });
+    const t32 = buildWithdrawalWaterfall({ ...p, withdrawalBracketTarget: "32" });
+    // First year the 24% cap binds, both runs still hold identical balances
+    // (behavior was identical up to that point), so 32% must draw MORE pretax there.
+    const cappedRow = t24.smart.rows.find(r => r.pretaxCapReason === "bracket_24");
+    expect(cappedRow).toBeDefined();
+    const row32 = t32.smart.rows.find(r => r.age === cappedRow.age);
+    expect(row32.fromPretax).toBeGreaterThan(cappedRow.fromPretax);
+  });
+
+  test("spending grows at exactly the inflation rate inside the final 15 years (Bengen phase)", () => {
+    const result = buildWithdrawalWaterfall(BASE); // endAge 90 → Bengen from age 76
+    const rows = result.smart.rows;
+    const late = rows.filter(r => r.age >= 77 && r.age <= 89);
+    for (let i = 1; i < late.length; i++) {
+      const ratio = late[i].spending / late[i - 1].spending;
+      expect(ratio).toBeGreaterThan(1.024);  // 2.5% inflation ±rounding
+      expect(ratio).toBeLessThan(1.026);
+    }
+  });
+});
