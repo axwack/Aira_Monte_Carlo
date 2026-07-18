@@ -456,3 +456,32 @@ describe("buildWithdrawalWaterfall — equity-glide-driven growth (C1 regression
     expect(withGlide.smart.rows[0].pretaxEnd).toBeGreaterThan(withGr7.smart.rows[0].pretaxEnd);
   });
 });
+
+describe("cashRealReturn honored by the waterfall (profile field regression)", () => {
+  // The profile's "Cash return" field drove runMC's cash bucket but the
+  // waterfall hardcoded 4.5% — the user's setting silently did nothing on
+  // the Withdrawal Plan tab. Both engines now read the same field.
+  const cashProfile = {
+    currentAge: 60, retireAge: 62, endAge: 90,
+    sp: 60_000, ssAge: 67, ssb: 30_000, inf: 2.5,
+    filingStatus: "mfj", stateOfResidence: "FL",
+    accounts: [
+      { category: "cash", balance: 500_000 },
+      { category: "pretax", balance: 1_000_000 },
+    ],
+  };
+
+  test("higher cash return grows the cash bucket faster in the waterfall", () => {
+    const low  = buildWithdrawalWaterfall({ ...cashProfile, cashRealReturn: 0 });
+    const high = buildWithdrawalWaterfall({ ...cashProfile, cashRealReturn: 5 });
+    expect(high.smart.rows[0].cashEnd).toBeGreaterThan(low.smart.rows[0].cashEnd);
+  });
+
+  test("default matches runMC's default (3.0%), not the old hardcoded 4.5%", () => {
+    const dflt = buildWithdrawalWaterfall({ ...cashProfile });
+    const three = buildWithdrawalWaterfall({ ...cashProfile, cashRealReturn: 3.0 });
+    const old45 = buildWithdrawalWaterfall({ ...cashProfile, cashRealReturn: 4.5 });
+    expect(dflt.smart.rows[0].cashEnd).toBe(three.smart.rows[0].cashEnd);
+    expect(dflt.smart.rows[0].cashEnd).not.toBe(old45.smart.rows[0].cashEnd);
+  });
+});
