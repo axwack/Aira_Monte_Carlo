@@ -59,11 +59,34 @@ Tests: suite updated where it encoded the old behavior; 256 passing
 
 ## 3. Known Limitations (accepted simplifications — revisit)
 
-- **No LTCG / cost-basis model.** Taxable-brokerage withdrawals are invisible to the
-  tax calc (treated as 100% return of basis) and excluded from provisional income.
-  Biases results optimistic for taxable-heavy portfolios. Candidate fix: user-set
-  "% of taxable account that is unrealized gains," taxed at 0/15/20% LTCG brackets
-  and included in provisional income + MAGI.
+- ✅ **IMPLEMENTED 2026-07-18** — ~~No LTCG / cost-basis model.~~ Taxable-brokerage
+  draws now carry average-cost basis tracking: new profile field `taxableBasisPct`
+  (default 70) sets what % of TODAY's taxable balance is cost basis; the rest is
+  unrealized gain, realized proportionally (`g = draw × (1 − basis/balance)`) on
+  every draw and left flat (not grown) between draws — reinvested `rmdExcess` adds
+  fresh basis dollar-for-dollar. Realized gains are taxed via 2026 LTCG brackets
+  ($98,700/$613,700 MFJ, $49,350/$566,700 single — IRS Rev. Proc. 2025-32), stacked
+  ON TOP of ordinary income (the standard deduction soaks into gains first if
+  ordinary income didn't use it all), plus NIIT (3.8% on the lesser of the gain or
+  MAGI over the non-inflation-indexed $250K MFJ/$200K single threshold). States tax
+  gains as ordinary income (added to the state taxable base). Realized gains are
+  now included in both IRC §86 provisional income (SS taxability) and MAGI
+  (IRMAA) — closing the two related gaps this entry used to call out. Implemented
+  in `calcYearTax` (App.jsx, new `ltcgAmount` param), `runMC` (per-path
+  `taxableBasis`, mutated once per year after the tax↔draw fixed point converges),
+  and `buildWithdrawalWaterfall`'s `yearTax`/`runScenario` (new `taxableBasis0`
+  from `accumulateToRetirement`, one basis per smart/naive scenario). New shared
+  constants `LTCG_BRACKETS_2026_MFJ/SINGLE`, `NIIT_THRESHOLD_MFJ/SINGLE`,
+  `NIIT_RATE` live in `buildRothExplorer.js` (single source, imported by both
+  App.jsx and the waterfall engine — same pattern as `FED_BRACKETS_2026_*`).
+  12 new tests (`computations.test.js`, `withdrawal.test.js`); all 383 pre-existing
+  tests still pass unchanged (395 total) — the directional/relative nature of the
+  existing suite meant no expected values needed updating.
+  **Remaining sub-gaps (out of scope for this pass):** average-cost basis only —
+  no per-lot tax-lot selection or tax-loss harvesting; the Roth Explorer tab
+  (`buildRothExplorer.js`'s own 2-bucket pretax/Roth model) still ignores LTCG
+  entirely, since it has no taxable-bucket concept at all. IRMAA's 2-year lookback
+  (next entry below) is a separate, later pass — not touched here.
 - **IRMAA 2-year lookback** is ignored — surcharge applies to same-year MAGI.
 - **Bracket-cap "income so far" estimates** (smart waterfall, both engines) assume
   85% SS inclusion deliberately: the pretax draw being sized affects provisional

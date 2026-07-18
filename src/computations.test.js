@@ -2084,3 +2084,76 @@ describe("per-age funded fraction (MC band table)", () => {
     expect(r.pcts[r.pcts.length - 1].alive).toBeLessThan(1.0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Capital-gains / cost-basis model on taxable brokerage draws (2026-07-18)
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("calcYearTax — LTCG stacking (ltcgAmount param)", () => {
+  test("ordinary income $0 + $80K LTCG, current year → LTCG tax $0 (fits entirely in the 0% band after the std deduction)", () => {
+    // MFJ std deduction (age 60, no 65+ bonus) = $32,200.
+    // gainTaxable = max(0, 0 + 80,000 - 32,200) - 0 = 47,800, stacked in [0, 47,800).
+    // 2026 MFJ 0% LTCG band runs 0–98,700 → entirely 0% → ltcgTax = $0 → fedTax = $0.
+    const r = calcYearTax(60, 2026, 0, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 80_000);
+    expect(r.ltcgTax).toBe(0);
+    expect(r.fedTax).toBe(0);
+  });
+
+  test("ordinary income $150K + $100K LTCG → gains straddle into the 15% band (hand-computed)", () => {
+    // std deduction (age 60, MFJ) = 32,200.
+    // ordTaxable = 150,000 - 32,200 = 117,800 (std deduction fully absorbed by ordinary income).
+    // gainTaxable = (150,000 + 100,000 - 32,200) - 117,800 = 100,000, stacked over
+    // the interval [117,800, 217,800) — entirely inside the 2026 MFJ 15% LTCG band
+    // (98,700–613,700) → ltcgTax = 100,000 × 15% = $15,000.
+    // fedTaxOrdinary on $117,800 (2026 MFJ brackets):
+    //   10% × 24,800 = 2,480
+    //   12% × (100,800-24,800) = 12% × 76,000 = 9,120
+    //   22% × (117,800-100,800) = 22% × 17,000 = 3,740
+    //   = 15,340
+    // MAGI = 250,000 = exactly the NIIT threshold → niit = 0.
+    // fedTax = 15,340 (ordinary) + 15,000 (LTCG) + 0 (NIIT) = 30,340.
+    const r = calcYearTax(60, 2026, 150_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 100_000);
+    expect(r.ltcgTax).toBeCloseTo(15_000, 0);
+    expect(r.niit).toBe(0);
+    expect(r.fedTax).toBeCloseTo(30_340, 0);
+  });
+
+  test("NIIT: MFJ MAGI over $250K with $100K LTCG adds 3.8% on the excess (hand-computed)", () => {
+    // ordinary $200,000 + $100,000 LTCG → MAGI = 300,000.
+    // excess over the (non-inflation-indexed) $250,000 MFJ NIIT threshold = 50,000.
+    // niit = 3.8% × min(100,000, 50,000) = 3.8% × 50,000 = $1,900.
+    const r = calcYearTax(60, 2026, 200_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 100_000);
+    expect(r.niit).toBe(1_900);
+  });
+
+  test("NIIT is $0 when MAGI is below the threshold even with large realized gains", () => {
+    const r = calcYearTax(60, 2026, 0, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 50_000);
+    expect(r.niit).toBe(0);
+  });
+
+  test("ltcgAmount defaults to 0 — omitting it reproduces the pre-feature (no-LTCG) result", () => {
+    const explicit0 = calcYearTax(65, 2026, 100_000, 24_000, 0, 0, 0, false, 0.025, "mfj", "FL", 0);
+    const omitted   = calcYearTax(65, 2026, 100_000, 24_000, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(omitted.fedTax).toBe(explicit0.fedTax);
+    expect(omitted.ltcgTax).toBe(0);
+    expect(omitted.niit).toBe(0);
+  });
+});
+
+describe("runMC — taxable cost-basis (taxableBasisPct) success-rate impact", () => {
+  test("a taxable-heavy profile with a lower cost basis has success rate <= the same profile at 100% basis (same seed)", () => {
+    // No SS, no pretax — spending is funded almost entirely from the taxable
+    // bucket, so a lower basis (more unrealized gain realized every draw) can
+    // only add tax drag relative to the 100%-basis run, never remove it. Same
+    // seed → identical market/inflation draw sequence for both runs.
+    const taxableHeavy = {
+      ...BASE, ssb: 0, sp: 100_000,
+      accounts: [
+        { id: "th1", category: "taxable", name: "Taxable", balance: 1_800_000 },
+        { id: "th2", category: "cash",    name: "Cash",    balance:    50_000 },
+      ],
+    };
+    const lowBasis  = runMC({ ...taxableHeavy, taxableBasisPct: 40  }, 90, 1000, 42, true);
+    const highBasis = runMC({ ...taxableHeavy, taxableBasisPct: 100 }, 90, 1000, 42, true);
+    expect(lowBasis.rate).toBeLessThanOrEqual(highBasis.rate);
+  });
+});

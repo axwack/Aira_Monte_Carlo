@@ -1,5 +1,6 @@
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 import { mortgageSchedule, mortgageAnnualPayments } from "./engine/expenses.js";
+import { runMC } from "./App";
 
 const BASE = {
   currentAge: 65,
@@ -483,5 +484,124 @@ describe("cashRealReturn honored by the waterfall (profile field regression)", (
     const old45 = buildWithdrawalWaterfall({ ...cashProfile, cashRealReturn: 4.5 });
     expect(dflt.smart.rows[0].cashEnd).toBe(three.smart.rows[0].cashEnd);
     expect(dflt.smart.rows[0].cashEnd).not.toBe(old45.smart.rows[0].cashEnd);
+  });
+});
+
+// ─── Capital-gains / cost-basis model on taxable brokerage draws (2026-07-18) ──
+// Average-cost basis tracking: taxableBasisPct% of TODAY's taxable balance is
+// cost basis; the rest is unrealized gain, realized proportionally on draws
+// and taxed at LTCG rates (stacked on top of ordinary income) + NIIT, and
+// folded into provisional income (SS taxability) + MAGI (IRMAA).
+
+// sp/balance are deliberately large relative to the standard deduction, and
+// inf: 0 freezes the deduction/bracket inflation, so that even the FIRST
+// year's realized gain clears the standard deduction and lands somewhere
+// inside the LTCG brackets — a modest profile like the other describe blocks'
+// BASE would have every year's combined ordinary+gain income absorbed by a
+// standard deduction that (correctly) keeps inflating for 20+ years, masking
+// the very effect this suite is testing.
+const TAX_HEAVY = {
+  currentAge: 65, retireAge: 65, endAge: 80,
+  sp: 300_000, ssAge: 90, ssb: 0, ssCola: 0, ab: 0, inf: 0,
+  filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
+  useJointRmdTable: false, gkFloor: 250_000, gkCeiling: 400_000,
+  withdrawalBracketTarget: "37", irmaaGuard: false, ssTorpedoGuard: false,
+  rothEmergencyReserve: 0, gr: 0.05,
+  accounts: [
+    { id: "x3", category: "taxable", balance: 4_000_000 },
+  ],
+};
+
+describe("buildWithdrawalWaterfall — capital-gains / cost-basis model", () => {
+  test("a lower cost basis (more unrealized gain) pays MORE lifetime tax than a 100%-basis account", () => {
+    const basis50  = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableBasisPct: 50 });
+    const basis100 = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableBasisPct: 100 });
+    expect(basis50.smart.totalTax).toBeGreaterThan(basis100.smart.totalTax);
+  });
+
+  test("realizedGain > 0 in every year that draws from taxable, when basisPct < 100", () => {
+    const result = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableBasisPct: 50 });
+    const drawYears = result.smart.rows.filter(r => r.fromTaxable > 0);
+    expect(drawYears.length).toBeGreaterThan(0);
+    drawYears.forEach(r => expect(r.realizedGain).toBeGreaterThan(0));
+  });
+
+  test("100%-basis account with no portfolio growth realizes ZERO gain — no LTCG/NIIT tax at all (matches pre-feature behavior)", () => {
+    // gr: 0 isolates the LTCG effect from ordinary investment growth: with no
+    // growth AND no accumulation phase (currentAge === retireAge), basis stays
+    // exactly equal to the balance every year, so every draw realizes $0 gain.
+    const result = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableBasisPct: 100, gr: 0 });
+    result.smart.rows.forEach(r => {
+      expect(r.realizedGain).toBe(0);
+      expect(r.ltcgTax).toBe(0);
+      expect(r.niit).toBe(0);
+    });
+  });
+
+  test("realized gains alone can push Social Security from untaxed to taxed (provisional income includes LTCG)", () => {
+    // No pretax/RMD, no cash — spending is funded by SS + a taxable draw only,
+    // isolating the effect of the realized gain on provisional income.
+    const ssProfile = {
+      currentAge: 65, retireAge: 65, endAge: 66,
+      sp: 80_000, ssAge: 65, ssb: 30_000, ssCola: 2.4, ab: 0, inf: 2.5,
+      filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
+      gkFloor: 40_000, gkCeiling: 150_000, withdrawalBracketTarget: "22",
+      irmaaGuard: false, ssTorpedoGuard: false, rothEmergencyReserve: 0, gr: 0,
+      accounts: [{ id: "s1", category: "taxable", balance: 700_000 }],
+    };
+    // 100% basis → $0 realized gain → provisional = 0.5×$30K = $15K < $32K MFJ
+    // lower threshold → taxSS = 0.
+    const highBasis = buildWithdrawalWaterfall({ ...ssProfile, taxableBasisPct: 100 });
+    expect(highBasis.smart.rows[0].taxSS).toBe(0);
+    // 10% basis → ~90% of the draw is realized gain (~$45K on a ~$50K draw) →
+    // provisional = $15K + ~$45K ≈ $60K, well past the $44K MFJ upper threshold
+    // → some SS becomes taxable.
+    const lowBasis = buildWithdrawalWaterfall({ ...ssProfile, taxableBasisPct: 10 });
+    expect(lowBasis.smart.rows[0].taxSS).toBeGreaterThan(0);
+  });
+
+  test("basis depletes over time: the realized-gain fraction of each taxable draw is non-decreasing year over year", () => {
+    // No pretax (no RMD/rmdExcess to perturb basis) — every dollar of spending
+    // comes from the taxable bucket, isolating basis-fraction drift. With
+    // average-cost tracking, a proportional draw never changes the basis
+    // fraction by itself; only growth (which grows the balance but not the
+    // basis) shrinks the basis fraction and grows the gain fraction — so the
+    // gain fraction should only ever go up.
+    const depletionProfile = {
+      currentAge: 65, retireAge: 65, endAge: 85,
+      sp: 50_000, ssAge: 67, ssb: 0, ssCola: 2.4, ab: 0, inf: 2.5,
+      filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
+      gkFloor: 20_000, gkCeiling: 200_000, withdrawalBracketTarget: "22",
+      irmaaGuard: false, ssTorpedoGuard: false, rothEmergencyReserve: 0, gr: 0.06,
+      accounts: [{ id: "d1", category: "taxable", balance: 1_000_000 }],
+    };
+    const result = buildWithdrawalWaterfall({ ...depletionProfile, taxableBasisPct: 50 });
+    const fracs = result.smart.rows
+      .filter(r => r.fromTaxable > 0)
+      .map(r => r.realizedGain / r.fromTaxable);
+    expect(fracs.length).toBeGreaterThan(5);
+    for (let i = 1; i < fracs.length; i++) {
+      expect(fracs[i]).toBeGreaterThanOrEqual(fracs[i - 1] - 0.005); // small rounding tolerance
+    }
+  });
+});
+
+describe("runMC — taxable cost-basis (taxableBasisPct) wiring", () => {
+  test("basisPct flows through to a lower cost basis realizing more gain (indirect check via lower success rate)", () => {
+    const taxableHeavy = {
+      currentAge: 65, retireAge: 65, endAge: 90, port: 0, contrib: 0, inf: 2.5,
+      sp: 100_000, ssAge: 90, ssb: 0, ssCola: 2.4, ab: 0, useAb: false,
+      tax: 22, smile: false, preRetireEq: 91, postRetireEq: 70,
+      gkFloor: 40_000, gkCeiling: 150_000, withdrawalStrategy: "gk",
+      cashRealReturn: 1.0, useJointRmdTable: false, twoHousehold: false,
+      filingStatus: "mfj", stateOfResidence: "FL",
+      accounts: [
+        { id: "th1", category: "taxable", name: "Taxable", balance: 1_800_000 },
+        { id: "th2", category: "cash",    name: "Cash",    balance:    50_000 },
+      ],
+    };
+    const lowBasis  = runMC({ ...taxableHeavy, taxableBasisPct: 40  }, 90, 500, 42, true);
+    const highBasis = runMC({ ...taxableHeavy, taxableBasisPct: 100 }, 90, 500, 42, true);
+    expect(lowBasis.rate).toBeLessThanOrEqual(highBasis.rate);
   });
 });

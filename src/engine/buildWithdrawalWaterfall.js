@@ -30,6 +30,11 @@ import {
   getRmdStartAge,
   FED_BRACKETS_2026_MFJ,
   FED_BRACKETS_2026_SINGLE,
+  LTCG_BRACKETS_2026_MFJ,
+  LTCG_BRACKETS_2026_SINGLE,
+  NIIT_THRESHOLD_MFJ,
+  NIIT_THRESHOLD_SINGLE,
+  NIIT_RATE,
   RMD_DIV,
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
@@ -72,15 +77,28 @@ function bracketCeiling(target, isMFJ, inflFactor) {
 }
 
 /**
+ * Realized capital gain from a taxable-brokerage draw, using average-cost
+ * basis tracking (not per-lot). g = draw × (1 − basis/balance) — the fraction
+ * of the account that is unrealized gain. Guards balance<=0/basis>=balance.
+ * A local copy of App.jsx's identical helper — this module does not import
+ * from App.jsx.
+ */
+function realizedGainFor(draw, balance, basis) {
+  if (!draw || draw <= 0 || !balance || balance <= 0) return 0;
+  const frac = Math.max(0, 1 - (basis || 0) / balance);
+  return draw * frac;
+}
+
+/**
  * Grows a profile's account balances from currentAge to retireAge using the
  * same per-bucket rates buildWithdrawalWaterfall uses (gr for pretax/roth/
  * taxable, a conservative cashGr for cash/HSA). Exported so other views
  * (e.g. the deterministic schedule's "Portfolio at Retirement" metric) agree
  * with the waterfall's own starting balances instead of re-deriving them.
- * @returns {{ pretax0: number, roth0: number, taxable0: number, cash0: number, total: number }}
+ * @returns {{ pretax0: number, roth0: number, taxable0: number, cash0: number, total: number, taxableBasis0: number }}
  */
 export function accumulateToRetirement(params = {}) {
-  const { currentAge, retireAge, accounts = [], preRetireEq = 91, cashRealReturn, gr: grParam } = params;
+  const { currentAge, retireAge, accounts = [], preRetireEq = 91, cashRealReturn, gr: grParam, taxableBasisPct = 70 } = params;
   // This function only models the PRE-retirement accumulation phase, so the
   // pre-retirement equity glide (preRetireEq) — not postRetireEq — drives the
   // default growth rate here, mirroring runMC's portReturn age<62 branch.
@@ -100,6 +118,11 @@ export function accumulateToRetirement(params = {}) {
     else                               cash0    += bal; // cash + hsa
   }
 
+  // Basis is a % of TODAY's taxable balance (before the accumulation growth
+  // below) — growth is unrealized gain, so the basis fraction shrinks by
+  // retirement even though no dollar of basis has been consumed by a draw yet.
+  const taxableBasis0 = taxable0 * (Math.max(0, Math.min(100, taxableBasisPct)) / 100);
+
   const accYrs = Math.max(0, (retireAge ?? 0) - (currentAge ?? 0));
   for (let y = 0; y < accYrs; y++) {
     pretax0  *= (1 + gr);
@@ -108,7 +131,7 @@ export function accumulateToRetirement(params = {}) {
     cash0    *= (1 + cashGr);
   }
 
-  return { pretax0, roth0, taxable0, cash0, total: pretax0 + roth0 + taxable0 + cash0 };
+  return { pretax0, roth0, taxable0, cash0, total: pretax0 + roth0 + taxable0 + cash0, taxableBasis0 };
 }
 
 /**
@@ -149,6 +172,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     postRetireEq = 70,
     cashRealReturn,
     gr: grParam,
+    taxableBasisPct = 70,
     // Real-world cash needs/income — same fields runMC uses for `need`
     mortBalance = 0,
     mortRate,
@@ -200,7 +224,7 @@ export function buildWithdrawalWaterfall(params = {}) {
   // Accumulation (pre-retirement) phase uses preGr — accumulateToRetirement
   // derives its own default from preRetireEq too, but pass it explicitly here
   // so an explicit grParam override (if given) also applies to this phase.
-  const { pretax0, roth0, taxable0, cash0 } = accumulateToRetirement({ currentAge, retireAge, accounts, cashRealReturn, gr: preGr });
+  const { pretax0, roth0, taxable0, cash0, taxableBasis0 } = accumulateToRetirement({ currentAge, retireAge, accounts, cashRealReturn, gr: preGr, taxableBasisPct });
 
   // Pre-compute the actual annual mortgage cash cost per calendar year (incl.
   // extra payments and the partial payoff year) — housing cost is part of
@@ -239,30 +263,60 @@ export function buildWithdrawalWaterfall(params = {}) {
   }
 
   // ── Tax helpers ────────────────────────────────────────────────────────────
-  function yearTax(age, yr, fromPretax, ssGross, annuityTaxable, rmd, inflFactor, otherTaxable = 0) {
+  // ltcg = realized capital gain from this year's taxable-brokerage draw (0 for
+  // callers that don't pass it — e.g. a pure conversion-tax probe on an
+  // already-computed gain reuses the SAME value, never re-derives it, so the
+  // conversion delta stays a pure conversion cost).
+  function yearTax(age, yr, fromPretax, ssGross, annuityTaxable, rmd, inflFactor, otherTaxable = 0, ltcg = 0) {
     const iF  = inflFactor;
     const fB  = idxB(fedBase, iF);
     const sd  = stdDed(age, isMFJ, iF);
-    // IRC §86 provisional-income tiers (0% / 50% / 85% of SS taxable)
+    // IRC §86 provisional-income tiers (0% / 50% / 85% of SS taxable). Realized
+    // gains count toward provisional income (they're part of MAGI) even though
+    // they are NOT part of ordinary otherOrdInc/totInc below.
     const otherOrdInc = annuityTaxable + rmd + fromPretax + otherTaxable;
-    const taxSS = Math.round(taxableSocialSecurity(ssGross, otherOrdInc, isMFJ));
-    const totInc = taxSS + otherOrdInc;
+    const taxSS = Math.round(taxableSocialSecurity(ssGross, otherOrdInc + ltcg, isMFJ));
+    const totInc = taxSS + otherOrdInc; // ordinary income total (excludes LTCG)
     const txInc  = Math.max(0, totInc - sd);
-    const fedT   = Math.round(progTax(txInc, fB));
-    const stT    = stateBr0 ? Math.round(progTax(txInc, idxB(stateBr0, iF))) : 0;
-    // IRMAA MAGI = AGI + tax-exempt interest; untaxed SS is NOT added back
-    const magi   = totInc;
+    // LTCG stacks ON TOP of ordinary income — the standard deduction soaks into
+    // gains first if ordinary income didn't fully use it.
+    const gainTxInc = Math.max(0, totInc + ltcg - sd) - txInc;
+    const fedOrdinary = progTax(txInc, fB);
+
+    // LTCG bracket walk over the stacked interval [txInc, txInc + gainTxInc).
+    const ltcgBr = idxB(isMFJ ? LTCG_BRACKETS_2026_MFJ : LTCG_BRACKETS_2026_SINGLE, iF);
+    const ltcgTax = Math.round(progTax(txInc + gainTxInc, ltcgBr) - progTax(txInc, ltcgBr));
+
+    // IRMAA MAGI = AGI (incl. the full realized gain) + tax-exempt interest;
+    // untaxed SS is NOT added back.
+    const magi = totInc + ltcg;
+
+    // NIIT (IRC §1411): 3.8% of the lesser of net investment income (LTCG here)
+    // or the excess of MAGI over the statutory (NOT inflation-indexed) threshold.
+    const niitThreshold = isMFJ ? NIIT_THRESHOLD_MFJ : NIIT_THRESHOLD_SINGLE;
+    const niit = ltcg > 0 ? Math.round(NIIT_RATE * Math.min(ltcg, Math.max(0, magi - niitThreshold))) : 0;
+
+    // LTCG tax + NIIT fold into fedT so the funding-identity math (irmaaFull =
+    // fedT + stT + irmaa) keeps working unchanged; both are also returned
+    // separately for UI surfacing.
+    const fedT   = Math.round(fedOrdinary) + ltcgTax + niit;
+    // States generally tax capital gains as ordinary income (no LTCG preferential
+    // rate) — add the realized gain to the state taxable base.
+    const stT    = stateBr0 ? Math.round(progTax(txInc + ltcg, idxB(stateBr0, iF))) : 0;
     const irmaa  = age >= 65 ? irmaaCost(magi, yr, infR, isMFJ) : 0;
     let margR = 0;
     for (const b of fB) { if (txInc > b.lo) margR = b.rate; else break; }
     return { fedTax: fedT, stateTax: stT, irmaa, totalTax: fedT + stT, irmaaFull: fedT + stT + irmaa,
-             effectiveRate: totInc > 0 ? (fedT + stT) / totInc : 0, marginalBracket: margR,
-             taxableIncome: txInc, totInc, taxSS };
+             effectiveRate: (totInc + ltcg) > 0 ? (fedT + stT) / (totInc + ltcg) : 0, marginalBracket: margR,
+             taxableIncome: txInc, totInc, taxSS, ltcgTax, niit, realizedGain: Math.round(ltcg) };
   }
 
   // ── Scenario runner ────────────────────────────────────────────────────────
   function runScenario(isSmart) {
     let pretax = pretax0, roth = roth0, taxable = taxable0, cash = cash0;
+    // Smart and naive each track their own basis (they draw taxable differently
+    // year to year), both seeded from the same taxableBasis0.
+    let taxableBasis = taxableBasis0;
     const rows = [];
     // Post-retirement per-year growth mirrors runMC's portReturn age-62 switch:
     // preGr below 62 (even though already retired), postGr from 62 on.
@@ -450,12 +504,22 @@ export function buildWithdrawalWaterfall(params = {}) {
         rothReserveHeld = Math.max(0, roth - rothFloor - fromRoth);
         need -= fromRoth;
 
+        // Realized LTCG on this pass's taxable draw — READ-ONLY off the current
+        // (pre-draw) taxable balance/basis; the real `taxableBasis` is mutated
+        // exactly once below, after the fixed point converges.
+        const gPass = realizedGainFor(fromTaxable, taxable, taxableBasis);
         // Source-aware tax on this pass's draws; converge on the funded amount.
-        taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable);
+        taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable, gPass);
         const newTax = taxNoConv.irmaaFull; // fed + state + IRMAA are all real cash costs
         if (Math.abs(newTax - taxDue) < 1) { taxDue = newTax; break; }
         taxDue = newTax;
       }
+
+      // Realized gain for the YEAR (final, converged fromTaxable) — the single
+      // authoritative value used both to mutate taxableBasis below and to feed
+      // the Roth-conversion delta-tax calls, so the delta stays a pure
+      // conversion cost rather than mixing in a different gain estimate.
+      const realizedGain = realizedGainFor(fromTaxable, taxable, taxableBasis);
 
       // ── Step 6.5: Roth conversion (smart scenario only) ──────────────────
       // A pinned conversionOverrides amount wins; otherwise fill remaining room
@@ -476,7 +540,10 @@ export function buildWithdrawalWaterfall(params = {}) {
       }
 
       // ── Step 7: Tax calculation — conversion stacks as ordinary income ───
-      let tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable) : taxNoConv;
+      // Same `realizedGain` passed to both the with-conversion and no-conversion
+      // yearTax calls (taxNoConv above already used it) so the LTCG tax cancels
+      // out of the delta and convTax isolates the conversion's own cost.
+      let tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain) : taxNoConv;
       let convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
 
       // Affordability: pretax must cover both the conversion and its incremental tax.
@@ -487,7 +554,7 @@ export function buildWithdrawalWaterfall(params = {}) {
           const shortfall = (convAmt + convTax) - (pretax - fromPretax);
           if (shortfall <= 0) break;
           convAmt = Math.max(0, convAmt - shortfall);
-          tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable) : taxNoConv;
+          tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain) : taxNoConv;
           convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
         }
         if (convAmt <= 500) {
@@ -512,6 +579,11 @@ export function buildWithdrawalWaterfall(params = {}) {
       // The cascade draws above already include the year's tax bill (taxDue).
       // Excess RMD (forced out beyond spending + taxes) is reinvested in taxable.
       const rmdExcess = Math.max(0, rmd - (baseNeed + taxDue));
+      // Basis consumed by the draw = draw − realized gain (the non-gain, return-
+      // of-basis portion); reinvested rmdExcess is fresh money → fresh basis
+      // dollar-for-dollar. No growth on basis — only the balance grows below.
+      const consumedBasis = fromTaxable - realizedGain;
+      taxableBasis = Math.max(0, taxableBasis - consumedBasis) + rmdExcess;
       cash    = Math.max(0, cash    - fromCash)    * (1 + cashGr);
       taxable = (Math.max(0, taxable - fromTaxable) + rmdExcess) * (1 + gr);
       pretax  = Math.max(0, pretax  - fromPretax - convAmt - convTax) * (1 + gr);
@@ -531,6 +603,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         totalTax: tax.totalTax, irmaaFull: tax.irmaaFull,
         effectiveRate: tax.effectiveRate, marginalBracket: tax.marginalBracket,
         taxableIncome: tax.taxableIncome, totInc: tax.totInc,
+        realizedGain: Math.round(realizedGain), ltcgTax: tax.ltcgTax, niit: tax.niit, taxSS: tax.taxSS,
         landmines: { ssTorpedo, irmaaTriggered, rmdActive },
         cashEnd:    Math.round(cash),
         taxableEnd: Math.round(taxable),
