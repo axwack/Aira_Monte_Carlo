@@ -267,7 +267,13 @@ export function buildWithdrawalWaterfall(params = {}) {
   // callers that don't pass it — e.g. a pure conversion-tax probe on an
   // already-computed gain reuses the SAME value, never re-derives it, so the
   // conversion delta stays a pure conversion cost).
-  function yearTax(age, yr, fromPretax, ssGross, annuityTaxable, rmd, inflFactor, otherTaxable = 0, ltcg = 0) {
+  // magiLookback = MAGI from two years ago (IRMAA 2-year lookback). When the
+  // caller supplies it, the IRMAA charge uses IT instead of this year's own
+  // MAGI — the current year `yr` still selects the bracket table. `null`
+  // (default) preserves same-year-MAGI behavior for callers without history
+  // (e.g. a first-two-retirement-years fallback — pre-retirement wage income
+  // isn't modeled, so there's nothing real to look back on yet).
+  function yearTax(age, yr, fromPretax, ssGross, annuityTaxable, rmd, inflFactor, otherTaxable = 0, ltcg = 0, magiLookback = null) {
     const iF  = inflFactor;
     const fB  = idxB(fedBase, iF);
     const sd  = stdDed(age, isMFJ, iF);
@@ -303,12 +309,28 @@ export function buildWithdrawalWaterfall(params = {}) {
     // States generally tax capital gains as ordinary income (no LTCG preferential
     // rate) — add the realized gain to the state taxable base.
     const stT    = stateBr0 ? Math.round(progTax(txInc + ltcg, idxB(stateBr0, iF))) : 0;
-    const irmaa  = age >= 65 ? irmaaCost(magi, yr, infR, isMFJ) : 0;
+    // IRMAA 2-year lookback: charge uses the 2-years-ago MAGI when supplied,
+    // else this year's own MAGI (pre-lookback fallback). Because magiLookback
+    // is fixed before the tax↔draw fixed point runs (it doesn't depend on this
+    // year's draws), `irmaa` is effectively a per-year CONSTANT across passes —
+    // an improvement over the old same-year charge, which was itself part of
+    // the step-function the fixed point had to converge through.
+    const irmaaMagi = (typeof magiLookback === "number" && !isNaN(magiLookback)) ? magiLookback : magi;
+    const irmaa  = age >= 65 ? irmaaCost(irmaaMagi, yr, infR, isMFJ) : 0;
     let margR = 0;
     for (const b of fB) { if (txInc > b.lo) margR = b.rate; else break; }
+    // NOTE: `totalTax` here is fed+state ONLY (irmaa is reported separately /
+    // folded via irmaaFull) — the Step 6.5/7 conversion-delta math already
+    // takes `tax.totalTax - taxNoConv.totalTax`, so a same-year conversion's
+    // incremental cost has never included IRMAA and needs no change for the
+    // lookback: IRMAA can't move within a year regardless of convAmt now that
+    // it's sourced from a fixed 2-years-ago MAGI.
     return { fedTax: fedT, stateTax: stT, irmaa, totalTax: fedT + stT, irmaaFull: fedT + stT + irmaa,
              effectiveRate: (totInc + ltcg) > 0 ? (fedT + stT) / (totInc + ltcg) : 0, marginalBracket: margR,
-             taxableIncome: txInc, totInc, taxSS, ltcgTax, niit, realizedGain: Math.round(ltcg) };
+             taxableIncome: txInc, totInc, taxSS, ltcgTax, niit, realizedGain: Math.round(ltcg),
+             // This year's OWN MAGI (never the lookback substitution) — runScenario
+             // stores this per age so it becomes magiLookback two years from now.
+             magi };
   }
 
   // ── Scenario runner ────────────────────────────────────────────────────────
@@ -318,6 +340,11 @@ export function buildWithdrawalWaterfall(params = {}) {
     // year to year), both seeded from the same taxableBasis0.
     let taxableBasis = taxableBasis0;
     const rows = [];
+    // IRMAA 2-year lookback history for THIS scenario (smart/naive diverge in
+    // draws and conversions, so each gets its own MAGI-by-age history). Keyed
+    // by age, populated with each year's final (post-conversion) MAGI at the
+    // bottom of the loop below.
+    const magiByAge = new Map();
     // Post-retirement per-year growth mirrors runMC's portReturn age-62 switch:
     // preGr below 62 (even though already retired), postGr from 62 on.
     let sp = baseSp, lastRet = retireAge < 62 ? preGr : postGr;
@@ -355,6 +382,18 @@ export function buildWithdrawalWaterfall(params = {}) {
       // post-retirement rate, so a profile that retires before 62 still
       // tracks runMC's glide path exactly.
       const gr = age < 62 ? preGr : postGr;
+
+      // IRMAA 2-year lookback: this year's charge is based on MAGI from
+      // age-2, already stored in magiByAge from that year's own iteration.
+      // Pre-retirement wage income isn't modeled (this engine only knows
+      // portfolio/SS/rental/conversion income), so ages whose lookback would
+      // reach into working years (age-2 < retireAge) fall back to null →
+      // yearTax uses same-year MAGI, matching the pre-lookback approximation
+      // for exactly the first two retirement years.
+      const twoYrAge = age - 2;
+      const magiLookback = (twoYrAge >= retireAge && magiByAge.has(twoYrAge))
+        ? magiByAge.get(twoYrAge)
+        : null;
 
       // ── Step 1: Fixed income (computed BEFORE the spend adjustment so GK's
       // netNeed offset can use this year's own income/fixed-cost figures) ──
@@ -509,7 +548,12 @@ export function buildWithdrawalWaterfall(params = {}) {
         // exactly once below, after the fixed point converges.
         const gPass = realizedGainFor(fromTaxable, taxable, taxableBasis);
         // Source-aware tax on this pass's draws; converge on the funded amount.
-        taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable, gPass);
+        // magiLookback makes the IRMAA component a per-year CONSTANT across
+        // passes (it depends on the already-known age-2 MAGI, not this pass's
+        // draws) — an improvement over the old same-year charge, which was
+        // itself part of the step function the fixed point had to converge
+        // through.
+        taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable, gPass, magiLookback);
         const newTax = taxNoConv.irmaaFull; // fed + state + IRMAA are all real cash costs
         if (Math.abs(newTax - taxDue) < 1) { taxDue = newTax; break; }
         taxDue = newTax;
@@ -540,10 +584,16 @@ export function buildWithdrawalWaterfall(params = {}) {
       }
 
       // ── Step 7: Tax calculation — conversion stacks as ordinary income ───
-      // Same `realizedGain` passed to both the with-conversion and no-conversion
-      // yearTax calls (taxNoConv above already used it) so the LTCG tax cancels
-      // out of the delta and convTax isolates the conversion's own cost.
-      let tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain) : taxNoConv;
+      // Same `realizedGain` AND same `magiLookback` passed to both the
+      // with-conversion and no-conversion yearTax calls — the LTCG tax cancels
+      // out of the delta and convTax isolates the conversion's own cost. IRMAA
+      // is sourced from the fixed age-2 MAGI, not this year's convAmt, so it's
+      // identical in `tax` and `taxNoConv` regardless of conversion size — a
+      // same-year conversion cannot move its own year's IRMAA charge under the
+      // lookback (confirmed: convTax below already uses totalTax = fed+state
+      // only, excluding irmaa, so this was already a pure conversion cost and
+      // needed no change).
+      let tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain, magiLookback) : taxNoConv;
       let convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
 
       // Affordability: pretax must cover both the conversion and its incremental tax.
@@ -554,7 +604,7 @@ export function buildWithdrawalWaterfall(params = {}) {
           const shortfall = (convAmt + convTax) - (pretax - fromPretax);
           if (shortfall <= 0) break;
           convAmt = Math.max(0, convAmt - shortfall);
-          tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain) : taxNoConv;
+          tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain, magiLookback) : taxNoConv;
           convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
         }
         if (convAmt <= 500) {
@@ -592,6 +642,11 @@ export function buildWithdrawalWaterfall(params = {}) {
       lastRet = gr;
       cTax += tax.totalTax;
 
+      // IRMAA lookback history: this year's FINAL MAGI (post-conversion when
+      // one executed — `tax` is already the with-conversion result whenever
+      // convAmt > 0) becomes the magiLookback input for the age+2 iteration.
+      magiByAge.set(age, tax.magi);
+
       rows.push({
         age, yr,
         ss, annuityRental: annuity, fixedIncomeTotal: fixedIncome,
@@ -602,7 +657,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         fedTax: tax.fedTax, stateTax: tax.stateTax, irmaa: tax.irmaa,
         totalTax: tax.totalTax, irmaaFull: tax.irmaaFull,
         effectiveRate: tax.effectiveRate, marginalBracket: tax.marginalBracket,
-        taxableIncome: tax.taxableIncome, totInc: tax.totInc,
+        taxableIncome: tax.taxableIncome, totInc: tax.totInc, magi: Math.round(tax.magi),
         realizedGain: Math.round(realizedGain), ltcgTax: tax.ltcgTax, niit: tax.niit, taxSS: tax.taxSS,
         landmines: { ssTorpedo, irmaaTriggered, rmdActive },
         cashEnd:    Math.round(cash),

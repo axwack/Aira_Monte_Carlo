@@ -792,7 +792,14 @@ function calcYearTax(
   inflationRate,
   filingStatus = "mfj",
   stateOfResidence = "NJ",
-  ltcgAmount = 0
+  ltcgAmount = 0,
+  // IRMAA 2-year lookback: MAGI from two years ago (SSA charges year T's premium
+  // off the tax return filed two years prior). When the caller has that history
+  // it passes it here; the CURRENT year `yr` still selects the bracket table —
+  // only the MAGI used to walk the table changes. `null` (default) preserves the
+  // pre-lookback same-year-MAGI behavior for every caller that hasn't threaded
+  // history through yet (backward compatible).
+  magiLookback = null
 ) {
   // Replace any NaN arguments with 0
   withdrawalAmount = isNaN(withdrawalAmount) ? 0 : withdrawalAmount;
@@ -862,7 +869,10 @@ function calcYearTax(
     // rate) — add the realized gain to the state taxable base.
     if (stateBr) stateTax = Math.round(progTax(taxableIncome + ltcgAmount, idxB(stateBr, inflationFactor)));
   }
-      const irmaa = age >= 65 ? irmaaCost(magi, yr, inflationRate, isMFJ) : 0;
+      // IRMAA charge uses the 2-year-old MAGI when the caller supplied one;
+      // otherwise falls back to this year's own MAGI (pre-lookback behavior).
+      const irmaaMagi = (typeof magiLookback === "number" && !isNaN(magiLookback)) ? magiLookback : magi;
+      const irmaa = age >= 65 ? irmaaCost(irmaaMagi, yr, inflationRate, isMFJ) : 0;
       const totalTax = fedTax + stateTax + irmaa;
       const effectiveRate = (totalIncome + ltcgAmount) > 0 ? totalTax / (totalIncome + ltcgAmount) : 0;
       let marginalBracket = 0;
@@ -874,6 +884,10 @@ function calcYearTax(
   return {
     fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket, taxableIncome,
     ltcgTax, niit, realizedGain: Math.round(ltcgAmount),
+    // This year's OWN MAGI (never the lookback substitution) — callers store
+    // this in a per-age history so it becomes the magiLookback input two years
+    // from now.
+    magi,
   };
 }
 
@@ -1037,6 +1051,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     }, 0);
     const initNeed0 = Math.max(0, p.sp - ss0 - ab0 - otherInc0) + housing0 + carveout0;
     const initWR = portAtRetire > 0 ? initNeed0 / portAtRetire : 0.04;
+
+    // IRMAA 2-year lookback history for this path — rolled forward at the end
+    // of each retirement year below. Pre-retirement wage income isn't modeled
+    // (this engine only knows portfolio/SS/rental income), so the first two
+    // retirement years (y === 0, 1) have no usable 2-years-ago figure; those
+    // years fall back to same-year MAGI (the pre-lookback approximation) via
+    // the `y >= 2` gate below.
+    let magiOneYearAgo = null, magiTwoYearsAgo = null;
 
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
@@ -1279,6 +1301,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       }
 
       const rothFloorMC = p.rothEmergencyReserve || 0;
+      // IRMAA 2-year lookback for THIS year's charge: the MAGI from age-2,
+      // rolled forward at the bottom of the previous two iterations. The first
+      // two retirement years (y < 2) have no pre-retirement wage history to
+      // look back on (this engine doesn't model wages), so they fall back to
+      // null → calcYearTax uses same-year MAGI, matching the pre-lookback
+      // approximation for those two years only.
+      const magiLookbackMC = (y >= 2 && typeof magiTwoYearsAgo === "number") ? magiTwoYearsAgo : null;
       let taxResult = null;
       let totalTax = 0;
       let fromCash = 0, fromTaxable = 0, fromPretax = 0, fromRoth = 0;
@@ -1307,7 +1336,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const gPass = realizedGainFromDraw(fromTaxable, taxable, taxableBasis);
         taxResult = calcYearTax(
           age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, 0,
-          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", gPass
+          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", gPass, magiLookbackMC
         );
         const newTax = taxEnabled ? taxResult.totalTax : 0;
         if (Math.abs(newTax - totalTax) < 1) { totalTax = newTax; break; }
@@ -1344,6 +1373,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       pretax  = isNaN(pretax)  ? 0 : pretax;
       roth    = isNaN(roth)    ? 0 : roth;
 
+      // IRMAA lookback history: this year's MAGI, used two years from now.
+      // Defaults to the no-conversion taxResult.magi; overwritten below with
+      // the post-conversion MAGI when a conversion actually executes (a
+      // conversion raises MAGI, so the age+2 IRMAA charge must see it — the
+      // conversion CANNOT affect its own year's charge under the lookback).
+      let finalMagiMC = taxResult.magi;
+
       // Bracket-fill Roth conversion (after spending withdrawals, before growth).
       // Bracket ceilings index at the assumed long-run inflation rate, not inflY:
       // compounding a single bootstrapped year's draw over the whole horizon would
@@ -1354,20 +1390,28 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
         if (room > 500) {
           let convAmt = Math.min(room, pretax);
+          let lastWithConv = null;
           // True conversion cost = the DELTA in total tax vs. the no-conversion tax
           // (correct progressive bracket stacking), not a flat marginal-rate estimate —
           // a single bracket's rate understates cost whenever `room` spans intervening
           // brackets. Mirrors buildWithdrawalWaterfall.js's Step 6.5/7 exactly: recompute
           // full tax with the conversion stacked as ordinary income via calcYearTax's own
-          // `conversionAmount` parameter, then take the delta.
+          // `conversionAmount` parameter, then take the delta. NOTE: `totalTax` (and
+          // `withConv.totalTax`) exclude IRMAA (calcYearTax.totalTax = fedTax+stateTax),
+          // so this delta was already a pure fed+state conversion cost before the
+          // lookback landed and needs no change now that IRMAA is a fixed, lookback-
+          // driven constant for the year — a same-year conversion can't move it.
           const convTaxFor = (amt) => {
             if (!taxEnabled || amt <= 0) return 0;
             // Same realizedGainMC as the spending-draw tax call above — the delta
             // must isolate the conversion's own cost, not a different LTCG estimate.
+            // Same magiLookbackMC too, so the (fixed) IRMAA component agrees with
+            // taxResult's — it's this year's charge, unaffected by convAmt.
             const withConv = calcYearTax(
               age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, amt,
-              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC
+              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC, magiLookbackMC
             );
+            lastWithConv = withConv;
             return Math.max(0, withConv.totalTax - totalTax);
           };
           let convTax = convTaxFor(convAmt);
@@ -1385,9 +1429,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           if (convAmt > 500) {
             pretax -= (convAmt + convTax);
             roth   += convAmt;
+            if (lastWithConv) finalMagiMC = lastWithConv.magi;
           }
         }
       }
+
+      // Roll the 2-year IRMAA lookback history forward: this year's final MAGI
+      // (post-conversion when one executed) becomes "two years ago" once we
+      // reach year y+2.
+      magiTwoYearsAgo = magiOneYearAgo;
+      magiOneYearAgo = finalMagiMC;
 
       // Apply growth
       cash    = Math.max(0, cash    * (1 + cashRealReturn));
@@ -1698,11 +1749,13 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const need = Math.max(0, sp - ss - ab - otherIncTotal) + housingCost + carveoutCost;
 
     // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab) —
-    // this path automatically carries LTCG/cost-basis since buildWithdrawalWaterfall
-    // now models it. Fall back to the legacy "treat everything as ordinary income"
-    // calc only when no waterfall row exists for this age (e.g. accounts not
-    // configured); that fallback has no taxable-bucket split at all, so it has
-    // no LTCG to model (ltcgAmount defaults to 0) — left unchanged, out of scope here.
+    // this path automatically carries LTCG/cost-basis AND the IRMAA 2-year lookback
+    // since buildWithdrawalWaterfall now models both. Fall back to the legacy "treat
+    // everything as ordinary income" calc only when no waterfall row exists for this
+    // age (e.g. accounts not configured); that fallback has no taxable-bucket split
+    // (ltcgAmount defaults to 0) and no lookback history to thread through (magiLookback
+    // defaults to null → same-year MAGI, the pre-lookback approximation) — both left
+    // unchanged, out of scope here.
     const wfTax = smartTaxByAge.get(age);
     const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "NJ");
     const totalTax = taxEnabled ? taxResult.totalTax : 0;
@@ -5633,7 +5686,7 @@ function WaterfallPlanView({ p, result }) {
                         emoji="💊"
                         label="IRMAA Surcharge"
                         color="#fb923c"
-                        detail={`Medicare premium surcharge: ${fmtK(r.irmaa)}/yr this year. Your income crossed the IRMAA Tier 1 threshold (~$218,000 MFJ). IRMAA uses a 2-year lookback — income this year affects Medicare premiums in ${r.yr + 2}. Enable IRMAA Guard in Profile → Withdrawal Order to cap pretax draws before this threshold.`}
+                        detail={`This year's ${fmtDollar(r.irmaa)} surcharge is based on your ${r.yr - 2} income (IRMAA uses a 2-year lookback — the current Tier-1 threshold ~$218,000 MFJ was checked against that year's MAGI, not this year's). Income this year affects premiums in ${r.yr + 2}. Enable IRMAA Guard in Profile → Withdrawal Order to cap pretax draws before this threshold.`}
                       />
                     );
                   })()}

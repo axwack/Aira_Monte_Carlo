@@ -297,6 +297,54 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
     expect(future.taxableIncome).toBeLessThan(now.taxableIncome);
     expect(future.fedTax).toBeLessThanOrEqual(now.fedTax);
   });
+
+  test("calcYearTax exposes this year's own MAGI on the result (magi field)", () => {
+    // magi = totalIncome (incl. taxable SS) + ltcgAmount — callers build a
+    // per-age history from this so future years can look it back up.
+    const r = calcYearTax(60, 2026, 60_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(r.magi).toBe(60_000);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// IRMAA 2-year lookback (calcYearTax's magiLookback parameter) — 2026-07-18
+//
+// Medicare charges year T's IRMAA surcharge off the tax return filed two years
+// prior (MAGI[T-2]), not the current year's income. calcYearTax's new trailing
+// `magiLookback` parameter lets a caller with per-age MAGI history substitute
+// that 2-years-ago figure for the irmaaCost() lookup; the CURRENT year `yr`
+// still selects which bracket table to use. `null` (the default, and every
+// pre-existing call site above) preserves the old same-year-MAGI behavior.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("calcYearTax — IRMAA 2-year lookback (magiLookback param)", () => {
+  test("magiLookback above tier-1 charges IRMAA even when THIS year's MAGI is low", () => {
+    // Current-year withdrawal is only $100K (well under $218K tier-1), but the
+    // 2-years-ago MAGI of $300K (>$274K) is what actually gets charged.
+    const r = calcYearTax(66, 2026, 100_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, 300_000);
+    expect(r.irmaa).toBeGreaterThan(0);
+    expect(r.irmaa).toBe(2_160); // same $274K–$342K tier as the direct irmaaCost(300_000,...) test above
+  });
+
+  test("magiLookback below tier-1 charges NO IRMAA even when THIS year's MAGI is high", () => {
+    // Current-year withdrawal of $300K would trigger IRMAA under the OLD
+    // same-year behavior, but the 2-years-ago MAGI of $100K is below tier-1 —
+    // the surcharge is charged on the OLD income, not the current one.
+    const r = calcYearTax(66, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, 100_000);
+    expect(r.irmaa).toBe(0);
+  });
+
+  test("magiLookback = null (default/omitted) falls back to same-year MAGI (backward compatible)", () => {
+    const withNull    = calcYearTax(66, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, null);
+    const omitted     = calcYearTax(66, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0);
+    const sameYearRef = calcYearTax(66, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(withNull.irmaa).toBe(sameYearRef.irmaa);
+    expect(omitted.irmaa).toBe(sameYearRef.irmaa);
+  });
+
+  test("age < 65 still charges no IRMAA regardless of magiLookback", () => {
+    const r = calcYearTax(64, 2026, 100_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, 900_000);
+    expect(r.irmaa).toBe(0);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2155,5 +2203,49 @@ describe("runMC — taxable cost-basis (taxableBasisPct) success-rate impact", (
     const lowBasis  = runMC({ ...taxableHeavy, taxableBasisPct: 40  }, 90, 1000, 42, true);
     const highBasis = runMC({ ...taxableHeavy, taxableBasisPct: 100 }, 90, 1000, 42, true);
     expect(lowBasis.rate).toBeLessThanOrEqual(highBasis.rate);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// runMC — IRMAA 2-year lookback wiring (2026-07-18)
+//
+// runMC now threads a rolling magiTwoYearsAgo/magiOneYearAgo history into
+// calcYearTax's magiLookback param every year (both the spending-draw tax
+// convergence loop and the Roth-conversion delta calls). This is a directional/
+// wiring check, not an exact-value assertion (the fixed point + bracket-fill
+// conversion + RNG paths make a hand-computed expected rate impractical): a
+// profile whose income crosses the IRMAA threshold via large ordinary-bracket
+// conversions from 63-70 must still produce a finite, valid success rate with
+// no NaN anywhere in the aggregated bands.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("runMC — IRMAA 2-year lookback wiring", () => {
+  test("completes with a finite, in-range success rate for an IRMAA-crossing conversion profile", () => {
+    const irmaaHeavy = {
+      currentAge: 60, retireAge: 60, endAge: 90, port: 0, contrib: 0, inf: 2.5,
+      sp: 150_000, ssAge: 67, ssb: 30_000, ssCola: 2.4, ab: 0, useAb: false,
+      tax: 22, smile: false, preRetireEq: 91, postRetireEq: 70,
+      gkFloor: 100_000, gkCeiling: 250_000, withdrawalStrategy: "gk",
+      cashRealReturn: 1.0, useJointRmdTable: false, twoHousehold: false,
+      filingStatus: "mfj", stateOfResidence: "FL",
+      withdrawalBracketTarget: "off", irmaaGuard: false,
+      // Large bracket-fill conversions every year — pushes MAGI well past the
+      // IRMAA tier-1 threshold in some years, so the lookback history actually
+      // gets exercised (non-null magiLookback) for most of retirement.
+      rothConversionTarget: "24",
+      accounts: [
+        { id: "m1", category: "pretax", name: "401k", balance: 3_000_000 },
+        { id: "m2", category: "cash",   name: "Cash",  balance:   200_000 },
+      ],
+    };
+    const result = runMC(irmaaHeavy, 90, 200, 42, true);
+    expect(Number.isFinite(result.rate)).toBe(true);
+    expect(result.rate).toBeGreaterThanOrEqual(0);
+    expect(result.rate).toBeLessThanOrEqual(1);
+    result.pcts.forEach((row) => {
+      expect(Number.isNaN(row.p10)).toBe(false);
+      expect(Number.isNaN(row.p50)).toBe(false);
+      expect(Number.isNaN(row.p90)).toBe(false);
+      expect(Number.isNaN(row.alive)).toBe(false);
+    });
   });
 });

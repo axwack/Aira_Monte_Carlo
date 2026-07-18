@@ -139,6 +139,158 @@ describe("buildWithdrawalWaterfall — landmine detection", () => {
   });
 });
 
+// ─── IRMAA 2-year lookback (2026-07-18) ────────────────────────────────────────
+// Medicare charges year T's surcharge off MAGI from year T-2, not the current
+// year. buildWithdrawalWaterfall now maintains a per-scenario magiByAge history
+// and threads magiLookback into yearTax every year. The first two retirement
+// years (no pre-retirement wage history modeled) fall back to same-year MAGI.
+//
+// LOOKBACK_BASE: cash is abundant enough to fund baseline spending for the
+// whole horizon without ever touching pretax (draw order is cash → taxable →
+// pretax in smart mode), so baseline-year MAGI stays ~$0 (well under the
+// $218K IRMAA tier-1). gr: 0 and inf: 0 freeze balances/thresholds so the
+// ONLY thing that moves MAGI in any given year is a pinned conversionOverrides
+// entry — isolating the lookback effect cleanly.
+const LOOKBACK_BASE = {
+  currentAge: 60, retireAge: 60, endAge: 85,
+  sp: 60_000, ssAge: 90, ssb: 0, ssCola: 0, ab: 0, inf: 0,
+  filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
+  useJointRmdTable: false, gkFloor: 40_000, gkCeiling: 150_000,
+  withdrawalBracketTarget: "off", irmaaGuard: false, ssTorpedoGuard: false,
+  rothEmergencyReserve: 0, gr: 0,
+  accounts: [
+    { id: "p1", category: "pretax", balance: 2_000_000 },
+    { id: "c1", category: "cash",   balance: 2_000_000 },
+  ],
+};
+
+describe("buildWithdrawalWaterfall — IRMAA 2-year lookback", () => {
+  test("a pinned Roth conversion at exactly age 63 charges IRMAA at age 65, NOT at 63/64", () => {
+    const yr63 = BASE_YEAR() + (63 - 60);
+    const result = buildWithdrawalWaterfall({
+      ...LOOKBACK_BASE,
+      conversionOverrides: [{ year: yr63, amount: 700_000 }],
+    });
+    const row63 = result.smart.rows.find(r => r.age === 63);
+    const row64 = result.smart.rows.find(r => r.age === 64);
+    const row65 = result.smart.rows.find(r => r.age === 65);
+    // Ages 63/64 are under-65 anyway (no IRMAA gate at all), but assert them
+    // explicitly per spec.
+    expect(row63.irmaa).toBe(0);
+    expect(row64.irmaa).toBe(0);
+    // Age 65's charge is driven by age 63's MAGI (the conversion year) — under
+    // the OLD same-year behavior this charge would never appear at 65 at all
+    // (65's own income is back to baseline-low).
+    expect(row65.irmaa).toBeGreaterThan(0);
+    expect(row65.landmines.irmaaTriggered).toBe(true);
+  });
+
+  test("moving the same pinned conversion to age 70 shifts the IRMAA charge to age 72", () => {
+    const yr70 = BASE_YEAR() + (70 - 60);
+    const result = buildWithdrawalWaterfall({
+      ...LOOKBACK_BASE,
+      conversionOverrides: [{ year: yr70, amount: 700_000 }],
+    });
+    const row70 = result.smart.rows.find(r => r.age === 70);
+    const row71 = result.smart.rows.find(r => r.age === 71);
+    const row72 = result.smart.rows.find(r => r.age === 72);
+    // Under the OLD same-year behavior this would have charged AT 70 — the
+    // lookback proves itself by showing $0 here instead.
+    expect(row70.irmaa).toBe(0);
+    expect(row71.irmaa).toBe(0);
+    expect(row72.irmaa).toBeGreaterThan(0);
+  });
+
+  test("income high at 65-66 (conversions) then dropping: IRMAA charges shift to 67-68 via the lookback, then stop", () => {
+    const yr65 = BASE_YEAR() + (65 - 60);
+    const yr66 = BASE_YEAR() + (66 - 60);
+    const result = buildWithdrawalWaterfall({
+      ...LOOKBACK_BASE,
+      conversionOverrides: [
+        { year: yr65, amount: 700_000 },
+        { year: yr66, amount: 700_000 },
+      ],
+    });
+    const byAge = (a) => result.smart.rows.find(r => r.age === a);
+    // 65/66 themselves: their OWN lookback (ages 63/64) is baseline-low, so no
+    // charge in the conversion years themselves.
+    expect(byAge(65).irmaa).toBe(0);
+    expect(byAge(66).irmaa).toBe(0);
+    // 67/68: lookback now sees the high 65/66 MAGI — charged.
+    expect(byAge(67).irmaa).toBeGreaterThan(0);
+    expect(byAge(68).irmaa).toBeGreaterThan(0);
+    // 69+: income already dropped back to baseline two years earlier (67's
+    // own MAGI, which 69 looks back on, is low again) — charge stops.
+    expect(byAge(69).irmaa).toBe(0);
+    expect(byAge(70).irmaa).toBe(0);
+  });
+
+  test("row exposes this year's own magi (for the age+2 lookback / future UI use)", () => {
+    const yr63 = BASE_YEAR() + (63 - 60);
+    const result = buildWithdrawalWaterfall({
+      ...LOOKBACK_BASE,
+      conversionOverrides: [{ year: yr63, amount: 700_000 }],
+    });
+    const row63 = result.smart.rows.find(r => r.age === 63);
+    expect(row63.magi).toBeGreaterThan(600_000); // conversion dominates MAGI that year
+  });
+});
+
+// ─── Funding identity holds with IRMAA-triggering income (audit regression) ────
+// Fixed income + otherIncome + RMD + draws − rmdExcess must equal spending +
+// housing + carveouts + fedTax + stateTax + irmaa on every row, within $2
+// rounding — the same identity App.jsx documents above the Withdrawal Order
+// table. No conversionOverrides/rothConversionTarget here (kept "off") so the
+// draw cascade and the reported fedTax/stateTax/irmaa stay in lockstep (a
+// pinned conversion's own tax is funded separately, outside the cascade —
+// deliberately out of scope for this identity check).
+describe("buildWithdrawalWaterfall — funding identity holds with IRMAA-triggering income", () => {
+  const IDENTITY_PROFILE = {
+    currentAge: 63, retireAge: 63, endAge: 90,
+    sp: 260_000, ssAge: 65, ssb: 30_000, ssCola: 2.4, ab: 0, inf: 2.5,
+    filingStatus: "mfj", stateOfResidence: "CA", twoHousehold: false,
+    useJointRmdTable: false, gkFloor: 200_000, gkCeiling: 400_000,
+    withdrawalBracketTarget: "off", irmaaGuard: false, ssTorpedoGuard: false,
+    rothEmergencyReserve: 0, gr: 0.03, rothConversionTarget: "off",
+    // A large balance relative to spending — the identity assumes every
+    // dollar of "need" is actually funded by the draw cascade; a portfolio
+    // that depletes mid-horizon (pretax exhausted, no other buckets left)
+    // breaks that assumption in its own well-known way (a documented
+    // modeling edge case, not part of this lookback fix), so this profile
+    // is sized to comfortably survive the full 63→90 horizon.
+    accounts: [
+      { id: "p1", category: "pretax", balance: 10_000_000 },
+      { id: "c1", category: "cash",   balance:    200_000 },
+    ],
+  };
+
+  function assertIdentity(rows) {
+    expect(rows.length).toBeGreaterThan(0);
+    rows.forEach((r) => {
+      const taxTotal = r.fedTax + r.stateTax + r.irmaa;
+      const rmdExcess = Math.max(0, r.rmd - (r.needFromPort + taxTotal));
+      const lhs = r.fixedIncomeTotal + r.otherIncome + r.rmd
+        + (r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth) - rmdExcess;
+      const rhs = r.spending + r.housingCost + r.carveoutCost + taxTotal;
+      expect(Math.abs(lhs - rhs)).toBeLessThan(2);
+    });
+  }
+
+  test("identity holds on every smart row for an IRMAA-triggering profile", () => {
+    const result = buildWithdrawalWaterfall(IDENTITY_PROFILE);
+    // Guard: this profile must actually trigger IRMAA somewhere, or the test
+    // isn't exercising the lookback-charged tax component at all.
+    expect(result.smart.rows.some(r => r.irmaa > 0)).toBe(true);
+    assertIdentity(result.smart.rows);
+  });
+
+  test("identity holds on every naive row for the same IRMAA-triggering profile", () => {
+    const result = buildWithdrawalWaterfall(IDENTITY_PROFILE);
+    expect(result.naive.rows.some(r => r.irmaa > 0)).toBe(true);
+    assertIdentity(result.naive.rows);
+  });
+});
+
 // ─── Real-world expenses/income feed "need" and conversion headroom ───────────
 
 describe("buildWithdrawalWaterfall — mortgage, carveouts, other income", () => {

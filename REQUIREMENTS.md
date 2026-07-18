@@ -87,7 +87,50 @@ Tests: suite updated where it encoded the old behavior; 256 passing
   (`buildRothExplorer.js`'s own 2-bucket pretax/Roth model) still ignores LTCG
   entirely, since it has no taxable-bucket concept at all. IRMAA's 2-year lookback
   (next entry below) is a separate, later pass — not touched here.
-- **IRMAA 2-year lookback** is ignored — surcharge applies to same-year MAGI.
+- ✅ **IMPLEMENTED 2026-07-18** — ~~IRMAA 2-year lookback is ignored.~~ Medicare
+  charges year T's IRMAA surcharge off the tax return filed two years prior
+  (MAGI[T-2]), not the current year's income — a big Roth conversion at 63 now
+  raises Medicare premiums at 65 (not at 63), and income dropping at retirement
+  takes 2 years to flow through to lower premiums. `calcYearTax` (App.jsx) and
+  `yearTax` (`buildWithdrawalWaterfall.js`) both gain an optional trailing
+  `magiLookback` param: when supplied, `irmaaCost()` uses that 2-years-ago MAGI
+  instead of the current year's own MAGI (the current year `yr` still selects
+  the bracket table). `null` (default) preserves the old same-year-MAGI
+  behavior for every caller that hasn't threaded history through — the
+  purely-`calcYearTax`-level tests above are unaffected. The tax↔draw fixed
+  point actually converges a step FASTER now: IRMAA is sourced from an
+  already-known, fixed 2-years-ago MAGI instead of the current pass's draws, so
+  it's a per-year constant rather than part of the step function the loop had
+  to converge through. Threaded through both engines' year loops:
+  `buildWithdrawalWaterfall`'s `runScenario` keeps a per-scenario (smart/naive
+  diverge) `magiByAge` Map, storing each year's FINAL (post-conversion, since a
+  conversion raises MAGI) MAGI and looking up `age-2`; `runMC` keeps cheaper
+  rolling `magiOneYearAgo`/`magiTwoYearsAgo` variables per path, rolled forward
+  after the Roth-conversion block (using the post-conversion MAGI when a
+  conversion executed that year). **Pre-retirement fallback:** neither engine
+  models pre-retirement wages, so the first two retirement years (whose
+  lookback would reach `age-2 < retireAge`, into unmodeled working years) fall
+  back to `null` → same-year MAGI, the old approximation, for those two years
+  only. Every row now also exposes `magi` (this year's own MAGI, feeding the
+  UI and the next engine's history) alongside the existing `irmaa`/
+  `irmaaTriggered` fields; `irmaaTriggered` continues to mean "surcharge
+  CHARGED this year" (now correctly sourced from 2-years-ago income).
+  Roth-conversion delta costing needed NO change: `convTax = tax.totalTax -
+  taxNoConv.totalTax` was always fed+state only (IRMAA excluded, reported
+  separately via `irmaaFull`), so a same-year conversion's cost was never
+  polluted by IRMAA and still isn't — IRMAA simply can't move within the
+  conversion's own year anymore, full stop. `simulateDeterministicWithStrategy`
+  inherits the lookback automatically via its `smartTaxByAge` map (sourced from
+  `buildWithdrawalWaterfall`); its legacy no-waterfall-row fallback still calls
+  `calcYearTax` with no lookback arg (`null` default, old same-year behavior),
+  unchanged, out of scope.
+  **Remaining sub-gap (out of scope for this pass):** `buildRothExplorer.js`'s
+  own `irmaaCost`/`irmaaCeiling` (the Conversion Plan tab) still charges IRMAA
+  on same-year MAGI — same category of gap as that tab's pre-existing
+  LTCG-ignorance noted above (it has no taxable-bucket concept, and now no
+  lookback history either).
+  10 new tests (`computations.test.js`, `withdrawal.test.js`); all pre-existing
+  tests pass unchanged.
 - **Bracket-cap "income so far" estimates** (smart waterfall, both engines) assume
   85% SS inclusion deliberately: the pretax draw being sized affects provisional
   income, so worst-case inclusion keeps the cap conservative (never overshoots).
