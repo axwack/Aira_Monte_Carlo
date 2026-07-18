@@ -22,6 +22,7 @@ import {
   expandAccountBuckets,
   _defaultBucket,
 } from "./App";
+import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 
 // ─── Shared MC baseline ───────────────────────────────────────────────────────
 const BASE = {
@@ -510,8 +511,13 @@ describe("runMC — Monte Carlo integration", () => {
   });
 
   test("FL (no state tax) has higher success rate than CA (13.3% state tax)", () => {
-    // Use a tighter scenario so the 13.3% state tax drag is detectable
-    const tight = { ...BASE, ssb: 0, sp: 90_000,
+    // Use a tighter scenario so the 13.3% state tax drag is detectable.
+    // Bengen (non-adaptive) spending: GK guardrails now correctly track NET
+    // portfolio need, so they adaptively spend part of any tax savings
+    // (prosperity raises), which can shrink the FL-vs-CA survival gap into
+    // sampling noise. Tax drag → survival is only monotone for a fixed-real
+    // spending rule, which is what this test is actually about.
+    const tight = { ...BASE, withdrawalStrategy: "bengen", ssb: 0, sp: 90_000,
       accounts: [
         { id: "t1", category: "pretax",  name: "401k",    balance: 900_000 },
         { id: "t2", category: "roth",    name: "Roth",    balance: 200_000 },
@@ -525,7 +531,8 @@ describe("runMC — Monte Carlo integration", () => {
   });
 
   test("twoHousehold mode (no state tax) has higher success rate than single CA household", () => {
-    const tight = { ...BASE, stateOfResidence: "CA", ssb: 0, sp: 90_000,
+    // Bengen spending — same reasoning as the FL-vs-CA test above.
+    const tight = { ...BASE, withdrawalStrategy: "bengen", stateOfResidence: "CA", ssb: 0, sp: 90_000,
       accounts: [
         { id: "t1", category: "pretax",  name: "401k",    balance: 900_000 },
         { id: "t2", category: "roth",    name: "Roth",    balance: 200_000 },
@@ -1953,5 +1960,62 @@ describe("CURRENT_YEAR — dynamic 'today' anchor for tax-year math (C2 regressi
     const low  = calcYearTax(65, thisYear, 100_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
     const high = calcYearTax(65, thisYear, 100_000, 0, 0, 0, 0, false, 0.08, "mfj", "FL");
     expect(low.totalTax).toBe(high.totalTax);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GK calibration — cross-engine consistency (audit regression)
+//
+// buildWithdrawalWaterfall's gkWithdraw and App.jsx's guytonKlingerWithdrawal
+// must use the IDENTICAL net-portfolio-need formula for both the baseline
+// initWR and the tracked yearly ratio, so the two engines agree on the very
+// first few years' spending direction for the same profile — neither should
+// cut toward the floor while the other holds steady at inflation-only growth.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("GK calibration — cross-engine consistency (audit regression)", () => {
+  // Retires AT ssAge with substantial SS, healthy portfolio. `port` (used by
+  // simulateDeterministicWithStrategy's standalone "gk" fallback path) is set
+  // to match the `accounts` total (used by buildWithdrawalWaterfall) so both
+  // engines start from the identical portfolio.
+  const gkProfile = {
+    currentAge: 65, retireAge: 65, endAge: 95,
+    sp: 80_000, ssAge: 65, ssb: 30_000, ssCola: 2.4,
+    ab: 0, inf: 2.5, filingStatus: "mfj", stateOfResidence: "FL",
+    twoHousehold: false, useJointRmdTable: false,
+    gkFloor: 40_000, gkCeiling: 120_000,
+    withdrawalBracketTarget: "22", irmaaGuard: false, ssTorpedoGuard: false,
+    rothEmergencyReserve: 0, gr: 0.06,
+    port: 1_000_000,
+    accounts: [
+      { id: "p1", category: "pretax",  balance: 700_000 },
+      { id: "p2", category: "roth",    balance: 150_000 },
+      { id: "p3", category: "taxable", balance: 100_000 },
+      { id: "p4", category: "cash",    balance:  50_000 },
+    ],
+  };
+
+  test("buildWithdrawalWaterfall (smart) and simulateDeterministicWithStrategy (gk) agree: neither cuts while the other grows", () => {
+    const wf = buildWithdrawalWaterfall(gkProfile);
+    const det = simulateDeterministicWithStrategy(gkProfile, 2.5, "gk");
+    const wfRatios = [];
+    const detRatios = [];
+    for (let i = 1; i < 5; i++) {
+      wfRatios.push(wf.smart.rows[i].spending / wf.smart.rows[i - 1].spending);
+      detRatios.push(det.schedule[i].spending / det.schedule[i - 1].spending);
+    }
+    // Neither engine should collapse (ratio << 1) while the other grows — both
+    // must agree on direction every year.
+    for (let i = 0; i < wfRatios.length; i++) {
+      expect(Math.sign(wfRatios[i] - 1)).toBe(Math.sign(detRatios[i] - 1));
+    }
+  });
+
+  test("both engines keep spending well above the GK floor in the first 5 years (healthy portfolio, no death spiral)", () => {
+    const wf = buildWithdrawalWaterfall(gkProfile);
+    const det = simulateDeterministicWithStrategy(gkProfile, 2.5, "gk");
+    for (let i = 0; i < 5; i++) {
+      expect(wf.smart.rows[i].spending).toBeGreaterThan(gkProfile.gkFloor * 1.3);
+      expect(det.schedule[i].spending).toBeGreaterThan(gkProfile.gkFloor * 1.3);
+    }
   });
 });
