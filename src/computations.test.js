@@ -2066,3 +2066,21 @@ describe("probability analogies — revolving context messages", () => {
     expect(pool.some((a) => a.text.toLowerCase().includes("worse than a coin flip"))).toBe(true);
   });
 });
+
+describe("per-age funded fraction (MC band table)", () => {
+  test("alive fraction starts at 1.0, never increases, and ends consistent with the success rate", () => {
+    const tight = { ...BASE, ssb: 0, sp: 110_000, accounts: [
+      { id: "t1", category: "pretax", name: "401k", balance: 1_000_000 },
+    ]};
+    const r = runMC(tight, 90, 500, 42, true);
+    expect(r.pcts[0].alive).toBe(1.0);
+    for (let i = 1; i < r.pcts.length; i++) {
+      expect(r.pcts[i].alive).toBeLessThanOrEqual(r.pcts[i - 1].alive);
+    }
+    // Paths that exhaust exactly at the final age still count as failures in
+    // `rate`, so the last alive value can only be ≥ rate.
+    expect(r.pcts[r.pcts.length - 1].alive).toBeGreaterThanOrEqual(r.rate);
+    // And in a scenario with real failures, alive must actually drop below 1
+    expect(r.pcts[r.pcts.length - 1].alive).toBeLessThan(1.0);
+  });
+});
