@@ -86,10 +86,10 @@ export function accumulateToRetirement(params = {}) {
   // default growth rate here, mirroring runMC's portReturn age<62 branch.
   const gr     = grParam ?? (expectedReturn(preRetireEq) / 100);
   // Cash growth honors the profile's "Cash return" field — the SAME value
-  // runMC applies to the cash bucket ((p.cashRealReturn ?? 1.0)/100). This was
+  // runMC applies to the cash bucket ((p.cashRealReturn ?? 3.0)/100). This was
   // a hardcoded 0.045 that silently ignored the user's setting, so the profile
   // field changed the Monte Carlo but never this engine.
-  const cashGr = (cashRealReturn ?? 1.0) / 100;
+  const cashGr = (cashRealReturn ?? 3.0) / 100;
 
   let pretax0 = 0, roth0 = 0, taxable0 = 0, cash0 = 0;
   for (const a of accounts) {
@@ -178,10 +178,10 @@ export function buildWithdrawalWaterfall(params = {}) {
   const preGr      = grParam ?? (expectedReturn(preRetireEq) / 100);
   const postGr     = grParam ?? (expectedReturn(postRetireEq) / 100);
   // Cash growth honors the profile's "Cash return" field — the SAME value
-  // runMC applies ((p.cashRealReturn ?? 1.0)/100). Was a hardcoded 0.045 that
+  // runMC applies ((p.cashRealReturn ?? 3.0)/100). Was a hardcoded 0.045 that
   // ignored the user's setting entirely (profile field changed the Monte
   // Carlo but never this tab).
-  const cashGr     = (cashRealReturn ?? 1.0) / 100;
+  const cashGr     = (cashRealReturn ?? 3.0) / 100;
   const retireYear = BASE_YEAR + (retireAge - currentAge);
   const rmdAge     = (typeof rmdStartAge === "number" && rmdStartAge > 0)
     ? rmdStartAge

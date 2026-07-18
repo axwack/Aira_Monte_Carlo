@@ -473,7 +473,7 @@ export const BLANK_PROFILE = {
   filingStatus: "mfj",          // "mfj" | "single" — drives federal brackets & std deduction
   reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
   useJointRmdTable: false,      // default: use Uniform Lifetime table
-  cashRealReturn: 1.0,          // default real return for cash/HYSA (percent)
+  cashRealReturn: 3.0,          // default return for cash/HYSA (percent)
   // Expense model
   housingType: "own",           // "own" | "rent" | "none"
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
@@ -885,7 +885,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   const withdrawalStrategy = p.withdrawalStrategy || "gk";
 
   // User settings for cash return and RMD table
-  const cashRealReturn = (p.cashRealReturn ?? 1.0) / 100;
+  const cashRealReturn = (p.cashRealReturn ?? 3.0) / 100;
   const useJointTable = (p.useJointRmdTable ?? false) && p.filingStatus !== "single";
   const UNIFORM_TABLE = RMD_DIV;
 
@@ -9484,7 +9484,7 @@ export default function AiRAForecaster() {
       hcProb: assumptions.hcProb,
       hcMin: assumptions.hcMin,
       hcMax: assumptions.hcMax,
-      cashRealReturn: assumptions.cashRealReturn ?? 1.0,
+      cashRealReturn: assumptions.cashRealReturn ?? 3.0,
       useJointRmdTable: assumptions.useJointRmdTable || false,
       withdrawalStrategy: assumptions.withdrawalStrategy,
       // Sourcing guardrails — MUST be forwarded here or runMC + the Withdrawal Plan

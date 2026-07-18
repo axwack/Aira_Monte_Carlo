@@ -477,11 +477,11 @@ describe("cashRealReturn honored by the waterfall (profile field regression)", (
     expect(high.smart.rows[0].cashEnd).toBeGreaterThan(low.smart.rows[0].cashEnd);
   });
 
-  test("default matches runMC's default (1.0%), not the old hardcoded 4.5%", () => {
+  test("default matches runMC's default (3.0%), not the old hardcoded 4.5%", () => {
     const dflt = buildWithdrawalWaterfall({ ...cashProfile });
-    const one  = buildWithdrawalWaterfall({ ...cashProfile, cashRealReturn: 1.0 });
+    const three = buildWithdrawalWaterfall({ ...cashProfile, cashRealReturn: 3.0 });
     const old45 = buildWithdrawalWaterfall({ ...cashProfile, cashRealReturn: 4.5 });
-    expect(dflt.smart.rows[0].cashEnd).toBe(one.smart.rows[0].cashEnd);
+    expect(dflt.smart.rows[0].cashEnd).toBe(three.smart.rows[0].cashEnd);
     expect(dflt.smart.rows[0].cashEnd).not.toBe(old45.smart.rows[0].cashEnd);
   });
 });
