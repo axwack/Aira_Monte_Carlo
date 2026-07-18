@@ -106,6 +106,21 @@ export const ABOUT_FEATURES = [
           This isn't just a status check. It's the foundation of adaptive distribution planning, a framework championed by financial planner Michael Kitces. Instead of blindly following a withdrawal plan made years ago, you adjust based on how your portfolio is actually performing. If you're in the green, you might spend a little more. In the red, you tighten up. Over time, checkpoints build a living history of your financial journey, turning a static retirement plan into a responsive roadmap. You're not guessing whether you're still on track—you're measuring it, one checkpoint at a time.`,
      },
     {
+    id:    "still-funded-percent",
+    group: "Reading the Charts",
+    icon:  "🎯",
+    title: "What does “Still Funded %” actually mean?",
+    body:  `The <strong>Still Funded</strong> column in the Age-by-Age Projection Bands table (Forecast tab, under the fan chart) answers one question per age: <em>in what share of the simulated futures did your accounts still have money at this age?</em><br/><br/>
+          The Monte Carlo replays your exact plan through thousands of alternate market histories — same accounts, same spending rule, same taxes; only the year-by-year sequence of returns and inflation differs, each drawn from roughly a century of real S&amp;P 500, bond, and CPI data. If the table says <strong>96.5% at age 85</strong>, then in 96.5% of those simulated histories your portfolio was still positive at 85. The other <strong>3.5%</strong> are the histories where the portfolio hit zero at some age <em>at or before</em> 85 — the engine marks a path as failed in the first year its four buckets (cash, taxable, pre-tax, Roth) can't cover that year's spending plus taxes. Nearly all failures are <em>sequence-of-returns</em> cases: a 2000-style or 1970s-style stretch of bad markets in your first retirement years, when withdrawals from a shrinking portfolio do permanent damage.<br/><br/>
+          <strong style="color:#5eead4;">Two things the failure percentage does NOT mean</strong><br/>
+          • <strong>It is not a chance of having zero income.</strong> Social Security, rental, and pension income keep paying in every simulated path — they can't run out in the model. A "failed" path means living on those guaranteed streams alone from the failure age onward, with no portfolio to top them up. Whether that's a catastrophe or a survivable floor depends on how big your guaranteed income is relative to your spending.<br/>
+          • <strong>It is not a literal forecast.</strong> It's conditional on the model's assumptions — that historical return patterns repeat in reassembled form, and that the spending rule is followed mechanically. Real retirees adapt. Guardrail strategies (Guyton-Klinger, Smart Waterfall) simulate some of that adaptation by trimming spending in bad markets; the failure paths are the ones where even those cuts weren't enough.<br/><br/>
+          <strong style="color:#fbbf24;">How to read it alongside the percentile columns</strong><br/>
+          Still Funded tells you how many histories survived; the <strong>10th percentile</strong> column tells you how thin things got even among survivors. A 96.5% at 85 with a 10th percentile of $150,000 is a far more fragile plan than the same 96.5% with a 10th percentile of $900,000 — the second has margin, the first is one bad year from joining the 3.5%.<br/><br/>
+          <strong style="color:#94a3b8;">Why it differs from the headline success rate</strong><br/>
+          The big success number on the Forecast tab is measured at your full plan age (say 90). "Still funded at 85" will always be equal or higher — paths that run out between 85 and 90 count against the headline but not against age 85's row. Watching where the column starts to sag tells you <em>when</em> the risk concentrates, not just whether it exists.`,
+     },
+    {
     id:    "gk-longevity-paradox",
     group: "Reading the Charts",
     icon:  "🧠",
