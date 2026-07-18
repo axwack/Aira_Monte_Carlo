@@ -1,4 +1,5 @@
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
+import { mortgageSchedule, mortgageAnnualPayments } from "./engine/expenses.js";
 
 const BASE = {
   currentAge: 65,
@@ -186,6 +187,99 @@ describe("buildWithdrawalWaterfall — mortgage, carveouts, other income", () =>
 function BASE_YEAR() {
   return new Date().getFullYear();
 }
+
+// ─── Mortgage payoff-year fix (audit regression) ───────────────────────────────
+// Before this fix, housingCost used a flat `pmt * 12` and zeroed out entirely in
+// the calendar year the mortgage is paid off, even though up to a full year of
+// real payments were still due that year; extra payments (mortExtra) were also
+// silently dropped from the annual cash cost. mortgageAnnualPayments() sums the
+// schedule's own per-year pPaid+iPaid (which already includes extra payments and
+// the partial final year), and buildWithdrawalWaterfall must charge that exact
+// figure instead.
+
+describe("buildWithdrawalWaterfall — mortgage payoff-year & extra-payment fix (audit regression)", () => {
+  const MORT = { mortBalance: 120_000, mortRate: 6, mortStart: "2015-01", mortTerm: 15, mortExtra: 0 };
+
+  test("the payoff calendar year charges the actual partial-year P&I (not $0); the following year is $0", () => {
+    const ms = mortgageSchedule(MORT.mortBalance, MORT.mortRate, MORT.mortStart, MORT.mortTerm, MORT.mortExtra);
+    const byYear = mortgageAnnualPayments(ms);
+    const payoffAmt = byYear.get(ms.payoffYr);
+    // Sanity: the schedule itself actually pays something in the payoff year.
+    expect(payoffAmt).toBeGreaterThan(0);
+
+    const result = buildWithdrawalWaterfall({ ...BASE, ...MORT, endAge: 95 });
+    const payoffRow = result.smart.rows.find(r => r.yr === ms.payoffYr);
+    const nextRow = result.smart.rows.find(r => r.yr === ms.payoffYr + 1);
+    expect(payoffRow).toBeDefined();
+    // Old behavior: yr === mortPayoffYr fell outside `yr < mortPayoffYr`, so
+    // housingCost was $0 in the payoff year. Fixed behavior: it must charge the
+    // real partial-year amount.
+    expect(payoffRow.housingCost).toBeGreaterThan(0);
+    expect(payoffRow.housingCost).toBeCloseTo(payoffAmt, -1);
+    if (nextRow) expect(nextRow.housingCost).toBe(0);
+  });
+
+  test("mortExtra > 0 raises the annual housing cost above pmt*12 (extra payments were previously ignored)", () => {
+    const withExtra = { ...BASE, mortBalance: 300_000, mortRate: 6, mortStart: "2024-01", mortTerm: 30, mortExtra: 500 };
+    const ms = mortgageSchedule(withExtra.mortBalance, withExtra.mortRate, withExtra.mortStart, withExtra.mortTerm, withExtra.mortExtra);
+    const result = buildWithdrawalWaterfall(withExtra);
+    // Year 0 (retirement year) is a normal full year, nowhere near this 30yr
+    // loan's payoff, so it isolates the extra-payment effect.
+    expect(result.smart.rows[0].housingCost).toBeGreaterThan(ms.pmt * 12);
+  });
+});
+
+// ─── Guyton-Klinger calibration fix (audit regression) ─────────────────────────
+// Before this fix, the GK band baseline (initWR) was net of SS/income, but the
+// tracked ratio each year used GROSS spending. A retiree whose SS starts at
+// retirement had year-1 cur = sp/port far above initWR = (sp-ss)/port * 1.2,
+// firing the capital-preservation cut every year regardless of portfolio
+// health, and spending death-spiraled toward the floor. Fixed: both sides are
+// the same NET PORTFOLIO NEED, so a healthy portfolio's spending should track
+// plain inflation, not collapse.
+
+describe("buildWithdrawalWaterfall — GK calibration matches income-offset baseline (audit regression)", () => {
+  // Retires AT ssAge with substantial SS, healthy portfolio, endAge far enough
+  // out that yrsRemaining > 15 for the first several years (smart hybrid keeps
+  // using GK, not the Bengen inflation-only fallback).
+  const gkProfile = {
+    currentAge: 65, retireAge: 65, endAge: 95,
+    sp: 80_000, ssAge: 65, ssb: 30_000, ssCola: 2.4,
+    ab: 0, inf: 2.5, filingStatus: "mfj", stateOfResidence: "FL",
+    twoHousehold: false, useJointRmdTable: false,
+    gkFloor: 40_000, gkCeiling: 120_000,
+    withdrawalBracketTarget: "22", irmaaGuard: false, ssTorpedoGuard: false,
+    rothEmergencyReserve: 0, gr: 0.06,
+    accounts: [
+      { id: "p1", category: "pretax",  balance: 700_000 },
+      { id: "p2", category: "roth",    balance: 150_000 },
+      { id: "p3", category: "taxable", balance: 100_000 },
+      { id: "p4", category: "cash",    balance:  50_000 },
+    ],
+  };
+
+  test("spending does not collapse toward the GK floor in the first 5 years on a healthy portfolio", () => {
+    const result = buildWithdrawalWaterfall(gkProfile);
+    const early = result.smart.rows.slice(0, 5);
+    for (const row of early) {
+      // Well above the floor — the old bug's capital-preservation cut fired
+      // every year, ratcheting spending down toward gkFloor almost immediately.
+      expect(row.spending).toBeGreaterThan(gkProfile.gkFloor * 1.3);
+    }
+  });
+
+  test("with SS covering a large share of spending, year-over-year spending tracks inflation, not a repeated 10% cut", () => {
+    const result = buildWithdrawalWaterfall(gkProfile);
+    const rows = result.smart.rows;
+    // A repeated capital-preservation cut compounds ~0.9x(1+inf) each year
+    // (≈ -7.75%); a healthy, correctly-calibrated band should instead grow
+    // at ~ +2.5% (inflation only, since cur stays within the no-adjustment band).
+    for (let i = 1; i < 5; i++) {
+      const ratio = rows[i].spending / rows[i - 1].spending;
+      expect(ratio).toBeGreaterThan(1.0);
+    }
+  });
+});
 
 // ─── Summary totals ────────────────────────────────────────────────────────────
 

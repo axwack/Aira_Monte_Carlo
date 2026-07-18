@@ -66,7 +66,7 @@ import { taxableSocialSecurity } from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall, accumulateToRetirement } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
-import { mortgageSchedule, computeOtherIncome } from "./engine/expenses.js";
+import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
@@ -169,6 +169,14 @@ const SEQ_2000_2012 = [
 /**
  * Initial withdrawal rate diagnostic.
  * Projects portfolio to retirement using REAL return (so result stays in today's dollars).
+ * initDrawEst is the NET PORTFOLIO NEED at retirement — gross spend minus SS/
+ * rental/other income, plus housing/carveouts — the same quantity the GK
+ * engines (runMC/simulateDeterministicWithStrategy/buildWithdrawalWaterfall)
+ * calibrate their own initWR against, so this sidebar diagnostic matches what
+ * the engines actually use. Housing/carveout/otherIncome terms are evaluated
+ * at the retirement calendar year but left un-inflated (today's-dollars mortgage
+ * map value / raw carveout annual amounts), consistent with the rest of this
+ * helper's today's-dollars framing.
  * Returns { initWRpct, projectedPort, initDrawEst, baseSpend, ssAtRetire, rentalAtRetire,
  * annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } so callers can show the math.
  * Accepts either a profile shape (values from RetirementPanel) or the assembled params shape.
@@ -194,7 +202,20 @@ function computeInitialWR(p) {
   const baseSpend = p.sp || 0;
   const ssAtRetire = retireAge >= ssAge ? (p.ssb || 0) : 0;
   const rentalAtRetire = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
-  const initDrawEst = Math.max(0, baseSpend - ssAtRetire - rentalAtRetire);
+  const retireCalYear = CURRENT_YEAR + (retireAge - currentAge);
+  const { total: otherIncAtRetire } = computeOtherIncome(p.otherIncomes, retireCalYear);
+  const housingType = p.housingType || "own";
+  let housingAtRetire = 0;
+  if (housingType === "own" && p.mortBalance > 0) {
+    const ms = mortgageSchedule(p.mortBalance, p.mortRate || 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
+    housingAtRetire = mortgageAnnualPayments(ms).get(retireCalYear) || 0;
+  } else if (housingType === "rent") {
+    housingAtRetire = p.annualRent || 0;
+  }
+  const carveoutAtRetire = (p.carveouts || []).reduce((sum, c) => {
+    return sum + (retireCalYear <= (c.endYear || 9999) ? (c.annual || 0) : 0);
+  }, 0);
+  const initDrawEst = Math.max(0, baseSpend - ssAtRetire - rentalAtRetire - otherIncAtRetire) + housingAtRetire + carveoutAtRetire;
   const initWRpct = projectedPort > 0 ? (initDrawEst / projectedPort) * 100 : 0;
   return { initWRpct, projectedPort, initDrawEst, baseSpend, ssAtRetire, rentalAtRetire,
     annualAdds, accumRate, nominalRate, inflRate, yrsToRetire };
@@ -579,7 +600,9 @@ function guytonKlingerWithdrawal(
     inflationRate,
     floor,
     ceiling,
-    yearsRemaining = Infinity
+    yearsRemaining = Infinity,
+    incomeOffset = 0,
+    fixedCosts = 0
   ) {
     // NaN guards – fall back to safe values if any parameter is invalid
     if (isNaN(portfolioValue) || portfolioValue <= 0) return floor || 0;
@@ -587,19 +610,35 @@ function guytonKlingerWithdrawal(
     if (isNaN(lastReturn)) lastReturn = 0;
     if (isNaN(inflationRate)) inflationRate = 0.02;
     if (isNaN(initialWR)) initialWR = 0.04;
+    if (isNaN(incomeOffset)) incomeOffset = 0;
+    if (isNaN(fixedCosts)) fixedCosts = 0;
 
     // GK Rule: Withdrawal/Inflation — adjust by CPI only when prior-year return ≥ 0,
     // and cap the inflation pass-through per the original paper.
     const cappedInfl = Math.min(GK_INFLATION_CAP, inflationRate);
     let w =
       lastReturn >= 0 ? lastWithdrawal * (1 + cappedInfl) : lastWithdrawal;
-    const currentWR = portfolioValue !== 0 ? w / portfolioValue : 0;
 
-    // GK Prosperity Rule: WR drops 20% below initial → +10%
-    if (currentWR <= initialWR * 0.8) w *= 1.1;
-    // GK Capital Preservation Rule: WR rises 20% above initial → -10%.
-    // GK Longevity Rule: skip the cut when ≤15 years remaining.
-    else if (currentWR >= initialWR * 1.2 && yearsRemaining > 15) w *= 0.9;
+    // Guard: if the baseline draw is already fully covered by income at
+    // retirement (initialWR <= 0), skip the band adjustments entirely —
+    // otherwise currentWR <= 0.8*0 is always true and fires a meaningless
+    // +10% raise every year regardless of portfolio health.
+    if (initialWR > 0) {
+      // The tracked ratio must be the SAME quantity the baseline initialWR was
+      // calibrated against — NET portfolio need (gross withdrawal minus SS/
+      // annuity/otherIncome, plus housing/carveouts), not gross withdrawal `w`.
+      // Otherwise a retiree whose SS starts at retirement has currentWR far
+      // above initialWR every year, triggering a bogus capital-preservation
+      // cut regardless of portfolio health.
+      const netNeed = Math.max(0, w - incomeOffset) + fixedCosts;
+      const currentWR = portfolioValue !== 0 ? netNeed / portfolioValue : 0;
+
+      // GK Prosperity Rule: WR drops 20% below initial → +10%
+      if (currentWR <= initialWR * 0.8) w *= 1.1;
+      // GK Capital Preservation Rule: WR rises 20% above initial → -10%.
+      // GK Longevity Rule: skip the cut when ≤15 years remaining.
+      else if (currentWR >= initialWR * 1.2 && yearsRemaining > 15) w *= 0.9;
+    }
 
     // Custom safety belt (not from the GK paper): clamp to floor/ceiling.
     return Math.max(floor || 0, Math.min(ceiling || Infinity, w));
@@ -742,8 +781,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // assumed long-run rate, not a single bootstrapped year's draw (see inflY below).
   const taxInfl = (p.inf ?? 2.5) / 100;
 
-  // Pre-compute annual mortgage P&I obligation (constant across all paths)
-  let mortAnnualPI = 0, mortPayoffYr = 0;
+  // Pre-compute the actual annual mortgage cash cost per calendar year (incl.
+  // extra payments and the partial payoff year), constant across all paths —
+  // the mortgage is path-independent.
+  let mortByYear = new Map();
   if (p.mortBalance > 0) {
     const ms = mortgageSchedule(
       p.mortBalance,
@@ -752,8 +793,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       p.mortTerm || 30,
       p.mortExtra || 0
     );
-    mortAnnualPI = ms.pmt * 12;
-    mortPayoffYr = ms.payoffYr;
+    mortByYear = mortgageAnnualPayments(ms);
   }
 
   for (let i = 0; i < N; i++) {
@@ -791,25 +831,30 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     let lastReturn = 0;
     let startingPort = portAtRetire; // for Kitces ratcheting
 
+    // Baseline initWR = NET PORTFOLIO NEED at retirement / portfolio — NO tax
+    // (matches the ratio the GK call tracks each year: netNeed = gross spend
+    // minus SS/rental/otherIncome, plus housing/carveouts — see the Step 1
+    // block inside the retirement loop below). ab0 includes propIncome to
+    // match the yearly `totalRental` term. calYear0/otherInc0/housing0/
+    // carveout0 mirror the exact formulas the retirement loop applies for
+    // age === p.retireAge (y === 0), so this engine's own year-0 netNeed is
+    // what initWR is calibrated against.
     const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
     const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
-    //const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
-    const need0 = Math.max(0, p.sp - ss0 - ab0);
-    const initialTaxResult = calcYearTax(
-      p.retireAge,
-      CURRENT_YEAR + (p.retireAge - p.currentAge),
-      need0,
-      ss0, 
-      ab0, 
-      0, 
-      0, 
-      p.twoHousehold || false, 
-      taxInfl, 
-      p.filingStatus || "mfj", 
-      p.stateOfResidence || "NJ"
-    );
-    const initDraw = need0 + (taxEnabled ? initialTaxResult.totalTax : 0);
-    const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
+    const calYear0 = CURRENT_YEAR + (p.retireAge - p.currentAge);
+    const { total: otherInc0 } = computeOtherIncome(p.otherIncomes, calYear0);
+    const housingType0 = p.housingType || "own";
+    let housing0 = 0;
+    if (housingType0 === "own") {
+      housing0 = mortByYear.get(calYear0) || 0;
+    } else if (housingType0 === "rent") {
+      housing0 = Math.round(p.annualRent || 0);
+    }
+    const carveout0 = (p.carveouts || []).reduce((sum, c) => {
+      return sum + (calYear0 <= (c.endYear || 9999) ? Math.round(c.annual || 0) : 0);
+    }, 0);
+    const initNeed0 = Math.max(0, p.sp - ss0 - ab0 - otherInc0) + housing0 + carveout0;
+    const initWR = portAtRetire > 0 ? initNeed0 / portAtRetire : 0.04;
 
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
@@ -830,6 +875,45 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       const adjFloor = gkFloor * cumInfl;
       const adjCeiling = gkCeiling * cumInfl;
 
+      // Deterministic income/fixed-cost pieces needed both by this year's GK
+      // netNeed offset (below) and by `need` after the strategy block — moved
+      // ABOVE the strategy switch WITHOUT touching the rand() call order: none
+      // of these consume rand(), so r/inflY/abReliable's draw sequence is
+      // unaffected. abReliable itself stays in its original position (right
+      // after `lastReturn = r`) — only these deterministic values move earlier.
+      const ss = age >= p.ssAge
+        ? p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, Math.max(0, age - p.ssAge))
+        : 0;
+      const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
+      const totalRental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * growthFactor);
+      // Deterministic expected rental (abEndYear cutoff applied, but NOT the
+      // abReliability coin-flip below) — used only to offset GK's netNeed.
+      // The actual reliability draw still gates `effectiveAb`, the real
+      // income used in the real `need` afterward, exactly as before.
+      const rentalForGK = (p.abEndYear && calYear > p.abEndYear) ? 0 : totalRental;
+
+      // Housing cost (own = mortgage cash cost while active, rent = inflation-adjusted rent, none = 0)
+      const housingType = p.housingType || "own";
+      let housingCost = 0;
+      if (housingType === "own") {
+        housingCost = mortByYear.get(calYear) || 0;
+      } else if (housingType === "rent") {
+        housingCost = Math.round((p.annualRent || 0) * cumInfl);
+      }
+
+      // Active fixed carveouts
+      const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
+        return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * cumInfl) : 0);
+      }, 0);
+
+      const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, calYear);
+
+      // GK's netNeed income offset — same NET PORTFOLIO NEED quantity initWR
+      // was calibrated against: SS + expected rental + other income offset
+      // gross spend; housing + carveouts add to it.
+      const gkIncomeOffset = ss + rentalForGK + otherIncTotal;
+      const gkFixedCosts = housingCost + carveoutCost;
+
       // ========== WITHDRAWAL STRATEGY ==========
       if (p.spSchedule && p.spSchedule.length) {
         // A detailed year-by-year budget IS the spending plan: it overrides the
@@ -842,7 +926,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         if (withdrawalStrategy === "gk") {
           // Years remaining uses the horizon being simulated (`endAge`), NOT p.endAge —
           // so the GK longevity rule stays consistent with this run's survival test.
-          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age);
+          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age, gkIncomeOffset, gkFixedCosts);
         }
         else if (withdrawalStrategy === "fixed") {
           // Pure fixed %: draw = rate × port. No GK clamp — that defeats the purpose.
@@ -948,7 +1032,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           // Bucket sourcing is handled below regardless.
           const yrsRemaining = endAge - age;
           if (yrsRemaining > 15) {
-            sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining);
+            sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining, gkIncomeOffset, gkFixedCosts);
           } else {
             sp = sp * (1 + inflY);
           }
@@ -960,31 +1044,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // (p.ssAge), not the retirement-year loop counter `y` — someone who
       // retires before claiming SS would otherwise get bogus pre-claim COLA
       // compounding baked into their very first check (matches
-      // buildWithdrawalWaterfall.js's `age - ssAge` pattern).
-      const ss = age >= p.ssAge
-        ? p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, Math.max(0, age - p.ssAge))
-        : 0;
+      // buildWithdrawalWaterfall.js's `age - ssAge` pattern). ss/totalRental
+      // are already computed above (before the strategy block); only the
+      // reliability coin-flip and the real effectiveAb need computing here.
       const abReliable = rand() < (p.abReliability || 80) / 100;
-      const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
-      const totalRental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * growthFactor);
       const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 :
         (abReliable ? totalRental : 0);
 
-      // Housing cost (own = mortgage P&I while active, rent = inflation-adjusted rent, none = 0)
-      const housingType = p.housingType || "own";
-      let housingCost = 0;
-      if (housingType === "own") {
-        housingCost = mortAnnualPI > 0 && calYear < mortPayoffYr ? mortAnnualPI : 0;
-      } else if (housingType === "rent") {
-        housingCost = Math.round((p.annualRent || 0) * cumInfl);
-      }
-
-      // Active fixed carveouts
-      const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
-        return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * cumInfl) : 0);
-      }, 0);
-
-      const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, calYear);
       const need = Math.max(0, sp - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost;
 
       // RMD calculation
@@ -1035,7 +1101,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       let totalTax = 0;
       let fromCash = 0, fromTaxable = 0, fromPretax = 0, fromRoth = 0;
       let shortfall = 0;
-      for (let pass = 0; pass < 4; pass++) {
+      // 12 passes, not 4 — the tax↔draw fixed point converges geometrically at
+      // ~the marginal rate (≈0.3×/pass); 4 passes exited ~$100-350 short of the
+      // true tax bill every year. The <$1 break makes extra passes free once
+      // converged. Matches buildWithdrawalWaterfall's pass cap exactly.
+      for (let pass = 0; pass < 12; pass++) {
         // Withdraw from buckets in order: cash → taxable → pretax (capped) → roth
         let remaining = Math.max(0, need + totalTax - rmd); // RMD proceeds fund first
         fromCash = Math.min(remaining, cash);
@@ -1214,19 +1284,36 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   }
 
   const portAtRetire = port;
-  // Precompute mortgage P&I obligation (constant, same model as buildWithdrawalWaterfall)
-  let mortAnnualPI = 0, mortPayoffYr = 0;
+  // Precompute the actual annual mortgage cash cost per calendar year (incl.
+  // extra payments and the partial payoff year, same model as
+  // buildWithdrawalWaterfall/runMC — Fix 1).
+  let mortByYear = new Map();
   if (p.mortBalance > 0) {
     const ms = mortgageSchedule(p.mortBalance, p.mortRate || 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
-    mortAnnualPI = ms.pmt * 12;
-    mortPayoffYr = ms.payoffYr;
+    mortByYear = mortgageAnnualPayments(ms);
   }
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
+  // Baseline initWR = NET PORTFOLIO NEED at retirement / portfolio — NO tax,
+  // same quantity the yearly loop's GK netNeed offset computes (mirrors
+  // runMC/buildWithdrawalWaterfall's calibration). ab0 includes propIncome to
+  // match this engine's own `ab` term in the yearly loop below.
   const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
   const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
-  const initDraw = Math.max(0, p.sp - ss0 - ab0);
-  const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
+  const calYear0 = CURRENT_YEAR + (p.retireAge - p.currentAge);
+  const { total: otherInc0 } = computeOtherIncome(p.otherIncomes, calYear0);
+  const housingType0 = p.housingType || "own";
+  let housing0 = 0;
+  if (housingType0 === "own") {
+    housing0 = mortByYear.get(calYear0) || 0;
+  } else if (housingType0 === "rent") {
+    housing0 = Math.round(p.annualRent || 0);
+  }
+  const carveout0 = (p.carveouts || []).reduce((sum, c) => {
+    return sum + (calYear0 <= (c.endYear || 9999) ? Math.round(c.annual || 0) : 0);
+  }, 0);
+  const initNeed0 = Math.max(0, p.sp - ss0 - ab0 - otherInc0) + housing0 + carveout0;
+  const initWR = portAtRetire > 0 ? initNeed0 / portAtRetire : 0.04;
   // Kitces ratcheting high-water mark — hoisted OUTSIDE the yearly loop (mirrors
   // runMC's `startingPort`, declared once before its retirement-years loop) so a
   // ratchet-fire reassignment persists across years instead of resetting every
@@ -1268,6 +1355,34 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const adjFloor = gkFloor * cumInfl;
     const adjCeiling = gkCeiling * cumInfl;
 
+    // Deterministic income/fixed-cost pieces — moved above the strategy switch
+    // so GK's netNeed offset can use this year's own figures (no rand() in
+    // this engine, so there's no draw-order concern to preserve here).
+    // COLA compounds from the claiming age (p.ssAge), not the retirement-year
+    // loop counter `y` — see runMC's identical fix above.
+    const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, Math.max(0, age - p.ssAge))) : 0;
+    const growthFactor = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
+    const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
+    const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
+    const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
+
+    // Housing cost: mortgage cash cost while active, or inflation-adjusted rent
+    // — same model as buildWithdrawalWaterfall's Step 1 (ENG-19).
+    let housingCost = 0;
+    if ((p.housingType || "own") === "own") {
+      housingCost = mortByYear.get(yr) || 0;
+    } else if (p.housingType === "rent") {
+      housingCost = Math.round((p.annualRent || 0) * cumInfl);
+    }
+    const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
+      return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * cumInfl) : 0);
+    }, 0);
+
+    // GK's netNeed income offset — same NET PORTFOLIO NEED quantity initWR
+    // was calibrated against.
+    const gkIncomeOffset = ss + ab + otherIncTotal;
+    const gkFixedCosts = housingCost + carveoutCost;
+
     // Apply withdrawal strategy (deterministic version)
     if (p.spSchedule && p.spSchedule.length) {
       // Detailed budget overrides the distribution strategy (see runMC note).
@@ -1276,7 +1391,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       // first year: use target spend
     } else {
       if (withdrawalStrategy === "gk") {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age);
+        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age, gkIncomeOffset, gkFixedCosts);
       }
       else if (withdrawalStrategy === "fixed") {
         // Pure fixed %: draw = rate × port. No GK clamp.
@@ -1367,33 +1482,13 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         // exactly where its safety brake would otherwise be disabled.
         const yrsRemaining = p.endAge - age;
         if (yrsRemaining > 15) {
-          sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining);
+          sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining, gkIncomeOffset, gkFixedCosts);
         } else {
           sp = sp * (1 + inflY);
         }
       }
     }
     lastReturn = ret;
-
-    // COLA compounds from the claiming age (p.ssAge), not the retirement-year
-    // loop counter `y` — see runMC's identical fix above.
-    const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, Math.max(0, age - p.ssAge))) : 0;
-    const growthFactor = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
-    const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
-    const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
-    const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
-
-    // Housing cost: mortgage P&I while active, or inflation-adjusted rent — same
-    // model as buildWithdrawalWaterfall's Step 1 (ENG-19).
-    let housingCost = 0;
-    if ((p.housingType || "own") === "own") {
-      housingCost = mortAnnualPI > 0 && yr < mortPayoffYr ? mortAnnualPI : 0;
-    } else if (p.housingType === "rent") {
-      housingCost = Math.round((p.annualRent || 0) * cumInfl);
-    }
-    const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
-      return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * cumInfl) : 0);
-    }, 0);
 
     const need = Math.max(0, sp - ss - ab - otherIncTotal) + housingCost + carveoutCost;
 
@@ -5295,7 +5390,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
         <div className="met"><div className="ml">Portfolio at Retirement</div><div className="mv" style={{ color: "#5eead4" }}>{fmtM(portAtRetire)}</div><div className="ms">Median accumulation</div></div>
-        <div className="met"><div className="ml">Initial Withdrawal Rate</div><div className="mv" style={{ color: "#fbbf24" }}>{(initWR * 100).toFixed(1)}%</div><div className="ms">Pre‑tax spending / portfolio</div></div>
+        <div className="met"><div className="ml">Initial Withdrawal Rate</div><div className="mv" style={{ color: "#fbbf24" }}>{(initWR * 100).toFixed(1)}%</div><div className="ms">Net portfolio draw / portfolio</div></div>
         <div className="met"><div className="ml">Final Portfolio (Age {schedule[schedule.length - 1]?.age})</div><div className="mv" style={{ color: schedule[schedule.length - 1]?.portfolioEnd > 0 ? "#34d399" : "#ef4444" }}>{fmtM(schedule[schedule.length - 1]?.portfolioEnd || 0)}</div><div className="ms">{schedule[schedule.length - 1]?.portfolioEnd > 0 ? "Survives" : "Exhausted"}</div></div>
       </div>
 
