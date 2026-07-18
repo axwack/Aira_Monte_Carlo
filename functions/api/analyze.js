@@ -97,7 +97,7 @@ function ctxNarrative(values, mcResults) {
     `State: ${values.stateOfResidence || "unknown"} | Filing: ${values.filingStatus || "mfj"}`,
     accts ? `Accounts: ${accts}` : null,
     mcResults ? `MC success: ${(mcResults.rate * 100).toFixed(1)}% over ${mcResults.N} paths` : null,
-    mcResults ? `Terminal p10/p50/p90: $${(mcResults.term.p10/1000).toFixed(0)}K / $${(mcResults.term.p50/1000).toFixed(0)}K / $${(mcResults.term.p90/1000).toFixed(0)}K` : null,
+    mcResults ? `Terminal p10/p50/p90: $${Math.round(mcResults.term.p10).toLocaleString()} / $${Math.round(mcResults.term.p50).toLocaleString()} / $${Math.round(mcResults.term.p90).toLocaleString()}` : null,
   ].filter(Boolean).join("\n");
 }
 

@@ -103,7 +103,7 @@ export const RULES = [
       daysToRetire < 730 && !params.twoHousehold &&
       (params.stateOfResidence === "NJ" || !params.stateOfResidence),
     action: "FL domicile not established",
-    reason: "NJ tax on withdrawals = $50K+ lifetime loss",
+    reason: "NJ tax on withdrawals = $50,000+ lifetime loss",
     deadline: "Before D-Day",
   },
   {
@@ -122,7 +122,7 @@ export const RULES = [
         : "Portfolio severely underfunded",
     reason: ({ params, assumptions, mc }) => {
       const goal = assumptions?.portfolioGoal || 1_000_000;
-      const fmt = v => v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : `$${Math.round(v / 1e3)}K`;
+      const fmt = v => `$${Math.round(v).toLocaleString()}`;
       if (!mc) {
         return `$${Math.round(goal - params.port).toLocaleString()} gap to ${fmt(goal)} Reassess goal — run Monte Carlo to assess real risk`;
       }
@@ -210,7 +210,7 @@ export const RULES = [
     },
     action: "Increase contributions or reduce spend",
     reason: ({ params, assumptions, mc }) => {
-      const fmt = v => v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : `$${Math.round(v / 1e3)}K`;
+      const fmt = v => `$${Math.round(v).toLocaleString()}`;
       const rate = (mc.rate * 100).toFixed(1);
       const retRow = mc.pcts?.find(d => d.age === params.retireAge);
       const p25 = retRow?.p25, p50 = retRow?.p50;
@@ -272,7 +272,7 @@ export const RULES = [
     condition: ({ daysToRetire }) => daysToRetire < 1460,
     action: "Bucket 1 funding — confirm cash reserve",
     reason: ({ daysToRetire, params }) =>
-      `D-Day in ${Math.ceil(daysToRetire / 365)} yrs — need 2yr expenses ($${((params.sp * 2) / 1000).toFixed(0)}K) liquid`,
+      `D-Day in ${Math.ceil(daysToRetire / 365)} yrs — need 2yr expenses ($${Math.round(params.sp * 2).toLocaleString()}) liquid`,
     deadline: "1 year before D-Day",
   },
   {
@@ -361,7 +361,7 @@ export const RULES = [
     },
     action: ({ params, assumptions }) => {
       const goal = assumptions?.portfolioGoal || 1_000_000;
-      return `On pace for $${(goal / 1e6).toFixed(1)}M goal`;
+      return `On pace for $${Math.round(goal).toLocaleString()} goal`;
     },
     reason: ({ params, assumptions }) => {
       const goal = assumptions?.portfolioGoal || 1_000_000;
@@ -383,7 +383,7 @@ export const RULES = [
       params.currentAge >= 55,
     action: "Enable IRMAA guard in Withdrawal Order settings",
     reason: ({ params }) =>
-      `$${(preTaxTotal(params) / 1e6).toFixed(1)}M pretax — unguarded withdrawals may cross Medicare IRMAA Tier 1 ($218K MFJ), adding $2,160–$11,130/yr in surcharges`,
+      `$${Math.round(preTaxTotal(params)).toLocaleString()} pretax — unguarded withdrawals may cross Medicare IRMAA Tier 1 ($218,000 MFJ), adding $2,160–$11,130/yr in surcharges`,
     deadline: "Before age 63",
   },
   {
@@ -395,7 +395,7 @@ export const RULES = [
       (!params.withdrawalBracketTarget || params.withdrawalBracketTarget === "off"),
     action: "Set a pretax bracket ceiling in Withdrawal Order settings",
     reason: ({ params }) =>
-      `$${(preTaxTotal(params) / 1e6).toFixed(1)}M pretax with no ceiling — naive ordering drains pretax first, pushing income into higher brackets and exhausting tax-deferred shelter early`,
+      `$${Math.round(preTaxTotal(params)).toLocaleString()} pretax with no ceiling — naive ordering drains pretax first, pushing income into higher brackets and exhausting tax-deferred shelter early`,
     deadline: "At retirement",
   },
   {
@@ -407,7 +407,7 @@ export const RULES = [
       (params.rothEmergencyReserve || 0) === 0,
     action: "Set a Roth emergency reserve floor",
     reason: ({ params }) =>
-      `$${(rothTotal(params) / 1e3).toFixed(0)}K Roth with no reserve — a bad sequence-of-returns year could force full Roth depletion, eliminating your only tax-free spending bucket`,
+      `$${Math.round(rothTotal(params)).toLocaleString()} Roth with no reserve — a bad sequence-of-returns year could force full Roth depletion, eliminating your only tax-free spending bucket`,
     deadline: "At retirement",
     steps: [
       "Go to the Withdrawal Schedule tab, Section 1 ('Where does each year's spending come from?')",
@@ -426,7 +426,7 @@ export const RULES = [
     action: "Consider Smart Waterfall withdrawal strategy",
     reason: ({ params }) => {
       const pretax = preTaxTotal(params);
-      return `$${(pretax / 1e6).toFixed(1)}M pretax balance — naive ordering drains it first and pushes income into higher brackets. To enable: (1) Forecast sidebar → Withdrawal Strategy → select "📋 Smart Waterfall (Tax-Optimal)", then re-run Monte Carlo. (2) Profile → Assumptions → Withdrawal Order → configure your bracket ceiling and IRMAA guard. (3) Scenarios → 📋 Withdrawal Plan to compare Smart vs Naive lifetime taxes.`;
+      return `$${Math.round(pretax).toLocaleString()} pretax balance — naive ordering drains it first and pushes income into higher brackets. To enable: (1) Forecast sidebar → Withdrawal Strategy → select "📋 Smart Waterfall (Tax-Optimal)", then re-run Monte Carlo. (2) Profile → Assumptions → Withdrawal Order → configure your bracket ceiling and IRMAA guard. (3) Scenarios → 📋 Withdrawal Plan to compare Smart vs Naive lifetime taxes.`;
     },
     deadline: "At retirement",
   },

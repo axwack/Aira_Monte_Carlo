@@ -10,6 +10,7 @@
 
 import { buildWithdrawalWaterfall } from "./buildWithdrawalWaterfall.js";
 import { getRmdStartAge, getStateBrackets } from "./buildRothExplorer.js";
+import { expectedReturn } from "./expectedReturn.js";
 
 const MIN_REMAINING_BALANCE = 10_000;
 
@@ -228,8 +229,16 @@ function classifyRow(r, retireAge, ssAge, target, overrideMap) {
 export function buildConversionLadder(params = {}, rothMode = "fill_22") {
   const target = ROTH_MODE_TO_TARGET[rothMode] ?? "22";
   const irmaaGuard = rothMode === "irmaa_safe" ? true : !!params.irmaaGuard;
-  const gr = params.gr ?? 0.07;
   const { ssAge, retireAge } = params;
+  // Row 0 of buildWithdrawalWaterfall's smart.rows is always age === retireAge,
+  // so this must derive the SAME growth rate that engine applied internally to
+  // grow that row (age < 62 ? preRetireEq-derived : postRetireEq-derived,
+  // mirroring runMC's portReturn age-62 switch) — otherwise "backing out" the
+  // pre-conversion starting balance below would divide by the wrong rate. An
+  // explicit params.gr override still wins, matching buildWithdrawalWaterfall.
+  const preGr  = params.gr ?? (expectedReturn(params.preRetireEq ?? 91) / 100);
+  const postGr = params.gr ?? (expectedReturn(params.postRetireEq ?? 70) / 100);
+  const gr = retireAge < 62 ? preGr : postGr;
 
   const { smart } = buildWithdrawalWaterfall({ ...params, rothConversionTarget: target, irmaaGuard });
   const rows = smart.rows;

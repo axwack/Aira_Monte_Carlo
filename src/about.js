@@ -138,7 +138,7 @@ export const ABOUT_FEATURES = [
           <strong style="color:#fbbf24;">Section 2 — “How does my chosen strategy pace spending year by year?”</strong><br/>
           Shows the trajectory of the <em>one</em> withdrawal strategy you've picked in Profile → Withdrawal. AiRA supports ten strategies (Guyton-Klinger, Fixed %, Vanguard Dynamic, VPW, CAPE, Kitces Ratcheting, Endowment, 1/N, 95% Rule, Risk-Based), but this view runs only the one selected. To compare two strategies, swap the selection in Profile and revisit this view — the schedule recomputes live.<br/><br/>
           <strong style="color:#94a3b8;">In short:</strong> Section 1 answers <em>where</em> the money comes from. Section 2 answers <em>how fast</em> you spend it. Both update live as you edit balances in Profile → Savings — there's no refresh button because there's no cache.<br/><br/>
-          <strong style="color:#475569;">Caveat:</strong> the sourcing engine treats taxable-brokerage withdrawals as basis (no LTCG owed). For MFJ households under ~$94K total income that's correct (you're in the 0% LTCG bracket). Once Social Security and pre-tax draws push you above that line, the model is slightly optimistic by the LTCG you'd actually owe.`,
+          <strong style="color:#475569;">Caveat:</strong> the sourcing engine treats taxable-brokerage withdrawals as basis (no LTCG owed). For MFJ households under ~$94,000 total income that's correct (you're in the 0% LTCG bracket). Once Social Security and pre-tax draws push you above that line, the model is slightly optimistic by the LTCG you'd actually owe.`,
      },
   // ── Tax Modeling ──────────────────────────────────────────
   {
