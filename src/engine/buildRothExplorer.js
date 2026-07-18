@@ -179,6 +179,30 @@ const IRMAA_2026 = [
   { m: 750000, f: 11130 },
 ];
 
+// 2026 LTCG/qualified-dividend taxable-income breakpoints (IRS Rev. Proc. 2025-32),
+// inflation-indexed forward in calcYearTax / buildWithdrawalWaterfall via idxB(),
+// exactly like the ordinary federal brackets above. Single source of truth for
+// both engines — do not re-declare these literals elsewhere.
+const LTCG_BRACKETS_2026_MFJ = [
+  { lo: 0,       hi: 98_700,  rate: 0.00 },
+  { lo: 98_700,  hi: 613_700, rate: 0.15 },
+  { lo: 613_700, hi: Infinity, rate: 0.20 },
+];
+const LTCG_BRACKETS_2026_SINGLE = [
+  { lo: 0,       hi: 49_350,  rate: 0.00 },
+  { lo: 49_350,  hi: 566_700, rate: 0.15 },
+  { lo: 566_700, hi: Infinity, rate: 0.20 },
+];
+
+// Net Investment Income Tax (IRC §1411) — 3.8% surtax on the lesser of net
+// investment income (LTCG here) or the excess of MAGI over the threshold.
+// Thresholds are STATUTORY and Congress has never indexed them for inflation
+// (unlike the ordinary brackets/IRMAA/standard deduction above) — do not
+// apply idxB()/inflFactor to these two numbers.
+const NIIT_THRESHOLD_MFJ = 250_000;
+const NIIT_THRESHOLD_SINGLE = 200_000;
+const NIIT_RATE = 0.038;
+
 // IRS Pub 590-B Table III (Uniform Lifetime) divisors, 2022+ table.
 // Default table for owners whose sole-beneficiary spouse is NOT >10 years younger.
 const RMD_DIV = {
@@ -635,5 +659,7 @@ export {
   buildRothExplorer, buildRothLadder,
   progTax, idxB, irmaaCost, taxableSocialSecurity, getStateBrackets, getRmdStartAge,
   FED_BRACKETS_2026_MFJ, FED_BRACKETS_2026_SINGLE,
+  LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,
+  NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,
   STATE_BRACKETS, RMD_DIV, JOINT_RMD_DIV,
 };

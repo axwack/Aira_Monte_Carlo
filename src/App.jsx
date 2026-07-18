@@ -62,7 +62,11 @@ consult your fiduciary, CPA or tax accountant.
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
-import { taxableSocialSecurity } from "./engine/buildRothExplorer.js";
+import {
+  taxableSocialSecurity,
+  LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,
+  NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,
+} from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall, accumulateToRetirement } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
@@ -72,6 +76,7 @@ import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
 import { AdminPanel } from "./billing/admin-panel.js";
+import PrintReport from "./report/PrintReport.jsx";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -474,6 +479,7 @@ export const BLANK_PROFILE = {
   reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 3.0,          // default return for cash/HYSA (percent)
+  taxableBasisPct: 70,          // % of TODAY's taxable-brokerage balance that is cost basis (rest = unrealized LTCG)
   // Expense model
   housingType: "own",           // "own" | "rent" | "none"
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
@@ -761,6 +767,20 @@ function guytonKlingerWithdrawal(
     return Math.max(floor || 0, Math.min(ceiling || Infinity, w));
 }
 
+/**
+ * Realized capital gain from a taxable-brokerage draw, using average-cost
+ * basis tracking (not per-lot). g = draw × (1 − basis/balance) — the fraction
+ * of the account that is unrealized gain. Guards balance<=0 and basis>=balance
+ * (fully-basis accounts realize $0 gain). Shared by runMC and the deterministic
+ * conversion-delta helper; buildWithdrawalWaterfall.js keeps its own copy since
+ * it does not import from App.jsx.
+ */
+function realizedGainFromDraw(draw, balance, basis) {
+  if (!draw || draw <= 0 || !balance || balance <= 0) return 0;
+  const frac = Math.max(0, 1 - (basis || 0) / balance);
+  return draw * frac;
+}
+
 function calcYearTax(
   age,
   yr,
@@ -772,7 +792,15 @@ function calcYearTax(
   isTwoHousehold,
   inflationRate,
   filingStatus = "mfj",
-  stateOfResidence = "NJ"
+  stateOfResidence = "NJ",
+  ltcgAmount = 0,
+  // IRMAA 2-year lookback: MAGI from two years ago (SSA charges year T's premium
+  // off the tax return filed two years prior). When the caller has that history
+  // it passes it here; the CURRENT year `yr` still selects the bracket table —
+  // only the MAGI used to walk the table changes. `null` (default) preserves the
+  // pre-lookback same-year-MAGI behavior for every caller that hasn't threaded
+  // history through yet (backward compatible).
+  magiLookback = null
 ) {
   // Replace any NaN arguments with 0
   withdrawalAmount = isNaN(withdrawalAmount) ? 0 : withdrawalAmount;
@@ -781,6 +809,7 @@ function calcYearTax(
   rmdIncome = isNaN(rmdIncome) ? 0 : rmdIncome;
   conversionAmount = isNaN(conversionAmount) ? 0 : conversionAmount;
   inflationRate = isNaN(inflationRate) ? 0.025 : inflationRate;
+  ltcgAmount = isNaN(ltcgAmount) ? 0 : Math.max(0, ltcgAmount || 0);
 
   const isMFJ = filingStatus !== "single";
   const otherIncome =
@@ -788,38 +817,79 @@ function calcYearTax(
     (RentalIncome || 0) +
     (rmdIncome || 0) +
     (conversionAmount || 0);
-  // IRC §86 provisional-income tiers: 0% / 50% / 85% of SS taxable by income level
-  const taxableSS = taxableSocialSecurity(ssIncome, otherIncome, isMFJ);
-  const totalIncome = taxableSS + otherIncome;
+  // IRC §86 provisional-income tiers: 0% / 50% / 85% of SS taxable by income level.
+  // Realized capital gains count in provisional income (they're part of MAGI),
+  // so they're added to the "other income" side of the SS-taxability test even
+  // though they are NOT part of ordinary `otherIncome`/`totalIncome` below.
+  const taxableSS = taxableSocialSecurity(ssIncome, otherIncome + ltcgAmount, isMFJ);
+  const totalIncome = taxableSS + otherIncome; // ordinary income total (excludes LTCG)
   const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - CURRENT_YEAR));
 
   // Standard deduction (incl. age-65+ add-on), inflation-adjusted forward.
   // Single source: getStandardDeduction → TAX_REFERENCE.md (CLAUDE.md Rule 6).
   const stdDeduction = getStandardDeduction(age, filingStatus, inflationFactor);
   const taxableIncome = Math.max(0, totalIncome - stdDeduction);
+  // LTCG stacks ON TOP of ordinary income (IRS stacking rule): gains occupy the
+  // taxable-income band from `taxableIncome` up to `taxableIncome + gainTaxable`.
+  // If ordinary income didn't fully use the standard deduction, gains soak up
+  // whatever's left of it first.
+  const gainTaxable = Math.max(0, totalIncome + ltcgAmount - stdDeduction) - taxableIncome;
 
   // Select federal brackets by filing status
   const rawBrackets = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
   const fedBrackets = idxB(rawBrackets, inflationFactor);
-  const fedTax = progTax(taxableIncome, fedBrackets);
+  const fedTaxOrdinary = progTax(taxableIncome, fedBrackets);
+
+  // LTCG bracket walk over the stacked interval [taxableIncome, taxableIncome+gainTaxable).
+  const ltcgBrackets = idxB(isMFJ ? LTCG_BRACKETS_2026_MFJ : LTCG_BRACKETS_2026_SINGLE, inflationFactor);
+  const ltcgTax = Math.round(
+    progTax(taxableIncome + gainTaxable, ltcgBrackets) - progTax(taxableIncome, ltcgBrackets)
+  );
+
+  // IRMAA MAGI = AGI + tax-exempt interest; untaxed SS is NOT added back.
+  // AGI includes the full realized gain (pre-standard-deduction), unlike
+  // taxableIncome above.
+  const magi = totalIncome + ltcgAmount;
+
+  // NIIT (IRC §1411): 3.8% of the lesser of net investment income (LTCG here)
+  // or the excess of MAGI over the statutory (non-inflation-indexed) threshold.
+  const niitThreshold = isMFJ ? NIIT_THRESHOLD_MFJ : NIIT_THRESHOLD_SINGLE;
+  const niit = ltcgAmount > 0
+    ? Math.round(NIIT_RATE * Math.min(ltcgAmount, Math.max(0, magi - niitThreshold)))
+    : 0;
+
+  // LTCG tax + NIIT fold into the federal total so downstream funding-identity
+  // math (totalTax = fedTax + stateTax + irmaa) keeps working unchanged; the
+  // components are also returned separately (ltcgTax, niit) for UI surfacing.
+  const fedTax = fedTaxOrdinary + ltcgTax + niit;
   let stateTax = 0;
 
   if (!isTwoHousehold) {
     const stateBr = getStateBrackets(stateOfResidence, isMFJ);
-    if (stateBr) stateTax = Math.round(progTax(taxableIncome, idxB(stateBr, inflationFactor)));
+    // States generally tax capital gains as ordinary income (no LTCG preferential
+    // rate) — add the realized gain to the state taxable base.
+    if (stateBr) stateTax = Math.round(progTax(taxableIncome + ltcgAmount, idxB(stateBr, inflationFactor)));
   }
-      // IRMAA MAGI = AGI + tax-exempt interest; untaxed SS is NOT added back
-      const magi = totalIncome;
-      const irmaa = age >= 65 ? irmaaCost(magi, yr, inflationRate, isMFJ) : 0;
+      // IRMAA charge uses the 2-year-old MAGI when the caller supplied one;
+      // otherwise falls back to this year's own MAGI (pre-lookback behavior).
+      const irmaaMagi = (typeof magiLookback === "number" && !isNaN(magiLookback)) ? magiLookback : magi;
+      const irmaa = age >= 65 ? irmaaCost(irmaaMagi, yr, inflationRate, isMFJ) : 0;
       const totalTax = fedTax + stateTax + irmaa;
-      const effectiveRate = totalIncome > 0 ? totalTax / totalIncome : 0;
+      const effectiveRate = (totalIncome + ltcgAmount) > 0 ? totalTax / (totalIncome + ltcgAmount) : 0;
       let marginalBracket = 0;
 
   for (const b of fedBrackets) {
     if (taxableIncome > b.lo) marginalBracket = b.rate;
     else break;
   }
-  return { fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket, taxableIncome };
+  return {
+    fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket, taxableIncome,
+    ltcgTax, niit, realizedGain: Math.round(ltcgAmount),
+    // This year's OWN MAGI (never the lookback substitution) — callers store
+    // this in a per-age history so it becomes the magiLookback input two years
+    // from now.
+    magi,
+  };
 }
 
 /**
@@ -898,6 +968,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // assumed long-run rate, not a single bootstrapped year's draw (see inflY below).
   const taxInfl = (p.inf ?? 2.5) / 100;
 
+  // Percent of TODAY's taxable-brokerage balance that is cost basis (user reads
+  // this off their brokerage statement). The rest is unrealized gain, realized
+  // proportionally (average-cost basis, not per-lot) as the account is drawn down.
+  const taxableBasisPct = Math.max(0, Math.min(100, p.taxableBasisPct ?? 70));
+
   // Pre-compute the actual annual mortgage cash cost per calendar year (incl.
   // extra payments and the partial payoff year), constant across all paths —
   // the mortgage is path-independent.
@@ -923,6 +998,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       else if (acct.category === "taxable") taxable += bal;
       else if (acct.category === "cash") cash += bal;
     }
+    // Basis is a % of TODAY's taxable balance, fixed in dollars from here on —
+    // accumulation-phase growth (below) increases the balance but not the
+    // basis (growth is unrealized gain), so the basis fraction shrinks by
+    // retirement even though no draw has happened yet.
+    let taxableBasis = taxable * (taxableBasisPct / 100);
     let totalPort = pretax + roth + taxable + cash;
 
     // Accumulation phase
@@ -972,6 +1052,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     }, 0);
     const initNeed0 = Math.max(0, p.sp - ss0 - ab0 - otherInc0) + housing0 + carveout0;
     const initWR = portAtRetire > 0 ? initNeed0 / portAtRetire : 0.04;
+
+    // IRMAA 2-year lookback history for this path — rolled forward at the end
+    // of each retirement year below. Pre-retirement wage income isn't modeled
+    // (this engine only knows portfolio/SS/rental income), so the first two
+    // retirement years (y === 0, 1) have no usable 2-years-ago figure; those
+    // years fall back to same-year MAGI (the pre-lookback approximation) via
+    // the `y >= 2` gate below.
+    let magiOneYearAgo = null, magiTwoYearsAgo = null;
 
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
@@ -1214,6 +1302,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       }
 
       const rothFloorMC = p.rothEmergencyReserve || 0;
+      // IRMAA 2-year lookback for THIS year's charge: the MAGI from age-2,
+      // rolled forward at the bottom of the previous two iterations. The first
+      // two retirement years (y < 2) have no pre-retirement wage history to
+      // look back on (this engine doesn't model wages), so they fall back to
+      // null → calcYearTax uses same-year MAGI, matching the pre-lookback
+      // approximation for those two years only.
+      const magiLookbackMC = (y >= 2 && typeof magiTwoYearsAgo === "number") ? magiTwoYearsAgo : null;
       let taxResult = null;
       let totalTax = 0;
       let fromCash = 0, fromTaxable = 0, fromPretax = 0, fromRoth = 0;
@@ -1235,9 +1330,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         remaining -= fromRoth;
         shortfall = remaining;
 
+        // Realized LTCG on this pass's taxable draw — READ-ONLY off the current
+        // (pre-draw) taxable balance/basis; the real `taxableBasis` is mutated
+        // exactly once below, after the fixed point converges, using the final
+        // fromTaxable (not accumulated pass-by-pass).
+        const gPass = realizedGainFromDraw(fromTaxable, taxable, taxableBasis);
         taxResult = calcYearTax(
           age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, 0,
-          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ"
+          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", gPass, magiLookbackMC
         );
         const newTax = taxEnabled ? taxResult.totalTax : 0;
         if (Math.abs(newTax - totalTax) < 1) { totalTax = newTax; break; }
@@ -1250,9 +1350,19 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         break;
       }
 
+      // Realized gain for the YEAR (final, converged fromTaxable) — the single
+      // authoritative value used both to mutate taxableBasis below and to feed
+      // the Roth-conversion delta-tax helper further down, so a pure conversion
+      // cost isn't polluted by a second, different gain estimate.
+      const realizedGainMC = realizedGainFromDraw(fromTaxable, taxable, taxableBasis);
+
       // Update bucket balances. Excess RMD (forced out beyond what spending and
       // taxes consumed) is reinvested in the taxable bucket, not vaporized.
       const rmdExcess = Math.max(0, rmd - (need + totalTax));
+      // Basis consumed by the draw = draw − realized gain (the non-gain, return-of-
+      // basis portion); reinvested rmdExcess is fresh money → fresh basis dollar-for-dollar.
+      const consumedBasisMC = fromTaxable - realizedGainMC;
+      taxableBasis = Math.max(0, taxableBasis - consumedBasisMC) + rmdExcess;
       cash    = Math.max(0, cash    - fromCash);
       taxable = Math.max(0, taxable - fromTaxable) + rmdExcess;
       pretax  = Math.max(0, pretax  - fromPretax - rmd);
@@ -1264,6 +1374,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       pretax  = isNaN(pretax)  ? 0 : pretax;
       roth    = isNaN(roth)    ? 0 : roth;
 
+      // IRMAA lookback history: this year's MAGI, used two years from now.
+      // Defaults to the no-conversion taxResult.magi; overwritten below with
+      // the post-conversion MAGI when a conversion actually executes (a
+      // conversion raises MAGI, so the age+2 IRMAA charge must see it — the
+      // conversion CANNOT affect its own year's charge under the lookback).
+      let finalMagiMC = taxResult.magi;
+
       // Bracket-fill Roth conversion (after spending withdrawals, before growth).
       // Bracket ceilings index at the assumed long-run inflation rate, not inflY:
       // compounding a single bootstrapped year's draw over the whole horizon would
@@ -1274,18 +1391,28 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
         if (room > 500) {
           let convAmt = Math.min(room, pretax);
+          let lastWithConv = null;
           // True conversion cost = the DELTA in total tax vs. the no-conversion tax
           // (correct progressive bracket stacking), not a flat marginal-rate estimate —
           // a single bracket's rate understates cost whenever `room` spans intervening
           // brackets. Mirrors buildWithdrawalWaterfall.js's Step 6.5/7 exactly: recompute
           // full tax with the conversion stacked as ordinary income via calcYearTax's own
-          // `conversionAmount` parameter, then take the delta.
+          // `conversionAmount` parameter, then take the delta. NOTE: `totalTax` (and
+          // `withConv.totalTax`) exclude IRMAA (calcYearTax.totalTax = fedTax+stateTax),
+          // so this delta was already a pure fed+state conversion cost before the
+          // lookback landed and needs no change now that IRMAA is a fixed, lookback-
+          // driven constant for the year — a same-year conversion can't move it.
           const convTaxFor = (amt) => {
             if (!taxEnabled || amt <= 0) return 0;
+            // Same realizedGainMC as the spending-draw tax call above — the delta
+            // must isolate the conversion's own cost, not a different LTCG estimate.
+            // Same magiLookbackMC too, so the (fixed) IRMAA component agrees with
+            // taxResult's — it's this year's charge, unaffected by convAmt.
             const withConv = calcYearTax(
               age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, amt,
-              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ"
+              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC, magiLookbackMC
             );
+            lastWithConv = withConv;
             return Math.max(0, withConv.totalTax - totalTax);
           };
           let convTax = convTaxFor(convAmt);
@@ -1303,9 +1430,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           if (convAmt > 500) {
             pretax -= (convAmt + convTax);
             roth   += convAmt;
+            if (lastWithConv) finalMagiMC = lastWithConv.magi;
           }
         }
       }
+
+      // Roll the 2-year IRMAA lookback history forward: this year's final MAGI
+      // (post-conversion when one executed) becomes "two years ago" once we
+      // reach year y+2.
+      magiTwoYearsAgo = magiOneYearAgo;
+      magiOneYearAgo = finalMagiMC;
 
       // Apply growth
       cash    = Math.max(0, cash    * (1 + cashRealReturn));
@@ -1615,9 +1749,14 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
     const need = Math.max(0, sp - ss - ab - otherIncTotal) + housingCost + carveoutCost;
 
-    // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab).
-    // Fall back to the legacy "treat everything as ordinary income" calc only
-    // when no waterfall row exists for this age (e.g. accounts not configured).
+    // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab) —
+    // this path automatically carries LTCG/cost-basis AND the IRMAA 2-year lookback
+    // since buildWithdrawalWaterfall now models both. Fall back to the legacy "treat
+    // everything as ordinary income" calc only when no waterfall row exists for this
+    // age (e.g. accounts not configured); that fallback has no taxable-bucket split
+    // (ltcgAmount defaults to 0) and no lookback history to thread through (magiLookback
+    // defaults to null → same-year MAGI, the pre-lookback approximation) — both left
+    // unchanged, out of scope here.
     const wfTax = smartTaxByAge.get(age);
     const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "NJ");
     const totalTax = taxEnabled ? taxResult.totalTax : 0;
@@ -1867,19 +2006,45 @@ function deflate(data, inf, useReal) {
  * chart's reference lines. */
 function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge }) {
   const [show, setShow] = useState(false);
+  // ℹ️ "What do these numbers mean?" — an inline, mobile-readable explainer
+  // (not a browser tooltip) condensing the About page's "still-funded-percent"
+  // card. Independent of `show` so it's reachable even with the table collapsed.
+  const [showExplainer, setShowExplainer] = useState(false);
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
   if (!data || data.length === 0) return null;
   const fundedColor = (a) => (a >= 0.9 ? "#34d399" : a >= 0.75 ? "#fbbf24" : "#f87171");
   return (
     <div className="chart-card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show ? 8 : 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show || showExplainer ? 8 : 0, flexWrap: "wrap", gap: 6 }}>
         <div className="ct" style={{ marginBottom: 0 }}>
           📊 Age-by-Age Projection Bands · {useReal ? "Real $" : "Nominal $"}
         </div>
-        <button onClick={() => setShow(!show)} className="mbtn" style={{ fontSize: 12, padding: "3px 8px" }}>
-          {show ? "Hide Table" : "Show Table"}
-        </button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={() => setShowExplainer(!showExplainer)}
+            className="mbtn"
+            style={{ fontSize: 12, padding: "3px 8px" }}
+          >
+            ℹ️ What do these numbers mean?
+          </button>
+          <button onClick={() => setShow(!show)} className="mbtn" style={{ fontSize: 12, padding: "3px 8px" }}>
+            {show ? "Hide Table" : "Show Table"}
+          </button>
+        </div>
       </div>
+      {showExplainer && (
+        <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.6, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+          <strong style={{ color: "#94a3b8" }}>Still Funded</strong> is the share of simulated retirement
+          histories where your accounts still had money at that age — not a literal forecast, and not a
+          chance of zero income. Social Security, rental, and pension income keep paying even in "failed"
+          paths; a failure just means living on those guaranteed streams alone from that age onward.
+          Read Still Funded together with the <strong style={{ color: "#94a3b8" }}>10th percentile</strong> column
+          for fragility: a high Still Funded % paired with a thin 10th percentile is one bad market
+          sequence away from joining the failures, while a high 10th percentile means real margin.
+          <br /><br />
+          Full explanation: ℹ️ About → Reading the Charts → "What does Still Funded % actually mean?"
+        </div>
+      )}
       {show && (
         <>
           <div style={{ fontSize: 11, color: "#64748b", margin: "6px 0 8px", lineHeight: 1.5 }}>
@@ -5548,7 +5713,7 @@ function WaterfallPlanView({ p, result }) {
                         emoji="💊"
                         label="IRMAA Surcharge"
                         color="#fb923c"
-                        detail={`Medicare premium surcharge: ${fmtK(r.irmaa)}/yr this year. Your income crossed the IRMAA Tier 1 threshold (~$218,000 MFJ). IRMAA uses a 2-year lookback — income this year affects Medicare premiums in ${r.yr + 2}. Enable IRMAA Guard in Profile → Withdrawal Order to cap pretax draws before this threshold.`}
+                        detail={`This year's ${fmtDollar(r.irmaa)} surcharge is based on your ${r.yr - 2} income (IRMAA uses a 2-year lookback — the current Tier-1 threshold ~$218,000 MFJ was checked against that year's MAGI, not this year's). Income this year affects premiums in ${r.yr + 2}. Enable IRMAA Guard in Profile → Withdrawal Order to cap pretax draws before this threshold.`}
                       />
                     );
                   })()}
@@ -8561,6 +8726,9 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Cash return" desc="Annual return on cash/savings (HYSA, SGOV, money market). Drives the cash bucket in the Monte Carlo AND the Withdrawal Plan tab.">
           <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={8} step={0.1} suffix="%" />
         </ARow>
+        <ARow label="Taxable cost basis" desc="Percent of your taxable brokerage balance that is cost basis (from your brokerage statement). The rest is unrealized gain — selling realizes it as LTCG income, taxed at 0/15/20% federal (plus state, plus NIIT above the MAGI threshold) and counted toward Social Security's provisional income and Medicare IRMAA.">
+          <ANumInput value={values.taxableBasisPct ?? 70} onSet={(v) => onChange("taxableBasisPct", v)} min={0} max={100} step={5} suffix="%" />
+        </ARow>
         <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
           <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
         </ARow>
@@ -9382,6 +9550,7 @@ export default function AiRAForecaster() {
   const [feedbackName, setFeedbackName] = useState("");
   const [feedbackEmail, setFeedbackEmail] = useState("");
   const [showTerms, setShowTerms] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [stripeToast, setStripeToast] = useState(null);
   const stripeReturn = useStripeReturn();
   useEffect(() => {
@@ -9561,6 +9730,7 @@ export default function AiRAForecaster() {
       hcMin: assumptions.hcMin,
       hcMax: assumptions.hcMax,
       cashRealReturn: assumptions.cashRealReturn ?? 3.0,
+      taxableBasisPct: assumptions.taxableBasisPct ?? 70,
       useJointRmdTable: assumptions.useJointRmdTable || false,
       withdrawalStrategy: assumptions.withdrawalStrategy,
       // Sourcing guardrails — MUST be forwarded here or runMC + the Withdrawal Plan
@@ -9685,6 +9855,15 @@ export default function AiRAForecaster() {
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
+            <button
+              className="mbtn"
+              disabled={!mc}
+              title={mc ? "Generate a printable CFP/CPA-ready report" : "Run Monte Carlo first"}
+              style={!mc ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
+              onClick={() => setShowReport(true)}
+            >
+              📄 Report
+            </button>
             <button
               className="mbtn"
               title="Export profile to JSON"
@@ -10835,6 +11014,16 @@ export default function AiRAForecaster() {
             </div>
           </div>
         </div>
+      )}
+      {showReport && mc && (
+        <PrintReport
+          params={{ ...params, name: assumptions.name }}
+          mc={mc}
+          stress={stress}
+          rmdAge={rmdAge}
+          buildTag={BUILD_TAG}
+          onClose={() => setShowReport(false)}
+        />
       )}
     </>
   );
