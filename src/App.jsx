@@ -1330,9 +1330,15 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // Use ?? 0 so exhausted paths count as $0, not undefined
     const vals = results.map(r => r.path[t] ?? 0).sort((a, b) => a - b);
     const q = pct => vals[Math.floor(pct * (vals.length - 1))];
+    const ageT = p.retireAge + t;
+    // Fraction of paths not yet exhausted at this age — feeds the per-age
+    // band table under the fan chart. A path counts as funded at ageT if it
+    // never exhausted, or exhausted at a later age.
+    const alive = results.filter(r => r.exhaustAge == null || r.exhaustAge > ageT).length / N;
     pcts.push({
-      age: p.retireAge + t,
+      age: ageT,
       p10: q(0.1), p25: q(0.25), p50: q(0.5), p75: q(0.75), p90: q(0.9),
+      alive,
     });
   }
   const nS = results.filter(r => r.survived).length;
@@ -1852,6 +1858,76 @@ function deflate(data, inf, useReal) {
     p75: Math.round(d.p75 / Math.pow(1 + inf / 100, i)),
     p90: Math.round(d.p90 / Math.pow(1 + inf / 100, i)),
   }));
+}
+
+/* Per-age band table under the Monte Carlo fan chart — the same percentile
+ * data the chart plots (deflated identically when Real $ is on), one row per
+ * age, plus the share of simulated paths still funded at that age. Milestone
+ * rows (SS claiming, RMD start) are flagged so the table reads like the
+ * chart's reference lines. */
+function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge }) {
+  const [show, setShow] = useState(false);
+  const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
+  if (!data || data.length === 0) return null;
+  const fundedColor = (a) => (a >= 0.9 ? "#34d399" : a >= 0.75 ? "#fbbf24" : "#f87171");
+  return (
+    <div className="chart-card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show ? 8 : 0 }}>
+        <div className="ct" style={{ marginBottom: 0 }}>
+          📊 Age-by-Age Projection Bands · {useReal ? "Real $" : "Nominal $"}
+        </div>
+        <button onClick={() => setShow(!show)} className="mbtn" style={{ fontSize: 12, padding: "3px 8px" }}>
+          {show ? "Hide Table" : "Show Table"}
+        </button>
+      </div>
+      {show && (
+        <>
+          <div style={{ fontSize: 11, color: "#64748b", margin: "6px 0 8px", lineHeight: 1.5 }}>
+            Each row is one age from the fan chart above: the percentile spread of {MC_PATHS_LABEL} simulated
+            portfolios and the share of paths still funded. 10th %ile = pessimistic (90% of outcomes were better);
+            90th %ile = optimistic. 🏛️ Social Security starts · 📋 RMDs begin.
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="nw-table" style={{ fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th>Age</th><th>Year</th>
+                  <th title="Share of simulated paths whose portfolio has not run out by this age">Still Funded</th>
+                  <th title="Pessimistic — 90% of simulated outcomes were better than this">10th %ile</th>
+                  <th>25th %ile</th>
+                  <th title="The median outcome — half of paths above, half below">Median</th>
+                  <th>75th %ile</th>
+                  <th title="Optimistic — only 10% of simulated outcomes were better than this">90th %ile</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((d, i) => {
+                  const yr = CURRENT_YEAR + (d.age - (currentAge ?? d.age));
+                  const isSS = d.age === ssAge, isRMD = d.age === rmdAge;
+                  return (
+                    <tr key={d.age} style={{ background: isSS || isRMD ? "rgba(94,234,212,0.06)" : undefined }}>
+                      <td style={{ textAlign: "left", whiteSpace: "nowrap" }}>
+                        {d.age}{isSS && " 🏛️"}{isRMD && " 📋"}
+                      </td>
+                      <td>{currentAge != null ? yr : "—"}</td>
+                      <td style={{ color: fundedColor(d.alive ?? 1), fontWeight: 600 }}>
+                        {d.alive != null ? `${(d.alive * 100).toFixed(1)}%` : "—"}
+                      </td>
+                      <td style={{ color: "#f87171" }}>{fmtM(d.p10)}</td>
+                      <td style={{ color: "#fbbf24" }}>{fmtM(d.p25)}</td>
+                      <td style={{ color: "#5eead4", fontWeight: 700 }}>{fmtM(d.p50)}</td>
+                      <td style={{ color: "#94a3b8" }}>{fmtM(d.p75)}</td>
+                      <td style={{ color: "#34d399" }}>{fmtM(d.p90)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function SectorBadge({ age }) {
@@ -10442,6 +10518,17 @@ export default function AiRAForecaster() {
                         contrib={params.contrib}
                         preRetireEq={params.preRetireEq ?? 91}
                         sex={assumptions.sex}
+                      />
+                    )}
+                    {mc && (
+                      <MCBandTable
+                        pcts={mc.pcts}
+                        inf={inf}
+                        useReal={real}
+                        ssAge={assumptions.ssAge}
+                        rmdAge={rmdAge}
+                        currentAge={assumptions.currentAge}
+                        endAge={endAge}
                       />
                     )}
                   </>
