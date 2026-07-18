@@ -21,6 +21,7 @@ import {
   accountBucketPieces,
   expandAccountBuckets,
   _defaultBucket,
+  getAnalogues,
 } from "./App";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 
@@ -2017,5 +2018,51 @@ describe("GK calibration — cross-engine consistency (audit regression)", () =>
       expect(wf.smart.rows[i].spending).toBeGreaterThan(gkProfile.gkFloor * 1.3);
       expect(det.schedule[i].spending).toBeGreaterThan(gkProfile.gkFloor * 1.3);
     }
+  });
+});
+
+describe("probability analogies — revolving context messages", () => {
+  test("every success rate from 0% to 100% lands in a band with at least one analogy", () => {
+    for (let pct = 0; pct <= 100; pct++) {
+      const pool = getAnalogues(pct / 100);
+      expect(pool.length).toBeGreaterThanOrEqual(1);
+      for (const a of pool) {
+        expect(typeof a.text).toBe("string");
+        expect(a.text.length).toBeGreaterThan(0);
+        expect(typeof a.emoji).toBe("string");
+      }
+    }
+  });
+
+  test("every band offers at least two analogies so the display can revolve", () => {
+    // Sample one rate inside each band floor
+    for (const pct of [97, 92, 87, 82, 77, 72, 65, 55, 30]) {
+      expect(getAnalogues(pct / 100).length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  test("all analogies in a band share the same band floor (no cross-band mixing)", () => {
+    const pool = getAnalogues(0.93);
+    const mins = new Set(pool.map((a) => a.min));
+    expect(mins.size).toBe(1);
+    expect(pool[0].min).toBe(90);
+  });
+
+  test("the 96.4% flagship keeps the commercial-flight analogy", () => {
+    const pool = getAnalogues(0.964);
+    expect(pool.some((a) => a.text.includes("commercial flight"))).toBe(true);
+  });
+
+  test("coin-flip math is stated correctly (87.5% = NOT flipping three heads, not 'calling heads 3x')", () => {
+    const pool = getAnalogues(0.875);
+    const coin = pool.find((a) => a.text.toLowerCase().includes("three heads"));
+    expect(coin).toBeDefined();
+    expect(coin.text).toMatch(/Not flipping/i);
+    expect(coin.stat).toBe("87.5%");
+  });
+
+  test("low rates get urgency messaging, not false comfort", () => {
+    const pool = getAnalogues(0.30);
+    expect(pool.some((a) => a.text.toLowerCase().includes("worse than a coin flip"))).toBe(true);
   });
 });
