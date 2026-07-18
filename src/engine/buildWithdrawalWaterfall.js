@@ -80,12 +80,16 @@ function bracketCeiling(target, isMFJ, inflFactor) {
  * @returns {{ pretax0: number, roth0: number, taxable0: number, cash0: number, total: number }}
  */
 export function accumulateToRetirement(params = {}) {
-  const { currentAge, retireAge, accounts = [], preRetireEq = 91, gr: grParam } = params;
+  const { currentAge, retireAge, accounts = [], preRetireEq = 91, cashRealReturn, gr: grParam } = params;
   // This function only models the PRE-retirement accumulation phase, so the
   // pre-retirement equity glide (preRetireEq) — not postRetireEq — drives the
   // default growth rate here, mirroring runMC's portReturn age<62 branch.
   const gr     = grParam ?? (expectedReturn(preRetireEq) / 100);
-  const cashGr = 0.045;
+  // Cash growth honors the profile's "Cash return" field — the SAME value
+  // runMC applies to the cash bucket ((p.cashRealReturn ?? 3.0)/100). This was
+  // a hardcoded 0.045 that silently ignored the user's setting, so the profile
+  // field changed the Monte Carlo but never this engine.
+  const cashGr = (cashRealReturn ?? 3.0) / 100;
 
   let pretax0 = 0, roth0 = 0, taxable0 = 0, cash0 = 0;
   for (const a of accounts) {
@@ -143,6 +147,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     conversionOverrides  = [],
     preRetireEq = 91,
     postRetireEq = 70,
+    cashRealReturn,
     gr: grParam,
     // Real-world cash needs/income — same fields runMC uses for `need`
     mortBalance = 0,
@@ -172,7 +177,11 @@ export function buildWithdrawalWaterfall(params = {}) {
   // for backward compatibility with callers/tests that pin a specific rate.
   const preGr      = grParam ?? (expectedReturn(preRetireEq) / 100);
   const postGr     = grParam ?? (expectedReturn(postRetireEq) / 100);
-  const cashGr     = 0.045; // conservative cash/SGOV return
+  // Cash growth honors the profile's "Cash return" field — the SAME value
+  // runMC applies ((p.cashRealReturn ?? 3.0)/100). Was a hardcoded 0.045 that
+  // ignored the user's setting entirely (profile field changed the Monte
+  // Carlo but never this tab).
+  const cashGr     = (cashRealReturn ?? 3.0) / 100;
   const retireYear = BASE_YEAR + (retireAge - currentAge);
   const rmdAge     = (typeof rmdStartAge === "number" && rmdStartAge > 0)
     ? rmdStartAge
@@ -191,7 +200,7 @@ export function buildWithdrawalWaterfall(params = {}) {
   // Accumulation (pre-retirement) phase uses preGr — accumulateToRetirement
   // derives its own default from preRetireEq too, but pass it explicitly here
   // so an explicit grParam override (if given) also applies to this phase.
-  const { pretax0, roth0, taxable0, cash0 } = accumulateToRetirement({ currentAge, retireAge, accounts, gr: preGr });
+  const { pretax0, roth0, taxable0, cash0 } = accumulateToRetirement({ currentAge, retireAge, accounts, cashRealReturn, gr: preGr });
 
   // Pre-compute the actual annual mortgage cash cost per calendar year (incl.
   // extra payments and the partial payoff year) — housing cost is part of
