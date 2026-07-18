@@ -1917,3 +1917,41 @@ describe("twoHousehold default consistency (B3 regression)", () => {
     expect(SRC).not.toMatch(/twoHousehold:\s*data\.twoHousehold\s*\?\?\s*true/);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CURRENT_YEAR — dynamic "today" anchor for tax-year math (C2 regression)
+//
+// App.jsx previously hardcoded the literal 2026 as "today" in several places
+// (calcYearTax's inflation factor, runMC/simulateDeterministicWithStrategy's
+// age→calendar-year conversion, the bracket/IRMAA inflation factors, irmaaCost,
+// and a Conversion Plan UI recompute) instead of computing it dynamically —
+// unlike buildWithdrawalWaterfall.js's BASE_YEAR / buildRothExplorer.js's
+// ROTH_BASE_YEAR, both `new Date().getFullYear()`. That silently goes one year
+// stale every time the real calendar rolls past 2026. CURRENT_YEAR fixes this
+// by matching the same dynamic pattern the sibling engines already use.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("CURRENT_YEAR — dynamic 'today' anchor for tax-year math (C2 regression)", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
+  const thisYear = new Date().getFullYear();
+
+  test("App.jsx defines CURRENT_YEAR dynamically (new Date().getFullYear()), not a hardcoded literal", () => {
+    expect(SRC).toMatch(/const CURRENT_YEAR = new Date\(\)\.getFullYear\(\);/);
+  });
+
+  test("irmaaCost's inflation factor at the real current year is 1.0 (no spurious inflation) regardless of the assumed inflation rate", () => {
+    // yr - CURRENT_YEAR === 0 this year, so (1+infR)^0 === 1 regardless of infR —
+    // the surcharge for THIS year must not depend on the assumed future inflation rate.
+    const magi = 250_000; // above IRMAA tier-1 (218K MFJ)
+    const atOnePctInfl = irmaaCost(magi, thisYear, 0.01, true);
+    const atTenPctInfl = irmaaCost(magi, thisYear, 0.10, true);
+    expect(atOnePctInfl).toBe(atTenPctInfl);
+  });
+
+  test("calcYearTax's inflation factor at the real current year is 1.0 — same-year tax is independent of the assumed inflation rate", () => {
+    const low  = calcYearTax(65, thisYear, 100_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
+    const high = calcYearTax(65, thisYear, 100_000, 0, 0, 0, 0, false, 0.08, "mfj", "FL");
+    expect(low.totalTax).toBe(high.totalTax);
+  });
+});

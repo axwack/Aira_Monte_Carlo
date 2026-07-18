@@ -1,3 +1,5 @@
+import { expectedReturn } from "./expectedReturn.js";
+
 // Progressive state income tax brackets (2025). null = no state income tax.
 // Brackets are inflation-indexed in calcYearTax / buildRothExplorer via idxB().
 const STATE_BRACKETS = {
@@ -242,7 +244,9 @@ function idxB(br, f) {
 }
 
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true) {
-  const f = Math.pow(1 + infR, yr - 2026);
+  // Anchored to ROTH_BASE_YEAR (today), not a hardcoded 2026, so this stays
+  // consistent with the rest of this file as real calendar time passes.
+  const f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
     // Single tiers are half the MFJ thresholds, except the top tier ($500,000 vs $750,000).
     // Surcharge is per person, so single pays half the two-person MFJ amount.
@@ -320,6 +324,9 @@ function buildRothExplorer(params = {}) {
     cssEndYear = null,
     conversionOverrides = [],
     useJointRmdTable = false,
+    preRetireEq = 91,
+    postRetireEq = 70,
+    gr: grParam,
   } = params;
   // Build a fast year→amount lookup from the overrides array
   const overrideMap = {};
@@ -355,11 +362,20 @@ function buildRothExplorer(params = {}) {
   const _totalFromAccounts = _pretaxSum + _rothSum + _otherSum;
   const pretaxBal = _totalFromAccounts > 0 ? _pretaxSum : port * 0.6,
     rothBal = _totalFromAccounts > 0 ? _rothSum : port * 0.4,
-    taxBal0 = _totalFromAccounts > 0 ? _otherSum : 0,
-    gr = 0.07;
+    taxBal0 = _totalFromAccounts > 0 ? _otherSum : 0;
+  // Expected growth now derives from the same equity-glide formula runMC's
+  // portReturn uses (expectedReturn(eqPct), shared via ./expectedReturn.js)
+  // instead of a hardcoded flat 7% that ignored preRetireEq/postRetireEq.
+  // This engine has no separate pre-retirement accumulation phase (it starts
+  // from `port`/accounts as-of retirement), but the per-year retirement loop
+  // below still mirrors runMC's portReturn age-62 switch (preRetireEq below
+  // 62, postRetireEq from 62 on) for profiles that retire before 62. An
+  // explicit gr override (grParam) still wins for backward compatibility.
+  const preGr  = grParam ?? (expectedReturn(preRetireEq) / 100);
+  const postGr = grParam ?? (expectedReturn(postRetireEq) / 100);
 
   function irmaaCeiling(yr) {
-    const f = Math.pow(1 + infR, yr - 2026);
+    const f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
     return Math.round((isMFJ ? 218_000 : 109_000) * f);
   }
 
@@ -377,7 +393,7 @@ function buildRothExplorer(params = {}) {
       cRmd = 0;
     const rows = [];
     let sp = baseSp,
-      lastReturn = gr;
+      lastReturn = retireAge < 62 ? preGr : postGr;
     const totalPort0 = pretaxBal + rothBal;
     const ss0 = retireAge >= ssAge ? ssb : 0;
     const ab0 = ab > 0 ? ab : 0;
@@ -387,6 +403,9 @@ function buildRothExplorer(params = {}) {
     for (let age = retireAge; age <= endAge; age++) {
       const yr = retireYear + (age - retireAge),
         f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
+      // Per-year growth rate — mirrors runMC's portReturn age-62 switch
+      // (preRetireEq below 62, postRetireEq from 62 on).
+      const gr = age < 62 ? preGr : postGr;
       const fB = idxB(fedBase, f);
       const nB = stateBr0 ? idxB(stateBr0, f) : [];
 

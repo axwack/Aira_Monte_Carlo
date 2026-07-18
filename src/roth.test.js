@@ -13,6 +13,7 @@
  */
 
 import { buildRothExplorer, buildRothLadder } from "./engine/buildRothExplorer.js";
+import { expectedReturn } from "./engine/expectedReturn.js";
 
 // ─── 2026 MFJ engine constants (from buildRothExplorer.js) ──────────────────
 const B10T_MFJ  =  24_800;   // 10% bracket ceiling, MFJ 2026
@@ -634,11 +635,20 @@ describe("buildRothLadder — net-Roth accounting", () => {
 //     outside_cash tax funding, conversionOverride for 2032 at 87,239.
 //
 //     Key invariants tested:
-//       pT update:  pT_end = max(0, pT_start - rmd - conv - portDraw*0.6) * 1.07
-//       ro update:  ro_end = max(0, ro_start + conv - portDraw*0.4) * 1.07  (outside_cash)
+//       pT update:  pT_end = max(0, pT_start - rmd - conv - portDraw*0.6) * (1+gr)
+//       ro update:  ro_end = max(0, ro_start + conv - portDraw*0.4) * (1+gr)  (outside_cash)
 //       continuity: row[N].pT === row[N+1].pTStart (and same for ro / roStart)
+//
+//     gr is no longer a hardcoded flat 7% — it now derives from the equity-glide
+//     formula runMC's portReturn uses (expectedReturn(eqPct)/100), switching at
+//     age 62 exactly like portReturn's own preRetireEq/postRetireEq cutoff.
+//     ALEX_FULL doesn't set preRetireEq/postRetireEq, so the engine's defaults
+//     (91/70) apply: expectedReturn(91) ≈ 7.6% below 62, expectedReturn(70) ≈
+//     7.34% at 62+ — both above the old flat 7% this test previously assumed.
 // ═══════════════════════════════════════════════════════════════════════════════
-const GR = 0.07; // growth rate hardcoded in engine
+const PRE_GR  = expectedReturn(91) / 100;  // preRetireEq default, ages < 62
+const POST_GR = expectedReturn(70) / 100;  // postRetireEq default, ages >= 62
+const grForAge = (age) => (age < 62 ? PRE_GR : POST_GR);
 
 const ALEX_FULL = {
   currentAge: 56,
@@ -698,11 +708,11 @@ describe("buildRothExplorer — Alex Mercer full profile (NM, fill_12, outside_c
   });
 
   test("pT update invariant holds on every row with a conversion", () => {
-    // Dynamic ratio: pT_end = max(0, pTStart - rmd - conv - pretaxSpend) * (1+GR)
+    // Dynamic ratio: pT_end = max(0, pTStart - rmd - conv - pretaxSpend) * (1+gr)
     const { opt } = buildRothExplorer(ALEX_FULL);
     for (const r of opt.rows.filter(r => r.conv > 0)) {
       const expected = Math.round(
-        Math.max(0, r.pTStart - r.rmd - r.conv - (r.pretaxSpend || 0)) * (1 + GR)
+        Math.max(0, r.pTStart - r.rmd - r.conv - (r.pretaxSpend || 0)) * (1 + grForAge(r.age))
       );
       expect(Math.abs(r.pT - expected)).toBeLessThanOrEqual(2);
     }
@@ -714,7 +724,7 @@ describe("buildRothExplorer — Alex Mercer full profile (NM, fill_12, outside_c
     for (const r of opt.rows.filter(r => r.conv > 0)) {
       const additionalRoth = Math.max(0, r.portDraw - r.rmd) - (r.pretaxSpend || 0);
       const expected = Math.round(
-        Math.max(0, r.roStart + r.conv - additionalRoth) * (1 + GR)
+        Math.max(0, r.roStart + r.conv - additionalRoth) * (1 + grForAge(r.age))
       );
       expect(Math.abs(r.ro - expected)).toBeLessThanOrEqual(2);
     }
@@ -827,5 +837,35 @@ describe("buildRothExplorer — useJointRmdTable gated by filingStatus (B2 regre
     const rowJoint = mfjJoint.opt.rows.find(r => r.age === 75);
     const rowUniform = mfjUniform.opt.rows.find(r => r.age === 75);
     expect(rowJoint.rmd).not.toBe(rowUniform.rmd);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EQUITY-GLIDE-DRIVEN GROWTH (C1 regression)
+//
+// Before this fix, buildRothExplorer hardcoded a flat 7% account-growth rate
+// and never read preRetireEq/postRetireEq at all — two profiles differing only
+// in risk posture (e.g. postRetireEq 30 vs 70) produced IDENTICAL Roth Explorer
+// trajectories, contradicting the Monte Carlo (which correctly reads the
+// glide-path sliders via runMC's portReturn/expectedReturn).
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("buildRothExplorer — equity-glide-driven growth (C1 regression)", () => {
+  // no_convert isolates pure account growth from conversion-driven balance shifts.
+  const growthBase = { ...BASE, rothMode: "no_convert", ssb: 0, ab: 0 };
+
+  test("two profiles differing only in postRetireEq no longer produce identical trajectories (the reported bug)", () => {
+    const low  = buildRothExplorer({ ...growthBase, postRetireEq: 30 });
+    const high = buildRothExplorer({ ...growthBase, postRetireEq: 70 });
+    const rowLow  = low.cur.rows[10];
+    const rowHigh = high.cur.rows[10];
+    expect(rowLow.nw).not.toBe(rowHigh.nw);
+  });
+
+  test("a more aggressive postRetireEq (70) grows the portfolio faster than a conservative one (30)", () => {
+    const conservative = buildRothExplorer({ ...growthBase, postRetireEq: 30 });
+    const aggressive   = buildRothExplorer({ ...growthBase, postRetireEq: 70 });
+    const lastConservative = conservative.cur.rows[conservative.cur.rows.length - 1].nw;
+    const lastAggressive   = aggressive.cur.rows[aggressive.cur.rows.length - 1].nw;
+    expect(lastAggressive).toBeGreaterThan(lastConservative);
   });
 });

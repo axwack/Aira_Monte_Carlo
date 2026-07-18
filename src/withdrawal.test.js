@@ -319,3 +319,46 @@ describe("buildWithdrawalWaterfall — GK 6% inflation pass-through cap (B4 regr
     expect(ratio).toBeLessThan(1.026);
   });
 });
+
+// ─── Equity-glide-driven growth (C1 regression) ────────────────────────────────
+// Before this fix, accumulateToRetirement/buildWithdrawalWaterfall hardcoded a
+// flat 7% account-growth rate and never read preRetireEq/postRetireEq at all —
+// two profiles differing only in risk posture produced IDENTICAL Smart
+// Waterfall trajectories, contradicting the Monte Carlo (which correctly reads
+// the glide-path sliders via runMC's portReturn/expectedReturn). BASE pins an
+// explicit gr: 0.07, so these tests clear that override to let the equity
+// sliders actually drive growth.
+
+describe("buildWithdrawalWaterfall — equity-glide-driven growth (C1 regression)", () => {
+  const noGr = { ...BASE, gr: undefined };
+
+  test("a conservative postRetireEq (30) produces a LOWER final portfolio than an aggressive one (70), all else equal", () => {
+    const conservative = buildWithdrawalWaterfall({ ...noGr, preRetireEq: 91, postRetireEq: 30 });
+    const aggressive   = buildWithdrawalWaterfall({ ...noGr, preRetireEq: 91, postRetireEq: 70 });
+    const finalConservative = conservative.smart.finalPretax + conservative.smart.finalRoth
+      + conservative.smart.finalCash + conservative.smart.finalTaxable;
+    const finalAggressive = aggressive.smart.finalPretax + aggressive.smart.finalRoth
+      + aggressive.smart.finalCash + aggressive.smart.finalTaxable;
+    expect(finalAggressive).toBeGreaterThan(finalConservative);
+  });
+
+  test("two profiles differing only in postRetireEq no longer produce identical trajectories (the reported bug)", () => {
+    const low  = buildWithdrawalWaterfall({ ...noGr, postRetireEq: 30 });
+    const high = buildWithdrawalWaterfall({ ...noGr, postRetireEq: 70 });
+    // Compare a mid-horizon row's ending total portfolio — by this point enough
+    // compounding has occurred that a flat-7%-for-both bug would show identical
+    // totals, while the real glide-path-driven rates must differ.
+    const rowLow  = low.smart.rows[10];
+    const rowHigh = high.smart.rows[10];
+    expect(rowLow.totalPort).not.toBe(rowHigh.totalPort);
+  });
+
+  test("gr defaults to expectedReturn(preRetireEq)/expectedReturn(postRetireEq), not a flat 7%, when no explicit gr override is given", () => {
+    // expectedReturn(91) ≈ 7.6%, expectedReturn(70) ≈ 7.34% — both above the
+    // old hardcoded 7.0%, so the very first year's pretax growth (age === retireAge,
+    // which is 65 here, so postGr applies since 65 >= 62) must exceed a flat-7% run.
+    const withGr7   = buildWithdrawalWaterfall({ ...BASE }); // BASE pins gr: 0.07
+    const withGlide = buildWithdrawalWaterfall({ ...noGr, postRetireEq: 70 });
+    expect(withGlide.smart.rows[0].pretaxEnd).toBeGreaterThan(withGr7.smart.rows[0].pretaxEnd);
+  });
+});

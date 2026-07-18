@@ -35,6 +35,7 @@ import {
 } from "./buildRothExplorer.js";
 import { mortgageSchedule, computeOtherIncome } from "./expenses.js";
 import { scheduleSpendForYear } from "./expenseImport.js";
+import { expectedReturn } from "./expectedReturn.js";
 
 const BASE_YEAR = new Date().getFullYear();
 
@@ -79,8 +80,11 @@ function bracketCeiling(target, isMFJ, inflFactor) {
  * @returns {{ pretax0: number, roth0: number, taxable0: number, cash0: number, total: number }}
  */
 export function accumulateToRetirement(params = {}) {
-  const { currentAge, retireAge, accounts = [], gr: grParam } = params;
-  const gr     = grParam ?? 0.07;
+  const { currentAge, retireAge, accounts = [], preRetireEq = 91, gr: grParam } = params;
+  // This function only models the PRE-retirement accumulation phase, so the
+  // pre-retirement equity glide (preRetireEq) — not postRetireEq — drives the
+  // default growth rate here, mirroring runMC's portReturn age<62 branch.
+  const gr     = grParam ?? (expectedReturn(preRetireEq) / 100);
   const cashGr = 0.045;
 
   let pretax0 = 0, roth0 = 0, taxable0 = 0, cash0 = 0;
@@ -137,6 +141,8 @@ export function buildWithdrawalWaterfall(params = {}) {
     rothEmergencyReserve = 0,
     rothConversionTarget = "off",
     conversionOverrides  = [],
+    preRetireEq = 91,
+    postRetireEq = 70,
     gr: grParam,
     // Real-world cash needs/income — same fields runMC uses for `need`
     mortBalance = 0,
@@ -159,7 +165,13 @@ export function buildWithdrawalWaterfall(params = {}) {
 
   const isMFJ      = filingStatus !== "single";
   const infR       = inf / 100;
-  const gr         = grParam ?? 0.07;
+  // Expected growth now derives from the SAME equity-glide formula runMC's
+  // portReturn uses (expectedReturn(eqPct), shared via ./expectedReturn.js)
+  // instead of a hardcoded flat 7% that ignored preRetireEq/postRetireEq
+  // entirely. An explicit gr override (grParam) still wins for either phase,
+  // for backward compatibility with callers/tests that pin a specific rate.
+  const preGr      = grParam ?? (expectedReturn(preRetireEq) / 100);
+  const postGr     = grParam ?? (expectedReturn(postRetireEq) / 100);
   const cashGr     = 0.045; // conservative cash/SGOV return
   const retireYear = BASE_YEAR + (retireAge - currentAge);
   const rmdAge     = (typeof rmdStartAge === "number" && rmdStartAge > 0)
@@ -176,7 +188,10 @@ export function buildWithdrawalWaterfall(params = {}) {
   }
 
   // ── Initialise buckets from accounts, grown to retirement ──────────────────
-  const { pretax0, roth0, taxable0, cash0 } = accumulateToRetirement({ currentAge, retireAge, accounts, gr });
+  // Accumulation (pre-retirement) phase uses preGr — accumulateToRetirement
+  // derives its own default from preRetireEq too, but pass it explicitly here
+  // so an explicit grParam override (if given) also applies to this phase.
+  const { pretax0, roth0, taxable0, cash0 } = accumulateToRetirement({ currentAge, retireAge, accounts, gr: preGr });
 
   // Pre-compute annual mortgage P&I obligation (constant across all years,
   // mirrors runMC) — housing cost is part of "need" until the mortgage payoff year.
@@ -227,7 +242,9 @@ export function buildWithdrawalWaterfall(params = {}) {
   function runScenario(isSmart) {
     let pretax = pretax0, roth = roth0, taxable = taxable0, cash = cash0;
     const rows = [];
-    let sp = baseSp, lastRet = gr;
+    // Post-retirement per-year growth mirrors runMC's portReturn age-62 switch:
+    // preGr below 62 (even though already retired), postGr from 62 on.
+    let sp = baseSp, lastRet = retireAge < 62 ? preGr : postGr;
     const totalPort0 = pretax + roth + taxable + cash;
     const ss0 = retireAge >= ssAge ? ssb : 0;
     const ab0 = ab > 0 ? ab : 0;
@@ -240,6 +257,11 @@ export function buildWithdrawalWaterfall(params = {}) {
       const iF  = Math.pow(1 + infR, yr - BASE_YEAR);
       const adjFloor   = Math.round(gkFloor   * iF);
       const adjCeiling = Math.round(gkCeiling * iF);
+      // Per-year growth rate — mirrors runMC's portReturn age-62 switch
+      // (preRetireEq below 62, postRetireEq from 62 on), not just a flat
+      // post-retirement rate, so a profile that retires before 62 still
+      // tracks runMC's glide path exactly.
+      const gr = age < 62 ? preGr : postGr;
 
       // Spend adjustment (every year after first), unless a detailed
       // year-by-year budget was uploaded — that schedule IS the plan.

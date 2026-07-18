@@ -64,6 +64,7 @@ import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { taxableSocialSecurity } from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall, accumulateToRetirement } from "./engine/buildWithdrawalWaterfall.js";
+import { expectedReturn } from "./engine/expectedReturn.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, computeOtherIncome } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
@@ -116,6 +117,14 @@ export const GK_CEILING_DEFAULT_PCT = 135;
 // Dollar fallbacks used only when a profile predates the % fields
 export const GK_FLOOR_FALLBACK = 48_000;
 export const GK_CEILING_FALLBACK = 115_000;
+// "Today" as a calendar year, for age→year conversion and inflation-factor
+// indexing (e.g. Math.pow(1+rate, yr - CURRENT_YEAR)). Matches the exact
+// pattern buildWithdrawalWaterfall.js's BASE_YEAR / buildRothExplorer.js's
+// ROTH_BASE_YEAR already use — computed dynamically so it never goes stale,
+// unlike a hardcoded literal year. Do NOT use this for the FED_BRACKETS_2026_*
+// / IRMAA_2026 table names or their literal dollar data — those represent the
+// real IRS 2026 bracket figures and must stay pinned to 2026.
+const CURRENT_YEAR = new Date().getFullYear();
 
 const SP500 = [
   37.88, -11.91, -28.48, -47.07, -15.15, 46.59, -5.94, 41.37, 27.92, -38.59,
@@ -150,12 +159,12 @@ const SEQ_2000_2012 = [
   0.151, 0.021, 0.16,
 ];
 
-const SP500_MEAN = SP500.reduce((s, v) => s + v, 0) / SP500.length;
-const BONDS_MEAN = BONDS.reduce((s, v) => s + v, 0) / BONDS.length;
-function expectedReturn(eqPct) {
-  const w = (eqPct ?? 91) / 100;
-  return parseFloat((w * SP500_MEAN * 100 + (1 - w) * BONDS_MEAN * 100).toFixed(2));
-}
+// expectedReturn() (expected-VALUE helper, used by computeInitialWR/the
+// deterministic schedule/Fan Chart) now lives in ./engine/expectedReturn.js so
+// buildWithdrawalWaterfall.js/buildRothExplorer.js/rothConversionPlan.js can
+// import the exact same formula instead of hardcoding a flat 7%. SP500/BONDS
+// above are kept here (unchanged) because they still feed the STOCHASTIC
+// bootstrap draws in portReturn/bootstrapDraw below, a different consumer.
 
 /**
  * Initial withdrawal rate diagnostic.
@@ -626,7 +635,7 @@ function calcYearTax(
   // IRC §86 provisional-income tiers: 0% / 50% / 85% of SS taxable by income level
   const taxableSS = taxableSocialSecurity(ssIncome, otherIncome, isMFJ);
   const totalIncome = taxableSS + otherIncome;
-  const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - 2026));
+  const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - CURRENT_YEAR));
 
   // Standard deduction (incl. age-65+ add-on), inflation-adjusted forward.
   // Single source: getStandardDeduction → TAX_REFERENCE.md (CLAUDE.md Rule 6).
@@ -787,9 +796,9 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     //const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
     const need0 = Math.max(0, p.sp - ss0 - ab0);
     const initialTaxResult = calcYearTax(
-      p.retireAge, 
-      2026 + (p.retireAge - p.currentAge), 
-      need0, 
+      p.retireAge,
+      CURRENT_YEAR + (p.retireAge - p.currentAge),
+      need0,
       ss0, 
       ab0, 
       0, 
@@ -804,7 +813,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
-      const calYear = 2026 + (age - p.currentAge);
+      const calYear = CURRENT_YEAR + (age - p.currentAge);
       // Stress sequence override: prescribe the equity leg for the first
       // seqOverride.length retirement years; bond leg stays bootstrapped at the
       // same age-based equity weight portReturn uses. No override → normal draw.
@@ -995,7 +1004,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // Taxes depend on the pretax draw, which depends on the total draw size
       // (need + taxes), which depends on taxes — iterate to convergence.
       // RMD proceeds fund spending first; any excess is reinvested in taxable.
-      const yr = 2026 + (age - p.currentAge);
+      const yr = CURRENT_YEAR + (age - p.currentAge);
       const filingStatus = p.filingStatus || "mfj";
 
       // Sourcing guardrails (bracket cap, IRMAA guard, Roth reserve) are ORTHOGONAL
@@ -1004,7 +1013,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // The rooms don't depend on the draw size, so compute them once.
       let bracketRoomMC = Infinity;
       if (p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off") {
-        const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - 2026));
+        const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
         const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC);
         // 85% SS inclusion is a deliberate worst-case estimate so the cap never overshoots.
         const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable);
@@ -1073,7 +1082,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // compounding a single bootstrapped year's draw over the whole horizon would
       // swing the ceiling wildly with RNG noise.
       if (p.rothConversionTarget && p.rothConversionTarget !== "off" && pretax > 1000) {
-        const inflFactor = Math.pow(1 + taxInfl, Math.max(0, yr - 2026));
+        const inflFactor = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
         const bracketCeiling = getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor);
         const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
         if (room > 500) {
@@ -1252,7 +1261,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
   for (let y = 0; y < retYrs; y++) {
     const age = p.retireAge + y;
-    const yr = 2026 + (age - p.currentAge);
+    const yr = CURRENT_YEAR + (age - p.currentAge);
     const ret = age < 62 ? expectedReturn(p.preRetireEq ?? 91) / 100 : expectedReturn(p.postRetireEq ?? 70) / 100;
     const inflY = inf / 100;
     const cumInfl = Math.pow(1 + inflY, y);
@@ -1501,7 +1510,7 @@ function idxB(br, f) {
   }));
 }
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true) {
-  const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - 2026);
+  const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - CURRENT_YEAR);
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
     // Single tiers are half the MFJ thresholds, except the top tier ($500,000 vs $750,000).
     // Surcharge is per person, so single pays half the two-person MFJ amount.
@@ -3617,7 +3626,7 @@ const modeDescs = {
       {view === "thisyear" && (() => {
         const isMFJ   = (params?.filingStatus || "mfj") !== "single";
         const infRate = (params?.inf || 2.5) / 100;
-        const f       = Math.pow(1 + infRate, cyYear - 2026);
+        const f       = Math.pow(1 + infRate, cyYear - CURRENT_YEAR);
         const fedBase = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
         const fB      = idxB(fedBase, f);
         const stdD    = Math.round((isMFJ ? 32200 : 16100) * f);
