@@ -33,7 +33,7 @@ import {
   RMD_DIV,
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
-import { mortgageSchedule, computeOtherIncome } from "./expenses.js";
+import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./expenses.js";
 import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
 
@@ -193,26 +193,39 @@ export function buildWithdrawalWaterfall(params = {}) {
   // so an explicit grParam override (if given) also applies to this phase.
   const { pretax0, roth0, taxable0, cash0 } = accumulateToRetirement({ currentAge, retireAge, accounts, gr: preGr });
 
-  // Pre-compute annual mortgage P&I obligation (constant across all years,
-  // mirrors runMC) — housing cost is part of "need" until the mortgage payoff year.
-  let mortAnnualPI = 0, mortPayoffYr = 0;
+  // Pre-compute the actual annual mortgage cash cost per calendar year (incl.
+  // extra payments and the partial payoff year) — housing cost is part of
+  // "need" for every year the mortgageSchedule reports a payment, mirroring
+  // runMC/simulateDeterministicWithStrategy's mortByYear map (Fix 1).
+  let mortByYear = new Map();
   if (mortBalance > 0) {
     const ms = mortgageSchedule(mortBalance, mortRate || 6.5, mortStart || "2020-01", mortTerm || 30, mortExtra || 0);
-    mortAnnualPI = ms.pmt * 12;
-    mortPayoffYr = ms.payoffYr;
+    mortByYear = mortgageAnnualPayments(ms);
   }
 
   // ── Guyton-Klinger helper (mirrors App.jsx implementation) ─────────────────
-  function gkWithdraw(port, initWR, lastW, lastRet, inflRate, floor, ceiling) {
+  // incomeOffset/fixedCosts let the tracked ratio be the same NET PORTFOLIO
+  // NEED the baseline initWR was calibrated against (SS/annuity/otherIncome
+  // net out of gross spend `w`; housing/carveouts add on top) — otherwise a
+  // retiree whose SS starts at retirement has cur = gross-w/port far above an
+  // initWR calibrated net-of-SS, triggering a bogus capital-preservation cut
+  // every year regardless of portfolio health.
+  function gkWithdraw(port, initWR, lastW, lastRet, inflRate, floor, ceiling, incomeOffset = 0, fixedCosts = 0) {
     if (!port || port <= 0) return floor || 0;
     // Cap the CPI pass-through per the original GK paper (App.jsx's
     // guytonKlingerWithdrawal applies the same GK_INFLATION_CAP = 0.06) — only
     // the inflation step is capped, not the whole withdrawal formula.
     const cappedInfl = Math.min(GK_INFLATION_CAP, inflRate);
     let w = lastRet >= 0 ? lastW * (1 + cappedInfl) : lastW;
-    const cur = port > 0 ? w / port : 0;
-    if (cur <= initWR * 0.8) w *= 1.1;
-    else if (cur >= initWR * 1.2) w *= 0.9;
+    // Guard: if the baseline draw is already fully covered by income at
+    // retirement (initWR <= 0), skip the band adjustments entirely — otherwise
+    // cur <= 0.8*0 is always true and fires a meaningless +10% raise every year.
+    if (initWR > 0) {
+      const netNeed = Math.max(0, w - incomeOffset) + fixedCosts;
+      const cur = port > 0 ? netNeed / port : 0;
+      if (cur <= initWR * 0.8) w *= 1.1;
+      else if (cur >= initWR * 1.2) w *= 0.9;
+    }
     return Math.max(floor || 0, Math.min(ceiling || Infinity, w));
   }
 
@@ -246,10 +259,27 @@ export function buildWithdrawalWaterfall(params = {}) {
     // preGr below 62 (even though already retired), postGr from 62 on.
     let sp = baseSp, lastRet = retireAge < 62 ? preGr : postGr;
     const totalPort0 = pretax + roth + taxable + cash;
-    const ss0 = retireAge >= ssAge ? ssb : 0;
-    const ab0 = ab > 0 ? ab : 0;
-    const initDraw = Math.max(0, baseSp - ss0 - ab0);
-    const initWR = totalPort0 > 0 ? initDraw / totalPort0 : 0.04;
+    // Baseline initWR = NET PORTFOLIO NEED at retirement / portfolio — the same
+    // quantity (income-offset gross spend, plus housing/carveouts) the yearly
+    // loop's `netNeed` computes, evaluated at the retirement year. ab0 includes
+    // propIncome to match this engine's own `annuity` term below (Step 1) —
+    // otherwise the baseline and the tracked ratio would drift apart even
+    // within this one engine.
+    const ss0  = retireAge >= ssAge ? ssb : 0;
+    const iF0  = Math.pow(1 + infR, retireYear - BASE_YEAR);
+    const ab0  = (ab > 0 ? ab : 0) + Math.round((propIncome || 0) * iF0);
+    const { total: otherInc0 } = computeOtherIncome(otherIncomes, retireYear);
+    let housing0 = 0;
+    if (housingType === "own") {
+      housing0 = mortByYear.get(retireYear) || 0;
+    } else if (housingType === "rent") {
+      housing0 = Math.round((annualRent || 0) * iF0);
+    }
+    const carveout0 = carveouts.reduce((sum, c) => {
+      return sum + (retireYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * iF0) : 0);
+    }, 0);
+    const initNeed0 = Math.max(0, baseSp - ss0 - ab0 - otherInc0) + housing0 + carveout0;
+    const initWR = totalPort0 > 0 ? initNeed0 / totalPort0 : 0.04;
     let cTax = 0;
 
     for (let age = retireAge; age <= endAge; age++) {
@@ -262,6 +292,35 @@ export function buildWithdrawalWaterfall(params = {}) {
       // post-retirement rate, so a profile that retires before 62 still
       // tracks runMC's glide path exactly.
       const gr = age < 62 ? preGr : postGr;
+
+      // ── Step 1: Fixed income (computed BEFORE the spend adjustment so GK's
+      // netNeed offset can use this year's own income/fixed-cost figures) ──
+      const ss = age >= ssAge
+        ? Math.round(ssb * Math.pow(1 + (ssCola || 2.4) / 100, age - ssAge))
+        : 0;
+      const annuity = (ab > 0 && (abEndYear == null || yr <= abEndYear) && age <= 80
+        ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
+        : 0) + Math.round((propIncome || 0) * iF);
+      const fixedIncome = ss + annuity;
+
+      // Other income streams (pensions, part-time work, etc.) — offset "need"
+      // and, if taxable, stack as ordinary income alongside RMDs/pretax draws.
+      const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(otherIncomes, yr);
+
+      // Housing cost: mortgage cash cost (P&I + extra, incl. the partial payoff
+      // year) while the loan is active, or inflation-adjusted rent — same model
+      // as runMC's `housingCost`.
+      let housingCost = 0;
+      if (housingType === "own") {
+        housingCost = mortByYear.get(yr) || 0;
+      } else if (housingType === "rent") {
+        housingCost = Math.round((annualRent || 0) * iF);
+      }
+
+      // Other fixed expenses (HOA, insurance, college, etc.) active this year.
+      const carveoutCost = carveouts.reduce((sum, c) => {
+        return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * iF) : 0);
+      }, 0);
 
       // Spend adjustment (every year after first), unless a detailed
       // year-by-year budget was uploaded — that schedule IS the plan.
@@ -276,38 +335,14 @@ export function buildWithdrawalWaterfall(params = {}) {
       } else if (age > retireAge && totalPort > 0) {
         const yrsRemaining = endAge - age;
         if (yrsRemaining > 15) {
-          sp = gkWithdraw(totalPort, initWR, sp, lastRet, infR, adjFloor, adjCeiling);
+          sp = gkWithdraw(
+            totalPort, initWR, sp, lastRet, infR, adjFloor, adjCeiling,
+            fixedIncome + otherIncTotal, housingCost + carveoutCost
+          );
         } else {
           sp = sp * (1 + infR);
         }
       }
-
-      // ── Step 1: Fixed income ────────────────────────────────────────────
-      const ss = age >= ssAge
-        ? Math.round(ssb * Math.pow(1 + (ssCola || 2.4) / 100, age - ssAge))
-        : 0;
-      const annuity = (ab > 0 && (abEndYear == null || yr <= abEndYear) && age <= 80
-        ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
-        : 0) + Math.round((propIncome || 0) * iF);
-      const fixedIncome = ss + annuity;
-
-      // Other income streams (pensions, part-time work, etc.) — offset "need"
-      // and, if taxable, stack as ordinary income alongside RMDs/pretax draws.
-      const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(otherIncomes, yr);
-
-      // Housing cost: mortgage P&I while the loan is active, or inflation-adjusted
-      // rent — same model as runMC's `housingCost`.
-      let housingCost = 0;
-      if (housingType === "own") {
-        housingCost = mortAnnualPI > 0 && yr < mortPayoffYr ? mortAnnualPI : 0;
-      } else if (housingType === "rent") {
-        housingCost = Math.round((annualRent || 0) * iF);
-      }
-
-      // Other fixed expenses (HOA, insurance, college, etc.) active this year.
-      const carveoutCost = carveouts.reduce((sum, c) => {
-        return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * iF) : 0);
-      }, 0);
 
       // ── Step 2: RMD (forced) ────────────────────────────────────────────
       let rmd = 0;
@@ -342,7 +377,12 @@ export function buildWithdrawalWaterfall(params = {}) {
       let taxNoConv = null;
       let taxDue = 0;
 
-      for (let pass = 0; pass < 4; pass++) {
+      // 12 passes, not 4: the tax↔draw fixed point converges geometrically at
+      // ~the marginal rate (≈0.3×/pass), so 4 passes systematically exited
+      // ~$100-350 short of the true tax bill every year — a persistent
+      // underfunding of the draws the user acts on. The <$1 break below makes
+      // extra passes free once converged (typically pass 5-7).
+      for (let pass = 0; pass < 12; pass++) {
         let need = Math.max(0, baseNeed + taxDue - rmd); // RMD proceeds fund first
         fromCash = 0; fromTaxable = 0; fromPretax = 0;
         pretaxCapReason = "uncapped";

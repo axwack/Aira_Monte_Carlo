@@ -77,6 +77,21 @@ export function mortgageSchedule(balance, annualRate, startDate, termYrs, extraM
 }
 
 /**
+ * Actual cash paid (P&I + extra) per calendar year, including the partial
+ * final (payoff) year — mortgageSchedule's `years[]` entries already only
+ * cover the months actually paid in that year, and `pPaid` already includes
+ * any extraMonthly principal, so this is a straight per-year sum, not a
+ * flat pmt*12 estimate (which both drops the payoff-year cost to $0 too
+ * early and ignores extra payments entirely).
+ * @returns {Map<number, number>} calendar year → total P&I paid that year
+ */
+export function mortgageAnnualPayments(ms) {
+  const m = new Map();
+  for (const y of ms.years) m.set(y.yr, y.pPaid + y.iPaid);
+  return m;
+}
+
+/**
  * Sums a profile's "other income" streams (e.g. pensions, part-time work,
  * royalties) active in a given calendar year, applying each stream's own
  * growth rate (capped at growthCapYears).
