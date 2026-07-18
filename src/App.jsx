@@ -4968,7 +4968,10 @@ function WaterfallPlanView({ p, result }) {
     age: r.age,
     Cash:    Math.round(r.fromCash),
     Taxable: Math.round(r.fromTaxable),
-    "Pre-Tax": Math.round(r.fromPretax),
+    // Pre-Tax = TOTAL pretax outflow (forced RMD + discretionary draw). The RMD
+    // funds spending like any other dollar, so omitting it left a hole in the
+    // stack during RMD years even though the money was flowing out of the IRA.
+    "Pre-Tax": Math.round(r.fromPretax + r.rmd),
     Roth:    Math.round(r.fromRoth),
     "Fed Tax":   Math.round(r.fedTax),
     "State Tax": Math.round(r.stateTax),
@@ -5087,22 +5090,24 @@ function WaterfallPlanView({ p, result }) {
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
           Bracket cap reason shown in Pre-Tax column
           <br />
-          Columns read left→right as the draw order &amp; equation: <strong>Spending = Fixed Income + Cash + Taxable + Pre-Tax + Roth</strong>
+          Columns read left→right in draw order. Funding identity each year: <strong>Fixed Income + Cash + Taxable + Pre-Tax (incl. RMD) + Roth = Spending + Housing + Carveouts + Fed/State/IRMAA taxes − Other Income</strong> (any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown.
         </div>
         <table className="roth-tbl">
           <thead>
             <tr>
-              <th>Age</th><th>Spending</th>
-              <th style={opThStyle}>=</th>
+              <th>Age</th><th title="Target spending this year. Hover each row's value for the full need breakdown (housing, carveouts, other income, taxes).">Spending</th>
+              <th style={opThStyle} title="Spending is funded by the income + draw columns to the right — see the funding identity above the table.">←</th>
               <th title="Social Security + annuity/rental income — covered first, before any portfolio draw">Fixed Income</th>
               <th style={opThStyle}>+</th>
               <th title="Step 3 — drawn first from the portfolio">Cash</th>
               <th style={opThStyle}>+</th>
               <th title="Step 4 — drawn after cash is exhausted">Taxable</th>
               <th style={opThStyle}>+</th>
-              <th title="Step 5 — drawn after taxable, capped at your bracket-ceiling target (RMD shown when forced)">Pre-Tax</th>
+              <th title="Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k.">Pre-Tax</th>
               <th style={opThStyle}>+</th>
               <th title="Step 6 — last resort; emergency reserve floor maintained">Roth</th>
+              <th style={opThStyle}>=</th>
+              <th title="Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes.">Total Draw</th>
               {anyConversion && (
                 <th title="Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total.">Roth Conv</th>
               )}
@@ -5130,8 +5135,15 @@ function WaterfallPlanView({ p, result }) {
               return (
               <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
                 <td>{r.age}</td>
-                <td style={{ textAlign: "right" }} title={fmtDollar(r.spending)}>{fmtK(r.spending)}</td>
-                <td style={opTdStyle}>=</td>
+                <td style={{ textAlign: "right" }}
+                    title={`Spending ${fmtDollar(r.spending)}`
+                      + (r.housingCost > 0 ? ` + housing ${fmtDollar(r.housingCost)}` : "")
+                      + (r.carveoutCost > 0 ? ` + carveouts ${fmtDollar(r.carveoutCost)}` : "")
+                      + ` + taxes ${fmtDollar(r.fedTax + r.stateTax + r.irmaa)}`
+                      + (r.otherIncome > 0 ? ` − other income ${fmtDollar(r.otherIncome)}` : "")
+                      + ` = total need funded by the income + draw columns to the right`}>
+                  {fmtK(r.spending)}</td>
+                <td style={opTdStyle}>←</td>
                 <td style={{ textAlign: "right", color: "#5eead4" }}
                     title={r.annuityRental > 0 ? `SS ${fmtDollar(r.ss)} + Annuity/Rental ${fmtDollar(r.annuityRental)} = ${fmtDollar(r.fixedIncomeTotal)}` : `Social Security: ${fmtDollar(r.ss)}`}>
                   {r.fixedIncomeTotal > 0 ? fmtK(r.fixedIncomeTotal) : "—"}
@@ -5142,12 +5154,30 @@ function WaterfallPlanView({ p, result }) {
                 <td style={{ textAlign: "right", color: "#3b82f6" }} title={fmtDollar(r.fromTaxable)}>{r.fromTaxable > 0 ? fmtK(r.fromTaxable) : "—"}</td>
                 <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#f59e0b" }}
-                    title={r.rmd > 0 ? `${fmtDollar(r.fromPretax)} (incl. RMD ${fmtDollar(r.rmd)}) — ${r.pretaxCapReason}` : `${fmtDollar(r.fromPretax)} — ${r.pretaxCapReason}`}>
+                    title={(() => {
+                      // The displayed figure is the TOTAL pretax outflow the user must
+                      // actually withdraw: forced RMD + discretionary bracket-capped draw.
+                      // (The engine tracks them separately; showing only the discretionary
+                      // part used to display "—" in RMD-funded years while six figures
+                      // were actually leaving the IRA.)
+                      const totalPretaxOut = r.fromPretax + r.rmd;
+                      const rmdExcess = Math.max(0, r.rmd - ((r.needFromPort || 0) + (r.irmaaFull || 0)));
+                      let t = `${fmtDollar(totalPretaxOut)} total from pretax`;
+                      if (r.rmd > 0) t += ` = forced RMD ${fmtDollar(r.rmd)} + discretionary ${fmtDollar(r.fromPretax)}`;
+                      t += ` — ${r.pretaxCapReason}`;
+                      if (rmdExcess > 0) t += `. ${fmtDollar(rmdExcess)} of the RMD exceeds this year's need and is reinvested into Taxable.`;
+                      return t;
+                    })()}>
                   {r.rmd > 0 && <span style={{ fontSize: 9, color: "#a78bfa", marginRight: 2 }}>RMD {fmtK(r.rmd)}</span>}
-                  {r.fromPretax > 0 ? fmtK(r.fromPretax) : "—"}
+                  {(r.fromPretax + r.rmd) > 0 ? fmtK(r.fromPretax + r.rmd) : "—"}
                 </td>
                 <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#10b981" }} title={fmtDollar(r.fromRoth)}>{r.fromRoth > 0 ? fmtK(r.fromRoth) : "—"}</td>
+                <td style={opTdStyle}>=</td>
+                <td style={{ textAlign: "right", color: "#e2e8f0", fontWeight: 600 }}
+                    title={`${fmtDollar(r.totalWithdrawal)} leaves the portfolio this year (Cash ${fmtDollar(r.fromCash)} + Taxable ${fmtDollar(r.fromTaxable)} + Pre-Tax ${fmtDollar(r.fromPretax + r.rmd)} + Roth ${fmtDollar(r.fromRoth)}) — covers spending, housing, carveouts, and all taxes`}>
+                  {r.totalWithdrawal > 0 ? fmtK(r.totalWithdrawal) : "—"}
+                </td>
                 {anyConversion && (
                   <td style={{ textAlign: "right", color: "#a78bfa" }}
                       title={r.conversionAmount > 0 ? `Converted ${fmtDollar(r.conversionAmount)} pretax → Roth — adds ~${fmtDollar(r.conversionTax)} to this year's tax (included in Fed/State below)` : "No conversion this year"}>
