@@ -76,6 +76,7 @@ import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
 import { AdminPanel } from "./billing/admin-panel.js";
+import PrintReport from "./report/PrintReport.jsx";
 
 import emailjs from '@emailjs/browser';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
@@ -2005,19 +2006,45 @@ function deflate(data, inf, useReal) {
  * chart's reference lines. */
 function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge }) {
   const [show, setShow] = useState(false);
+  // ℹ️ "What do these numbers mean?" — an inline, mobile-readable explainer
+  // (not a browser tooltip) condensing the About page's "still-funded-percent"
+  // card. Independent of `show` so it's reachable even with the table collapsed.
+  const [showExplainer, setShowExplainer] = useState(false);
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
   if (!data || data.length === 0) return null;
   const fundedColor = (a) => (a >= 0.9 ? "#34d399" : a >= 0.75 ? "#fbbf24" : "#f87171");
   return (
     <div className="chart-card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show ? 8 : 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show || showExplainer ? 8 : 0, flexWrap: "wrap", gap: 6 }}>
         <div className="ct" style={{ marginBottom: 0 }}>
           📊 Age-by-Age Projection Bands · {useReal ? "Real $" : "Nominal $"}
         </div>
-        <button onClick={() => setShow(!show)} className="mbtn" style={{ fontSize: 12, padding: "3px 8px" }}>
-          {show ? "Hide Table" : "Show Table"}
-        </button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={() => setShowExplainer(!showExplainer)}
+            className="mbtn"
+            style={{ fontSize: 12, padding: "3px 8px" }}
+          >
+            ℹ️ What do these numbers mean?
+          </button>
+          <button onClick={() => setShow(!show)} className="mbtn" style={{ fontSize: 12, padding: "3px 8px" }}>
+            {show ? "Hide Table" : "Show Table"}
+          </button>
+        </div>
       </div>
+      {showExplainer && (
+        <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.6, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+          <strong style={{ color: "#94a3b8" }}>Still Funded</strong> is the share of simulated retirement
+          histories where your accounts still had money at that age — not a literal forecast, and not a
+          chance of zero income. Social Security, rental, and pension income keep paying even in "failed"
+          paths; a failure just means living on those guaranteed streams alone from that age onward.
+          Read Still Funded together with the <strong style={{ color: "#94a3b8" }}>10th percentile</strong> column
+          for fragility: a high Still Funded % paired with a thin 10th percentile is one bad market
+          sequence away from joining the failures, while a high 10th percentile means real margin.
+          <br /><br />
+          Full explanation: ℹ️ About → Reading the Charts → "What does Still Funded % actually mean?"
+        </div>
+      )}
       {show && (
         <>
           <div style={{ fontSize: 11, color: "#64748b", margin: "6px 0 8px", lineHeight: 1.5 }}>
@@ -9523,6 +9550,7 @@ export default function AiRAForecaster() {
   const [feedbackName, setFeedbackName] = useState("");
   const [feedbackEmail, setFeedbackEmail] = useState("");
   const [showTerms, setShowTerms] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [stripeToast, setStripeToast] = useState(null);
   const stripeReturn = useStripeReturn();
   useEffect(() => {
@@ -9827,6 +9855,15 @@ export default function AiRAForecaster() {
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
+            <button
+              className="mbtn"
+              disabled={!mc}
+              title={mc ? "Generate a printable CFP/CPA-ready report" : "Run Monte Carlo first"}
+              style={!mc ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
+              onClick={() => setShowReport(true)}
+            >
+              📄 Report
+            </button>
             <button
               className="mbtn"
               title="Export profile to JSON"
@@ -10977,6 +11014,16 @@ export default function AiRAForecaster() {
             </div>
           </div>
         </div>
+      )}
+      {showReport && mc && (
+        <PrintReport
+          params={{ ...params, name: assumptions.name }}
+          mc={mc}
+          stress={stress}
+          rmdAge={rmdAge}
+          buildTag={BUILD_TAG}
+          onClose={() => setShowReport(false)}
+        />
       )}
     </>
   );

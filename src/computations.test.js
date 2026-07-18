@@ -2249,3 +2249,25 @@ describe("runMC — IRMAA 2-year lookback wiring", () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MCBandTable "Still Funded" explainer — source-text check (same convention as
+// the twoHousehold default-consistency regression above / banner.test.js) since
+// the explainer toggle lives inside a component's JSX, not an exportable pure
+// function.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("MCBandTable 'What do these numbers mean?' explainer", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
+
+  test("Age-by-Age Projection Bands table has an ℹ️ explainer trigger", () => {
+    expect(SRC).toMatch(/ℹ️ What do these numbers mean\?/);
+  });
+
+  test("explainer panel condenses Still Funded / 10th percentile pairing guidance and links back to the About page", () => {
+    expect(SRC).toMatch(/Still Funded<\/strong> is the share of simulated retirement/);
+    expect(SRC).toMatch(/10th percentile/);
+    expect(SRC).toMatch(/About → Reading the Charts → "What does Still Funded % actually mean\?"/);
+  });
+});
