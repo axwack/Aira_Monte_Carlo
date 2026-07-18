@@ -8482,8 +8482,8 @@ function AssumptionsPanel({ values, onChange }) {
         >
           <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
         </ARow>
-        <ARow label="Cash real return" desc="Annual real return on cash/savings (e.g., HYSA)">
-          <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={3} step={0.1} suffix="%" />
+        <ARow label="Cash return" desc="Annual return on cash/savings (HYSA, SGOV, money market). Drives the cash bucket in the Monte Carlo AND the Withdrawal Plan tab.">
+          <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={8} step={0.1} suffix="%" />
         </ARow>
         <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
           <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
