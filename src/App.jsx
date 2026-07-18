@@ -516,6 +516,14 @@ export const BLANK_PROFILE = {
   geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
 };
 
+/* Real-world probability analogies, grouped into success-rate bands (min = band
+ * floor in %). Several entries per band feed the revolving display so users get
+ * varied context for what their number actually means. Every `stat` is the
+ * analogy's own real-world probability, stated approximately and defensibly:
+ * users should be able to sanity-check the comparison, not just take the vibe.
+ * (Two earlier entries were factually wrong and are replaced: "calling heads
+ * three times in a row" is 12.5% — it's NOT flipping three heads that's 87.5% —
+ * and the 4-year college graduation rate is ~46%, nowhere near 80%.) */
 const ANALOGUES = [
   {
     min: 95,
@@ -524,39 +532,148 @@ const ANALOGUES = [
     color: "#10b981",
   },
   {
+    min: 95,
+    text: "A tour pro sinking a three-foot putt",
+    stat: "≈99%",
+    emoji: "⛳",
+    color: "#10b981",
+  },
+  {
+    min: 95,
+    text: "A next-day weather forecast being right",
+    stat: "≈95%",
+    emoji: "☀️",
+    color: "#10b981",
+  },
+  {
     min: 90,
     text: "Odds a 50-year-old reaches age 65 — F-You Money territory",
+    stat: "≈9 in 10",
     emoji: "💪",
     color: "#34d399",
   },
   {
+    min: 90,
+    text: "An NFL kicker making an extra point",
+    stat: "≈94%",
+    emoji: "🏈",
+    color: "#34d399",
+  },
+  {
+    min: 90,
+    text: "A full year of driving without a collision claim",
+    stat: "≈94%",
+    emoji: "🚗",
+    color: "#34d399",
+  },
+  {
     min: 85,
-    text: "Like calling heads correctly three times in a row",
+    text: "Not flipping three heads in a row",
+    stat: "87.5%",
     emoji: "🪙",
     color: "#6ee7b7",
   },
   {
-    min: 80,
-    text: "Similar to a college freshman graduating in 4 years",
+    min: 85,
+    text: "A U.S. high-school freshman graduating on time",
+    stat: "≈87%",
     emoji: "🎓",
+    color: "#6ee7b7",
+  },
+  {
+    min: 85,
+    text: "No ace showing up in two dealt cards",
+    stat: "≈85%",
+    emoji: "🃏",
+    color: "#6ee7b7",
+  },
+  {
+    min: 80,
+    text: "Avoiding a 1 on a single die roll",
+    stat: "≈83%",
+    emoji: "🎲",
+    color: "#fbbf24",
+  },
+  {
+    min: 80,
+    text: "Staying dry when the forecast says 20% chance of rain",
+    stat: "80%",
+    emoji: "☔",
     color: "#fbbf24",
   },
   {
     min: 75,
     text: "About the odds an NBA player makes a free throw",
+    stat: "≈78%",
     emoji: "🏀",
+    color: "#fbbf24",
+  },
+  {
+    min: 75,
+    text: "A U.S. flight arriving on time",
+    stat: "≈78%",
+    emoji: "🛫",
+    color: "#fbbf24",
+  },
+  {
+    min: 75,
+    text: "Not drawing a spade from a full deck",
+    stat: "75%",
+    emoji: "♠️",
     color: "#fbbf24",
   },
   {
     min: 70,
     text: "Odds a new business survives its first two years",
+    stat: "≈70%",
     emoji: "🏢",
     color: "#f97316",
   },
   {
+    min: 70,
+    text: "Not flipping two heads in a row",
+    stat: "75%",
+    emoji: "🪙",
+    color: "#f97316",
+  },
+  {
+    min: 60,
+    text: "Graduating college within six years of starting",
+    stat: "≈64%",
+    emoji: "🎓",
+    color: "#fb923c",
+  },
+  {
+    min: 60,
+    text: "Rolling 3 or higher on a single die",
+    stat: "≈67%",
+    emoji: "🎲",
+    color: "#fb923c",
+  },
+  {
+    min: 50,
+    text: "A literal coin flip — retirement shouldn't be one",
+    stat: "50%",
+    emoji: "🪙",
+    color: "#f87171",
+  },
+  {
+    min: 50,
+    text: "Guessing a card's color correctly",
+    stat: "50%",
+    emoji: "🎴",
+    color: "#f87171",
+  },
+  {
     min: 0,
-    text: "Slightly better than a coin flip — plan needs work",
+    text: "Worse than a coin flip — plan needs structural changes, not luck",
     emoji: "😰",
+    color: "#ef4444",
+  },
+  {
+    min: 0,
+    text: "Lower spending, later retirement, or different allocation beat hoping for good markets",
+    emoji: "⚠️",
     color: "#ef4444",
   },
 ];
@@ -1646,9 +1763,52 @@ const fmtM = (v) => `$${Math.round(v).toLocaleString()}`;
 const fmtK = (v) => `$${Math.round(v).toLocaleString()}`;
 const fmtDollar = (v) => `$${Math.round(v).toLocaleString()}`;
 const fmtPct = (v) => `${(v * 100).toFixed(1)}%`;
-function getAnalogue(rate) {
+/* All analogies in the band the rate falls into (band = highest `min` ≤ rate).
+ * Exported for tests. The array is ordered highest-band-first, so the first
+ * match's `min` identifies the band. */
+export function getAnalogues(rate) {
   const pct = rate * 100;
-  return ANALOGUES.find((a) => pct >= a.min) || ANALOGUES[ANALOGUES.length - 1];
+  const first = ANALOGUES.find((a) => pct >= a.min) || ANALOGUES[ANALOGUES.length - 1];
+  return ANALOGUES.filter((a) => a.min === first.min);
+}
+
+function getAnalogue(rate) {
+  return getAnalogues(rate)[0];
+}
+
+/* Revolving analogy card — cycles through every analogy in the current band so
+ * users see several independent real-world reference points for the same
+ * number, each with its own (approximate, defensible) probability. Click
+ * advances immediately; auto-advances every 7s. */
+function RotatingAnalogue({ rate, endAge }) {
+  const pool = getAnalogues(rate);
+  const [idx, setIdx] = useState(0);
+  useEffect(() => { setIdx(0); }, [rate]);
+  useEffect(() => {
+    if (pool.length < 2) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % pool.length), 7000);
+    return () => clearInterval(t);
+  }, [pool.length, rate]);
+  const a = pool[idx % pool.length];
+  return (
+    <div
+      className="analogue"
+      onClick={() => pool.length > 1 && setIdx((i) => (i + 1) % pool.length)}
+      style={{ cursor: pool.length > 1 ? "pointer" : "default" }}
+      title={pool.length > 1 ? "Click for another comparison" : undefined}
+    >
+      <span key={idx} className="analogue-fade" style={{ display: "inline" }}>
+        {a.emoji} “{a.text}{a.stat ? ` (${a.stat})` : ""}.” — your plan: {fmtPct(rate)} to age {endAge}.
+      </span>
+      {pool.length > 1 && (
+        <span style={{ marginLeft: 8, whiteSpace: "nowrap" }}>
+          {pool.map((_, i) => (
+            <span key={i} style={{ color: i === idx % pool.length ? "#94a3b8" : "#334155", fontSize: 9, marginRight: 3 }}>●</span>
+          ))}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function useCountdown(dday, startDate) {
@@ -1793,6 +1953,8 @@ const CSS = `
   .mv { font-size:22px; font-weight:800; font-family:'JetBrains Mono',monospace; line-height:1; }
   .ms { font-size:11px; color:#64748b; margin-top:5px; }
   .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:#cbd5e1; font-style:italic; }
+  .analogue-fade { animation: analogueFade 0.6s ease; }
+  @keyframes analogueFade { from { opacity: 0; } to { opacity: 1; } }
   .tabs { display:flex; gap:3px; background:rgba(255,255,255,0.04); border-radius:10px; padding:3px; flex-wrap:wrap; }
   .tab { flex:1; min-width:72px; padding:9px 6px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:13px; font-family:'Inter',sans-serif; color:#64748b; transition:all 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; }
   .tab:hover { color:#94a3b8; }
@@ -10148,11 +10310,7 @@ export default function AiRAForecaster() {
                 rather than always in your face (progressive disclosure). */}
             {showInterpretation && (
               <>
-                {analogue && (
-                  <div className="analogue">
-                    {analogue.emoji} "{analogue.text}." — {fmtPct(mc.rate)} to age {endAge}.
-                  </div>
-                )}
+                {analogue && <RotatingAnalogue rate={mc.rate} endAge={endAge} />}
                 {mc &&
                   (() => {
                     const success = Math.round(mc.rate * 26);
