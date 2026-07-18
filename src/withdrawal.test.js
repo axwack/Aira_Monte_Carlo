@@ -255,3 +255,110 @@ describe("buildWithdrawalWaterfall — full bracket-target coverage (v1.1.0.30)"
     }
   });
 });
+
+// ─── useJointRmdTable gated by filingStatus (B2 regression) ────────────────────
+// The joint RMD table must only apply when actually filing jointly. A stale
+// useJointRmdTable=true left over from switching filingStatus to "single"
+// must fall back to the standard Uniform Lifetime table — matching runMC's
+// `(p.useJointRmdTable ?? false) && p.filingStatus !== "single"` gate.
+
+describe("buildWithdrawalWaterfall — useJointRmdTable gated by filingStatus (B2 regression)", () => {
+  test("filingStatus 'single' + useJointRmdTable=true falls back to Uniform table (matches false)", () => {
+    const singleJoint = buildWithdrawalWaterfall({ ...BASE, filingStatus: "single", useJointRmdTable: true });
+    const singleUniform = buildWithdrawalWaterfall({ ...BASE, filingStatus: "single", useJointRmdTable: false });
+    const rowJoint = singleJoint.smart.rows.find(r => r.age === 75);
+    const rowUniform = singleUniform.smart.rows.find(r => r.age === 75);
+    expect(rowJoint).toBeDefined();
+    expect(rowJoint.rmd).toBe(rowUniform.rmd);
+  });
+
+  test("filingStatus 'mfj' + useJointRmdTable=true actually uses the Joint table (differs from Uniform)", () => {
+    const mfjJoint = buildWithdrawalWaterfall({ ...BASE, filingStatus: "mfj", useJointRmdTable: true });
+    const mfjUniform = buildWithdrawalWaterfall({ ...BASE, filingStatus: "mfj", useJointRmdTable: false });
+    const rowJoint = mfjJoint.smart.rows.find(r => r.age === 75);
+    const rowUniform = mfjUniform.smart.rows.find(r => r.age === 75);
+    expect(rowJoint.rmd).not.toBe(rowUniform.rmd);
+  });
+});
+
+// ─── Guyton-Klinger 6% inflation pass-through cap (B4 regression) ──────────────
+// Must match App.jsx's GK_INFLATION_CAP = 0.06 exactly — the historical
+// bootstrapped inflation array used by runMC/deterministic engines can exceed
+// 6% (clamped at 7% max), so an uncapped waterfall GK implementation would
+// diverge from the MC/deterministic tabs in high-inflation years.
+
+describe("buildWithdrawalWaterfall — GK 6% inflation pass-through cap (B4 regression)", () => {
+  const gkBase = {
+    ...BASE,
+    sp: 80_000, ssAge: 90, ssb: 0, gkFloor: 20_000, gkCeiling: 400_000,
+    accounts: [
+      { id: "g1", category: "pretax",  name: "401k",    balance: 1_000_000 },
+      { id: "g2", category: "roth",    name: "Roth",    balance:   400_000 },
+      { id: "g3", category: "taxable", name: "Taxable", balance:   150_000 },
+      { id: "g4", category: "cash",    name: "Cash",    balance:    50_000 },
+    ],
+  };
+
+  test("20% inflation input still caps the year-1 spending bump at ~6%, not 20%", () => {
+    const result = buildWithdrawalWaterfall({ ...gkBase, inf: 20 });
+    const ratio = result.smart.rows[1].spending / result.smart.rows[0].spending;
+    expect(ratio).toBeGreaterThan(1.055);
+    expect(ratio).toBeLessThan(1.065);
+  });
+
+  test("8% inflation caps the same way, and produces the same year-1 spend as 20% (both hit the 6% ceiling)", () => {
+    const eightPct  = buildWithdrawalWaterfall({ ...gkBase, inf: 8 });
+    const twentyPct = buildWithdrawalWaterfall({ ...gkBase, inf: 20 });
+    expect(eightPct.smart.rows[1].spending).toBe(twentyPct.smart.rows[1].spending);
+  });
+
+  test("2.5% inflation (below the cap) is unaffected — grows at the raw rate", () => {
+    const result = buildWithdrawalWaterfall({ ...gkBase, inf: 2.5 });
+    const ratio = result.smart.rows[1].spending / result.smart.rows[0].spending;
+    expect(ratio).toBeGreaterThan(1.024);
+    expect(ratio).toBeLessThan(1.026);
+  });
+});
+
+// ─── Equity-glide-driven growth (C1 regression) ────────────────────────────────
+// Before this fix, accumulateToRetirement/buildWithdrawalWaterfall hardcoded a
+// flat 7% account-growth rate and never read preRetireEq/postRetireEq at all —
+// two profiles differing only in risk posture produced IDENTICAL Smart
+// Waterfall trajectories, contradicting the Monte Carlo (which correctly reads
+// the glide-path sliders via runMC's portReturn/expectedReturn). BASE pins an
+// explicit gr: 0.07, so these tests clear that override to let the equity
+// sliders actually drive growth.
+
+describe("buildWithdrawalWaterfall — equity-glide-driven growth (C1 regression)", () => {
+  const noGr = { ...BASE, gr: undefined };
+
+  test("a conservative postRetireEq (30) produces a LOWER final portfolio than an aggressive one (70), all else equal", () => {
+    const conservative = buildWithdrawalWaterfall({ ...noGr, preRetireEq: 91, postRetireEq: 30 });
+    const aggressive   = buildWithdrawalWaterfall({ ...noGr, preRetireEq: 91, postRetireEq: 70 });
+    const finalConservative = conservative.smart.finalPretax + conservative.smart.finalRoth
+      + conservative.smart.finalCash + conservative.smart.finalTaxable;
+    const finalAggressive = aggressive.smart.finalPretax + aggressive.smart.finalRoth
+      + aggressive.smart.finalCash + aggressive.smart.finalTaxable;
+    expect(finalAggressive).toBeGreaterThan(finalConservative);
+  });
+
+  test("two profiles differing only in postRetireEq no longer produce identical trajectories (the reported bug)", () => {
+    const low  = buildWithdrawalWaterfall({ ...noGr, postRetireEq: 30 });
+    const high = buildWithdrawalWaterfall({ ...noGr, postRetireEq: 70 });
+    // Compare a mid-horizon row's ending total portfolio — by this point enough
+    // compounding has occurred that a flat-7%-for-both bug would show identical
+    // totals, while the real glide-path-driven rates must differ.
+    const rowLow  = low.smart.rows[10];
+    const rowHigh = high.smart.rows[10];
+    expect(rowLow.totalPort).not.toBe(rowHigh.totalPort);
+  });
+
+  test("gr defaults to expectedReturn(preRetireEq)/expectedReturn(postRetireEq), not a flat 7%, when no explicit gr override is given", () => {
+    // expectedReturn(91) ≈ 7.6%, expectedReturn(70) ≈ 7.34% — both above the
+    // old hardcoded 7.0%, so the very first year's pretax growth (age === retireAge,
+    // which is 65 here, so postGr applies since 65 >= 62) must exceed a flat-7% run.
+    const withGr7   = buildWithdrawalWaterfall({ ...BASE }); // BASE pins gr: 0.07
+    const withGlide = buildWithdrawalWaterfall({ ...noGr, postRetireEq: 70 });
+    expect(withGlide.smart.rows[0].pretaxEnd).toBeGreaterThan(withGr7.smart.rows[0].pretaxEnd);
+  });
+});

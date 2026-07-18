@@ -64,6 +64,7 @@ import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import { taxableSocialSecurity } from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall, accumulateToRetirement } from "./engine/buildWithdrawalWaterfall.js";
+import { expectedReturn } from "./engine/expectedReturn.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, computeOtherIncome } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
@@ -116,6 +117,14 @@ export const GK_CEILING_DEFAULT_PCT = 135;
 // Dollar fallbacks used only when a profile predates the % fields
 export const GK_FLOOR_FALLBACK = 48_000;
 export const GK_CEILING_FALLBACK = 115_000;
+// "Today" as a calendar year, for age→year conversion and inflation-factor
+// indexing (e.g. Math.pow(1+rate, yr - CURRENT_YEAR)). Matches the exact
+// pattern buildWithdrawalWaterfall.js's BASE_YEAR / buildRothExplorer.js's
+// ROTH_BASE_YEAR already use — computed dynamically so it never goes stale,
+// unlike a hardcoded literal year. Do NOT use this for the FED_BRACKETS_2026_*
+// / IRMAA_2026 table names or their literal dollar data — those represent the
+// real IRS 2026 bracket figures and must stay pinned to 2026.
+const CURRENT_YEAR = new Date().getFullYear();
 
 const SP500 = [
   37.88, -11.91, -28.48, -47.07, -15.15, 46.59, -5.94, 41.37, 27.92, -38.59,
@@ -150,12 +159,12 @@ const SEQ_2000_2012 = [
   0.151, 0.021, 0.16,
 ];
 
-const SP500_MEAN = SP500.reduce((s, v) => s + v, 0) / SP500.length;
-const BONDS_MEAN = BONDS.reduce((s, v) => s + v, 0) / BONDS.length;
-function expectedReturn(eqPct) {
-  const w = (eqPct ?? 91) / 100;
-  return parseFloat((w * SP500_MEAN * 100 + (1 - w) * BONDS_MEAN * 100).toFixed(2));
-}
+// expectedReturn() (expected-VALUE helper, used by computeInitialWR/the
+// deterministic schedule/Fan Chart) now lives in ./engine/expectedReturn.js so
+// buildWithdrawalWaterfall.js/buildRothExplorer.js/rothConversionPlan.js can
+// import the exact same formula instead of hardcoding a flat 7%. SP500/BONDS
+// above are kept here (unchanged) because they still feed the STOCHASTIC
+// bootstrap draws in portReturn/bootstrapDraw below, a different consumer.
 
 /**
  * Initial withdrawal rate diagnostic.
@@ -607,7 +616,7 @@ function calcYearTax(
   isTwoHousehold,
   inflationRate,
   filingStatus = "mfj",
-  stateOfResidence = "CA"
+  stateOfResidence = "NJ"
 ) {
   // Replace any NaN arguments with 0
   withdrawalAmount = isNaN(withdrawalAmount) ? 0 : withdrawalAmount;
@@ -626,7 +635,7 @@ function calcYearTax(
   // IRC §86 provisional-income tiers: 0% / 50% / 85% of SS taxable by income level
   const taxableSS = taxableSocialSecurity(ssIncome, otherIncome, isMFJ);
   const totalIncome = taxableSS + otherIncome;
-  const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - 2026));
+  const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - CURRENT_YEAR));
 
   // Standard deduction (incl. age-65+ add-on), inflation-adjusted forward.
   // Single source: getStandardDeduction → TAX_REFERENCE.md (CLAUDE.md Rule 6).
@@ -787,9 +796,9 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     //const initDraw = Math.max(0, p.sp - ss0 - ab0) * (1 + taxDragRate(p.retireAge, p.ssAge, p.tax, p.filingStatus));
     const need0 = Math.max(0, p.sp - ss0 - ab0);
     const initialTaxResult = calcYearTax(
-      p.retireAge, 
-      2026 + (p.retireAge - p.currentAge), 
-      need0, 
+      p.retireAge,
+      CURRENT_YEAR + (p.retireAge - p.currentAge),
+      need0,
       ss0, 
       ab0, 
       0, 
@@ -804,7 +813,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     for (let y = 0; y < retYrs; y++) {
       const age = p.retireAge + y;
-      const calYear = 2026 + (age - p.currentAge);
+      const calYear = CURRENT_YEAR + (age - p.currentAge);
       // Stress sequence override: prescribe the equity leg for the first
       // seqOverride.length retirement years; bond leg stays bootstrapped at the
       // same age-based equity weight portReturn uses. No override → normal draw.
@@ -947,9 +956,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       }
       lastReturn = r;
 
-      // Income from SS and rental/AB
+      // Income from SS and rental/AB. COLA compounds from the claiming age
+      // (p.ssAge), not the retirement-year loop counter `y` — someone who
+      // retires before claiming SS would otherwise get bogus pre-claim COLA
+      // compounding baked into their very first check (matches
+      // buildWithdrawalWaterfall.js's `age - ssAge` pattern).
       const ss = age >= p.ssAge
-        ? p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y)
+        ? p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, Math.max(0, age - p.ssAge))
         : 0;
       const abReliable = rand() < (p.abReliability || 80) / 100;
       const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
@@ -991,7 +1004,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // Taxes depend on the pretax draw, which depends on the total draw size
       // (need + taxes), which depends on taxes — iterate to convergence.
       // RMD proceeds fund spending first; any excess is reinvested in taxable.
-      const yr = 2026 + (age - p.currentAge);
+      const yr = CURRENT_YEAR + (age - p.currentAge);
       const filingStatus = p.filingStatus || "mfj";
 
       // Sourcing guardrails (bracket cap, IRMAA guard, Roth reserve) are ORTHOGONAL
@@ -1000,7 +1013,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // The rooms don't depend on the draw size, so compute them once.
       let bracketRoomMC = Infinity;
       if (p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off") {
-        const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - 2026));
+        const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
         const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC);
         // 85% SS inclusion is a deliberate worst-case estimate so the cap never overshoots.
         const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable);
@@ -1037,7 +1050,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
         taxResult = calcYearTax(
           age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, 0,
-          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "CA"
+          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ"
         );
         const newTax = taxEnabled ? taxResult.totalTax : 0;
         if (Math.abs(newTax - totalTax) < 1) { totalTax = newTax; break; }
@@ -1069,15 +1082,39 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // compounding a single bootstrapped year's draw over the whole horizon would
       // swing the ceiling wildly with RNG noise.
       if (p.rothConversionTarget && p.rothConversionTarget !== "off" && pretax > 1000) {
-        const inflFactor = Math.pow(1 + taxInfl, Math.max(0, yr - 2026));
+        const inflFactor = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
         const bracketCeiling = getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor);
         const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
         if (room > 500) {
-          const convAmt = Math.min(room, pretax);
-          const convTax = taxEnabled ? Math.round(convAmt * (taxResult.marginalBracket || 0.22)) : 0;
-          const totalCost = convAmt + convTax;
-          if (pretax >= totalCost) {
-            pretax -= totalCost;
+          let convAmt = Math.min(room, pretax);
+          // True conversion cost = the DELTA in total tax vs. the no-conversion tax
+          // (correct progressive bracket stacking), not a flat marginal-rate estimate —
+          // a single bracket's rate understates cost whenever `room` spans intervening
+          // brackets. Mirrors buildWithdrawalWaterfall.js's Step 6.5/7 exactly: recompute
+          // full tax with the conversion stacked as ordinary income via calcYearTax's own
+          // `conversionAmount` parameter, then take the delta.
+          const convTaxFor = (amt) => {
+            if (!taxEnabled || amt <= 0) return 0;
+            const withConv = calcYearTax(
+              age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, amt,
+              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ"
+            );
+            return Math.max(0, withConv.totalTax - totalTax);
+          };
+          let convTax = convTaxFor(convAmt);
+
+          // Shrink (rather than all-or-nothing skip) when pretax can't self-fund the
+          // conversion plus its incremental tax — converge on the largest amount the
+          // remaining pretax balance can afford, mirroring the waterfall's own loop.
+          for (let i = 0; i < 5 && convAmt > 0; i++) {
+            const shortfall = (convAmt + convTax) - pretax;
+            if (shortfall <= 0) break;
+            convAmt = Math.max(0, convAmt - shortfall);
+            convTax = convTaxFor(convAmt);
+          }
+
+          if (convAmt > 500) {
+            pretax -= (convAmt + convTax);
             roth   += convAmt;
           }
         }
@@ -1190,6 +1227,11 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const initDraw = Math.max(0, p.sp - ss0 - ab0);
   const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
+  // Kitces ratcheting high-water mark — hoisted OUTSIDE the yearly loop (mirrors
+  // runMC's `startingPort`, declared once before its retirement-years loop) so a
+  // ratchet-fire reassignment persists across years instead of resetting every
+  // iteration, which would otherwise make the +10% bump re-fire every year forever.
+  let startingPort = portAtRetire;
 
   // Source-aware tax: reuse the Smart Waterfall engine so the tax column here
   // matches what the Waterfall tab shows for the same age. The waterfall knows
@@ -1219,7 +1261,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
   for (let y = 0; y < retYrs; y++) {
     const age = p.retireAge + y;
-    const yr = 2026 + (age - p.currentAge);
+    const yr = CURRENT_YEAR + (age - p.currentAge);
     const ret = age < 62 ? expectedReturn(p.preRetireEq ?? 91) / 100 : expectedReturn(p.postRetireEq ?? 70) / 100;
     const inflY = inf / 100;
     const cumInfl = Math.pow(1 + inflY, y);
@@ -1270,8 +1312,6 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
       }
       else if (withdrawalStrategy === "kitces") {
-        let startingPort = portAtRetire;
-        if (y === 1) startingPort = portAtRetire;
         if (port >= startingPort * 1.5) {
           sp = sp * 1.10;
           startingPort = port;
@@ -1335,7 +1375,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     }
     lastReturn = ret;
 
-    const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
+    // COLA compounds from the claiming age (p.ssAge), not the retirement-year
+    // loop counter `y` — see runMC's identical fix above.
+    const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, Math.max(0, age - p.ssAge))) : 0;
     const growthFactor = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
     const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
     const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
@@ -1359,7 +1401,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // Fall back to the legacy "treat everything as ordinary income" calc only
     // when no waterfall row exists for this age (e.g. accounts not configured).
     const wfTax = smartTaxByAge.get(age);
-    const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+    const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "NJ");
     const totalTax = taxEnabled ? taxResult.totalTax : 0;
     const totalDraw = need + totalTax;
     port = port * (1 + ret) - totalDraw;
@@ -1468,9 +1510,9 @@ function idxB(br, f) {
   }));
 }
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true) {
-  const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - 2026);
+  const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - CURRENT_YEAR);
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
-    // Single tiers are half the MFJ thresholds, except the top tier ($500K vs $750K).
+    // Single tiers are half the MFJ thresholds, except the top tier ($500,000 vs $750,000).
     // Surcharge is per person, so single pays half the two-person MFJ amount.
     const thresh = isMFJ ? IRMAA_2026[i].m
       : (i === IRMAA_2026.length - 1 ? 500_000 : IRMAA_2026[i].m / 2);
@@ -1505,13 +1547,8 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
 }
 
 /* ════ FORMATTERS ════ */
-const fmtM = (v) =>
-  v >= 1e6
-    ? `$${(v / 1e6).toFixed(2)}M`
-    : v >= 1e3
-    ? `$${Math.round(v / 1e3)}K`
-    : `$${Math.round(v)}`;
-const fmtK = (v) => `$${Math.round(v / 1e3)}K`;
+const fmtM = (v) => `$${Math.round(v).toLocaleString()}`;
+const fmtK = (v) => `$${Math.round(v).toLocaleString()}`;
 const fmtDollar = (v) => `$${Math.round(v).toLocaleString()}`;
 const fmtPct = (v) => `${(v * 100).toFixed(1)}%`;
 function getAnalogue(rate) {
@@ -2560,14 +2597,14 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
         return (
           <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
           <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#8b5cf6", marginBottom: 3 }}>🚀 Trigger — ${(earlyRetireTarget/1e6).toFixed(1)}M</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#8b5cf6", marginBottom: 3 }}>🚀 Trigger — ${Math.round(earlyRetireTarget).toLocaleString()}</div>
               <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
                 Your early-exit number. If the median hits this before D-Day, the math says you're done — regardless of your original timeline.
               </div>
               {crossBadge(triggerCross, "#8b5cf6")}
             </div>
             <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 3 }}>🎯 Reassess — ${(portfolioGoal/1e6).toFixed(1)}M</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 3 }}>🎯 Reassess — ${Math.round(portfolioGoal).toLocaleString()}</div>
               <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
                 Your minimum acceptable goal. When the median MC path crosses this line, your plan is already viable — anything above is upside.
               </div>
@@ -2730,7 +2767,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             strokeWidth={2.5}
             strokeDasharray="0"
             label={{
-              value: `🎯 Reassess $${(portfolioGoal / 1e6).toFixed(1)}M`,
+              value: `🎯 Reassess $${Math.round(portfolioGoal).toLocaleString()}`,
               fill: "#0a0f1e",
               fontSize: 12,
               fontWeight: 700,
@@ -2745,7 +2782,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             strokeWidth={2.5}
             strokeDasharray="0"
             label={{
-              value: `🚀 Trigger $${(earlyRetireTarget / 1e6).toFixed(1)}M`,
+              value: `🚀 Trigger $${Math.round(earlyRetireTarget).toLocaleString()}`,
               fill: "#fff",
               fontSize: 12,
               fontWeight: 700,
@@ -2791,8 +2828,8 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           { c: "#fbbf24", l: "25th %ile" },
           { c: "#f87171", l: "10th %ile" },
           ...(showTargets ? [
-            { c: "#f59e0b", l: `🎯 Reassess $${(portfolioGoal / 1e6).toFixed(1)}M` },
-            { c: "#8b5cf6", l: `🚀 Trigger $${(earlyRetireTarget / 1e6).toFixed(1)}M` },
+            { c: "#f59e0b", l: `🎯 Reassess $${Math.round(portfolioGoal).toLocaleString()}` },
+            { c: "#8b5cf6", l: `🚀 Trigger $${Math.round(earlyRetireTarget).toLocaleString()}` },
           ] : []),
         ].map((i) => (
           <div key={i.l} className="li">
@@ -3589,7 +3626,7 @@ const modeDescs = {
       {view === "thisyear" && (() => {
         const isMFJ   = (params?.filingStatus || "mfj") !== "single";
         const infRate = (params?.inf || 2.5) / 100;
-        const f       = Math.pow(1 + infRate, cyYear - 2026);
+        const f       = Math.pow(1 + infRate, cyYear - CURRENT_YEAR);
         const fedBase = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
         const fB      = idxB(fedBase, f);
         const stdD    = Math.round((isMFJ ? 32200 : 16100) * f);
@@ -5076,7 +5113,7 @@ function WaterfallPlanView({ p, result }) {
                   emoji="💣"
                   label="Tax Landmines"
                   color="#f87171"
-                  detail="Hidden tax traps that quietly increase your bill. ⚡ SS Torpedo — too much income makes 85% of Social Security taxable. 💊 IRMAA — income above ~$218K MFJ triggers Medicare premium surcharges. 📋 RMD — forced pretax distributions create mandatory taxable income you cannot defer. Hover each row icon for year-specific details."
+                  detail="Hidden tax traps that quietly increase your bill. ⚡ SS Torpedo — too much income makes 85% of Social Security taxable. 💊 IRMAA — income above ~$218,000 MFJ triggers Medicare premium surcharges. 📋 RMD — forced pretax distributions create mandatory taxable income you cannot defer. Hover each row icon for year-specific details."
                 />
                 {" "}Landmines
               </th>
@@ -5148,7 +5185,7 @@ function WaterfallPlanView({ p, result }) {
                         emoji="💊"
                         label="IRMAA Surcharge"
                         color="#fb923c"
-                        detail={`Medicare premium surcharge: ${fmtK(r.irmaa)}/yr this year. Your income crossed the IRMAA Tier 1 threshold (~$218K MFJ). IRMAA uses a 2-year lookback — income this year affects Medicare premiums in ${r.yr + 2}. Enable IRMAA Guard in Profile → Withdrawal Order to cap pretax draws before this threshold.`}
+                        detail={`Medicare premium surcharge: ${fmtK(r.irmaa)}/yr this year. Your income crossed the IRMAA Tier 1 threshold (~$218,000 MFJ). IRMAA uses a 2-year lookback — income this year affects Medicare premiums in ${r.yr + 2}. Enable IRMAA Guard in Profile → Withdrawal Order to cap pretax draws before this threshold.`}
                       />
                     );
                   })()}
@@ -6705,7 +6742,7 @@ function buildMilestones(params, rmdAge) {
       age: 65, label: "Medicare Enrollment", year: yr + (65 - age),
       items: [
         "Enroll during 7-month Initial Enrollment Period (3 months before 65)",
-        "IRMAA surcharge if income >$103K single or >$206K MFJ",
+        "IRMAA surcharge if income >$103,000 single or >$206,000 MFJ",
         "Stop HSA contributions at 65 (Medicare makes you ineligible)",
         "Compare Original Medicare vs Medicare Advantage",
       ],
@@ -6825,7 +6862,7 @@ function getCardSteps(card) {
   ];
   if (a.includes("irmaa") || a.includes("medicare")) return [
     "Check the IRMAA brackets — Medicare uses your MAGI from 2 years ago",
-    "Keep MAGI below the first cliff ($103K single / $206K MFJ) when possible",
+    "Keep MAGI below the first cliff ($103,000 single / $206,000 MFJ) when possible",
     "Roth conversions this year affect Medicare premiums in two years — plan ahead",
     "If income dropped (retirement, death of spouse), file for IRMAA appeal (SSA-44)",
   ];
@@ -7228,7 +7265,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
       {(() => {
         const solver = solveRetirementDate(params);
         const { target, currentPort, currentAge, results } = solver;
-        const fmtM = (n) => `$${(n / 1_000_000).toFixed(2)}M`;
+        const fmtM = (n) => `$${Math.round(n).toLocaleString()}`;
         const retireAge = params.retireAge || 60;
         const rowColor = (age) => {
           if (age == null) return "#f87171";
@@ -8416,10 +8453,10 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Annual shock probability" desc="Chance of a shock in any given year (default 3.5%)">
           <ANumInput value={values.hcProb} onSet={(v) => onChange("hcProb", v)} min={0} max={20} step={0.5} suffix="%" />
         </ARow>
-        <ARow label="Shock cost — minimum" desc="Low end of randomized healthcare shock cost (default $70K)">
+        <ARow label="Shock cost — minimum" desc="Low end of randomized healthcare shock cost (default $70,000)">
           <ANumInput value={values.hcMin} onSet={(v) => onChange("hcMin", v)} min={0} max={200000} step={5000} />
         </ARow>
-        <ARow label="Shock cost — maximum" desc="High end of randomized healthcare shock cost (default $130K)">
+        <ARow label="Shock cost — maximum" desc="High end of randomized healthcare shock cost (default $130,000)">
           <ANumInput value={values.hcMax} onSet={(v) => onChange("hcMax", v)} min={0} max={500000} step={5000} />
         </ARow>
       </div>
@@ -8566,7 +8603,7 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
         />
         {!focused && (
           <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap" }}>
-            {inc.annual ? `$${(inc.annual / 1000).toFixed(0)}K/yr` : ""}
+            {inc.annual ? `$${Math.round(inc.annual).toLocaleString()}/yr` : ""}
             {inc.startYear ? ` · ${inc.startYear}` : ""}
             {inc.endYear ? `–${inc.endYear}` : inc.startYear ? "+" : ""}
           </span>
@@ -9413,9 +9450,12 @@ export default function AiRAForecaster() {
                     ...data,
                     name: data.name || "",
                     dob: data.dob || "",
-                    stateOfResidence: data.stateOfResidence || "CA",
+                    stateOfResidence: data.stateOfResidence || "NJ",
                     filingStatus: data.filingStatus || "mfj",
-                    twoHousehold: data.twoHousehold ?? true,
+                    // Match BLANK_PROFILE's fresh-profile default (false) so an
+                    // older export missing this field doesn't silently flip to
+                    // zero state tax vs. a hand-entered profile with identical data.
+                    twoHousehold: data.twoHousehold ?? false,
                     portfolioGoal: data.portfolioGoal ?? 3_200_000,
                     earlyRetireTarget: data.earlyRetireTarget ?? 3_500_000,
                     accounts: data.accounts,
