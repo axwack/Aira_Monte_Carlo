@@ -1,5 +1,6 @@
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 import { mortgageSchedule, mortgageAnnualPayments } from "./engine/expenses.js";
+import { runMC } from "./App";
 
 const BASE = {
   currentAge: 65,
@@ -135,6 +136,158 @@ describe("buildWithdrawalWaterfall — landmine detection", () => {
       // With $60K spend and low pretax draws, MAGI should be < $218K
       expect(row.landmines.irmaaTriggered).toBe(false);
     });
+  });
+});
+
+// ─── IRMAA 2-year lookback (2026-07-18) ────────────────────────────────────────
+// Medicare charges year T's surcharge off MAGI from year T-2, not the current
+// year. buildWithdrawalWaterfall now maintains a per-scenario magiByAge history
+// and threads magiLookback into yearTax every year. The first two retirement
+// years (no pre-retirement wage history modeled) fall back to same-year MAGI.
+//
+// LOOKBACK_BASE: cash is abundant enough to fund baseline spending for the
+// whole horizon without ever touching pretax (draw order is cash → taxable →
+// pretax in smart mode), so baseline-year MAGI stays ~$0 (well under the
+// $218K IRMAA tier-1). gr: 0 and inf: 0 freeze balances/thresholds so the
+// ONLY thing that moves MAGI in any given year is a pinned conversionOverrides
+// entry — isolating the lookback effect cleanly.
+const LOOKBACK_BASE = {
+  currentAge: 60, retireAge: 60, endAge: 85,
+  sp: 60_000, ssAge: 90, ssb: 0, ssCola: 0, ab: 0, inf: 0,
+  filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
+  useJointRmdTable: false, gkFloor: 40_000, gkCeiling: 150_000,
+  withdrawalBracketTarget: "off", irmaaGuard: false, ssTorpedoGuard: false,
+  rothEmergencyReserve: 0, gr: 0,
+  accounts: [
+    { id: "p1", category: "pretax", balance: 2_000_000 },
+    { id: "c1", category: "cash",   balance: 2_000_000 },
+  ],
+};
+
+describe("buildWithdrawalWaterfall — IRMAA 2-year lookback", () => {
+  test("a pinned Roth conversion at exactly age 63 charges IRMAA at age 65, NOT at 63/64", () => {
+    const yr63 = BASE_YEAR() + (63 - 60);
+    const result = buildWithdrawalWaterfall({
+      ...LOOKBACK_BASE,
+      conversionOverrides: [{ year: yr63, amount: 700_000 }],
+    });
+    const row63 = result.smart.rows.find(r => r.age === 63);
+    const row64 = result.smart.rows.find(r => r.age === 64);
+    const row65 = result.smart.rows.find(r => r.age === 65);
+    // Ages 63/64 are under-65 anyway (no IRMAA gate at all), but assert them
+    // explicitly per spec.
+    expect(row63.irmaa).toBe(0);
+    expect(row64.irmaa).toBe(0);
+    // Age 65's charge is driven by age 63's MAGI (the conversion year) — under
+    // the OLD same-year behavior this charge would never appear at 65 at all
+    // (65's own income is back to baseline-low).
+    expect(row65.irmaa).toBeGreaterThan(0);
+    expect(row65.landmines.irmaaTriggered).toBe(true);
+  });
+
+  test("moving the same pinned conversion to age 70 shifts the IRMAA charge to age 72", () => {
+    const yr70 = BASE_YEAR() + (70 - 60);
+    const result = buildWithdrawalWaterfall({
+      ...LOOKBACK_BASE,
+      conversionOverrides: [{ year: yr70, amount: 700_000 }],
+    });
+    const row70 = result.smart.rows.find(r => r.age === 70);
+    const row71 = result.smart.rows.find(r => r.age === 71);
+    const row72 = result.smart.rows.find(r => r.age === 72);
+    // Under the OLD same-year behavior this would have charged AT 70 — the
+    // lookback proves itself by showing $0 here instead.
+    expect(row70.irmaa).toBe(0);
+    expect(row71.irmaa).toBe(0);
+    expect(row72.irmaa).toBeGreaterThan(0);
+  });
+
+  test("income high at 65-66 (conversions) then dropping: IRMAA charges shift to 67-68 via the lookback, then stop", () => {
+    const yr65 = BASE_YEAR() + (65 - 60);
+    const yr66 = BASE_YEAR() + (66 - 60);
+    const result = buildWithdrawalWaterfall({
+      ...LOOKBACK_BASE,
+      conversionOverrides: [
+        { year: yr65, amount: 700_000 },
+        { year: yr66, amount: 700_000 },
+      ],
+    });
+    const byAge = (a) => result.smart.rows.find(r => r.age === a);
+    // 65/66 themselves: their OWN lookback (ages 63/64) is baseline-low, so no
+    // charge in the conversion years themselves.
+    expect(byAge(65).irmaa).toBe(0);
+    expect(byAge(66).irmaa).toBe(0);
+    // 67/68: lookback now sees the high 65/66 MAGI — charged.
+    expect(byAge(67).irmaa).toBeGreaterThan(0);
+    expect(byAge(68).irmaa).toBeGreaterThan(0);
+    // 69+: income already dropped back to baseline two years earlier (67's
+    // own MAGI, which 69 looks back on, is low again) — charge stops.
+    expect(byAge(69).irmaa).toBe(0);
+    expect(byAge(70).irmaa).toBe(0);
+  });
+
+  test("row exposes this year's own magi (for the age+2 lookback / future UI use)", () => {
+    const yr63 = BASE_YEAR() + (63 - 60);
+    const result = buildWithdrawalWaterfall({
+      ...LOOKBACK_BASE,
+      conversionOverrides: [{ year: yr63, amount: 700_000 }],
+    });
+    const row63 = result.smart.rows.find(r => r.age === 63);
+    expect(row63.magi).toBeGreaterThan(600_000); // conversion dominates MAGI that year
+  });
+});
+
+// ─── Funding identity holds with IRMAA-triggering income (audit regression) ────
+// Fixed income + otherIncome + RMD + draws − rmdExcess must equal spending +
+// housing + carveouts + fedTax + stateTax + irmaa on every row, within $2
+// rounding — the same identity App.jsx documents above the Withdrawal Order
+// table. No conversionOverrides/rothConversionTarget here (kept "off") so the
+// draw cascade and the reported fedTax/stateTax/irmaa stay in lockstep (a
+// pinned conversion's own tax is funded separately, outside the cascade —
+// deliberately out of scope for this identity check).
+describe("buildWithdrawalWaterfall — funding identity holds with IRMAA-triggering income", () => {
+  const IDENTITY_PROFILE = {
+    currentAge: 63, retireAge: 63, endAge: 90,
+    sp: 260_000, ssAge: 65, ssb: 30_000, ssCola: 2.4, ab: 0, inf: 2.5,
+    filingStatus: "mfj", stateOfResidence: "CA", twoHousehold: false,
+    useJointRmdTable: false, gkFloor: 200_000, gkCeiling: 400_000,
+    withdrawalBracketTarget: "off", irmaaGuard: false, ssTorpedoGuard: false,
+    rothEmergencyReserve: 0, gr: 0.03, rothConversionTarget: "off",
+    // A large balance relative to spending — the identity assumes every
+    // dollar of "need" is actually funded by the draw cascade; a portfolio
+    // that depletes mid-horizon (pretax exhausted, no other buckets left)
+    // breaks that assumption in its own well-known way (a documented
+    // modeling edge case, not part of this lookback fix), so this profile
+    // is sized to comfortably survive the full 63→90 horizon.
+    accounts: [
+      { id: "p1", category: "pretax", balance: 10_000_000 },
+      { id: "c1", category: "cash",   balance:    200_000 },
+    ],
+  };
+
+  function assertIdentity(rows) {
+    expect(rows.length).toBeGreaterThan(0);
+    rows.forEach((r) => {
+      const taxTotal = r.fedTax + r.stateTax + r.irmaa;
+      const rmdExcess = Math.max(0, r.rmd - (r.needFromPort + taxTotal));
+      const lhs = r.fixedIncomeTotal + r.otherIncome + r.rmd
+        + (r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth) - rmdExcess;
+      const rhs = r.spending + r.housingCost + r.carveoutCost + taxTotal;
+      expect(Math.abs(lhs - rhs)).toBeLessThan(2);
+    });
+  }
+
+  test("identity holds on every smart row for an IRMAA-triggering profile", () => {
+    const result = buildWithdrawalWaterfall(IDENTITY_PROFILE);
+    // Guard: this profile must actually trigger IRMAA somewhere, or the test
+    // isn't exercising the lookback-charged tax component at all.
+    expect(result.smart.rows.some(r => r.irmaa > 0)).toBe(true);
+    assertIdentity(result.smart.rows);
+  });
+
+  test("identity holds on every naive row for the same IRMAA-triggering profile", () => {
+    const result = buildWithdrawalWaterfall(IDENTITY_PROFILE);
+    expect(result.naive.rows.some(r => r.irmaa > 0)).toBe(true);
+    assertIdentity(result.naive.rows);
   });
 });
 
@@ -483,5 +636,124 @@ describe("cashRealReturn honored by the waterfall (profile field regression)", (
     const old45 = buildWithdrawalWaterfall({ ...cashProfile, cashRealReturn: 4.5 });
     expect(dflt.smart.rows[0].cashEnd).toBe(three.smart.rows[0].cashEnd);
     expect(dflt.smart.rows[0].cashEnd).not.toBe(old45.smart.rows[0].cashEnd);
+  });
+});
+
+// ─── Capital-gains / cost-basis model on taxable brokerage draws (2026-07-18) ──
+// Average-cost basis tracking: taxableBasisPct% of TODAY's taxable balance is
+// cost basis; the rest is unrealized gain, realized proportionally on draws
+// and taxed at LTCG rates (stacked on top of ordinary income) + NIIT, and
+// folded into provisional income (SS taxability) + MAGI (IRMAA).
+
+// sp/balance are deliberately large relative to the standard deduction, and
+// inf: 0 freezes the deduction/bracket inflation, so that even the FIRST
+// year's realized gain clears the standard deduction and lands somewhere
+// inside the LTCG brackets — a modest profile like the other describe blocks'
+// BASE would have every year's combined ordinary+gain income absorbed by a
+// standard deduction that (correctly) keeps inflating for 20+ years, masking
+// the very effect this suite is testing.
+const TAX_HEAVY = {
+  currentAge: 65, retireAge: 65, endAge: 80,
+  sp: 300_000, ssAge: 90, ssb: 0, ssCola: 0, ab: 0, inf: 0,
+  filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
+  useJointRmdTable: false, gkFloor: 250_000, gkCeiling: 400_000,
+  withdrawalBracketTarget: "37", irmaaGuard: false, ssTorpedoGuard: false,
+  rothEmergencyReserve: 0, gr: 0.05,
+  accounts: [
+    { id: "x3", category: "taxable", balance: 4_000_000 },
+  ],
+};
+
+describe("buildWithdrawalWaterfall — capital-gains / cost-basis model", () => {
+  test("a lower cost basis (more unrealized gain) pays MORE lifetime tax than a 100%-basis account", () => {
+    const basis50  = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableBasisPct: 50 });
+    const basis100 = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableBasisPct: 100 });
+    expect(basis50.smart.totalTax).toBeGreaterThan(basis100.smart.totalTax);
+  });
+
+  test("realizedGain > 0 in every year that draws from taxable, when basisPct < 100", () => {
+    const result = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableBasisPct: 50 });
+    const drawYears = result.smart.rows.filter(r => r.fromTaxable > 0);
+    expect(drawYears.length).toBeGreaterThan(0);
+    drawYears.forEach(r => expect(r.realizedGain).toBeGreaterThan(0));
+  });
+
+  test("100%-basis account with no portfolio growth realizes ZERO gain — no LTCG/NIIT tax at all (matches pre-feature behavior)", () => {
+    // gr: 0 isolates the LTCG effect from ordinary investment growth: with no
+    // growth AND no accumulation phase (currentAge === retireAge), basis stays
+    // exactly equal to the balance every year, so every draw realizes $0 gain.
+    const result = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableBasisPct: 100, gr: 0 });
+    result.smart.rows.forEach(r => {
+      expect(r.realizedGain).toBe(0);
+      expect(r.ltcgTax).toBe(0);
+      expect(r.niit).toBe(0);
+    });
+  });
+
+  test("realized gains alone can push Social Security from untaxed to taxed (provisional income includes LTCG)", () => {
+    // No pretax/RMD, no cash — spending is funded by SS + a taxable draw only,
+    // isolating the effect of the realized gain on provisional income.
+    const ssProfile = {
+      currentAge: 65, retireAge: 65, endAge: 66,
+      sp: 80_000, ssAge: 65, ssb: 30_000, ssCola: 2.4, ab: 0, inf: 2.5,
+      filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
+      gkFloor: 40_000, gkCeiling: 150_000, withdrawalBracketTarget: "22",
+      irmaaGuard: false, ssTorpedoGuard: false, rothEmergencyReserve: 0, gr: 0,
+      accounts: [{ id: "s1", category: "taxable", balance: 700_000 }],
+    };
+    // 100% basis → $0 realized gain → provisional = 0.5×$30K = $15K < $32K MFJ
+    // lower threshold → taxSS = 0.
+    const highBasis = buildWithdrawalWaterfall({ ...ssProfile, taxableBasisPct: 100 });
+    expect(highBasis.smart.rows[0].taxSS).toBe(0);
+    // 10% basis → ~90% of the draw is realized gain (~$45K on a ~$50K draw) →
+    // provisional = $15K + ~$45K ≈ $60K, well past the $44K MFJ upper threshold
+    // → some SS becomes taxable.
+    const lowBasis = buildWithdrawalWaterfall({ ...ssProfile, taxableBasisPct: 10 });
+    expect(lowBasis.smart.rows[0].taxSS).toBeGreaterThan(0);
+  });
+
+  test("basis depletes over time: the realized-gain fraction of each taxable draw is non-decreasing year over year", () => {
+    // No pretax (no RMD/rmdExcess to perturb basis) — every dollar of spending
+    // comes from the taxable bucket, isolating basis-fraction drift. With
+    // average-cost tracking, a proportional draw never changes the basis
+    // fraction by itself; only growth (which grows the balance but not the
+    // basis) shrinks the basis fraction and grows the gain fraction — so the
+    // gain fraction should only ever go up.
+    const depletionProfile = {
+      currentAge: 65, retireAge: 65, endAge: 85,
+      sp: 50_000, ssAge: 67, ssb: 0, ssCola: 2.4, ab: 0, inf: 2.5,
+      filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
+      gkFloor: 20_000, gkCeiling: 200_000, withdrawalBracketTarget: "22",
+      irmaaGuard: false, ssTorpedoGuard: false, rothEmergencyReserve: 0, gr: 0.06,
+      accounts: [{ id: "d1", category: "taxable", balance: 1_000_000 }],
+    };
+    const result = buildWithdrawalWaterfall({ ...depletionProfile, taxableBasisPct: 50 });
+    const fracs = result.smart.rows
+      .filter(r => r.fromTaxable > 0)
+      .map(r => r.realizedGain / r.fromTaxable);
+    expect(fracs.length).toBeGreaterThan(5);
+    for (let i = 1; i < fracs.length; i++) {
+      expect(fracs[i]).toBeGreaterThanOrEqual(fracs[i - 1] - 0.005); // small rounding tolerance
+    }
+  });
+});
+
+describe("runMC — taxable cost-basis (taxableBasisPct) wiring", () => {
+  test("basisPct flows through to a lower cost basis realizing more gain (indirect check via lower success rate)", () => {
+    const taxableHeavy = {
+      currentAge: 65, retireAge: 65, endAge: 90, port: 0, contrib: 0, inf: 2.5,
+      sp: 100_000, ssAge: 90, ssb: 0, ssCola: 2.4, ab: 0, useAb: false,
+      tax: 22, smile: false, preRetireEq: 91, postRetireEq: 70,
+      gkFloor: 40_000, gkCeiling: 150_000, withdrawalStrategy: "gk",
+      cashRealReturn: 1.0, useJointRmdTable: false, twoHousehold: false,
+      filingStatus: "mfj", stateOfResidence: "FL",
+      accounts: [
+        { id: "th1", category: "taxable", name: "Taxable", balance: 1_800_000 },
+        { id: "th2", category: "cash",    name: "Cash",    balance:    50_000 },
+      ],
+    };
+    const lowBasis  = runMC({ ...taxableHeavy, taxableBasisPct: 40  }, 90, 500, 42, true);
+    const highBasis = runMC({ ...taxableHeavy, taxableBasisPct: 100 }, 90, 500, 42, true);
+    expect(lowBasis.rate).toBeLessThanOrEqual(highBasis.rate);
   });
 });

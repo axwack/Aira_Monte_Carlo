@@ -297,6 +297,54 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
     expect(future.taxableIncome).toBeLessThan(now.taxableIncome);
     expect(future.fedTax).toBeLessThanOrEqual(now.fedTax);
   });
+
+  test("calcYearTax exposes this year's own MAGI on the result (magi field)", () => {
+    // magi = totalIncome (incl. taxable SS) + ltcgAmount — callers build a
+    // per-age history from this so future years can look it back up.
+    const r = calcYearTax(60, 2026, 60_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(r.magi).toBe(60_000);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// IRMAA 2-year lookback (calcYearTax's magiLookback parameter) — 2026-07-18
+//
+// Medicare charges year T's IRMAA surcharge off the tax return filed two years
+// prior (MAGI[T-2]), not the current year's income. calcYearTax's new trailing
+// `magiLookback` parameter lets a caller with per-age MAGI history substitute
+// that 2-years-ago figure for the irmaaCost() lookup; the CURRENT year `yr`
+// still selects which bracket table to use. `null` (the default, and every
+// pre-existing call site above) preserves the old same-year-MAGI behavior.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("calcYearTax — IRMAA 2-year lookback (magiLookback param)", () => {
+  test("magiLookback above tier-1 charges IRMAA even when THIS year's MAGI is low", () => {
+    // Current-year withdrawal is only $100K (well under $218K tier-1), but the
+    // 2-years-ago MAGI of $300K (>$274K) is what actually gets charged.
+    const r = calcYearTax(66, 2026, 100_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, 300_000);
+    expect(r.irmaa).toBeGreaterThan(0);
+    expect(r.irmaa).toBe(2_160); // same $274K–$342K tier as the direct irmaaCost(300_000,...) test above
+  });
+
+  test("magiLookback below tier-1 charges NO IRMAA even when THIS year's MAGI is high", () => {
+    // Current-year withdrawal of $300K would trigger IRMAA under the OLD
+    // same-year behavior, but the 2-years-ago MAGI of $100K is below tier-1 —
+    // the surcharge is charged on the OLD income, not the current one.
+    const r = calcYearTax(66, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, 100_000);
+    expect(r.irmaa).toBe(0);
+  });
+
+  test("magiLookback = null (default/omitted) falls back to same-year MAGI (backward compatible)", () => {
+    const withNull    = calcYearTax(66, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, null);
+    const omitted     = calcYearTax(66, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0);
+    const sameYearRef = calcYearTax(66, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(withNull.irmaa).toBe(sameYearRef.irmaa);
+    expect(omitted.irmaa).toBe(sameYearRef.irmaa);
+  });
+
+  test("age < 65 still charges no IRMAA regardless of magiLookback", () => {
+    const r = calcYearTax(64, 2026, 100_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, 900_000);
+    expect(r.irmaa).toBe(0);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2082,5 +2130,144 @@ describe("per-age funded fraction (MC band table)", () => {
     expect(r.pcts[r.pcts.length - 1].alive).toBeGreaterThanOrEqual(r.rate);
     // And in a scenario with real failures, alive must actually drop below 1
     expect(r.pcts[r.pcts.length - 1].alive).toBeLessThan(1.0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Capital-gains / cost-basis model on taxable brokerage draws (2026-07-18)
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("calcYearTax — LTCG stacking (ltcgAmount param)", () => {
+  test("ordinary income $0 + $80K LTCG, current year → LTCG tax $0 (fits entirely in the 0% band after the std deduction)", () => {
+    // MFJ std deduction (age 60, no 65+ bonus) = $32,200.
+    // gainTaxable = max(0, 0 + 80,000 - 32,200) - 0 = 47,800, stacked in [0, 47,800).
+    // 2026 MFJ 0% LTCG band runs 0–98,700 → entirely 0% → ltcgTax = $0 → fedTax = $0.
+    const r = calcYearTax(60, 2026, 0, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 80_000);
+    expect(r.ltcgTax).toBe(0);
+    expect(r.fedTax).toBe(0);
+  });
+
+  test("ordinary income $150K + $100K LTCG → gains straddle into the 15% band (hand-computed)", () => {
+    // std deduction (age 60, MFJ) = 32,200.
+    // ordTaxable = 150,000 - 32,200 = 117,800 (std deduction fully absorbed by ordinary income).
+    // gainTaxable = (150,000 + 100,000 - 32,200) - 117,800 = 100,000, stacked over
+    // the interval [117,800, 217,800) — entirely inside the 2026 MFJ 15% LTCG band
+    // (98,700–613,700) → ltcgTax = 100,000 × 15% = $15,000.
+    // fedTaxOrdinary on $117,800 (2026 MFJ brackets):
+    //   10% × 24,800 = 2,480
+    //   12% × (100,800-24,800) = 12% × 76,000 = 9,120
+    //   22% × (117,800-100,800) = 22% × 17,000 = 3,740
+    //   = 15,340
+    // MAGI = 250,000 = exactly the NIIT threshold → niit = 0.
+    // fedTax = 15,340 (ordinary) + 15,000 (LTCG) + 0 (NIIT) = 30,340.
+    const r = calcYearTax(60, 2026, 150_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 100_000);
+    expect(r.ltcgTax).toBeCloseTo(15_000, 0);
+    expect(r.niit).toBe(0);
+    expect(r.fedTax).toBeCloseTo(30_340, 0);
+  });
+
+  test("NIIT: MFJ MAGI over $250K with $100K LTCG adds 3.8% on the excess (hand-computed)", () => {
+    // ordinary $200,000 + $100,000 LTCG → MAGI = 300,000.
+    // excess over the (non-inflation-indexed) $250,000 MFJ NIIT threshold = 50,000.
+    // niit = 3.8% × min(100,000, 50,000) = 3.8% × 50,000 = $1,900.
+    const r = calcYearTax(60, 2026, 200_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 100_000);
+    expect(r.niit).toBe(1_900);
+  });
+
+  test("NIIT is $0 when MAGI is below the threshold even with large realized gains", () => {
+    const r = calcYearTax(60, 2026, 0, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 50_000);
+    expect(r.niit).toBe(0);
+  });
+
+  test("ltcgAmount defaults to 0 — omitting it reproduces the pre-feature (no-LTCG) result", () => {
+    const explicit0 = calcYearTax(65, 2026, 100_000, 24_000, 0, 0, 0, false, 0.025, "mfj", "FL", 0);
+    const omitted   = calcYearTax(65, 2026, 100_000, 24_000, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(omitted.fedTax).toBe(explicit0.fedTax);
+    expect(omitted.ltcgTax).toBe(0);
+    expect(omitted.niit).toBe(0);
+  });
+});
+
+describe("runMC — taxable cost-basis (taxableBasisPct) success-rate impact", () => {
+  test("a taxable-heavy profile with a lower cost basis has success rate <= the same profile at 100% basis (same seed)", () => {
+    // No SS, no pretax — spending is funded almost entirely from the taxable
+    // bucket, so a lower basis (more unrealized gain realized every draw) can
+    // only add tax drag relative to the 100%-basis run, never remove it. Same
+    // seed → identical market/inflation draw sequence for both runs.
+    const taxableHeavy = {
+      ...BASE, ssb: 0, sp: 100_000,
+      accounts: [
+        { id: "th1", category: "taxable", name: "Taxable", balance: 1_800_000 },
+        { id: "th2", category: "cash",    name: "Cash",    balance:    50_000 },
+      ],
+    };
+    const lowBasis  = runMC({ ...taxableHeavy, taxableBasisPct: 40  }, 90, 1000, 42, true);
+    const highBasis = runMC({ ...taxableHeavy, taxableBasisPct: 100 }, 90, 1000, 42, true);
+    expect(lowBasis.rate).toBeLessThanOrEqual(highBasis.rate);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// runMC — IRMAA 2-year lookback wiring (2026-07-18)
+//
+// runMC now threads a rolling magiTwoYearsAgo/magiOneYearAgo history into
+// calcYearTax's magiLookback param every year (both the spending-draw tax
+// convergence loop and the Roth-conversion delta calls). This is a directional/
+// wiring check, not an exact-value assertion (the fixed point + bracket-fill
+// conversion + RNG paths make a hand-computed expected rate impractical): a
+// profile whose income crosses the IRMAA threshold via large ordinary-bracket
+// conversions from 63-70 must still produce a finite, valid success rate with
+// no NaN anywhere in the aggregated bands.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("runMC — IRMAA 2-year lookback wiring", () => {
+  test("completes with a finite, in-range success rate for an IRMAA-crossing conversion profile", () => {
+    const irmaaHeavy = {
+      currentAge: 60, retireAge: 60, endAge: 90, port: 0, contrib: 0, inf: 2.5,
+      sp: 150_000, ssAge: 67, ssb: 30_000, ssCola: 2.4, ab: 0, useAb: false,
+      tax: 22, smile: false, preRetireEq: 91, postRetireEq: 70,
+      gkFloor: 100_000, gkCeiling: 250_000, withdrawalStrategy: "gk",
+      cashRealReturn: 1.0, useJointRmdTable: false, twoHousehold: false,
+      filingStatus: "mfj", stateOfResidence: "FL",
+      withdrawalBracketTarget: "off", irmaaGuard: false,
+      // Large bracket-fill conversions every year — pushes MAGI well past the
+      // IRMAA tier-1 threshold in some years, so the lookback history actually
+      // gets exercised (non-null magiLookback) for most of retirement.
+      rothConversionTarget: "24",
+      accounts: [
+        { id: "m1", category: "pretax", name: "401k", balance: 3_000_000 },
+        { id: "m2", category: "cash",   name: "Cash",  balance:   200_000 },
+      ],
+    };
+    const result = runMC(irmaaHeavy, 90, 200, 42, true);
+    expect(Number.isFinite(result.rate)).toBe(true);
+    expect(result.rate).toBeGreaterThanOrEqual(0);
+    expect(result.rate).toBeLessThanOrEqual(1);
+    result.pcts.forEach((row) => {
+      expect(Number.isNaN(row.p10)).toBe(false);
+      expect(Number.isNaN(row.p50)).toBe(false);
+      expect(Number.isNaN(row.p90)).toBe(false);
+      expect(Number.isNaN(row.alive)).toBe(false);
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MCBandTable "Still Funded" explainer — source-text check (same convention as
+// the twoHousehold default-consistency regression above / banner.test.js) since
+// the explainer toggle lives inside a component's JSX, not an exportable pure
+// function.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("MCBandTable 'What do these numbers mean?' explainer", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
+
+  test("Age-by-Age Projection Bands table has an ℹ️ explainer trigger", () => {
+    expect(SRC).toMatch(/ℹ️ What do these numbers mean\?/);
+  });
+
+  test("explainer panel condenses Still Funded / 10th percentile pairing guidance and links back to the About page", () => {
+    expect(SRC).toMatch(/Still Funded<\/strong> is the share of simulated retirement/);
+    expect(SRC).toMatch(/10th percentile/);
+    expect(SRC).toMatch(/About → Reading the Charts → "What does Still Funded % actually mean\?"/);
   });
 });

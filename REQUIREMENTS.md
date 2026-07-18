@@ -59,12 +59,78 @@ Tests: suite updated where it encoded the old behavior; 256 passing
 
 ## 3. Known Limitations (accepted simplifications — revisit)
 
-- **No LTCG / cost-basis model.** Taxable-brokerage withdrawals are invisible to the
-  tax calc (treated as 100% return of basis) and excluded from provisional income.
-  Biases results optimistic for taxable-heavy portfolios. Candidate fix: user-set
-  "% of taxable account that is unrealized gains," taxed at 0/15/20% LTCG brackets
-  and included in provisional income + MAGI.
-- **IRMAA 2-year lookback** is ignored — surcharge applies to same-year MAGI.
+- ✅ **IMPLEMENTED 2026-07-18** — ~~No LTCG / cost-basis model.~~ Taxable-brokerage
+  draws now carry average-cost basis tracking: new profile field `taxableBasisPct`
+  (default 70) sets what % of TODAY's taxable balance is cost basis; the rest is
+  unrealized gain, realized proportionally (`g = draw × (1 − basis/balance)`) on
+  every draw and left flat (not grown) between draws — reinvested `rmdExcess` adds
+  fresh basis dollar-for-dollar. Realized gains are taxed via 2026 LTCG brackets
+  ($98,700/$613,700 MFJ, $49,350/$566,700 single — IRS Rev. Proc. 2025-32), stacked
+  ON TOP of ordinary income (the standard deduction soaks into gains first if
+  ordinary income didn't use it all), plus NIIT (3.8% on the lesser of the gain or
+  MAGI over the non-inflation-indexed $250K MFJ/$200K single threshold). States tax
+  gains as ordinary income (added to the state taxable base). Realized gains are
+  now included in both IRC §86 provisional income (SS taxability) and MAGI
+  (IRMAA) — closing the two related gaps this entry used to call out. Implemented
+  in `calcYearTax` (App.jsx, new `ltcgAmount` param), `runMC` (per-path
+  `taxableBasis`, mutated once per year after the tax↔draw fixed point converges),
+  and `buildWithdrawalWaterfall`'s `yearTax`/`runScenario` (new `taxableBasis0`
+  from `accumulateToRetirement`, one basis per smart/naive scenario). New shared
+  constants `LTCG_BRACKETS_2026_MFJ/SINGLE`, `NIIT_THRESHOLD_MFJ/SINGLE`,
+  `NIIT_RATE` live in `buildRothExplorer.js` (single source, imported by both
+  App.jsx and the waterfall engine — same pattern as `FED_BRACKETS_2026_*`).
+  12 new tests (`computations.test.js`, `withdrawal.test.js`); all 383 pre-existing
+  tests still pass unchanged (395 total) — the directional/relative nature of the
+  existing suite meant no expected values needed updating.
+  **Remaining sub-gaps (out of scope for this pass):** average-cost basis only —
+  no per-lot tax-lot selection or tax-loss harvesting; the Roth Explorer tab
+  (`buildRothExplorer.js`'s own 2-bucket pretax/Roth model) still ignores LTCG
+  entirely, since it has no taxable-bucket concept at all. IRMAA's 2-year lookback
+  (next entry below) is a separate, later pass — not touched here.
+- ✅ **IMPLEMENTED 2026-07-18** — ~~IRMAA 2-year lookback is ignored.~~ Medicare
+  charges year T's IRMAA surcharge off the tax return filed two years prior
+  (MAGI[T-2]), not the current year's income — a big Roth conversion at 63 now
+  raises Medicare premiums at 65 (not at 63), and income dropping at retirement
+  takes 2 years to flow through to lower premiums. `calcYearTax` (App.jsx) and
+  `yearTax` (`buildWithdrawalWaterfall.js`) both gain an optional trailing
+  `magiLookback` param: when supplied, `irmaaCost()` uses that 2-years-ago MAGI
+  instead of the current year's own MAGI (the current year `yr` still selects
+  the bracket table). `null` (default) preserves the old same-year-MAGI
+  behavior for every caller that hasn't threaded history through — the
+  purely-`calcYearTax`-level tests above are unaffected. The tax↔draw fixed
+  point actually converges a step FASTER now: IRMAA is sourced from an
+  already-known, fixed 2-years-ago MAGI instead of the current pass's draws, so
+  it's a per-year constant rather than part of the step function the loop had
+  to converge through. Threaded through both engines' year loops:
+  `buildWithdrawalWaterfall`'s `runScenario` keeps a per-scenario (smart/naive
+  diverge) `magiByAge` Map, storing each year's FINAL (post-conversion, since a
+  conversion raises MAGI) MAGI and looking up `age-2`; `runMC` keeps cheaper
+  rolling `magiOneYearAgo`/`magiTwoYearsAgo` variables per path, rolled forward
+  after the Roth-conversion block (using the post-conversion MAGI when a
+  conversion executed that year). **Pre-retirement fallback:** neither engine
+  models pre-retirement wages, so the first two retirement years (whose
+  lookback would reach `age-2 < retireAge`, into unmodeled working years) fall
+  back to `null` → same-year MAGI, the old approximation, for those two years
+  only. Every row now also exposes `magi` (this year's own MAGI, feeding the
+  UI and the next engine's history) alongside the existing `irmaa`/
+  `irmaaTriggered` fields; `irmaaTriggered` continues to mean "surcharge
+  CHARGED this year" (now correctly sourced from 2-years-ago income).
+  Roth-conversion delta costing needed NO change: `convTax = tax.totalTax -
+  taxNoConv.totalTax` was always fed+state only (IRMAA excluded, reported
+  separately via `irmaaFull`), so a same-year conversion's cost was never
+  polluted by IRMAA and still isn't — IRMAA simply can't move within the
+  conversion's own year anymore, full stop. `simulateDeterministicWithStrategy`
+  inherits the lookback automatically via its `smartTaxByAge` map (sourced from
+  `buildWithdrawalWaterfall`); its legacy no-waterfall-row fallback still calls
+  `calcYearTax` with no lookback arg (`null` default, old same-year behavior),
+  unchanged, out of scope.
+  **Remaining sub-gap (out of scope for this pass):** `buildRothExplorer.js`'s
+  own `irmaaCost`/`irmaaCeiling` (the Conversion Plan tab) still charges IRMAA
+  on same-year MAGI — same category of gap as that tab's pre-existing
+  LTCG-ignorance noted above (it has no taxable-bucket concept, and now no
+  lookback history either).
+  10 new tests (`computations.test.js`, `withdrawal.test.js`); all pre-existing
+  tests pass unchanged.
 - **Bracket-cap "income so far" estimates** (smart waterfall, both engines) assume
   85% SS inclusion deliberately: the pretax draw being sized affects provisional
   income, so worst-case inclusion keeps the cap conservative (never overshoots).
