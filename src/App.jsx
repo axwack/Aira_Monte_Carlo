@@ -1470,7 +1470,7 @@ function idxB(br, f) {
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true) {
   const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - 2026);
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
-    // Single tiers are half the MFJ thresholds, except the top tier ($500K vs $750K).
+    // Single tiers are half the MFJ thresholds, except the top tier ($500,000 vs $750,000).
     // Surcharge is per person, so single pays half the two-person MFJ amount.
     const thresh = isMFJ ? IRMAA_2026[i].m
       : (i === IRMAA_2026.length - 1 ? 500_000 : IRMAA_2026[i].m / 2);
@@ -1505,13 +1505,8 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
 }
 
 /* ════ FORMATTERS ════ */
-const fmtM = (v) =>
-  v >= 1e6
-    ? `$${(v / 1e6).toFixed(2)}M`
-    : v >= 1e3
-    ? `$${Math.round(v / 1e3)}K`
-    : `$${Math.round(v)}`;
-const fmtK = (v) => `$${Math.round(v / 1e3)}K`;
+const fmtM = (v) => `$${Math.round(v).toLocaleString()}`;
+const fmtK = (v) => `$${Math.round(v).toLocaleString()}`;
 const fmtDollar = (v) => `$${Math.round(v).toLocaleString()}`;
 const fmtPct = (v) => `${(v * 100).toFixed(1)}%`;
 function getAnalogue(rate) {
@@ -2560,14 +2555,14 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
         return (
           <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
           <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#8b5cf6", marginBottom: 3 }}>🚀 Trigger — ${(earlyRetireTarget/1e6).toFixed(1)}M</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#8b5cf6", marginBottom: 3 }}>🚀 Trigger — ${Math.round(earlyRetireTarget).toLocaleString()}</div>
               <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
                 Your early-exit number. If the median hits this before D-Day, the math says you're done — regardless of your original timeline.
               </div>
               {crossBadge(triggerCross, "#8b5cf6")}
             </div>
             <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 3 }}>🎯 Reassess — ${(portfolioGoal/1e6).toFixed(1)}M</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 3 }}>🎯 Reassess — ${Math.round(portfolioGoal).toLocaleString()}</div>
               <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
                 Your minimum acceptable goal. When the median MC path crosses this line, your plan is already viable — anything above is upside.
               </div>
@@ -2730,7 +2725,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             strokeWidth={2.5}
             strokeDasharray="0"
             label={{
-              value: `🎯 Reassess $${(portfolioGoal / 1e6).toFixed(1)}M`,
+              value: `🎯 Reassess $${Math.round(portfolioGoal).toLocaleString()}`,
               fill: "#0a0f1e",
               fontSize: 12,
               fontWeight: 700,
@@ -2745,7 +2740,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             strokeWidth={2.5}
             strokeDasharray="0"
             label={{
-              value: `🚀 Trigger $${(earlyRetireTarget / 1e6).toFixed(1)}M`,
+              value: `🚀 Trigger $${Math.round(earlyRetireTarget).toLocaleString()}`,
               fill: "#fff",
               fontSize: 12,
               fontWeight: 700,
@@ -2791,8 +2786,8 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           { c: "#fbbf24", l: "25th %ile" },
           { c: "#f87171", l: "10th %ile" },
           ...(showTargets ? [
-            { c: "#f59e0b", l: `🎯 Reassess $${(portfolioGoal / 1e6).toFixed(1)}M` },
-            { c: "#8b5cf6", l: `🚀 Trigger $${(earlyRetireTarget / 1e6).toFixed(1)}M` },
+            { c: "#f59e0b", l: `🎯 Reassess $${Math.round(portfolioGoal).toLocaleString()}` },
+            { c: "#8b5cf6", l: `🚀 Trigger $${Math.round(earlyRetireTarget).toLocaleString()}` },
           ] : []),
         ].map((i) => (
           <div key={i.l} className="li">
@@ -5076,7 +5071,7 @@ function WaterfallPlanView({ p, result }) {
                   emoji="💣"
                   label="Tax Landmines"
                   color="#f87171"
-                  detail="Hidden tax traps that quietly increase your bill. ⚡ SS Torpedo — too much income makes 85% of Social Security taxable. 💊 IRMAA — income above ~$218K MFJ triggers Medicare premium surcharges. 📋 RMD — forced pretax distributions create mandatory taxable income you cannot defer. Hover each row icon for year-specific details."
+                  detail="Hidden tax traps that quietly increase your bill. ⚡ SS Torpedo — too much income makes 85% of Social Security taxable. 💊 IRMAA — income above ~$218,000 MFJ triggers Medicare premium surcharges. 📋 RMD — forced pretax distributions create mandatory taxable income you cannot defer. Hover each row icon for year-specific details."
                 />
                 {" "}Landmines
               </th>
@@ -5148,7 +5143,7 @@ function WaterfallPlanView({ p, result }) {
                         emoji="💊"
                         label="IRMAA Surcharge"
                         color="#fb923c"
-                        detail={`Medicare premium surcharge: ${fmtK(r.irmaa)}/yr this year. Your income crossed the IRMAA Tier 1 threshold (~$218K MFJ). IRMAA uses a 2-year lookback — income this year affects Medicare premiums in ${r.yr + 2}. Enable IRMAA Guard in Profile → Withdrawal Order to cap pretax draws before this threshold.`}
+                        detail={`Medicare premium surcharge: ${fmtK(r.irmaa)}/yr this year. Your income crossed the IRMAA Tier 1 threshold (~$218,000 MFJ). IRMAA uses a 2-year lookback — income this year affects Medicare premiums in ${r.yr + 2}. Enable IRMAA Guard in Profile → Withdrawal Order to cap pretax draws before this threshold.`}
                       />
                     );
                   })()}
@@ -6705,7 +6700,7 @@ function buildMilestones(params, rmdAge) {
       age: 65, label: "Medicare Enrollment", year: yr + (65 - age),
       items: [
         "Enroll during 7-month Initial Enrollment Period (3 months before 65)",
-        "IRMAA surcharge if income >$103K single or >$206K MFJ",
+        "IRMAA surcharge if income >$103,000 single or >$206,000 MFJ",
         "Stop HSA contributions at 65 (Medicare makes you ineligible)",
         "Compare Original Medicare vs Medicare Advantage",
       ],
@@ -6825,7 +6820,7 @@ function getCardSteps(card) {
   ];
   if (a.includes("irmaa") || a.includes("medicare")) return [
     "Check the IRMAA brackets — Medicare uses your MAGI from 2 years ago",
-    "Keep MAGI below the first cliff ($103K single / $206K MFJ) when possible",
+    "Keep MAGI below the first cliff ($103,000 single / $206,000 MFJ) when possible",
     "Roth conversions this year affect Medicare premiums in two years — plan ahead",
     "If income dropped (retirement, death of spouse), file for IRMAA appeal (SSA-44)",
   ];
@@ -7228,7 +7223,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
       {(() => {
         const solver = solveRetirementDate(params);
         const { target, currentPort, currentAge, results } = solver;
-        const fmtM = (n) => `$${(n / 1_000_000).toFixed(2)}M`;
+        const fmtM = (n) => `$${Math.round(n).toLocaleString()}`;
         const retireAge = params.retireAge || 60;
         const rowColor = (age) => {
           if (age == null) return "#f87171";
@@ -8416,10 +8411,10 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Annual shock probability" desc="Chance of a shock in any given year (default 3.5%)">
           <ANumInput value={values.hcProb} onSet={(v) => onChange("hcProb", v)} min={0} max={20} step={0.5} suffix="%" />
         </ARow>
-        <ARow label="Shock cost — minimum" desc="Low end of randomized healthcare shock cost (default $70K)">
+        <ARow label="Shock cost — minimum" desc="Low end of randomized healthcare shock cost (default $70,000)">
           <ANumInput value={values.hcMin} onSet={(v) => onChange("hcMin", v)} min={0} max={200000} step={5000} />
         </ARow>
-        <ARow label="Shock cost — maximum" desc="High end of randomized healthcare shock cost (default $130K)">
+        <ARow label="Shock cost — maximum" desc="High end of randomized healthcare shock cost (default $130,000)">
           <ANumInput value={values.hcMax} onSet={(v) => onChange("hcMax", v)} min={0} max={500000} step={5000} />
         </ARow>
       </div>
@@ -8566,7 +8561,7 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
         />
         {!focused && (
           <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap" }}>
-            {inc.annual ? `$${(inc.annual / 1000).toFixed(0)}K/yr` : ""}
+            {inc.annual ? `$${Math.round(inc.annual).toLocaleString()}/yr` : ""}
             {inc.startYear ? ` · ${inc.startYear}` : ""}
             {inc.endYear ? `–${inc.endYear}` : inc.startYear ? "+" : ""}
           </span>

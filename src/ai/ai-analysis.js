@@ -229,7 +229,7 @@ function ctxNarrative(values, mcResults) {
     `State: ${values.stateOfResidence || "unknown"} | Filing: ${values.filingStatus || "mfj"}`,
     accts ? `Accounts: ${accts}` : null,
     mcResults ? `MC success: ${(mcResults.rate * 100).toFixed(1)}% over ${mcResults.N} paths` : null,
-    mcResults ? `Terminal p10/p50/p90: $${(mcResults.term.p10/1000).toFixed(0)}K / $${(mcResults.term.p50/1000).toFixed(0)}K / $${(mcResults.term.p90/1000).toFixed(0)}K` : null,
+    mcResults ? `Terminal p10/p50/p90: $${Math.round(mcResults.term.p10).toLocaleString()} / $${Math.round(mcResults.term.p50).toLocaleString()} / $${Math.round(mcResults.term.p90).toLocaleString()}` : null,
   ].filter(Boolean).join("\n");
 }
 
@@ -625,7 +625,7 @@ export async function generateTimeSensitiveCards(values, mcResults) {
     `Portfolio: $${(values.port || 0).toLocaleString()} | Spending: $${(values.sp || 0).toLocaleString()}/yr`,
     `Filing: ${values.filingStatus || "mfj"} | SS: $${(values.ssb || 0).toLocaleString()}/yr at ${values.ssAge}`,
     `MC success: ${mcResults ? (mcResults.rate * 100).toFixed(1) : "N/A"}%`,
-    `Pre-tax: $${((values.accounts||[]).filter(a=>a.category==="pretax").reduce((s,a)=>s+(a.balance||0),0)/1000).toFixed(0)}K | Roth: $${((values.accounts||[]).filter(a=>a.category==="roth").reduce((s,a)=>s+(a.balance||0),0)/1000).toFixed(0)}K`,
+    `Pre-tax: $${Math.round((values.accounts||[]).filter(a=>a.category==="pretax").reduce((s,a)=>s+(a.balance||0),0)).toLocaleString()} | Roth: $${Math.round((values.accounts||[]).filter(a=>a.category==="roth").reduce((s,a)=>s+(a.balance||0),0)).toLocaleString()}`,
   ].join("\n");
 
   const prompt = `You are Aira, a fiduciary retirement planning AI.\n\nUSER PROFILE:\n${profileCtx}\n\nUse Google Search to find CURRENT information on these topics. Only create a card when you find specific, current numbers or thresholds directly actionable for this user.\n\nSEARCH TOPICS:\n${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\nReturn ONLY a valid JSON array between <cards> and </cards> tags. Each object:\n{\n  "priority": "red|yellow|green",\n  "category": "short category name",\n  "action": "specific action sentence tailored to this user",\n  "reason": "why this matters given their numbers",\n  "deadline": "when to act",\n  "aiNote": "key current number or threshold found (dollar amount, percentage, date)",\n  "source": "website or publication name"\n}\n\nRules:\n- Only include cards with real current numbers you found via search\n- Skip topics where you only have general/training knowledge\n- Set priority by financial impact urgency for this user\n- Maximum 12 cards\n\n<cards>\n</cards>`;
@@ -698,7 +698,7 @@ export async function analyzeRetirementDate(values, mcResults) {
   const apiKey = values?.geminiApiKey?.trim();
   try {
     if (!apiKey) throw new Error("no api key");
-    const fmtM = (n) => `$${(n / 1_000_000).toFixed(2)}M`;
+    const fmtM = (n) => `$${Math.round(n).toLocaleString()}`;
     const scenarioLines = solver.results.map(r =>
       `- ${r.label} (${(r.rate * 100).toFixed(1)}%): reaches ${fmtM(solver.target)} ${r.crossoverAge != null ? `at age ${r.crossoverAge}` : "beyond age 80"}`
     ).join("\n");
@@ -722,7 +722,7 @@ export async function analyzeRetirementDate(values, mcResults) {
     const expected = results.find(r => r.label === "Expected");
     const conservative = results.find(r => r.label === "Conservative");
     const fmt = (n) => n != null ? `age ${n}` : "beyond age 80";
-    const fmtM = (n) => `$${(n / 1_000_000).toFixed(2)}M`;
+    const fmtM = (n) => `$${Math.round(n).toLocaleString()}`;
 
     const narrative = [
       `**Retirement Date Solver** — Target: ${fmtM(target)}`,
@@ -749,9 +749,7 @@ export async function analyzeRetirementDate(values, mcResults) {
 // ─── AIAnalysisPanel Component ────────────────────────────────────────────────
 
 function formatTokens(n) {
-  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
-  return `${n}`;
+  return n.toLocaleString();
 }
 
 function formatCost(usd) {
@@ -855,7 +853,7 @@ export function AIAnalysisPanel({ values, mcResults }) {
 
       {mcResults && (
         <p style={{ fontSize: 11, color: "#475569", margin: "8px 0 0" }}>
-          MC engine: {(mcResults.rate * 100).toFixed(1)}% success · ${(mcResults.term.p50 / 1_000_000).toFixed(2)}M median terminal
+          MC engine: {(mcResults.rate * 100).toFixed(1)}% success · ${Math.round(mcResults.term.p50).toLocaleString()} median terminal
         </p>
       )}
 

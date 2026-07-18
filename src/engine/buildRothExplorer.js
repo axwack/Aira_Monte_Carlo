@@ -244,7 +244,7 @@ function idxB(br, f) {
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true) {
   const f = Math.pow(1 + infR, yr - 2026);
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
-    // Single tiers are half the MFJ thresholds, except the top tier ($500K vs $750K).
+    // Single tiers are half the MFJ thresholds, except the top tier ($500,000 vs $750,000).
     // Surcharge is per person, so single pays half the two-person MFJ amount.
     const thresh = isMFJ ? IRMAA_2026[i].m
       : (i === IRMAA_2026.length - 1 ? 500_000 : IRMAA_2026[i].m / 2);

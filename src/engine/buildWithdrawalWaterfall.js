@@ -415,7 +415,7 @@ export function buildWithdrawalWaterfall(params = {}) {
 
       // ── Step 8: Landmine detection ──────────────────────────────────────
       // SS torpedo: other ordinary income has pushed provisional income past the
-      // IRC §86 lower threshold ($32K MFJ / $25K single), dragging SS benefits
+      // IRC §86 lower threshold ($32,000 MFJ / $25,000 single), dragging SS benefits
       // into taxation (up to $0.85 per extra $1 in the phase-in range).
       const provisional = ss * 0.5 + rmd + fromPretax + convAmt + annuity + otherIncTaxable;
       const torpedoThresh = isMFJ ? 32_000 : 25_000;
