@@ -48,6 +48,11 @@ const AGE_BONUS_SINGLE = 1_650;
 const IRMAA_TIER1_2026_MFJ    = 218_000;
 const IRMAA_TIER1_2026_SINGLE = 109_000;
 
+// Guyton-Klinger CPI pass-through cap (original GK paper). Must match
+// App.jsx's GK_INFLATION_CAP exactly — kept as a separate named constant here
+// since this engine does not import from App.jsx.
+const GK_INFLATION_CAP = 0.06;
+
 // Bracket ceilings as taxable income (post std-deduction), 2026, inflation-indexed
 const BRACKET_CEILINGS_MFJ    = { "10": 24_800, "12": 100_800, "22": 211_400, "24": 403_550, "32": 512_450, "35": 768_700, "37": Infinity, "irmaa": 218_000 };
 const BRACKET_CEILINGS_SINGLE = { "10": 12_400, "12": 50_400,  "22": 105_700, "24": 201_800, "32": 256_225, "35": 640_600, "37": Infinity, "irmaa": 109_000 };
@@ -185,7 +190,11 @@ export function buildWithdrawalWaterfall(params = {}) {
   // ── Guyton-Klinger helper (mirrors App.jsx implementation) ─────────────────
   function gkWithdraw(port, initWR, lastW, lastRet, inflRate, floor, ceiling) {
     if (!port || port <= 0) return floor || 0;
-    let w = lastRet >= 0 ? lastW * (1 + inflRate) : lastW;
+    // Cap the CPI pass-through per the original GK paper (App.jsx's
+    // guytonKlingerWithdrawal applies the same GK_INFLATION_CAP = 0.06) — only
+    // the inflation step is capped, not the whole withdrawal formula.
+    const cappedInfl = Math.min(GK_INFLATION_CAP, inflRate);
+    let w = lastRet >= 0 ? lastW * (1 + cappedInfl) : lastW;
     const cur = port > 0 ? w / port : 0;
     if (cur <= initWR * 0.8) w *= 1.1;
     else if (cur >= initWR * 1.2) w *= 0.9;
@@ -281,7 +290,11 @@ export function buildWithdrawalWaterfall(params = {}) {
       // ── Step 2: RMD (forced) ────────────────────────────────────────────
       let rmd = 0;
       if (age >= rmdAge && pretax > 0) {
-        const tbl     = useJointRmdTable ? JOINT_RMD_DIV : RMD_DIV;
+        // Joint table only applies when actually filing jointly — a stale
+        // useJointRmdTable=true left over from switching filingStatus to
+        // "single" (e.g. modeling widowhood) must fall back to the standard
+        // Uniform Lifetime table, matching runMC's `useJointTable` gate.
+        const tbl     = (useJointRmdTable && isMFJ) ? JOINT_RMD_DIV : RMD_DIV;
         const divisor = tbl[age] || 15.0;
         rmd = Math.round(pretax / divisor);
         pretax -= rmd;

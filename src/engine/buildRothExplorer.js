@@ -421,7 +421,11 @@ function buildRothExplorer(params = {}) {
       // RMD calculation — table selected by useJointRmdTable param
       let rmd = 0;
       if (age >= rmdAge && pT > 0) {
-        const rmdTable = useJointRmdTable ? JOINT_RMD_DIV : RMD_DIV;
+        // Joint table only applies when actually filing jointly — a stale
+        // useJointRmdTable=true left over from switching filingStatus to
+        // "single" must fall back to the standard Uniform Lifetime table,
+        // matching runMC's `useJointTable` gate.
+        const rmdTable = (useJointRmdTable && isMFJ) ? JOINT_RMD_DIV : RMD_DIV;
         const divisor = rmdTable[age] || 15.0;
         rmd = Math.round(pT / divisor);
       }

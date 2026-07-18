@@ -298,6 +298,61 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// stateOfResidence fallback consistency (B1 regression)
+//
+// Every code path that defaults stateOfResidence when it's omitted must agree
+// on "NJ" — the documented, majority default (matches BLANK_PROFILE's UI
+// display defaults and buildWithdrawalWaterfall.js). Regression guard for the
+// bug where runMC's per-year tax calc and simulateDeterministicWithStrategy
+// silently fell back to "CA" while everything else in the app agreed on "NJ".
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("stateOfResidence fallback consistency (B1 regression)", () => {
+  test("calcYearTax: omitted stateOfResidence defaults to NJ, not CA", () => {
+    const omitted = calcYearTax(65, 2026, 150_000, 0, 0, 0, 0, false, 0.025, "mfj");
+    const nj      = calcYearTax(65, 2026, 150_000, 0, 0, 0, 0, false, 0.025, "mfj", "NJ");
+    const ca      = calcYearTax(65, 2026, 150_000, 0, 0, 0, 0, false, 0.025, "mfj", "CA");
+    expect(omitted.stateTax).toBe(nj.stateTax);
+    expect(omitted.stateTax).not.toBe(ca.stateTax);
+  });
+
+  test("runMC: profile with stateOfResidence omitted matches an explicit NJ profile, not CA", () => {
+    const p = {
+      ...BASE, ssb: 0, sp: 90_000,
+      accounts: [
+        { id: "t1", category: "pretax",  name: "401k",    balance: 900_000 },
+        { id: "t2", category: "roth",    name: "Roth",    balance: 200_000 },
+        { id: "t3", category: "taxable", name: "Taxable", balance:  80_000 },
+        { id: "t4", category: "cash",    name: "Cash",    balance:  20_000 },
+      ],
+    };
+    delete p.stateOfResidence; // simulate a profile that never set the field
+    const omitted = runMC(p, 90, 1, 42, true);
+    const nj      = runMC({ ...p, stateOfResidence: "NJ" }, 90, 1, 42, true);
+    const ca      = runMC({ ...p, stateOfResidence: "CA" }, 90, 1, 42, true);
+    // medR is portfolio-AT-RETIREMENT (pre-drawdown) — unaffected by state tax.
+    // Use the terminal portfolio value, which accumulates the annual state-tax
+    // drag over the whole retirement horizon.
+    expect(omitted.term.p50).toBe(nj.term.p50);
+    expect(omitted.term.p50).not.toBe(ca.term.p50);
+  });
+
+  test("simulateDeterministicWithStrategy: omitted stateOfResidence matches explicit NJ, not CA", () => {
+    const p = {
+      currentAge: 65, retireAge: 65, endAge: 90,
+      port: 2_000_000, sp: 90_000, ssAge: 90, ssb: 0,
+      filingStatus: "mfj", gkFloor: 48_000, gkCeiling: 300_000,
+      withdrawalStrategy: "gk",
+      accounts: [{ id: "a1", category: "pretax", name: "401k", balance: 2_000_000 }],
+    };
+    const omitted = simulateDeterministicWithStrategy(p, 2.5, "gk");
+    const nj = simulateDeterministicWithStrategy({ ...p, stateOfResidence: "NJ" }, 2.5, "gk");
+    const ca = simulateDeterministicWithStrategy({ ...p, stateOfResidence: "CA" }, 2.5, "gk");
+    expect(omitted.schedule[1].stateTax).toBe(nj.schedule[1].stateTax);
+    expect(omitted.schedule[1].stateTax).not.toBe(ca.schedule[1].stateTax);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // getRmdStartAge — SECURE Act 2.0 RMD start age
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("getRmdStartAge — SECURE Act 2.0 RMD start age", () => {
@@ -542,6 +597,74 @@ describe("runMC — Monte Carlo integration", () => {
     const fixedMedian = fixed.pcts[fixed.pcts.length - 1].p50;
     // The two strategies generate different wealth paths even if both succeed
     expect(gkMedian).not.toBe(fixedMedian);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Roth conversion tax cost — progressive bracket stacking (A1 regression)
+//
+// The conversion cost must be the DELTA in full progressive tax (with the
+// conversion stacked as ordinary income) vs. the no-conversion tax — not a flat
+// marginal-rate estimate priced off the PRE-conversion income level. A flat rate
+// badly under-costs any conversion whose `room` spans multiple brackets above the
+// pre-conversion bracket (in the extreme, starting from $0 taxable income, the
+// pre-conversion marginal bracket is 0% — the old code would have priced a
+// six-figure bracket-fill conversion at $0 tax).
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Roth conversion tax cost — progressive bracket stacking (A1 regression)", () => {
+  test("calcYearTax: real progressive cost of a bracket-spanning conversion is far above a flat pre-conversion marginal-rate estimate", () => {
+    // Zero baseline ordinary income → pre-conversion marginal bracket is 0%
+    // (the old flat-rate bug's worst case: convTax = round(convAmt × 0) = $0).
+    const noConv = calcYearTax(65, 2026, 0, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(noConv.marginalBracket).toBe(0);
+
+    // conversionAmount is ORDINARY INCOME (pre-standard-deduction); at age 65
+    // MFJ the std deduction is 35,500, so a $211,400 conversion leaves taxable
+    // income of 175,900 — squarely inside the 22% bracket (100,800–211,400).
+    const convAmt = 211_400;
+    const withConv = calcYearTax(65, 2026, 0, 0, 0, 0, convAmt, false, 0.025, "mfj", "FL");
+    const trueCost = withConv.totalTax - noConv.totalTax;
+    expect(withConv.taxableIncome).toBe(175_900);
+
+    // Old buggy cost estimate: convAmt × pre-conversion marginal bracket (0%) = $0.
+    const buggyCost = Math.round(convAmt * (noConv.marginalBracket || 0));
+    expect(buggyCost).toBe(0);
+
+    // True progressive-stacked cost: 10% × $24,800 + 12% × $76,000 + 22% × $75,100
+    // = 2,480 + 9,120 + 16,522 = $28,122 — the fix must charge the real stacked
+    // amount, not $0.
+    expect(trueCost).toBeGreaterThan(25_000);
+    expect(trueCost).toBeGreaterThan(buggyCost);
+  });
+
+  test("runMC: a bracket-filling conversion from zero baseline income reduces terminal portfolio by a real, materially-nonzero tax cost", () => {
+    const base = {
+      currentAge: 65, retireAge: 65, endAge: 66, // single retirement year — isolates the conversion cost
+      port: 5_000_000, contrib: 0, inf: 2.5,
+      sp: 0, ssAge: 90, ssb: 0, ab: 0, useAb: false,
+      tax: 22, smile: false,
+      preRetireEq: 91, postRetireEq: 70,
+      gkFloor: 1_000, gkCeiling: 10_000_000,
+      withdrawalStrategy: "gk",
+      cashRealReturn: 1.0, useJointRmdTable: false, twoHousehold: false,
+      filingStatus: "mfj", stateOfResidence: "FL",
+      rothConversionTarget: "22",
+      accounts: [
+        { id: "t1", category: "pretax", name: "401k", balance: 5_000_000 },
+      ],
+    };
+    // Single deterministic path (N=1, fixed seed) — the equity/inflation draws
+    // are identical between the two runs since the conversion branch consumes
+    // no RNG calls, so any portfolio difference is purely the conversion tax cost.
+    const withConv = runMC(base, 66, 1, 42, true);
+    const noConv   = runMC({ ...base, rothConversionTarget: "off" }, 66, 1, 42, true);
+    const diff = noConv.pcts[1].p50 - withConv.pcts[1].p50;
+
+    // Old bug (flat rate off $0 pre-conversion income) would have priced this at
+    // ~$0 cost. The fix must show a real, substantial tax drag (comfortably above
+    // MC/rounding noise, safely below the true ~$35,932 cost even after applying
+    // a plausible single-year growth factor).
+    expect(diff).toBeGreaterThan(20_000);
   });
 });
 
@@ -1297,6 +1420,43 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
     expect(schedule[1].spending).toBeCloseTo(expected, -2);
   });
 
+  // Regression test for the "ratchet re-fires every year forever" bug (A3):
+  // startingPort must be a high-water mark that persists across years, so once
+  // portfolio crosses 1.5× the CURRENT startingPort it should NOT ratchet again
+  // until portfolio grows another 50% past the NEW (updated) startingPort — not
+  // just stay above the original portAtRetire forever.
+  test("Kitces: ratchet fires once, then does not re-fire every subsequent year", () => {
+    const kitcesProfile = {
+      currentAge: 65, retireAge: 65, endAge: 90,
+      port: 2_000_000, sp: 20_000, ssAge: 90, ssb: 0,
+      filingStatus: "mfj", stateOfResidence: "FL",
+      gkFloor: 1_000, gkCeiling: 10_000_000,
+      preRetireEq: 91, postRetireEq: 91,
+      withdrawalStrategy: "kitces",
+      accounts: [
+        { id: "k1", category: "pretax", name: "401k", balance: 1_600_000 },
+        { id: "k2", category: "roth",   name: "Roth", balance:   400_000 },
+      ],
+    };
+    const { schedule } = sim(kitcesProfile, "kitces");
+
+    // Year-over-year spending ratios. A ratchet fire looks like ~1.10 × 1.025
+    // ≈ 1.1275; a plain inflation-only bump is ~1.025.
+    const ratios = [];
+    for (let i = 1; i < schedule.length; i++) {
+      ratios.push(schedule[i].spending / schedule[i - 1].spending);
+    }
+    const ratchetFireIdx = ratios.findIndex((r) => r > 1.05);
+    expect(ratchetFireIdx).toBeGreaterThan(-1); // sanity: at least one ratchet did fire
+
+    // The bug: with the broken (un-hoisted) startingPort, EVERY year after the
+    // first crossing re-fires the +10% bump, since the comparison never moves
+    // off the original portAtRetire. With the fix, the very next year after a
+    // ratchet fire must be a plain inflation adjustment only (portfolio hasn't
+    // had time to grow another 50% off the new, updated high-water mark).
+    expect(ratios[ratchetFireIdx + 1]).toBeLessThan(1.05);
+  });
+
   // ── Variable Percentage Withdrawal (VPW) ───────────────────────────────────
   // Year 1 (age 66): n = vpwEndAge − age = 100 − 66 = 34, r = 3.76%.
   // Canonical PMT payout rate (fixed 2026-06-10): rate = r / (1 − (1+r)^(−n)),
@@ -1383,6 +1543,44 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
     const cape  = sim({ ...baseStrat, withdrawalStrategy: "cape"  }, "cape");
     // Both draw exactly 4% of the portfolio — should be within $1
     expect(Math.abs(cape.schedule[1].spending - fixed.schedule[1].spending)).toBeLessThan(1_000);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 7.5 SOCIAL SECURITY COLA ANCHORING — regression for A2
+//
+// COLA must compound from the SS CLAIMING age (ssAge), not from the number of
+// years since retirement (`y`). Someone who retires before claiming SS would
+// otherwise get bogus pre-claim COLA compounding baked into their very first
+// check (retire at 60, claim at 67 → y=7 at the first check, so the bug applies
+// 7 years of compounding that should not have happened yet).
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Social Security COLA anchoring — regression for A2 (simulateDeterministicWithStrategy)", () => {
+  const profile = {
+    currentAge: 60, retireAge: 60, endAge: 90,
+    port: 2_000_000, sp: 200_000,
+    ssAge: 67, ssb: 24_000, ssCola: 2.4,
+    filingStatus: "mfj", stateOfResidence: "FL",
+    gkFloor: 48_000, gkCeiling: 300_000,
+    withdrawalStrategy: "gk",
+    accounts: [{ id: "a1", category: "pretax", name: "401k", balance: 2_000_000 }],
+  };
+  const { schedule } = simulateDeterministicWithStrategy(profile, 2.5, "gk");
+  // retireAge=60 → schedule index i is age (60+i)
+  const scheduleByAge = (age) => schedule[age - 60];
+
+  test("pre-claim year (age 66, before ssAge=67): ss = 0", () => {
+    expect(scheduleByAge(66).ss).toBe(0);
+  });
+
+  test("first claim year (age 67 = ssAge): ss = ssb exactly — NOT compounded by y=7 years of COLA", () => {
+    // Buggy formula would give round(24_000 × 1.024^7) ≈ 28,337 — 18%+ too high.
+    expect(scheduleByAge(67).ss).toBe(24_000);
+  });
+
+  test("second claim year (age 68): ss = ssb × (1 + cola) — one year of COLA, not y=8 years", () => {
+    // Buggy formula would give round(24_000 × 1.024^8) ≈ 29,017.
+    expect(scheduleByAge(68).ss).toBe(Math.round(24_000 * 1.024));
   });
 });
 
@@ -1689,5 +1887,33 @@ describe("Federal brackets — 35% and 37% tiers (v1.1.0.30)", () => {
     expect(r.taxableIncome).toBe(967_800);
     expect(r.fedTax).toBeCloseTo(280_250.5, 0);
     expect(r.marginalBracket).toBe(0.37);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// twoHousehold default consistency — regression for B3
+//
+// A brand-new profile (BLANK_PROFILE) and a profile restored from an older
+// exported JSON missing the `twoHousehold` field must agree on the default
+// (false — full state tax). Before the fix, the import-restore handler
+// defaulted to `true` (zero state tax), silently flipping identical financial
+// data depending on whether it was hand-entered or imported. Source-text
+// check (same convention as banner.test.js) since the restore handler lives
+// inside a file-input React event handler, not an exportable pure function.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("twoHousehold default consistency (B3 regression)", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
+
+  test("BLANK_PROFILE.twoHousehold defaults to false", () => {
+    const blankMatch = SRC.match(/export const BLANK_PROFILE = \{[\s\S]*?\n\};/);
+    expect(blankMatch).not.toBeNull();
+    expect(blankMatch[0]).toMatch(/twoHousehold:\s*false/);
+  });
+
+  test("Import Profile JSON-restore handler defaults twoHousehold to false, not true", () => {
+    expect(SRC).toMatch(/twoHousehold:\s*data\.twoHousehold\s*\?\?\s*false/);
+    expect(SRC).not.toMatch(/twoHousehold:\s*data\.twoHousehold\s*\?\?\s*true/);
   });
 });

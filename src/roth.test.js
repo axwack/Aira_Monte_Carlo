@@ -796,3 +796,36 @@ describe("buildRothExplorer — edge cases", () => {
     expect(opt.rows[0].conv).toBeGreaterThan(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// useJointRmdTable gate — regression for B2
+//
+// The joint RMD table must only apply when actually filing jointly. A stale
+// useJointRmdTable=true left over from switching filingStatus to "single"
+// (e.g. modeling widowhood) must fall back to the standard Uniform Lifetime
+// table — matching runMC's `(p.useJointRmdTable ?? false) && p.filingStatus
+// !== "single"` gate. Before the fix, this engine ignored filingStatus entirely.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("buildRothExplorer — useJointRmdTable gated by filingStatus (B2 regression)", () => {
+  // rothMode: "no_convert" keeps the pretax balance intact through age 75 so
+  // there's an actual RMD to compare (BASE's default fill_22 mode converts
+  // the pretax balance down to $0 well before RMDs would start).
+  const rmdBase = { ...BASE, rothMode: "no_convert", rmdStartAge: 75, ssb: 0, ab: 0 };
+
+  test("filingStatus 'single' + useJointRmdTable=true falls back to the Uniform table (matches useJointRmdTable=false)", () => {
+    const singleJoint = buildRothExplorer({ ...rmdBase, filingStatus: "single", useJointRmdTable: true });
+    const singleUniform = buildRothExplorer({ ...rmdBase, filingStatus: "single", useJointRmdTable: false });
+    const rowJoint = singleJoint.opt.rows.find(r => r.age === 75);
+    const rowUniform = singleUniform.opt.rows.find(r => r.age === 75);
+    expect(rowJoint).toBeDefined();
+    expect(rowJoint.rmd).toBe(rowUniform.rmd);
+  });
+
+  test("filingStatus 'mfj' + useJointRmdTable=true actually uses the Joint table (differs from Uniform)", () => {
+    const mfjJoint = buildRothExplorer({ ...rmdBase, filingStatus: "mfj", useJointRmdTable: true });
+    const mfjUniform = buildRothExplorer({ ...rmdBase, filingStatus: "mfj", useJointRmdTable: false });
+    const rowJoint = mfjJoint.opt.rows.find(r => r.age === 75);
+    const rowUniform = mfjUniform.opt.rows.find(r => r.age === 75);
+    expect(rowJoint.rmd).not.toBe(rowUniform.rmd);
+  });
+});

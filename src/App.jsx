@@ -607,7 +607,7 @@ function calcYearTax(
   isTwoHousehold,
   inflationRate,
   filingStatus = "mfj",
-  stateOfResidence = "CA"
+  stateOfResidence = "NJ"
 ) {
   // Replace any NaN arguments with 0
   withdrawalAmount = isNaN(withdrawalAmount) ? 0 : withdrawalAmount;
@@ -947,9 +947,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       }
       lastReturn = r;
 
-      // Income from SS and rental/AB
+      // Income from SS and rental/AB. COLA compounds from the claiming age
+      // (p.ssAge), not the retirement-year loop counter `y` — someone who
+      // retires before claiming SS would otherwise get bogus pre-claim COLA
+      // compounding baked into their very first check (matches
+      // buildWithdrawalWaterfall.js's `age - ssAge` pattern).
       const ss = age >= p.ssAge
-        ? p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, y)
+        ? p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, Math.max(0, age - p.ssAge))
         : 0;
       const abReliable = rand() < (p.abReliability || 80) / 100;
       const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
@@ -1037,7 +1041,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
         taxResult = calcYearTax(
           age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, 0,
-          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "CA"
+          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ"
         );
         const newTax = taxEnabled ? taxResult.totalTax : 0;
         if (Math.abs(newTax - totalTax) < 1) { totalTax = newTax; break; }
@@ -1073,11 +1077,35 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const bracketCeiling = getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor);
         const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
         if (room > 500) {
-          const convAmt = Math.min(room, pretax);
-          const convTax = taxEnabled ? Math.round(convAmt * (taxResult.marginalBracket || 0.22)) : 0;
-          const totalCost = convAmt + convTax;
-          if (pretax >= totalCost) {
-            pretax -= totalCost;
+          let convAmt = Math.min(room, pretax);
+          // True conversion cost = the DELTA in total tax vs. the no-conversion tax
+          // (correct progressive bracket stacking), not a flat marginal-rate estimate —
+          // a single bracket's rate understates cost whenever `room` spans intervening
+          // brackets. Mirrors buildWithdrawalWaterfall.js's Step 6.5/7 exactly: recompute
+          // full tax with the conversion stacked as ordinary income via calcYearTax's own
+          // `conversionAmount` parameter, then take the delta.
+          const convTaxFor = (amt) => {
+            if (!taxEnabled || amt <= 0) return 0;
+            const withConv = calcYearTax(
+              age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, amt,
+              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ"
+            );
+            return Math.max(0, withConv.totalTax - totalTax);
+          };
+          let convTax = convTaxFor(convAmt);
+
+          // Shrink (rather than all-or-nothing skip) when pretax can't self-fund the
+          // conversion plus its incremental tax — converge on the largest amount the
+          // remaining pretax balance can afford, mirroring the waterfall's own loop.
+          for (let i = 0; i < 5 && convAmt > 0; i++) {
+            const shortfall = (convAmt + convTax) - pretax;
+            if (shortfall <= 0) break;
+            convAmt = Math.max(0, convAmt - shortfall);
+            convTax = convTaxFor(convAmt);
+          }
+
+          if (convAmt > 500) {
+            pretax -= (convAmt + convTax);
             roth   += convAmt;
           }
         }
@@ -1190,6 +1218,11 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const initDraw = Math.max(0, p.sp - ss0 - ab0);
   const initWR = portAtRetire > 0 ? initDraw / portAtRetire : 0.04;
+  // Kitces ratcheting high-water mark — hoisted OUTSIDE the yearly loop (mirrors
+  // runMC's `startingPort`, declared once before its retirement-years loop) so a
+  // ratchet-fire reassignment persists across years instead of resetting every
+  // iteration, which would otherwise make the +10% bump re-fire every year forever.
+  let startingPort = portAtRetire;
 
   // Source-aware tax: reuse the Smart Waterfall engine so the tax column here
   // matches what the Waterfall tab shows for the same age. The waterfall knows
@@ -1270,8 +1303,6 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
       }
       else if (withdrawalStrategy === "kitces") {
-        let startingPort = portAtRetire;
-        if (y === 1) startingPort = portAtRetire;
         if (port >= startingPort * 1.5) {
           sp = sp * 1.10;
           startingPort = port;
@@ -1335,7 +1366,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     }
     lastReturn = ret;
 
-    const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, y)) : 0;
+    // COLA compounds from the claiming age (p.ssAge), not the retirement-year
+    // loop counter `y` — see runMC's identical fix above.
+    const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, Math.max(0, age - p.ssAge))) : 0;
     const growthFactor = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
     const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
     const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
@@ -1359,7 +1392,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // Fall back to the legacy "treat everything as ordinary income" calc only
     // when no waterfall row exists for this age (e.g. accounts not configured).
     const wfTax = smartTaxByAge.get(age);
-    const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "CA");
+    const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "NJ");
     const totalTax = taxEnabled ? taxResult.totalTax : 0;
     const totalDraw = need + totalTax;
     port = port * (1 + ret) - totalDraw;
@@ -9408,9 +9441,12 @@ export default function AiRAForecaster() {
                     ...data,
                     name: data.name || "",
                     dob: data.dob || "",
-                    stateOfResidence: data.stateOfResidence || "CA",
+                    stateOfResidence: data.stateOfResidence || "NJ",
                     filingStatus: data.filingStatus || "mfj",
-                    twoHousehold: data.twoHousehold ?? true,
+                    // Match BLANK_PROFILE's fresh-profile default (false) so an
+                    // older export missing this field doesn't silently flip to
+                    // zero state tax vs. a hand-entered profile with identical data.
+                    twoHousehold: data.twoHousehold ?? false,
                     portfolioGoal: data.portfolioGoal ?? 3_200_000,
                     earlyRetireTarget: data.earlyRetireTarget ?? 3_500_000,
                     accounts: data.accounts,
