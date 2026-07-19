@@ -8053,6 +8053,14 @@ function ProfileWizard({ values, onChange }) {
     { label: "About You", icon: "👤", sub: `You are ${values.currentAge} yrs old` },
     { label: "Current Savings", icon: "💰", sub: `Net worth of ${fmtM(values.port)} saved. Congratulations!` },
     { label: "Contributions", icon: "📋", sub: `Total Contributions of ${fmtK(values.contrib)}/yr` },
+    {
+      label: "Expenses", icon: "📄",
+      sub: values.spImportMeta
+        ? (values.spImportMeta.mode === "multi"
+            ? `Multi-year budget · ${values.spImportMeta.years} yrs`
+            : `Budget loaded · ${fmtK(values.spImportMeta.total)}/yr`)
+        : "Import a detailed budget (CSV)",
+    },
     { label: "Retirement Plan", icon: "🎯", sub: `Projected Retirement Age ${values.retireAge}` },
   ];
 
@@ -8061,6 +8069,7 @@ function ProfileWizard({ values, onChange }) {
     <AboutYouPanel values={values} onChange={onChange} />,
     <SavingsPanel values={values} onChange={onChange} />,
     <ContribPanel values={values} onChange={onChange} />,
+    <ExpensesPanel values={values} onChange={onChange} />,
     <RetirementPanel values={values} onChange={onChange} />,
   ];
 
@@ -9295,7 +9304,7 @@ function ExpenseImport({ values, onChange }) {
     <div style={{ marginTop: 14, padding: "12px 14px", background: "rgba(168,85,247,0.06)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: 8 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: "#c4b5fd", marginBottom: 4 }}>📄 Import detailed expenses (CSV)</div>
       <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginBottom: 8 }}>
-        Replace the typed spend above with a line-item budget. <strong style={{ color: "#cbd5e1" }}>Exclude</strong> mortgage/rent,
+        Replace the typed spend (Retirement Plan → Spending) with a line-item budget. <strong style={{ color: "#cbd5e1" }}>Exclude</strong> mortgage/rent,
         debt, medical, long-term care, and income tax — those are modeled separately (Expense Model, carveouts, tax engine).
         Upload <strong style={{ color: "#cbd5e1" }}>one year</strong> (summed and inflated forward) or
         <strong style={{ color: "#cbd5e1" }}> multiple years</strong> (one column or row per year — used as the spend plan for those years).
@@ -9368,6 +9377,39 @@ function ExpenseImport({ values, onChange }) {
   );
 }
 
+/**
+ * Expenses tab — the detailed-budget CSV uploader as its own left-side wizard
+ * step, grouped with Contributions (user request: discoverability over the
+ * old buried-in-Spending placement). The uploaded budget still drives the
+ * same fields it always did (sp / spSchedule / spImportMeta); the Retirement
+ * Plan tab's Spending section keeps a pointer here plus a live summary.
+ */
+function ExpensesPanel({ values, onChange }) {
+  const meta = values.spImportMeta || null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>DETAILED EXPENSE BUDGET</div>
+        <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, marginBottom: 12 }}>
+          Instead of a single typed spending number, upload your real line-item budget.
+          A <strong style={{ color: "#cbd5e1" }}>one-year</strong> budget is summed into the US Spending field
+          (Retirement Plan → Spending) and inflated forward like a typed number.
+          A <strong style={{ color: "#cbd5e1" }}>multi-year</strong> budget becomes an explicit per-year spending
+          plan that overrides your withdrawal strategy's spend rule for those years — the Monte Carlo,
+          Withdrawal Plan, and deterministic schedule all follow it.
+        </div>
+        <ExpenseImport values={values} onChange={onChange} />
+        {!meta && (
+          <div style={{ marginTop: 12, fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>
+            No budget loaded — the plan currently uses the typed spending numbers in
+            Retirement Plan → Spending.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RetirementPanel({ values, onChange }) {
   const usSp = values.sp || 0;
   const outOfCountrySp = values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0);
@@ -9435,7 +9477,20 @@ function RetirementPanel({ values, onChange }) {
           <span>Total combined annual spending (used for portfolio draw)</span>
           <strong style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace", fontSize: 14 }}>{fmtK(combinedSp)}/yr</strong>
         </div>
-        <ExpenseImport values={values} onChange={onChange} />
+        {/* The CSV uploader itself lives in the 📄 Expenses tab now — keep a live
+            pointer/summary here so the spend fields still reference the budget
+            that may be overriding them (proximity without duplication). */}
+        <div style={{ marginTop: 10, fontSize: 11, color: "#94a3b8", background: "rgba(168,85,247,0.06)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: 8, padding: "8px 12px", lineHeight: 1.5 }}>
+          {values.spImportMeta ? (
+            values.spImportMeta.mode === "multi" ? (
+              <>📄 <strong style={{ color: "#c4b5fd" }}>Multi-year budget active</strong> — {values.spImportMeta.years} years ({values.spImportMeta.firstYear}–{values.spImportMeta.lastYear}) from <em>{values.spImportMeta.fileName}</em> override the spend fields above. Manage it in the <strong style={{ color: "#c4b5fd" }}>📄 Expenses</strong> tab.</>
+            ) : (
+              <>📄 <strong style={{ color: "#c4b5fd" }}>One-year budget loaded</strong> — {fmtDollar(values.spImportMeta.total)}/yr from <em>{values.spImportMeta.fileName}</em> set the US Spending field above. Manage it in the <strong style={{ color: "#c4b5fd" }}>📄 Expenses</strong> tab.</>
+            )
+          ) : (
+            <>Have a line-item budget? Import it in the <strong style={{ color: "#c4b5fd" }}>📄 Expenses</strong> tab (left) — a detailed budget replaces or overrides the typed spend fields above.</>
+          )}
+        </div>
       </div>
 
       <div>
