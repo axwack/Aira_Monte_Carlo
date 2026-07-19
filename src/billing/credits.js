@@ -45,6 +45,16 @@ export const FREE_STARTER_CREDITS = 5_000;
 // 1 AiRA credit = 1,000 raw Gemini tokens (must match analyze.js RAW_TOKENS_PER_CREDIT)
 export const RAW_TOKENS_PER_CREDIT = 1_000;
 
+// ─── Report unlock (flat-fee, 24h window) ──────────────────────────────────
+// Keep in sync with functions/api/report-unlock.js DEFAULT_REPORT_COST_CREDITS.
+// Economics: a Starter Pack is 5,000 credits for $5 ($1 ≈ 1,000 credits). The
+// printable report is 100% client-computed (no AI/token cost), so it's priced
+// as a meaningful-but-small flat slice of a pack — 250 credits (~$0.25, 5% of
+// a Starter Pack) so one $5 pack buys ~20 report unlocks.
+export const REPORT_COST_CREDITS = 250;
+
+const REPORT_UNLOCK_KEY = "aira_report_unlock";
+
 // ─── JWT management ─────────────────────────────────────────────────────────
 
 const JWT_KEY = "airaJWT.v1";
@@ -209,6 +219,63 @@ export async function purchaseCreditPack(packId) {
   }
   const { url } = await res.json();
   window.location.href = url; // redirect to Stripe — page unloads here
+}
+
+// ─── Report unlock ──────────────────────────────────────────────────────────
+
+/**
+ * Unlock the printable CFP report for 24 hours by POSTing to
+ * /api/report-unlock with the stored JWT (same fetch shape as
+ * purchaseCreditPack's real-billing branch). On success, syncs the returned
+ * balance and persists the unlock window in localStorage so isReportUnlocked()
+ * can gate the report client-side without another round-trip.
+ *
+ * NOTE (soft gate by design): this is a client-side convenience gate — the
+ * report's data is entirely client-computed, so nothing here is DRM. The only
+ * server-enforced thing is the credit deduction itself (and, in future, any
+ * AI-generated narrative added to the report). See the gating comment in
+ * App.jsx for the full rationale.
+ */
+export async function unlockReport() {
+  const jwt = getStoredJWT();
+  if (!jwt) throw new Error("Not authenticated — please purchase AiRA credits to continue.");
+
+  const res = await fetch("/api/report-unlock", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` },
+    body:    JSON.stringify({}),
+  });
+
+  if (res.status === 401) {
+    clearStoredJWT(); // expired token
+    throw new Error("Session expired — please log in again.");
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const e = new Error(err.error || "Report unlock failed");
+    if (err.creditsRemaining != null) e.creditsRemaining = err.creditsRemaining;
+    throw e;
+  }
+
+  const result = await res.json();
+  if (result.creditsRemaining != null) syncCreditBalance(result.creditsRemaining);
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(REPORT_UNLOCK_KEY, JSON.stringify({ unlockedUntil: result.unlockedUntil }));
+    }
+  } catch {}
+  return result;
+}
+
+/** Reads the client-tracked unlock window — valid until `unlockedUntil`. */
+export function isReportUnlocked() {
+  try {
+    if (typeof localStorage === "undefined") return false;
+    const raw = localStorage.getItem(REPORT_UNLOCK_KEY);
+    if (!raw) return false;
+    const { unlockedUntil } = JSON.parse(raw);
+    return !!unlockedUntil && new Date(unlockedUntil).getTime() > Date.now();
+  } catch { return false; }
 }
 
 // ─── Post-purchase: verify Stripe session → issue JWT ──────────────────────
