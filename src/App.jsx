@@ -8832,7 +8832,7 @@ function AssumptionsPanel({ values, onChange }) {
       {/* EXPENSE MODEL CARD */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
-          Expense Model
+          Housing & Fixed Obligations 
         </div>
         <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
           Separate housing &amp; fixed obligations from core lifestyle spend. The MC engine adds each carveout to the portfolio draw automatically.
