@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.0";
-export const BUILD_TAG = "[main] v1.2.0 — LTCG cost-basis model on taxable draws (0/15/20% stacking, NIIT, state, MAGI/provisional); IRMAA 2-year lookback; mortality-weighted success rate; printable CFP report behind a credit paywall; age-band table with Still Funded %; expense uploader + spending unified in the Spending & Expenses tab; mortgage payoff-year and GK-calibration fixes; equity-glide-driven growth in all engines; full-number formatting (no more $48K).";
-export const BUILD_TIME = "2026-07-19T00:00:00Z";
+const APP_VERSION = "1.2.1";
+export const BUILD_TAG = "[main] v1.2.1 — Fan chart ↔ age-band table linked hover: hovering a table row spotlights that age column and its percentile dots on the fan. Prior: LTCG cost-basis model on taxable draws (0/15/20% stacking, NIIT, state, MAGI/provisional); IRMAA 2-year lookback; mortality-weighted success rate; printable CFP report behind a credit paywall; age-band table with Still Funded %; expense uploader + spending unified in the Spending & Expenses tab; mortgage payoff-year and GK-calibration fixes; equity-glide-driven growth in all engines; full-number formatting (no more $48K).";
+export const BUILD_TIME = "2026-07-19T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2016,7 +2016,7 @@ function deflate(data, inf, useReal) {
  * age, plus the share of simulated paths still funded at that age. Milestone
  * rows (SS claiming, RMD start) are flagged so the table reads like the
  * chart's reference lines. */
-function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge }) {
+function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, hoveredAge, onHoverAge }) {
   const [show, setShow] = useState(false);
   // ℹ️ "What do these numbers mean?" — an inline, mobile-readable explainer
   // (not a browser tooltip) condensing the About page's "still-funded-percent"
@@ -2081,8 +2081,23 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge }) 
                 {data.map((d, i) => {
                   const yr = CURRENT_YEAR + (d.age - (currentAge ?? d.age));
                   const isSS = d.age === ssAge, isRMD = d.age === rmdAge;
+                  const isHovered = hoveredAge === d.age;
                   return (
-                    <tr key={d.age} style={{ background: isSS || isRMD ? "rgba(94,234,212,0.06)" : undefined }}>
+                    <tr
+                      key={d.age}
+                      onMouseEnter={onHoverAge ? () => onHoverAge(d.age) : undefined}
+                      onMouseLeave={onHoverAge ? () => onHoverAge(null) : undefined}
+                      style={{
+                        background: isHovered
+                          ? "rgba(56,189,248,0.14)"
+                          : isSS || isRMD
+                          ? "rgba(94,234,212,0.06)"
+                          : undefined,
+                        boxShadow: isHovered ? "inset 3px 0 0 #38bdf8" : undefined,
+                        cursor: onHoverAge ? "pointer" : undefined,
+                        transition: "background 0.1s",
+                      }}
+                    >
                       <td style={{ textAlign: "left", whiteSpace: "nowrap" }}>
                         {d.age}{isSS && " 🏛️"}{isRMD && " 📋"}
                       </td>
@@ -2181,6 +2196,16 @@ const CSS = `
   .mbtn { padding:5px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.12); cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:#94a3b8; }
   .mbtn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
   .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
+  /* Accented header button — the single emphasized action (Report). */
+  .mbtn.accent { background:rgba(56,189,248,0.12); border-color:rgba(56,189,248,0.45); color:#38bdf8; font-weight:600; }
+  .mbtn.accent:hover { background:rgba(56,189,248,0.2); color:#7dd3fc; border-color:rgba(56,189,248,0.6); }
+  .mbtn:disabled { opacity:0.4; cursor:not-allowed; }
+  /* Header groups + overflow (Help) menu. */
+  .hdiv { width:1px; height:20px; background:rgba(255,255,255,0.1); margin:0 3px; flex-shrink:0; }
+  .hmenu { position:absolute; top:100%; right:0; margin-top:6px; background:#0f2138; border:1px solid #1e3a5f; border-radius:10px; padding:6px; min-width:220px; z-index:999; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
+  .hmenu-item { display:flex; align-items:center; gap:9px; width:100%; padding:9px 11px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:12px; font-family:'Inter',sans-serif; font-weight:500; color:#cbd5e1; text-align:left; text-decoration:none; transition:background 0.12s; }
+  .hmenu-item:hover { background:rgba(255,255,255,0.06); color:#f1f5f9; }
+  .hmenu-arrow { margin-left:auto; color:#475569; font-size:11px; }
   .layout { display:grid; grid-template-columns:300px 1fr; height:calc(100vh - 56px); overflow:hidden; }
   .sidebar { border-right:1px solid rgba(228, 24, 24, 0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
   .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:11px; padding:13px; }
@@ -2475,7 +2500,7 @@ function CollapsibleAboutCard({ entry, defaultOpen = false }) {
   );
 }
 
-function AboutButton() {
+function AboutButton({ variant, onOpen }) {
   const [open, setOpen] = React.useState(false);
   const [tab, setTab] = React.useState(0);
   const TABS = ["👤 About Me", "📦 The App", "📖 How It Works"];
@@ -2624,10 +2649,24 @@ function AboutButton() {
     document.body
   ) : null;
 
+  const openModal = () => { setTab(0); setOpen(true); onOpen && onOpen(); };
+
+  if (variant === "menuitem") {
+    return (
+      <>
+        <button className="hmenu-item" onClick={openModal}>
+          📖 About the app &amp; author
+          <span className="hmenu-arrow">↗</span>
+        </button>
+        {overlay}
+      </>
+    );
+  }
+
   return (
     <>
       <button
-        onClick={() => { setTab(0); setOpen(true); }}
+        onClick={openModal}
         style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 13px",
           borderRadius:7, border:"1px solid rgba(96,165,250,0.35)",
           background:"rgba(96,165,250,0.08)", color:"#60a5fa",
@@ -2990,7 +3029,7 @@ function computeSurvivalCurve(startAge, endAge, sex = "blended") {
   return curve;
 }
 
-function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, preRetireEq, sex }) {
+function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, preRetireEq, sex, hoveredAge }) {
   const [showTargets, setShowTargets] = useState(true);
   const [showMortality, setShowMortality] = useState(false);
 
@@ -3205,6 +3244,28 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           <Line yAxisId="port" type="monotone" dataKey="p50" stroke="#14b8a6" strokeWidth={2.5} dot={false} name="Median" />
           <Line yAxisId="port" type="monotone" dataKey="p25" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 3" name="25th" />
           <Line yAxisId="port" type="monotone" dataKey="p10" stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="3 3" name="10th" />
+
+          {/* Hover highlight — when a row in the age-band table below is hovered,
+              spotlight that age column and mark its percentile values on the fan. */}
+          {hoveredAge != null && (() => {
+            const row = dataWithMortality.find((d) => d.age === hoveredAge);
+            if (!row) return null;
+            const dot = (val, color) =>
+              val == null ? null : (
+                <ReferenceDot yAxisId="port" x={hoveredAge} y={val} r={4} fill={color} stroke="#0a0f1e" strokeWidth={1.5} isFront />
+              );
+            return (
+              <>
+                <ReferenceLine yAxisId="port" x={hoveredAge} stroke="rgba(56,189,248,0.5)" strokeWidth={2}
+                  label={{ value: `Age ${hoveredAge}`, fill: "#38bdf8", fontSize: 10, position: "top" }} />
+                {dot(row.p90, "#5eead4")}
+                {dot(row.p75, "#0d9488")}
+                {dot(row.p50, "#14b8a6")}
+                {dot(row.p25, "#fbbf24")}
+                {dot(row.p10, "#f87171")}
+              </>
+            );
+          })()}
 
           {/* Survival probability curve (right axis, red dashed) */}
           {showMortality && (
@@ -9642,8 +9703,12 @@ export default function AiRAForecaster() {
   const [stale, setStale] = useState(false);
   const [mc, setMc] = useState(null);
   const [stress, setStress] = useState(null);
+  // Shared hover state so hovering a row in the age-band table highlights the
+  // matching age column on the fan chart above (FanChart + MCBandTable are siblings).
+  const [hoveredAge, setHoveredAge] = useState(null);
   const [showInterpretation, setShowInterpretation] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [feedbackType, setFeedbackType] = useState(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackName, setFeedbackName] = useState("");
@@ -9958,10 +10023,9 @@ export default function AiRAForecaster() {
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
             <button
-              className="mbtn"
+              className="mbtn accent"
               disabled={!mc}
               title={mc ? "Generate a printable CFP/CPA-ready report" : "Run Monte Carlo first"}
-              style={!mc ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
               onClick={() => setShowReport(true)}
             >
               📄 Report
@@ -10124,70 +10188,46 @@ export default function AiRAForecaster() {
             >
               ⬆ Import
             </button>
-            <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} title="Support & info" />
-            <a
-              href="https://buymeacoffee.com/axwacki"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "5px 13px",
-                borderRadius: 7,
-                border: "1px solid rgba(255,193,7,0.4)",
-                background: "rgba(255,193,7,0.08)",
-                color: "#fbbf24",
-                fontSize: 11,
-                fontFamily: "'DM Sans',sans-serif",
-                fontWeight: 600,
-                textDecoration: "none",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,193,7,0.18)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,193,7,0.08)")}
-            >
-              ☕ Buy me a coffee
-            </a>
-            <AboutButton />
+            <div className="hdiv" title="Support & info" />
             <div style={{ position: "relative", display: "inline-flex" }}>
               <button
-                onClick={() => setShowFeedback((prev) => !prev)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5,
-                  padding: "5px 13px",
-                  borderRadius: 7,
-                  border: "1px solid rgba(139,92,246,0.4)",
-                  background: "rgba(139,92,246,0.08)",
-                  color: "#a78bfa",
-                  fontSize: 11,
-                  fontFamily: "'DM Sans',sans-serif",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(139,92,246,0.18)")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(139,92,246,0.08)")}
+                className="mbtn"
+                onClick={() => setShowHelp((prev) => !prev)}
+                title="Support, about & feedback"
               >
-                💬 Feedback
+                ⋯ Help {showHelp ? "▴" : "▾"}
               </button>
+              {showHelp && (
+                <>
+                  <div
+                    onClick={() => { setShowHelp(false); setShowFeedback(false); }}
+                    style={{ position: "fixed", inset: 0, zIndex: 998 }}
+                  />
+                  <div className="hmenu">
+                    <a
+                      href="https://buymeacoffee.com/axwacki"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hmenu-item"
+                    >
+                      ☕ Buy me a coffee
+                      <span className="hmenu-arrow">↗</span>
+                    </a>
+                    <AboutButton variant="menuitem" onOpen={() => setShowHelp(false)} />
+                    <button
+                      className="hmenu-item"
+                      onClick={() => setShowFeedback((prev) => !prev)}
+                    >
+                      💬 Send feedback
+                      <span className="hmenu-arrow">{showFeedback ? "▴" : "▾"}</span>
+                    </button>
               {showFeedback && (
                 <div
                   style={{
-                    position: "absolute",
-                    top: "100%",
-                    right: 0,
-                    marginTop: 6,
-                    background: "#0f2138",
-                    border: "1px solid #1e3a5f",
-                    borderRadius: 10,
-                    padding: 14,
-                    width: 300,
-                    zIndex: 999,
-                    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                    marginTop: 8,
+                    paddingTop: 12,
+                    borderTop: "1px solid rgba(255,255,255,0.08)",
+                    width: 268,
                   }}
                 >
                   <div style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 600, marginBottom: 10 }}>
@@ -10288,6 +10328,9 @@ export default function AiRAForecaster() {
                     </button>
                   </div>
                 </div>
+              )}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -10799,6 +10842,7 @@ export default function AiRAForecaster() {
                         contrib={params.contrib}
                         preRetireEq={params.preRetireEq ?? 91}
                         sex={assumptions.sex}
+                        hoveredAge={hoveredAge}
                       />
                     )}
                     {mc && (
@@ -10810,6 +10854,8 @@ export default function AiRAForecaster() {
                         rmdAge={rmdAge}
                         currentAge={assumptions.currentAge}
                         endAge={endAge}
+                        hoveredAge={hoveredAge}
+                        onHoverAge={setHoveredAge}
                       />
                     )}
                   </>
