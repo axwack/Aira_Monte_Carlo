@@ -1480,8 +1480,20 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   const medR = rV[Math.floor(rV.length / 2)];
   const tV = results.map(r => r.path[r.path.length - 1]).sort((a, b) => a - b);
   const qt = p => tV[Math.floor(p * (tV.length - 1))];
+  // Mortality-weighted success: a failed path only fails YOU if you're alive
+  // to experience it. Weight each failure by P(alive at its exhaust age),
+  // from the same SSA table the fan chart's mortality overlay uses. The raw
+  // `rate` is the conservative "live to the horizon" number; `mwRate` is the
+  // actuarial "chance the money outlives you" number (Blanchett/Kitces-style).
+  // mwRate >= rate always, since each failure's weight is <= 1.
+  const failSurvivalSum = results.reduce(
+    (s, r) => s + (r.survived ? 0 : survivalToAge(p.currentAge, r.exhaustAge ?? endAge, p.sex)),
+    0
+  );
+  const mwRate = 1 - failSurvivalSum / N;
   return {
     rate: nS / N,
+    mwRate,
     pcts,
     medR,
     term: { p10: qt(0.1), p25: qt(0.25), p50: qt(0.5), p75: qt(0.75), p90: qt(0.9) },
@@ -2943,6 +2955,23 @@ const SSA_QX_FEMALE = [
   0.21476,0.23238,0.25058,0.26894,0.28700, // 95-99
   0.30462,                                  // 100
 ];
+
+/* P(alive at toAge | alive at fromAge) from the same SSA period life table
+ * the fan chart's mortality overlay uses — single mortality source for the
+ * whole app. Ages below 50 are treated as q=0 (negligible for this app's
+ * planning ranges); ages past 100 hold the age-100 rate. Exported for tests. */
+export function survivalToAge(fromAge, toAge, sex = "blended") {
+  if (toAge <= fromAge) return 1;
+  let survM = 1, survF = 1;
+  for (let age = fromAge; age < toAge; age++) {
+    const i = Math.min(age - 50, 50);
+    if (i >= 0) {
+      survM *= 1 - (SSA_QX_MALE[i] || 0);
+      survF *= 1 - (SSA_QX_FEMALE[i] || 0);
+    }
+  }
+  return sex === "male" ? survM : sex === "female" ? survF : (survM + survF) / 2;
+}
 
 function computeSurvivalCurve(startAge, endAge, sex = "blended") {
   const maleQx   = SSA_QX_MALE;
@@ -6684,6 +6713,14 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             <div className="section-label" style={{ marginBottom: 8 }}>SUCCESS RATE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
             <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(mc.rate), fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(mc.rate)}</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>of {MC_PATHS_LABEL} simulations last to age {params.endAge}</div>
+            {mc.mwRate != null && (
+              <div
+                style={{ fontSize: 12, color: "#a78bfa", marginBottom: 10, fontWeight: 600 }}
+                title={`Mortality-weighted success. The headline rate assumes you live all the way to ${params.endAge} — but a path that runs out of money at, say, 88 only fails you if you're alive at 88. This weights each failed path by the SSA probability (${params.sex || "blended"} setting, Profile → Personal) of being alive at its failure age. It answers the actuarial question "what's the chance my money outlives me?" — always ≥ the headline rate, which remains the conservative planning number.`}
+              >
+                ◐ {fmtPct(mc.mwRate)} chance your money outlives you
+              </div>
+            )}
             <div style={{ fontSize: 12, color: rateColor(mc.rate), marginBottom: 14, lineHeight: 1.5 }}>{riskLabel(mc.rate)}</div>
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10, display: "flex", gap: 12 }}>
               <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>Plan age</div><div style={{ fontSize: 18, fontWeight: 700, color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>Age {params.endAge}</div></div>
@@ -9730,6 +9767,9 @@ export default function AiRAForecaster() {
       hcMin: assumptions.hcMin,
       hcMax: assumptions.hcMax,
       cashRealReturn: assumptions.cashRealReturn ?? 3.0,
+      // Mortality weighting for runMC's "money outlives you" metric — same
+      // sex setting the fan chart's SSA survival overlay uses.
+      sex: assumptions.sex || "blended",
       taxableBasisPct: assumptions.taxableBasisPct ?? 70,
       useJointRmdTable: assumptions.useJointRmdTable || false,
       withdrawalStrategy: assumptions.withdrawalStrategy,

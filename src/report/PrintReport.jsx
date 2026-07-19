@@ -162,6 +162,9 @@ function MonteCarloSection({ mc, params }) {
       <h2>Monte Carlo Verdict</h2>
       <div className="pr-two-col">
         <div><span>Success rate to plan age</span><strong>{formatPct(mc.rate)}</strong></div>
+        {mc.mwRate != null && (
+          <div><span>Chance money outlives you (mortality-weighted)</span><strong>{formatPct(mc.mwRate)}</strong></div>
+        )}
         <div><span>Simulated paths</span><strong>{(mc.N ?? 0).toLocaleString()}</strong></div>
         <div><span>Median portfolio at retirement</span><strong>{formatMoney(mc.medR)}</strong></div>
         <div><span>Terminal 10th percentile</span><strong>{formatMoney(mc.term?.p10)}</strong></div>
@@ -177,6 +180,10 @@ function MonteCarloSection({ mc, params }) {
         in every path, and this is a conditional model, not a literal forecast. Read Still Funded
         alongside the 10th percentile column — a high funded rate paired with a thin 10th
         percentile is a fragile plan, one bad sequence of returns from joining the failures.
+        The mortality-weighted figure answers the actuarial question instead of the planning
+        one: the headline rate assumes you live to the full plan age, while the weighted rate
+        discounts each failed path by the SSA probability of being alive at its failure age —
+        the chance the money outlives <em>you</em>, rather than the horizon.
       </p>
       <table className="pr-wide-table">
         <thead>
