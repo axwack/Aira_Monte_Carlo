@@ -95,4 +95,41 @@ describe("PrintReport", () => {
     );
     expect(html).toMatch(/Roth Conversion Plan/);
   });
+
+  describe("locked mode (credit paywall)", () => {
+    test("default (no `locked` prop) behaves exactly as before — Print button present, no unlock card", () => {
+      const html = renderToStaticMarkup(
+        <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" />
+      );
+      expect(html).toMatch(/Print \/ Save as PDF/);
+      expect(html).not.toMatch(/Premium Report/);
+    });
+
+    test("locked=false explicitly — Print button present, no unlock card", () => {
+      const html = renderToStaticMarkup(
+        <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={false} />
+      );
+      expect(html).toMatch(/Print \/ Save as PDF/);
+      expect(html).not.toMatch(/Premium Report/);
+    });
+
+    test("locked=true — Print button absent, unlock card present with blur class on report content", () => {
+      const html = renderToStaticMarkup(
+        <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={true} />
+      );
+      expect(html).not.toMatch(/Print \/ Save as PDF/);
+      expect(html).toMatch(/Premium Report/);
+      expect(html).toMatch(/pr-blurred/);
+      // The underlying document is still there (soft gate, not DRM) — just blurred —
+      // so the report content markup (e.g. the cover heading) is still present in the DOM.
+      expect(html).toMatch(/Retirement Plan Report/);
+    });
+
+    test("locked=true still renders the Close button", () => {
+      const html = renderToStaticMarkup(
+        <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={true} />
+      );
+      expect(html).toMatch(/Close/);
+    });
+  });
 });

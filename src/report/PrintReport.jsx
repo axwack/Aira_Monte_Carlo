@@ -11,9 +11,16 @@
  * re-fetches or re-simulates anything except the withdrawal waterfall, which
  * is deterministic and cheap to recompute from `params`.
  */
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { buildWithdrawalWaterfall } from "../engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "../engine/expectedReturn.js";
+import {
+  REPORT_COST_CREDITS,
+  unlockReport,
+  isAuthenticated,
+  useCreditBalance,
+  CreditPackModal,
+} from "../billing/credits.js";
 
 /* ── Local formatting helpers — full comma dollars, never k/M abbreviations ── */
 export function formatMoney(v) {
@@ -373,6 +380,83 @@ function DisclaimerSection() {
   );
 }
 
+/* ════════════════════════ Locked-mode unlock panel ════════════════════════
+ * Soft client-side gate, by design: the report's data is entirely computed
+ * in the browser from state the app already holds — nothing here is DRM.
+ * The only thing actually enforced server-side is the credit deduction in
+ * POST /api/report-unlock (and, in future, any AI-generated narrative added
+ * to the report). This panel just decides whether to render the blurred vs.
+ * clear version and lets the user pay to flip that decision.
+ */
+function UnlockPanel({ onUnlocked }) {
+  const balance = useCreditBalance();
+  const authed = isAuthenticated();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [insufficient, setInsufficient] = useState(false);
+  const [showBuyModal, setShowBuyModal] = useState(false);
+
+  const handleUnlock = async () => {
+    setBusy(true);
+    setError(null);
+    setInsufficient(false);
+    try {
+      await unlockReport();
+      onUnlocked();
+    } catch (e) {
+      if (e.creditsRemaining != null || /insufficient/i.test(e.message || "")) {
+        setInsufficient(true);
+      } else {
+        setError(e.message || "Unlock failed — please try again.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="pr-unlock-overlay">
+      <div className="pr-unlock-card">
+        <div className="pr-unlock-lock">🔒</div>
+        <h3>Premium Report — {REPORT_COST_CREDITS.toLocaleString()} credits</h3>
+        <p>Unlock the full printable CFP/CPA-ready report for 24 hours.</p>
+
+        {!authed ? (
+          <>
+            <p className="pr-unlock-note">
+              Buy AiRA credits to unlock — your first purchase also creates your account.
+            </p>
+            <button type="button" className="pr-btn-unlock" onClick={() => setShowBuyModal(true)}>
+              💳 Buy Credits
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="pr-unlock-balance">Balance: {balance.toLocaleString()} credits</div>
+            <button type="button" className="pr-btn-unlock" disabled={busy} onClick={handleUnlock}>
+              {busy ? "Unlocking…" : "Unlock for 24 hours"}
+            </button>
+            {insufficient && (
+              <>
+                <div className="pr-unlock-error">Not enough credits for this unlock.</div>
+                <button
+                  type="button"
+                  className="pr-btn-unlock-secondary"
+                  onClick={() => setShowBuyModal(true)}
+                >
+                  Buy More Credits
+                </button>
+              </>
+            )}
+            {error && <div className="pr-unlock-error">{error}</div>}
+          </>
+        )}
+      </div>
+      {showBuyModal && <CreditPackModal onClose={() => setShowBuyModal(false)} />}
+    </div>
+  );
+}
+
 /* ════════════════════════ Print CSS ════════════════════════ */
 const PRINT_CSS = `
   .aira-print-overlay {
@@ -389,6 +473,36 @@ const PRINT_CSS = `
   }
   .aira-print-controls .pr-btn-print { background: #0d9488; color: #fff; }
   .aira-print-controls .pr-btn-close { background: #334155; color: #e2e8f0; }
+  .pr-report-wrap { position: relative; max-width: 800px; margin: 0 auto; }
+  .print-report.pr-blurred {
+    filter: blur(7px);
+    user-select: none;
+    pointer-events: none;
+  }
+  .pr-unlock-overlay {
+    position: absolute; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .pr-unlock-card {
+    background: rgba(15,23,42,0.97); border: 1px solid rgba(124,58,237,0.4);
+    border-radius: 14px; padding: 28px 32px; text-align: center; color: #e2e8f0;
+    font-family: 'Inter', system-ui, sans-serif; box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    max-width: 320px;
+  }
+  .pr-unlock-lock { font-size: 32px; margin-bottom: 8px; }
+  .pr-unlock-card h3 { margin: 0 0 6px; font-size: 15px; color: #fff; }
+  .pr-unlock-card p, .pr-unlock-note { font-size: 12px; color: #94a3b8; margin: 0 0 14px; }
+  .pr-unlock-balance { font-size: 12px; color: #a78bfa; margin-bottom: 10px; }
+  .pr-btn-unlock {
+    background: linear-gradient(135deg,#7c3aed,#a78bfa); border: none; color: #fff;
+    border-radius: 8px; padding: 10px 22px; font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+  .pr-btn-unlock-secondary {
+    margin-top: 8px; background: transparent; border: 1px solid rgba(255,255,255,0.2);
+    color: #e2e8f0; border-radius: 8px; padding: 8px 18px; font-size: 12px; cursor: pointer;
+  }
+  .pr-unlock-error { color: #f87171; font-size: 11px; margin-top: 8px; }
   .print-report {
     background: #fff; color: #111827; max-width: 800px; margin: 0 auto;
     padding: 48px 56px; font-family: Georgia, 'Times New Roman', serif;
@@ -423,16 +537,35 @@ const PRINT_CSS = `
     .print-report { position: absolute; inset: 0; margin: 0; max-width: none; box-shadow: none; border-radius: 0; padding: 0.15in 0; }
     .pr-section { page-break-before: always; }
     .pr-row { page-break-inside: avoid; }
+    /* Locked mode must print the SAME blurred document a screen shows — never
+       let the print pipeline (which recalculates visibility above) leak the
+       clear, un-blurred report. The unlock card itself is never printed. */
+    .print-report.pr-blurred, .print-report.pr-blurred * {
+      visibility: visible !important;
+      filter: blur(7px) !important;
+    }
+    .pr-unlock-overlay, .pr-unlock-overlay * {
+      visibility: hidden !important;
+      content-visibility: hidden;
+    }
   }
 `;
 
 /**
  * Main export — the overlay + printable report. Rendered by App.jsx only when
  * `mc` exists (the caller gates the "📄 Report" button on `mc != null`).
+ *
+ * `locked` (soft client-side gate — see UnlockPanel comment above): when
+ * true, the report content renders blurred/non-interactive and an unlock
+ * panel takes the place of the Print button. Once the user successfully
+ * calls unlockReport(), internal state flips the view to unlocked in place
+ * without needing to close/reopen the overlay.
  */
-export default function PrintReport({ params = {}, mc, stress, rmdAge, buildTag, onClose }) {
+export default function PrintReport({ params = {}, mc, stress, rmdAge, buildTag, onClose, locked = false }) {
   const waterfall = useMemo(() => buildWithdrawalWaterfall(params), [params]);
   const rows = waterfall?.smart?.rows ?? [];
+  const [justUnlocked, setJustUnlocked] = useState(false);
+  const isLocked = locked && !justUnlocked;
 
   const handlePrint = () => {
     if (typeof window !== "undefined" && window.print) window.print();
@@ -442,18 +575,23 @@ export default function PrintReport({ params = {}, mc, stress, rmdAge, buildTag,
     <div className="aira-print-overlay">
       <style>{PRINT_CSS}</style>
       <div className="aira-print-controls">
-        <button type="button" className="pr-btn-print" onClick={handlePrint}>🖨️ Print / Save as PDF</button>
+        {!isLocked && (
+          <button type="button" className="pr-btn-print" onClick={handlePrint}>🖨️ Print / Save as PDF</button>
+        )}
         <button type="button" className="pr-btn-close" onClick={() => onClose && onClose()}>Close</button>
       </div>
-      <div className="print-report">
-        <CoverSection params={params} buildTag={buildTag} />
-        <AssumptionsSection params={params} rmdAge={rmdAge} />
-        <MonteCarloSection mc={mc} params={params} />
-        <StressTestSection stress={stress} />
-        <WithdrawalScheduleSection rows={rows} endAge={params.endAge} />
-        <RothConversionSection rows={rows} />
-        <LifetimeTaxSection summary={waterfall?.summary} />
-        <DisclaimerSection />
+      <div className="pr-report-wrap">
+        <div className={`print-report${isLocked ? " pr-blurred" : ""}`}>
+          <CoverSection params={params} buildTag={buildTag} />
+          <AssumptionsSection params={params} rmdAge={rmdAge} />
+          <MonteCarloSection mc={mc} params={params} />
+          <StressTestSection stress={stress} />
+          <WithdrawalScheduleSection rows={rows} endAge={params.endAge} />
+          <RothConversionSection rows={rows} />
+          <LifetimeTaxSection summary={waterfall?.summary} />
+          <DisclaimerSection />
+        </div>
+        {isLocked && <UnlockPanel onUnlocked={() => setJustUnlocked(true)} />}
       </div>
     </div>
   );
