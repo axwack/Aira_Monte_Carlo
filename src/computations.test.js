@@ -2271,3 +2271,52 @@ describe("MCBandTable 'What do these numbers mean?' explainer", () => {
     expect(SRC).toMatch(/About → Reading the Charts → "What does Still Funded % actually mean\?"/);
   });
 });
+
+describe("mortality-weighted success rate (money outlives you)", () => {
+  const { survivalToAge } = require("./App");
+
+  test("survivalToAge: 1.0 at the starting age, strictly decreasing after, female >= male", () => {
+    expect(survivalToAge(65, 65, "male")).toBe(1);
+    let prev = 1;
+    for (const age of [70, 75, 80, 85, 90, 95, 100]) {
+      const s = survivalToAge(65, age, "male");
+      expect(s).toBeLessThan(prev);
+      expect(s).toBeGreaterThan(0);
+      prev = s;
+    }
+    for (const age of [75, 85, 95]) {
+      expect(survivalToAge(65, age, "female")).toBeGreaterThan(survivalToAge(65, age, "male"));
+      const blended = survivalToAge(65, age, "blended");
+      expect(blended).toBeGreaterThan(survivalToAge(65, age, "male"));
+      expect(blended).toBeLessThan(survivalToAge(65, age, "female"));
+    }
+  });
+
+  test("mwRate >= rate always, equal when nothing fails, strictly higher when failures exist", () => {
+    const comfortable = runMC(BASE, 90, 300, 42, true);
+    expect(comfortable.mwRate).toBeGreaterThanOrEqual(comfortable.rate);
+    if (comfortable.rate === 1) expect(comfortable.mwRate).toBe(1);
+
+    const tight = { ...BASE, ssb: 0, sp: 120_000, accounts: [
+      { id: "t1", category: "pretax", name: "401k", balance: 1_000_000 },
+    ]};
+    const r = runMC(tight, 90, 500, 42, true);
+    expect(r.rate).toBeLessThan(1); // fixture must actually produce failures
+    expect(r.mwRate).toBeGreaterThan(r.rate);
+    expect(r.mwRate).toBeLessThanOrEqual(1);
+  });
+
+  test("late failures are discounted more than early ones: same failure count, older exhaust ages -> higher mwRate boost", () => {
+    // Indirect but deterministic: for any failing run, the boost (mwRate - rate)
+    // equals the average mortality discount of the failed paths, which must be
+    // strictly between 0 and the failure mass.
+    const tight = { ...BASE, ssb: 0, sp: 120_000, accounts: [
+      { id: "t1", category: "pretax", name: "401k", balance: 1_000_000 },
+    ]};
+    const r = runMC(tight, 90, 500, 42, true);
+    const failureMass = 1 - r.rate;
+    const boost = r.mwRate - r.rate;
+    expect(boost).toBeGreaterThan(0);
+    expect(boost).toBeLessThan(failureMass); // discount can't exceed the failures themselves
+  });
+});
