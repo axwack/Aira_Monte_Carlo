@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.2";
-export const BUILD_TAG = "[main] v1.2.2 — Header: flat toolbar (Report/Export/Import/About/Feedback one consistent style) with Buy-me-a-coffee pulled out as a prominent gold CTA; dropped the overflow menu. Prior: Fan chart ↔ age-band table linked hover — hovering a table row spotlights that age column and its percentile dots on the fan. Earlier: LTCG cost-basis model on taxable draws (0/15/20% stacking, NIIT, state, MAGI/provisional); IRMAA 2-year lookback; mortality-weighted success rate; printable CFP report behind a credit paywall; age-band table with Still Funded %; expense uploader + spending unified in the Spending & Expenses tab; mortgage payoff-year and GK-calibration fixes; equity-glide-driven growth in all engines; full-number formatting (no more $48K).";
-export const BUILD_TIME = "2026-07-19T18:00:00Z";
+const APP_VERSION = "1.2.3";
+export const BUILD_TAG = "[main] v1.2.3 — Progress check-ins: the header Check-in button snapshots today's plan (success rate, portfolio, spending, ages, median terminal) to a local journal; new Analysis-tab Progress view charts the trend with an empty-state guide. Check-ins live outside the profile and are never loaded back into the planner. Prior (1.2.2): flat header toolbar with Buy-me-a-coffee CTA; fan chart ↔ age-band table linked hover; LTCG cost-basis model; IRMAA 2-year lookback; mortality-weighted success rate; printable CFP report.";
+export const BUILD_TIME = "2026-07-19T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2832,6 +2832,28 @@ function DualInput({ label, value, min, max, step, format, onChange }) {
 
 /* ════ IMPORT / EXPORT ════ */
 const LS_PROFILE_KEY = "aira_profile_v1";
+
+/* ════ PROGRESS CHECK-INS ════
+   A running journal of plan snapshots (success rate, portfolio, spending, ages).
+   Stored under their own key, OUTSIDE the profile: unlike Export/Import, check-ins
+   are never loaded back into the planner — they only feed the Progress view. */
+const LS_CHECKINS_KEY = "aira_checkins_v1";
+function loadCheckIns() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(LS_CHECKINS_KEY) || "[]");
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+function saveCheckIns(list) {
+  try {
+    localStorage.setItem(LS_CHECKINS_KEY, JSON.stringify(list));
+    return true;
+  } catch {
+    return false;
+  }
+}
 function saveProfileToLocal(values) {
   try {
     const hasPropIncome = (values.properties || []).some(pr => Number(pr.income) > 0);
@@ -6267,10 +6289,135 @@ function BucketsTab({ params = {} }) {
     </div>
   );
 }
+/* ════ PROGRESS TAB — check-in journal ════ */
+const CHECKIN_TICK = { fill: "#94a3b8", fontSize: 10 };
+function ProgressTab({ checkIns, onDelete }) {
+  const fmtDate = (ts) => {
+    const d = new Date(ts);
+    return isNaN(d) ? "—" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  };
+
+  if (!checkIns || checkIns.length === 0) {
+    return (
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "48px 24px", textAlign: "center" }}>
+        <div style={{ fontSize: 34, marginBottom: 12 }}>📈</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginBottom: 8 }}>Start your journey</div>
+        <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, maxWidth: 460, margin: "0 auto" }}>
+          Save your first check-in to start tracking how your plan changes over time.
+          The <strong style={{ color: "#5eead4" }}>✓ Check-in</strong> button in the top toolbar snapshots
+          today's plan — success rate, portfolio, and spending — as a point on your timeline.
+          Unlike Export/Import, check-ins are never loaded back into the planner; they're a
+          running journal, shown here as a trend once you've saved a few.
+        </div>
+      </div>
+    );
+  }
+
+  const sorted = [...checkIns].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  const first = sorted[0], latest = sorted[sorted.length - 1];
+  const chartData = sorted.map((c) => ({
+    date: fmtDate(c.ts),
+    successPct: c.successRate != null ? +(c.successRate * 100).toFixed(1) : null,
+    port: c.port ?? null,
+  }));
+  const ratePP = latest.successRate != null && first.successRate != null
+    ? (latest.successRate - first.successRate) * 100 : null;
+  const portDelta = latest.port != null && first.port != null ? latest.port - first.port : null;
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 12 }}>
+        <div className="met">
+          <div className="ml">Latest success rate</div>
+          <div className="mv" style={{ color: "#5eead4" }}>{latest.successRate != null ? `${(latest.successRate * 100).toFixed(1)}%` : "—"}</div>
+          <div className="ms">{fmtDate(latest.ts)}</div>
+        </div>
+        <div className="met">
+          <div className="ml">Since first check-in</div>
+          <div className="mv" style={{ color: ratePP == null ? "#94a3b8" : ratePP >= 0 ? "#0d9488" : "#ef4444" }}>
+            {ratePP == null ? "—" : `${ratePP >= 0 ? "+" : ""}${ratePP.toFixed(1)}pp`}
+          </div>
+          <div className="ms">{fmtDate(first.ts)} → today</div>
+        </div>
+        <div className="met">
+          <div className="ml">Portfolio change</div>
+          <div className="mv" style={{ color: portDelta == null ? "#94a3b8" : portDelta >= 0 ? "#0d9488" : "#ef4444" }}>
+            {portDelta == null ? "—" : `${portDelta >= 0 ? "+" : "−"}${fmtM(Math.abs(portDelta))}`}
+          </div>
+          <div className="ms">{sorted.length} check-in{sorted.length === 1 ? "" : "s"}</div>
+        </div>
+      </div>
+
+      {sorted.length >= 2 ? (
+        <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
+          <div className="ct">Plan trend</div>
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+              <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="date" tick={CHECKIN_TICK} />
+              <YAxis yAxisId="rate" domain={[0, 100]} tick={CHECKIN_TICK} tickFormatter={(v) => `${v}%`} width={42} />
+              <YAxis yAxisId="port" orientation="right" tick={CHECKIN_TICK} tickFormatter={(v) => fmtM(v)} width={54} />
+              <Tooltip
+                contentStyle={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, fontSize: 12 }}
+                formatter={(value, name) => name === "Success rate" ? [`${value}%`, name] : [fmtDollar(value), name]}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line yAxisId="rate" type="monotone" dataKey="successPct" name="Success rate" stroke="#5eead4" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              <Line yAxisId="port" type="monotone" dataKey="port" name="Portfolio" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: "#94a3b8", background: "rgba(94,234,212,0.05)", border: "1px solid rgba(94,234,212,0.15)", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
+          Save another check-in later to see your trend here — one point doesn't make a line yet.
+        </div>
+      )}
+
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+        <div className="ct">Check-in history</div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ color: "#94a3b8", textAlign: "right", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                <th style={{ textAlign: "left", padding: "6px 8px" }}>Date</th>
+                <th style={{ padding: "6px 8px" }}>Success</th>
+                <th style={{ padding: "6px 8px" }}>Portfolio</th>
+                <th style={{ padding: "6px 8px" }}>Spending</th>
+                <th style={{ padding: "6px 8px" }}>Retire</th>
+                <th style={{ padding: "6px 8px" }}>Plan to</th>
+                <th style={{ padding: "6px 8px" }}>Median end</th>
+                <th style={{ padding: "6px 8px" }} />
+              </tr>
+            </thead>
+            <tbody style={{ fontFamily: "'JetBrains Mono',monospace" }}>
+              {[...sorted].reverse().map((c) => (
+                <tr key={c.id} style={{ textAlign: "right", borderBottom: "1px solid rgba(255,255,255,0.05)", color: "#e2e8f0" }}>
+                  <td style={{ textAlign: "left", padding: "6px 8px", fontFamily: "inherit" }}>{fmtDate(c.ts)}</td>
+                  <td style={{ padding: "6px 8px", color: "#5eead4" }}>{c.successRate != null ? `${(c.successRate * 100).toFixed(1)}%` : "—"}</td>
+                  <td style={{ padding: "6px 8px" }}>{c.port != null ? fmtDollar(c.port) : "—"}</td>
+                  <td style={{ padding: "6px 8px" }}>{c.sp != null ? fmtDollar(c.sp) : "—"}</td>
+                  <td style={{ padding: "6px 8px" }}>{c.retireAge ?? "—"}</td>
+                  <td style={{ padding: "6px 8px" }}>{c.endAge ?? "—"}</td>
+                  <td style={{ padding: "6px 8px" }}>{c.medianTerminal != null ? fmtM(c.medianTerminal) : "—"}</td>
+                  <td style={{ padding: "6px 8px" }}>
+                    <button onClick={() => onDelete(c.id)} title="Delete this check-in" style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer" }}>🗑️</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScenariosTab({
   baseParams,
   mc,
   stress,
+  checkIns,
+  onDeleteCheckIn,
   retireAge,
   ssAge,
   rmdAge,
@@ -6303,6 +6450,7 @@ function ScenariosTab({
     ["buckets",     "🪣 BUCKETS"],
     ["income",      "💵 INCOME"],
     ["realestate",  "🏠 REAL ESTATE"],
+    ["progress",    "📈 PROGRESS"],
   ];
 
   return (
@@ -6423,6 +6571,7 @@ function ScenariosTab({
         </div>
       )}
       {scenarioSubTab === "realestate" && <MortgageTab values={assumptions ?? baseParams} onChange={onAssumptionChange ?? (() => {})} />}
+      {scenarioSubTab === "progress"   && <ProgressTab checkIns={checkIns} onDelete={onDeleteCheckIn} />}
     </div>
   );
 }
@@ -9680,6 +9829,37 @@ export default function AiRAForecaster() {
   // Shared hover state so hovering a row in the age-band table highlights the
   // matching age column on the fan chart above (FanChart + MCBandTable are siblings).
   const [hoveredAge, setHoveredAge] = useState(null);
+
+  // Progress check-ins: a journal of plan snapshots (see LS_CHECKINS_KEY).
+  // Requires a completed MC run so the snapshot carries a real success rate.
+  const [checkIns, setCheckIns] = useState(loadCheckIns);
+  const [checkInFlash, setCheckInFlash] = useState(false);
+  const handleSaveCheckIn = () => {
+    if (!mc) return;
+    const entry = {
+      id: `ci_${Date.now()}`,
+      ts: new Date().toISOString(),
+      successRate: mc.rate,
+      stressRate: stress?.rate ?? null,
+      port,
+      sp,
+      retireAge: retAge,
+      endAge,
+      medianTerminal: mc.term?.p50 ?? null,
+      appVersion: APP_VERSION,
+    };
+    const next = [...checkIns, entry];
+    setCheckIns(next);
+    saveCheckIns(next);
+    setCheckInFlash(true);
+    setTimeout(() => setCheckInFlash(false), 2000);
+  };
+  const handleDeleteCheckIn = (id) => {
+    const next = checkIns.filter((c) => c.id !== id);
+    setCheckIns(next);
+    saveCheckIns(next);
+  };
+
   const [showInterpretation, setShowInterpretation] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackType, setFeedbackType] = useState(null);
@@ -10160,6 +10340,17 @@ export default function AiRAForecaster() {
               }
             >
               ⬆ Import
+            </button>
+            <button
+              className="mbtn"
+              title={mc
+                ? "Snapshot today's plan (success rate, portfolio, spending) to your Progress journal — Analysis → Progress"
+                : "Run Monte Carlo first — a check-in snapshots your current success rate"}
+              onClick={handleSaveCheckIn}
+              disabled={!mc}
+              style={!mc ? { opacity: 0.45, cursor: "default" } : checkInFlash ? { color: "#5eead4" } : undefined}
+            >
+              {checkInFlash ? "✓ Saved!" : "✓ Check-in"}
             </button>
             <AboutButton />
             <div style={{ position: "relative", display: "inline-flex" }}>
@@ -10828,6 +11019,8 @@ export default function AiRAForecaster() {
                     mc={mc}
                     fmtPct={fmtPct}
                     stress={stress}
+                    checkIns={checkIns}
+                    onDeleteCheckIn={handleDeleteCheckIn}
                     retireAge={retAge}
                     ssAge={assumptions.ssAge}
                     rmdAge={rmdAge}
@@ -11145,4 +11338,4 @@ export default function AiRAForecaster() {
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab };
