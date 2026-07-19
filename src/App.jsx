@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.1";
-export const BUILD_TAG = "[main] v1.2.1 — Fan chart ↔ age-band table linked hover: hovering a table row spotlights that age column and its percentile dots on the fan. Prior: LTCG cost-basis model on taxable draws (0/15/20% stacking, NIIT, state, MAGI/provisional); IRMAA 2-year lookback; mortality-weighted success rate; printable CFP report behind a credit paywall; age-band table with Still Funded %; expense uploader + spending unified in the Spending & Expenses tab; mortgage payoff-year and GK-calibration fixes; equity-glide-driven growth in all engines; full-number formatting (no more $48K).";
-export const BUILD_TIME = "2026-07-19T12:00:00Z";
+const APP_VERSION = "1.2.2";
+export const BUILD_TAG = "[main] v1.2.2 — Header: flat toolbar (Report/Export/Import/About/Feedback one consistent style) with Buy-me-a-coffee pulled out as a prominent gold CTA; dropped the overflow menu. Prior: Fan chart ↔ age-band table linked hover — hovering a table row spotlights that age column and its percentile dots on the fan. Earlier: LTCG cost-basis model on taxable draws (0/15/20% stacking, NIIT, state, MAGI/provisional); IRMAA 2-year lookback; mortality-weighted success rate; printable CFP report behind a credit paywall; age-band table with Still Funded %; expense uploader + spending unified in the Spending & Expenses tab; mortgage payoff-year and GK-calibration fixes; equity-glide-driven growth in all engines; full-number formatting (no more $48K).";
+export const BUILD_TIME = "2026-07-19T18:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2196,16 +2196,12 @@ const CSS = `
   .mbtn { padding:5px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.12); cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:#94a3b8; }
   .mbtn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
   .mbtn.on { background:linear-gradient(135deg,#0ea5e9,#38bdf8); border-color:transparent; color:white; box-shadow:0 0 16px rgba(14,165,233,0.3); }
-  /* Accented header button — the single emphasized action (Report). */
-  .mbtn.accent { background:rgba(56,189,248,0.12); border-color:rgba(56,189,248,0.45); color:#38bdf8; font-weight:600; }
-  .mbtn.accent:hover { background:rgba(56,189,248,0.2); color:#7dd3fc; border-color:rgba(56,189,248,0.6); }
   .mbtn:disabled { opacity:0.4; cursor:not-allowed; }
-  /* Header groups + overflow (Help) menu. */
+  /* Thin divider separating the utility buttons from the support CTA. */
   .hdiv { width:1px; height:20px; background:rgba(255,255,255,0.1); margin:0 3px; flex-shrink:0; }
-  .hmenu { position:absolute; top:100%; right:0; margin-top:6px; background:#0f2138; border:1px solid #1e3a5f; border-radius:10px; padding:6px; min-width:220px; z-index:999; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
-  .hmenu-item { display:flex; align-items:center; gap:9px; width:100%; padding:9px 11px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:12px; font-family:'Inter',sans-serif; font-weight:500; color:#cbd5e1; text-align:left; text-decoration:none; transition:background 0.12s; }
-  .hmenu-item:hover { background:rgba(255,255,255,0.06); color:#f1f5f9; }
-  .hmenu-arrow { margin-left:auto; color:#475569; font-size:11px; }
+  /* Buy-me-a-coffee — the one prominent, filled support CTA in the header. */
+  .coffee-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 15px; border-radius:8px; border:none; background:linear-gradient(135deg,#f59e0b,#fbbf24); color:#231603; font-size:12px; font-weight:800; font-family:'Inter',sans-serif; letter-spacing:-0.01em; text-decoration:none; cursor:pointer; white-space:nowrap; box-shadow:0 3px 12px rgba(245,158,11,0.35); transition:transform 0.15s, box-shadow 0.15s, filter 0.15s; }
+  .coffee-btn:hover { filter:brightness(1.07); transform:translateY(-1px); box-shadow:0 5px 16px rgba(245,158,11,0.5); }
   .layout { display:grid; grid-template-columns:300px 1fr; height:calc(100vh - 56px); overflow:hidden; }
   .sidebar { border-right:1px solid rgba(228, 24, 24, 0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
   .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:11px; padding:13px; }
@@ -2500,7 +2496,7 @@ function CollapsibleAboutCard({ entry, defaultOpen = false }) {
   );
 }
 
-function AboutButton({ variant, onOpen }) {
+function AboutButton() {
   const [open, setOpen] = React.useState(false);
   const [tab, setTab] = React.useState(0);
   const TABS = ["👤 About Me", "📦 The App", "📖 How It Works"];
@@ -2649,31 +2645,9 @@ function AboutButton({ variant, onOpen }) {
     document.body
   ) : null;
 
-  const openModal = () => { setTab(0); setOpen(true); onOpen && onOpen(); };
-
-  if (variant === "menuitem") {
-    return (
-      <>
-        <button className="hmenu-item" onClick={openModal}>
-          📖 About the app &amp; author
-          <span className="hmenu-arrow">↗</span>
-        </button>
-        {overlay}
-      </>
-    );
-  }
-
   return (
     <>
-      <button
-        onClick={openModal}
-        style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 13px",
-          borderRadius:7, border:"1px solid rgba(96,165,250,0.35)",
-          background:"rgba(96,165,250,0.08)", color:"#60a5fa",
-          fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}
-        onMouseEnter={e => e.currentTarget.style.background = "rgba(96,165,250,0.18)"}
-        onMouseLeave={e => e.currentTarget.style.background = "rgba(96,165,250,0.08)"}
-      >
+      <button className="mbtn" onClick={() => { setTab(0); setOpen(true); }}>
         📖 About
       </button>
       {overlay}
@@ -9708,7 +9682,6 @@ export default function AiRAForecaster() {
   const [hoveredAge, setHoveredAge] = useState(null);
   const [showInterpretation, setShowInterpretation] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [feedbackType, setFeedbackType] = useState(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackName, setFeedbackName] = useState("");
@@ -10023,7 +9996,7 @@ export default function AiRAForecaster() {
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
             <button
-              className="mbtn accent"
+              className="mbtn"
               disabled={!mc}
               title={mc ? "Generate a printable CFP/CPA-ready report" : "Run Monte Carlo first"}
               onClick={() => setShowReport(true)}
@@ -10188,46 +10161,29 @@ export default function AiRAForecaster() {
             >
               ⬆ Import
             </button>
-            <div className="hdiv" title="Support & info" />
+            <AboutButton />
             <div style={{ position: "relative", display: "inline-flex" }}>
               <button
                 className="mbtn"
-                onClick={() => setShowHelp((prev) => !prev)}
-                title="Support, about & feedback"
+                onClick={() => setShowFeedback((prev) => !prev)}
+                title="Send feedback"
               >
-                ⋯ Help {showHelp ? "▴" : "▾"}
+                💬 Feedback
               </button>
-              {showHelp && (
-                <>
-                  <div
-                    onClick={() => { setShowHelp(false); setShowFeedback(false); }}
-                    style={{ position: "fixed", inset: 0, zIndex: 998 }}
-                  />
-                  <div className="hmenu">
-                    <a
-                      href="https://buymeacoffee.com/axwacki"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hmenu-item"
-                    >
-                      ☕ Buy me a coffee
-                      <span className="hmenu-arrow">↗</span>
-                    </a>
-                    <AboutButton variant="menuitem" onOpen={() => setShowHelp(false)} />
-                    <button
-                      className="hmenu-item"
-                      onClick={() => setShowFeedback((prev) => !prev)}
-                    >
-                      💬 Send feedback
-                      <span className="hmenu-arrow">{showFeedback ? "▴" : "▾"}</span>
-                    </button>
               {showFeedback && (
                 <div
                   style={{
-                    marginTop: 8,
-                    paddingTop: 12,
-                    borderTop: "1px solid rgba(255,255,255,0.08)",
-                    width: 268,
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: 6,
+                    background: "#0f2138",
+                    border: "1px solid #1e3a5f",
+                    borderRadius: 10,
+                    padding: 14,
+                    width: 300,
+                    zIndex: 999,
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
                   }}
                 >
                   <div style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 600, marginBottom: 10 }}>
@@ -10329,10 +10285,16 @@ export default function AiRAForecaster() {
                   </div>
                 </div>
               )}
-                  </div>
-                </>
-              )}
             </div>
+            <a
+              href="https://buymeacoffee.com/axwacki"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="coffee-btn"
+              title="Support the app — buy me a coffee"
+            >
+              ☕ Buy me a coffee
+            </a>
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: "#14b8a6", fontFamily: "'DM Mono',monospace" }}>
