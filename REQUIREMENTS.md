@@ -596,3 +596,23 @@ findings below, most severe first. Verdict: **BLOCKED** on §13.1 items.
     withdrawalStrategy in RetirementPanel:8796.
 25. Passes: first-run Profile-first flow, Forecast progressive disclosure, Action
     Plan/AI-credits UI, guardrails selector placement, Net Worth tab density.
+
+## 14. Progress Check-ins — 2026-07-19 (v1.2.3)
+
+Journal feature modeled on "save check-in / progress trend" trackers:
+
+- **✓ Check-in button** (header toolbar, next to Export/Import) snapshots the
+  current plan: success rate, stress rate, portfolio, spending, retire/plan-to
+  ages, median terminal, app version. Disabled until an MC run exists (the
+  snapshot must carry a real success rate). Flashes "✓ Saved!" on save.
+- **Analysis → 📈 Progress sub-tab** (`ProgressTab`): empty state ("Start your
+  journey") pointing at the button; with entries, a 3-metric strip (latest
+  success, pp-change since first, portfolio change), a dual-axis trend chart
+  (success % + portfolio $, ≥2 points), and a history table with per-row delete.
+- **Storage**: `aira_checkins_v1` localStorage key, deliberately OUTSIDE the
+  profile — check-ins are a running journal and are never loaded back into the
+  planner (unlike Export/Import). Not included in profile export; device-local.
+- Distinct from §MCTab "Portfolio Checkpoints" (manual actual-balance entries
+  plotted on the fan chart) — different data, different purpose; no duplication.
+- Tests: storage round-trip/corruption guards + empty-state and history
+  rendering (`features.test.js`). 436 passing after rebase onto v1.2.2.

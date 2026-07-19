@@ -161,3 +161,55 @@ describe('Success Rate Tooltip', () => {
     expect(tooltip).toContain(endAge.toString());
   });
 });
+// ─── Progress check-ins (v1.1.0.31) ────────────────────────────────────────────
+
+describe('Progress check-ins — storage + rendering', () => {
+  const { loadCheckIns, saveCheckIns, ProgressTab } = require('./App');
+  const React = require('react');
+  const { createRoot } = require('react-dom/client');
+  const { act } = require('react-dom/test-utils');
+  global.IS_REACT_ACT_ENVIRONMENT = true;
+
+  const renderToDiv = (el) => {
+    const div = document.createElement('div');
+    document.body.appendChild(div);
+    act(() => { createRoot(div).render(el); });
+    return div;
+  };
+
+  beforeEach(() => localStorage.removeItem('aira_checkins_v1'));
+
+  test('loadCheckIns returns [] when nothing is stored', () => {
+    expect(loadCheckIns()).toEqual([]);
+  });
+
+  test('loadCheckIns returns [] on corrupt or non-array data', () => {
+    localStorage.setItem('aira_checkins_v1', '{not json');
+    expect(loadCheckIns()).toEqual([]);
+    localStorage.setItem('aira_checkins_v1', '{"a":1}');
+    expect(loadCheckIns()).toEqual([]);
+  });
+
+  test('save/load round-trips a check-in entry', () => {
+    const entry = { id: 'ci_1', ts: '2026-07-11T12:00:00Z', successRate: 0.91, port: 800_000, sp: 72_000, retireAge: 62, endAge: 90, medianTerminal: 1_200_000 };
+    expect(saveCheckIns([entry])).toBe(true);
+    expect(loadCheckIns()).toEqual([entry]);
+  });
+
+  test('ProgressTab shows the empty state with no check-ins', () => {
+    const div = renderToDiv(React.createElement(ProgressTab, { checkIns: [], onDelete: () => {} }));
+    expect(div.textContent).toContain('Start your journey');
+  });
+
+  test('ProgressTab renders history rows and summary for saved check-ins', () => {
+    const checkIns = [
+      { id: 'ci_1', ts: '2026-01-05T12:00:00Z', successRate: 0.85, port: 700_000, sp: 70_000, retireAge: 62, endAge: 90, medianTerminal: 900_000 },
+      { id: 'ci_2', ts: '2026-07-11T12:00:00Z', successRate: 0.91, port: 800_000, sp: 72_000, retireAge: 62, endAge: 90, medianTerminal: 1_100_000 },
+    ];
+    const div = renderToDiv(React.createElement(ProgressTab, { checkIns, onDelete: () => {} }));
+    expect(div.textContent).toContain('Latest success rate');
+    expect(div.textContent).toContain('91.0%');
+    expect(div.textContent).toContain('+6.0pp');
+    expect(div.textContent).toContain('Check-in history');
+  });
+});
