@@ -213,3 +213,41 @@ describe('Progress check-ins — storage + rendering', () => {
     expect(div.textContent).toContain('Check-in history');
   });
 });
+
+// ─── Plan shape + progress import/export (v1.2.4) ──────────────────────────────
+
+describe('Plan shape scores + check-in merge', () => {
+  const { planShapeScores, mergeCheckIns } = require('./App');
+
+  test('planShapeScores maps a snapshot onto absolute 0-100 axes', () => {
+    const s = planShapeScores({ successRate: 0.9, stressRate: 0.75, retireAge: 62.5, sp: 40_000, port: 1_000_000, medianTerminal: 500_000 });
+    expect(s.confidence).toBe(90);
+    expect(s.resilience).toBe(75);
+    expect(s.retireBy).toBe(50);          // (75 − 62.5) / 25 × 100
+    expect(s.spend).toBe(100);            // 4% × $1M = $40K = target → capped at 100
+    expect(s.legacy).toBe(50);            // $500K / $1M
+  });
+
+  test('planShapeScores clamps to [0,100] and tolerates missing fields', () => {
+    const s = planShapeScores({});
+    for (const k of ['confidence', 'retireBy', 'spend', 'legacy', 'resilience']) {
+      expect(s[k]).toBeGreaterThanOrEqual(0);
+      expect(s[k]).toBeLessThanOrEqual(100);
+    }
+    expect(planShapeScores({ retireAge: 45 }).retireBy).toBe(100);
+    expect(planShapeScores({ medianTerminal: 5_000_000 }).legacy).toBe(100);
+  });
+
+  test('mergeCheckIns dedupes by id (local wins), sorts by timestamp, skips junk', () => {
+    const local = [{ id: 'a', ts: '2026-03-01T00:00:00Z', name: 'kept' }];
+    const imported = [
+      { id: 'a', ts: '2026-03-01T00:00:00Z', name: 'overwritten?' },
+      { id: 'b', ts: '2026-01-01T00:00:00Z' },
+      { notAnEntry: true },
+      null,
+    ];
+    const merged = mergeCheckIns(local, imported);
+    expect(merged.map(c => c.id)).toEqual(['b', 'a']);
+    expect(merged.find(c => c.id === 'a').name).toBe('kept');
+  });
+});

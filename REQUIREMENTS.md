@@ -616,3 +616,20 @@ Journal feature modeled on "save check-in / progress trend" trackers:
   plotted on the fan chart) — different data, different purpose; no duplication.
 - Tests: storage round-trip/corruption guards + empty-state and history
   rendering (`features.test.js`). 436 passing after rebase onto v1.2.2.
+
+### §14 addendum — v1.2.4 (2026-07-19)
+
+- **History as cards**: each check-in is a card with an inline-editable name,
+  date badge, × delete, and metric chips (Success, Stress SR, Portfolio,
+  Spending, Legacy, Retire/Plan-to ages). Table removed.
+- **Export/Import progress**: JSON backup of the journal (`⬇/⬆` links on the
+  history card and empty state). Import merges by id — local entries win —
+  then sorts by timestamp (`mergeCheckIns`, exported + tested).
+- **Plan Shape radar** (`planShapeScores`, exported + tested): five absolute
+  0–100 axes — Confidence (MC success), Retire by (age 50→100pts … 75→0),
+  Spend (4%×port vs target), Legacy (p50 ending, $1M=100), Resilience (stress
+  success). First check-in (gray) vs today (blue), stability banner (≤5-point
+  moves = stable, else biggest shift named), per-axis explainer legend.
+  Deliberately NO "median cohort" overlay — no real cohort data exists, and a
+  fabricated benchmark would violate the no-hardcoded-values principle.
+- 439 tests passing.
