@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.1.0.30";
-export const BUILD_TAG = "[main] v1.1.0.30 — Withdrawal Waterfall adopts the smart GK/Bengen hybrid (GK guardrails >15 yrs remaining, inflation-only after) so the schedule matches the Monte Carlo; full bracket-target coverage: 10/32/35/37 ceilings added to both engines (10% no longer silently acted as 22% in MC; 32/35/37 no longer fell back to 22); 35%/37% federal brackets added above $512K/$256K; Roth tab mode mapping fixed so stored fill_10..fill_35 targets no longer default to 22%.";
-export const BUILD_TIME = "2026-07-11T00:00:00Z";
+const APP_VERSION = "1.2.0";
+export const BUILD_TAG = "[main] v1.2.0 — LTCG cost-basis model on taxable draws (0/15/20% stacking, NIIT, state, MAGI/provisional); IRMAA 2-year lookback; mortality-weighted success rate; printable CFP report behind a credit paywall; age-band table with Still Funded %; expense uploader + spending unified in the Spending & Expenses tab; mortgage payoff-year and GK-calibration fixes; equity-glide-driven growth in all engines; full-number formatting (no more $48K).";
+export const BUILD_TIME = "2026-07-19T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -8054,12 +8054,12 @@ function ProfileWizard({ values, onChange }) {
     { label: "Current Savings", icon: "💰", sub: `Net worth of ${fmtM(values.port)} saved. Congratulations!` },
     { label: "Contributions", icon: "📋", sub: `Total Contributions of ${fmtK(values.contrib)}/yr` },
     {
-      label: "Expenses", icon: "📄",
+      label: "Spending & Expenses", icon: "💸",
       sub: values.spImportMeta
         ? (values.spImportMeta.mode === "multi"
             ? `Multi-year budget · ${values.spImportMeta.years} yrs`
             : `Budget loaded · ${fmtK(values.spImportMeta.total)}/yr`)
-        : "Import a detailed budget (CSV)",
+        : `Spending ${fmtK((values.sp || 0) + (values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)))}/yr`,
     },
     { label: "Retirement Plan", icon: "🎯", sub: `Projected Retirement Age ${values.retireAge}` },
   ];
@@ -9304,7 +9304,7 @@ function ExpenseImport({ values, onChange }) {
     <div style={{ marginTop: 14, padding: "12px 14px", background: "rgba(168,85,247,0.06)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: 8 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: "#c4b5fd", marginBottom: 4 }}>📄 Import detailed expenses (CSV)</div>
       <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginBottom: 8 }}>
-        Replace the typed spend (Retirement Plan → Spending) with a line-item budget. <strong style={{ color: "#cbd5e1" }}>Exclude</strong> mortgage/rent,
+        Replace the typed spend above with a line-item budget. <strong style={{ color: "#cbd5e1" }}>Exclude</strong> mortgage/rent,
         debt, medical, long-term care, and income tax — those are modeled separately (Expense Model, carveouts, tax engine).
         Upload <strong style={{ color: "#cbd5e1" }}>one year</strong> (summed and inflated forward) or
         <strong style={{ color: "#cbd5e1" }}> multiple years</strong> (one column or row per year — used as the spend plan for those years).
@@ -9378,22 +9378,40 @@ function ExpenseImport({ values, onChange }) {
 }
 
 /**
- * Expenses tab — the detailed-budget CSV uploader as its own left-side wizard
- * step, grouped with Contributions (user request: discoverability over the
- * old buried-in-Spending placement). The uploaded budget still drives the
- * same fields it always did (sp / spSchedule / spImportMeta); the Retirement
- * Plan tab's Spending section keeps a pointer here plus a live summary.
+ * Spending & Expenses tab — the typed spending fields AND the detailed-budget
+ * CSV uploader live together (user request: they're two ways of expressing the
+ * same thing, so they belong on one screen — type a number, or upload a budget
+ * that replaces/overrides it, with the interaction visible in place). The
+ * uploaded budget drives the same fields it always did (sp / spSchedule /
+ * spImportMeta); the Retirement Plan tab keeps a compact spending summary.
  */
 function ExpensesPanel({ values, onChange }) {
   const meta = values.spImportMeta || null;
+  const usSp = values.sp || 0;
+  const outOfCountrySp = values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0);
+  const combinedSp = usSp + outOfCountrySp;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
+        <WFieldRow label="US Spending (annual)" helper="Domestic household spending in today's dollars. Subject to state income tax when residing in-state.">
+          <ANumInput value={values.sp || 0} onSet={(v) => onChange("sp", v)} min={0} max={500000} step={1000} suffix="/yr" />
+        </WFieldRow>
+        <WFieldRow label="Out-of-Country Spending (annual)" helper="Spending that occurs abroad in today's dollars. Always drawn from the portfolio but never subject to US state tax.">
+          <ANumInput value={values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={500000} step={1000} suffix="/yr" />
+        </WFieldRow>
+        <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span>Total combined annual spending (used for portfolio draw)</span>
+          <strong style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace", fontSize: 14 }}>{fmtK(combinedSp)}/yr</strong>
+        </div>
+      </div>
+
+      <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>DETAILED EXPENSE BUDGET</div>
         <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, marginBottom: 12 }}>
-          Instead of a single typed spending number, upload your real line-item budget.
+          Instead of typing a single spending number above, upload your real line-item budget.
           A <strong style={{ color: "#cbd5e1" }}>one-year</strong> budget is summed into the US Spending field
-          (Retirement Plan → Spending) and inflated forward like a typed number.
+          above and inflated forward like a typed number.
           A <strong style={{ color: "#cbd5e1" }}>multi-year</strong> budget becomes an explicit per-year spending
           plan that overrides your withdrawal strategy's spend rule for those years — the Monte Carlo,
           Withdrawal Plan, and deterministic schedule all follow it.
@@ -9401,8 +9419,7 @@ function ExpensesPanel({ values, onChange }) {
         <ExpenseImport values={values} onChange={onChange} />
         {!meta && (
           <div style={{ marginTop: 12, fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>
-            No budget loaded — the plan currently uses the typed spending numbers in
-            Retirement Plan → Spending.
+            No budget loaded — the plan currently uses the typed spending numbers above.
           </div>
         )}
       </div>
@@ -9465,31 +9482,21 @@ function RetirementPanel({ values, onChange }) {
         </div>
       </div>
 
+      {/* Spending inputs + the budget uploader live together in the 💸 Spending
+          & Expenses tab now. This compact summary keeps the number visible here
+          (the WR diagnostic and guardrails below are calibrated to it). */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
-        <WFieldRow label="US Spending (annual)" helper="Domestic household spending in today's dollars. Subject to state income tax when residing in-state.">
-          <ANumInput value={values.sp || 0} onSet={(v) => onChange("sp", v)} min={0} max={500000} step={1000} suffix="/yr" />
-        </WFieldRow>
-        <WFieldRow label="Out-of-Country Spending (annual)" helper="Spending that occurs abroad in today's dollars. Always drawn from the portfolio but never subject to US state tax.">
-          <ANumInput value={values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={500000} step={1000} suffix="/yr" />
-        </WFieldRow>
-        <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span>Total combined annual spending (used for portfolio draw)</span>
-          <strong style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace", fontSize: 14 }}>{fmtK(combinedSp)}/yr</strong>
-        </div>
-        {/* The CSV uploader itself lives in the 📄 Expenses tab now — keep a live
-            pointer/summary here so the spend fields still reference the budget
-            that may be overriding them (proximity without duplication). */}
-        <div style={{ marginTop: 10, fontSize: 11, color: "#94a3b8", background: "rgba(168,85,247,0.06)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: 8, padding: "8px 12px", lineHeight: 1.5 }}>
-          {values.spImportMeta ? (
-            values.spImportMeta.mode === "multi" ? (
-              <>📄 <strong style={{ color: "#c4b5fd" }}>Multi-year budget active</strong> — {values.spImportMeta.years} years ({values.spImportMeta.firstYear}–{values.spImportMeta.lastYear}) from <em>{values.spImportMeta.fileName}</em> override the spend fields above. Manage it in the <strong style={{ color: "#c4b5fd" }}>📄 Expenses</strong> tab.</>
-            ) : (
-              <>📄 <strong style={{ color: "#c4b5fd" }}>One-year budget loaded</strong> — {fmtDollar(values.spImportMeta.total)}/yr from <em>{values.spImportMeta.fileName}</em> set the US Spending field above. Manage it in the <strong style={{ color: "#c4b5fd" }}>📄 Expenses</strong> tab.</>
-            )
-          ) : (
-            <>Have a line-item budget? Import it in the <strong style={{ color: "#c4b5fd" }}>📄 Expenses</strong> tab (left) — a detailed budget replaces or overrides the typed spend fields above.</>
-          )}
+        <div style={{ padding: "10px 12px", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <span>
+            Combined annual spending{values.spImportMeta ? (
+              <> · 📄 <strong style={{ color: "#c4b5fd" }}>{values.spImportMeta.mode === "multi" ? "multi-year budget active" : "budget-driven"}</strong></>
+            ) : null}
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <strong style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace", fontSize: 14 }}>{fmtK(combinedSp)}/yr</strong>
+            <span style={{ fontSize: 11, color: "#c4b5fd" }}>Edit in 💸 Spending &amp; Expenses →</span>
+          </span>
         </div>
       </div>
 
