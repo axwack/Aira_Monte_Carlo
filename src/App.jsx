@@ -79,7 +79,7 @@ import { AdminPanel } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 
 import emailjs from '@emailjs/browser';
-import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,} from "recharts";
+import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,RadarChart,PolarGrid,PolarAngleAxis,PolarRadiusAxis,Radar,} from "recharts";
 
 if (typeof document !== "undefined") {
   const link = document.createElement("link");
@@ -100,8 +100,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.3";
-export const BUILD_TAG = "[main] v1.2.3 — Progress check-ins: the header Check-in button snapshots today's plan (success rate, portfolio, spending, ages, median terminal) to a local journal; new Analysis-tab Progress view charts the trend with an empty-state guide. Check-ins live outside the profile and are never loaded back into the planner. Prior (1.2.2): flat header toolbar with Buy-me-a-coffee CTA; fan chart ↔ age-band table linked hover; LTCG cost-basis model; IRMAA 2-year lookback; mortality-weighted success rate; printable CFP report.";
+const APP_VERSION = "1.2.4";
+export const BUILD_TAG = "[main] v1.2.4 — Progress upgrades: check-in history redesigned as nameable cards with metric chips (success, stress, portfolio, spending, legacy, ages) plus Export/Import progress JSON for backup; new Plan Shape radar — five absolute 0-100 axes (Confidence, Retire by, Spend, Legacy, Resilience) comparing first check-in vs today with a stability banner and per-axis explainers.";
 export const BUILD_TIME = "2026-07-19T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -6291,10 +6291,94 @@ function BucketsTab({ params = {} }) {
 }
 /* ════ PROGRESS TAB — check-in journal ════ */
 const CHECKIN_TICK = { fill: "#94a3b8", fontSize: 10 };
-function ProgressTab({ checkIns, onDelete }) {
+
+// Five absolute 0–100 scores describing the "shape" of a plan snapshot.
+// Absolute (not cohort-relative) so the same snapshot always scores the same:
+//   confidence — MC success rate
+//   retireBy   — planned retirement age, 50 → 100 pts down to 75 → 0 (lower age = better)
+//   spend      — how comfortably the 4% rule covers the target: 4% × port vs sp
+//   legacy     — median ending portfolio (p50); $1M+ scores 100
+//   resilience — success rate under the 2000–2012 stress sequence
+function planShapeScores(c) {
+  const clamp = (v) => Math.max(0, Math.min(100, v));
+  return {
+    confidence: clamp((c.successRate ?? 0) * 100),
+    retireBy:   c.retireAge != null ? clamp(((75 - c.retireAge) / 25) * 100) : 0,
+    spend:      c.sp > 0 && c.port != null ? clamp(((c.port * 0.04) / c.sp) * 100) : 0,
+    legacy:     clamp(((c.medianTerminal ?? 0) / 1_000_000) * 100),
+    resilience: clamp((c.stressRate ?? 0) * 100),
+  };
+}
+
+// Merge imported check-ins into the existing journal: entries whose id already
+// exists locally are skipped (local wins), result sorted by timestamp.
+function mergeCheckIns(existing, imported) {
+  const base = Array.isArray(existing) ? existing : [];
+  const inc  = Array.isArray(imported) ? imported : [];
+  const seen = new Set(base.map((c) => c.id));
+  const merged = [...base];
+  for (const c of inc) {
+    if (!c || typeof c !== "object" || !c.id || !c.ts) continue;
+    if (seen.has(c.id)) continue;
+    seen.add(c.id);
+    merged.push(c);
+  }
+  return merged.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+}
+
+const PLAN_SHAPE_AXES = [
+  { key: "confidence", label: "Confidence", color: "#38bdf8",
+    what: "Odds your money outlasts you",
+    how: "Monte Carlo success rate across all simulated paths" },
+  { key: "retireBy", label: "Retire by", color: "#34d399",
+    what: "How early your plan retires you",
+    how: "Planned retirement age on an absolute scale (50 scores 100, 75 scores 0 — lower is better)" },
+  { key: "spend", label: "Spend", color: "#a3e635",
+    what: "How comfortably the plan funds your spending target",
+    how: "4% of today's portfolio vs your planned annual spend (at or above target scores 100)" },
+  { key: "legacy", label: "Legacy", color: "#818cf8",
+    what: "What's left at end of plan",
+    how: "Median ending portfolio (p50) — $1M or more scores 100" },
+  { key: "resilience", label: "Resilience", color: "#fb923c",
+    what: "How well the plan weathers market stress",
+    how: "Success rate with the 2000–2012 sequence forced at retirement" },
+];
+
+function exportCheckInsFile(checkIns) {
+  try {
+    const payload = { kind: "aira_checkins", version: 1, exportedAt: new Date().toISOString(), checkIns };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `AiRA_Progress_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {}
+}
+
+function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
   const fmtDate = (ts) => {
     const d = new Date(ts);
-    return isNaN(d) ? "—" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    return isNaN(d) ? "—" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }).toUpperCase();
+  };
+  const isToday = (ts) => {
+    const d = new Date(ts), n = new Date();
+    return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+  };
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        const arr = Array.isArray(data) ? data : data?.checkIns;
+        if (Array.isArray(arr)) onImport(arr);
+      } catch {}
+    };
+    reader.readAsText(file);
   };
 
   if (!checkIns || checkIns.length === 0) {
@@ -6302,13 +6386,17 @@ function ProgressTab({ checkIns, onDelete }) {
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "48px 24px", textAlign: "center" }}>
         <div style={{ fontSize: 34, marginBottom: 12 }}>📈</div>
         <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginBottom: 8 }}>Start your journey</div>
-        <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, maxWidth: 460, margin: "0 auto" }}>
+        <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, maxWidth: 460, margin: "0 auto 14px" }}>
           Save your first check-in to start tracking how your plan changes over time.
           The <strong style={{ color: "#5eead4" }}>✓ Check-in</strong> button in the top toolbar snapshots
           today's plan — success rate, portfolio, and spending — as a point on your timeline.
           Unlike Export/Import, check-ins are never loaded back into the planner; they're a
           running journal, shown here as a trend once you've saved a few.
         </div>
+        <label style={{ fontSize: 11, color: "#38bdf8", cursor: "pointer" }}>
+          ⬆ Import progress from a previous export
+          <input type="file" accept=".json,application/json" onChange={handleImportFile} style={{ display: "none" }} />
+        </label>
       </div>
     );
   }
@@ -6323,6 +6411,17 @@ function ProgressTab({ checkIns, onDelete }) {
   const ratePP = latest.successRate != null && first.successRate != null
     ? (latest.successRate - first.successRate) * 100 : null;
   const portDelta = latest.port != null && first.port != null ? latest.port - first.port : null;
+
+  // ── Plan shape (radar) ──
+  const sFirst = planShapeScores(first);
+  const sToday = planShapeScores(latest);
+  const hasTwo = sorted.length >= 2;
+  const radarData = PLAN_SHAPE_AXES.map(({ key, label }) => ({
+    axis: label, first: +sFirst[key].toFixed(0), today: +sToday[key].toFixed(0),
+  }));
+  const deltas = PLAN_SHAPE_AXES.map(({ key, label }) => ({ label, d: sToday[key] - sFirst[key] }));
+  const maxShift = deltas.reduce((a, b) => (Math.abs(b.d) > Math.abs(a.d) ? b : a), { label: "", d: 0 });
+  const shapeStable = !hasTwo || Math.abs(maxShift.d) <= 5;
 
   return (
     <div>
@@ -6345,6 +6444,57 @@ function ProgressTab({ checkIns, onDelete }) {
             {portDelta == null ? "—" : `${portDelta >= 0 ? "+" : "−"}${fmtM(Math.abs(portDelta))}`}
           </div>
           <div className="ms">{sorted.length} check-in{sorted.length === 1 ? "" : "s"}</div>
+        </div>
+      </div>
+
+      {/* ── Plan shape over time (radar) ── */}
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
+        <div className="ct">Plan shape over time</div>
+        <div style={{
+          fontSize: 12, lineHeight: 1.5, padding: "8px 12px", borderRadius: 8, marginBottom: 10,
+          background: shapeStable ? "rgba(56,189,248,0.06)" : "rgba(251,146,60,0.08)",
+          border: `1px solid ${shapeStable ? "rgba(56,189,248,0.18)" : "rgba(251,146,60,0.25)"}`,
+          color: "#e2e8f0",
+        }}>
+          {shapeStable
+            ? "Your plan shape has been stable — no axis has moved by more than 5 points."
+            : `Biggest shift since your first check-in: ${maxShift.label} ${maxShift.d > 0 ? "+" : ""}${maxShift.d.toFixed(0)} points.`}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+          <div style={{ flex: "1 1 300px", minWidth: 260 }}>
+            <ResponsiveContainer width="100%" height={280}>
+              <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
+                <PolarGrid stroke="rgba(255,255,255,0.12)" />
+                <PolarAngleAxis dataKey="axis" tick={{ fill: "#e2e8f0", fontSize: 11 }} />
+                <PolarRadiusAxis domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 9 }} tickCount={5} angle={90} />
+                {hasTwo && (
+                  <Radar name={`First check-in (${fmtDate(first.ts)})`} dataKey="first"
+                    stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.12} strokeWidth={1.5} />
+                )}
+                <Radar name={`Today (${fmtDate(latest.ts)})`} dataKey="today"
+                  stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.25} strokeWidth={2} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ flex: "1 1 280px", minWidth: 250, display: "flex", flexDirection: "column", gap: 8 }}>
+            {PLAN_SHAPE_AXES.map(({ key, label, color, what, how }) => (
+              <div key={key} style={{ borderLeft: `3px solid ${color}`, paddingLeft: 10 }}>
+                <div style={{ fontSize: 12 }}>
+                  <strong style={{ color: "#e2e8f0" }}>{label}</strong>
+                  <span style={{ color: "#94a3b8" }}> {what}</span>
+                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>{how}</div>
+                <div style={{ fontSize: 11, color, fontFamily: "'JetBrains Mono',monospace" }}>
+                  {hasTwo ? `${sFirst[key].toFixed(0)} → ${sToday[key].toFixed(0)}` : sToday[key].toFixed(0)} / 100
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 8 }}>
+          Each axis scores 0–100 on an absolute scale — higher is better on every axis.
+          Goal: <strong style={{ color: "#5eead4" }}>expand the polygon over time</strong>.
         </div>
       </div>
 
@@ -6373,39 +6523,60 @@ function ProgressTab({ checkIns, onDelete }) {
         </div>
       )}
 
+      {/* ── Check-in history (cards) ── */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
-        <div className="ct">Check-in history</div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead>
-              <tr style={{ color: "#94a3b8", textAlign: "right", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-                <th style={{ textAlign: "left", padding: "6px 8px" }}>Date</th>
-                <th style={{ padding: "6px 8px" }}>Success</th>
-                <th style={{ padding: "6px 8px" }}>Portfolio</th>
-                <th style={{ padding: "6px 8px" }}>Spending</th>
-                <th style={{ padding: "6px 8px" }}>Retire</th>
-                <th style={{ padding: "6px 8px" }}>Plan to</th>
-                <th style={{ padding: "6px 8px" }}>Median end</th>
-                <th style={{ padding: "6px 8px" }} />
-              </tr>
-            </thead>
-            <tbody style={{ fontFamily: "'JetBrains Mono',monospace" }}>
-              {[...sorted].reverse().map((c) => (
-                <tr key={c.id} style={{ textAlign: "right", borderBottom: "1px solid rgba(255,255,255,0.05)", color: "#e2e8f0" }}>
-                  <td style={{ textAlign: "left", padding: "6px 8px", fontFamily: "inherit" }}>{fmtDate(c.ts)}</td>
-                  <td style={{ padding: "6px 8px", color: "#5eead4" }}>{c.successRate != null ? `${(c.successRate * 100).toFixed(1)}%` : "—"}</td>
-                  <td style={{ padding: "6px 8px" }}>{c.port != null ? fmtDollar(c.port) : "—"}</td>
-                  <td style={{ padding: "6px 8px" }}>{c.sp != null ? fmtDollar(c.sp) : "—"}</td>
-                  <td style={{ padding: "6px 8px" }}>{c.retireAge ?? "—"}</td>
-                  <td style={{ padding: "6px 8px" }}>{c.endAge ?? "—"}</td>
-                  <td style={{ padding: "6px 8px" }}>{c.medianTerminal != null ? fmtM(c.medianTerminal) : "—"}</td>
-                  <td style={{ padding: "6px 8px" }}>
-                    <button onClick={() => onDelete(c.id)} title="Delete this check-in" style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer" }}>🗑️</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div className="ct" style={{ marginBottom: 0 }}>Check-in history</div>
+          <div style={{ fontSize: 11, display: "flex", gap: 12, alignItems: "center" }}>
+            <button onClick={() => exportCheckInsFile(sorted)} style={{ background: "none", border: "none", padding: 0, color: "#38bdf8", cursor: "pointer", fontSize: 11 }}>
+              ⬇ Export progress
+            </button>
+            <span style={{ color: "#475569" }}>·</span>
+            <label style={{ color: "#38bdf8", cursor: "pointer" }}>
+              ⬆ Import progress
+              <input type="file" accept=".json,application/json" onChange={handleImportFile} style={{ display: "none" }} />
+            </label>
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+          {[...sorted].reverse().map((c) => (
+            <div key={c.id} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 10, color: "#94a3b8", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
+                  {fmtDate(c.ts)}{isToday(c.ts) ? " · TODAY" : ""}
+                </span>
+                <input
+                  defaultValue={c.name || ""}
+                  placeholder="Name this check-in…"
+                  onBlur={(e) => { const v = e.target.value.trim(); if (v !== (c.name || "")) onRename(c.id, v); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                  style={{
+                    flex: 1, minWidth: 80, background: "transparent", border: "none", outline: "none",
+                    color: "#e2e8f0", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                  }}
+                />
+                <button onClick={() => onDelete(c.id)} title="Delete this check-in"
+                  style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>
+                  ×
+                </button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                {[
+                  ["SUCCESS RATE", c.successRate != null ? `${(c.successRate * 100).toFixed(0)}%` : "—", "#5eead4"],
+                  ["STRESS SR",    c.stressRate  != null ? `${(c.stressRate  * 100).toFixed(0)}%` : "—", "#fb923c"],
+                  ["PORTFOLIO",    c.port           != null ? fmtM(c.port)           : "—", "#e2e8f0"],
+                  ["SPENDING",     c.sp             != null ? fmtM(c.sp)             : "—", "#e2e8f0"],
+                  ["LEGACY",       c.medianTerminal != null ? fmtM(c.medianTerminal) : "—", "#818cf8"],
+                  ["RETIRE / PLAN TO", c.retireAge != null ? `${c.retireAge} / ${c.endAge ?? "—"}` : "—", "#e2e8f0"],
+                ].map(([label, value, color]) => (
+                  <div key={label} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "6px 10px", minWidth: 86 }}>
+                    <div style={{ fontSize: 8.5, color: "#94a3b8", letterSpacing: "0.08em" }}>{label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: "'JetBrains Mono',monospace" }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -6418,6 +6589,8 @@ function ScenariosTab({
   stress,
   checkIns,
   onDeleteCheckIn,
+  onRenameCheckIn,
+  onImportCheckIns,
   retireAge,
   ssAge,
   rmdAge,
@@ -6571,7 +6744,7 @@ function ScenariosTab({
         </div>
       )}
       {scenarioSubTab === "realestate" && <MortgageTab values={assumptions ?? baseParams} onChange={onAssumptionChange ?? (() => {})} />}
-      {scenarioSubTab === "progress"   && <ProgressTab checkIns={checkIns} onDelete={onDeleteCheckIn} />}
+      {scenarioSubTab === "progress"   && <ProgressTab checkIns={checkIns} onDelete={onDeleteCheckIn} onRename={onRenameCheckIn} onImport={onImportCheckIns} />}
     </div>
   );
 }
@@ -9859,6 +10032,16 @@ export default function AiRAForecaster() {
     setCheckIns(next);
     saveCheckIns(next);
   };
+  const handleRenameCheckIn = (id, name) => {
+    const next = checkIns.map((c) => (c.id === id ? { ...c, name } : c));
+    setCheckIns(next);
+    saveCheckIns(next);
+  };
+  const handleImportCheckIns = (imported) => {
+    const next = mergeCheckIns(checkIns, imported);
+    setCheckIns(next);
+    saveCheckIns(next);
+  };
 
   const [showInterpretation, setShowInterpretation] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
@@ -11021,6 +11204,8 @@ export default function AiRAForecaster() {
                     stress={stress}
                     checkIns={checkIns}
                     onDeleteCheckIn={handleDeleteCheckIn}
+                    onRenameCheckIn={handleRenameCheckIn}
+                    onImportCheckIns={handleImportCheckIns}
                     retireAge={retAge}
                     ssAge={assumptions.ssAge}
                     rmdAge={rmdAge}
@@ -11338,4 +11523,4 @@ export default function AiRAForecaster() {
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns };
