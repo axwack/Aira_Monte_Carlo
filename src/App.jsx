@@ -74,7 +74,7 @@ import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
-import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance } from "./billing/credits.js";
+import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance, isReportUnlocked } from "./billing/credits.js";
 import { AdminPanel } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 
@@ -11063,6 +11063,12 @@ export default function AiRAForecaster() {
           rmdAge={rmdAge}
           buildTag={BUILD_TAG}
           onClose={() => setShowReport(false)}
+          // Soft client-side paywall gate (see UnlockPanel comment in
+          // PrintReport.jsx): self-host/dev mode (BILLING_ENABLED=false)
+          // always opens the report free, exactly as before this feature.
+          // In billing mode, a still-active 24h unlock (isReportUnlocked())
+          // also opens it free; otherwise the overlay renders locked/blurred.
+          locked={BILLING_ENABLED && !isReportUnlocked()}
         />
       )}
     </>
