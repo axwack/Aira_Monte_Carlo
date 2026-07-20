@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.4";
-export const BUILD_TAG = "[main] v1.2.4 — Progress upgrades: check-in history redesigned as nameable cards with metric chips (success, stress, portfolio, spending, legacy, ages) plus Export/Import progress JSON for backup; new Plan Shape radar — five absolute 0-100 axes (Confidence, Retire by, Spend, Legacy, Resilience) comparing first check-in vs today with a stability banner and per-axis explainers.";
-export const BUILD_TIME = "2026-07-19T00:00:00Z";
+const APP_VERSION = "1.2.5";
+export const BUILD_TAG = "[main] v1.2.5 — Stress Test subtab: named-scenario card grid (market crash w/ severity buttons, long-term-care event, live-to-100, spouse passes early) — each a confidence gauge + pp drop vs baseline, quick low-path estimate on open with a per-card Run-full real-MC button; the 2000–2012 sequence view stays below. Prior v1.2.4: Progress check-in card history + Plan Shape radar.";
+export const BUILD_TIME = "2026-07-20T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -6583,6 +6583,198 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
   );
 }
 
+// ── Stress-scenario constants ────────────────────────────────────────────────
+// Scenario knobs (not tax constants): a memory-care shock and its duration.
+// Crash severity is user-driven via the buttons below.
+const STRESS_QUICK_PATHS = 200;                 // fast, noisy estimate
+const LTC_ANNUAL_COST = 110000;                 // memory care ≈ $110k/yr, today's $
+const LTC_YEARS = 3;
+
+// Success-rate → traffic-light color, shared by the gauge ring and the pp delta.
+function stressRateColor(rate) {
+  if (rate == null) return "#64748b";
+  if (rate >= 0.85) return "#34d399";
+  if (rate >= 0.70) return "#fbbf24";
+  return "#f87171";
+}
+
+// Small donut gauge showing a scenario's surviving-plans percentage.
+function ScenarioGauge({ pct, color }) {
+  const r = 24, circ = 2 * Math.PI * r;
+  const dash = circ * Math.max(0, Math.min(100, pct)) / 100;
+  return (
+    <svg width="58" height="58" viewBox="0 0 58 58" style={{ flexShrink: 0 }}>
+      <circle cx="29" cy="29" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
+      <circle cx="29" cy="29" r={r} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
+        strokeDasharray={`${dash} ${circ}`} transform="rotate(-90 29 29)" />
+      <text x="29" y="34" textAnchor="middle" fill={color} fontSize="16" fontWeight="700"
+        fontFamily="'DM Mono',monospace">{pct == null ? "—" : Math.round(pct)}</text>
+    </svg>
+  );
+}
+
+// Card grid of "what if" stress scenarios. Each card shows a quick low-path
+// estimate immediately, with a "Run full" button that re-runs the real engine
+// (MC_PATHS) for that one scenario. Deltas are computed against a like-for-like
+// baseline: estimate-vs-estimate, or (once run) full-vs-full using the app's mc.
+function StressScenarioGrid({ p, baseRate, fmtPct }) {
+  const [severity, setSeverity] = useState(-0.40);
+  const [est, setEst] = useState(null);        // { base, [id]: rate } low-path
+  const [full, setFull] = useState({});        // { [id]: rate } full-path
+  const [running, setRunning] = useState(null);
+  const endAge = p.endAge || 90;
+
+  const scenarios = useMemo(() => [
+    {
+      id: "crash", emoji: "📉", label: "MARKET CRASHES EARLY",
+      sub: `One-year ${Math.round(severity * 100)}% equity shock right at retirement`,
+      run: (N, seed) => runMC(p, endAge, N, seed, true, [severity]),
+    },
+    {
+      id: "ltc", emoji: "🏥", label: "LONG-TERM CARE EVENT",
+      sub: `${LTC_YEARS} years of memory care ≈ $${Math.round(LTC_ANNUAL_COST / 1000)}k/yr`,
+      run: (N, seed) => runMC(
+        { ...p, carveouts: [...(p.carveouts || []), {
+          id: "_ltc_shock", label: "LTC shock",
+          // 3-year care cost absorbed across the remaining plan (engine carveouts
+          // run from retirement; amortizing keeps the total real without a
+          // start-year lever the engine doesn't have).
+          annual: Math.round(LTC_ANNUAL_COST * LTC_YEARS / Math.max(1, endAge - p.retireAge)),
+          endYear: null,
+        }] },
+        endAge, N, seed, true),
+    },
+    {
+      id: "live100", emoji: "🎂", label: "LIVE TO 100",
+      sub: `${Math.max(0, 100 - endAge)} extra years of withdrawals`,
+      run: (N, seed) => runMC(p, 100, N, seed, true),
+    },
+    {
+      id: "survivor", emoji: "🕊️", label: "SPOUSE PASSES EARLY",
+      sub: "Loss of one Social Security check (survivor keeps the larger)",
+      run: (N, seed) => runMC({ ...p, ssb: Math.round((p.ssb || 0) * 0.67) }, endAge, N, seed, true),
+    },
+  ], [p, endAge, severity]);
+
+  // Quick estimates — deferred a tick so the tab paints before the run.
+  useEffect(() => {
+    let cancelled = false;
+    setEst(null);
+    const t = setTimeout(() => {
+      const out = { base: runMC(p, endAge, STRESS_QUICK_PATHS, 7, true).rate };
+      scenarios.forEach((s) => { out[s.id] = s.run(STRESS_QUICK_PATHS, 7).rate; });
+      if (!cancelled) setEst(out);
+    }, 30);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [scenarios, p, endAge]);
+
+  const runFull = (s) => {
+    setRunning(s.id);
+    setTimeout(() => {
+      const rate = s.run(MC_PATHS, 43).rate;
+      setFull((f) => ({ ...f, [s.id]: rate }));
+      setRunning(null);
+    }, 30);
+  };
+
+  const setSev = (v) => {
+    setSeverity(v);
+    setFull((f) => { const n = { ...f }; delete n.crash; return n; }); // crash result now stale
+  };
+
+  const worst = est
+    ? scenarios.reduce((lo, s) => Math.min(lo, full[s.id] ?? est[s.id] ?? 1), 1)
+    : null;
+
+  return (
+    <div className="chart-card" style={{ marginBottom: 12 }}>
+      <div className="ct" style={{ marginBottom: 4 }}>🔶 Stress scenarios against your plan</div>
+      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 12, lineHeight: 1.5 }}>
+        Each card re-runs the full engine with one thing gone wrong. The number is the share of
+        simulated plans still funded; <b style={{ color: "#94a3b8" }}>pp</b> is the drop vs your
+        baseline. Cards show a fast estimate — press <b style={{ color: "#94a3b8" }}>Run full</b> for
+        the precise {MC_PATHS_LABEL}-path result.
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 10 }}>
+        {scenarios.map((s) => {
+          const real = full[s.id];
+          const measured = real != null;
+          const rate = measured ? real : est ? est[s.id] : null;         // 0..1
+          const baseline = measured ? (baseRate ?? est?.base) : est?.base;
+          const deltaPP = rate != null && baseline != null ? (rate - baseline) * 100 : null;
+          const color = stressRateColor(rate);
+          const isRunning = running === s.id;
+          return (
+            <div key={s.id} style={{
+              background: `${color}0d`, border: `1px solid ${color}33`,
+              borderRadius: 12, padding: "13px 15px",
+            }}>
+              <div style={{ display: "flex", gap: 12 }}>
+                <ScenarioGauge pct={rate == null ? null : rate * 100} color={color} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#94a3b8", textTransform: "uppercase" }}>
+                    {s.emoji} {s.label}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 4, margin: "3px 0 1px" }}>
+                    <span style={{ fontSize: 26, fontWeight: 800, color, fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>
+                      {deltaPP == null ? "—" : `${deltaPP > 0 ? "+" : ""}${deltaPP.toFixed(0)}`}
+                    </span>
+                    <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>pp</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                    drops to <b style={{ color, fontFamily: "'DM Mono',monospace" }}>{rate == null ? "—" : fmtPct(rate)}</b>
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "#64748b", marginTop: 9, lineHeight: 1.45 }}>{s.sub}</div>
+
+              {s.id === "crash" && (
+                <div style={{ marginTop: 9 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", color: "#475569", textTransform: "uppercase", marginBottom: 5 }}>
+                    Crash severity
+                  </div>
+                  <div style={{ display: "flex", gap: 5 }}>
+                    {[-0.10, -0.25, -0.40].map((v) => (
+                      <button key={v} onClick={() => setSev(v)}
+                        style={{
+                          flex: 1, padding: "3px 0", fontSize: 11, borderRadius: 5, cursor: "pointer",
+                          fontFamily: "'DM Mono',monospace", fontWeight: 700,
+                          border: `1px solid ${severity === v ? "#f87171" : "rgba(255,255,255,0.12)"}`,
+                          background: severity === v ? "rgba(248,113,113,0.15)" : "transparent",
+                          color: severity === v ? "#f87171" : "#64748b",
+                        }}>
+                        {Math.round(v * 100)}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
+                <span style={{ fontSize: 10, color: measured ? "#34d399" : "#475569", fontWeight: 600 }}>
+                  {measured ? `✓ ${MC_PATHS_LABEL} paths` : est ? "fast estimate" : "estimating…"}
+                </span>
+                <button onClick={() => runFull(s)} disabled={isRunning || !est} className="mbtn"
+                  style={{ fontSize: 11, padding: "3px 10px", opacity: isRunning || !est ? 0.5 : 1 }}>
+                  {isRunning ? "Running…" : measured ? "Re-run" : "Run full"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ fontSize: 12, color: "#475569", fontStyle: "italic", marginTop: 12 }}>
+        {worst == null ? "Estimating worst case…"
+          : worst >= 0.70
+          ? "Even the worst case here stays in the recoverable range."
+          : "At least one scenario pushes the plan into fragile territory — worth a mitigation."}
+      </div>
+    </div>
+  );
+}
+
 function ScenariosTab({
   baseParams,
   mc,
@@ -6660,8 +6852,11 @@ function ScenariosTab({
         ))}
       </div>
 
-      {scenarioSubTab === "stress" && stress && (
+      {scenarioSubTab === "stress" && (
         <div>
+          <StressScenarioGrid p={baseParams} baseRate={mc?.rate ?? null} fmtPct={fmtPct} />
+          {stress && (
+            <>
           <FanChart
             pcts={stress.pcts}
             retireAge={retireAge}
@@ -6729,6 +6924,8 @@ function ScenariosTab({
               </span>
             ))}
           </div>
+            </>
+          )}
         </div>
       )}
 
