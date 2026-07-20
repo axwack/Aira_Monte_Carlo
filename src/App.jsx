@@ -100,8 +100,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.5";
-export const BUILD_TAG = "[main] v1.2.5 — Stress Test subtab: named-scenario card grid (market crash w/ severity buttons, long-term-care event, live-to-100, spouse passes early) — each a confidence gauge + pp drop vs baseline, quick low-path estimate on open with a per-card Run-full real-MC button; the 2000–2012 sequence view stays below. Prior v1.2.4: Progress check-in card history + Plan Shape radar.";
+const APP_VERSION = "1.2.6";
+export const BUILD_TAG = "[main] v1.2.6 — New first-screen visitor landing (retirementscenario-style): a one-number hero ('You can retire at age X' + confidence meter, live sliders, median-path sparkline) with a 'Take me to the app! →' button that seeds the profile from the quick estimate and runs the real MC. Shows only for visitors with no saved profile; returning users skip to their dashboard. Prior v1.2.5: Stress Test subtab: named-scenario card grid (market crash w/ severity buttons, long-term-care event, live-to-100, spouse passes early) — each a confidence gauge + pp drop vs baseline, quick low-path estimate on open with a per-card Run-full real-MC button; the 2000–2012 sequence view stays below. Prior v1.2.4: Progress check-in card history + Plan Shape radar.";
 export const BUILD_TIME = "2026-07-20T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -2202,6 +2202,27 @@ const CSS = `
   /* Buy-me-a-coffee — the one prominent, filled support CTA in the header. */
   .coffee-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 15px; border-radius:8px; border:none; background:linear-gradient(135deg,#f59e0b,#fbbf24); color:#231603; font-size:12px; font-weight:800; font-family:'Inter',sans-serif; letter-spacing:-0.01em; text-decoration:none; cursor:pointer; white-space:nowrap; box-shadow:0 3px 12px rgba(245,158,11,0.35); transition:transform 0.15s, box-shadow 0.15s, filter 0.15s; }
   .coffee-btn:hover { filter:brightness(1.07); transform:translateY(-1px); box-shadow:0 5px 16px rgba(245,158,11,0.5); }
+  /* ── Visitor landing (first-screen hero) ── */
+  .landing { min-height:100vh; background:linear-gradient(135deg,#0a0f1e 0%,#0d1529 50%,#0a0f1e 100%); display:flex; flex-direction:column; align-items:center; padding:clamp(26px,6vw,60px) 20px 60px; overflow-y:auto; }
+  .lp-wrap { width:100%; max-width:760px; }
+  .lp-brand { display:flex; align-items:center; justify-content:space-between; margin-bottom:clamp(30px,6vw,52px); }
+  .lp-eyebrow { font-size:12px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; color:#38bdf8; margin-bottom:16px; }
+  .lp-answer { font-size:clamp(29px,6vw,50px); font-weight:800; line-height:1.05; letter-spacing:-0.03em; color:#f1f5f9; margin:0; }
+  .lp-age { color:#5eead4; font-family:'DM Mono',monospace; }
+  .lp-answer.short .lp-age { color:#fbbf24; }
+  .lp-sub { margin-top:16px; font-size:16px; color:#cbd5e1; max-width:54ch; line-height:1.55; }
+  .lp-panel { margin-top:28px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.09); border-radius:16px; padding:22px; }
+  .lp-row { display:grid; grid-template-columns:1fr auto; align-items:baseline; }
+  .lp-label { font-size:14px; color:#cbd5e1; font-weight:600; }
+  .lp-val { font-size:16px; font-weight:800; color:#f1f5f9; font-family:'DM Mono',monospace; }
+  /* Scoped under .landing so it beats the global input[type=range] display:none. */
+  .landing input[type=range].lp-range { -webkit-appearance:none; appearance:none; display:block; width:100%; height:6px; border-radius:100px; background:rgba(255,255,255,0.1); outline:none; margin:7px 0 18px; cursor:pointer; }
+  .landing input[type=range].lp-range::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:22px; height:22px; border-radius:50%; background:#38bdf8; border:3px solid #0d1529; box-shadow:0 2px 8px rgba(56,189,248,0.5); cursor:pointer; }
+  .landing input[type=range].lp-range::-moz-range-thumb { width:20px; height:20px; border-radius:50%; background:#38bdf8; border:3px solid #0d1529; cursor:pointer; }
+  .lp-cta { display:inline-flex; align-items:center; gap:9px; margin-top:26px; padding:15px 30px; border:none; border-radius:12px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); color:#fff; font-size:17px; font-weight:700; font-family:'Inter',sans-serif; letter-spacing:-0.01em; cursor:pointer; box-shadow:0 10px 26px -8px rgba(14,165,233,0.6); transition:transform 0.15s, box-shadow 0.15s; }
+  .lp-cta:hover { transform:translateY(-1px); box-shadow:0 14px 32px -8px rgba(14,165,233,0.75); }
+  .lp-skip { display:block; margin-top:15px; background:none; border:none; color:#64748b; font-size:13px; cursor:pointer; font-family:'Inter',sans-serif; text-decoration:underline; padding:0; }
+  .lp-skip:hover { color:#94a3b8; }
   .layout { display:grid; grid-template-columns:300px 1fr; height:calc(100vh - 56px); overflow:hidden; }
   .sidebar { border-right:1px solid rgba(228, 24, 24, 0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
   .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:11px; padding:13px; }
@@ -10185,6 +10206,154 @@ function formatDate(dateString) {
 
 const LS_WELCOMED_KEY = "aira_welcomed_v1";
 
+// ── Landing quick-estimate ───────────────────────────────────────────────────
+// A deliberately simple heuristic used ONLY on the visitor landing so the sliders
+// feel alive. The real 3,000-path engine takes over the moment they enter the app.
+const LANDING_SS_ANNUAL = 30000;      // rough real Social Security from 67
+const LANDING_REAL_RETURN = 0.045;    // real, after inflation
+const LANDING_TARGET = 0.85;          // confidence goal
+
+function landingProject(retireAge, s) {
+  const n = Math.max(0, retireAge - s.curAge);
+  const grow = Math.pow(1 + LANDING_REAL_RETURN, n);
+  const port = s.savings * grow + (n > 0 ? s.contrib * (grow - 1) / LANDING_REAL_RETURN : 0);
+  const ss = retireAge >= 67 ? LANDING_SS_ANNUAL : LANDING_SS_ANNUAL * 0.55;
+  const need = Math.max(0, s.spend - ss);
+  const wr = port > 0 ? need / port : 1;
+  const conf = 1 / (1 + Math.exp((wr - 0.042) / 0.006));
+  return { port, conf: Math.max(0.02, Math.min(0.985, conf)) };
+}
+function landingEarliestAge(s) {
+  for (let a = Math.max(s.curAge + 1, 50); a <= 72; a++) {
+    if (landingProject(a, s).conf >= LANDING_TARGET) return a;
+  }
+  return null;
+}
+function landingPath(s, retireAge) {
+  const pts = [];
+  let p = s.savings;
+  for (let a = s.curAge; a <= 90; a++) {
+    pts.push({ age: a, val: Math.max(0, p) });
+    if (a < (retireAge ?? 65)) p = p * (1 + LANDING_REAL_RETURN) + s.contrib;
+    else {
+      const ss = a >= 67 ? LANDING_SS_ANNUAL : LANDING_SS_ANNUAL * 0.55;
+      p = p * (1 + LANDING_REAL_RETURN) - Math.max(0, s.spend - ss);
+    }
+  }
+  return pts;
+}
+const landingMoney = (v) =>
+  v >= 1e6 ? "$" + (v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 1) + "M" : "$" + Math.round(v / 1000) + "K";
+
+// First-screen landing shown to visitors with no saved profile. Answers the one
+// question — "when can I retire?" — then routes into the full app via onEnter.
+function RetirementLanding({ onEnter }) {
+  const [curAge, setCurAge] = useState(45);
+  const [savings, setSavings] = useState(850000);
+  const [contribL, setContribL] = useState(40000);
+  const [spend, setSpend] = useState(90000);
+  const canvasRef = useRef(null);
+  const s = { curAge, savings, contrib: contribL, spend };
+  const age = landingEarliestAge(s);
+  const conf = (age != null ? landingProject(age, s) : landingProject(72, s)).conf;
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = c.clientWidth || 700, H = 120;
+    c.width = W * dpr; c.height = H * dpr;
+    const ctx = c.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const pts = landingPath(s, age);
+    const pad = 6, maxV = Math.max(...pts.map((p) => p.val), 1);
+    const x = (i) => pad + (W - pad * 2) * i / (pts.length - 1);
+    const y = (v) => H - pad - (H - pad * 2) * (v / maxV);
+    ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad, H - pad); ctx.lineTo(W - pad, H - pad); ctx.stroke();
+    if (age != null) {
+      const idx = pts.findIndex((p) => p.age === age);
+      if (idx >= 0) {
+        const rx = x(idx);
+        ctx.strokeStyle = "#475569"; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(rx, pad); ctx.lineTo(rx, H - pad); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "rgba(94,234,212,0.28)"); g.addColorStop(1, "rgba(94,234,212,0.02)");
+    ctx.beginPath(); pts.forEach((p, i) => i === 0 ? ctx.moveTo(x(i), y(p.val)) : ctx.lineTo(x(i), y(p.val)));
+    ctx.lineTo(x(pts.length - 1), H - pad); ctx.lineTo(x(0), H - pad); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+    ctx.beginPath(); pts.forEach((p, i) => i === 0 ? ctx.moveTo(x(i), y(p.val)) : ctx.lineTo(x(i), y(p.val)));
+    ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
+  }, [curAge, savings, contribL, spend, age]);
+
+  const rows = [
+    { label: "Current age", val: curAge, set: setCurAge, min: 30, max: 62, step: 1, fmt: (v) => v },
+    { label: "What you've saved so far", val: savings, set: setSavings, min: 50000, max: 4000000, step: 25000, fmt: landingMoney },
+    { label: "Adding each year", val: contribL, set: setContribL, min: 0, max: 120000, step: 2500, fmt: landingMoney },
+    { label: "Spending in retirement", val: spend, set: setSpend, min: 40000, max: 220000, step: 2500, fmt: (v) => landingMoney(v) + "/yr" },
+  ];
+
+  return (
+    <div className="landing">
+      <div className="lp-wrap">
+        <div className="lp-brand">
+          <div className="logo">AiRA <span className="logo-sub">Freedom Financial</span></div>
+          <div style={{ fontSize: 11, color: "#475569" }}>v{APP_VERSION}</div>
+        </div>
+
+        <div className="lp-eyebrow">Your one-number answer</div>
+        <h1 className={"lp-answer" + (age != null && conf < 0.9 ? " short" : "")}>
+          {age != null
+            ? <>You can retire at <span className="lp-age">{age}</span></>
+            : <>Let's find your <span className="lp-age">number</span></>}
+        </h1>
+        <p className="lp-sub">
+          {age != null
+            ? <>Based on your savings and spending, the math says you reach financial independence{" "}
+                <b style={{ color: "#f1f5f9" }}>{age - curAge <= 0 ? "right now" : `${age - curAge} year${age - curAge === 1 ? "" : "s"} from now`}</b>
+                {conf >= 0.92 ? " — with real margin." : " — with a modest cushion."}</>
+            : <>No age before 72 clears 85% confidence at these numbers yet — try saving more, or trimming the spend.</>}
+        </p>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <span style={{ fontSize: 38, fontWeight: 800, color: "#5eead4", fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>{Math.round(conf * 100)}</span>
+            <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>% confident<br />at that age</span>
+          </div>
+          <div style={{ flex: 1, minWidth: 200, height: 10, borderRadius: 100, background: "rgba(255,255,255,0.06)", position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: -3, bottom: -3, left: "85%", width: 2, background: "#475569" }} />
+            <div style={{ height: "100%", borderRadius: 100, width: `${Math.min(100, Math.round(conf * 100))}%`, background: "linear-gradient(90deg,#0d9488,#5eead4)", transition: "width 0.35s" }} />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 26 }}>
+          <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700 }}>Median portfolio path</div>
+          <canvas ref={canvasRef} style={{ width: "100%", height: 120, display: "block" }} />
+        </div>
+
+        <div className="lp-panel">
+          {rows.map((r) => (
+            <div key={r.label}>
+              <div className="lp-row"><span className="lp-label">{r.label}</span><span className="lp-val">{r.fmt(r.val)}</span></div>
+              <input className="lp-range" type="range" min={r.min} max={r.max} step={r.step} value={r.val} onChange={(e) => r.set(+e.target.value)} />
+            </div>
+          ))}
+        </div>
+
+        <button className="lp-cta" onClick={() => onEnter(s)}>Take me to the app! →</button>
+        <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll enter my own details</button>
+
+        <p style={{ marginTop: 32, fontSize: 12, color: "#475569", lineHeight: 1.6, maxWidth: "62ch" }}>
+          This is a 60-second estimate. The full app runs {MC_PATHS_LABEL} market simulations across your real
+          accounts, taxes, Social Security, and withdrawal order — that's where your true plan lives.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function AiRAForecaster() {
   const [activeTab, setTab] = useState(() =>
     loadProfileFromLocal() ? "networth" : "assumptions"
@@ -10258,6 +10427,9 @@ export default function AiRAForecaster() {
     }
   }, [stripeReturn]);
   const isFirst = useRef(true);
+  // Set true when the visitor enters from the landing so the next params update
+  // (after seeding) triggers one real Monte Carlo run with their numbers.
+  const pendingRunRef = useRef(false);
 
   // Slider states – initialized from BLANK_PROFILE
   const [port, setPort] = useState(BLANK_PROFILE.port);
@@ -10539,7 +10711,45 @@ export default function AiRAForecaster() {
     }
   };
 
+  // After a landing "Take me to the app!" seed, run one real MC on the fresh params.
+  useEffect(() => {
+    if (pendingRunRef.current) {
+      pendingRunRef.current = false;
+      runSimulation();
+    }
+  }, [params, runSimulation]);
+
+  // Seed the profile from the landing's quick-estimate inputs, then enter the app.
+  const enterFromLanding = (inp) => {
+    if (inp) {
+      const yr = new Date().getFullYear();
+      setPort(inp.savings);
+      updateAssumption(
+        "accounts",
+        (assumptions.accounts || BLANK_PROFILE.accounts).map((a) =>
+          a.id === "1" ? { ...a, balance: inp.savings } : { ...a, balance: 0 }
+        )
+      );
+      setContrib(inp.contrib);
+      setSp(inp.spend);
+      updateAssumption("dob", `${yr - inp.curAge}-06-15`);
+      setStale(true);
+      pendingRunRef.current = true;
+    }
+    dismissWelcome();
+    setTab(inp ? "networth" : "assumptions");
+  };
+
   // --- RENDER ---
+  if (showWelcome) {
+    return (
+      <>
+        <style>{CSS}</style>
+        <RetirementLanding onEnter={enterFromLanding} />
+      </>
+    );
+  }
+
   return (
     <>
       <style>{CSS}</style>
