@@ -1,4 +1,4 @@
-import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
+import { buildWithdrawalWaterfall, resolveDrawOrder } from "./engine/buildWithdrawalWaterfall.js";
 import { mortgageSchedule, mortgageAnnualPayments } from "./engine/expenses.js";
 import { runMC } from "./App";
 
@@ -755,5 +755,106 @@ describe("runMC — taxable cost-basis (taxableBasisPct) wiring", () => {
     const lowBasis  = runMC({ ...taxableHeavy, taxableBasisPct: 40  }, 90, 500, 42, true);
     const highBasis = runMC({ ...taxableHeavy, taxableBasisPct: 100 }, 90, 500, 42, true);
     expect(lowBasis.rate).toBeLessThanOrEqual(highBasis.rate);
+  });
+});
+
+// ─── Custom account draw order (orderingMode / withdrawalOrder) ──────────────────
+describe("Account draw order — resolveDrawOrder", () => {
+  test("Test 1 — resolves each mode and sanitizes custom orders", () => {
+    // default + tax_reactive → the historical sequence
+    expect(resolveDrawOrder(undefined)).toEqual(["cash", "taxable", "pretax", "roth"]);
+    expect(resolveDrawOrder("tax_reactive")).toEqual(["cash", "taxable", "pretax", "roth"]);
+    expect(resolveDrawOrder("pretax_first")).toEqual(["pretax", "cash", "taxable", "roth"]);
+    // custom passes through when it's a full valid permutation
+    expect(resolveDrawOrder("custom", ["taxable", "cash", "pretax", "roth"]))
+      .toEqual(["taxable", "cash", "pretax", "roth"]);
+    // sanitize: drop dupes + invalid tokens, append any missing bucket
+    expect(resolveDrawOrder("custom", ["roth", "roth", "bogus", "cash"]))
+      .toEqual(["roth", "cash", "taxable", "pretax"]);
+    // partial order is completed in canonical order
+    expect(resolveDrawOrder("custom", ["pretax"]))
+      .toEqual(["pretax", "cash", "taxable", "roth"]);
+  });
+});
+
+describe("Account draw order — engine behavior", () => {
+  const def = buildWithdrawalWaterfall(BASE); // no orderingMode → default
+
+  test("Test 2 — default equals explicit tax_reactive (regression lock)", () => {
+    const tr = buildWithdrawalWaterfall({ ...BASE, orderingMode: "tax_reactive" });
+    expect(tr.smart.rows).toEqual(def.smart.rows);
+    // The naive ("No plan") scenario is order-invariant — orderingMode must never
+    // touch it (it's the fixed comparison baseline).
+    expect(tr.naive.rows).toEqual(def.naive.rows);
+    const custom = buildWithdrawalWaterfall({
+      ...BASE, orderingMode: "custom", withdrawalOrder: ["roth", "pretax", "taxable", "cash"],
+    });
+    expect(custom.naive.rows).toEqual(def.naive.rows);
+  });
+
+  test("Test 3 — custom taxable-first drains taxable before cash; sum funds the need", () => {
+    const cust = buildWithdrawalWaterfall({
+      ...BASE, orderingMode: "custom", withdrawalOrder: ["taxable", "cash", "pretax", "roth"],
+    });
+    const c0 = cust.smart.rows[0];
+    const d0 = def.smart.rows[0];
+    expect(d0.fromCash).toBeGreaterThan(0);            // default drains cash first
+    expect(c0.fromCash).toBe(0);                       // custom leaves cash untouched first year
+    expect(c0.fromTaxable).toBeGreaterThan(d0.fromTaxable);
+    // Sum invariant: order changes WHERE, not roughly HOW MUCH — both fund ~ the year's spend.
+    const total = (r) => r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth + r.rmd;
+    expect(total(c0)).toBeGreaterThanOrEqual(BASE.sp * 0.8);
+    expect(total(d0)).toBeGreaterThanOrEqual(BASE.sp * 0.8);
+  });
+
+  test("Test 4 — Roth reserve is honored even when Roth is dragged to first", () => {
+    const rothFirst = buildWithdrawalWaterfall({
+      ...BASE, orderingMode: "custom", withdrawalOrder: ["roth", "cash", "taxable", "pretax"],
+      rothEmergencyReserve: 10_000_000, // reserve >> balance → Roth fully protected
+    });
+    rothFirst.smart.rows.forEach((r) => expect(r.fromRoth).toBe(0));
+  });
+
+  test("Test 5 — pre-tax bracket cap still binds when pre-tax is moved to position 1", () => {
+    const common = {
+      ...BASE, sp: 200_000, gkFloor: 40_000, gkCeiling: 260_000,
+      orderingMode: "custom", withdrawalOrder: ["pretax", "cash", "taxable", "roth"],
+    };
+    const capped   = buildWithdrawalWaterfall({ ...common, withdrawalBracketTarget: "12" });
+    const uncapped = buildWithdrawalWaterfall({ ...common, withdrawalBracketTarget: "off" });
+    // The 12% ceiling limits the year-1 pre-tax draw even though pre-tax is drained first.
+    expect(capped.smart.rows[0].fromPretax).toBeLessThan(uncapped.smart.rows[0].fromPretax);
+    expect(String(capped.smart.rows[0].pretaxCapReason)).toMatch(/^bracket_|^irmaa_ceil$/);
+  });
+});
+
+describe("Account draw order — runMC honors it (cross-engine, shared resolver)", () => {
+  const MC_ORDER = {
+    currentAge: 65, retireAge: 65, endAge: 90, port: 0, contrib: 0, inf: 2.5,
+    sp: 90_000, ssAge: 67, ssb: 24_000, ssCola: 2.4, ab: 0, useAb: false,
+    tax: 22, smile: false, preRetireEq: 91, postRetireEq: 70,
+    gkFloor: 40_000, gkCeiling: 150_000, withdrawalStrategy: "gk",
+    withdrawalBracketTarget: "22", irmaaGuard: false, rothEmergencyReserve: 0,
+    cashRealReturn: 1.0, useJointRmdTable: false, twoHousehold: false,
+    filingStatus: "mfj", stateOfResidence: "FL",
+    accounts: [
+      { id: "m1", category: "pretax",  name: "401k",    balance: 900_000 },
+      { id: "m2", category: "roth",    name: "Roth",    balance: 400_000 },
+      { id: "m3", category: "taxable", name: "Taxable", balance: 200_000 },
+      { id: "m4", category: "cash",    name: "Cash",    balance:  60_000 },
+    ],
+  };
+
+  test("Test 6 — a different order changes the deterministic MC outcome, tax-reactive not worse", () => {
+    const taxReactive = runMC({ ...MC_ORDER, orderingMode: "tax_reactive" }, 90, 800, 42, true);
+    const rothFirst   = runMC({ ...MC_ORDER, orderingMode: "custom", withdrawalOrder: ["roth", "cash", "taxable", "pretax"] }, 90, 800, 42, true);
+    for (const r of [taxReactive.rate, rothFirst.rate]) {
+      expect(r).toBeGreaterThanOrEqual(0);
+      expect(r).toBeLessThanOrEqual(1);
+    }
+    // Draw order is wired into runMC (same seed, deterministic) — the outcomes differ,
+    // and draining tax-free Roth first is no better than the tax-reactive default.
+    expect(rothFirst.rate).not.toBe(taxReactive.rate);
+    expect(rothFirst.rate).toBeLessThanOrEqual(taxReactive.rate);
   });
 });

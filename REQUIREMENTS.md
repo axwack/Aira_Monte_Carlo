@@ -421,7 +421,10 @@ State at end of evening; resume here next session.
 ## 12. User-Configurable Withdrawal Order ("Custom Order" wizard) — scoped 2026-06-29
 
 Requested by Vincent. **Comparable:** Boldin's custom withdrawal-order list. **Priority:** P1.
-**Status:** Scoped, not started.
+**Status:** ✅ **SHIPPED v1.2.8 (2026-07-25).** Built via one shared `resolveDrawOrder`/`WITHDRAWAL_BUCKETS`/`NAIVE_DRAW_ORDER` exported from `buildWithdrawalWaterfall.js` and used by BOTH engines (no drift). Profile keys `orderingMode` ("tax_reactive"|"custom"|"pretax_first") + `withdrawalOrder` added to `BLANK_PROFILE` + `params`. UI: `AccountDrawOrder` radio + reorderable up/down list above the guardrails strip in the Sourcing section. **Naming resolved per design-authority BLOCKED verdict:** modes are "Tax-reactive/Custom/Pre-tax first" (NOT "Smart/Traditional" — that collided with the distribution strategy 3×); the waterfall View toggle renamed to "Your plan" / "No plan (pre-tax first, uncapped)"; Section-1 subtitle + Profile pointer templated from the live order. logic-validator: APPROVE-WITH-CHANGES (no logic bugs; naive-invariance + NAIVE_DRAW_ORDER constant added per its non-blocking flags). **6 new tests** (resolver sanitize, default==tax_reactive deep-equal incl. naive-invariance, taxable-first, Roth-reserve-honored-first, bracket-cap-binds-when-pretax-first, runMC honors order) — 445 total pass.
+**Engine insertion point (line ref corrected — was stale "290-345"):** `buildWithdrawalWaterfall.js` `runScenario` draw loop ≈ lines 525-582 (`drawCash`/`drawTaxable`/`drawPretax`/`drawRoth` closures + `drawFns` map + `for (const bucket of drawSeq)`); `runMC` mirror in `App.jsx` ≈ lines 1331-1343.
+
+_Original scope (for history) below:_
 
 ### Problem
 Account drawdown order is **hardcoded** `cash → taxable → pre-tax (bracket-capped) → Roth` in
