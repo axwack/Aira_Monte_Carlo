@@ -1,10 +1,16 @@
 # AiRA Monte Carlo — Requirements & Audit Log
 
+> **SINGLE SOURCE OF TRUTH.** This is the one requirements file for the project —
+> git-tracked, so every collaborating agent gets it. The old, gitignored
+> `src/Requirements.md` (stuck at v1.0.1.18 / Netlify / pre-billing) was **deleted
+> as redundant on 2026-07-25**; its still-open, non-duplicated items were merged
+> into §15 below. Do not re-create a second requirements file — add to this one.
+
 Living document tracking the business-logic requirements of the forecaster, what has
 been fixed, and the open backlog from the June 2026 code review. Update this file
 whenever engine rules change.
 
-Last updated: **2026-06-19** (branch `main`, billing H4+AI-2 shipped)
+Last updated: **2026-07-25** (branch `main`; merged `src/Requirements.md` → §15)
 
 ---
 
@@ -633,3 +639,30 @@ Journal feature modeled on "save check-in / progress trend" trackers:
   Deliberately NO "median cohort" overlay — no real cohort data exists, and a
   fabricated benchmark would violate the no-hardcoded-values principle.
 - 439 tests passing.
+
+## 15. AI Provider & Monetization Backlog (merged from `src/Requirements.md`, 2026-07-25)
+
+The old `src/Requirements.md` (last real update 2026-05-13, stuck at v1.0.1.18 /
+Netlify / `BILLING_ENABLED=false` on branch `feature/ai-action-plan-cloudflare`) was
+**deleted as redundant**. Everything in it about the Stripe/D1 billing *setup* is now
+DONE and superseded by §7 (billing shipped, `BILLING_ENABLED=true` since 2026-06-19,
+platform migrated Netlify → Cloudflare Pages). Its still-open, non-duplicated items:
+
+### 15.1 Open — not built
+
+| # | Feature | Priority | Notes |
+|---|---------|----------|-------|
+| PROV-1 | **Multi-provider AI switcher** — let users pick Claude / OpenAI alongside Gemini. | High | Add `assumptions.aiProvider` + `assumptions.aiModel` to `BLANK_PROFILE`; provider + model selectors in Profile → Assumptions; Anthropic + OpenAI routing branches in `functions/api/analyze.js` (both need the Cloudflare proxy — CORS; Gemini stays browser-direct); per-provider token-cost constants in `src/ai/ai-analysis.js`. Build on existing exports (do not duplicate): `GEMINI_MODELS`, `DEFAULT_GEMINI_MODEL` (`"gemini-2.5-flash"`), `AiUsageBadge`, `BILLING_ENABLED`. Provider defaults: Gemini `gemini-2.5-flash` (free tier, direct); Claude `claude-haiku-4-5-20251001` (~$0.80/M, proxy); OpenAI `gpt-4o-mini` (~$0.15/M, proxy). |
+| MON-1 | **BMC Phase 2 redemption codes** — manual monetization for early adopters. | Medium | User pays on Buy Me a Coffee → you email a code → user enters it in-app → unlocks N credits. No backend beyond a code list in localStorage. Simple bridge that predates/complements the live Stripe path. |
+| AI-CHAT | **Q&A chat session** (1 credit / exchange). | Medium | The `analyze.js` `"chat"` handler already exists; needs the conversational UI + credit-per-exchange wiring. |
+| AI-CARD | **AI card system, phases 2–4** (opt-in cards). | High | Always-on: Plan Survivability, RMD Trajectory. User-selectable: IRMAA Risk, Roth Conversion Opportunity, Tax Bracket Management, Pre-65 Healthcare Exposure, Social Security Timing, Estate/Legacy Balance. Plus a catch-all Summary card that always fires last (cross-card conflicts → one priority action). Full spec: `aira-forecaster-agents/specs/AI_ANALYSIS_SPEC.md`. Overlaps with AI-1/§10 (build the context from `buildWithdrawalWaterfall`). |
+
+### 15.2 Operational config (values live in the deploy platform, NOT here)
+
+- **Cloudflare Pages env vars** for billing/AI/admin: see §7 checklist (`STRIPE_*`,
+  `JWT_SECRET`, `ADMIN_SECRET`, server-side `GEMINI_API_KEY`, `DB` binding).
+- **Feedback form (EmailJS)** build-time vars: `REACT_APP_EMAILJS_SERVICE_ID`,
+  `REACT_APP_EMAILJS_TEMPLATE_ID`, `REACT_APP_EMAILJS_USER_ID` (+ the legacy
+  `NETLIFY_EMAILS_*` pair, now unused post-Cloudflare-migration). **Secret values are
+  intentionally NOT recorded in this git-tracked file** — they live in the Cloudflare
+  Pages / deploy dashboard. Rotate any key that ever appears in plaintext anywhere.
