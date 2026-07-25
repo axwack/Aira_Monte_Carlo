@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.8";
-export const BUILD_TAG = "[main] v1.2.8 — User-configurable account draw order (Withdrawal Plan → Sourcing): a new 'Account draw order' control — Tax-reactive (default) · Custom (reorderable cash/taxable/pre-tax/Roth list) · Pre-tax first — orthogonal to the distribution strategy and the guardrails. Array-driven in both runMC and buildWithdrawalWaterfall via one shared resolveDrawOrder (no cross-engine drift); RMDs stay first, the bracket cap/IRMAA guard follow the pre-tax step and the Roth reserve follows the Roth step wherever each sits. Default is byte-identical to the old order. Also renamed the waterfall View toggle to 'Your plan' / 'No plan' so it can't mislabel a custom order. Prior v1.2.7: MC Engine (i) tooltip fix. (Phase 1 / Phase 2 expected return) now actually show their explanation — replaced flaky native title tooltips with a hover/click/focus Hint popover (works on touch + keyboard), explaining what μ means. Prior v1.2.6: New first-screen visitor landing (retirementscenario-style): a one-number hero ('You can retire at age X' + confidence meter, live sliders, median-path sparkline) with a 'Take me to the app! →' button that seeds the profile from the quick estimate and runs the real MC. Shows only for visitors with no saved profile; returning users skip to their dashboard. Prior v1.2.5: Stress Test subtab: named-scenario card grid (market crash w/ severity buttons, long-term-care event, live-to-100, spouse passes early) — each a confidence gauge + pp drop vs baseline, quick low-path estimate on open with a per-card Run-full real-MC button; the 2000–2012 sequence view stays below. Prior v1.2.4: Progress check-in card history + Plan Shape radar.";
-export const BUILD_TIME = "2026-07-25T00:00:00Z";
+const APP_VERSION = "1.2.9";
+export const BUILD_TAG = "[main] v1.2.9 — Other Income (pensions): new fixed-dollar growth mode — a per-source % ⇄ $/yr toggle so a pension that raises by a set dollar amount (not a compounding %) is modeled correctly; growth now shown on the collapsed row. Profile tab icon 👤→💵 (it holds finances, not account/login). Brightened the collapsed income $ amount (was near-invisible gray). Prior v1.2.8: user-configurable account draw order.";
+export const BUILD_TIME = "2026-07-25T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -501,7 +501,7 @@ export const BLANK_PROFILE = {
   ],
   // MC assumptions
   abReliability: 80,
-  otherIncomes: [],   // [{ id, name, annual, startYear, endYear, growthRate, growthCapYears, taxable }]
+  otherIncomes: [],   // [{ id, name, annual, startYear, endYear, growthMode:"pct"|"fixed", growthRate, growthAmount, growthCapYears, taxable }]
   abGrowth: 3.0,
   ssCola: 2.4,
   preRetireEq: 91,
@@ -9818,7 +9818,7 @@ function ContribPanel({ values, onChange }) {
           />
         ))}
         <button
-          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthRate: 0, growthCapYears: null, taxable: true }])}
+          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthMode: "pct", growthRate: 0, growthAmount: 0, growthCapYears: null, taxable: true }])}
           style={{ background: "transparent", border: "1px dashed rgba(14,165,233,0.35)", borderRadius: 4, color: "#38bdf8", fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.7, marginTop: 2 }}
           onMouseEnter={e => e.currentTarget.style.opacity = 1}
           onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
@@ -9879,10 +9879,14 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
           }}
         />
         {!focused && (
-          <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap" }}>
-            {inc.annual ? `$${Math.round(inc.annual).toLocaleString()}/yr` : ""}
-            {inc.startYear ? ` · ${inc.startYear}` : ""}
-            {inc.endYear ? `–${inc.endYear}` : inc.startYear ? "+" : ""}
+          <span style={{ fontSize: 11, fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap" }}>
+            {inc.annual ? <span style={{ color: "#5eead4", fontWeight: 700 }}>{`$${Math.round(inc.annual).toLocaleString()}/yr`}</span> : ""}
+            <span style={{ color: "#64748b" }}>
+              {inc.startYear ? ` · ${inc.startYear}` : ""}
+              {inc.endYear ? `–${inc.endYear}` : inc.startYear ? "+" : ""}
+              {inc.growthMode === "fixed" && inc.growthAmount ? ` · +$${Math.round(inc.growthAmount).toLocaleString()}/yr` : ""}
+              {inc.growthMode !== "fixed" && inc.growthRate ? ` · +${inc.growthRate}%/yr` : ""}
+            </span>
           </span>
         )}
         <button
@@ -9894,7 +9898,7 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
         >✕</button>
       </div>
       {focused && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 70px 70px auto", gap: 6, alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 72px 108px 60px auto", gap: 6, alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Annual ($)</div>
             <ANumInput value={inc.annual || 0} onSet={(v) => upd({ annual: v })} min={0} max={500000} step={1000} suffix="/yr" />
@@ -9913,8 +9917,21 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
               style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
           </div>
           <div>
-            <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Growth %</div>
-            <ANumInput value={inc.growthRate || 0} onSet={(v) => upd({ growthRate: v })} min={0} max={20} step={0.5} suffix="%" />
+            <div style={{ fontSize: 10, color: "#475569", marginBottom: 2, display: "flex", alignItems: "center", gap: 4 }}>
+              <span>Growth</span>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => upd({ growthMode: inc.growthMode === "fixed" ? "pct" : "fixed" })}
+                title="Switch between a percentage increase (compounds) and a fixed dollar increase each year — many pensions raise by a set $ amount."
+                style={{ background: "rgba(14,165,233,0.12)", border: "1px solid rgba(14,165,233,0.35)", color: "#38bdf8", borderRadius: 4, fontSize: 9, fontWeight: 700, padding: "1px 5px", cursor: "pointer", lineHeight: 1.5 }}
+              >
+                {inc.growthMode === "fixed" ? "$/yr" : "%"}
+              </button>
+            </div>
+            {inc.growthMode === "fixed"
+              ? <ANumInput value={inc.growthAmount || 0} onSet={(v) => upd({ growthAmount: v })} min={0} max={50000} step={100} suffix="/yr" />
+              : <ANumInput value={inc.growthRate || 0} onSet={(v) => upd({ growthRate: v })} min={0} max={20} step={0.5} suffix="%" />}
           </div>
           <div>
             <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Cap yrs</div>
@@ -10805,7 +10822,7 @@ export default function AiRAForecaster() {
     ["scenarios", "📋 Analysis"],
     ["actionplan", "✅ Action Plan"],
     // ["airaai", "🤖 Aira AI"],  // DO NOT RE-ADD — AiraAITab is being integrated INSIDE ActionPlanTab on a separate branch (per user: no tab sprawl).
-    ["assumptions", "👤 Profile"],
+    ["assumptions", "💵 Profile"],
   ];
 
   const needsMC = ["montecarlo", "networth"];

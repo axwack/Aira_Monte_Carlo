@@ -1,5 +1,5 @@
 import { buildWithdrawalWaterfall, resolveDrawOrder } from "./engine/buildWithdrawalWaterfall.js";
-import { mortgageSchedule, mortgageAnnualPayments } from "./engine/expenses.js";
+import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./engine/expenses.js";
 import { runMC } from "./App";
 
 const BASE = {
@@ -759,6 +759,34 @@ describe("runMC — taxable cost-basis (taxableBasisPct) wiring", () => {
 });
 
 // ─── Custom account draw order (orderingMode / withdrawalOrder) ──────────────────
+// ─── Other income growth modes (pension fixed-$ COLA vs compounding %) ──────────
+describe("computeOtherIncome — growth modes", () => {
+  test("compounding % (default) grows geometrically", () => {
+    const inc = [{ annual: 10_000, startYear: 2026, endYear: null, growthMode: "pct", growthRate: 2, taxable: true }];
+    // 3 years elapsed (2029): 10000 × 1.02^3
+    expect(computeOtherIncome(inc, 2029).total).toBeCloseTo(10_000 * Math.pow(1.02, 3), 2);
+  });
+
+  test("fixed $/yr COLA adds a flat amount each year", () => {
+    const inc = [{ annual: 30_000, startYear: 2026, endYear: null, growthMode: "fixed", growthAmount: 600, taxable: true }];
+    expect(computeOtherIncome(inc, 2026).total).toBe(30_000);          // start year: no increase yet
+    expect(computeOtherIncome(inc, 2031).total).toBe(33_000);          // +600 × 5 years
+  });
+
+  test("growthCapYears caps both modes", () => {
+    const fixed = [{ annual: 20_000, startYear: 2026, growthMode: "fixed", growthAmount: 1_000, growthCapYears: 3, taxable: true }];
+    // 10 years elapsed but capped at 3 → 20000 + 1000×3
+    expect(computeOtherIncome(fixed, 2036).total).toBe(23_000);
+  });
+
+  test("taxable flag routes fixed-mode income to totalTaxable", () => {
+    const inc = [{ annual: 10_000, startYear: 2026, growthMode: "fixed", growthAmount: 0, taxable: false }];
+    const r = computeOtherIncome(inc, 2028);
+    expect(r.total).toBe(10_000);
+    expect(r.totalTaxable).toBe(0);
+  });
+});
+
 describe("Account draw order — resolveDrawOrder", () => {
   test("Test 1 — resolves each mode and sanitizes custom orders", () => {
     // default + tax_reactive → the historical sequence
