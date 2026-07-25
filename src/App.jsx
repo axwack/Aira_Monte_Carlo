@@ -100,8 +100,8 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.6";
-export const BUILD_TAG = "[main] v1.2.6 — New first-screen visitor landing (retirementscenario-style): a one-number hero ('You can retire at age X' + confidence meter, live sliders, median-path sparkline) with a 'Take me to the app! →' button that seeds the profile from the quick estimate and runs the real MC. Shows only for visitors with no saved profile; returning users skip to their dashboard. Prior v1.2.5: Stress Test subtab: named-scenario card grid (market crash w/ severity buttons, long-term-care event, live-to-100, spouse passes early) — each a confidence gauge + pp drop vs baseline, quick low-path estimate on open with a per-card Run-full real-MC button; the 2000–2012 sequence view stays below. Prior v1.2.4: Progress check-in card history + Plan Shape radar.";
+const APP_VERSION = "1.2.7";
+export const BUILD_TAG = "[main] v1.2.7 — Fix: the (i) info icons on the MC Engine assumptions popover (Phase 1 / Phase 2 expected return) now actually show their explanation — replaced flaky native title tooltips with a hover/click/focus Hint popover (works on touch + keyboard), explaining what μ means. Prior v1.2.6: New first-screen visitor landing (retirementscenario-style): a one-number hero ('You can retire at age X' + confidence meter, live sliders, median-path sparkline) with a 'Take me to the app! →' button that seeds the profile from the quick estimate and runs the real MC. Shows only for visitors with no saved profile; returning users skip to their dashboard. Prior v1.2.5: Stress Test subtab: named-scenario card grid (market crash w/ severity buttons, long-term-care event, live-to-100, spouse passes early) — each a confidence gauge + pp drop vs baseline, quick low-path estimate on open with a per-card Run-full real-MC button; the 2000–2012 sequence view stays below. Prior v1.2.4: Progress check-in card history + Plan Shape radar.";
 export const BUILD_TIME = "2026-07-20T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -2673,6 +2673,47 @@ function AboutButton() {
       </button>
       {overlay}
     </>
+  );
+}
+
+// Small hover / click / focus info popover — replaces flaky native `title`
+// tooltips so the (i) always reveals its explanation (works on touch + keyboard too).
+function Hint({ text, width = 240 }) {
+  const [show, setShow] = React.useState(false);
+  return (
+    <span style={{ position: "relative", display: "inline-flex", marginLeft: 4 }}>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label="More information"
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onFocus={() => setShow(true)}
+        onBlur={() => setShow(false)}
+        onClick={(e) => { e.stopPropagation(); setShow((s) => !s); }}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setShow((s) => !s); } }}
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 15, height: 15, borderRadius: "50%", background: "rgba(96,165,250,0.15)",
+          color: "#60a5fa", fontSize: 10, fontWeight: 700, fontStyle: "normal", lineHeight: 1,
+          cursor: "help", border: "1px solid rgba(96,165,250,0.4)",
+        }}
+      >
+        i
+      </span>
+      {show && (
+        <span
+          style={{
+            position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
+            width, background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 8,
+            padding: "9px 11px", fontSize: 11, color: "#cbd5e1", lineHeight: 1.55, fontWeight: 400,
+            textAlign: "left", zIndex: 100001, boxShadow: "0 10px 30px rgba(0,0,0,0.6)", pointerEvents: "none",
+          }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -11186,51 +11227,15 @@ export default function AiRAForecaster() {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <span style={{ color: "#14b8a6" }}>💹 Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(2)}% μ
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 14,
-                        height: 14,
-                        borderRadius: "50%",
-                        background: "rgba(255,255,255,0.08)",
-                        color: "#64748b",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        cursor: "help",
-                        marginLeft: 4,
-                      }}
-                      title={`Pre‑retirement expected return (${assumptions.preRetireEq ?? 91}% stocks / ${100 - (assumptions.preRetireEq ?? 91)}% bonds). Historical average annual return.`}
-                    >
-                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
-                        ℹ️
-                      </span>
-                    </span>
+                    <Hint
+                      text={`Pre‑retirement expected return. "μ" (mu) is the mean annual return of a ${assumptions.preRetireEq ?? 91}% stocks / ${100 - (assumptions.preRetireEq ?? 91)}% bonds mix — the weighted average of the S&P 500 and bond history the engine bootstraps from. Individual simulated years vary widely around this average; it is not a guaranteed rate.`}
+                    />
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <span style={{ color: "#fb923c" }}>💹 Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(2)}% μ
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 14,
-                        height: 14,
-                        borderRadius: "50%",
-                        background: "rgba(255,255,255,0.08)",
-                        color: "#64748b",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        cursor: "help",
-                        marginLeft: 4,
-                      }}
-                      title={`Post‑retirement expected return (${assumptions.postRetireEq ?? 70}% stocks / ${100 - (assumptions.postRetireEq ?? 70)}% bonds). Lower volatility, slightly lower return.`}
-                    >
-                      <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>
-                        ℹ️
-                      </span>
-                    </span>
+                    <Hint
+                      text={`Post‑retirement expected return. "μ" (mu) is the mean annual return of a ${assumptions.postRetireEq ?? 70}% stocks / ${100 - (assumptions.postRetireEq ?? 70)}% bonds mix. The lower equity weight vs. Phase 1 means less volatility and a slightly lower average return once you're drawing down.`}
+                    />
                   </div>
                 </div>
               </InfoModal>
