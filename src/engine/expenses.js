@@ -94,7 +94,12 @@ export function mortgageAnnualPayments(ms) {
 /**
  * Sums a profile's "other income" streams (e.g. pensions, part-time work,
  * royalties) active in a given calendar year, applying each stream's own
- * growth rate (capped at growthCapYears).
+ * growth (capped at growthCapYears).
+ *
+ * Growth mode (per stream):
+ *   - "fixed" → a flat dollar COLA each year: amount = annual + growthAmount × years
+ *     (matches many pensions that raise by a set $ amount, not a %).
+ *   - anything else (default "pct") → compounding: annual × (1 + growthRate%)^years.
  * @returns {{ total: number, totalTaxable: number }}
  */
 export function computeOtherIncome(otherIncomes, calYear) {
@@ -106,8 +111,11 @@ export function computeOtherIncome(otherIncomes, calYear) {
     if (calYear >= start && calYear <= end) {
       const yearsElapsed = calYear - start;
       const cap = inc.growthCapYears ?? Infinity;
-      const growth = Math.pow(1 + (inc.growthRate || 0) / 100, Math.min(yearsElapsed, cap));
-      const amt = (inc.annual || 0) * growth;
+      const years = Math.min(yearsElapsed, cap);
+      const base = inc.annual || 0;
+      const amt = inc.growthMode === "fixed"
+        ? Math.max(0, base + (inc.growthAmount || 0) * years)          // flat $/yr increase
+        : base * Math.pow(1 + (inc.growthRate || 0) / 100, years);     // compounding %
       total += amt;
       if (inc.taxable) totalTaxable += amt;
     }

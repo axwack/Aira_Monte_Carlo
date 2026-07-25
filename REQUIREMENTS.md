@@ -669,3 +669,64 @@ platform migrated Netlify → Cloudflare Pages). Its still-open, non-duplicated 
   `NETLIFY_EMAILS_*` pair, now unused post-Cloudflare-migration). **Secret values are
   intentionally NOT recorded in this git-tracked file** — they live in the Cloudflare
   Pages / deploy dashboard. Rotate any key that ever appears in plaintext anywhere.
+
+## 16. ACA-Aware Roth Conversions (subsidy-preserving) — requested 2026-07-25
+
+**Requested by a user (Reddit) and flagged by Vincent as "the biggest deal for me."**
+**Priority: P1 (next major feature).** **Status: scoped, NOT started.**
+
+### Problem
+In the pre-Medicare bridge years (retireAge → 64), many early retirees buy health
+insurance on the ACA marketplace, where the **Premium Tax Credit (PTC)** subsidy shrinks
+as **MAGI** rises. A Roth conversion (or a large pre-tax draw) raises MAGI and can silently
+destroy thousands of dollars of subsidy — often more than the conversion's tax benefit.
+AiRA models the **IRMAA** cliff (65+) but has **no ACA subsidy model at all** (grep: the only
+"ACA" reference is a cosmetic Action-Plan tip at `App.jsx` ~8000). So the Conversion Plan /
+Withdrawal Plan can recommend a conversion that looks tax-smart but nukes the user's subsidy.
+
+### Goal
+Model the ACA PTC during bridge years and add an **"ACA subsidy guard"** (sibling to the
+existing IRMAA guard) so conversion + pre-tax draw sizing accounts for subsidy lost — and
+surface the tradeoff (subsidy $ lost per conversion $, cliff proximity) the way IRMAA is shown.
+
+### Modeling components
+1. **PTC as a function of MAGI ÷ Federal Poverty Level (FPL).** The benchmark (2nd-lowest
+   silver) plan premium is capped at an income-based "applicable percentage" of MAGI; PTC =
+   benchmark premium − that cap. Inputs: **household size** (FPL lookup), **state** (AK/HI have
+   higher FPL tables), and a **benchmark annual premium** estimate (user-entered, or a rough
+   age-scaled default). FPL tables + applicable-percentage schedule are dated constants → live
+   in `TAX_REFERENCE.md`, inflation/annual-update indexed, NOT hardcoded in engine (Rule 6).
+2. **⚠️ Policy-date nuance (a differentiator to get right).** The ARPA/IRA enhancement
+   (2021–2025) REMOVED the 400%-FPL "subsidy cliff" (capped premium at 8.5% of income with no
+   upper income limit). **Absent Congressional extension, the cliff RETURNS in 2026**: above
+   400% FPL the subsidy drops to $0. Model both regimes behind a user assumption
+   (`acaCliffReturns2026: true/false`, default = current law) so the plan is honest about the
+   discontinuity. This is the crux of "convert while keeping subsidies."
+3. **ACA subsidy guard** — new profile toggle (default per user's situation). When on AND a
+   household member is pre-65 AND on the marketplace, cap the Step-6.5 Roth conversion (and the
+   Step-5 pre-tax draw) so MAGI stays under the chosen ACA ceiling (e.g., just under 400% FPL,
+   or an optimized point on the phase-out). Mirror the `irmaaGuard`/`irmaaCap` pattern in
+   `buildWithdrawalWaterfall` Step 6.5 + `runMC`. The conversion **sweet spot** becomes
+   `min(bracket room, IRMAA room, ACA room, LTCG 0%-cliff room)` — extends §15/ENG-8's list.
+4. **Display / cliff proximity.** Show ACA subsidy $ lost per conversion dollar and a
+   cliff-proximity indicator (like the IRMAA surcharge surfacing), on the Conversion Plan tab
+   and/or a bridge-year healthcare card. Pairs with gain-harvesting (both use the low-income
+   bridge window and both raise MAGI — competing for the same headroom).
+5. **Profile inputs**: `onAcaMarketplace` (bool, pre-65), `householdSize` (int, for FPL),
+   `acaBenchmarkPremium` (annual $, or estimate), `acaCliffReturns2026` (bool). Generic-first —
+   no user-specific values in code.
+
+### Interactions / gotchas
+- ACA guard active **retireAge→64**; IRMAA guard active **63+/65+**. Both can bind in the 63–64
+  overlap. Order: ACA and IRMAA rooms both feed the conversion `min(...)` ceiling.
+- The engine already threads MAGI per year (ENG lookback work) — reuse that MAGI, don't recompute.
+- Depends on the same single-source `buildWithdrawalWaterfall` used by the Conversion Plan tab so
+  the recommended conversion and the ladder agree (avoid the ENG-9/12/14 class of drift).
+
+### Effort
+**Medium-large.** ~1–2 focused sessions: FPL/PTC constants + a `computeAcaSubsidy(magi, size, state, year, cliff)` helper (single source, exported), the guard wiring in both engines' conversion/draw sizing, profile inputs, a display, and tests (subsidy math, cliff on/off, guard binds pre-65 not at 65+, sweet-spot = min of all rooms). Gate through logic-validator (IRS/HHS currency) + design-authority (where the inputs + cliff toggle live) + tester.
+
+### Reddit-update summary (plain language)
+"Coming soon: AiRA will model your ACA health-insurance subsidy in the pre-65 years and size Roth
+conversions to keep it — showing exactly how much subsidy each conversion dollar costs, and
+warning you before a conversion pushes you over the subsidy cliff."
