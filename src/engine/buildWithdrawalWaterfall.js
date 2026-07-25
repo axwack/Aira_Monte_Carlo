@@ -134,6 +134,39 @@ export function accumulateToRetirement(params = {}) {
   return { pretax0, roth0, taxable0, cash0, total: pretax0 + roth0 + taxable0 + cash0, taxableBasis0 };
 }
 
+// The four drawable buckets, canonical order. Shared so runMC and this engine
+// resolve a user's account draw order identically (no cross-engine drift).
+export const WITHDRAWAL_BUCKETS = ["cash", "taxable", "pretax", "roth"];
+
+// The naive ("No plan") comparison scenario is intentionally NOT user-configurable:
+// it always drains pre-tax first, uncapped — the common-default baseline the smart
+// plan is measured against. Named so this "not resolver-driven" invariant is explicit.
+export const NAIVE_DRAW_ORDER = ["pretax", "cash", "taxable", "roth"];
+
+/**
+ * Resolve the account draw order from the profile's orderingMode.
+ *   "tax_reactive" (default) → cash → taxable → pre-tax → Roth (today's behavior)
+ *   "pretax_first"           → pre-tax → cash → taxable → Roth
+ *   "custom"                 → the user's `withdrawalOrder`, sanitized to a full
+ *                              permutation (invalid/dupes dropped, missing appended)
+ * NOTE: ordering is orthogonal to the guardrails — the bracket cap / IRMAA guard
+ * attach to the pre-tax step and the reserve floor to the Roth step wherever each
+ * lands in the returned order.
+ */
+export function resolveDrawOrder(orderingMode, withdrawalOrder) {
+  if (orderingMode === "custom" && Array.isArray(withdrawalOrder)) {
+    const seen = new Set();
+    const out = [];
+    for (const b of withdrawalOrder) {
+      if (WITHDRAWAL_BUCKETS.includes(b) && !seen.has(b)) { seen.add(b); out.push(b); }
+    }
+    for (const b of WITHDRAWAL_BUCKETS) if (!seen.has(b)) out.push(b);
+    return out;
+  }
+  if (orderingMode === "pretax_first") return ["pretax", "cash", "taxable", "roth"];
+  return ["cash", "taxable", "pretax", "roth"]; // tax_reactive (default)
+}
+
 /**
  * Main export.
  * @param {object} params — full AiRA profile object
@@ -168,6 +201,10 @@ export function buildWithdrawalWaterfall(params = {}) {
     rothEmergencyReserve = 0,
     rothConversionTarget = "off",
     conversionOverrides  = [],
+    // Account draw order (orthogonal to distribution + guardrails). Default
+    // "tax_reactive" reproduces the historical cash→taxable→pretax→Roth sequence.
+    orderingMode    = "tax_reactive",
+    withdrawalOrder = ["cash", "taxable", "pretax", "roth"],
     preRetireEq = 91,
     postRetireEq = 70,
     cashRealReturn,
@@ -333,6 +370,10 @@ export function buildWithdrawalWaterfall(params = {}) {
              magi };
   }
 
+  // The user's chosen account draw order (used by the "smart" = your-plan scenario).
+  // The "naive" comparison scenario always drains pre-tax first, uncapped.
+  const smartDrawOrder = resolveDrawOrder(orderingMode, withdrawalOrder);
+
   // ── Scenario runner ────────────────────────────────────────────────────────
   function runScenario(isSmart) {
     let pretax = pretax0, roth = roth0, taxable = taxable0, cash = cash0;
@@ -486,7 +527,7 @@ export function buildWithdrawalWaterfall(params = {}) {
       // extra passes free once converged (typically pass 5-7).
       for (let pass = 0; pass < 12; pass++) {
         let need = Math.max(0, baseNeed + taxDue - rmd); // RMD proceeds fund first
-        fromCash = 0; fromTaxable = 0; fromPretax = 0;
+        fromCash = 0; fromTaxable = 0; fromPretax = 0; fromRoth = 0;
         pretaxCapReason = "uncapped";
 
         const drawCash    = () => { fromCash    = Math.min(need, cash);    need -= fromCash;    };
@@ -526,22 +567,23 @@ export function buildWithdrawalWaterfall(params = {}) {
           need -= fromPretax;
         };
 
-        if (isSmart) {
-          drawCash();
-          drawTaxable();
-          drawPretax();
-        } else {
-          drawPretax();   // pretax first — the whole point of the "without planning" view
-          drawCash();
-          drawTaxable();
-        }
+        // Step 6 — Roth. Reserve floor respected in the smart (your-plan) scenario,
+        // wherever Roth sits in the order. Naive keeps zero floor.
+        const drawRoth = () => {
+          const rothFloor = isSmart ? (rothEmergencyReserve || 0) : 0;
+          const rothAvail = Math.max(0, roth - rothFloor);
+          fromRoth = Math.min(need, rothAvail);
+          rothReserveHeld = Math.max(0, roth - rothFloor - fromRoth);
+          need -= fromRoth;
+        };
 
-        // Step 6 — Roth (last resort, reserve respected in smart mode)
-        const rothFloor = isSmart ? (rothEmergencyReserve || 0) : 0;
-        const rothAvail = Math.max(0, roth - rothFloor);
-        fromRoth = Math.min(need, rothAvail);
-        rothReserveHeld = Math.max(0, roth - rothFloor - fromRoth);
-        need -= fromRoth;
+        // Drain buckets in order. The smart (your-plan) scenario uses the user's
+        // chosen order; the naive comparison always drains pre-tax first, uncapped.
+        // Ordering is orthogonal to the guardrails: drawPretax caps itself and
+        // drawRoth holds its reserve wherever each falls in the sequence.
+        const drawFns  = { cash: drawCash, taxable: drawTaxable, pretax: drawPretax, roth: drawRoth };
+        const drawSeq  = isSmart ? smartDrawOrder : NAIVE_DRAW_ORDER;
+        for (const bucket of drawSeq) drawFns[bucket]();
 
         // Realized LTCG on this pass's taxable draw — READ-ONLY off the current
         // (pre-draw) taxable balance/basis; the real `taxableBasis` is mutated

@@ -67,7 +67,7 @@ import {
   LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,
   NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,
 } from "./engine/buildRothExplorer.js";
-import { buildWithdrawalWaterfall, accumulateToRetirement } from "./engine/buildWithdrawalWaterfall.js";
+import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./engine/expenses.js";
@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.7";
-export const BUILD_TAG = "[main] v1.2.7 — Fix: the (i) info icons on the MC Engine assumptions popover (Phase 1 / Phase 2 expected return) now actually show their explanation — replaced flaky native title tooltips with a hover/click/focus Hint popover (works on touch + keyboard), explaining what μ means. Prior v1.2.6: New first-screen visitor landing (retirementscenario-style): a one-number hero ('You can retire at age X' + confidence meter, live sliders, median-path sparkline) with a 'Take me to the app! →' button that seeds the profile from the quick estimate and runs the real MC. Shows only for visitors with no saved profile; returning users skip to their dashboard. Prior v1.2.5: Stress Test subtab: named-scenario card grid (market crash w/ severity buttons, long-term-care event, live-to-100, spouse passes early) — each a confidence gauge + pp drop vs baseline, quick low-path estimate on open with a per-card Run-full real-MC button; the 2000–2012 sequence view stays below. Prior v1.2.4: Progress check-in card history + Plan Shape radar.";
-export const BUILD_TIME = "2026-07-20T00:00:00Z";
+const APP_VERSION = "1.2.8";
+export const BUILD_TAG = "[main] v1.2.8 — User-configurable account draw order (Withdrawal Plan → Sourcing): a new 'Account draw order' control — Tax-reactive (default) · Custom (reorderable cash/taxable/pre-tax/Roth list) · Pre-tax first — orthogonal to the distribution strategy and the guardrails. Array-driven in both runMC and buildWithdrawalWaterfall via one shared resolveDrawOrder (no cross-engine drift); RMDs stay first, the bracket cap/IRMAA guard follow the pre-tax step and the Roth reserve follows the Roth step wherever each sits. Default is byte-identical to the old order. Also renamed the waterfall View toggle to 'Your plan' / 'No plan' so it can't mislabel a custom order. Prior v1.2.7: MC Engine (i) tooltip fix. (Phase 1 / Phase 2 expected return) now actually show their explanation — replaced flaky native title tooltips with a hover/click/focus Hint popover (works on touch + keyboard), explaining what μ means. Prior v1.2.6: New first-screen visitor landing (retirementscenario-style): a one-number hero ('You can retire at age X' + confidence meter, live sliders, median-path sparkline) with a 'Take me to the app! →' button that seeds the profile from the quick estimate and runs the real MC. Shows only for visitors with no saved profile; returning users skip to their dashboard. Prior v1.2.5: Stress Test subtab: named-scenario card grid (market crash w/ severity buttons, long-term-care event, live-to-100, spouse passes early) — each a confidence gauge + pp drop vs baseline, quick low-path estimate on open with a per-card Run-full real-MC button; the 2000–2012 sequence view stays below. Prior v1.2.4: Progress check-in card history + Plan Shape radar.";
+export const BUILD_TIME = "2026-07-25T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -518,6 +518,8 @@ export const BLANK_PROFILE = {
   irmaaGuard: false,              // cap pretax draws below IRMAA tier-1 ceiling (ages 63+)
   ssTorpedoGuard: false,          // show SS torpedo landmine warnings in Withdrawal Plan tab
   rothEmergencyReserve: 0,        // never draw Roth below this $ floor
+  orderingMode: "tax_reactive",   // "tax_reactive"|"custom"|"pretax_first" — which bucket drains first (orthogonal to strategy + guardrails)
+  withdrawalOrder: ["cash", "taxable", "pretax", "roth"], // used only when orderingMode === "custom"
   geminiApiKey: "",
   geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
 };
@@ -947,6 +949,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // delegates to runMC, the toggle now governs MC and Stress identically. Only an
   // explicit boolean false disables it — a numeric/true value (default) keeps tax on.
   const taxEnabled = p.tax !== false;
+  // Account draw order (which bucket drains first) — constant for the whole run.
+  // Default "tax_reactive" resolves to cash → taxable → pretax → roth, the
+  // historical hardcoded sequence. Shared resolver keeps this in lock-step with
+  // buildWithdrawalWaterfall's smart scenario.
+  const drawOrderMC = resolveDrawOrder(p.orderingMode, p.withdrawalOrder);
   const accYrs = Math.max(0, p.retireAge - p.currentAge);
   const retYrs = endAge - p.retireAge;
   const results = [];
@@ -1318,16 +1325,18 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // true tax bill every year. The <$1 break makes extra passes free once
       // converged. Matches buildWithdrawalWaterfall's pass cap exactly.
       for (let pass = 0; pass < 12; pass++) {
-        // Withdraw from buckets in order: cash → taxable → pretax (capped) → roth
+        // Withdraw from buckets in the user's chosen order (default tax_reactive =
+        // cash → taxable → pretax capped → roth). The bracket/IRMAA cap stays on the
+        // pretax step and the reserve floor on the roth step wherever each lands.
         let remaining = Math.max(0, need + totalTax - rmd); // RMD proceeds fund first
-        fromCash = Math.min(remaining, cash);
-        remaining -= fromCash;
-        fromTaxable = Math.min(remaining, taxable);
-        remaining -= fromTaxable;
-        fromPretax = Math.min(Math.min(remaining, bracketRoomMC), Math.max(0, pretax - rmd));
-        remaining -= fromPretax;
-        fromRoth = Math.min(remaining, Math.max(0, roth - rothFloorMC));
-        remaining -= fromRoth;
+        fromCash = fromTaxable = fromPretax = fromRoth = 0;
+        const drawMC = {
+          cash:    () => { fromCash    = Math.min(remaining, cash);                                             remaining -= fromCash;    },
+          taxable: () => { fromTaxable = Math.min(remaining, taxable);                                          remaining -= fromTaxable; },
+          pretax:  () => { fromPretax  = Math.min(Math.min(remaining, bracketRoomMC), Math.max(0, pretax - rmd)); remaining -= fromPretax;  },
+          roth:    () => { fromRoth    = Math.min(remaining, Math.max(0, roth - rothFloorMC));                  remaining -= fromRoth;    },
+        };
+        for (const bucket of drawOrderMC) drawMC[bucket]();
         shortfall = remaining;
 
         // Realized LTCG on this pass's taxable draw — READ-ONLY off the current
@@ -5360,6 +5369,77 @@ function LandmineTip({ emoji, label, detail, color }) {
 // they shape (design-authority: proximity). They persist to the profile via the same
 // onAssumptionChange setter the Profile panel uses, so the MC stale-flag fires
 // identically. Distribution strategy stays in Profile (it's global, drives MC).
+// Plain-language names for the four drawable buckets (shared by the order control
+// and the templated Section-1 subtitle).
+const BUCKET_LABELS = { cash: "Cash / SGOV", taxable: "Taxable brokerage", pretax: "Pre-tax (IRA/401k)", roth: "Roth" };
+const BUCKET_LABELS_SHORT = { cash: "cash", taxable: "taxable", pretax: "pre-tax", roth: "Roth" };
+
+// "Account draw order" — which bucket drains first. Orthogonal to the distribution
+// strategy (how much to spend) and to the guardrails (how deep to draw pre-tax/Roth).
+function AccountDrawOrder({ p, onAssumptionChange }) {
+  const set = onAssumptionChange ?? (() => {});
+  const mode = p.orderingMode || "tax_reactive";
+  const effective = resolveDrawOrder(mode, p.withdrawalOrder);          // shown for non-custom modes
+  const customOrder = resolveDrawOrder("custom", p.withdrawalOrder);    // the editable list
+
+  const move = (i, dir) => {
+    const j = i + dir;
+    if (j < 0 || j >= customOrder.length) return;
+    const next = customOrder.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    set("withdrawalOrder", next);
+  };
+
+  const MODES = [
+    ["tax_reactive", "Tax-reactive", true],
+    ["custom",       "Custom",       false],
+    ["pretax_first", "Pre-tax first", false],
+  ];
+  const radioLbl = { fontSize: 12, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 5, cursor: "pointer", whiteSpace: "nowrap" };
+  const arrow = (dis) => ({ background: dis ? "transparent" : "#0a1628", border: "1px solid #1e3a5f", color: dis ? "#334155" : "#5eead4", borderRadius: 4, width: 20, height: 18, cursor: dis ? "default" : "pointer", fontSize: 10, lineHeight: 1, padding: 0 });
+
+  return (
+    <div style={{
+      background: "rgba(56,189,248,0.05)", border: "1px solid rgba(56,189,248,0.18)",
+      borderRadius: 8, padding: "10px 14px", margin: "10px 0",
+    }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: "#38bdf8", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          Account draw order
+        </span>
+        {MODES.map(([val, name, rec]) => (
+          <label key={val} style={radioLbl}>
+            <input type="radio" name="orderingMode" checked={mode === val} onChange={() => set("orderingMode", val)} style={{ cursor: "pointer" }} />
+            {name}{rec && <em style={{ color: "#64748b", fontStyle: "normal", fontSize: 11 }}>&nbsp;(recommended)</em>}
+          </label>
+        ))}
+        {mode !== "custom" && (
+          <span style={{ marginLeft: "auto", fontSize: 11, color: "#94a3b8", fontFamily: "'DM Mono',monospace" }}>
+            {effective.map((b) => BUCKET_LABELS[b]).join(" → ")}
+          </span>
+        )}
+      </div>
+
+      {mode === "custom" && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+          {customOrder.map((b, i) => (
+            <div key={b} style={{ display: "flex", alignItems: "center", gap: 6, background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 7, padding: "5px 8px" }}>
+              <span style={{ fontSize: 11, color: "#475569", fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{i + 1}</span>
+              <span style={{ fontSize: 12, color: "#e2e8f0" }}>{BUCKET_LABELS[b]}</span>
+              <button style={arrow(i === 0)} disabled={i === 0} onClick={() => move(i, -1)} title="Move earlier">▲</button>
+              <button style={arrow(i === customOrder.length - 1)} disabled={i === customOrder.length - 1} onClick={() => move(i, 1)} title="Move later">▼</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ fontSize: 10.5, color: "#64748b", marginTop: 8, lineHeight: 1.5 }}>
+        Earlier = drained first. RMDs are always taken first by law; the bracket cap, IRMAA guard, and Roth reserve below still apply to wherever pre-tax and Roth land.
+      </div>
+    </div>
+  );
+}
+
 function SourcingGuardrails({ p, onAssumptionChange, summary }) {
   const set = onAssumptionChange ?? (() => {});
   const saved = summary?.taxSavings ?? 0;
@@ -5488,13 +5568,15 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           onToggle={() => setOpenSourcing(v => !v)}
           color="#5eead4"
           question="Where does each year's spending come from?"
-          subtitle="Account-by-account sourcing — cash → taxable → pre-tax (bracket-capped) → Roth — with tax landmines flagged"
+          subtitle={`Account-by-account sourcing — ${resolveDrawOrder(p.orderingMode, p.withdrawalOrder).map((b) => BUCKET_LABELS_SHORT[b]).join(" → ")} — with tax landmines flagged`}
         />
         {/* Guardrails live inside the collapsible now (design update): they're
             revealed only when the green sourcing section is expanded, alongside the
-            waterfall table they shape. */}
+            waterfall table they shape. The order control sits above the guardrails
+            strip — ordering is the outer sequence; the guardrails are inner caps. */}
         {openSourcing && (
           <div style={{ paddingLeft: 4 }}>
+            <AccountDrawOrder p={p} onAssumptionChange={onAssumptionChange} />
             <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} summary={waterfall.summary} />
             <WaterfallPlanView p={p} result={waterfall} />
           </div>
@@ -5693,18 +5775,18 @@ function WaterfallPlanView({ p, result }) {
       {/* Toggle */}
       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
         <span style={{ fontSize: 11, color: "#475569", marginRight: 4 }}>View:</span>
-        <button style={btnStyle(mode === "smart")} onClick={() => setMode("smart")}>📋 Smart Waterfall</button>
-        <button style={btnStyle(mode === "naive")} onClick={() => setMode("naive")}>Without planning (pretax first)</button>
+        <button style={btnStyle(mode === "smart")} onClick={() => setMode("smart")}>📋 Your plan</button>
+        <button style={btnStyle(mode === "naive")} onClick={() => setMode("naive")}>No plan (pretax first, uncapped)</button>
         {mode === "naive" && (
           <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
-            No bracket ceiling — pretax drains first, Roth used last
+            The common default — pretax drains first, no bracket ceiling, Roth used last
           </span>
         )}
       </div>
 
       {/* Stacked bar chart */}
       <div className="chart-card">
-        <div className="ct">Annual Withdrawals by Source — {mode === "smart" ? "Smart Waterfall" : "Without Planning"}</div>
+        <div className="ct">Annual Withdrawals by Source — {mode === "smart" ? "Your plan" : "No plan"}</div>
         <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
           Stacks show where each year's spending comes from; Fed Tax / State Tax / IRMAA sit on top (match the table columns exactly)
           {anyConversion && mode === "smart" && <> · Roth Conversion (purple) is a pretax→Roth transfer, not spending — shown for visibility</>}
@@ -9588,9 +9670,11 @@ function AssumptionsPanel({ values, onChange }) {
           Withdrawal Order
         </div>
         <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5 }}>
-          Sourcing guardrails — pre-tax bracket ceiling, IRMAA guard, Roth reserve, and
-          SS-torpedo warnings — are set on <strong style={{ color: "#5eead4" }}>Scenarios → 📋 Withdrawal Plan</strong>,
-          right above the waterfall they shape. The distribution strategy stays here in Profile.
+          The <strong style={{ color: "#38bdf8" }}>account draw order</strong> (which bucket drains first —
+          tax-reactive, custom, or pre-tax first) and the sourcing guardrails — pre-tax bracket ceiling,
+          IRMAA guard, Roth reserve, and SS-torpedo warnings — are set on{" "}
+          <strong style={{ color: "#5eead4" }}>Scenarios → 📋 Withdrawal Plan</strong>, right above the
+          waterfall they shape. The distribution strategy stays here in Profile.
         </div>
       </div>
 
@@ -10653,6 +10737,9 @@ export default function AiRAForecaster() {
       irmaaGuard: assumptions.irmaaGuard || false,
       rothEmergencyReserve: assumptions.rothEmergencyReserve || 0,
       ssTorpedoGuard: assumptions.ssTorpedoGuard || false,
+      // Account draw order (which bucket drains first) — orthogonal to strategy + guardrails.
+      orderingMode: assumptions.orderingMode || "tax_reactive",
+      withdrawalOrder: assumptions.withdrawalOrder || ["cash", "taxable", "pretax", "roth"],
       fixedWithdrawalRate: (() => { const r = assumptions.fixedWithdrawalRate || 4.0; return r < 1 ? r : r / 100; })(), // normalize: stored as % (4) or decimal (0.04) → always decimal
       vanguardInitialRate: 0.04,
       vanguardCap: 0.05,
