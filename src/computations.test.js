@@ -1514,13 +1514,18 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
   });
 
   // ── Variable Percentage Withdrawal (VPW) ───────────────────────────────────
-  // Year 1 (age 66): n = vpwEndAge − age = 100 − 66 = 34, r = 3.76%.
+  // Year 1 (age 66): n = horizon − age, r = 3.76%.
   // Canonical PMT payout rate (fixed 2026-06-10): rate = r / (1 − (1+r)^(−n)),
   // capped at 10%. spending = port × rate, clamped to the GK band.
-  test("VPW: year-2 spending = port × vpw_rate(age=66, n=34, r=3.76%), clamped", () => {
+  //
+  // The horizon is the profile's PLAN-TO age (endAge), not a hardcoded 100.
+  // vpwEndAge used to default to 100 independently of endAge, so a plan to age
+  // 105 still amortized to 100 and the spend-to-zero answer was five years off.
+  // `n` is derived from the fixture here so the test can't re-freeze that.
+  test("VPW: year-2 spending = port × vpw_rate(age=66, n=endAge−66, r=3.76%), clamped", () => {
     const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "vpw" }, "vpw");
     const port1 = schedule[0].portfolioEnd;
-    const n = 100 - 66; // age=66 at y=1
+    const n = (baseStrat.vpwEndAge ?? baseStrat.endAge) - 66; // age=66 at y=1
     const r = 0.0376;
     const rate = Math.min(0.10, r / (1 - Math.pow(1 + r, -n)));
     const expected = Math.min(adjCeiling1, Math.max(adjFloor1, Math.round(port1 * rate)));

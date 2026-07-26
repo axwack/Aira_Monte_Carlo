@@ -175,9 +175,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.18";
-export const BUILD_TAG = "[main] v1.2.18 — Already-retired users are now supported end to end. (1) ENGINE: all three engines started the drawdown at the entered retireAge while balances are always TODAY's, so a 67-year-old who retired at 65 replayed two years that already happened — drawing two extra years of spending and listing past calendar years in the schedule. New shared effectiveRetireAge() clamps the start to currentAge. (2) The landing hero capped current age at 62, locking retirees out of the front door, and its only question was 'when can you retire' — it now flips to 'your money lasts to X' once you are already retired. (3) All age controls read one AGE_LIMITS constant: the sidebar retire-age slider allowed 50-68 while the Profile input for the SAME value allowed 50-100, so you could not model delaying retirement to 70. Retire age is now 45-80 everywhere. 11 new tests. Prior v1.2.17: single source of truth for current age."
-export const BUILD_TIME = "2026-07-26T18:00:00Z";
+const APP_VERSION = "1.2.19";
+export const BUILD_TAG = "[main] v1.2.19 — Spend-to-zero + Mac scrollbars. (1) VPW now amortizes to your PLAN-TO age instead of a hardcoded 100: vpwEndAge was a second, separate end age defaulting to 100, so setting Plan to 105 still depleted at 100 and the spend-to-zero number was five years off with nothing in the UI saying so. (2) Scrollbars were 3px at 12% opacity — invisible everywhere, and on macOS the OS hides overlay scrollbars entirely until you scroll, so the 15-column waterfall and MC band tables looked truncated rather than scrollable and Mac users never found the columns to the right. Now 10px with real contrast (which also opts Chrome/Safari out of overlay mode), Firefox equivalents, and a .scroll-x right-edge fade cue. Prior v1.2.18: already-retired support."
+export const BUILD_TIME = "2026-07-26T19:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1293,7 +1293,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           // Canonical PMT payout rate: r / (1 - (1+r)^(-n)), n = years of payments
           // left. r is a fixed assumption (VPW's defining feature), profile-overridable.
           const rVPW = p.vpwRealReturn ?? 0.0376;
-          const n = Math.max(1, (p.vpwEndAge ?? 100) - age);
+          // Deplete by the PLAN-TO age, not a separate hardcoded 100. vpwEndAge
+          // was its own field defaulting to 100, so setting "Plan to age 105"
+          // still amortized to 100 — the spend-to-zero answer was five years off
+          // and nothing in the UI said so. An explicit vpwEndAge still wins.
+          const n = Math.max(1, (p.vpwEndAge ?? endAge ?? 100) - age);
           const rateVPW = rVPW === 0 ? 1 / n : rVPW / (1 - Math.pow(1 + rVPW, -n));
           const newSp = totalPort * Math.min(0.10, rateVPW);
           sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
@@ -1828,7 +1832,8 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       else if (withdrawalStrategy === "vpw") {
         // VPW PMT payout rate: r / (1 - (1+r)^(-n)). Must match runMC exactly.
         const rVPW = p.vpwRealReturn ?? 0.0376;
-        const n = Math.max(1, (p.vpwEndAge ?? 100) - age);
+        // Follows Plan-to age — see the matching note in runMC.
+        const n = Math.max(1, (p.vpwEndAge ?? p.endAge ?? 100) - age);
         const rate = rVPW === 0 ? 1 / n : rVPW / (1 - Math.pow(1 + rVPW, -n));
         const newSp = port * Math.min(0.10, rate);
         sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
@@ -2408,8 +2413,45 @@ const CSS = `
   .ms-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; margin-top:2px; }
   .ms-line { width:2px; background:rgba(255,255,255,0.08); margin:0 4px; }
   .tip-box { background:rgba(10,15,30,0.98); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:9px 12px; font-size:14px; color:#f1f5f9; }
-  ::-webkit-scrollbar { width:3px; height:3px; }
-  ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.12); border-radius:2px; }
+  /* ── Scrollbars ──────────────────────────────────────────────────────────
+     These were 3px wide at 12% opacity — invisible on every platform, and worse
+     on macOS, where the OS uses overlay scrollbars that stay hidden until you
+     actively scroll. Wide tables (the 15-column waterfall, the MC band table,
+     the checkpoint table) therefore looked truncated rather than scrollable,
+     and Mac users never discovered the columns to the right.
+
+     Styling ::-webkit-scrollbar at all opts Chrome/Safari out of overlay mode,
+     so the bar stays on screen; the size and contrast below make it actually
+     visible once it is. Firefox uses the standard properties. */
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-track {
+    background:rgba(255,255,255,0.04);
+    border-radius:5px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background:rgba(148,163,184,0.45);
+    border-radius:5px;
+    border:2px solid transparent;
+    background-clip:padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background:rgba(148,163,184,0.75);
+    background-clip:padding-box;
+  }
+  ::-webkit-scrollbar-corner { background:transparent; }
+  * { scrollbar-width:thin; scrollbar-color:rgba(148,163,184,0.45) rgba(255,255,255,0.04); }
+
+  /* Horizontally scrollable regions get a right-edge fade so there is a visual
+     cue that content continues past the viewport, independent of the bar. */
+  .scroll-x {
+    overflow-x:auto;
+    background:
+      linear-gradient(to right, var(--bg-base) 30%, rgba(10,15,30,0)) left center,
+      linear-gradient(to left,  var(--bg-base) 30%, rgba(10,15,30,0)) right center;
+    background-repeat:no-repeat;
+    background-size:36px 100%, 36px 100%;
+    background-attachment:local, local;
+  }
 
   /* ── Mobile / Responsive ── */
   @media (max-width: 768px) {
