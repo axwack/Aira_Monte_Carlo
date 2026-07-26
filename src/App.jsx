@@ -175,9 +175,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.25";
-export const BUILD_TAG = "[main] v1.2.25 — Input fix (user-reported data corruption): numeric fields did not select their contents on focus, so clicking a field pre-filled with 0 and typing 40000 left the original zero on the end — the plan silently used $400,000. Every Profile field ships with a default, so this hit any value the caret landed in front of and produced a 10x error with no visible sign. Typing now replaces, via a shared selectAllOnFocus applied to ANumInput and all 18 raw number inputs. Deferred one frame because focusing swaps formatted text for raw. Prior v1.2.24: healthcare shocks + equity glidepath switch age."
-export const BUILD_TIME = "2026-07-27T02:15:00Z";
+const APP_VERSION = "1.2.26";
+export const BUILD_TAG = "[main] v1.2.26 — Equity % explained in both places it needs to be: two new About entries under a Risk & Returns group (what the two weights do, and how the mix becomes a return — bootstrap resampling in the MC vs the weighted historical mean everywhere deterministic, with the +/-30% clamp noted), plus rewritten inline helpers on the two inputs, which previously just restated their own labels ('Equity % before retirement age'). The post-retirement helper now names the actual trade: raising it lifts the median while the success rate can FALL. Prior v1.2.25: numeric inputs select on focus."
+export const BUILD_TIME = "2026-07-27T03:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -10062,10 +10062,10 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
           <ANumInput value={values.ssCola} onSet={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} suffix="%" />
         </ARow>
-        <ARow label="Pre-retirement equity weight" desc="Equity % before retirement age (default 91%)">
+        <ARow label="Pre-retirement equity weight" desc="Stock share while you're still saving, up to your retirement age. Higher = more growth and bigger swings, which you can absorb because you aren't withdrawing yet. Sets both the average return AND the volatility in the Monte Carlo. Default 91%.">
           <ANumInput value={values.preRetireEq} onSet={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} suffix="%" />
         </ARow>
-        <ARow label="Post-retirement equity weight" desc="Equity % after retirement age (default 70%)">
+        <ARow label="Post-retirement equity weight" desc="Stock share once you retire. This is your sequence-of-returns dial: raising it lifts the median outcome but widens the downside, so success rate can FALL even as the median rises. Lower it if an early crash would end the plan. Default 70%.">
           <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} suffix="%" />
         </ARow>
       </div>

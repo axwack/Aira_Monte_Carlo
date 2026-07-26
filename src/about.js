@@ -76,6 +76,23 @@ export const ABOUT_FEATURES = [
     body:  "Your spending adapts based on portfolio performance. If the withdrawal rate climbs above 120% of the initial rate, spending cuts 10% (never below the floor). If it falls below 80%, spending rises 10% (never above the ceiling). Floor = 65% and ceiling = 135% of your target spending. Protects against sequence-of-returns risk while letting you spend more in good markets.",
   },
 
+  // ── Risk & Returns ────────────────────────────────────────
+  {
+    id:    "equity-weight",
+    group: "Risk & Returns",
+    icon:  "📈",
+    title: "Equity % — the two numbers that set your returns",
+    body:  "AiRA doesn't ask you to guess a return. You set a stock/bond mix and it derives the return from real history — 99 years of S&P 500 results and 50 years of bond results. You give it two weights: PRE-RETIREMENT (default 91%) applies while you're still saving, and POST-RETIREMENT (default 70%) applies once you retire. The switch happens at YOUR retirement age. Higher equity while working makes sense because volatility doesn't hurt when you aren't withdrawing; lowering it in retirement is protection against sequence-of-returns risk, where a crash in your first few years does permanent damage because you're selling into it. The key thing to understand: equity % sets your volatility as well as your average return. Raise the retirement weight and the median outcome improves while the success rate can FALL, because the bad paths get worse faster than the good paths get better. If you want to see that, set post-retirement to 90% and watch the two numbers move in opposite directions.",
+  },
+
+  {
+    id:    "equity-mechanics",
+    group: "Risk & Returns",
+    icon:  "🎲",
+    title: "How the equity mix becomes a return",
+    body:  "Two different things read your equity weights. In the Monte Carlo, each simulated year independently draws one random historical S&P year and one random historical bond year, then blends them by your weight — so a 70% weight means 70% of that year's return comes from a real S&P year and 30% from a real bond year. That resampling is what produces the spread of outcomes, and it's why the equity weight changes the shape of the fan chart and not just its height. Everywhere that isn't random — the year-by-year withdrawal schedule, the Smart Waterfall, the Roth explorer, the accumulation ramp — uses the weighted MEAN of the same historical data, so the deterministic and probabilistic views can never drift apart. One detail worth knowing: annual returns are clamped to plus or minus 30%, which trims the most extreme historical years from both tails.",
+  },
+
   // ── Your Spending ─────────────────────────────────────────
   {
     id:    "spending-smile",
