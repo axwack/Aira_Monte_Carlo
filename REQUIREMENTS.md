@@ -785,3 +785,48 @@ Large (multi-session, phased above). Each phase ships independently and is Reddi
 to convert — accounting for ACA subsidies, IRMAA, NIIT, capital-gains and Social-Security tax
 cliffs together — plus which account to pay the conversion tax from and which to live on. Rolling
 out in phases; the ACA-subsidy piece is first."
+
+## 18. Profile Information-Architecture Overhaul — scoped 2026-07-25 (design-authority: APPROVE-WITH-CHANGES)
+
+**Priority: P1 (recurring user pain — "profile is hard to work with, income is all over").**
+**Status: design-authority blueprint approved, NOT started.** Also closes REQUIREMENTS §5.1 (single
+point of control) + §13.3 #24 (duplicate sliders).
+
+### Why (verified findings)
+Income is scattered because fields were added to whichever panel was open, not by a content model:
+contributions + pensions → step 4 `ContribPanel`; **Social Security** (`ssb`/`ssAge`) + **rental/Airbnb**
+(`ab`/`abGrowth`/`abReliability`/`abEndYear`) → step 6 `RetirementPanel` (a step whose real job is
+withdrawal strategy); per-property rental → `MortgageTab` (separate tab, legitimately different object).
+`ProfileWizard` `step` index is UI-only (`App.jsx` ~8749-8984) — **reordering/regrouping steps is pure
+JSX, zero engine risk** (every panel is a pure function of the flat `values`/`assumptions` object).
+
+### Approved step blueprint
+| # | Step | Contains |
+|---|------|----------|
+| 1 | **You** 👤 | Identity: name, DOB, state, filing status, sex (AboutYouPanel + the "Personal Profile" identity fields currently stranded in AssumptionsPanel) |
+| 2 | **Money In** 💵 | Two `sectionCard` sub-cards: **While Working** (401k/HSA/employer) + **In Retirement** (Social Security, blanket rental/Airbnb, Pensions & Other Income). Split by *when it applies* — NOT a flat dump. This is the consolidation the user asked for. |
+| 3 | **What You Have** 💰 | Accounts by category (SavingsPanel, unchanged) |
+| 4 | **Money Out** 💸 | Spending (US + out-of-country), CSV budget import, Housing & Fixed Obligations carveouts (moved out of AssumptionsPanel) |
+| 5 | **Strategy** 🎯 | Withdrawal strategy + GK guardrails, Roth Conversion Strategy (FAFSA/CSS/tax-funding, moved out of AssumptionsPanel), Withdrawal Order pointer |
+| 6 | **Advanced** ⚙️ | Pure "set once" tuning: cash return, taxable cost basis, RE growth, joint-RMD toggle, Gemini key/model, MC params (SS COLA, equity glidepath), Healthcare Shock Model. Last step, optionally collapsed with a "most users don't need this" note. |
+
+### Findings → build tasks (most important first)
+1. **Single point of control (VIOLATION).** Retire age, end age, US spend, annual contribution, SS start age are live-editable in BOTH the main sidebar (`App.jsx:11342-11402`) AND the wizard, synced by a fragile hand-maintained 7-key fan-out (`11798-11823`) — same failure class as the real guardrail-forwarding bug in CLAUDE.md's handoff notes. **Fix:** sidebar authoritative; wizard shows read-only value + "Set live in the sidebar →" pointer (pattern already used for DOB `9262` and Withdrawal Order `9668-9679`); delete the fan-out. (`ssb` is already correctly single-sourced in the wizard — proof the split works.)
+2. **Proximity (VIOLATION).** Consolidate income into the "Money In" step per the blueprint, split while-working vs in-retirement (that distinction already exists in ContribPanel's two cards — extend, don't flatten).
+3. **Card system (VIOLATION — 4 patterns coexist).** Promote `ContribPanel`'s `sectionCard`/`sectionTitle`/`sectionDesc` to a shared module-level component (like `WFieldRow`); reskin AssumptionsPanel, AboutYouPanel, ExpensesPanel, RetirementPanel onto it. Keep `SavingsPanel`'s color-strip account-category cards as the ONE deliberate exception (encodes a taxonomy, not a topic). The `WFieldRow` field row is already uniform — don't touch it.
+4. **Assumptions-as-step-1 (VIOLATION).** Move pure tuning to the last "Advanced" step (behind disclosure); front-loading tuning knobs before any of the user's own data is why the profile reads as intimidating.
+5. **Safety: PASS** — moving SS/rental JSX between panels is a cut-paste (panels don't own state). Follow-up: update `STEPS[].sub` subtitle strings (8749-8763) + the existing cross-ref pointers (e.g. RetirementPanel's "Edit in 💸 Spending & Expenses →" at 10207) to point at the new steps.
+6. **Minor cleanup:** dead `abReliability`/`abGrowth` reads in `AssumptionsPanel` (9422-9423, leftover) — delete when that panel is touched.
+
+### Suggested build phasing (each ships independently, low risk)
+- **Phase A (safest, pure visual):** promote `sectionCard` to shared + reskin all panels onto one card system. No data movement.
+- **Phase B (the headline):** step reorder + "Money In" consolidation (move SS + rental into it, split while-working/in-retirement). Pure JSX moves + `STEPS`/`PANELS` reorder + subtitle/pointer updates.
+- **Phase C (correctness):** single-point-of-control — wizard pointers for the 5 duplicated fields, delete the 7-key fan-out shim.
+- **Phase D:** move Housing/carveouts → Money Out, Roth-strategy → Strategy, tuning → Advanced (behind disclosure).
+Gate each through a render smoke-test (the RothLadder-crash class of bug) + design-authority re-verdict on the final layout.
+
+### Reddit-update summary (plain language)
+"We're reorganizing the planner so everything about your money lives where you'd expect: one 'Money In'
+section for all your income (paychecks-era contributions, plus Social Security, pension, and rental in
+retirement), a clean 'What You Have' for accounts, 'Money Out' for spending — with the advanced tuning
+tucked at the end. Same math, far easier to fill in."
