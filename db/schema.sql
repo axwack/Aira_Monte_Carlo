@@ -61,3 +61,23 @@ CREATE TABLE IF NOT EXISTS admin_audit (
 );
 
 CREATE INDEX IF NOT EXISTS idx_admin_audit_ip_time ON admin_audit(actor_ip, created_at);
+
+-- Account-restore tokens (migration 006).
+-- The JWT is minted once, at the Stripe redirect, and lives only in that
+-- browser's localStorage — there is no login. A restore token is an expiring,
+-- use-capped credential an admin can email to a customer who paid but cannot
+-- reach their credits. /api/restore swaps it for a JWT via an atomic consume.
+-- max_uses > 1 so a customer opening the link on phone then laptop isn't locked
+-- out; see db/migrations/006_restore_tokens.sql for the full rationale.
+CREATE TABLE IF NOT EXISTS restore_tokens (
+  token        TEXT    PRIMARY KEY,
+  customer_id  TEXT    NOT NULL REFERENCES customers(stripe_customer_id),
+  note         TEXT,
+  created_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+  expires_at   INTEGER NOT NULL,
+  uses         INTEGER NOT NULL DEFAULT 0,
+  max_uses     INTEGER NOT NULL DEFAULT 3,
+  last_used_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_restore_customer ON restore_tokens(customer_id);

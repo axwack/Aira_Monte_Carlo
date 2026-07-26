@@ -74,7 +74,7 @@ import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
-import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useCreditBalance, isReportUnlocked } from "./billing/credits.js";
+import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, isReportUnlocked } from "./billing/credits.js";
 import { AdminPanel } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 
@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.12";
-export const BUILD_TAG = "[main] v1.2.12 — BILLING HOTFIX: Stripe webhook signature verification stripped the 'whsec_' prefix off the endpoint secret before using it as the HMAC key. Stripe signs with the FULL secret string, so every real checkout.session.completed delivery failed with 400 and NO purchase was ever credited to D1 — customers paid and received nothing. Also applied D1 migration 005 (prod was 3 migrations behind: missing pending_checkouts made /api/verify-session fail closed with 503, so no JWT was ever issued either). 9 new signature-parity regression tests. Prior v1.2.11: Profile income UX.";
-export const BUILD_TIME = "2026-07-26T12:30:00Z";
+const APP_VERSION = "1.2.13";
+export const BUILD_TAG = "[main] v1.2.13 — Account restore: a customer's JWT was minted once at the Stripe redirect and lived only in that browser's localStorage, so clearing it, switching devices, or hitting the verify-session outage left paid credits permanently unreachable with no login to recover them. Adds /api/restore + an admin 'issue-restore-link' action that emails a click-to-activate link (expiring, use-capped, atomic consume), and makes purchase/restore FAILURES visible in the toast instead of silent. Prior v1.2.12: Stripe webhook signature hotfix (whsec_ prefix must stay in the HMAC key).";
+export const BUILD_TIME = "2026-07-26T13:45:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -10488,6 +10488,17 @@ function RetirementLanding({ onEnter }) {
   );
 }
 
+/**
+ * Show a toast and auto-dismiss it. Returns the timer id so the caller's effect
+ * can clear it on unmount/re-fire. Errors get a longer dwell than successes —
+ * a failed purchase or restore is something the user may need to read twice or
+ * copy into a support email.
+ */
+function setToastTimed(setter, toast, ms) {
+  setter(toast);
+  return setTimeout(() => setter(null), ms);
+}
+
 export default function AiRAForecaster() {
   const [activeTab, setTab] = useState(() =>
     loadProfileFromLocal() ? "networth" : "assumptions"
@@ -10551,15 +10562,26 @@ export default function AiRAForecaster() {
   const [feedbackEmail, setFeedbackEmail] = useState("");
   const [showTerms, setShowTerms] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  // { msg, tone: "ok" | "err" }. Failures must be visible: a silent failure on
+  // a paid return or a restore link leaves the customer stuck with no idea why,
+  // and no way to tell us what went wrong. Errors persist longer than successes.
   const [stripeToast, setStripeToast] = useState(null);
-  const stripeReturn = useStripeReturn();
+  const stripeReturn  = useStripeReturn();
+  const restoreReturn = useRestoreReturn();
   useEffect(() => {
-    if (stripeReturn?.success) {
-      setStripeToast(`✓ ${stripeReturn.credits.toLocaleString()} credits added to your account`);
-      const t = setTimeout(() => setStripeToast(null), 5000);
-      return () => clearTimeout(t);
-    }
+    if (!stripeReturn) return;
+    const t = stripeReturn.success
+      ? setToastTimed(setStripeToast, { msg: `✓ ${stripeReturn.credits.toLocaleString()} credits added to your account`, tone: "ok" }, 5000)
+      : setToastTimed(setStripeToast, { msg: `⚠ ${stripeReturn.error}`, tone: "err" }, 15000);
+    return () => clearTimeout(t);
   }, [stripeReturn]);
+  useEffect(() => {
+    if (!restoreReturn) return;
+    const t = restoreReturn.success
+      ? setToastTimed(setStripeToast, { msg: `✓ Account restored — ${restoreReturn.credits.toLocaleString()} credits available`, tone: "ok" }, 6000)
+      : setToastTimed(setStripeToast, { msg: `⚠ ${restoreReturn.error}`, tone: "err" }, 15000);
+    return () => clearTimeout(t);
+  }, [restoreReturn]);
   const isFirst = useRef(true);
   // Set true when the visitor enters from the landing so the next params update
   // (after seeding) triggers one real Monte Carlo run with their numbers.
@@ -11862,16 +11884,20 @@ export default function AiRAForecaster() {
       {/* ── Admin panel (hidden; activate via ?aira_admin=1) ── */}
       <AdminPanel />
 
-      {/* ── Stripe purchase success toast ── */}
+      {/* ── Purchase / account-restore toast (success + failure) ── */}
       {stripeToast && (
         <div style={{
           position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
-          background: "rgba(16,185,129,0.95)", color: "white",
+          background: stripeToast.tone === "err"
+            ? "rgba(220,38,38,0.97)"
+            : "rgba(16,185,129,0.95)",
+          color: "white",
           borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 600,
           boxShadow: "0 4px 16px rgba(0,0,0,0.4)", zIndex: 99999,
-          pointerEvents: "none",
+          pointerEvents: "none", maxWidth: "min(92vw, 560px)", textAlign: "center",
+          lineHeight: 1.45,
         }}>
-          {stripeToast}
+          {stripeToast.msg}
         </div>
       )}
 
