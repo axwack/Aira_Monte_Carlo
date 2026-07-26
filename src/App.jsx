@@ -99,10 +99,66 @@ if (typeof document !== "undefined") {
  */
 
 
+/**
+ * Age from a date of birth, by calendar birthday. `asOf` defaults to today, so
+ * `ageFromDob(dob)` is "age now" and `ageFromDob(dob, someDate)` is "age on that
+ * date". Returns null for a missing/unparseable input so callers choose their
+ * own fallback.
+ *
+ * SINGLE SOURCE OF TRUTH — do not inline this again. There were FOUR separate
+ * implementations. Two divided elapsed milliseconds by 365.25 days, which
+ * disagrees with the calendar answer by a full year for anyone near their
+ * birthday, so the engine and the Profile panel could report different ages for
+ * the same person. The other two hand-rolled the birthday adjustment for
+ * checkpoint dates, one of them comparing "month-day" as STRINGS
+ * ("9-5" < "10-1" is true lexically but false as a date).
+ *
+ * Worse, several views read the STORED `currentAge` field rather than deriving
+ * from `dob`, so editing a birthday updated the simulation while the portfolio
+ * fan chart and MC band table kept rendering the old age — including the band
+ * table's calendar-year column, which was silently shifted by the difference.
+ *
+ * `dob` is the input of record. Always derive from it. Treat stored
+ * `currentAge` purely as a fallback for imported profiles that have no dob.
+ */
+function ageFromDob(dob, asOf) {
+  if (!dob) return null;
+  try {
+    const d = parseCalendarDate(dob);
+    const ref = asOf ? parseCalendarDate(asOf) : new Date();
+    if (!d || !ref || isNaN(d.getTime()) || isNaN(ref.getTime())) return null;
+    let age = ref.getFullYear() - d.getFullYear();
+    const m = ref.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && ref.getDate() < d.getDate())) age--;
+    return age;
+  } catch { return null; }
+}
+
+/**
+ * Parse a date that represents a CALENDAR day (a birthday, a checkpoint date) —
+ * not an instant in time.
+ *
+ * `new Date("1970-07-27")` is specified to parse as UTC midnight, but every
+ * getFullYear/getMonth/getDate call reads it back in LOCAL time. West of UTC
+ * that lands on the previous day: for a US user the birthday above becomes
+ * July 26th, and a dob of "1970-01-01" becomes 1969-12-31 — shifting the derived
+ * age by a full year for the whole year. Date-only strings are therefore split
+ * and rebuilt with the local-time constructor. Values that already carry a time
+ * (or are Date objects) are passed through untouched.
+ */
+function parseCalendarDate(value) {
+  if (value instanceof Date) return value;
+  if (typeof value === "string") {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  return new Date(value);
+}
+
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.16";
-export const BUILD_TAG = "[main] v1.2.16 — Profile regrouped by topic (REQUIREMENTS §18, partial Phase D): 'Personal Profile' was a grab bag of 9 unrelated fields — it is now identity only (name, DOB, state, federal filing status, employer start date) and COLLAPSED by default. Tax knobs (taxable cost basis, joint-RMD table) moved to a new Tax Settings card; Home/RE growth moved into Housing & Fixed Obligations where it applies; cash return moved to Monte Carlo Model Parameters; Gemini key + model moved to their own collapsed AI Assistant card. New shared collapsible ACard component. Prior v1.2.15: report paywall is now enforced by withholding markup (was cosmetically blurred) + ledger-derived 24h window + report_unlock ledger type.";
-export const BUILD_TIME = "2026-07-26T16:00:00Z";
+const APP_VERSION = "1.2.17";
+export const BUILD_TAG = "[main] v1.2.17 — SINGLE SOURCE OF TRUTH for current age (bug: changing your birthdate left the MC portfolio fan on the old age). dob is now the only input of record: one shared ageFromDob() replaces FOUR different implementations, an effect reconciles the stored currentAge field so every panel/chart/AI-context reads the same number, and the fan chart + MC band table no longer read the stale stored field (the band table's calendar-year column was silently shifted by the difference). Also fixed two real bugs found while consolidating: date-only strings parsed as UTC midnight then read with local getters, shifting a birthday a day earlier (a full YEAR for Jan-1 birthdays, west of UTC); and checkpoint ages compared month-day as STRINGS. 11 new tests. Prior v1.2.16: Profile regrouped by topic";
+export const BUILD_TIME = "2026-07-26T17:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -3391,14 +3447,11 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             const labeledAges = new Set();
             return checkpoints.map((cp) => {
               if (!cp.date) return null;
-              const birth = new Date(dob);
-              const checkDate = new Date(cp.date);
-              if (isNaN(birth) || isNaN(checkDate)) return null;
-
-              let age = checkDate.getFullYear() - birth.getFullYear();
-              const monthDay = `${checkDate.getMonth()}-${checkDate.getDate()}`;
-              const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
-              if (monthDay < birthMonthDay) age--;
+              // Shared helper. The hand-rolled version here compared month-day
+              // as STRINGS, so e.g. "9-5" < "10-1" was true lexically but false
+              // as a date — mis-aging checkpoints in some months.
+              const age = ageFromDob(dob, cp.date);
+              if (age == null) return null;
 
               const isPreRetire = age < retireAge;
               if (isPreRetire && !showTargets) return null;
@@ -7325,15 +7378,9 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
               </thead>
               <tbody>
                 {[...checkpoints].reverse().slice(0, 6).map(cp => {
-                  let age = null;
-                  if (dob && cp.date) {
-                    const birth = new Date(dob);
-                    const cd = new Date(cp.date);
-                    if (!isNaN(birth) && !isNaN(cd)) {
-                      age = cd.getFullYear() - birth.getFullYear();
-                      if (`${cd.getMonth()}-${cd.getDate()}` < `${birth.getMonth()}-${birth.getDate()}`) age--;
-                    }
-                  }
+                  // Shared helper — same string-compared month-day bug as the
+                  // checkpoint dots in FanChart had.
+                  const age = ageFromDob(dob, cp.date);
                   const p50AtAge  = (age !== null && mc?.pcts) ? (mc.pcts.find(d => d.age === age)?.p50 || 0) : 0;
                   const delta     = p50AtAge > 0 ? cp.value - p50AtAge : null;
                   const status    = p50AtAge > 0 ? (delta > 0 ? "Ahead" : delta < 0 ? "Behind" : "On track") : "Pre‑retirement";
@@ -8777,7 +8824,7 @@ function ProfileWizard({ values, onChange }) {
 
   const STEPS = [
     { label: "Assumptions", icon: "⚙️", sub: "Model parameters" },
-    { label: "About You", icon: "👤", sub: `You are ${values.currentAge} yrs old` },
+    { label: "About You", icon: "👤", sub: `You are ${ageFromDob(values.dob) ?? values.currentAge} yrs old` },
     { label: "Current Savings", icon: "💰", sub: `Net worth of ${fmtM(values.port)} saved. Congratulations!` },
     { label: "Contributions", icon: "📋", sub: `Total Contributions of ${fmtK(values.contrib)}/yr` },
     {
@@ -9265,20 +9312,7 @@ function SavingsPanel({ values, onChange }) {
 }
 
 function AboutYouPanel({ values, onChange }) {
-  const derivedAge = values.dob
-    ? (() => {
-        try {
-          const dobDate = new Date(values.dob);
-          if (isNaN(dobDate.getTime())) return null;
-          const today = new Date();
-          let age = today.getFullYear() - dobDate.getFullYear();
-          const m = today.getMonth() - dobDate.getMonth();
-          if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) age--;
-          return age;
-        } catch { return null; }
-      })()
-    : null;
-
+  const derivedAge = ageFromDob(values.dob);
   const currentAgeForCalc = derivedAge ?? values.currentAge;
   const yearsToRetire = Math.max(0, values.retireAge - currentAgeForCalc);
   const yearsInRetire = Math.max(0, values.endAge - values.retireAge);
@@ -9495,9 +9529,9 @@ function AssumptionsPanel({ values, onChange }) {
     hcMax,
   } = values;
 
-  const derivedAge = dob
-    ? Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 3600 * 1000))
-    : "—";
+  // Shared helper — this used to divide elapsed ms by 365.25 days, so it could
+  // report a different age than the About You panel for the same birthday.
+  const derivedAge = ageFromDob(dob) ?? "—";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -10754,16 +10788,30 @@ export default function AiRAForecaster() {
     setStale(true);
   }, []);
 
-  // Derived values from assumptions
-  const currentAge = useMemo(() => {
-    try {
-      const d = new Date(assumptions.dob);
-      if (isNaN(d)) return BLANK_PROFILE.currentAge;
-      return Math.floor((new Date() - d) / (365.25 * 24 * 3600 * 1000));
-    } catch {
-      return BLANK_PROFILE.currentAge;
+  // ── Current age: ONE value, everywhere ────────────────────────────────────
+  // `dob` is the only input of record. This derives from it, and the effect
+  // below writes the result back into assumptions.currentAge so that every
+  // consumer — the engines via params, every Profile panel via `values`, the AI
+  // context builders, the exported JSON — reads the same number. Nothing should
+  // compute its own age from dob, and nothing should read a stored age that
+  // could disagree with the birthday on file (REQUIREMENTS §5.1, single point of
+  // control). The stored field survives only so dob-less imported profiles keep
+  // working.
+  const currentAge = useMemo(
+    () => ageFromDob(assumptions.dob) ?? assumptions.currentAge ?? BLANK_PROFILE.currentAge,
+    [assumptions.dob, assumptions.currentAge]
+  );
+
+  // Keep the stored field reconciled with dob. Without this, editing a birthday
+  // updated the simulation (which reads the derived value) while every panel and
+  // chart reading assumptions.currentAge kept showing the old age. Guarded by
+  // the inequality so it settles in one pass.
+  useEffect(() => {
+    const derived = ageFromDob(assumptions.dob);
+    if (derived != null && derived !== assumptions.currentAge) {
+      updateAssumption("currentAge", derived);
     }
-  }, [assumptions.dob]);
+  }, [assumptions.dob, assumptions.currentAge]);
 
   const rmdAge = useMemo(() => {
     const override = assumptions.rmdStartAge;
@@ -11805,7 +11853,11 @@ export default function AiRAForecaster() {
                         earlyRetireTarget={assumptions.earlyRetireTarget}
                         dob={assumptions.dob}
                         portfolioGoal={assumptions.portfolioGoal}
-                        currentAge={assumptions.currentAge}
+                        // Derived age, NOT assumptions.currentAge — that stored
+                        // field never changes when the birthday does, so the fan
+                        // kept plotting the old age (and the accumulation ramp,
+                        // "you are here" dot, and survival curve with it).
+                        currentAge={currentAge}
                         currentPort={params.port}
                         contrib={params.contrib}
                         preRetireEq={params.preRetireEq ?? 91}
@@ -11820,7 +11872,10 @@ export default function AiRAForecaster() {
                         useReal={real}
                         ssAge={assumptions.ssAge}
                         rmdAge={rmdAge}
-                        currentAge={assumptions.currentAge}
+                        // Same fix: this feeds the table's calendar-year column
+                        // (yr = CURRENT_YEAR + age - currentAge), so a stale age
+                        // shifted every year in the table by the difference.
+                        currentAge={currentAge}
                         endAge={endAge}
                         hoveredAge={hoveredAge}
                         onHoverAge={setHoveredAge}
@@ -12160,4 +12215,4 @@ export default function AiRAForecaster() {
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob };
