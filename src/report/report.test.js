@@ -113,16 +113,67 @@ describe("PrintReport", () => {
       expect(html).not.toMatch(/Premium Report/);
     });
 
-    test("locked=true — Print button absent, unlock card present with blur class on report content", () => {
+    test("locked=true — Print button absent, unlock card present", () => {
       const html = renderToStaticMarkup(
         <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={true} />
       );
       expect(html).not.toMatch(/Print \/ Save as PDF/);
       expect(html).toMatch(/Premium Report/);
-      expect(html).toMatch(/pr-blurred/);
-      // The underlying document is still there (soft gate, not DRM) — just blurred —
-      // so the report content markup (e.g. the cover heading) is still present in the DOM.
+    });
+
+    // The paywall used to render every section and merely add a `pr-blurred`
+    // CSS class, so deleting one class in devtools revealed the whole report.
+    // Since every figure is computed client-side, withholding the MARKUP is the
+    // only gate that actually holds. These assert exactly that.
+    //
+    // NOTE: don't assert on /pr-blurred/ — PRINT_CSS is rendered inline in a
+    // <style> block, so that string is always present regardless of the class
+    // actually applied. The original test matched the stylesheet, not the DOM,
+    // and so could never have failed.
+    // Matched as <h2> specifically: the teaser intentionally NAMES these
+    // sections to sell the unlock, so bare-text matching would hit the teaser's
+    // own labels. Only a real rendered section emits the <h2>.
+    const PAID_HEADINGS = [
+      /<h2>Monte Carlo Verdict/,
+      /<h2>Stress Test/,
+      /<h2>Withdrawal Schedule/,
+      /<h2>Lifetime Tax Summary/,
+    ];
+
+    test("locked=true withholds the paid section markup entirely", () => {
+      const html = renderToStaticMarkup(
+        <PrintReport params={{ ...BASE_PARAMS, rothConversionTarget: "22" }} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={true} />
+      );
+      for (const heading of PAID_HEADINGS) expect(html).not.toMatch(heading);
+      expect(html).not.toMatch(/<h2>Roth Conversion Plan/);
+    });
+
+    test("locked=true does not leak the headline success rate", () => {
+      const html = renderToStaticMarkup(
+        <PrintReport params={BASE_PARAMS} mc={{ ...BASE_MC, rate: 0.873 }} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={true} />
+      );
+      expect(html).not.toMatch(/87\.3/);
+    });
+
+    test("locked=true still shows the cover, the user's own assumptions, and the teaser", () => {
+      const html = renderToStaticMarkup(
+        <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={true} />
+      );
+      // Nothing is withheld by showing the user their own inputs, and it makes
+      // the preview read as a real document rather than an error state.
       expect(html).toMatch(/Retirement Plan Report/);
+      expect(html).toMatch(/Assumptions/);
+      expect(html).toMatch(/Included in the full report/);
+      expect(html).toMatch(/Disclaimer/);
+    });
+
+    test("unlocking restores every paid section", () => {
+      const html = renderToStaticMarkup(
+        <PrintReport params={{ ...BASE_PARAMS, rothConversionTarget: "22" }} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={false} />
+      );
+      for (const heading of PAID_HEADINGS) expect(html).toMatch(heading);
+      expect(html).toMatch(/<h2>Roth Conversion Plan/);
+      expect(html).not.toMatch(/Included in the full report/);
     });
 
     test("locked=true still renders the Close button", () => {

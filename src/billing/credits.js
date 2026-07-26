@@ -267,7 +267,13 @@ export async function unlockReport() {
   return result;
 }
 
-/** Reads the client-tracked unlock window — valid until `unlockedUntil`. */
+/**
+ * Locally-cached unlock window. This is an OPTIMISTIC hint for first paint only
+ * — it is not authority. The server derives the real window from the ledger
+ * (see currentUnlockWindow in functions/api/report-unlock.js); use
+ * useReportUnlocked() so a hand-edited localStorage flag can't grant access and
+ * a cleared one can't revoke it.
+ */
 export function isReportUnlocked() {
   try {
     if (typeof localStorage === "undefined") return false;
@@ -276,6 +282,51 @@ export function isReportUnlocked() {
     const { unlockedUntil } = JSON.parse(raw);
     return !!unlockedUntil && new Date(unlockedUntil).getTime() > Date.now();
   } catch { return false; }
+}
+
+/** Authoritative check — asks the server for the ledger-derived window. */
+export async function fetchReportUnlockStatus() {
+  const jwt = getStoredJWT();
+  if (!jwt) return { unlocked: false, unlockedUntil: null };
+  try {
+    const res = await fetch("/api/report-unlock", {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (res.status === 401) { clearStoredJWT(); return { unlocked: false, unlockedUntil: null }; }
+    if (!res.ok) return null;                       // null = unknown, keep cache
+    const { unlocked, unlockedUntil } = await res.json();
+    try {
+      if (typeof localStorage !== "undefined") {
+        if (unlocked) localStorage.setItem(REPORT_UNLOCK_KEY, JSON.stringify({ unlockedUntil }));
+        else          localStorage.removeItem(REPORT_UNLOCK_KEY);
+      }
+    } catch {}
+    return { unlocked, unlockedUntil };
+  } catch { return null; }
+}
+
+/**
+ * Whether the report is unlocked, reconciled against the server.
+ *
+ * Starts from the local cache so the report doesn't flash locked for a paying
+ * customer, then corrects from the ledger. `bump` re-checks after a successful
+ * unlock without a remount.
+ */
+export function useReportUnlocked(bump = 0) {
+  const [unlocked, setUnlocked] = useState(isReportUnlocked);
+
+  useEffect(() => {
+    if (!BILLING_ENABLED) { setUnlocked(true); return; }
+    let alive = true;
+    fetchReportUnlockStatus().then(r => {
+      // null means the request failed — leave the optimistic value alone rather
+      // than locking out a customer over a transient network error.
+      if (alive && r) setUnlocked(r.unlocked);
+    });
+    return () => { alive = false; };
+  }, [bump]);
+
+  return unlocked;
 }
 
 // ─── Post-purchase: verify Stripe session → issue JWT ──────────────────────
