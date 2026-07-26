@@ -175,9 +175,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.26";
-export const BUILD_TAG = "[main] v1.2.26 — Equity % explained in both places it needs to be: two new About entries under a Risk & Returns group (what the two weights do, and how the mix becomes a return — bootstrap resampling in the MC vs the weighted historical mean everywhere deterministic, with the +/-30% clamp noted), plus rewritten inline helpers on the two inputs, which previously just restated their own labels ('Equity % before retirement age'). The post-retirement helper now names the actual trade: raising it lifts the median while the success rate can FALL. Prior v1.2.25: numeric inputs select on focus."
-export const BUILD_TIME = "2026-07-27T03:00:00Z";
+const APP_VERSION = "1.2.27";
+export const BUILD_TAG = "[main] v1.2.27 — Two honesty fixes. (1) Roth tax funding: 'Outside cash' pays conversion tax from a pot the simulation never tracks or depletes, so every converted dollar lands in the Roth intact and the strategy looks better than it can perform. It is no longer listed first, is labelled UNLIMITED, and now raises an inline warning when selected; 'From taxable' is marked recommended. (2) Real dollars now has a tooltip stating what it actually does: it converts FUTURE dollars to present-day purchasing power (not an adjustment of past data), and because the chart begins at your retirement year the figures are in RETIREMENT-year purchasing power — inflation between today and retirement is NOT removed. Prior v1.2.26: equity % documentation."
+export const BUILD_TIME = "2026-07-27T03:45:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2699,10 +2699,13 @@ const IncYearTip = ({ active, payload, label }) => {
     </div>
   );
 };
-function Toggle({ val, onChange, label, accent = "#0d9488" }) {
+function Toggle({ val, onChange, label, accent = "#0d9488", hint }) {
   return (
-    <div className="tog-row">
-      <span className="tog-label">{label}</span>
+    <div className="tog-row" title={hint || undefined}>
+      <span className="tog-label">
+        {label}
+        {hint && <span style={{ marginLeft: 5, fontSize: 10, color: "#475569", cursor: "help" }}>ⓘ</span>}
+      </span>
       <div
         className="tog"
         onClick={() => onChange(!val)}
@@ -9997,17 +10000,40 @@ function AssumptionsPanel({ values, onChange }) {
               />
           </ARow>
         </div>
-        <ARow label="Tax funding source" desc="How conversion taxes are paid. 'Outside cash' is most favorable (full conversion grows tax-free). 'From taxable' debits your taxable/HSA/cash buckets. 'From conversion' shrinks the Roth transfer by the tax owed.">
+        {/* Paying conversion tax from money the plan never tracks is the single
+            biggest way to flatter a Roth strategy — every dollar converted lands
+            in the Roth untouched, funded from a pot the simulation never
+            depletes. A user put it well: "unlimited outside funds should come
+            with a warning: do you have a money tree?" It stays available because
+            some people genuinely hold cash outside the modeled accounts, but it
+            no longer passes as a neutral default. */}
+        <ARow label="Tax funding source" desc="Who pays the tax on each conversion. 'From taxable' debits your real taxable / HSA / cash buckets — the honest default for most people. 'From the conversion' withholds the tax out of the amount transferred, so less lands in the Roth. 'Outside cash' assumes an UNLIMITED external pot the simulation never depletes.">
           <select
             value={values.taxFunding || "from_taxable"}
             onChange={(e) => onChange("taxFunding", e.target.value)}
             style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
           >
-            <option value="outside_cash">Outside cash (assumes unlimited)</option>
-            <option value="from_taxable">From taxable / HSA / cash bucket</option>
+            <option value="from_taxable">From taxable / HSA / cash bucket (recommended)</option>
             <option value="from_conv">From the conversion (withhold)</option>
+            <option value="outside_cash">Outside cash — assumes UNLIMITED funds ⚠️</option>
           </select>
         </ARow>
+        {(values.taxFunding === "outside_cash") && (
+          <div style={{
+            marginTop: 8, padding: "10px 12px", borderRadius: 8,
+            background: "rgba(251,146,60,0.10)", border: "1px solid rgba(251,146,60,0.35)",
+            fontSize: 11, color: "#fdba74", lineHeight: 1.55,
+          }}>
+            <strong>⚠️ This overstates your Roth benefit.</strong> Conversion tax is paid from money
+            AiRA never tracks or depletes — an unlimited outside pot. Every dollar converted lands in
+            the Roth intact, so the strategy looks better than it can actually perform.
+            <div style={{ marginTop: 6, color: "#fcd9b6" }}>
+              Only use this if you genuinely hold cash outside the accounts in your profile, and
+              remember the simulation will never run it out. Otherwise pick <strong>From taxable</strong>,
+              which pays the tax from money you actually have.
+            </div>
+          </div>
+        )}
 
       </div>
 
@@ -12069,7 +12095,10 @@ export default function AiRAForecaster() {
                   <div className="tok" style={{ left: tax ? 18 : 2 }} />
                 </div>
               </div>
-              <Toggle val={real} onChange={setReal} label="📉 Real dollars" accent="#0ea5e9" />
+              <Toggle
+                val={real} onChange={setReal} label="📉 Real dollars" accent="#0ea5e9"
+                hint={"Converts FUTURE dollars back to present-day purchasing power, so a balance decades out is readable in money you recognise — it does not adjust past data. Note: the chart begins at your retirement year, so amounts are shown in RETIREMENT-year purchasing power; inflation between now and retirement is not removed. If you are already retired, that is the same as today."}
+              />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span className="tog-label">🌴 Non-resident (no state tax)</span>
