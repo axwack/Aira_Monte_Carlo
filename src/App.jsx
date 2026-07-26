@@ -175,9 +175,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.21";
-export const BUILD_TAG = "[main] v1.2.21 — GK GUARDRAIL FIX (user-reported): adding a pension that grew $1,135/yr produced ~$637k of extra lifetime income but LOWERED the ending balance and the success rate. Cause: Guyton-Klinger's Prosperity Rule raises spending 10% when the withdrawal rate falls 20% below baseline, and because AiRA nets income out of that rate, a pension rising on schedule was indistinguishable from investment outperformance — so a $1,135 income bump could trigger a ~$9,000 spending raise, compounding annually against a baseline calibrated once at retirement and never re-based. The guardrail reference is now re-based each year against the SAME income, so scheduled income cancels from both sides and only PORTFOLIO deviation moves spending. Extra income now flows through to the ending balance (+$627k of $637k in the reproduction, previously negative). 9 new tests, including the invariant that broke: more income must never lower the ending balance or success rate. Prior v1.2.20: planned one-off expenses + widow's penalty."
-export const BUILD_TIME = "2026-07-26T21:30:00Z";
+const APP_VERSION = "1.2.22";
+export const BUILD_TAG = "[main] v1.2.22 — Pensions get a type. Profile now separates PENSIONS from OTHER INCOME, and every pension carries its own embedded type selector (Monthly / Lump Sum / Cash Balance) since people commonly have several of different kinds; switching type migrates the record between the recurring-stream and one-time-inflow models. Lump-sum and cash-balance pensions are now first-class INFLOWS: they deposit into a chosen account (defaulting to pre-tax for a rollover, cash for a lump sum taken) and compound from the year they arrive. Previously the guidance was to enter them as an ordinary account balance, which put the money in the plan from TODAY instead of the receipt year and overstated years of growth. Inflows also fix the silently-discarded surplus: other income is netted as max(0, spend - income), so anything beyond one year of need vanished — a $500k inheritance against an $80k gap lost $420k. Adds two About entries on pension types and guardrail interaction. 10 new tests. Prior v1.2.21: GK guardrail income fix."
+export const BUILD_TIME = "2026-07-26T22:45:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1235,6 +1235,20 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       const ev = computeCashFlowEvents(p.cashFlowEvents, calYear, p.inf ?? 2.5, CURRENT_YEAR);
       const eventCost = ev.total;
 
+      // INFLOWS (lump-sum pension, cash-balance rollover, inheritance, home
+      // sale) are DEPOSITED into their bucket so they compound. They must not
+      // be netted against spending — `need` is Math.max(0, sp - income), which
+      // discards everything past one year's need.
+      if (ev.inflow > 0) {
+        pretax  += ev.byBucket.pretax  || 0;
+        roth    += ev.byBucket.roth    || 0;
+        cash    += ev.byBucket.cash    || 0;
+        const taxableIn = ev.byBucket.taxable || 0;
+        taxable += taxableIn;
+        taxableBasis += taxableIn;   // already-taxed money arrives as basis
+        totalPort = pretax + roth + taxable + cash;
+      }
+
       const gkIncomeOffset = ss + rentalForGK + otherIncTotal;
       // Only COMMITTED events are shielded from the guardrails; a deferrable one
       // (a big travel year) is discretionary and may be trimmed like base spend.
@@ -1792,6 +1806,10 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // was calibrated against.
     const evDet = computeCashFlowEvents(p.cashFlowEvents, yr, p.inf ?? 2.5, CURRENT_YEAR);
     const eventCostDet = evDet.total;
+    // This engine tracks one aggregate portfolio, so an inflow simply adds to
+    // it; the per-bucket routing that matters for tax lives in runMC and
+    // buildWithdrawalWaterfall.
+    if (evDet.inflow > 0) port += evDet.inflow;
 
     const gkIncomeOffset = ss + ab + otherIncTotal;
     const gkFixedCosts = housingCost + carveoutCost + evDet.committed;
@@ -10087,17 +10105,74 @@ function ContribPanel({ values, onChange }) {
         </div>
       </div>
 
-      {/* ── Income card 2: Pensions & Other Income (uniform card, same chrome) ── */}
+      {/* ── Income card 2: PENSIONS ────────────────────────────────────────
+          Split from Other Income because a pension is a distinct object with a
+          TYPE, and the three types behave completely differently in the engine:
+          a monthly pension is a recurring stream that offsets spending, while a
+          lump sum or cash balance is a deposit into an account that compounds
+          from the year it arrives. The type selector is embedded per pension —
+          people commonly have more than one, and each can be a different kind.
+          Switching type migrates the entry between the two stores. */}
       <div style={sectionCard}>
-        <div style={sectionTitle}>🏦 Pensions &amp; Other Income</div>
+        <div style={sectionTitle}>🏦 Pensions</div>
         <div style={sectionDesc}>
-          Income streams that <strong style={{ color: "#cbd5e1" }}>reduce what you withdraw</strong> — pension, part-time work, annuity, royalties. These are paid <em>to</em> you every year, not balances you draw down. A monthly pension goes here; a <strong style={{ color: "#cbd5e1" }}>lump-sum / cash-balance</strong> pension you'll roll over is a pre-tax account instead.
+          Defined-benefit income. Pick the type for each one — AiRA models them differently, and
+          getting it wrong is the most common source of bad numbers here.
         </div>
-        {(values.otherIncomes || []).map((inc, idx) => (
+
+        {/* Monthly pensions live in otherIncomes; lump/cash live in cashFlowEvents. */}
+        {(values.otherIncomes || []).filter(x => x.kind === "pension").map((inc) => (
+          <PensionEntry
+            key={inc.id}
+            type="monthly"
+            onTypeChange={(t) => convertPension(values, onChange, inc, "monthly", t)}
+            onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
+          >
+            <OtherIncomeCard
+              inc={inc}
+              onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
+              onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
+            />
+          </PensionEntry>
+        ))}
+
+        {(values.cashFlowEvents || []).filter(e => e.direction === "in" && e.source === "pension").map((ev) => {
+          const upd = (patch) => onChange("cashFlowEvents", (values.cashFlowEvents || []).map(x => x.id === ev.id ? { ...x, ...patch } : x));
+          const type = ev.bucket === "pretax" && !ev.taxable ? "cash" : "lump";
+          return (
+            <PensionEntry
+              key={ev.id}
+              type={type}
+              onTypeChange={(t) => convertPension(values, onChange, ev, type, t)}
+              onRemove={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter(x => x.id !== ev.id))}
+            >
+              <LumpPensionFields ev={ev} upd={upd} />
+            </PensionEntry>
+          );
+        })}
+
+        <button
+          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), {
+            id: Date.now().toString(), kind: "pension", name: "", annual: 0,
+            startYear: new Date().getFullYear(), endYear: null,
+            growthMode: "pct", growthRate: 0, growthAmount: 0, growthCapYears: null, taxable: true,
+          }])}
+          style={{ background: "rgba(14,165,233,0.1)", border: "1px dashed rgba(14,165,233,0.45)", borderRadius: 6, color: "#38bdf8", fontSize: 12, fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
+        >+ Add pension</button>
+      </div>
+
+      {/* ── Income card 3: OTHER INCOME ─────────────────────────────────── */}
+      <div style={sectionCard}>
+        <div style={sectionTitle}>💵 Other Income</div>
+        <div style={sectionDesc}>
+          Everything that isn't a pension — part-time work, an annuity, royalties, alimony. Recurring
+          amounts paid <em>to</em> you, not balances you draw down.
+        </div>
+        {(values.otherIncomes || []).filter(x => x.kind !== "pension").map((inc, idx) => (
           <OtherIncomeCard
             key={inc.id}
             inc={inc}
-            autoFocus={idx === (values.otherIncomes || []).length - 1 && !inc.annual}
+            autoFocus={idx === (values.otherIncomes || []).filter(x => x.kind !== "pension").length - 1 && !inc.annual}
             onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
             onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
           />
@@ -10107,9 +10182,115 @@ function ContribPanel({ values, onChange }) {
           style={{ background: "rgba(14,165,233,0.1)", border: "1px dashed rgba(14,165,233,0.45)", borderRadius: 6, color: "#38bdf8", fontSize: 12, fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
           onMouseEnter={e => e.currentTarget.style.background = "rgba(14,165,233,0.18)"}
           onMouseLeave={e => e.currentTarget.style.background = "rgba(14,165,233,0.1)"}
-        >+ Add pension / income source</button>
+        >+ Add another income source</button>
       </div>
 
+    </div>
+  );
+}
+
+const PENSION_TYPES = [
+  { id: "monthly", icon: "📅", label: "Monthly / Annual", desc: "Paid every year from a start age" },
+  { id: "lump",    icon: "💰", label: "Lump Sum",         desc: "One payment at a set age" },
+  { id: "cash",    icon: "🏦", label: "Cash Balance",     desc: "Balance you'll roll over" },
+];
+
+/**
+ * Moves a pension between the two storage models when its type changes.
+ *
+ * A monthly pension is a recurring stream (`otherIncomes`), while a lump sum or
+ * cash balance is a one-time inflow event (`cashFlowEvents`). They are stored
+ * separately because the engines treat them completely differently — one offsets
+ * spending each year, the other is deposited into an account and compounds — so
+ * switching type has to migrate the record rather than flip a flag.
+ *
+ * Destination defaults are chosen so most users never touch them: a cash-balance
+ * plan is almost always rolled to an IRA (no tax on receipt, becomes RMD-able),
+ * whereas a lump sum taken as cash is ordinary income that year and the net
+ * proceeds land liquid.
+ */
+function convertPension(values, onChange, entry, fromType, toType) {
+  if (fromType === toType) return;
+  const incomes = values.otherIncomes  || [];
+  const events  = values.cashFlowEvents || [];
+  const label   = entry.name || entry.label || "Pension";
+  const amount  = entry.annual || entry.amount || 0;
+  const year    = entry.startYear || entry.year || new Date().getFullYear() + 5;
+
+  if (toType === "monthly") {
+    onChange("cashFlowEvents", events.filter(x => x.id !== entry.id));
+    onChange("otherIncomes", [...incomes.filter(x => x.id !== entry.id), {
+      id: entry.id, kind: "pension", name: label, annual: amount,
+      startYear: year, endYear: null,
+      growthMode: "pct", growthRate: 0, growthAmount: 0, growthCapYears: null, taxable: true,
+    }]);
+    return;
+  }
+
+  const isCash = toType === "cash";
+  onChange("otherIncomes", incomes.filter(x => x.id !== entry.id));
+  onChange("cashFlowEvents", [...events.filter(x => x.id !== entry.id), {
+    id: entry.id, source: "pension", label,
+    amount, year, direction: "in",
+    bucket: isCash ? "pretax" : "cash",
+    taxable: !isCash,
+    inflate: false,
+  }]);
+}
+
+/** Wraps one pension with its embedded type selector. */
+function PensionEntry({ type, onTypeChange, onRemove, children }) {
+  return (
+    <div style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 12, marginBottom: 10, background: "rgba(255,255,255,0.02)" }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+        {PENSION_TYPES.map(t => {
+          const on = t.id === type;
+          return (
+            <button key={t.id} onClick={() => onTypeChange(t.id)} title={t.desc}
+              style={{
+                background: on ? "rgba(14,165,233,0.22)" : "transparent",
+                border: `1px solid ${on ? "rgba(56,189,248,0.55)" : "rgba(255,255,255,0.10)"}`,
+                color: on ? "#e0f2fe" : "#64748b",
+                borderRadius: 6, padding: "4px 10px", fontSize: 11,
+                fontWeight: on ? 700 : 500, cursor: "pointer", fontFamily: "inherit",
+              }}>{t.icon} {t.label}</button>
+          );
+        })}
+        <button onClick={onRemove} title="Remove this pension"
+          style={{ marginLeft: "auto", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 12, padding: "2px 8px" }}>×</button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Fields for a lump-sum / cash-balance pension (a one-time inflow). */
+function LumpPensionFields({ ev, upd }) {
+  const cell = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "5px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", width: "100%" };
+  const lbl  = { fontSize: 10, color: "#64748b", marginBottom: 3, display: "block" };
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 0.8fr 1.1fr", gap: 8 }}>
+      <label><span style={lbl}>Label</span>
+        <input type="text" value={ev.label || ""} placeholder="Cash balance pension"
+          onChange={(e) => upd({ label: e.target.value })} style={cell} /></label>
+      <label><span style={lbl}>Amount</span>
+        <input type="number" value={ev.amount || 0} min={0} step={1000}
+          onChange={(e) => upd({ amount: Number(e.target.value) })} style={{ ...cell, textAlign: "right" }} /></label>
+      <label><span style={lbl}>Year</span>
+        <input type="number" value={ev.year} min={new Date().getFullYear()} max={2090}
+          onChange={(e) => upd({ year: Number(e.target.value) })} style={{ ...cell, textAlign: "right" }} /></label>
+      <label><span style={lbl}>Deposit into</span>
+        <select value={ev.bucket || "cash"} onChange={(e) => upd({ bucket: e.target.value })} style={{ ...cell, cursor: "pointer" }}>
+          <option value="pretax">Pre-tax (IRA rollover)</option>
+          <option value="cash">Cash</option>
+          <option value="taxable">Taxable brokerage</option>
+          <option value="roth">Roth</option>
+        </select></label>
+      <label style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#94a3b8", cursor: "pointer" }}>
+        <input type="checkbox" checked={!!ev.taxable} onChange={(e) => upd({ taxable: e.target.checked })} />
+        Taxable as ordinary income in {ev.year}
+        <span style={{ color: "#475569" }}>(uncheck for a direct rollover)</span>
+      </label>
     </div>
   );
 }
