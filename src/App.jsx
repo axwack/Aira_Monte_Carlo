@@ -67,7 +67,7 @@ import {
   LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,
   NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,
 } from "./engine/buildRothExplorer.js";
-import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge } from "./engine/buildWithdrawalWaterfall.js";
+import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents } from "./engine/expenses.js";
@@ -175,9 +175,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.20";
-export const BUILD_TAG = "[main] v1.2.20 — Planned one-off expenses + the widow's penalty. (1) NEW: cash-flow events — a roof in 10 years, a car every 7, a wedding, a heavy travel decade. Each has a year, an optional repeat interval and an until-year, inflates from today's dollars, and carries a committed/deferrable flag deciding whether guardrails may trim it. Crucially ADDITIVE: unlike a multi-year CSV budget (which replaces the spend rule and silently switches Guyton-Klinger off), the strategy still governs the recurring base. Wired into all three engines. (2) The 'spouse passes early' stress test cut Social Security but left filing status on MFJ, so it missed the widow's penalty entirely — the survivor files Single, the standard deduction roughly halves, brackets narrow and IRMAA tiers halve, on the same RMDs. Now modeled. 17 new tests. Prior v1.2.19: VPW plan-to age + Mac scrollbars."
-export const BUILD_TIME = "2026-07-26T20:30:00Z";
+const APP_VERSION = "1.2.21";
+export const BUILD_TAG = "[main] v1.2.21 — GK GUARDRAIL FIX (user-reported): adding a pension that grew $1,135/yr produced ~$637k of extra lifetime income but LOWERED the ending balance and the success rate. Cause: Guyton-Klinger's Prosperity Rule raises spending 10% when the withdrawal rate falls 20% below baseline, and because AiRA nets income out of that rate, a pension rising on schedule was indistinguishable from investment outperformance — so a $1,135 income bump could trigger a ~$9,000 spending raise, compounding annually against a baseline calibrated once at retirement and never re-based. The guardrail reference is now re-based each year against the SAME income, so scheduled income cancels from both sides and only PORTFOLIO deviation moves spending. Extra income now flows through to the ending balance (+$627k of $637k in the reproduction, previously negative). 9 new tests, including the invariant that broke: more income must never lower the ending balance or success rate. Prior v1.2.20: planned one-off expenses + widow's penalty."
+export const BUILD_TIME = "2026-07-26T21:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1252,7 +1252,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         if (withdrawalStrategy === "gk") {
           // Years remaining uses the horizon being simulated (`endAge`), NOT p.endAge —
           // so the GK longevity rule stays consistent with this run's survival test.
-          sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age, gkIncomeOffset, gkFixedCosts);
+          // Reference re-based on THIS year's income so a scheduled pension
+          // raise can't masquerade as portfolio outperformance. See gkReferenceWR.
+          const refWR = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
+          sp = guytonKlingerWithdrawal(totalPort, refWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age, gkIncomeOffset, gkFixedCosts);
         }
         else if (withdrawalStrategy === "fixed") {
           // Pure fixed %: draw = rate × port. No GK clamp — that defeats the purpose.
@@ -1362,7 +1365,8 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           // Bucket sourcing is handled below regardless.
           const yrsRemaining = endAge - age;
           if (yrsRemaining > 15) {
-            sp = guytonKlingerWithdrawal(totalPort, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining, gkIncomeOffset, gkFixedCosts);
+            const refWR2 = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
+            sp = guytonKlingerWithdrawal(totalPort, refWR2, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining, gkIncomeOffset, gkFixedCosts);
           } else {
             sp = sp * (1 + inflY);
           }
@@ -1800,7 +1804,8 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       // first year: use target spend
     } else {
       if (withdrawalStrategy === "gk") {
-        sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age, gkIncomeOffset, gkFixedCosts);
+        const refWRd = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
+        sp = guytonKlingerWithdrawal(port, refWRd, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age, gkIncomeOffset, gkFixedCosts);
       }
       else if (withdrawalStrategy === "fixed") {
         // Pure fixed %: draw = rate × port. No GK clamp.
@@ -1892,7 +1897,8 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         // exactly where its safety brake would otherwise be disabled.
         const yrsRemaining = p.endAge - age;
         if (yrsRemaining > 15) {
-          sp = guytonKlingerWithdrawal(port, initWR, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining, gkIncomeOffset, gkFixedCosts);
+          const refWRd2 = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
+          sp = guytonKlingerWithdrawal(port, refWRd2, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining, gkIncomeOffset, gkFixedCosts);
         } else {
           sp = sp * (1 + inflY);
         }
