@@ -67,7 +67,7 @@ import {
   LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,
   NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,
 } from "./engine/buildRothExplorer.js";
-import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder } from "./engine/buildWithdrawalWaterfall.js";
+import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./engine/expenses.js";
@@ -155,10 +155,29 @@ function parseCalendarDate(value) {
   return new Date(value);
 }
 
+/**
+ * Age input bounds — ONE definition, used by every age control.
+ *
+ * These were hardcoded separately in three places and disagreed: the sidebar
+ * retire-age slider allowed 50–68 while the wizard's input for the SAME value
+ * allowed 50–100, so typing 70 in the Profile and then touching the slider
+ * silently snapped it back to 68 — meaning you could not model delaying
+ * retirement to 70, the most common Social Security optimization. The landing
+ * hero separately capped current age at 62, locking out anyone already retired.
+ *
+ * Ranges cover real users at both ends: FIRE at 45, delayed SS at 70+, and
+ * people who are already retired and want to know how it's going.
+ */
+const AGE_LIMITS = {
+  current: { min: 25, max: 85 },   // was 30–62 on the landing hero
+  retire:  { min: 45, max: 80 },   // was 50–68 (slider) vs 50–100 (wizard)
+  end:     { min: 60, max: 105 },
+};
+
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.17";
-export const BUILD_TAG = "[main] v1.2.17 — SINGLE SOURCE OF TRUTH for current age (bug: changing your birthdate left the MC portfolio fan on the old age). dob is now the only input of record: one shared ageFromDob() replaces FOUR different implementations, an effect reconciles the stored currentAge field so every panel/chart/AI-context reads the same number, and the fan chart + MC band table no longer read the stale stored field (the band table's calendar-year column was silently shifted by the difference). Also fixed two real bugs found while consolidating: date-only strings parsed as UTC midnight then read with local getters, shifting a birthday a day earlier (a full YEAR for Jan-1 birthdays, west of UTC); and checkpoint ages compared month-day as STRINGS. 11 new tests. Prior v1.2.16: Profile regrouped by topic";
-export const BUILD_TIME = "2026-07-26T17:00:00Z";
+const APP_VERSION = "1.2.18";
+export const BUILD_TAG = "[main] v1.2.18 — Already-retired users are now supported end to end. (1) ENGINE: all three engines started the drawdown at the entered retireAge while balances are always TODAY's, so a 67-year-old who retired at 65 replayed two years that already happened — drawing two extra years of spending and listing past calendar years in the schedule. New shared effectiveRetireAge() clamps the start to currentAge. (2) The landing hero capped current age at 62, locking retirees out of the front door, and its only question was 'when can you retire' — it now flips to 'your money lasts to X' once you are already retired. (3) All age controls read one AGE_LIMITS constant: the sidebar retire-age slider allowed 50-68 while the Profile input for the SAME value allowed 50-100, so you could not model delaying retirement to 70. Retire age is now 45-80 everywhere. 11 new tests. Prior v1.2.17: single source of truth for current age."
+export const BUILD_TIME = "2026-07-26T18:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1018,8 +1037,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // historical hardcoded sequence. Shared resolver keeps this in lock-step with
   // buildWithdrawalWaterfall's smart scenario.
   const drawOrderMC = resolveDrawOrder(p.orderingMode, p.withdrawalOrder);
-  const accYrs = Math.max(0, p.retireAge - p.currentAge);
-  const retYrs = endAge - p.retireAge;
+  // Already-retired users enter the age they actually retired at, which is in
+  // the past. Balances are always TODAY's, so starting the drawdown there would
+  // replay years that already happened. See effectiveRetireAge.
+  const retAgeMC = effectiveRetireAge(p.retireAge, p.currentAge);
+  const accYrs = Math.max(0, retAgeMC - p.currentAge);
+  const retYrs = endAge - retAgeMC;
   const results = [];
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
@@ -1123,9 +1146,9 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // carveout0 mirror the exact formulas the retirement loop applies for
     // age === p.retireAge (y === 0), so this engine's own year-0 netNeed is
     // what initWR is calibrated against.
-    const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
+    const ss0 = retAgeMC >= p.ssAge ? p.ssb : 0;
     const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
-    const calYear0 = CURRENT_YEAR + (p.retireAge - p.currentAge);
+    const calYear0 = CURRENT_YEAR + (retAgeMC - p.currentAge);
     const { total: otherInc0 } = computeOtherIncome(p.otherIncomes, calYear0);
     const housingType0 = p.housingType || "own";
     let housing0 = 0;
@@ -1149,7 +1172,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     let magiOneYearAgo = null, magiTwoYearsAgo = null;
 
     for (let y = 0; y < retYrs; y++) {
-      const age = p.retireAge + y;
+      const age = retAgeMC + y;
       const calYear = CURRENT_YEAR + (age - p.currentAge);
       // Stress sequence override: prescribe the equity leg for the first
       // seqOverride.length retirement years; bond leg stays bootstrapped at the
@@ -1553,7 +1576,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // Use ?? 0 so exhausted paths count as $0, not undefined
     const vals = results.map(r => r.path[t] ?? 0).sort((a, b) => a - b);
     const q = pct => vals[Math.floor(pct * (vals.length - 1))];
-    const ageT = p.retireAge + t;
+    // Clamped, matching the drawdown loop that produced `path` — otherwise the
+    // fan chart's age axis (and every calendar year derived from it) would start
+    // before today for an already-retired user.
+    const ageT = retAgeMC + t;
     // Fraction of paths not yet exhausted at this age — feeds the per-age
     // band table under the fan chart. A path counts as funded at ageT if it
     // never exhausted, or exhausted at a later age.
@@ -1631,8 +1657,10 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     return { schedule, portAtRetire: Math.round(portAtRetire), initWR };
   }
 
-  const accYrs = Math.max(0, p.retireAge - p.currentAge);
-  const retYrs = p.endAge - p.retireAge;
+  // Clamped for already-retired users — see effectiveRetireAge.
+  const retAgeDet = effectiveRetireAge(p.retireAge, p.currentAge);
+  const accYrs = Math.max(0, retAgeDet - p.currentAge);
+  const retYrs = p.endAge - retAgeDet;
   let port = p.port;
 
   // Accumulation using median returns
@@ -1661,9 +1689,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   // same quantity the yearly loop's GK netNeed offset computes (mirrors
   // runMC/buildWithdrawalWaterfall's calibration). ab0 includes propIncome to
   // match this engine's own `ab` term in the yearly loop below.
-  const ss0 = p.retireAge >= p.ssAge ? p.ssb : 0;
+  const ss0 = retAgeDet >= p.ssAge ? p.ssb : 0;
   const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
-  const calYear0 = CURRENT_YEAR + (p.retireAge - p.currentAge);
+  const calYear0 = CURRENT_YEAR + (retAgeDet - p.currentAge);
   const { total: otherInc0 } = computeOtherIncome(p.otherIncomes, calYear0);
   const housingType0 = p.housingType || "own";
   let housing0 = 0;
@@ -1710,7 +1738,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   const taxEnabled = p.tax !== false;
 
   for (let y = 0; y < retYrs; y++) {
-    const age = p.retireAge + y;
+    const age = retAgeDet + y;
     const yr = CURRENT_YEAR + (age - p.currentAge);
     const ret = age < 62 ? expectedReturn(p.preRetireEq ?? 91) / 100 : expectedReturn(p.postRetireEq ?? 70) / 100;
     const inflY = inf / 100;
@@ -9330,7 +9358,7 @@ function AboutYouPanel({ values, onChange }) {
           RETIREMENT TIMELINE
         </div>
         <WFieldRow label="Retirement Age" helper="Age at which you plan to retire (D‑Day).">
-          <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={50} max={100} step={1} />
+          <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={AGE_LIMITS.retire.min} max={AGE_LIMITS.retire.max} step={1} />
         </WFieldRow>
         <WFieldRow label="Planning Horizon" helper="Age through which you want the plan to last.">
           <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={40} max={100} step={1} />
@@ -10486,11 +10514,34 @@ function landingProject(retireAge, s) {
   const conf = 1 / (1 + Math.exp((wr - 0.042) / 0.006));
   return { port, conf: Math.max(0.02, Math.min(0.985, conf)) };
 }
+// Search runs to the top of the retire-age range, not a hardcoded 72, so the
+// hero can still answer for someone planning to work past 72.
 function landingEarliestAge(s) {
-  for (let a = Math.max(s.curAge + 1, 50); a <= 72; a++) {
+  for (let a = Math.max(s.curAge + 1, 50); a <= AGE_LIMITS.retire.max; a++) {
     if (landingProject(a, s).conf >= LANDING_TARGET) return a;
   }
   return null;
+}
+
+// Past the normal retirement window the "when can you retire" question is the
+// wrong one — the user is already retired (or about to be), and what they want
+// to know is whether the money lasts. The hero flips to that framing rather
+// than searching future ages that don't apply. `landingProject(curAge, …)` is
+// exactly "retire now", which is the right projection for someone drawing down
+// today.
+const LANDING_ALREADY_RETIRED_AGE = 66;
+function landingIsRetired(s) {
+  return s.curAge >= LANDING_ALREADY_RETIRED_AGE;
+}
+
+// Age at which the drawdown path hits zero, for the already-retired headline.
+// Walks the same path the chart draws, so the number and the curve agree.
+// "95+" is the cap because the landing model is a teaser, not the real engine —
+// anything beyond that should be answered by the actual Monte Carlo.
+function landingLastsToAge(s) {
+  const pts = landingPath(s, s.curAge);
+  const dead = pts.find((p) => p.age > s.curAge && p.val <= 0);
+  return dead ? dead.age : "95+";
 }
 function landingPath(s, retireAge) {
   const pts = [];
@@ -10517,8 +10568,13 @@ function RetirementLanding({ onEnter }) {
   const [spend, setSpend] = useState(90000);
   const canvasRef = useRef(null);
   const s = { curAge, savings, contrib: contribL, spend };
-  const age = landingEarliestAge(s);
-  const conf = (age != null ? landingProject(age, s) : landingProject(72, s)).conf;
+  const retired = landingIsRetired(s);
+  // Already retired ⇒ the projection IS "drawing down from today", so the
+  // reference age is their current age rather than a future retirement date.
+  const age = retired ? s.curAge : landingEarliestAge(s);
+  const conf = (age != null
+    ? landingProject(age, s)
+    : landingProject(AGE_LIMITS.retire.max, s)).conf;
 
   useEffect(() => {
     const c = canvasRef.current;
@@ -10552,7 +10608,7 @@ function RetirementLanding({ onEnter }) {
   }, [curAge, savings, contribL, spend, age]);
 
   const rows = [
-    { label: "Current age", val: curAge, set: setCurAge, min: 30, max: 62, step: 1, fmt: (v) => v },
+    { label: "Current age", val: curAge, set: setCurAge, min: AGE_LIMITS.current.min, max: AGE_LIMITS.current.max, step: 1, fmt: (v) => v },
     { label: "What you've saved so far", val: savings, set: setSavings, min: 50000, max: 4000000, step: 25000, fmt: landingMoney },
     { label: "Adding each year", val: contribL, set: setContribL, min: 0, max: 120000, step: 2500, fmt: landingMoney },
     { label: "Spending in retirement", val: spend, set: setSpend, min: 40000, max: 220000, step: 2500, fmt: (v) => landingMoney(v) + "/yr" },
@@ -10568,9 +10624,11 @@ function RetirementLanding({ onEnter }) {
 
         <div className="lp-eyebrow">Your one-number answer</div>
         <h1 className={"lp-answer" + (age != null && conf < 0.9 ? " short" : "")}>
-          {age != null
-            ? <>You can retire at <span className="lp-age">{age}</span></>
-            : <>Let's find your <span className="lp-age">number</span></>}
+          {retired
+            ? <>Your money lasts to <span className="lp-age">{landingLastsToAge(s)}</span></>
+            : age != null
+              ? <>You can retire at <span className="lp-age">{age}</span></>
+              : <>Let's find your <span className="lp-age">number</span></>}
         </h1>
         <p className="lp-sub">
           {age != null
@@ -11527,8 +11585,8 @@ export default function AiRAForecaster() {
               <Slider
                 label="Retire age"
                 value={retAge}
-                min={50}
-                max={68}
+                min={AGE_LIMITS.retire.min}
+                max={AGE_LIMITS.retire.max}
                 step={1}
                 format={(v) => "Age " + v}
                 onChange={setRetAge}
@@ -11536,8 +11594,8 @@ export default function AiRAForecaster() {
               <Slider
                 label="Plan to age"
                 value={endAge}
-                min={40}
-                max={100}
+                min={AGE_LIMITS.end.min}
+                max={AGE_LIMITS.end.max}
                 step={1}
                 format={(v) => "Age " + v}
                 onChange={setEndAge}
