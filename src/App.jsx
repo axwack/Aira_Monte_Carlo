@@ -70,7 +70,7 @@ import {
 import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
-import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./engine/expenses.js";
+import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
@@ -175,9 +175,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.19";
-export const BUILD_TAG = "[main] v1.2.19 — Spend-to-zero + Mac scrollbars. (1) VPW now amortizes to your PLAN-TO age instead of a hardcoded 100: vpwEndAge was a second, separate end age defaulting to 100, so setting Plan to 105 still depleted at 100 and the spend-to-zero number was five years off with nothing in the UI saying so. (2) Scrollbars were 3px at 12% opacity — invisible everywhere, and on macOS the OS hides overlay scrollbars entirely until you scroll, so the 15-column waterfall and MC band tables looked truncated rather than scrollable and Mac users never found the columns to the right. Now 10px with real contrast (which also opts Chrome/Safari out of overlay mode), Firefox equivalents, and a .scroll-x right-edge fade cue. Prior v1.2.18: already-retired support."
-export const BUILD_TIME = "2026-07-26T19:00:00Z";
+const APP_VERSION = "1.2.20";
+export const BUILD_TAG = "[main] v1.2.20 — Planned one-off expenses + the widow's penalty. (1) NEW: cash-flow events — a roof in 10 years, a car every 7, a wedding, a heavy travel decade. Each has a year, an optional repeat interval and an until-year, inflates from today's dollars, and carries a committed/deferrable flag deciding whether guardrails may trim it. Crucially ADDITIVE: unlike a multi-year CSV budget (which replaces the spend rule and silently switches Guyton-Klinger off), the strategy still governs the recurring base. Wired into all three engines. (2) The 'spouse passes early' stress test cut Social Security but left filing status on MFJ, so it missed the widow's penalty entirely — the survivor files Single, the standard deduction roughly halves, brackets narrow and IRMAA tiers halve, on the same RMDs. Now modeled. 17 new tests. Prior v1.2.19: VPW plan-to age + Mac scrollbars."
+export const BUILD_TIME = "2026-07-26T20:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -567,6 +567,9 @@ export const BLANK_PROFILE = {
   housingType: "own",           // "own" | "rent" | "none"
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
   carveouts: [],                // [{id, label, annual, endYear}] Other Expenses (HOA, Insurance, etc.) in today's dollars; endYear = null for indefinite
+  // Planned one-off / periodic costs — see computeCashFlowEvents in engine/expenses.js.
+  // [{id, label, year, amount, recurEveryYears, recurUntilYear, inflate, deferrable}]
+  cashFlowEvents: [],
   spSchedule: null,             // [{year, amount}] explicit per-year core spend from a detailed CSV import; null = use sp + strategy
   spImportMeta: null,           // { mode, fileName, importedAt, total|years, essentialTotal } — display only, for the import summary card
   rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
@@ -1226,8 +1229,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // GK's netNeed income offset — same NET PORTFOLIO NEED quantity initWR
       // was calibrated against: SS + expected rental + other income offset
       // gross spend; housing + carveouts add to it.
+      // Planned one-off / periodic expenses (roof, car, wedding). Additive, so
+      // the distribution strategy still governs the recurring base — unlike a
+      // multi-year CSV, which replaces the spend rule and disables guardrails.
+      const ev = computeCashFlowEvents(p.cashFlowEvents, calYear, p.inf ?? 2.5, CURRENT_YEAR);
+      const eventCost = ev.total;
+
       const gkIncomeOffset = ss + rentalForGK + otherIncTotal;
-      const gkFixedCosts = housingCost + carveoutCost;
+      // Only COMMITTED events are shielded from the guardrails; a deferrable one
+      // (a big travel year) is discretionary and may be trimmed like base spend.
+      const gkFixedCosts = housingCost + carveoutCost + ev.committed;
 
       // ========== WITHDRAWAL STRATEGY ==========
       if (p.spSchedule && p.spSchedule.length) {
@@ -1370,7 +1381,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 :
         (abReliable ? totalRental : 0);
 
-      const need = Math.max(0, sp - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost;
+      const need = Math.max(0, sp - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost + eventCost;
 
       // RMD calculation
       let rmd = 0;
@@ -1775,8 +1786,11 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
     // GK's netNeed income offset — same NET PORTFOLIO NEED quantity initWR
     // was calibrated against.
+    const evDet = computeCashFlowEvents(p.cashFlowEvents, yr, p.inf ?? 2.5, CURRENT_YEAR);
+    const eventCostDet = evDet.total;
+
     const gkIncomeOffset = ss + ab + otherIncTotal;
-    const gkFixedCosts = housingCost + carveoutCost;
+    const gkFixedCosts = housingCost + carveoutCost + evDet.committed;
 
     // Apply withdrawal strategy (deterministic version)
     if (p.spSchedule && p.spSchedule.length) {
@@ -1886,7 +1900,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     }
     lastReturn = ret;
 
-    const need = Math.max(0, sp - ss - ab - otherIncTotal) + housingCost + carveoutCost;
+    const need = Math.max(0, sp - ss - ab - otherIncTotal) + housingCost + carveoutCost + eventCostDet;
 
     // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab) —
     // this path automatically carries LTCG/cost-basis AND the IRMAA 2-year lookback
@@ -6947,8 +6961,22 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
     },
     {
       id: "survivor", emoji: "🕊️", label: "SPOUSE PASSES EARLY",
-      sub: "Loss of one Social Security check (survivor keeps the larger)",
-      run: (N, seed) => runMC({ ...p, ssb: Math.round((p.ssb || 0) * 0.67) }, endAge, N, seed, true),
+      sub: "Survivor keeps the larger SS check AND files Single — the widow's penalty",
+      // The SS haircut alone understated this badly. The survivor files Single
+      // from the following year: the standard deduction roughly halves, the
+      // brackets narrow sharply, and the IRMAA tiers halve too — same RMDs and
+      // same portfolio, materially more tax. That tax cliff, not the lost check,
+      // is what actually blindsides surviving spouses, and it only applies to
+      // couples, so leave a single filer's scenario alone.
+      run: (N, seed) => runMC(
+        {
+          ...p,
+          ssb: Math.round((p.ssb || 0) * 0.67),
+          filingStatus: "single",
+          twoHousehold: false,
+        },
+        endAge, N, seed, true
+      ),
     },
   ], [p, endAge, severity]);
 
@@ -9762,6 +9790,73 @@ function AssumptionsPanel({ values, onChange }) {
         </div>
       </div>
 
+      {/* ── PLANNED ONE-OFF EXPENSES ───────────────────────────────────────
+          Distinct from the carveouts above: those run from TODAY until an end
+          year, so they can't express a cost that lands in one future year. This
+          is the roof-in-10-years / car-every-7 case. Additive on top of the base
+          spend, so the withdrawal strategy still governs the recurring plan. */}
+      <ACard title="Planned One-Off Expenses" accent="#fb923c"
+        desc="Big costs you can see coming — a new roof, a car, a wedding, a heavy travel year. Enter today's price; AiRA inflates it to the year it happens.">
+        {(values.cashFlowEvents || []).length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 70px 70px 78px 28px", gap: 6, marginBottom: 4, fontSize: 9, color: "#475569" }}>
+            <span>What</span><span style={{ textAlign: "right" }}>Cost</span><span style={{ textAlign: "right" }}>Year</span>
+            <span style={{ textAlign: "right" }}>Every</span><span style={{ textAlign: "right" }}>Until</span><span />
+          </div>
+        )}
+        {(values.cashFlowEvents || []).map((ev, idx) => {
+          const upd = (patch) => {
+            const next = [...(values.cashFlowEvents || [])];
+            next[idx] = { ...ev, ...patch };
+            onChange("cashFlowEvents", next);
+          };
+          const cell = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" };
+          const num = { ...cell, textAlign: "right" };
+          return (
+            <div key={ev.id} style={{ marginBottom: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 70px 70px 78px 28px", gap: 6, alignItems: "center" }}>
+                <input type="text" value={ev.label} placeholder="New roof"
+                  onChange={(e) => upd({ label: e.target.value })} style={cell} />
+                <input type="number" value={ev.amount} min={0} step={1000} placeholder="$"
+                  onChange={(e) => upd({ amount: Number(e.target.value) })} style={num} />
+                <input type="number" value={ev.year} min={new Date().getFullYear()} max={2090} step={1}
+                  onChange={(e) => upd({ year: Number(e.target.value) })} style={num} />
+                {/* Blank = one-time. */}
+                <input type="number" value={ev.recurEveryYears || ""} min={0} max={50} step={1} placeholder="—"
+                  title="Repeat every N years. Leave blank for a one-time cost."
+                  onChange={(e) => upd({ recurEveryYears: Number(e.target.value) || 0 })} style={num} />
+                <input type="number" value={ev.recurUntilYear || ""} min={new Date().getFullYear()} max={2090} step={1} placeholder="—"
+                  title="Stop repeating after this year. Leave blank to repeat for the whole plan."
+                  disabled={!ev.recurEveryYears}
+                  onChange={(e) => upd({ recurUntilYear: Number(e.target.value) || null })}
+                  style={{ ...num, opacity: ev.recurEveryYears ? 1 : 0.35 }} />
+                <button
+                  onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter((_, i) => i !== idx))}
+                  style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 13, padding: "2px 6px" }}
+                >×</button>
+              </div>
+              {/* Committed vs deferrable decides whether the guardrails may trim
+                  this in a bad market — the same idea as Must Spend vs Like to
+                  Spend for recurring costs. A roof can't wait; a trip can. */}
+              <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: 10, color: "#94a3b8", cursor: "pointer" }}>
+                <input type="checkbox" checked={!!ev.deferrable} onChange={(e) => upd({ deferrable: e.target.checked })} />
+                I could delay this in a bad market <span style={{ color: "#475569" }}>(guardrails may trim it)</span>
+              </label>
+            </div>
+          );
+        })}
+        <button
+          onClick={() => onChange("cashFlowEvents", [
+            ...(values.cashFlowEvents || []),
+            { id: Date.now().toString(), label: "", amount: 0, year: new Date().getFullYear() + 5, recurEveryYears: 0, recurUntilYear: null, deferrable: false },
+          ])}
+          style={{ fontSize: 11, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.25)", color: "#fb923c", borderRadius: 6, padding: "5px 12px", cursor: "pointer", marginTop: 4 }}
+        >+ Add planned expense</button>
+        <div style={{ fontSize: 10, color: "#475569", marginTop: 8, lineHeight: 1.5 }}>
+          Leave <strong style={{ color: "#64748b" }}>Every</strong> blank for a one-time cost. Set it to 7 for a car
+          every seven years, and use <strong style={{ color: "#64748b" }}>Until</strong> to stop it (e.g. when you'd stop driving).
+        </div>
+      </ACard>
+
       {/* ROTH CONVERSION CARD */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
@@ -10991,6 +11086,8 @@ export default function AiRAForecaster() {
       housingType: assumptions.housingType || "own",
       annualRent: assumptions.annualRent || 0,
       carveouts: assumptions.carveouts || [],
+      // MUST be forwarded — the engines read `params`, not `assumptions`.
+      cashFlowEvents: assumptions.cashFlowEvents || [],
       spSchedule: (assumptions.spSchedule && assumptions.spSchedule.length) ? assumptions.spSchedule : null,
       rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
       taxFunding: assumptions.taxFunding || "from_taxable",
