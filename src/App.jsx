@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.10";
-export const BUILD_TAG = "[main] v1.2.10 — Profile: 'Pensions & Other Income' moved up directly under Annual Contributions (after Employer Contribution) and made a prominent accent card with a plain-language hint (income streams that reduce your withdrawals vs. a lump-sum pension = a pre-tax account). Prior v1.2.9: pension fixed-dollar growth mode + 💵 Profile icon + brighter income amount.";
-export const BUILD_TIME = "2026-07-25T18:00:00Z";
+const APP_VERSION = "1.2.11";
+export const BUILD_TAG = "[main] v1.2.11 — Profile income UX: the pension growth control is now a clear two-option SEGMENTED toggle (% /yr | $ /yr, both visible) instead of a hard-to-discover single button; Annual Contributions and Pensions & Other Income are now matching uniform cards with the savings total grouped inside Contributions (logical flow) via a shared sectionCard style. Prior v1.2.10: Pensions moved up + prominent.";
+export const BUILD_TIME = "2026-07-25T20:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -9758,14 +9758,19 @@ function ContribPanel({ values, onChange }) {
   const hsaAnnual = hsaMonthly * 12;
   const totalSavings = annual401k + hsaAnnual + employerContrib;
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+  // Shared "profile section card" chrome — one consistent look so sections read
+  // as a uniform, logically-ordered stack instead of scattered mismatched blocks.
+  const sectionCard = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 16 };
+  const sectionTitle = { fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 5, display: "flex", alignItems: "center", gap: 8 };
+  const sectionDesc = { fontSize: 11.5, color: "#94a3b8", marginBottom: 14, lineHeight: 1.55 };
 
-      {/* ── Contributions ── */}
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
-          ANNUAL CONTRIBUTIONS — Still working? Enter your annual retirement account contributions. If already retired, leave at 0.
-        </div>
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* ── Income card 1: Annual Contributions (inputs + savings total together) ── */}
+      <div style={sectionCard}>
+        <div style={sectionTitle}>💰 Annual Contributions</div>
+        <div style={sectionDesc}>Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.</div>
         <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
         </WFieldRow>
@@ -9775,14 +9780,17 @@ function ContribPanel({ values, onChange }) {
         <WFieldRow label="Employer Contribution ($/yr)" helper="Fixed annual employer money in dollars — 401(k) match + profit sharing. Compounds in the Monte Carlo accumulation until your retirement age.">
           <ANumInput value={employerContrib} onSet={(v) => onChange("employerContrib", v)} min={0} max={100_000} step={500} suffix="/yr" />
         </WFieldRow>
+        {/* Total belongs WITH the contributions that make it up (logical flow). */}
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <span style={{ fontSize: 12, color: "#94a3b8" }}>💰 Total annual savings <span style={{ color: "#475569" }}>(incl. employer + HSA)</span></span>
+          <span style={{ fontSize: 22, fontWeight: 800, color: "#14b8a6", fontFamily: "'DM Mono',monospace" }}>{fmtK(totalSavings)}<span style={{ fontSize: 12, fontWeight: 400, color: "#64748b" }}>/yr</span></span>
+        </div>
       </div>
 
-      {/* ── Pensions & other income (moved up, prominent) ── */}
-      <div style={{ background: "rgba(14,165,233,0.05)", border: "1px solid rgba(14,165,233,0.28)", borderRadius: 10, padding: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#38bdf8", marginBottom: 5, display: "flex", alignItems: "center", gap: 8 }}>
-          🏦 Pensions &amp; Other Income
-        </div>
-        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 13, lineHeight: 1.55 }}>
+      {/* ── Income card 2: Pensions & Other Income (uniform card, same chrome) ── */}
+      <div style={sectionCard}>
+        <div style={sectionTitle}>🏦 Pensions &amp; Other Income</div>
+        <div style={sectionDesc}>
           Income streams that <strong style={{ color: "#cbd5e1" }}>reduce what you withdraw</strong> — pension, part-time work, annuity, royalties. These are paid <em>to</em> you every year, not balances you draw down. A monthly pension goes here; a <strong style={{ color: "#cbd5e1" }}>lump-sum / cash-balance</strong> pension you'll roll over is a pre-tax account instead.
         </div>
         {(values.otherIncomes || []).map((inc, idx) => (
@@ -9800,32 +9808,6 @@ function ContribPanel({ values, onChange }) {
           onMouseEnter={e => e.currentTarget.style.background = "rgba(14,165,233,0.18)"}
           onMouseLeave={e => e.currentTarget.style.background = "rgba(14,165,233,0.1)"}
         >+ Add pension / income source</button>
-      </div>
-
-      {/* ── Summary grid ── */}
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-        {[
-          { label: "401(k) Contribution", val: annual401k, color: "#0ea5e9" },
-          { label: "Employer Contribution", val: employerContrib, color: "#34d399" },
-          { label: "HSA Contribution", val: hsaAnnual, color: "#a78bfa" },
-        ].map((m) => (
-          <div key={m.label}>
-            <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>{m.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: m.color, fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>
-              {fmtK(m.val)}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Total savings banner ── */}
-      <div style={{ background: "linear-gradient(135deg, #0d948818, #14b8a618)", border: "1px solid #0d948844", borderRadius: 10, padding: 18, textAlign: "center" }}>
-        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>💰 Total Annual Savings Rate</div>
-        <div style={{ fontSize: 36, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1 }}>
-          {fmtK(totalSavings)}
-          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>/yr</span>
-        </div>
-        <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Including employer contribution and HSA</div>
       </div>
 
     </div>
@@ -9920,17 +9902,24 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
               style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
           </div>
           <div>
-            <div style={{ fontSize: 10, color: "#475569", marginBottom: 2, display: "flex", alignItems: "center", gap: 4 }}>
-              <span>Growth</span>
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => upd({ growthMode: inc.growthMode === "fixed" ? "pct" : "fixed" })}
-                title="Switch between a percentage increase (compounds) and a fixed dollar increase each year — many pensions raise by a set $ amount."
-                style={{ background: "rgba(14,165,233,0.12)", border: "1px solid rgba(14,165,233,0.35)", color: "#38bdf8", borderRadius: 4, fontSize: 9, fontWeight: 700, padding: "1px 5px", cursor: "pointer", lineHeight: 1.5 }}
-              >
-                {inc.growthMode === "fixed" ? "$/yr" : "%"}
-              </button>
+            <div style={{ fontSize: 10, color: "#475569", marginBottom: 3 }}>Grows by</div>
+            {/* Segmented control — both units visible so it's obvious you can switch. */}
+            <div style={{ display: "flex", border: "1px solid #1e3a5f", borderRadius: 5, overflow: "hidden", marginBottom: 4 }}>
+              {[["pct", "% /yr"], ["fixed", "$ /yr"]].map(([m, lbl]) => {
+                const on = (inc.growthMode || "pct") === m;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => upd({ growthMode: m })}
+                    title={m === "pct" ? "Percentage increase each year (compounds)" : "Fixed dollar increase each year — many pensions raise by a set $ amount"}
+                    style={{ flex: 1, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, padding: "3px 0", lineHeight: 1, background: on ? "#0ea5e9" : "transparent", color: on ? "#fff" : "#64748b" }}
+                  >
+                    {lbl}
+                  </button>
+                );
+              })}
             </div>
             {inc.growthMode === "fixed"
               ? <ANumInput value={inc.growthAmount || 0} onSet={(v) => upd({ growthAmount: v })} min={0} max={50000} step={100} suffix="/yr" />
