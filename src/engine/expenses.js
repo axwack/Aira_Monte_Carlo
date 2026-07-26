@@ -214,3 +214,57 @@ export function computeCashFlowEvents(events, calYear, infPct = 2.5, baseYear = 
 
   return { total, committed, deferrable, inflow, inflowTaxable, byBucket, hits };
 }
+
+// ─── Blanchett spending smile ────────────────────────────────────────────────
+//
+// Real retirement spending does not hold flat at inflation. David Blanchett's
+// work ("Exploring the Retirement Consumption Puzzle", Journal of Financial
+// Planning, 2014) found it declines roughly 1%/yr in REAL terms through most of
+// retirement, with the decline easing and then reversing late in life as
+// healthcare and care costs take over. Plotted, that is a shallow U — the
+// "smile": go-go years, slow-go years, no-go years.
+//
+// Modeled as an annual real rate of change rather than fixed age bands. Bands
+// (e.g. "115% until 74, then 85%") imply a 26% spending cliff on a single
+// birthday, which no household experiences and which makes the year-by-year
+// table look broken. A rate compounds smoothly and is what the underlying
+// research actually measures.
+//
+// The factor is relative to spending at RETIREMENT (factor = 1.0 in year one),
+// so a user entering "$80,000/yr" is stating what they intend to spend when
+// they stop working — the intuitive reading — rather than a lifetime average.
+
+/** Real change in spending per year, by age band. Negative = declining. */
+const SMILE_RATE_GO_GO   = -0.010; // retirement → 80: the ~1%/yr Blanchett decline
+const SMILE_RATE_SLOW_GO = -0.003; // 80 → 85: decline flattens out
+const SMILE_RATE_NO_GO   =  0.012; // 85+: healthcare and care push spending back up
+const SMILE_AGE_SLOW_GO  = 80;
+const SMILE_AGE_NO_GO    = 85;
+// Sanity band. Keeps a very long retirement from drifting somewhere absurd, and
+// bounds the effect for anyone retiring unusually early.
+const SMILE_MIN = 0.75;
+const SMILE_MAX = 1.10;
+
+/**
+ * Real spending multiplier for a given age, relative to spending at retirement.
+ *
+ * @param {number} age        age in the year being simulated
+ * @param {number} retireAge  age spending starts (factor is 1.0 here)
+ * @param {boolean} enabled   profile's `smile` toggle; false ⇒ flat spending
+ * @returns {number} multiplier to apply to that year's spend
+ */
+export function spendingSmileFactor(age, retireAge, enabled = true) {
+  if (!enabled) return 1;
+  const a = Number(age), r = Number(retireAge);
+  if (!Number.isFinite(a) || !Number.isFinite(r) || a <= r) return 1;
+
+  let f = 1;
+  for (let y = r; y < a; y++) {
+    // The rate that applies for the year running from age y to y+1.
+    const rate = y >= SMILE_AGE_NO_GO   ? SMILE_RATE_NO_GO
+               : y >= SMILE_AGE_SLOW_GO ? SMILE_RATE_SLOW_GO
+               : SMILE_RATE_GO_GO;
+    f *= (1 + rate);
+  }
+  return Math.min(SMILE_MAX, Math.max(SMILE_MIN, f));
+}
