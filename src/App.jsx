@@ -175,9 +175,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.24";
-export const BUILD_TAG = "[main] v1.2.24 — HEALTHCARE SHOCKS NOW RUN, and the equity glidepath switches at YOUR retirement age. (1) Healthcare shocks were the second inert feature: four profile fields, four Advanced inputs, params plumbing and UI copy claiming 'shocks hit 3.5% of years after age 72', with zero engine consumption. Now implemented — stochastic per-path draw in the Monte Carlo, expected-value (prob x mean) in the deterministic schedule so the two agree in expectation, and costs INFLATE from today's dollars to the year they occur (a 25-year horizon nearly doubles the nominal figure). Treated as committed, so guardrails cannot trim a medical bill. (2) portReturn switched allocation at a hardcoded age 62 rather than retireAge, so early retirees kept a 91% accumulation equity weight years into drawdown and late retirees were derisked years before they stopped working; the waterfall hardcoded 62 in two more places. 21 new tests. Prior v1.2.23: spending smile."
-export const BUILD_TIME = "2026-07-27T01:30:00Z";
+const APP_VERSION = "1.2.25";
+export const BUILD_TAG = "[main] v1.2.25 — Input fix (user-reported data corruption): numeric fields did not select their contents on focus, so clicking a field pre-filled with 0 and typing 40000 left the original zero on the end — the plan silently used $400,000. Every Profile field ships with a default, so this hit any value the caret landed in front of and produced a 10x error with no visible sign. Typing now replaces, via a shared selectAllOnFocus applied to ANumInput and all 18 raw number inputs. Deferred one frame because focusing swaps formatted text for raw. Prior v1.2.24: healthcare shocks + equity glidepath switch age."
+export const BUILD_TIME = "2026-07-27T02:15:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -4629,7 +4629,8 @@ const modeDescs = {
                       type="number" value={cySGOV}
                       onChange={e => setCySGOVOverride(Number(e.target.value) || 0)}
                       min={0} step={1000} style={{ ...inputStyle, borderColor: "#f59e0b" }}
-                    />
+                onFocus={selectAllOnFocus}
+              />
                   </div>
                   <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
                     {cySGOVOverride != null
@@ -5691,7 +5692,9 @@ function SourcingGuardrails({ p, onAssumptionChange, summary }) {
       <label style={lbl} title="AiRA will not draw your Roth below this balance — protects tax-free funds during market downturns.">
         Keep Roth above $
         <input type="number" value={p.rothEmergencyReserve ?? 0} onChange={(e) => set("rothEmergencyReserve", Number(e.target.value) || 0)} min={0} max={2_000_000} step={10_000}
-          style={{ ...ctl, width: 110, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+          style={{ ...ctl, width: 110, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
+                onFocus={selectAllOnFocus}
+              />
       </label>
       <label style={lbl} title="The 'tax torpedo': as income rises, up to 85% of your Social Security becomes taxable. This flags the years where that happens (thresholds frozen since the 1980s).">
         <input type="checkbox" checked={p.ssTorpedoGuard ?? false} onChange={(e) => set("ssTorpedoGuard", e.target.checked)} style={{ cursor: "pointer", width: 15, height: 15 }} />
@@ -7518,7 +7521,9 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         {showAddCheckpoint && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
             <input type="date" value={newCpDate} onChange={e => setNewCpDate(e.target.value)} style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
-            <input type="number" placeholder="Portfolio value ($)" value={newCpValue} onChange={e => setNewCpValue(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
+            <input type="number" placeholder="Portfolio value ($)" value={newCpValue} onChange={e => setNewCpValue(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }}
+                onFocus={selectAllOnFocus}
+              />
             <input type="text" placeholder="Note (optional)" value={newCpNote} onChange={e => setNewCpNote(e.target.value)} style={{ width: 240, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
             <button onClick={handleSaveCheckpoint} style={{ background: "#0d9488", border: "none", borderRadius: 6, padding: "6px 16px", color: "white", cursor: "pointer" }}>
               {editingId ? "Update Checkpoint" : "Save Checkpoint"}
@@ -9270,7 +9275,8 @@ function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
             type="number" min={0} max={100} value={s.pct}
             onChange={e => update(i, { pct: clampPct(e.target.value) })}
             style={{ width: 52, fontSize: 11, color: "#e2e8f0", background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "2px 6px", textAlign: "right", outline: "none", fontFamily: "'DM Mono',monospace" }}
-          />
+                onFocus={selectAllOnFocus}
+              />
           <span style={{ fontSize: 10, color: "#64748b" }}>%</span>
           <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: "'DM Mono',monospace", minWidth: 78, textAlign: "right" }}>{fmtDollar(bal * (Number(s.pct) || 0) / 100)}</span>
           <button onClick={() => onChangeSplits(splits.filter((_, j) => j !== i))} title="Remove this slice"
@@ -9545,6 +9551,25 @@ function ARow({ label, desc, children }) {
   );
 }
 
+/**
+ * Select a numeric field's contents when it gains focus, so typing REPLACES the
+ * value instead of appending to it.
+ *
+ * Reported by a user: a field pre-filled with 0, clicked at the left edge, then
+ * typing "40000" left the original zero on the end — the plan silently used
+ * $400,000. Every Profile field ships with a default (often 0), so this hit any
+ * value the caret happened to land in front of, and produced a 10x error with
+ * no visible sign anything was wrong.
+ *
+ * Deferred a frame because focusing swaps the displayed text (formatted
+ * "40,000" -> raw "40000"); selecting synchronously would be undone by that
+ * re-render.
+ */
+function selectAllOnFocus(e) {
+  const el = e.target;
+  requestAnimationFrame(() => { try { el.select(); } catch { /* detached */ } });
+}
+
 function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   const [isFocused, setIsFocused] = useState(false);
   const [localValue, setLocalValue] = useState("");
@@ -9594,7 +9619,7 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
         inputMode={allowDecimals ? "decimal" : "numeric"}
         value={displayValue}
         onChange={handleChange}
-        onFocus={() => setIsFocused(true)}
+        onFocus={(e) => { setIsFocused(true); selectAllOnFocus(e); }}
         onBlur={handleBlur}
         style={{
           width: "120px",
@@ -9826,6 +9851,7 @@ function AssumptionsPanel({ values, onChange }) {
                   onChange("carveouts", updated);
                 }}
                 style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
+                onFocus={selectAllOnFocus}
               />
               <input
                 type="number"
@@ -9840,6 +9866,7 @@ function AssumptionsPanel({ values, onChange }) {
                   onChange("carveouts", updated);
                 }}
                 style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
+                onFocus={selectAllOnFocus}
               />
               <button
                 onClick={() => onChange("carveouts", (values.carveouts || []).filter((_, i) => i !== idx))}
@@ -9882,18 +9909,26 @@ function AssumptionsPanel({ values, onChange }) {
                 <input type="text" value={ev.label} placeholder="New roof"
                   onChange={(e) => upd({ label: e.target.value })} style={cell} />
                 <input type="number" value={ev.amount} min={0} step={1000} placeholder="$"
-                  onChange={(e) => upd({ amount: Number(e.target.value) })} style={num} />
+                  onChange={(e) => upd({ amount: Number(e.target.value) })} style={num}
+                onFocus={selectAllOnFocus}
+              />
                 <input type="number" value={ev.year} min={new Date().getFullYear()} max={2090} step={1}
-                  onChange={(e) => upd({ year: Number(e.target.value) })} style={num} />
+                  onChange={(e) => upd({ year: Number(e.target.value) })} style={num}
+                onFocus={selectAllOnFocus}
+              />
                 {/* Blank = one-time. */}
                 <input type="number" value={ev.recurEveryYears || ""} min={0} max={50} step={1} placeholder="—"
                   title="Repeat every N years. Leave blank for a one-time cost."
-                  onChange={(e) => upd({ recurEveryYears: Number(e.target.value) || 0 })} style={num} />
+                  onChange={(e) => upd({ recurEveryYears: Number(e.target.value) || 0 })} style={num}
+                onFocus={selectAllOnFocus}
+              />
                 <input type="number" value={ev.recurUntilYear || ""} min={new Date().getFullYear()} max={2090} step={1} placeholder="—"
                   title="Stop repeating after this year. Leave blank to repeat for the whole plan."
                   disabled={!ev.recurEveryYears}
                   onChange={(e) => upd({ recurUntilYear: Number(e.target.value) || null })}
-                  style={{ ...num, opacity: ev.recurEveryYears ? 1 : 0.35 }} />
+                  style={{ ...num, opacity: ev.recurEveryYears ? 1 : 0.35 }}
+                onFocus={selectAllOnFocus}
+              />
                 <button
                   onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter((_, i) => i !== idx))}
                   style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 13, padding: "2px 6px" }}
@@ -9947,7 +9982,8 @@ function AssumptionsPanel({ values, onChange }) {
               placeholder="e.g. 2031"
               min={2026} max={2060}
               style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
-            />
+                onFocus={selectAllOnFocus}
+              />
           </ARow>
           <ARow label="CSS Profile cap through year" desc="Cap conversions at 22% bracket through this year (CSS Profile period). Leave blank to skip.">
             <input
@@ -9957,7 +9993,8 @@ function AssumptionsPanel({ values, onChange }) {
               placeholder="e.g. 2033"
               min={2026} max={2060}
               style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
-            />
+                onFocus={selectAllOnFocus}
+              />
           </ARow>
         </div>
         <ARow label="Tax funding source" desc="How conversion taxes are paid. 'Outside cash' is most favorable (full conversion grows tax-free). 'From taxable' debits your taxable/HSA/cash buckets. 'From conversion' shrinks the Roth transfer by the tax owed.">
@@ -10316,10 +10353,14 @@ function LumpPensionFields({ ev, upd }) {
           onChange={(e) => upd({ label: e.target.value })} style={cell} /></label>
       <label><span style={lbl}>Amount</span>
         <input type="number" value={ev.amount || 0} min={0} step={1000}
-          onChange={(e) => upd({ amount: Number(e.target.value) })} style={{ ...cell, textAlign: "right" }} /></label>
+          onChange={(e) => upd({ amount: Number(e.target.value) })} style={{ ...cell, textAlign: "right" }}
+                onFocus={selectAllOnFocus}
+              /></label>
       <label><span style={lbl}>Year</span>
         <input type="number" value={ev.year} min={new Date().getFullYear()} max={2090}
-          onChange={(e) => upd({ year: Number(e.target.value) })} style={{ ...cell, textAlign: "right" }} /></label>
+          onChange={(e) => upd({ year: Number(e.target.value) })} style={{ ...cell, textAlign: "right" }}
+                onFocus={selectAllOnFocus}
+              /></label>
       <label><span style={lbl}>Deposit into</span>
         <select value={ev.bucket || "cash"} onChange={(e) => upd({ bucket: e.target.value })} style={{ ...cell, cursor: "pointer" }}>
           <option value="pretax">Pre-tax (IRA rollover)</option>
@@ -10414,14 +10455,18 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
             <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>Start yr</div>
             <input type="number" value={inc.startYear || ""} min={2025} max={2100}
               onChange={(e) => upd({ startYear: e.target.value ? Number(e.target.value) : null })}
-              style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+              style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
+                onFocus={selectAllOnFocus}
+              />
           </div>
           <div>
             <div style={{ fontSize: 10, color: "#475569", marginBottom: 2 }}>End yr</div>
             <input type="number" value={inc.endYear || ""} min={2025} max={2100}
               onChange={(e) => upd({ endYear: e.target.value ? Number(e.target.value) : null })}
               placeholder="∞"
-              style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+              style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
+                onFocus={selectAllOnFocus}
+              />
           </div>
           <div>
             <div style={{ fontSize: 10, color: "#475569", marginBottom: 3 }}>Grows by</div>
@@ -10452,7 +10497,9 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
             <input type="number" value={inc.growthCapYears || ""} min={1} max={50}
               onChange={(e) => upd({ growthCapYears: e.target.value ? Number(e.target.value) : null })}
               placeholder="∞"
-              style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }} />
+              style={{ width: "100%", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 11, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
+                onFocus={selectAllOnFocus}
+              />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, paddingTop: 14 }}>
             <Toggle val={inc.taxable} onChange={(v) => upd({ taxable: v })} accent="#0ea5e9" />
@@ -10761,7 +10808,8 @@ function RetirementPanel({ values, onChange }) {
           <input type="number" value={values.abEndYear || ''} min={2026} max={2100} step={1} onChange={(e) => onChange("abEndYear", Number(e.target.value))} style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0",
             borderRadius:6, padding:"6px 8px", fontSize:12, fontFamily:"'DM Mono',monospace",
             width:80, textAlign:"right" }}
-            /> year
+                onFocus={selectAllOnFocus}
+              /> year
         </WFieldRow>
       </div>
 
