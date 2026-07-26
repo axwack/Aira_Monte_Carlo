@@ -76,6 +76,23 @@ export const ABOUT_FEATURES = [
     body:  "Your spending adapts based on portfolio performance. If the withdrawal rate climbs above 120% of the initial rate, spending cuts 10% (never below the floor). If it falls below 80%, spending rises 10% (never above the ceiling). Floor = 65% and ceiling = 135% of your target spending. Protects against sequence-of-returns risk while letting you spend more in good markets.",
   },
 
+  // ── Your Income ───────────────────────────────────────────
+  {
+    id:    "pension-types",
+    group: "Your Income",
+    icon:  "🏦",
+    title: "Pensions — pick the right type",
+    body:  "AiRA models three kinds of pension, and the type matters because they behave completely differently in the engine. MONTHLY / ANNUAL is a recurring stream: it reduces what you withdraw each year, and can grow either by a percentage (a COLA) or by a flat dollar amount per year. LUMP SUM is a single payment at a chosen age — it is deposited into an account and compounds from that year forward. CASH BALANCE is an account balance you will roll over, so it defaults to your pre-tax bucket, where it later drives RMDs. Do NOT enter a lump-sum or cash-balance pension as an ordinary account balance: that puts the money in your plan starting TODAY rather than in the year you actually receive it, overstating years of compounding. Use the type selector on each pension and AiRA routes it correctly.",
+  },
+
+  {
+    id:    "pension-guardrails",
+    group: "Your Income",
+    icon:  "🛡️",
+    title: "How pensions interact with guardrails",
+    body:  "A pension is stable income, so it lowers the share of spending that must come from your portfolio. AiRA subtracts it from your target spending before measuring your withdrawal rate, which means a strong pension supports a higher rate on what is left — while the Guyton-Klinger guardrails still protect you in downturns. Critically, that target is RECALCULATED each year against your current income, so a pension rising on schedule is not mistaken for investment outperformance. An earlier version compared against a target frozen at retirement, which made a growing pension trigger repeated automatic spending increases; fixed in v1.2.21.",
+  },
+
   // ── Your Properties ───────────────────────────────────────
   {
     id:    "property-income",

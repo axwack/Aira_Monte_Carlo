@@ -143,6 +143,13 @@ export function computeOtherIncome(otherIncomes, calYear) {
  *   recurUntilYear  last year a repeat may occur; null = no end
  *   inflate         true (default) = `amount` is in TODAY's dollars and is
  *                   inflated to the occurrence year; false = already nominal
+ *   direction       "out" (default) = an expense; "in" = money arriving
+ *   bucket          inflows only — which account receives it: "pretax" |
+ *                   "roth" | "taxable" | "cash". Deposited there rather than
+ *                   offsetting spending, so a surplus compounds instead of
+ *                   being thrown away.
+ *   taxable         inflows only — ordinary income in the year received?
+ *                   A pension lump sum taken as cash is; a rollover is not.
  *   deferrable      true = discretionary, guardrails may cut it (a big travel
  *                   year); false (default) = committed, they may not (a roof).
  *                   Mirrors the Must Spend / Like to Spend split the CSV
@@ -155,9 +162,10 @@ export function computeOtherIncome(otherIncomes, calYear) {
  * @returns {{ total:number, committed:number, deferrable:number, hits:Array }}
  */
 export function computeCashFlowEvents(events, calYear, infPct = 2.5, baseYear = new Date().getFullYear()) {
-  let total = 0, committed = 0, deferrable = 0;
+  let total = 0, committed = 0, deferrable = 0, inflow = 0, inflowTaxable = 0;
+  const byBucket = {};
   const hits = [];
-  if (!events?.length) return { total, committed, deferrable, hits };
+  if (!events?.length) return { total, committed, deferrable, inflow, inflowTaxable, byBucket, hits };
 
   for (const e of events) {
     const start = Number(e.year);
@@ -182,10 +190,27 @@ export function computeCashFlowEvents(events, calYear, infPct = 2.5, baseYear = 
     const yrs = Math.max(0, calYear - baseYear);
     const amt = inflate ? amount * Math.pow(1 + (infPct || 0) / 100, yrs) : amount;
 
+    if (e.direction === "in") {
+      // INFLOW: money arriving (lump-sum pension, cash-balance rollover,
+      // inheritance, home sale). It must be DEPOSITED into an account bucket,
+      // not netted against this year's spending — `need` is
+      // Math.max(0, sp - income), so anything beyond one year's need would be
+      // silently discarded. A $500k inheritance against an $80k gap used to
+      // lose $420k that way.
+      inflow += amt;
+      const bucket = e.bucket || "taxable";
+      byBucket[bucket] = (byBucket[bucket] || 0) + amt;
+      // Taxable inflows are ordinary income in the year received (a pension
+      // lump sum taken as cash). Rollovers and inherited basis are not.
+      if (e.taxable) inflowTaxable += amt;
+      hits.push({ id: e.id, label: e.label || "Income", amount: Math.round(amt), direction: "in", bucket });
+      continue;
+    }
+
     total += amt;
     if (e.deferrable) deferrable += amt; else committed += amt;
-    hits.push({ id: e.id, label: e.label || "Planned expense", amount: Math.round(amt) });
+    hits.push({ id: e.id, label: e.label || "Planned expense", amount: Math.round(amt), direction: "out" });
   }
 
-  return { total, committed, deferrable, hits };
+  return { total, committed, deferrable, inflow, inflowTaxable, byBucket, hits };
 }

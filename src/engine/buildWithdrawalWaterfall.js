@@ -540,7 +540,7 @@ export function buildWithdrawalWaterfall(params = {}) {
 
       // Other income streams (pensions, part-time work, etc.) — offset "need"
       // and, if taxable, stack as ordinary income alongside RMDs/pretax draws.
-      const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(otherIncomes, yr);
+      let { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(otherIncomes, yr);
 
       // Housing cost: mortgage cash cost (P&I + extra, incl. the partial payoff
       // year) while the loan is active, or inflation-adjusted rent — same model
@@ -557,6 +557,29 @@ export function buildWithdrawalWaterfall(params = {}) {
       // so the guardrails keep governing the recurring plan. See
       // computeCashFlowEvents.
       const ev = computeCashFlowEvents(cashFlowEvents, yr, inf, BASE_YEAR);
+
+      // INFLOWS (lump-sum pension, cash-balance rollover, inheritance, home
+      // sale) are DEPOSITED into their destination bucket before this year's
+      // draws, so the money is available now and compounds from here. Netting
+      // them against spending instead would discard everything beyond one
+      // year's need — see computeCashFlowEvents.
+      if (ev.inflow > 0) {
+        pretax  += ev.byBucket.pretax  || 0;
+        roth    += ev.byBucket.roth    || 0;
+        cash    += ev.byBucket.cash    || 0;
+        const taxableIn = ev.byBucket.taxable || 0;
+        taxable += taxableIn;
+        // Already-taxed money arrives as basis; only later growth is gain.
+        // (An inherited brokerage account gets a stepped-up basis, so the same
+        // rule holds there.)
+        taxableBasis += taxableIn;
+        // A taxable inflow is ordinary income in the year received, so it must
+        // reach the tax calc — but deliberately NOT otherIncTotal, which offsets
+        // spending. Offsetting is what discards the surplus; this money was
+        // already deposited above.
+        otherIncTaxable += ev.inflowTaxable;
+      }
+
       const carveoutCost = carveouts.reduce((sum, c) => {
         return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * iF) : 0);
       }, 0);
@@ -816,6 +839,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         housingCost: Math.round(housingCost),
         carveoutCost: Math.round(carveoutCost),
         eventCost: Math.round(ev.total),
+        eventInflow: Math.round(ev.inflow),
         eventLabels: ev.hits.map(h => h.label),
         otherIncome: Math.round(otherIncTotal),
         needFromPort: Math.round(baseNeed),

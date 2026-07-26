@@ -167,3 +167,111 @@ describe("buildWithdrawalWaterfall — events reach the plan", () => {
     expect(sum(every7)).toBeGreaterThan(sum(once));
   });
 });
+
+/**
+ * INFLOWS — lump-sum pension, cash-balance rollover, inheritance, home sale.
+ *
+ * These must be DEPOSITED into an account, not netted against spending. Netting
+ * is what the old `otherIncomes` workaround did, and because need is computed as
+ * Math.max(0, sp - income), a $500k inflow against an $80k gap silently lost
+ * $420k. Boldin's "Deposit into" field models the same idea.
+ */
+describe("computeCashFlowEvents — inflows", () => {
+  test("an inflow is reported separately from expenses, not as a cost", () => {
+    const r = computeCashFlowEvents(
+      [{ id: "i", label: "Inheritance", year: 2032, amount: 500_000, direction: "in", bucket: "taxable", inflate: false }],
+      2032, 2.5, BASE
+    );
+    expect(r.inflow).toBe(500_000);
+    expect(r.total).toBe(0);         // not an expense
+    expect(r.committed).toBe(0);
+  });
+
+  test("routes to the named bucket", () => {
+    const r = computeCashFlowEvents(
+      [{ id: "cb", label: "Cash balance", year: 2032, amount: 400_000, direction: "in", bucket: "pretax", inflate: false }],
+      2032, 2.5, BASE
+    );
+    expect(r.byBucket.pretax).toBe(400_000);
+    expect(r.byBucket.taxable).toBeUndefined();
+  });
+
+  test("defaults to the taxable bucket when none is given", () => {
+    const r = computeCashFlowEvents(
+      [{ id: "x", year: 2032, amount: 1_000, direction: "in", inflate: false }], 2032, 2.5, BASE
+    );
+    expect(r.byBucket.taxable).toBe(1_000);
+  });
+
+  test("only taxable inflows count as ordinary income", () => {
+    const rollover = computeCashFlowEvents(
+      [{ id: "r", year: 2032, amount: 400_000, direction: "in", bucket: "pretax", taxable: false, inflate: false }], 2032, 2.5, BASE);
+    const cashOut = computeCashFlowEvents(
+      [{ id: "c", year: 2032, amount: 400_000, direction: "in", bucket: "cash", taxable: true, inflate: false }], 2032, 2.5, BASE);
+    expect(rollover.inflowTaxable).toBe(0);
+    expect(cashOut.inflowTaxable).toBe(400_000);
+  });
+
+  test("inflows and outflows in the same year stay separate", () => {
+    const r = computeCashFlowEvents([
+      { id: "a", year: 2032, amount: 500_000, direction: "in", bucket: "taxable", inflate: false },
+      { id: "b", year: 2032, amount: 60_000, inflate: false },
+    ], 2032, 2.5, BASE);
+    expect(r.inflow).toBe(500_000);
+    expect(r.total).toBe(60_000);
+  });
+
+  test("inflows respect recurrence and timing like any other event", () => {
+    const e = [{ id: "s", year: 2030, amount: 10_000, direction: "in", recurEveryYears: 5, recurUntilYear: 2040, inflate: false }];
+    expect(computeCashFlowEvents(e, 2029, 2.5, BASE).inflow).toBe(0);
+    expect(computeCashFlowEvents(e, 2035, 2.5, BASE).inflow).toBe(10_000);
+    expect(computeCashFlowEvents(e, 2045, 2.5, BASE).inflow).toBe(0);
+  });
+});
+
+describe("buildWithdrawalWaterfall — inflows are deposited and compound", () => {
+  const P = {
+    currentAge: 65, retireAge: 65, endAge: 90,
+    sp: 80_000, ssAge: 67, ssb: 36_000, inf: 2.5,
+    filingStatus: "mfj", stateOfResidence: "NJ", gr: 0.05,
+    accounts: [
+      { id: "1", category: "pretax", name: "IRA",  balance: 800_000 },
+      { id: "2", category: "cash",   name: "Cash", balance: 100_000 },
+    ],
+  };
+  const yr = new Date().getFullYear() + 5;
+  const lump = (over) => ({
+    id: "lp", source: "pension", label: "Lump", year: yr, amount: 400_000,
+    direction: "in", inflate: false, ...over,
+  });
+
+  test("a lump sum raises the ending balance", () => {
+    const base = buildWithdrawalWaterfall(P);
+    const with_ = buildWithdrawalWaterfall({ ...P, cashFlowEvents: [lump({ bucket: "pretax", taxable: false })] });
+    expect(with_.smart.rows.at(-1).totalPort).toBeGreaterThan(base.smart.rows.at(-1).totalPort);
+  });
+
+  test("the deposit is reported in the year it arrives, and only that year", () => {
+    const r = buildWithdrawalWaterfall({ ...P, cashFlowEvents: [lump({ bucket: "pretax", taxable: false })] });
+    expect(r.smart.rows.find(x => x.yr === yr).eventInflow).toBe(400_000);
+    expect(r.smart.rows.find(x => x.yr === yr + 1).eventInflow).toBe(0);
+  });
+
+  test("a surplus is NOT discarded — the whole amount survives, unlike other-income", () => {
+    // The bug this feature exists to fix: an inflow far larger than one year's
+    // spending gap used to vanish into Math.max(0, sp - income).
+    const base  = buildWithdrawalWaterfall(P);
+    const with_ = buildWithdrawalWaterfall({ ...P, cashFlowEvents: [lump({ bucket: "roth", taxable: false })] });
+    const gain  = with_.smart.rows.at(-1).totalPort - base.smart.rows.at(-1).totalPort;
+    // Deposited into Roth (never taxed, drawn last) it should still be largely
+    // intact 20 years later — certainly far more than a single year's gap.
+    expect(gain).toBeGreaterThan(300_000);
+  });
+
+  test("a taxable lump sum costs more tax than an identical rollover", () => {
+    const rollover = buildWithdrawalWaterfall({ ...P, cashFlowEvents: [lump({ bucket: "pretax", taxable: false })] });
+    const taken    = buildWithdrawalWaterfall({ ...P, cashFlowEvents: [lump({ bucket: "cash",   taxable: true  })] });
+    const taxIn = (r) => r.smart.rows.find(x => x.yr === yr).totalTax;
+    expect(taxIn(taken)).toBeGreaterThan(taxIn(rollover));
+  });
+});
