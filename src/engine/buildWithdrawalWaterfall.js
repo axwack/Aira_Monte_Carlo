@@ -98,7 +98,16 @@ function realizedGainFor(draw, balance, basis) {
  * @returns {{ pretax0: number, roth0: number, taxable0: number, cash0: number, total: number, taxableBasis0: number }}
  */
 export function accumulateToRetirement(params = {}) {
-  const { currentAge, retireAge, accounts = [], preRetireEq = 91, cashRealReturn, gr: grParam, taxableBasisPct = 70 } = params;
+  const {
+    currentAge, retireAge, accounts = [], preRetireEq = 91, cashRealReturn,
+    gr: grParam, taxableBasisPct = 70,
+    // Annual contribution streams. These were previously ignored entirely, so
+    // this engine reported a retirement portfolio with zero savings added —
+    // understating balances for every user still working, and contradicting the
+    // docstring's promise that it agrees with runMC's starting balances.
+    contrib = 0, employerContrib = 0, hsaContrib = 0,
+    taxableContrib = 0, rothContrib = 0,
+  } = params;
   // This function only models the PRE-retirement accumulation phase, so the
   // pre-retirement equity glide (preRetireEq) — not postRetireEq — drives the
   // default growth rate here, mirroring runMC's portReturn age<62 branch.
@@ -121,7 +130,7 @@ export function accumulateToRetirement(params = {}) {
   // Basis is a % of TODAY's taxable balance (before the accumulation growth
   // below) — growth is unrealized gain, so the basis fraction shrinks by
   // retirement even though no dollar of basis has been consumed by a draw yet.
-  const taxableBasis0 = taxable0 * (Math.max(0, Math.min(100, taxableBasisPct)) / 100);
+  let taxableBasis0 = taxable0 * (Math.max(0, Math.min(100, taxableBasisPct)) / 100);
 
   const accYrs = Math.max(0, (retireAge ?? 0) - (currentAge ?? 0));
   for (let y = 0; y < accYrs; y++) {
@@ -129,6 +138,15 @@ export function accumulateToRetirement(params = {}) {
     roth0    *= (1 + gr);
     taxable0 *= (1 + gr);
     cash0    *= (1 + cashGr);
+    // Same bucket routing as runMC's accumulation loop — grow first, then add
+    // the year's contributions, so a contribution doesn't earn a return in the
+    // year it was made.
+    pretax0  += contrib + employerContrib;
+    cash0    += hsaContrib;
+    roth0    += rothContrib;
+    taxable0 += taxableContrib;
+    // After-tax dollars in, so basis rises one-for-one (growth is unrealized).
+    taxableBasis0 += taxableContrib;
   }
 
   return { pretax0, roth0, taxable0, cash0, total: pretax0 + roth0 + taxable0 + cash0, taxableBasis0 };
@@ -210,6 +228,13 @@ export function buildWithdrawalWaterfall(params = {}) {
     cashRealReturn,
     gr: grParam,
     taxableBasisPct = 70,
+    // Annual contribution streams, forwarded to accumulateToRetirement so this
+    // engine's starting balances match runMC's for a user still working.
+    contrib = 0,
+    employerContrib = 0,
+    hsaContrib = 0,
+    taxableContrib = 0,
+    rothContrib = 0,
     // Real-world cash needs/income — same fields runMC uses for `need`
     mortBalance = 0,
     mortRate,
@@ -261,7 +286,10 @@ export function buildWithdrawalWaterfall(params = {}) {
   // Accumulation (pre-retirement) phase uses preGr — accumulateToRetirement
   // derives its own default from preRetireEq too, but pass it explicitly here
   // so an explicit grParam override (if given) also applies to this phase.
-  const { pretax0, roth0, taxable0, cash0, taxableBasis0 } = accumulateToRetirement({ currentAge, retireAge, accounts, cashRealReturn, gr: preGr, taxableBasisPct });
+  const { pretax0, roth0, taxable0, cash0, taxableBasis0 } = accumulateToRetirement({
+    currentAge, retireAge, accounts, cashRealReturn, gr: preGr, taxableBasisPct,
+    contrib, employerContrib, hsaContrib, taxableContrib, rothContrib,
+  });
 
   // Pre-compute the actual annual mortgage cash cost per calendar year (incl.
   // extra payments and the partial payoff year) — housing cost is part of

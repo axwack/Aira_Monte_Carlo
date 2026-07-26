@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.13";
-export const BUILD_TAG = "[main] v1.2.13 — Account restore: a customer's JWT was minted once at the Stripe redirect and lived only in that browser's localStorage, so clearing it, switching devices, or hitting the verify-session outage left paid credits permanently unreachable with no login to recover them. Adds /api/restore + an admin 'issue-restore-link' action that emails a click-to-activate link (expiring, use-capped, atomic consume), and makes purchase/restore FAILURES visible in the toast instead of silent. Prior v1.2.12: Stripe webhook signature hotfix (whsec_ prefix must stay in the HMAC key).";
-export const BUILD_TIME = "2026-07-26T13:45:00Z";
+const APP_VERSION = "1.2.14";
+export const BUILD_TAG = "[main] v1.2.14 — Contribution bucket routing (3 correctness bugs): (1) runMC added EVERY contribution to pretax, so brokerage savings were withdrawn as ordinary income instead of LTCG-against-basis and inflated the RMD base at 75 — new 'Brokerage / After-Tax Savings' and 'Roth IRA Contribution' Profile lines now route to the right bucket, with taxable contributions adding cost basis one-for-one. (2) runMC silently DROPPED every hsa-category balance (BLANK_PROFILE ships one) — now bucketed to cash, matching the waterfall engine. (3) accumulateToRetirement applied no contributions at all, understating the Withdrawal Plan's starting balances for anyone still working. 10 new hand-calculated tests. Prior v1.2.13: account-restore links.";
+export const BUILD_TIME = "2026-07-26T14:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -196,7 +196,8 @@ function computeInitialWR(p) {
   const inflRate = (p.inf || 2.5) / 100;
   const accumRate = nominalRate - inflRate;
   const hsaAnnual = p.hsaContrib != null ? p.hsaContrib : (p.hsaMonthly || 0) * 12;
-  const annualAdds = (p.contrib || 0) + (p.employerContrib || 0) + hsaAnnual;
+  const annualAdds = (p.contrib || 0) + (p.employerContrib || 0) + hsaAnnual
+    + (p.taxableContrib || 0) + (p.rothContrib || 0);
   const growth = (yrs) => Math.pow(1 + accumRate, yrs);
   const projectedPort = (p.port || 0) * growth(yrsToRetire) +
     (yrsToRetire > 0 && accumRate > 0
@@ -442,6 +443,13 @@ export const BLANK_PROFILE = {
   port: 1_000_000,
   contrib: 20,
   employerContrib: 0,           // annual employer contribution (fixed dollar amount, e.g. 401k match + profit sharing)
+  // Savings that are NOT tax-advantaged. Kept separate from `contrib` because the
+  // destination bucket changes the tax outcome decades later: taxable dollars are
+  // drawn at LTCG rates against a cost basis (waterfall Step 3), whereas pre-tax
+  // dollars are ordinary income AND enlarge the RMD base at rmdStartAge. Folding
+  // brokerage savings into the 401(k) field silently converts one into the other.
+  taxableContrib: 0,            // annual after-tax brokerage/savings contribution ($/yr)
+  rothContrib: 0,               // annual Roth IRA contribution ($/yr, direct or backdoor)
   inf: 2.5,
   sp: 10_000,                   // US-domestic annual spending (subject to state tax when applicable)
   spOutOfCountry: 0,            // additive out-of-country annual spending (never state-taxed)
@@ -1003,7 +1011,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       if (acct.category === "pretax") pretax += bal;
       else if (acct.category === "roth") roth += bal;
       else if (acct.category === "taxable") taxable += bal;
-      else if (acct.category === "cash") cash += bal;
+      // "hsa" and any unrecognized category fall through to cash. This used to
+      // be `else if (category === "cash")`, which silently DROPPED every
+      // hsa-category balance from the simulation — BLANK_PROFILE ships an HSA
+      // account by default, so any user with an HSA had it vanish from their
+      // portfolio. accumulateToRetirement() already bucketed hsa into cash via
+      // a catch-all else, so the two engines disagreed. Now they match.
+      else cash += bal;
     }
     // Basis is a % of TODAY's taxable balance, fixed in dollars from here on —
     // accumulation-phase growth (below) increases the balance but not the
@@ -1019,7 +1033,17 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
       cash     = Math.max(0, cash     * (1 + ret));
-      pretax += (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
+      // Contributions land in the bucket they actually belong to. Previously ALL
+      // of them were added to `pretax`, which mispriced every later withdrawal:
+      // brokerage savings became ordinary income instead of LTCG-with-basis, and
+      // inflated the RMD base at rmdStartAge.
+      pretax  += (p.contrib || 0) + (p.employerContrib || 0);
+      cash    += (p.hsaContrib || 0);          // HSA balances live in the cash bucket
+      roth    += (p.rothContrib || 0);
+      taxable += (p.taxableContrib || 0);
+      // Brokerage contributions are already-taxed dollars, so they add basis
+      // one-for-one. Only market growth is unrealized gain.
+      taxableBasis += (p.taxableContrib || 0);
       totalPort = pretax + roth + taxable + cash;
     }
 
@@ -1558,7 +1582,12 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   // Accumulation using median returns
   for (let y = 0; y < accYrs; y++) {
     const ret = expectedReturn(p.preRetireEq ?? 91) / 100;
-    port = port * (1 + ret) + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0);
+    // Aggregate portfolio here (no per-bucket split in this engine), but the
+    // total must include every contribution stream runMC applies or the two
+    // engines report different portfolio-at-retirement figures.
+    port = port * (1 + ret)
+      + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0)
+      + (p.taxableContrib || 0) + (p.rothContrib || 0);
   }
 
   const portAtRetire = port;
@@ -9755,8 +9784,10 @@ function ContribPanel({ values, onChange }) {
   const annual401k = values.contrib || 0;
   const hsaMonthly = values.hsaMonthly || 0;
   const employerContrib = values.employerContrib || 0;
+  const rothContrib = values.rothContrib || 0;
+  const taxableContrib = values.taxableContrib || 0;
   const hsaAnnual = hsaMonthly * 12;
-  const totalSavings = annual401k + hsaAnnual + employerContrib;
+  const totalSavings = annual401k + hsaAnnual + employerContrib + rothContrib + taxableContrib;
 
   // Shared "profile section card" chrome — one consistent look so sections read
   // as a uniform, logically-ordered stack instead of scattered mismatched blocks.
@@ -9780,9 +9811,15 @@ function ContribPanel({ values, onChange }) {
         <WFieldRow label="Employer Contribution ($/yr)" helper="Fixed annual employer money in dollars — 401(k) match + profit sharing. Compounds in the Monte Carlo accumulation until your retirement age.">
           <ANumInput value={employerContrib} onSet={(v) => onChange("employerContrib", v)} min={0} max={100_000} step={500} suffix="/yr" />
         </WFieldRow>
+        <WFieldRow label="Roth IRA Contribution" helper="Direct or backdoor Roth. Grows tax‑free and is drawn last, so it never triggers IRMAA or the SS torpedo.">
+          <ANumInput value={rothContrib} onSet={(v) => onChange("rothContrib", v)} min={0} max={30_000} step={500} suffix="/yr" />
+        </WFieldRow>
+        <WFieldRow label="Brokerage / After‑Tax Savings" helper="Money you invest OUTSIDE a retirement account. Keep it here rather than adding it to your 401(k) — these dollars are withdrawn at long‑term capital-gains rates against their cost basis, and they don't raise your RMDs at 75.">
+          <ANumInput value={taxableContrib} onSet={(v) => onChange("taxableContrib", v)} min={0} max={500_000} step={1_000} suffix="/yr" />
+        </WFieldRow>
         {/* Total belongs WITH the contributions that make it up (logical flow). */}
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <span style={{ fontSize: 12, color: "#94a3b8" }}>💰 Total annual savings <span style={{ color: "#475569" }}>(incl. employer + HSA)</span></span>
+          <span style={{ fontSize: 12, color: "#94a3b8" }}>💰 Total annual savings <span style={{ color: "#475569" }}>(incl. employer, HSA, Roth &amp; brokerage)</span></span>
           <span style={{ fontSize: 22, fontWeight: 800, color: "#14b8a6", fontFamily: "'DM Mono',monospace" }}>{fmtK(totalSavings)}<span style={{ fontSize: 12, fontWeight: 400, color: "#64748b" }}>/yr</span></span>
         </div>
       </div>
@@ -10699,6 +10736,10 @@ export default function AiRAForecaster() {
       contrib,
       employerContrib: assumptions.employerContrib || 0,
       hsaContrib: Math.round((assumptions.hsaMonthly || 0) * 12),
+      // MUST be forwarded here or the Profile inputs are a no-op — the engines
+      // read `params`, not `assumptions`. (Same trap the sourcing guardrails hit.)
+      taxableContrib: assumptions.taxableContrib || 0,
+      rothContrib: assumptions.rothContrib || 0,
       accounts: assumptions.accounts,
       // Portfolio draw = US + out-of-country (always combined). State-tax toggle is now
       // independent: twoHousehold ON means "claiming non-residency" and skips state tax,
