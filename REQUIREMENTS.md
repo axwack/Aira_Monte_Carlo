@@ -730,3 +730,58 @@ surface the tradeoff (subsidy $ lost per conversion $, cliff proximity) the way 
 "Coming soon: AiRA will model your ACA health-insurance subsidy in the pre-65 years and size Roth
 conversions to keep it — showing exactly how much subsidy each conversion dollar costs, and
 warning you before a conversion pushes you over the subsidy cliff."
+
+## 17. Full Roth-Conversion Recommendation Engine — requested 2026-07-25
+
+**Requested by a user (Reddit), verbatim:** *"I am looking for a product that will recommend how
+much to convert to Roth each year (taking into account ACA subsidies, IRMAA, NIIT and all other tax
+factors that go into a Roth analysis; and a recommendation on from which bucket of money to pay the
+Roth taxes and my living expenses."* **Priority: P1 (headline feature). Status: scoped, NOT started.**
+§16 (ACA) is a prerequisite component of this — build them together.
+
+### What it must recommend, per year
+1. **How much to convert to Roth** — sized against ALL cliffs at once, not just a bracket.
+2. **Which bucket pays the conversion tax** — taxable / cash / pre-tax (paying from taxable/cash
+   preserves the conversion's full value; paying from pre-tax shrinks it).
+3. **Which bucket funds living expenses** — the account draw order (already shipped v1.2.8) tied
+   into the same recommendation.
+Output: a year-by-year plan — *"Convert $X (fills to the Y ceiling), pay the $Z tax from Taxable,
+fund living from Cash→Taxable→…"* — with the marginal cost/benefit shown.
+
+### What AiRA already has (~70% of the pieces — do NOT rebuild)
+- Conversion **sweet-spot + ladder** (`src/engine/rothConversionPlan.js` `buildConversionLadder`/
+  `buildWaterfallComparison`), reconciled to the waterfall (ENG-9/12/14).
+- The **waterfall** self-funds conversion tax from pre-tax today; `taxFunding` profile field exists.
+- **Account draw order** for living expenses (v1.2.8, §12).
+- In `yearTax`/`calcYearTax`: bracket tops, **IRMAA** (2-yr lookback), **NIIT**, **LTCG 0/15/20
+  stacking**, **SS provisional/torpedo** — all already computed per year.
+
+### The gaps (what to build)
+- **ACA subsidy model** (§16) — the missing cliff. Prerequisite.
+- **BETR** — referenced in UI but never computed (§3). The "should I convert?" answer needs the
+  break-even tax rate: convert only while marginal conversion cost < BETR-implied future cost.
+- **Unified "conversion room across ALL cliffs"** — one per-year helper returning the true marginal
+  cost of the next converted dollar = fed + state + IRMAA surcharge + **ACA subsidy lost** + NIIT +
+  any LTCG-0%→15% spill + SS-torpedo step, and the binding ceiling =
+  `min(bracket, IRMAA, ACA, LTCG-cliff)`. Extends ENG-8's `min(...)` list.
+- **Tax-payment-source optimizer** — recommend paying conversion tax from taxable/cash vs. pre-tax
+  by comparing lifetime outcomes (currently self-funded from pre-tax only).
+- **Synthesis UI** — present all three recommendations as ONE year-by-year plan (not three tabs).
+
+### Phased plan — ⭐ THE FIRST THING TO DO
+**Phase 1 (foundation): the ACA model (§16) + a single `conversionRoomAllCliffs(year, state)` helper**
+that folds ACA into the existing bracket/IRMAA/NIIT/LTCG/SS math and returns `{ceiling, marginalCostOfNextDollar, bindingCliff }`. Every downstream recommendation depends on knowing the
+true marginal cost of the next conversion dollar, so this is the keystone. Single exported source
+(no drift), gated by logic-validator (IRS/HHS currency) + tester.
+- **Phase 2:** BETR (§3) + wire "convert while marginalCost < BETR benefit" into `buildConversionLadder`.
+- **Phase 3:** tax-payment-source optimizer (taxable/cash vs pre-tax).
+- **Phase 4:** synthesis UI — the single year-by-year "convert $X, pay tax from A, fund living from B" plan.
+
+### Effort
+Large (multi-session, phased above). Each phase ships independently and is Reddit-announceable.
+
+### Reddit-update summary (plain language)
+"We're building the big one: a year-by-year Roth conversion advisor that tells you exactly how much
+to convert — accounting for ACA subsidies, IRMAA, NIIT, capital-gains and Social-Security tax
+cliffs together — plus which account to pay the conversion tax from and which to live on. Rolling
+out in phases; the ACA-subsidy piece is first."
