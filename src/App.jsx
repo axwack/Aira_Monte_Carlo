@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.9";
-export const BUILD_TAG = "[main] v1.2.9 — Other Income (pensions): new fixed-dollar growth mode — a per-source % ⇄ $/yr toggle so a pension that raises by a set dollar amount (not a compounding %) is modeled correctly; growth now shown on the collapsed row. Profile tab icon 👤→💵 (it holds finances, not account/login). Brightened the collapsed income $ amount (was near-invisible gray). Prior v1.2.8: user-configurable account draw order.";
-export const BUILD_TIME = "2026-07-25T12:00:00Z";
+const APP_VERSION = "1.2.10";
+export const BUILD_TAG = "[main] v1.2.10 — Profile: 'Pensions & Other Income' moved up directly under Annual Contributions (after Employer Contribution) and made a prominent accent card with a plain-language hint (income streams that reduce your withdrawals vs. a lump-sum pension = a pre-tax account). Prior v1.2.9: pension fixed-dollar growth mode + 💵 Profile icon + brighter income amount.";
+export const BUILD_TIME = "2026-07-25T18:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -9777,6 +9777,31 @@ function ContribPanel({ values, onChange }) {
         </WFieldRow>
       </div>
 
+      {/* ── Pensions & other income (moved up, prominent) ── */}
+      <div style={{ background: "rgba(14,165,233,0.05)", border: "1px solid rgba(14,165,233,0.28)", borderRadius: 10, padding: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#38bdf8", marginBottom: 5, display: "flex", alignItems: "center", gap: 8 }}>
+          🏦 Pensions &amp; Other Income
+        </div>
+        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 13, lineHeight: 1.55 }}>
+          Income streams that <strong style={{ color: "#cbd5e1" }}>reduce what you withdraw</strong> — pension, part-time work, annuity, royalties. These are paid <em>to</em> you every year, not balances you draw down. A monthly pension goes here; a <strong style={{ color: "#cbd5e1" }}>lump-sum / cash-balance</strong> pension you'll roll over is a pre-tax account instead.
+        </div>
+        {(values.otherIncomes || []).map((inc, idx) => (
+          <OtherIncomeCard
+            key={inc.id}
+            inc={inc}
+            autoFocus={idx === (values.otherIncomes || []).length - 1 && !inc.annual}
+            onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
+            onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
+          />
+        ))}
+        <button
+          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthMode: "pct", growthRate: 0, growthAmount: 0, growthCapYears: null, taxable: true }])}
+          style={{ background: "rgba(14,165,233,0.1)", border: "1px dashed rgba(14,165,233,0.45)", borderRadius: 6, color: "#38bdf8", fontSize: 12, fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
+          onMouseEnter={e => e.currentTarget.style.background = "rgba(14,165,233,0.18)"}
+          onMouseLeave={e => e.currentTarget.style.background = "rgba(14,165,233,0.1)"}
+        >+ Add pension / income source</button>
+      </div>
+
       {/* ── Summary grid ── */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
         {[
@@ -9801,28 +9826,6 @@ function ContribPanel({ values, onChange }) {
           <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>/yr</span>
         </div>
         <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Including employer contribution and HSA</div>
-      </div>
-
-      {/* ── Other income sources ── */}
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 10, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
-          OTHER INCOME (pension, part-time, royalties…) — reduces portfolio draw
-        </div>
-        {(values.otherIncomes || []).map((inc, idx) => (
-          <OtherIncomeCard
-            key={inc.id}
-            inc={inc}
-            autoFocus={idx === (values.otherIncomes || []).length - 1 && !inc.annual}
-            onChange={(updated) => onChange("otherIncomes", (values.otherIncomes || []).map((x) => x.id === inc.id ? updated : x))}
-            onRemove={() => onChange("otherIncomes", (values.otherIncomes || []).filter((x) => x.id !== inc.id))}
-          />
-        ))}
-        <button
-          onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthMode: "pct", growthRate: 0, growthAmount: 0, growthCapYears: null, taxable: true }])}
-          style={{ background: "transparent", border: "1px dashed rgba(14,165,233,0.35)", borderRadius: 4, color: "#38bdf8", fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.7, marginTop: 2 }}
-          onMouseEnter={e => e.currentTarget.style.opacity = 1}
-          onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
-        >+ Add income source</button>
       </div>
 
     </div>
