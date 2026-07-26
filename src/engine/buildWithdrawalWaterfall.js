@@ -38,7 +38,7 @@ import {
   RMD_DIV,
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
-import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./expenses.js";
+import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents } from "./expenses.js";
 import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
 
@@ -269,6 +269,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     annualRent  = 0,
     propIncome  = 0,
     carveouts   = [],
+    cashFlowEvents = [],
     otherIncomes = [],
     spSchedule   = null,
     retireAge: retireAgeRaw,
@@ -518,6 +519,10 @@ export function buildWithdrawalWaterfall(params = {}) {
       }
 
       // Other fixed expenses (HOA, insurance, college, etc.) active this year.
+      // Planned one-off / periodic expenses — additive on top of the base spend
+      // so the guardrails keep governing the recurring plan. See
+      // computeCashFlowEvents.
+      const ev = computeCashFlowEvents(cashFlowEvents, yr, inf, BASE_YEAR);
       const carveoutCost = carveouts.reduce((sum, c) => {
         return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * iF) : 0);
       }, 0);
@@ -537,7 +542,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         if (yrsRemaining > 15) {
           sp = gkWithdraw(
             totalPort, initWR, sp, lastRet, infR, adjFloor, adjCeiling,
-            fixedIncome + otherIncTotal, housingCost + carveoutCost
+            fixedIncome + otherIncTotal, housingCost + carveoutCost + ev.committed
           );
         } else {
           sp = sp * (1 + infR);
@@ -564,7 +569,7 @@ export function buildWithdrawalWaterfall(params = {}) {
       // fromPretax, which depends on the draw size, which depends on taxes —
       // iterate to convergence. RMD proceeds fund the need first; any excess
       // RMD is reinvested in the taxable bucket below.
-      const baseNeed = Math.max(0, sp - fixedIncome - otherIncTotal) + housingCost + carveoutCost;
+      const baseNeed = Math.max(0, sp - fixedIncome - otherIncTotal) + housingCost + carveoutCost + ev.total;
 
       // Steps 3-5: portfolio draws. The draw ORDER differs by scenario:
       //   • smart — cash → taxable → pretax (bracket-capped) → Roth (tax-optimal)
@@ -767,6 +772,8 @@ export function buildWithdrawalWaterfall(params = {}) {
         spending:   Math.round(sp),
         housingCost: Math.round(housingCost),
         carveoutCost: Math.round(carveoutCost),
+        eventCost: Math.round(ev.total),
+        eventLabels: ev.hits.map(h => h.label),
         otherIncome: Math.round(otherIncTotal),
         needFromPort: Math.round(baseNeed),
         // Gross portfolio outflow for spending + taxes. The cascade draws already

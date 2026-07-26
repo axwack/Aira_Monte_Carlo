@@ -122,3 +122,70 @@ export function computeOtherIncome(otherIncomes, calYear) {
   }
   return { total, totalTaxable };
 }
+
+/**
+ * One-off and periodic planned expenses ("cash flow events") for a calendar year.
+ *
+ * The gap this fills: the model had recurring spend (`sp`), recurring committed
+ * obligations (`carveouts`, which run from today to an optional endYear), and
+ * nothing for a cost that lands in ONE future year — a new roof, a wedding, a car
+ * replaced every seven years. The only workaround was a multi-year CSV budget,
+ * which REPLACES the withdrawal strategy outright and so silently switches off
+ * the Guyton-Klinger guardrails. Events are additive instead: the strategy still
+ * governs the recurring base, and these ride on top.
+ *
+ * Event shape:
+ *   { id, label, year, amount, recurEveryYears, recurUntilYear, inflate, deferrable }
+ *
+ *   year            first occurrence (calendar year)
+ *   amount          cost per occurrence
+ *   recurEveryYears 0/null = one-time; 7 = every seven years
+ *   recurUntilYear  last year a repeat may occur; null = no end
+ *   inflate         true (default) = `amount` is in TODAY's dollars and is
+ *                   inflated to the occurrence year; false = already nominal
+ *   deferrable      true = discretionary, guardrails may cut it (a big travel
+ *                   year); false (default) = committed, they may not (a roof).
+ *                   Mirrors the Must Spend / Like to Spend split the CSV
+ *                   importer already uses for the recurring base.
+ *
+ * @param {Array} events
+ * @param {number} calYear
+ * @param {number} infPct annual inflation, percent
+ * @param {number} baseYear year in which `amount` is expressed (today)
+ * @returns {{ total:number, committed:number, deferrable:number, hits:Array }}
+ */
+export function computeCashFlowEvents(events, calYear, infPct = 2.5, baseYear = new Date().getFullYear()) {
+  let total = 0, committed = 0, deferrable = 0;
+  const hits = [];
+  if (!events?.length) return { total, committed, deferrable, hits };
+
+  for (const e of events) {
+    const start = Number(e.year);
+    const amount = Number(e.amount) || 0;
+    if (!Number.isFinite(start) || amount === 0) continue;
+    if (calYear < start) continue;
+
+    const every = Number(e.recurEveryYears) || 0;
+    if (every > 0) {
+      // Repeats every `every` years from `start`, optionally stopping at
+      // recurUntilYear. A year only counts if it is exactly on the cycle.
+      if ((calYear - start) % every !== 0) continue;
+      const until = e.recurUntilYear == null ? Infinity : Number(e.recurUntilYear);
+      if (calYear > until) continue;
+    } else if (calYear !== start) {
+      continue; // one-time event, wrong year
+    }
+
+    // Default to inflating: users think in today's dollars, and a roof quoted at
+    // today's price will not cost that in fifteen years.
+    const inflate = e.inflate !== false;
+    const yrs = Math.max(0, calYear - baseYear);
+    const amt = inflate ? amount * Math.pow(1 + (infPct || 0) / 100, yrs) : amount;
+
+    total += amt;
+    if (e.deferrable) deferrable += amt; else committed += amt;
+    hits.push({ id: e.id, label: e.label || "Planned expense", amount: Math.round(amt) });
+  }
+
+  return { total, committed, deferrable, hits };
+}
