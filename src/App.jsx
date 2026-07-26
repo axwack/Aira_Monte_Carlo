@@ -70,7 +70,7 @@ import {
 import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
-import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents } from "./engine/expenses.js";
+import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
@@ -175,9 +175,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.22";
-export const BUILD_TAG = "[main] v1.2.22 — Pensions get a type. Profile now separates PENSIONS from OTHER INCOME, and every pension carries its own embedded type selector (Monthly / Lump Sum / Cash Balance) since people commonly have several of different kinds; switching type migrates the record between the recurring-stream and one-time-inflow models. Lump-sum and cash-balance pensions are now first-class INFLOWS: they deposit into a chosen account (defaulting to pre-tax for a rollover, cash for a lump sum taken) and compound from the year they arrive. Previously the guidance was to enter them as an ordinary account balance, which put the money in the plan from TODAY instead of the receipt year and overstated years of growth. Inflows also fix the silently-discarded surplus: other income is netted as max(0, spend - income), so anything beyond one year of need vanished — a $500k inheritance against an $80k gap lost $420k. Adds two About entries on pension types and guardrail interaction. 10 new tests. Prior v1.2.21: GK guardrail income fix."
-export const BUILD_TIME = "2026-07-26T22:45:00Z";
+const APP_VERSION = "1.2.23";
+export const BUILD_TAG = "[main] v1.2.23 — SPENDING SMILE NOW ACTUALLY RUNS. It had a profile field, a sidebar toggle, a params entry and three pieces of UI copy asserting it as fact (including a card quoting 'Go-go 115% of base, Slow-go 85%') while NO engine ever read it — the toggle was inert and spending was flat in real terms. Implemented per Blanchett (2014) as a compounding REAL rate rather than age bands, since bands imply a 26% spending cliff on one birthday: 1.00 at retirement, ~-1%/yr to age 80, flattening to 85, then rising ~1.2%/yr as healthcare replaces lifestyle costs. Applied as an overlay on the strategy output, never fed back into GK's running state (which would compound it). Nominal dollars still rise — this is a real-terms adjustment. Corrected the UI card to report the curve the engine runs, added an About entry. 16 new tests, two of which assert it reaches the plan so it cannot go inert again. Prior v1.2.22: pension types."
+export const BUILD_TIME = "2026-07-27T00:15:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1399,7 +1399,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 :
         (abReliable ? totalRental : 0);
 
-      const need = Math.max(0, sp - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost + eventCost;
+      // Blanchett spending smile — a REAL lifestyle curve applied to this
+      // year's spend. Deliberately not fed back into `sp`, which is the
+      // withdrawal strategy's running state: multiplying that would compound
+      // the smile year over year and corrupt GK's own inflation logic. This is
+      // an overlay on what the strategy decided, not a change to the strategy.
+      const spSmiled = sp * spendingSmileFactor(age, retAgeMC, p.smile !== false);
+      const need = Math.max(0, spSmiled - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost + eventCost;
 
       // RMD calculation
       let rmd = 0;
@@ -1924,7 +1930,13 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     }
     lastReturn = ret;
 
-    const need = Math.max(0, sp - ss - ab - otherIncTotal) + housingCost + carveoutCost + eventCostDet;
+    // Blanchett spending smile — a REAL lifestyle curve applied to this
+    // year's spend. Deliberately not fed back into `sp`, which is the
+    // withdrawal strategy's running state: multiplying that would compound
+    // the smile year over year and corrupt GK's own inflation logic. This is
+    // an overlay on what the strategy decided, not a change to the strategy.
+    const spSmiledDet = sp * spendingSmileFactor(age, retAgeDet, p.smile !== false);
+    const need = Math.max(0, spSmiledDet - ss - ab - otherIncTotal) + housingCost + carveoutCost + eventCostDet;
 
     // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab) —
     // this path automatically carries LTCG/cost-basis AND the IRMAA 2-year lookback
@@ -1942,7 +1954,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
     schedule.push({
       age, yr,
-      spending: Math.round(sp),
+      spending: Math.round(spSmiledDet),
       ss, Rental: ab, OtherIncome: Math.round(otherIncTotal),
       portfolioDraw: Math.round(need),
       housingCost: Math.round(housingCost),
@@ -7421,7 +7433,19 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: "#a78bfa", marginBottom: 10 }}>WITHDRAWAL PHASE ({retPhase})</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-                <InputCard title="Living Expenses" rows={[["Base annual spend", fmtM(params.sp) + "/yr"], ["Inflation model", params.smile ? "Blanchett smile" : "Flat"], [`Go-go (${params.retireAge}–${Math.min(74, params.endAge)})`, "115% of base"], [`Slow-go (75–${Math.min(84, params.endAge)})`, "85% of base"]]} />
+                {/* Reports the smile curve the engine actually runs. This used
+                    to claim fixed bands ("115% until 74, then 85%") that were
+                    never implemented — and which would imply a 26% spending
+                    cliff on a single birthday. The real model is a compounding
+                    real rate; see spendingSmileFactor in engine/expenses.js. */}
+                <InputCard title="Living Expenses" rows={[
+                  ["Base annual spend", fmtM(params.sp) + "/yr"],
+                  ["Spending model", params.smile !== false ? "Blanchett smile" : "Flat (real)"],
+                  ...(params.smile !== false ? [
+                    [`Age ${Math.min(80, params.endAge)}`, `${Math.round(spendingSmileFactor(Math.min(80, params.endAge), params.retireAge) * 100)}% of base (real)`],
+                    [`Age ${Math.min(90, params.endAge)}`, `${Math.round(spendingSmileFactor(Math.min(90, params.endAge), params.retireAge) * 100)}% of base (real)`],
+                  ] : []),
+                ]} />
                 <InputCard title="Income Offsets" rows={[["Social Security", `$${(params.ssb || 0).toLocaleString()}/yr @ ${params.ssAge || "—"}`], ["SS COLA", `${params.ssCola ?? 2.4}%/yr`], [`Rental net (${params.abReliability ?? 80}% reliable)`, params.ab > 0 ? `$${(params.ab || 0).toLocaleString()}/yr` : "Not set"], ["SS gap", `Ages ${params.retireAge}–${(params.ssAge || params.retireAge) - 1}: $0`]]} />
                 <InputCard title="Additional Costs" rows={[[`Healthcare (age ${params.hcShockAge ?? 72}+)`, `${params.hcProb ?? 3.5}% shock prob/yr`], ["Shock range", `${fmtK(params.hcMin ?? 70000)}–${fmtK(params.hcMax ?? 130000)}`], ["Mortgage annual", mortAnnual > 0 ? fmtM(mortAnnual) + "/yr" : "Paid off"], ["Mortgage payoff", mortPayoffAge > 0 ? "~" + mortPayoffAge : "—"]]} />
               </div>

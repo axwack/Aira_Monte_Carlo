@@ -76,6 +76,15 @@ export const ABOUT_FEATURES = [
     body:  "Your spending adapts based on portfolio performance. If the withdrawal rate climbs above 120% of the initial rate, spending cuts 10% (never below the floor). If it falls below 80%, spending rises 10% (never above the ceiling). Floor = 65% and ceiling = 135% of your target spending. Protects against sequence-of-returns risk while letting you spend more in good markets.",
   },
 
+  // ── Your Spending ─────────────────────────────────────────
+  {
+    id:    "spending-smile",
+    group: "Your Spending",
+    icon:  "🙂",
+    title: "What the Spending Smile actually does",
+    body:  "Most calculators assume you spend the same amount every year, adjusted for inflation, until you die. Real retirees don't. David Blanchett's research (\"Exploring the Retirement Consumption Puzzle\", 2014) found that real spending falls roughly 1% a year through most of retirement, then rises again late in life as healthcare and care costs take over. Plotted, that's a shallow U — the smile: GO-GO years of travel and projects, SLOW-GO years as travel tapers, and NO-GO years where medical costs replace lifestyle costs. AiRA models this as a compounding real rate rather than fixed age bands, because bands imply an unrealistic spending cliff on a single birthday. Starting from 1.00 at retirement, spending drifts to about 86% of base by age 80, bottoms near 85% around 85, then climbs back toward 95% by 95 — all in REAL terms, so the dollar figures in your table still rise with inflation. Toggle it off in the sidebar to assume flat real spending, which is the more conservative assumption.",
+  },
+
   // ── Your Income ───────────────────────────────────────────
   {
     id:    "pension-types",

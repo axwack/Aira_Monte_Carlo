@@ -461,7 +461,9 @@ describe("buildWithdrawalWaterfall — summary", () => {
   test("naive finalPretax = 0 (exhausted); smart retains pretax balance", () => {
     // Aggressive early pretax draws in naive should deplete the account before endAge,
     // while smart's bracket-capped approach leaves a residual pretax balance.
-    const result = buildWithdrawalWaterfall(BASE);
+    // smile:false keeps the depletion comparison about DRAW ORDER — the spending
+    // smile makes every plan cheaper, which is enough to stop naive exhausting.
+    const result = buildWithdrawalWaterfall({ ...BASE, smile: false });
     expect(result.naive.finalPretax).toBe(0);
     expect(result.smart.finalPretax).toBeGreaterThan(0);
   });
@@ -492,7 +494,10 @@ describe("buildWithdrawalWaterfall — full bracket-target coverage (v1.1.0.30)"
   });
 
   test("spending grows at exactly the inflation rate inside the final 15 years (Bengen phase)", () => {
-    const result = buildWithdrawalWaterfall(BASE); // endAge 90 → Bengen from age 76
+    // smile:false isolates this from the Blanchett spending curve, which is an
+    // orthogonal real-spending overlay. With it on, spending deliberately grows
+    // BELOW inflation, which is not what this test is measuring.
+    const result = buildWithdrawalWaterfall({ ...BASE, smile: false }); // endAge 90 → Bengen from age 76
     const rows = result.smart.rows;
     const late = rows.filter(r => r.age >= 77 && r.age <= 89);
     for (let i = 1; i < late.length; i++) {
@@ -537,6 +542,9 @@ describe("buildWithdrawalWaterfall — useJointRmdTable gated by filingStatus (B
 describe("buildWithdrawalWaterfall — GK 6% inflation pass-through cap (B4 regression)", () => {
   const gkBase = {
     ...BASE,
+    // This suite measures the INFLATION pass-through cap, so the spending smile
+    // (a real-terms lifestyle curve) is switched off to avoid confounding it.
+    smile: false,
     sp: 80_000, ssAge: 90, ssb: 0, gkFloor: 20_000, gkCeiling: 400_000,
     accounts: [
       { id: "g1", category: "pretax",  name: "401k",    balance: 1_000_000 },
