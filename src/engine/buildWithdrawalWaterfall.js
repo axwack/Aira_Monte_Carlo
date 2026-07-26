@@ -38,7 +38,7 @@ import {
   RMD_DIV,
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
-import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor } from "./expenses.js";
+import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, expectedHealthcareShock } from "./expenses.js";
 import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
 
@@ -305,6 +305,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     carveouts   = [],
     cashFlowEvents = [],
     smile          = true,
+    hcShockAge, hcProb, hcMin, hcMax,
     otherIncomes = [],
     spSchedule   = null,
     retireAge: retireAgeRaw,
@@ -481,7 +482,10 @@ export function buildWithdrawalWaterfall(params = {}) {
     const magiByAge = new Map();
     // Post-retirement per-year growth mirrors runMC's portReturn age-62 switch:
     // preGr below 62 (even though already retired), postGr from 62 on.
-    let sp = baseSp, lastRet = retireAge < 62 ? preGr : postGr;
+    // Glidepath switches at the user's retirement age, not a hardcoded 62 —
+    // see portReturn in App.jsx for the same fix. At/after retirement the
+    // post-retirement weight applies, which is always true inside this loop.
+    let sp = baseSp, lastRet = postGr;
     const totalPort0 = pretax + roth + taxable + cash;
     // Baseline initWR = NET PORTFOLIO NEED at retirement / portfolio — the same
     // quantity (income-offset gross spend, plus housing/carveouts) the yearly
@@ -515,7 +519,7 @@ export function buildWithdrawalWaterfall(params = {}) {
       // (preRetireEq below 62, postRetireEq from 62 on), not just a flat
       // post-retirement rate, so a profile that retires before 62 still
       // tracks runMC's glide path exactly.
-      const gr = age < 62 ? preGr : postGr;
+      const gr = age < retireAge ? preGr : postGr;
 
       // IRMAA 2-year lookback: this year's charge is based on MAGI from
       // age-2, already stored in magiByAge from that year's own iteration.
@@ -558,6 +562,10 @@ export function buildWithdrawalWaterfall(params = {}) {
       // so the guardrails keep governing the recurring plan. See
       // computeCashFlowEvents.
       const ev = computeCashFlowEvents(cashFlowEvents, yr, inf, BASE_YEAR);
+      // Expected annual healthcare cost, inflated to this year. Declared here
+      // rather than beside the spend calc because the guardrail block below
+      // consumes it first.
+      const hcShock = expectedHealthcareShock(age, { hcShockAge, hcProb, hcMin, hcMax }, iF);
 
       // INFLOWS (lump-sum pension, cash-balance rollover, inheritance, home
       // sale) are DEPOSITED into their destination bucket before this year's
@@ -604,12 +612,12 @@ export function buildWithdrawalWaterfall(params = {}) {
             plannedSpend: baseSp,
             cumInfl: Math.pow(1 + infR, age - retireAge),
             incomeOffset: fixedIncome + otherIncTotal,
-            fixedCosts: housingCost + carveoutCost + ev.committed,
+            fixedCosts: housingCost + carveoutCost + ev.committed + hcShock,
             portAtRetire: totalPort0,
           });
           sp = gkWithdraw(
             totalPort, refWR, sp, lastRet, infR, adjFloor, adjCeiling,
-            fixedIncome + otherIncTotal, housingCost + carveoutCost + ev.committed
+            fixedIncome + otherIncTotal, housingCost + carveoutCost + ev.committed + hcShock
           );
         } else {
           sp = sp * (1 + infR);
@@ -642,7 +650,7 @@ export function buildWithdrawalWaterfall(params = {}) {
       // the smile year over year and corrupt GK's own inflation logic. This is
       // an overlay on what the strategy decided, not a change to the strategy.
       const spSmiled = sp * spendingSmileFactor(age, retireAge, smile !== false);
-      const baseNeed = Math.max(0, spSmiled - fixedIncome - otherIncTotal) + housingCost + carveoutCost + ev.total;
+      const baseNeed = Math.max(0, spSmiled - fixedIncome - otherIncTotal) + housingCost + carveoutCost + ev.total + hcShock;
 
       // Steps 3-5: portfolio draws. The draw ORDER differs by scenario:
       //   • smart — cash → taxable → pretax (bracket-capped) → Roth (tax-optimal)
@@ -846,6 +854,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         housingCost: Math.round(housingCost),
         carveoutCost: Math.round(carveoutCost),
         eventCost: Math.round(ev.total),
+        healthcareCost: Math.round(hcShock),
         eventInflow: Math.round(ev.inflow),
         eventLabels: ev.hits.map(h => h.label),
         otherIncome: Math.round(otherIncTotal),

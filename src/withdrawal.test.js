@@ -271,7 +271,12 @@ describe("buildWithdrawalWaterfall — funding identity holds with IRMAA-trigger
       const rmdExcess = Math.max(0, r.rmd - (r.needFromPort + taxTotal));
       const lhs = r.fixedIncomeTotal + r.otherIncome + r.rmd
         + (r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth) - rmdExcess;
-      const rhs = r.spending + r.housingCost + r.carveoutCost + taxTotal;
+      // healthcareCost and eventCost are real spending the draws must fund, so
+      // they belong on this side of the identity alongside housing and
+      // carveouts. Omitting them made the identity fail by exactly the
+      // healthcare charge once shocks were implemented.
+      const rhs = r.spending + r.housingCost + r.carveoutCost + taxTotal
+        + (r.healthcareCost || 0) + (r.eventCost || 0);
       expect(Math.abs(lhs - rhs)).toBeLessThan(2);
     });
   }

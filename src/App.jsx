@@ -70,7 +70,7 @@ import {
 import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
-import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor } from "./engine/expenses.js";
+import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, healthcareShockDraw, expectedHealthcareShock } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
@@ -175,9 +175,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.23";
-export const BUILD_TAG = "[main] v1.2.23 — SPENDING SMILE NOW ACTUALLY RUNS. It had a profile field, a sidebar toggle, a params entry and three pieces of UI copy asserting it as fact (including a card quoting 'Go-go 115% of base, Slow-go 85%') while NO engine ever read it — the toggle was inert and spending was flat in real terms. Implemented per Blanchett (2014) as a compounding REAL rate rather than age bands, since bands imply a 26% spending cliff on one birthday: 1.00 at retirement, ~-1%/yr to age 80, flattening to 85, then rising ~1.2%/yr as healthcare replaces lifestyle costs. Applied as an overlay on the strategy output, never fed back into GK's running state (which would compound it). Nominal dollars still rise — this is a real-terms adjustment. Corrected the UI card to report the curve the engine runs, added an About entry. 16 new tests, two of which assert it reaches the plan so it cannot go inert again. Prior v1.2.22: pension types."
-export const BUILD_TIME = "2026-07-27T00:15:00Z";
+const APP_VERSION = "1.2.24";
+export const BUILD_TAG = "[main] v1.2.24 — HEALTHCARE SHOCKS NOW RUN, and the equity glidepath switches at YOUR retirement age. (1) Healthcare shocks were the second inert feature: four profile fields, four Advanced inputs, params plumbing and UI copy claiming 'shocks hit 3.5% of years after age 72', with zero engine consumption. Now implemented — stochastic per-path draw in the Monte Carlo, expected-value (prob x mean) in the deterministic schedule so the two agree in expectation, and costs INFLATE from today's dollars to the year they occur (a 25-year horizon nearly doubles the nominal figure). Treated as committed, so guardrails cannot trim a medical bill. (2) portReturn switched allocation at a hardcoded age 62 rather than retireAge, so early retirees kept a 91% accumulation equity weight years into drawdown and late retirees were derisked years before they stopped working; the waterfall hardcoded 62 in two more places. 21 new tests. Prior v1.2.23: spending smile."
+export const BUILD_TIME = "2026-07-27T01:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -795,8 +795,15 @@ function clip(v, lo, hi) {
 function bootstrapDraw(arr, rand) {
   return arr[Math.floor(rand() * arr.length)];
 }
-function portReturn(age, rand, preRetireEq, postRetireEq) {
-  const eqW = age < 62 ? (preRetireEq || 91) / 100 : (postRetireEq || 70) / 100;
+function portReturn(age, rand, preRetireEq, postRetireEq, retireAge) {
+  // The glidepath switches at the user's RETIREMENT age. This was hardcoded to
+  // 62, so anyone retiring early kept an accumulation-weight equity allocation
+  // years into drawdown (understating sequence risk), while anyone retiring late
+  // was derisked years before they stopped working (understating their growth).
+  // Falls back to 62 only when no retireAge is supplied, preserving old
+  // behavior for any caller that hasn't been updated.
+  const switchAge = Number.isFinite(Number(retireAge)) ? Number(retireAge) : 62;
+  const eqW = age < switchAge ? (preRetireEq || 91) / 100 : (postRetireEq || 70) / 100;
   return (
     eqW * bootstrapDraw(SP500, rand) + (1 - eqW) * bootstrapDraw(BONDS, rand)
   );
@@ -1110,7 +1117,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     // Accumulation phase
     for (let y = 0; y < accYrs; y++) {
-      const ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq);
+      const ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, retAgeMC);
       pretax   = Math.max(0, pretax   * (1 + ret));
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
@@ -1185,7 +1192,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const eqW = age < 62 ? (p.preRetireEq || 91) / 100 : (p.postRetireEq || 70) / 100;
         r = eqW * seqOverride[y] + (1 - eqW) * bootstrapDraw(BONDS, rand);
       } else {
-        r = portReturn(age, rand, p.preRetireEq, p.postRetireEq);
+        r = portReturn(age, rand, p.preRetireEq, p.postRetireEq, retAgeMC);
       }
       const inflY = bootstrapDraw(INFL, rand);
 
@@ -1249,10 +1256,15 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         totalPort = pretax + roth + taxable + cash;
       }
 
+      // Healthcare shock — stochastic per path, inflated to this year. Treated
+      // as a committed cost: a medical bill is not discretionary spending the
+      // guardrails may trim.
+      const hcShock = healthcareShockDraw(age, rand, p, cumInfl);
+
       const gkIncomeOffset = ss + rentalForGK + otherIncTotal;
       // Only COMMITTED events are shielded from the guardrails; a deferrable one
       // (a big travel year) is discretionary and may be trimmed like base spend.
-      const gkFixedCosts = housingCost + carveoutCost + ev.committed;
+      const gkFixedCosts = housingCost + carveoutCost + ev.committed + hcShock;
 
       // ========== WITHDRAWAL STRATEGY ==========
       if (p.spSchedule && p.spSchedule.length) {
@@ -1405,7 +1417,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // the smile year over year and corrupt GK's own inflation logic. This is
       // an overlay on what the strategy decided, not a change to the strategy.
       const spSmiled = sp * spendingSmileFactor(age, retAgeMC, p.smile !== false);
-      const need = Math.max(0, spSmiled - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost + eventCost;
+      const need = Math.max(0, spSmiled - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost + eventCost + hcShock;
 
       // RMD calculation
       let rmd = 0;
@@ -1817,8 +1829,13 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // buildWithdrawalWaterfall.
     if (evDet.inflow > 0) port += evDet.inflow;
 
+    // Deterministic schedule is one median path, so it charges the EXPECTED
+    // annual cost rather than a coin flip — keeping it consistent in
+    // expectation with the Monte Carlo instead of ignoring the cost entirely.
+    const hcShockDet = expectedHealthcareShock(age, p, cumInfl);
+
     const gkIncomeOffset = ss + ab + otherIncTotal;
-    const gkFixedCosts = housingCost + carveoutCost + evDet.committed;
+    const gkFixedCosts = housingCost + carveoutCost + evDet.committed + hcShockDet;
 
     // Apply withdrawal strategy (deterministic version)
     if (p.spSchedule && p.spSchedule.length) {
@@ -1936,7 +1953,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // the smile year over year and corrupt GK's own inflation logic. This is
     // an overlay on what the strategy decided, not a change to the strategy.
     const spSmiledDet = sp * spendingSmileFactor(age, retAgeDet, p.smile !== false);
-    const need = Math.max(0, spSmiledDet - ss - ab - otherIncTotal) + housingCost + carveoutCost + eventCostDet;
+    const need = Math.max(0, spSmiledDet - ss - ab - otherIncTotal) + housingCost + carveoutCost + eventCostDet + hcShockDet;
 
     // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab) —
     // this path automatically carries LTCG/cost-basis AND the IRMAA 2-year lookback
