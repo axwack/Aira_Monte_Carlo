@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.11";
-export const BUILD_TAG = "[main] v1.2.11 — Profile income UX: the pension growth control is now a clear two-option SEGMENTED toggle (% /yr | $ /yr, both visible) instead of a hard-to-discover single button; Annual Contributions and Pensions & Other Income are now matching uniform cards with the savings total grouped inside Contributions (logical flow) via a shared sectionCard style. Prior v1.2.10: Pensions moved up + prominent.";
-export const BUILD_TIME = "2026-07-25T20:00:00Z";
+const APP_VERSION = "1.2.12";
+export const BUILD_TAG = "[main] v1.2.12 — BILLING HOTFIX: Stripe webhook signature verification stripped the 'whsec_' prefix off the endpoint secret before using it as the HMAC key. Stripe signs with the FULL secret string, so every real checkout.session.completed delivery failed with 400 and NO purchase was ever credited to D1 — customers paid and received nothing. Also applied D1 migration 005 (prod was 3 migrations behind: missing pending_checkouts made /api/verify-session fail closed with 503, so no JWT was ever issued either). 9 new signature-parity regression tests. Prior v1.2.11: Profile income UX.";
+export const BUILD_TIME = "2026-07-26T12:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
