@@ -115,9 +115,17 @@ export async function stripeGet(secretKey, path) {
  * Throws if invalid or replay attack detected (>5 min old).
  *
  * Implementation notes (audit fix C3):
- *   - Stripe whsec_ secrets are NOT base64. The post-prefix portion is the
- *     raw UTF-8 secret used directly as the HMAC key (matches Stripe's
- *     official Node SDK: `crypto.createHmac('sha256', secret)`).
+ *   - Stripe whsec_ secrets are NOT base64. The secret is used as raw UTF-8
+ *     bytes, exactly as it appears in the dashboard — INCLUDING the "whsec_"
+ *     prefix. This matches Stripe's official Node SDK, which passes the
+ *     endpoint secret through verbatim: `createHmac('sha256', secret)` where
+ *     `secret` is the full "whsec_..." string.
+ *
+ *     Do NOT strip the prefix. Doing so produces a different HMAC key than
+ *     Stripe used to sign, so every real delivery fails with 400 and no
+ *     purchase is ever credited. That was a live production bug — see the
+ *     regression test in src/billing/stripeWebhookSig.test.js, which signs a
+ *     payload the way Stripe does and asserts this function accepts it.
  *   - We use crypto.subtle.verify (not sign + string compare) so the
  *     byte comparison is constant-time at the WebCrypto level.
  */
@@ -138,11 +146,10 @@ export async function verifyStripeWebhook(rawBody, sigHeader, secret) {
   const age = Math.abs(Date.now() / 1000 - parseInt(timestamp, 10));
   if (age > 300) throw new Error("Webhook timestamp too old — possible replay attack");
 
-  // Strip the "whsec_" prefix; the remainder is the raw secret in UTF-8.
-  const rawSecret = secret.startsWith("whsec_") ? secret.slice(6) : secret;
+  // The full secret string (prefix included) is the HMAC key — see note above.
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(rawSecret),
+    new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["verify"]
