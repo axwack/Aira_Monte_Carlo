@@ -18,11 +18,16 @@
  *   a "coffee-money" fee that still gates a valuable printable artifact.
  *   Keep in sync with src/billing/credits.js REPORT_COST_CREDITS.
  *
- * unlockedUntil = now + 24h. This endpoint is intentionally stateless
- * beyond the txn record — idempotency (not re-charging within the 24h
- * window) is tracked CLIENT-side (see isReportUnlocked() in
- * src/billing/credits.js). Calling this endpoint twice always charges
- * twice; the client is responsible for not calling it while still unlocked.
+ * unlockedUntil = now + 24h, and the window is SERVER-authoritative: it is
+ * derived from the ledger (latest 'report_unlock' row's created_at + 24h), not
+ * from a localStorage flag. Idempotency used to be the client's job, which was
+ * wrong in both directions — a customer who cleared localStorage got charged
+ * 250 credits a second time, and anyone who hand-set the flag read the report
+ * for free. POSTing while a window is still open now returns that window
+ * without charging again.
+ *
+ * GET returns the current window without charging, so the UI can ask the server
+ * whether the report is unlocked instead of trusting the browser.
  *
  * Required env vars: JWT_SECRET, DB. Optional: REPORT_COST_CREDITS (integer
  * override for the flat fee).
@@ -36,6 +41,40 @@ const UNLOCK_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export function onRequestOptions() {
   return handleOptions();
+}
+
+// Authenticate and return the customerId, or a Response to return as-is.
+async function authenticate(request, env) {
+  const authHeader = request.headers.get("Authorization") || "";
+  if (!authHeader.startsWith("Bearer ") || !env.JWT_SECRET) {
+    return { error: json({ error: "Authorization required" }, 401) };
+  }
+  try {
+    const payload = await verifyJWT(authHeader.slice(7), env.JWT_SECRET);
+    return { customerId: payload.customerId };
+  } catch {
+    return { error: json({ error: "Invalid or expired token" }, 401) };
+  }
+}
+
+/**
+ * The active unlock window, derived from the ledger rather than the client.
+ * Returns { unlocked, unlockedUntil } where unlockedUntil is an ISO string or
+ * null. A 'report_unlock' row younger than UNLOCK_WINDOW_MS means still open.
+ */
+async function currentUnlockWindow(db, customerId) {
+  const row = await db.prepare(`
+    SELECT created_at FROM credit_transactions
+    WHERE customer_id = ? AND type = 'report_unlock'
+    ORDER BY created_at DESC LIMIT 1
+  `).bind(customerId).first();
+
+  if (!row?.created_at) return { unlocked: false, unlockedUntil: null };
+
+  const untilMs = row.created_at * 1000 + UNLOCK_WINDOW_MS;
+  return untilMs > Date.now()
+    ? { unlocked: true,  unlockedUntil: new Date(untilMs).toISOString() }
+    : { unlocked: false, unlockedUntil: null };
 }
 
 // Same atomic pattern as analyze.js's deductD1Credits, adapted for a flat
@@ -55,7 +94,11 @@ async function deductReportCredits(db, customerId, cost) {
     VALUES (?, ?, ?, ?)
   `).bind(
     customerId,
-    deducted ? "deduct" : "overdraft",
+    // 'report_unlock' rather than the generic 'deduct', so report spend is
+    // distinguishable from AI spend in the ledger AND so the 24h window can be
+    // derived from it. An overdraft stays 'overdraft' — no window was granted,
+    // and counting it as one would hand out a free unlock.
+    deducted ? "report_unlock" : "overdraft",
     -cost,
     null
   ).run();
@@ -75,26 +118,56 @@ async function deductReportCredits(db, customerId, cost) {
   };
 }
 
-export async function onRequestPost({ request, env }) {
-  // ── Auth: same shape/errors as analyze.js ──────────────────────────────
-  const authHeader = request.headers.get("Authorization") || "";
-  if (!authHeader.startsWith("Bearer ") || !env.JWT_SECRET) {
-    return json({ error: "Authorization required" }, 401);
-  }
+/**
+ * GET /api/report-unlock — read the current window without charging.
+ * The UI calls this so "is the report unlocked?" is answered by the ledger
+ * rather than by a localStorage flag the user can edit.
+ */
+export async function onRequestGet({ request, env }) {
+  const auth = await authenticate(request, env);
+  if (auth.error) return auth.error;
+  if (!env.DB) return json({ error: "D1 database not bound — check Pages bindings" }, 500);
 
-  let customerId;
   try {
-    const payload = await verifyJWT(authHeader.slice(7), env.JWT_SECRET);
-    customerId = payload.customerId;
-  } catch {
-    return json({ error: "Invalid or expired token" }, 401);
+    const window = await currentUnlockWindow(env.DB, auth.customerId);
+    return json(window);
+  } catch (e) {
+    console.error("[report-unlock] window lookup failed:", e.message);
+    return json({ error: "Database error: " + e.message }, 500);
   }
+}
+
+export async function onRequestPost({ request, env }) {
+  const auth = await authenticate(request, env);
+  if (auth.error) return auth.error;
+  const customerId = auth.customerId;
 
   if (!env.DB) return json({ error: "D1 database not bound — check Pages bindings" }, 500);
 
   const cost = Number(env.REPORT_COST_CREDITS) > 0
     ? Number(env.REPORT_COST_CREDITS)
     : DEFAULT_REPORT_COST_CREDITS;
+
+  // ── Already unlocked? Return the open window instead of charging again ──
+  // Previously this endpoint charged on every call and relied on the client not
+  // to ask twice, so a customer who cleared localStorage (or opened the report
+  // on a second device) paid 250 credits again for access they already had.
+  try {
+    const open = await currentUnlockWindow(env.DB, customerId);
+    if (open.unlocked) {
+      return json({
+        ok: true,
+        creditsUsed: 0,
+        alreadyUnlocked: true,
+        creditsRemaining: null,
+        unlockedUntil: open.unlockedUntil,
+      });
+    }
+  } catch (e) {
+    // Non-fatal: if this read fails we fall through and charge, which is the
+    // pre-existing behavior. Better to risk a re-charge than to deny access.
+    console.warn("[report-unlock] existing-window check failed:", e.message);
+  }
 
   // ── Pre-check: same suspended/insufficient shape as analyze.js ────────
   let customer;

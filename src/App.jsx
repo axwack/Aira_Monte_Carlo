@@ -74,7 +74,7 @@ import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
-import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, isReportUnlocked } from "./billing/credits.js";
+import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked } from "./billing/credits.js";
 import { AdminPanel } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 
@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.14";
-export const BUILD_TAG = "[main] v1.2.14 — Contribution bucket routing (3 correctness bugs): (1) runMC added EVERY contribution to pretax, so brokerage savings were withdrawn as ordinary income instead of LTCG-against-basis and inflated the RMD base at 75 — new 'Brokerage / After-Tax Savings' and 'Roth IRA Contribution' Profile lines now route to the right bucket, with taxable contributions adding cost basis one-for-one. (2) runMC silently DROPPED every hsa-category balance (BLANK_PROFILE ships one) — now bucketed to cash, matching the waterfall engine. (3) accumulateToRetirement applied no contributions at all, understating the Withdrawal Plan's starting balances for anyone still working. 10 new hand-calculated tests. Prior v1.2.13: account-restore links.";
-export const BUILD_TIME = "2026-07-26T14:30:00Z";
+const APP_VERSION = "1.2.15";
+export const BUILD_TAG = "[main] v1.2.15 — Report paywall now real + instrumented: (1) the lock was cosmetic — all 8 sections rendered and were merely CSS-blurred, so deleting one class in devtools revealed the whole report; paid sections are no longer emitted into the DOM at all, replaced by a teaser that names them. (2) The 24h window is now derived from the LEDGER server-side, not a localStorage flag — clearing it no longer causes a second 250-credit charge, and hand-setting it no longer grants free access. (3) Report spend writes type='report_unlock' instead of the generic 'deduct', so report vs AI usage is finally distinguishable — the data that decides whether the report deserves its own SKU. Prior v1.2.14: contribution bucket routing";
+export const BUILD_TIME = "2026-07-26T15:15:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -10599,6 +10599,9 @@ export default function AiRAForecaster() {
   const [feedbackEmail, setFeedbackEmail] = useState("");
   const [showTerms, setShowTerms] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  // Re-checked from the server each time the report is opened, so a window that
+  // expired (or was unlocked on another device) is picked up without a reload.
+  const reportUnlocked = useReportUnlocked(showReport ? 1 : 0);
   // { msg, tone: "ok" | "err" }. Failures must be visible: a silent failure on
   // a paid return or a restore link leaves the customer stuck with no idea why,
   // and no way to tell us what went wrong. Errors persist longer than successes.
@@ -12086,12 +12089,13 @@ export default function AiRAForecaster() {
           rmdAge={rmdAge}
           buildTag={BUILD_TAG}
           onClose={() => setShowReport(false)}
-          // Soft client-side paywall gate (see UnlockPanel comment in
-          // PrintReport.jsx): self-host/dev mode (BILLING_ENABLED=false)
-          // always opens the report free, exactly as before this feature.
-          // In billing mode, a still-active 24h unlock (isReportUnlocked())
-          // also opens it free; otherwise the overlay renders locked/blurred.
-          locked={BILLING_ENABLED && !isReportUnlocked()}
+          // Paywall gate. Self-host/dev mode (BILLING_ENABLED=false) always
+          // opens the report free, exactly as before this feature. In billing
+          // mode the 24h window comes from useReportUnlocked(), which reconciles
+          // against the LEDGER — previously this read a localStorage flag, so
+          // editing one value granted access and clearing it caused a second
+          // 250-credit charge for a window the customer already owned.
+          locked={BILLING_ENABLED && !reportUnlocked}
         />
       )}
     </>

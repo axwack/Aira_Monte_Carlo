@@ -388,6 +388,44 @@ function DisclaimerSection() {
  * to the report). This panel just decides whether to render the blurred vs.
  * clear version and lets the user pay to flip that decision.
  */
+/**
+ * Placeholder shown in place of the paid sections while locked.
+ *
+ * Deliberately lists what the report contains rather than blurring the real
+ * thing: it leaks no figures, it can't be un-blurred, and naming the sections
+ * sells the unlock better than a smear of illegible text does.
+ */
+function LockedSectionsTeaser() {
+  const sections = [
+    ["Monte Carlo Results",        "Success rate across 3,000 paths, with percentile bands"],
+    ["Stress Test",                "How the plan holds through a 2000–2012 style sequence"],
+    ["Year-by-Year Withdrawals",   "Which account funds each year, and the tax on it"],
+    ["Roth Conversion Schedule",   "Conversion amounts by year and the bracket they fill"],
+    ["Lifetime Tax Summary",       "Total tax paid, and the saving vs. no withdrawal plan"],
+  ];
+
+  return (
+    <section className="pr-section pr-locked-teaser">
+      <h2>Included in the full report</h2>
+      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+        {sections.map(([title, desc]) => (
+          <li key={title} style={{
+            padding: "10px 0",
+            borderBottom: "1px solid rgba(0,0,0,0.08)",
+            display: "flex", gap: 10, alignItems: "baseline",
+          }}>
+            <span aria-hidden="true" style={{ opacity: 0.5 }}>🔒</span>
+            <span>
+              <strong>{title}</strong>
+              <span style={{ display: "block", fontSize: 12, opacity: 0.75 }}>{desc}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function UnlockPanel({ onUnlocked }) {
   const balance = useCreditBalance();
   const authed = isAuthenticated();
@@ -581,14 +619,29 @@ export default function PrintReport({ params = {}, mc, stress, rmdAge, buildTag,
         <button type="button" className="pr-btn-close" onClick={() => onClose && onClose()}>Close</button>
       </div>
       <div className="pr-report-wrap">
-        <div className={`print-report${isLocked ? " pr-blurred" : ""}`}>
+        <div className="print-report">
+          {/* Cover and Assumptions are the user's OWN inputs — nothing is
+              withheld by showing them, and they make the preview feel real. */}
           <CoverSection params={params} buildTag={buildTag} />
           <AssumptionsSection params={params} rmdAge={rmdAge} />
-          <MonteCarloSection mc={mc} params={params} />
-          <StressTestSection stress={stress} />
-          <WithdrawalScheduleSection rows={rows} endAge={params.endAge} />
-          <RothConversionSection rows={rows} />
-          <LifetimeTaxSection summary={waterfall?.summary} />
+
+          {isLocked ? (
+            /* The paid sections are NOT rendered while locked. They used to be
+               emitted in full and merely CSS-blurred (`pr-blurred`), so deleting
+               one class in devtools revealed the entire report — the paywall was
+               decorative. Withholding the markup is the only version that holds,
+               since every figure is computed in the browser. */
+            <LockedSectionsTeaser />
+          ) : (
+            <>
+              <MonteCarloSection mc={mc} params={params} />
+              <StressTestSection stress={stress} />
+              <WithdrawalScheduleSection rows={rows} endAge={params.endAge} />
+              <RothConversionSection rows={rows} />
+              <LifetimeTaxSection summary={waterfall?.summary} />
+            </>
+          )}
+
           <DisclaimerSection />
         </div>
         {isLocked && <UnlockPanel onUnlocked={() => setJustUnlocked(true)} />}
