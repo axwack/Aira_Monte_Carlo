@@ -97,6 +97,31 @@ function realizedGainFor(draw, balance, basis) {
  * with the waterfall's own starting balances instead of re-deriving them.
  * @returns {{ pretax0: number, roth0: number, taxable0: number, cash0: number, total: number, taxableBasis0: number }}
  */
+/**
+ * The retirement age the projection should actually start from.
+ *
+ * Every engine walks the drawdown as `age = retireAge … endAge` and maps it to
+ * calendar years via `BASE_YEAR + (age - currentAge)`. Account balances are
+ * always TODAY's balances. So if a user is already retired and enters the age
+ * they actually retired at — 67 today, retired at 65 — the projection starts two
+ * years in the PAST and draws two extra years of spending out of a balance that
+ * has already lived through them. The plan looks worse than it is, and the
+ * year-by-year table shows years that have already happened.
+ *
+ * Clamping to currentAge makes "I retired at 65 and I'm 67" and "I'm retiring
+ * now" the same projection, which is correct: both draw from today's money
+ * starting today. Users still entering a future retireAge are unaffected.
+ *
+ * @returns {number} max(retireAge, currentAge), or retireAge when either is
+ *   not a finite number (callers handle the null case themselves).
+ */
+export function effectiveRetireAge(retireAge, currentAge) {
+  const r = Number(retireAge);
+  const c = Number(currentAge);
+  if (!Number.isFinite(r) || !Number.isFinite(c)) return retireAge;
+  return Math.max(r, c);
+}
+
 export function accumulateToRetirement(params = {}) {
   const {
     currentAge, retireAge, accounts = [], preRetireEq = 91, cashRealReturn,
@@ -193,7 +218,6 @@ export function resolveDrawOrder(orderingMode, withdrawalOrder) {
 export function buildWithdrawalWaterfall(params = {}) {
   const {
     currentAge,
-    retireAge,
     endAge       = 90,
     sp: baseSp   = 80_000,
     ssAge        = 67,
@@ -247,9 +271,14 @@ export function buildWithdrawalWaterfall(params = {}) {
     carveouts   = [],
     otherIncomes = [],
     spSchedule   = null,
+    retireAge: retireAgeRaw,
   } = params;
 
-  if (currentAge == null || retireAge == null) {
+  // Already-retired users: see effectiveRetireAge. Every use below must be the
+  // clamped value, or the projection replays years that have already happened.
+  const retireAge = effectiveRetireAge(retireAgeRaw, currentAge);
+
+  if (currentAge == null || retireAgeRaw == null) {
     const empty = { rows: [], totalTax: 0, finalPretax: 0, finalRoth: 0, finalCash: 0, finalTaxable: 0 };
     return { smart: empty, naive: empty, summary: emptySummary() };
   }
