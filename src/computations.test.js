@@ -530,8 +530,19 @@ describe("runMC — Monte Carlo integration", () => {
   });
 
   test("monotonicity: longer horizon → lower success rate", () => {
-    const shorter = runMC(BASE, 85, 1000, 42, true);
-    const longer  = runMC(BASE, 95, 1000, 42, true);
+    // The spending path must be held constant across the two horizons, or this
+    // measures Guyton-Klinger rather than horizon length. GK's longevity rule
+    // suspends capital-preservation cuts inside the final 15 years, so an
+    // endAge of 85 disables cuts for the WHOLE retirement while 95 keeps them
+    // active until 80 — the shorter plan never self-corrects and can genuinely
+    // score worse, inverting the property under test. Pinning the GK floor and
+    // ceiling to the same value clamps spending flat regardless of which rules
+    // fire, leaving horizon as the only difference. Leaner than BASE too, since
+    // at $2M against $80k both horizons succeed ~100% and the comparison
+    // becomes rounding noise.
+    const LEAN = { ...BASE, port: 1_100_000, gkFloor: 80_000, gkCeiling: 80_000 };
+    const shorter = runMC(LEAN, 85, 1000, 42, true);
+    const longer  = runMC(LEAN, 95, 1000, 42, true);
     expect(shorter.rate).toBeGreaterThan(longer.rate);
   });
 

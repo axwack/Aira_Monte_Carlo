@@ -268,3 +268,55 @@ export function spendingSmileFactor(age, retireAge, enabled = true) {
   }
   return Math.min(SMILE_MAX, Math.max(SMILE_MIN, f));
 }
+
+// ─── Healthcare shocks ───────────────────────────────────────────────────────
+//
+// A late-retirement medical or long-term-care event: infrequent, expensive, and
+// the single most common reason an otherwise sound plan fails. Modeled as an
+// annual probability of a randomly-sized cost from `hcShockAge` onward.
+//
+// Costs are entered in TODAY's dollars and inflated to the year they occur.
+// This matters more than it looks: a $100,000 shock at age 90 is a 2050s expense
+// on a 2020s number. Applying it un-inflated understates it by roughly half over
+// a 25-year horizon — and medical inflation has historically outpaced CPI, so
+// even inflating at general CPI is the conservative-but-honest floor.
+
+/**
+ * Stochastic draw for one simulated year. Used by the Monte Carlo, where each
+ * path needs its own outcome.
+ *
+ * @param {number} age
+ * @param {function} rand   seeded RNG returning [0,1)
+ * @param {object} p        profile (hcShockAge, hcProb, hcMin, hcMax)
+ * @param {number} cumInfl  inflation factor from today to this year
+ * @returns {number} shock cost in nominal dollars for this year (0 if none)
+ */
+export function healthcareShockDraw(age, rand, p = {}, cumInfl = 1) {
+  const startAge = p.hcShockAge ?? 72;
+  const prob     = (p.hcProb ?? 3.5) / 100;
+  if (!(age >= startAge) || prob <= 0) return 0;
+  if (rand() >= prob) return 0;
+
+  const lo = p.hcMin ?? 70_000;
+  const hi = Math.max(lo, p.hcMax ?? 130_000);
+  const todaysCost = lo + rand() * (hi - lo);
+  return todaysCost * (cumInfl || 1);
+}
+
+/**
+ * Deterministic analogue: the EXPECTED annual healthcare cost.
+ *
+ * The year-by-year schedule is a single median path, so it cannot show a
+ * coin-flip event. Charging the expected value (probability x mean cost) each
+ * eligible year keeps the deterministic plan consistent in expectation with the
+ * Monte Carlo, instead of quietly ignoring a cost the MC does model.
+ */
+export function expectedHealthcareShock(age, p = {}, cumInfl = 1) {
+  const startAge = p.hcShockAge ?? 72;
+  const prob     = (p.hcProb ?? 3.5) / 100;
+  if (!(age >= startAge) || prob <= 0) return 0;
+
+  const lo = p.hcMin ?? 70_000;
+  const hi = Math.max(lo, p.hcMax ?? 130_000);
+  return prob * ((lo + hi) / 2) * (cumInfl || 1);
+}
