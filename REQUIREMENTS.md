@@ -823,6 +823,29 @@ JSX, zero engine risk** (every panel is a pure function of the flat `values`/`as
 - **Phase B (the headline):** step reorder + "Money In" consolidation (move SS + rental into it, split while-working/in-retirement). Pure JSX moves + `STEPS`/`PANELS` reorder + subtitle/pointer updates.
 - **Phase C (correctness):** single-point-of-control — wizard pointers for the 5 duplicated fields, delete the 7-key fan-out shim.
 - **Phase D:** move Housing/carveouts → Money Out, Roth-strategy → Strategy, tuning → Advanced (behind disclosure).
+
+#### Phase D — partially DONE 2026-07-26 (v1.2.16): AssumptionsPanel regrouped
+Vincent (2026-07-26): *"can you move any tax stuff to somewhere else… HOME/RE Growth should go into
+Housing and Fixed Obligations. The AI line items should have its own section. Everything should be
+naturally grouped together."* Done **within** AssumptionsPanel (the step-level moves in Phase B/D are
+still open):
+- **"Personal Profile" is now identity only** — name, DOB, state, federal filing status, employer start
+  date — and **collapsed by default** (set-once data shouldn't cost vertical space every visit). It was a
+  grab bag of 9 unrelated fields, the clearest instance of finding #2 (proximity).
+- New **`ACard`** component (module-level, `collapsible`/`defaultOpen`) — the first step of Phase A's
+  shared card system, applied to the cards this change touched. Reskinning the *other* panels onto it is
+  still outstanding.
+- **Evicted to topic-matching cards:** taxable cost basis + joint-RMD toggle → new **Tax Settings**;
+  Home/RE growth → **Housing & Fixed Obligations** (it's an appreciation rate for the housing inputs it
+  applies to); cash return → **Monte Carlo Model Parameters** (it's a return assumption); Gemini key +
+  model → new collapsed **AI Assistant** card (credentials for an optional feature, unrelated to the
+  retirement model).
+- Closed finding #6: deleted the dead `abReliability`/`abGrowth` destructures (and `ab`/`ssb`, also unused).
+- Gate: production build compiles + App render smoke test. Pure JSX, no engine change, so the full Jest
+  suite was not re-run (per standing preference for UI-only work).
+**Still open on §18:** the step reorder + Money In consolidation (Phase B), the shared card system across
+all panels (Phase A), single-point-of-control (Phase C), and moving Housing→Money Out /
+Roth-strategy→Strategy at the *step* level.
 Gate each through a render smoke-test (the RothLadder-crash class of bug) + design-authority re-verdict on the final layout.
 
 ### Reddit-update summary (plain language)

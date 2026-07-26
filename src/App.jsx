@@ -100,9 +100,9 @@ if (typeof document !== "undefined") {
 
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.15";
-export const BUILD_TAG = "[main] v1.2.15 — Report paywall now real + instrumented: (1) the lock was cosmetic — all 8 sections rendered and were merely CSS-blurred, so deleting one class in devtools revealed the whole report; paid sections are no longer emitted into the DOM at all, replaced by a teaser that names them. (2) The 24h window is now derived from the LEDGER server-side, not a localStorage flag — clearing it no longer causes a second 250-credit charge, and hand-setting it no longer grants free access. (3) Report spend writes type='report_unlock' instead of the generic 'deduct', so report vs AI usage is finally distinguishable — the data that decides whether the report deserves its own SKU. Prior v1.2.14: contribution bucket routing";
-export const BUILD_TIME = "2026-07-26T15:15:00Z";
+const APP_VERSION = "1.2.16";
+export const BUILD_TAG = "[main] v1.2.16 — Profile regrouped by topic (REQUIREMENTS §18, partial Phase D): 'Personal Profile' was a grab bag of 9 unrelated fields — it is now identity only (name, DOB, state, federal filing status, employer start date) and COLLAPSED by default. Tax knobs (taxable cost basis, joint-RMD table) moved to a new Tax Settings card; Home/RE growth moved into Housing & Fixed Obligations where it applies; cash return moved to Monte Carlo Model Parameters; Gemini key + model moved to their own collapsed AI Assistant card. New shared collapsible ACard component. Prior v1.2.15: report paywall is now enforced by withholding markup (was cosmetically blurred) + ledger-derived 24h window + report_unlock ledger type.";
+export const BUILD_TIME = "2026-07-26T16:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -9445,11 +9445,47 @@ function ADateInput({ value, onSet }) {
   );
 }
 
+/**
+ * One card = one topic, on this panel. `collapsible` is for set-once groups
+ * (identity, API keys) that shouldn't occupy vertical space every visit —
+ * progressive disclosure, so the panel opens on what a user actually revisits.
+ */
+function ACard({ title, accent, desc, children, collapsible = false, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const isOpen = collapsible ? open : true;
+  const heading = (
+    <div style={{
+      fontSize: 11, fontWeight: 700, color: accent, textTransform: "uppercase",
+      letterSpacing: "0.1em", marginBottom: desc || !isOpen ? 4 : 12,
+      display: "flex", alignItems: "center", gap: 8,
+    }}>
+      <span>{title}</span>
+      {collapsible && <span style={{ fontSize: 10, color: "#64748b" }}>{isOpen ? "▾" : "▸"}</span>}
+    </div>
+  );
+
+  return (
+    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          style={{ background: "none", border: "none", padding: 0, margin: 0, width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}
+        >
+          {heading}
+        </button>
+      ) : heading}
+      {desc && isOpen && (
+        <div style={{ fontSize: 11, color: "#475569", marginBottom: 12, lineHeight: 1.5 }}>{desc}</div>
+      )}
+      {isOpen && children}
+    </div>
+  );
+}
+
 function AssumptionsPanel({ values, onChange }) {
   const {
     dob,
-    abReliability,
-    abGrowth,
     ssCola,
     preRetireEq,
     postRetireEq,
@@ -9457,8 +9493,6 @@ function AssumptionsPanel({ values, onChange }) {
     hcProb,
     hcMin,
     hcMax,
-    ab,
-    ssb,
   } = values;
 
   const derivedAge = dob
@@ -9467,11 +9501,15 @@ function AssumptionsPanel({ values, onChange }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* PERSONAL PROFILE CARD */}
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "#0ea5e9", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
-          Personal Profile
-        </div>
+      {/* ── PERSONAL PROFILE — identity only ────────────────────────────────
+          Was a grab bag: cash return, taxable cost basis, RE growth, the
+          joint-RMD toggle and the Gemini key all lived here too, because fields
+          were added to whichever card was open. Now it holds only who you are —
+          five set-once facts — and it's collapsed by default so the panel opens
+          on the settings people actually revisit. Everything evicted from here
+          moved to a card that matches its topic (see below). */}
+      <ACard title="Personal Profile" accent="#0ea5e9" collapsible defaultOpen={false}
+        desc="Who you are. Set once — collapse this and forget it.">
         <ARow
           label="Full Name"
           desc="Used in the exported JSON filename (AiRA_Profile_<name>_YYYY-MM-DD.json)."
@@ -9496,12 +9534,6 @@ function AssumptionsPanel({ values, onChange }) {
         >
           <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
         </ARow>
-        <ARow label="Cash return" desc="Annual return on cash/savings (HYSA, SGOV, money market). Drives the cash bucket in the Monte Carlo AND the Withdrawal Plan tab.">
-          <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={8} step={0.1} suffix="%" />
-        </ARow>
-        <ARow label="Taxable cost basis" desc="Percent of your taxable brokerage balance that is cost basis (from your brokerage statement). The rest is unrealized gain — selling realizes it as LTCG income, taxed at 0/15/20% federal (plus state, plus NIIT above the MAGI threshold) and counted toward Social Security's provisional income and Medicare IRMAA.">
-          <ANumInput value={values.taxableBasisPct ?? 70} onSet={(v) => onChange("taxableBasisPct", v)} min={0} max={100} step={5} suffix="%" />
-        </ARow>
         <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
           <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
         </ARow>
@@ -9515,11 +9547,18 @@ function AssumptionsPanel({ values, onChange }) {
             <option value="single">Single (unmarried)</option>
           </select>
         </ARow>
+      </ACard>
 
-        <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in Net Worth projection">
-          <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
+      {/* ── TAX SETTINGS ────────────────────────────────────────────────────
+          The two tax knobs that were buried in Personal Profile. Both are
+          genuinely tax mechanics, and the joint-RMD toggle keys off filing
+          status, so it belongs beside the cost-basis field rather than next to
+          someone's name. */}
+      <ACard title="Tax Settings" accent="#38bdf8"
+        desc="How AiRA taxes your withdrawals. Defaults are fine for most people.">
+        <ARow label="Taxable cost basis" desc="Percent of your taxable brokerage balance that is cost basis (from your brokerage statement). The rest is unrealized gain — selling realizes it as LTCG income, taxed at 0/15/20% federal (plus state, plus NIIT above the MAGI threshold) and counted toward Social Security's provisional income and Medicare IRMAA.">
+          <ANumInput value={values.taxableBasisPct ?? 70} onSet={(v) => onChange("taxableBasisPct", v)} min={0} max={100} step={5} suffix="%" />
         </ARow>
-
         {(values.filingStatus || "mfj") !== "single" && (
           <Toggle
             val={values.useJointRmdTable}
@@ -9528,33 +9567,7 @@ function AssumptionsPanel({ values, onChange }) {
             accent="#a78bfa"
           />
         )}
-
-        {/* --- GEMINI API KEY INPUT --- */}
-        <ARow label="Gemini API Key" desc="Bring your own free key from Google AI Studio to unlock AI analysis.">
-          <input
-            type="password"
-            value={values.geminiApiKey || ''}
-            onChange={(e) => onChange('geminiApiKey', e.target.value)}
-            placeholder="AIza..."
-            style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
-          />
-          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#60a5fa", marginLeft: 8 }}>Get free key →</a>
-        </ARow>
-        <ARow label="AI Model" desc="Select the Gemini model for AI features. If a model becomes unavailable (Google deprecates often), pick another from the dropdown.">
-          <select
-            value={values.geminiModel || DEFAULT_GEMINI_MODEL}
-            onChange={(e) => onChange('geminiModel', e.target.value)}
-            style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
-          >
-            {GEMINI_MODELS.map(m => (
-              <option key={m.id} value={m.id}>{m.label}</option>
-            ))}
-          </select>
-          <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
-            {(GEMINI_MODELS.find(m => m.id === (values.geminiModel || DEFAULT_GEMINI_MODEL))?.note) || ""}
-          </span>
-        </ARow>
-      </div>
+      </ACard>
 
       {/* EXPENSE MODEL CARD */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
@@ -9564,6 +9577,12 @@ function AssumptionsPanel({ values, onChange }) {
         <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
           Separate housing &amp; fixed obligations from core lifestyle spend. The MC engine adds each carveout to the portfolio draw automatically.
         </div>
+        {/* Moved here from Personal Profile: an appreciation rate for real
+            estate belongs with the housing inputs it applies to, not beside
+            the user's date of birth. */}
+        <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in the Net Worth projection.">
+          <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
+        </ARow>
         <ARow label="Housing type" desc="Own = mortgage P&I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
           <select
             value={values.housingType || "own"}
@@ -9734,6 +9753,11 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is a number where, if you hit this, would reconsider your target goal? This is a number that is a secondary decision. If you hit this, would you be ok with this goal if something caused a change in your plan,">
           <ANumInput value={values.portfolioGoal} onSet={(v) => onChange("portfolioGoal", v)} min={0} max={10000000} step={50000} />
         </ARow>
+        {/* Moved here from Personal Profile: it's a return assumption, so it
+            belongs with the other return/market assumptions. */}
+        <ARow label="Cash return" desc="Annual return on cash/savings (HYSA, SGOV, money market). Drives the cash bucket in the Monte Carlo AND the Withdrawal Plan tab.">
+          <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={8} step={0.1} suffix="%" />
+        </ARow>
         <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
           <ANumInput value={values.ssCola} onSet={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} suffix="%" />
         </ARow>
@@ -9776,6 +9800,40 @@ function AssumptionsPanel({ values, onChange }) {
       >
         Changes take effect on next Monte Carlo run · These replace all hardcoded simulation values
       </div>
+
+      {/* ── AI ASSISTANT ────────────────────────────────────────────────────
+          Its own card, per request. These are credentials/config for an
+          optional feature — nothing to do with the retirement model — so
+          mixing them in with identity fields made both harder to scan.
+          Collapsed by default: set once, or never (AI also works on credits
+          without a key). */}
+      <ACard title="AI Assistant" accent="#c4b5fd" collapsible defaultOpen={false}
+        desc="Optional. Bring your own free Gemini key to run AI analysis without spending AiRA credits.">
+        <ARow label="Gemini API Key" desc="Bring your own free key from Google AI Studio to unlock AI analysis.">
+          <input
+            type="password"
+            value={values.geminiApiKey || ''}
+            onChange={(e) => onChange('geminiApiKey', e.target.value)}
+            placeholder="AIza..."
+            style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
+          />
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#60a5fa", marginLeft: 8 }}>Get free key →</a>
+        </ARow>
+        <ARow label="AI Model" desc="Select the Gemini model for AI features. If a model becomes unavailable (Google deprecates often), pick another from the dropdown.">
+          <select
+            value={values.geminiModel || DEFAULT_GEMINI_MODEL}
+            onChange={(e) => onChange('geminiModel', e.target.value)}
+            style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
+          >
+            {GEMINI_MODELS.map(m => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+          <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
+            {(GEMINI_MODELS.find(m => m.id === (values.geminiModel || DEFAULT_GEMINI_MODEL))?.note) || ""}
+          </span>
+        </ARow>
+      </ACard>
     </div>
   );
 }
