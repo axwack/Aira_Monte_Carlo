@@ -115,6 +115,40 @@ function realizedGainFor(draw, balance, basis) {
  * @returns {number} max(retireAge, currentAge), or retireAge when either is
  *   not a finite number (callers handle the null case themselves).
  */
+/**
+ * The Guyton-Klinger reference withdrawal rate for a given year.
+ *
+ * GK compares this year's withdrawal rate against a baseline and raises spending
+ * 10% when it falls 20% below (Prosperity Rule) or cuts 10% when it rises 20%
+ * above (Capital Preservation). In the 2006 paper the baseline is the INITIAL
+ * withdrawal rate, fixed at retirement — and it works there because the paper
+ * has no outside income, so the ratio moves only when the portfolio moves.
+ *
+ * AiRA nets income out of the numerator (otherwise a retiree whose SS starts at
+ * retirement trips a bogus cut every year). That makes the signal move when
+ * INCOME changes, not just the portfolio — so a pension rising on schedule was
+ * indistinguishable from investment outperformance and repeatedly fired the
+ * Prosperity Rule. A user reported the consequence: adding a pension that grew
+ * $1,135/yr produced ~$637k of extra lifetime income but LOWERED their ending
+ * balance and their success rate, because ~62% of that income was silently
+ * absorbed into automatic 10% spending raises. A $1,135 income bump could
+ * trigger a $9,000 spending raise, and it compounded annually.
+ *
+ * Fixing it means re-baselining the reference every year against the SAME
+ * income, so scheduled income cancels from both sides of the comparison and
+ * only portfolio deviation moves the guardrails. At year 0 this is identical to
+ * the old static initialWR, so nothing else changes.
+ *
+ * Baseline = "what my rate would be this year if the portfolio had merely kept
+ * pace with inflation and I spent my original plan."
+ */
+export function gkReferenceWR({ plannedSpend, cumInfl = 1, incomeOffset = 0, fixedCosts = 0, portAtRetire }) {
+  const denom = (portAtRetire || 0) * (cumInfl || 1);
+  if (!Number.isFinite(denom) || denom <= 0) return 0;
+  const baselineNeed = Math.max(0, (plannedSpend || 0) * (cumInfl || 1) - (incomeOffset || 0)) + (fixedCosts || 0);
+  return baselineNeed / denom;
+}
+
 export function effectiveRetireAge(retireAge, currentAge) {
   const r = Number(retireAge);
   const c = Number(currentAge);
@@ -540,8 +574,17 @@ export function buildWithdrawalWaterfall(params = {}) {
       } else if (age > retireAge && totalPort > 0) {
         const yrsRemaining = endAge - age;
         if (yrsRemaining > 15) {
+          // Reference re-based on THIS year's income — a scheduled pension
+          // raise must not read as portfolio outperformance. See gkReferenceWR.
+          const refWR = gkReferenceWR({
+            plannedSpend: baseSp,
+            cumInfl: Math.pow(1 + infR, age - retireAge),
+            incomeOffset: fixedIncome + otherIncTotal,
+            fixedCosts: housingCost + carveoutCost + ev.committed,
+            portAtRetire: totalPort0,
+          });
           sp = gkWithdraw(
-            totalPort, initWR, sp, lastRet, infR, adjFloor, adjCeiling,
+            totalPort, refWR, sp, lastRet, infR, adjFloor, adjCeiling,
             fixedIncome + otherIncTotal, housingCost + carveoutCost + ev.committed
           );
         } else {
