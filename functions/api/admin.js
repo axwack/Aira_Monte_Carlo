@@ -276,6 +276,81 @@ export async function onRequestPost({ request, env, waitUntil }) {
       });
     }
 
+    // ── issue-restore-link ────────────────────────────────────────────────
+    // Mints an expiring, use-capped restore token and returns a clickable URL.
+    // Give this to a customer who paid but cannot reach their credits (lost
+    // localStorage, new device, or a verify-session failure at purchase time).
+    //
+    // Resolving by email uses a real lookup against customers.email — NOT
+    // fakeCustomerId(), which would invent a cus_ADMIN_… identity and split the
+    // balance away from their real Stripe customer id.
+    if (action === "issue-restore-link") {
+      const { email, customerId: explicitId, days = 14, maxUses = 3, note = null } = body;
+      if (!email && !explicitId) return json({ ok: false, error: "Provide email or customerId" }, 400);
+      if (!env.DB)               return json({ ok: false, error: "D1 not bound" }, 500);
+
+      let customerId = explicitId || null;
+      if (!customerId) {
+        try {
+          const found = await env.DB.prepare(
+            "SELECT stripe_customer_id FROM customers WHERE email = ? ORDER BY updated_at DESC"
+          ).bind(email).all();
+          const ids = (found.results || []).map(r => r.stripe_customer_id);
+          if (ids.length === 0) {
+            return json({ ok: false, error: `No customer found with email ${email}` }, 404);
+          }
+          if (ids.length > 1) {
+            // Ambiguous — refuse rather than guess which account to restore.
+            return json({
+              ok: false,
+              error: `${ids.length} customers share that email. Re-run with an explicit customerId.`,
+              candidates: ids,
+            }, 409);
+          }
+          customerId = ids[0];
+        } catch (e) {
+          return json({ ok: false, error: "D1 error: " + e.message }, 500);
+        }
+      } else {
+        // Explicit id must actually exist, or the link would 401 on redemption.
+        try {
+          const exists = await env.DB.prepare(
+            "SELECT 1 AS ok FROM customers WHERE stripe_customer_id = ?"
+          ).bind(customerId).first();
+          if (!exists) return json({ ok: false, error: `No customer row for ${customerId}` }, 404);
+        } catch (e) {
+          return json({ ok: false, error: "D1 error: " + e.message }, 500);
+        }
+      }
+
+      // 32 bytes of CSPRNG entropy, hex-encoded — not guessable, and distinct
+      // from the UUID shape used by checkout nonces.
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      const token = [...bytes].map(b => b.toString(16).padStart(2, "0")).join("");
+
+      const ttlSeconds = Math.max(1, Math.min(90, Number(days) || 14)) * 24 * 3600;
+      const cap        = Math.max(1, Math.min(20, Number(maxUses) || 3));
+
+      try {
+        await env.DB.prepare(`
+          INSERT INTO restore_tokens (token, customer_id, note, expires_at, max_uses)
+          VALUES (?, ?, ?, unixepoch() + ?, ?)
+        `).bind(token, customerId, note, ttlSeconds, cap).run();
+      } catch (e) {
+        return json({ ok: false, error: "D1 error (did you run migration 006?): " + e.message }, 500);
+      }
+
+      const origin = new URL(request.url).origin;
+      return json({
+        ok:        true,
+        customerId,
+        url:       `${origin}/?restore=${token}`,
+        maxUses:   cap,
+        expiresAt: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+        note:      "Send this URL to the customer. Clicking it restores their credits on that device.",
+      });
+    }
+
     return json({ ok: false, error: `Unknown action: ${action}` }, 400);
   };
 

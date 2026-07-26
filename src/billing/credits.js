@@ -315,6 +315,61 @@ export async function verifyStripeSession(sessionId, nonce) {
   return { credits: initialCredits };
 }
 
+// ─── Account restore (?restore=…) ──────────────────────────────────────────
+
+/**
+ * Exchange an admin-issued restore token for a JWT and store it, exactly as a
+ * successful Stripe return would. Lets a customer who paid but lost access
+ * (cleared localStorage, new device, or a verify-session failure at purchase
+ * time) get back in by clicking one link.
+ */
+export async function redeemRestoreToken(token) {
+  const res = await fetch("/api/restore", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ token }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || "Restore failed");
+  }
+  const { token: jwt, credits } = await res.json();
+  setStoredJWT(jwt);
+  try { localStorage.setItem(CACHED_BALANCE_KEY, String(credits)); } catch {}
+  _notifyListeners(credits);
+  return { credits };
+}
+
+/**
+ * Mount alongside useStripeReturn. When the page loads with ?restore=<token>,
+ * redeems it for a JWT and returns { success, credits } or { success, error }.
+ *
+ * The token is stripped from the URL before the network call so it never
+ * survives into history or a shared screenshot — it is a bearer credential
+ * until redeemed (though an expiring, use-capped one; see
+ * db/migrations/006_restore_tokens.sql).
+ */
+export function useRestoreReturn() {
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    if (!BILLING_ENABLED) return;
+    const params = new URLSearchParams(window.location.search);
+    const token  = params.get("restore");
+    if (!token) return;
+
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete("restore");
+    window.history.replaceState({}, "", clean.toString());
+
+    redeemRestoreToken(token)
+      .then(({ credits }) => setStatus({ success: true, credits }))
+      .catch(e => setStatus({ success: false, error: e.message }));
+  }, []);
+
+  return status;
+}
+
 // ─── Hook: detect Stripe return URL ────────────────────────────────────────────
 
 /**
