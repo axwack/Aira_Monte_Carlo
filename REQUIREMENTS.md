@@ -47,12 +47,34 @@ what they bought.** Treat as the top priority ahead of any feature work.
 
 3. **Verify the Functions are even deployed** (no auth needed):
    ```bash
-   curl -s -o /dev/null -w "%{http_code}\n" https://www.tiredtoretire.com/api/report-capability
+   curl -s -o /dev/null -w "%{http_code}\n" https://aira.tiredtoretire.com/api/report-capability
    ```
    200 = deployed. 404 = no billing backend at all, which would explain everything.
 
 4. **Restore an affected customer:** live site `?aira_admin=1` → `issue-restore-link`
    (it resolves the real `email` column) → send them the `?restore=…` URL.
+
+#### ⚠️ CORRECTION (2026-07-27, later the same day)
+
+The root-cause paragraph below is **WRONG about the trigger** and is kept only so the
+reasoning is traceable. Verified afterwards against the live database:
+
+- **The live host is `aira.tiredtoretire.com`.** `www.tiredtoretire.com` 301-redirects
+  and its `/api/*` does not serve the Functions. The API is healthy (200).
+- **`pending_checkouts` has 4 rows and only 1 consumed.** So `/api/verify-session`
+  never completed for 3 of the 4 purchases and **the JWT was never minted at all**.
+  It was not a TTL expiry — those customers bought on 2026-07-26, one day earlier,
+  so nothing had expired. The failure is at MINT time, not expiry time.
+- v1.2.29's sliding refresh is still correct and worth having, but it renews an
+  existing token and therefore **could not have prevented this**.
+- v1.2.33 instruments every `verify-session` exit with a distinct `reason` code
+  (grep production logs for `[verify-session]`), including which of
+  nonce_not_found / already_consumed / expired occurred. **The next purchase will
+  name the cause** — stop hypothesising until there is one real log line.
+- Restore tokens were minted manually on 2026-07-27 for the 3 affected customers and
+  the mechanism is confirmed working (uses incremented 0→1 on each).
+- Also confirmed: the client's 6×2s poll (§7/L2) runs only AFTER verify-session has
+  already succeeded — it waits on the webhook, so it is a real bug but NOT this one.
 
 #### Root cause — one bug produces all three symptoms
 
@@ -1468,3 +1490,68 @@ numbers byte-for-byte (regression lock).
 AiRA will apply the spousal top-up automatically, show what happens to the survivor when one
 of you dies — including the tax hit from filing Single — and tell you whether the higher
 earner delaying to 70 is worth it as survivor insurance."
+
+## 23. Roth conversion tax funded from "unlimited outside cash" — requested 2026-07-27
+
+**Priority: P1 (correctness — it overstates the headline benefit of the flagship feature).**
+**Status: warned but NOT fixed.**
+
+### The problem
+
+`taxFunding = "outside_cash"` pays each year's Roth-conversion tax from a pot the
+simulation **never tracks and never depletes**. Consequences:
+
+- Every converted dollar lands in the Roth intact, so the conversion looks strictly
+  better than it can actually perform.
+- The pot is infinite, so the strategy never runs out no matter how large or how
+  long the conversion ladder is — there is no failure mode, which is not a property
+  any real funding source has.
+- It competes directly against `from_taxable` in the Conversion Plan comparison, and
+  wins on numbers it did not have to earn. A user comparing funding sources is being
+  shown an unfair race.
+
+v1.2.27 (`3876a2f`) added an inline warning, moved the option off first position, and
+marked "From taxable" as recommended. **That is disclosure, not a fix** — the engine
+still models infinite money, and the number the user reads is still wrong.
+
+### The fix
+
+Make outside cash a real, finite, depleting balance.
+
+1. New profile field `outsideCashBalance` (default **0**, so the current default
+   behaviour is "you have none" rather than "you have infinite"). Generic-first: no
+   user-specific value in code.
+2. Track it as a real bucket through the year loop in `buildWithdrawalWaterfall`:
+   each year's `convTax` (and only the conversion tax — this pot is not a spending
+   source) is drawn from it and the balance carries forward, growing at the same rate
+   the cash bucket uses (`cashRealReturn`), not at the equity rate.
+3. **Define the exhaustion behaviour explicitly** — this is the part that needs a
+   decision, not a default:
+   - preferred: fall back to `from_taxable` for the remainder of that year's tax and
+     every subsequent year, and flag the year it happened, or
+   - shrink the conversion to what the remaining outside cash can fund (mirrors the
+     existing Step-6.5 affordability shrink loop), or
+   - hard-stop conversions once exhausted.
+   Whichever is chosen, the row must carry a reason field so the UI can say
+   "conversions stopped/shrank at age N — outside cash exhausted", exactly as
+   `convCapReason` now does for the bracket/IRMAA cap.
+4. Once it is finite, the warning copy can soften from "this overstates your benefit"
+   to a plain statement of the modelled balance — the honesty problem goes away
+   because the model becomes honest.
+
+### Notes
+
+- Same defect class as `abReliability` (§13.2 #11) and the age-80 rental stop: a
+  modelling shortcut the UI presents as a real strategy. The pattern to watch for is
+  any input that cannot fail.
+- Interacts with the tax-payment-source optimizer in §17 Phase 3, which is supposed to
+  compare paying conversion tax from taxable / cash / pre-tax by lifetime outcome. That
+  comparison is **meaningless while one of the sources is infinite** — so this is a
+  prerequisite for §17 Phase 3, not an independent nicety.
+- Needs a regression lock: `outsideCashBalance = 0` with `taxFunding = "outside_cash"`
+  must behave sensibly (immediately fall back), and existing profiles that selected
+  outside cash will change numbers — that is the point, but it should be called out in
+  the build note so it is not mistaken for a regression.
+- Gate through logic-validator (does the pot belong in MAGI/provisional income? it is
+  after-tax money being spent, so it should not be income — confirm) and
+  design-authority (where the balance input lives, and the exhausted-state copy).
