@@ -19,6 +19,107 @@ Last updated: **2026-07-27** (branch `main`; **read §0 SESSION HANDOFF first**;
 Written for whoever picks this up next, possibly on a different machine/account.
 Everything below is verified against the code, not remembered.
 
+### 🔴 OPEN PRODUCTION INCIDENT — customers cannot see or spend credits
+
+**This is not one person's browser problem. Real customers have paid and cannot use
+what they bought.** Treat as the top priority ahead of any feature work.
+
+#### Do these in order
+
+1. **Rotate `ADMIN_SECRET` — it was pasted into a chat transcript on 2026-07-27.**
+   `openssl rand -hex 32` → Cloudflare → Pages → `aira-monte-carlo` → Settings → Env
+   vars → **Production** (Preview is a separate list) → save → **redeploy** (env var
+   changes do not apply to already-built deployments).
+
+2. **Confirm the money is really there** (needs only a `wrangler` login — no
+   `ADMIN_SECRET`, no deployed Functions):
+   ```bash
+   wrangler d1 execute aira-credits --remote \
+     --command "SELECT stripe_customer_id, email, credits, status FROM customers ORDER BY updated_at DESC LIMIT 20"
+   ```
+   Then check whether anyone has ever successfully SPENT:
+   ```bash
+   wrangler d1 execute aira-credits --remote \
+     --command "SELECT type, COUNT(*) n, SUM(amount) total FROM credit_transactions GROUP BY type"
+   ```
+   As of 2026-07-26 there were **zero `deduct` rows**. If that is still true, nobody has
+   ever spent a credit — which points at the root cause below rather than at the meter.
+
+3. **Verify the Functions are even deployed** (no auth needed):
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}\n" https://www.tiredtoretire.com/api/report-capability
+   ```
+   200 = deployed. 404 = no billing backend at all, which would explain everything.
+
+4. **Restore an affected customer:** live site `?aira_admin=1` → `issue-restore-link`
+   (it resolves the real `email` column) → send them the `?restore=…` URL.
+
+#### Root cause — one bug produces all three symptoms
+
+A customer's only proof of ownership is a JWT in one browser's `localStorage`, minted
+once at the Stripe redirect. With no valid JWT:
+- `fetchCreditBalance()` returns `null` → the panel falls back to a cached 0 → **"AIRA
+  CREDITS 0"**, indistinguishable from never having paid;
+- `ai-analysis.js` gates on `BILLING_ENABLED && getStoredJWT()`, so it **never calls the
+  paid proxy** — it silently returns non-AI output;
+- because the proxy is never called, **credits never deplete**. "Credits don't deplete"
+  and "credits don't show" are the SAME bug, not two.
+
+v1.2.29 added sliding refresh so a *valid* session now renews indefinitely. It cannot
+recover a session that is already gone — that is what restore links are for.
+
+#### How it is SUPPOSED to work (verified in code, so the meter itself is sound)
+
+Purchase → Stripe webhook credits D1 → redirect mints a JWT → client stores it →
+`/api/balance` shows the balance and (v1.2.29+) rolls the session forward → an AI call
+goes through `/api/analyze` with the JWT → server checks balance, refuses below
+`MIN_CREDITS_GUARD = 50` with a 402, calls Gemini, then deducts
+`ceil(tokens / RAW_TOKENS_PER_CREDIT)` via an **atomic** `UPDATE … WHERE credits >= ?`
+(race-safe; a lost race writes an `overdraft` audit row), refunds via `refundD1Credits`
+if the result was empty, and returns `_credits_remaining` which the client syncs
+without a second round-trip. The report is a flat `REPORT_COST_CREDITS = 250`.
+
+That whole chain is implemented and unit-tested. The failure is upstream of it: no JWT
+means it never runs.
+
+#### Bugs to fix, highest value first
+
+1. **The credit panel must distinguish "no session on this device" from "zero credits."**
+   Today both render `0` next to a **Buy Credits** button, so a paying customer is
+   invited to pay twice. When `BILLING_ENABLED && !getStoredJWT()`, render "No credits
+   found on this device — restore access", not a number. *This is the one customers hit.*
+2. **`inspect` and `issue-jwt` cannot find real Stripe customers.** Both derive a
+   synthetic `cus_ADMIN_<local-part>` from an email (`fakeCustomerId`), so they only ever
+   match `simulate-purchase` test rows. Make them resolve against the `email` column the
+   way `issue-restore-link` already does (`admin.js:289`).
+3. **`admin.js` returns an identical 401 whether the secret is wrong OR
+   `env.ADMIN_SECRET` is unset.** Return a distinct 500 "ADMIN_SECRET not configured"
+   when it is falsy, before the compare — leaks nothing, and removes a genuinely
+   confusing dead end. (Note: 10 req/60s per-IP rate limit returns 429, so repeated
+   failed attempts stop being 401s — wait a minute between tests.)
+4. **Self-serve restore.** `customers.email` is already populated from Stripe; there is
+   no email-sending capability yet. Until then every recovery is manual admin work.
+5. **No low-balance warning, no depletion notification, no reconciliation** that
+   `customers.credits == SUM(credit_transactions.amount)`.
+
+#### End-to-end test that must pass before trusting any of this
+
+Standing lesson: these endpoints return plausible statuses while broken — during the
+2026-07-26 outage a correctly-signed AND an unsigned webhook POST both returned 400,
+which hid the bug for months. So do not probe; transact.
+
+1. Real purchase (or `simulate-purchase`) → balance appears in the UI.
+2. Run an AI analysis → balance **drops** → a `deduct` row appears in
+   `credit_transactions` → `_credits_remaining` matches the D1 value.
+3. Force an empty AI result → a `refund` row appears and the balance is restored.
+4. Drain below 50 → next call returns 402 and the buy modal opens.
+5. Unlock the report → one 250-credit `report_unlock` row, and re-opening within 24h
+   does **not** charge again.
+6. Reload the app → `/api/balance` returns a `token` and `localStorage.airaJWT.v1`
+   changes (this is the v1.2.29 fix actually working).
+7. Clear `localStorage` → confirm the UI says "restore access" rather than `0` (after
+   fix 1 lands), and that a restore link recovers the balance.
+
 ### Shipped this session (all on `main`)
 
 | Version | Commit | What |
