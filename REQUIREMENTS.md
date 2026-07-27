@@ -878,3 +878,114 @@ the specific case of early retirees (pre-65) drawing from taxable/capital-gains 
 - Not yet scoped: needs a design pass on where the mode selector lives (Conversion Plan tab's
   existing `fill_10`/`fill_12`/`fill_22`/`fill_24` buttons, per §6) and validation against the
   user's test case before implementation.
+
+## 20. Extract the Paid Report as a module excluded from the OSS repo — requested 2026-07-26
+
+**Priority: high. Phase 1 done this session (2026-07-26 11pm); history-rewrite decision still open.**
+
+### Done this session
+The plan below (git-ignore + `git rm --cached` + separate stub/dynamic-import) turned out to have a
+real blocker: webpack (react-scripts) resolves `import()`/`require()` targets **at compile time** even
+when the call is wrapped in `try/catch` or `.catch()` — a missing file fails the *build*, not just the
+runtime, so untracking `PrintReport.jsx` outright would break `npm run build` for every future OSS
+clone (and could break this repo's own build on a fresh checkout on another machine). Used a different,
+simpler mechanism instead:
+
+1. **`src/report/PrintReport.jsx` now holds a public placeholder component** (same default-export +
+   `formatMoney` named-export shape App.jsx and `report.test.js` expect — no other file needed to
+   change) that renders "Report module not included" and nothing else. This is what ships in the repo
+   and what any OSS clone builds against — `npm run build` stays green for downloaders, the feature is
+   just visibly absent.
+2. The real 651-line implementation is kept on **local disk only**, restored immediately after the stub
+   was committed, and the path was marked `git update-index --skip-worktree src/report/PrintReport.jsx`
+   — git now treats local edits to this file as invisible (won't show in `git status`/`git diff`, won't
+   get picked up by `git add -A`). This is what "stop commits for that code" actually means in git terms:
+   the committed blob is permanently the stub from this point forward; the real file keeps working
+   locally (and for `wrangler pages deploy`, which builds from local disk, not from a git checkout) with
+   zero risk of it slipping back into a future commit by accident.
+   **Caveat for future you:** if the real report ever needs a code change, `git update-index
+   --no-skip-worktree src/report/PrintReport.jsx` first, or the edit will sit invisibly on disk forever
+   without you noticing git isn't tracking it.
+3. **Added a second, independent layer** (Vincent's idea, same session): a fail-closed capability gate
+   so that even someone who copies the *billing/report-unlock plumbing* (which stayed public — see below)
+   into their own app can't get a free unlock just by finding and flipping `BILLING_ENABLED` to `false`
+   in their local copy (that flag is a source-level constant, not a real secret, and used to
+   unconditionally unlock the report in "dev mode"). New `GET /api/report-capability`
+   (`functions/api/report-capability.js`) returns `{ available: !!env.GEMINI_API_KEY }` — no auth, no
+   secret revealed, just a presence check. `useReportCapability()` (`src/billing/credits.js`) defaults to
+   **false** (fail-closed, unlike the balance/unlock hooks which fail open for paying customers) and
+   `App.jsx`'s `locked` prop is now `!reportCapable || (BILLING_ENABLED && !reportUnlocked)` — the report
+   cannot unlock on any deployment lacking the operator's real `GEMINI_API_KEY`, full stop, regardless of
+   what a cloner does to client-side flags.
+4. **Scope was narrowed from the original plan below**: `src/billing/credits.js`'s report-unlock
+   functions (`REPORT_COST_CREDITS`, `unlockReport`, `isReportUnlocked`, etc.) and
+   `functions/api/report-unlock.js` were **left public/tracked** — they're generic flat-fee-credit-
+   deduction plumbing, the same shape as the rest of the already-public billing backend
+   (`checkout.js`, `analyze.js`, `webhook.js`), with no report-specific business logic in them. The
+   actual proprietary asset was always the report's *content/layout* (`PrintReport.jsx`), which is now
+   the only thing given the stub treatment.
+
+### Still open — needs your call, not attempted
+**Does the existing public git history get scrubbed?** The stub-swap above only changes what ships
+*from this commit forward*. Every commit before it (all of git history up to today) still has the full
+`PrintReport.jsx` source, and it's already public — confirmed via `curl
+https://api.github.com/repos/axwack/Aira_Monte_Carlo` → `"private": false`. Anyone can `git log -p` or
+check out an old commit and pull the real file out of history. Fully purging it requires a destructive
+rewrite (`git filter-repo` or BFG) + **force-push to `origin/main`**, which breaks every existing
+clone/fork's ability to fast-forward pull — confirmed acceptable for now ("someone can go into the
+history and pull it" — yes, accepted 2026-07-26; revisit only if this becomes a real problem).
+
+### Original plan (superseded by "Done this session" above, kept for context)
+
+### ⚠️ Important finding first
+`origin` (`github.com/axwack/Aira_Monte_Carlo`) is confirmed **public** right now
+(`curl https://api.github.com/repos/axwack/Aira_Monte_Carlo` → `"private": false`). The paid-report
+code below is **already tracked and already public** — this isn't prep for a future open-sourcing,
+it's removing something already exposed. Untracking the files only stops *future* commits/clones
+from carrying them; the code remains visible in the existing public git history (every past commit)
+unless history is rewritten. See "Open decision" below.
+
+### Scope — what "the paid report" actually is
+| File | Lines | What's paid vs. shared |
+|---|---|---|
+| `src/report/PrintReport.jsx` | 651 | **Entire file is report-specific.** Cover + Assumptions sections render unlocked always (they're just the user's own inputs); `MonteCarloSection`/`StressTestSection`/`WithdrawalScheduleSection`/`RothConversionSection`/`LifetimeTaxSection` + `LockedSectionsTeaser` + `UnlockPanel` are the paywalled content. |
+| `src/billing/credits.js` | 636 | **Mixed** — most of the file (JWT storage, balance, credit packs, Stripe checkout/verify/restore) is shared plumbing also used by the AI-analysis credit system (`ai/ai-analysis.js`), which is staying in the OSS build. Only the "Report unlock" block (`REPORT_COST_CREDITS`, `unlockReport`, `isReportUnlocked`, `fetchReportUnlockStatus`, `useReportUnlocked`, the `REPORT_UNLOCK_KEY` constant — roughly lines 48-56 and 224-330) is report-specific and needs to move out. |
+| `functions/api/report-unlock.js` | 217 | Backend Cloudflare Pages Function, report-specific. Only matters for the deployed backend, not the static OSS repo — Cloudflare builds from whatever is in `functions/` on deploy, regardless of what's git-tracked, as long as the file still exists on disk locally. |
+| `src/App.jsx` | ~2 call sites | Line 79 static `import PrintReport from "./report/PrintReport.jsx"`; line 12700-12701 `{showReport && mc && <PrintReport ... locked={...} />}`. Needs to become a dynamic import with a graceful "not available" fallback so an OSS clone without the file still builds and runs. |
+
+### Recommended approach (open-core pattern, non-destructive, build stays green)
+1. Split `credits.js`'s report-unlock block out into a new `src/billing/reportUnlock.js` (report-specific
+   billing logic only — the rest of `credits.js` stays public/tracked, it's shared with AI billing).
+2. Move `src/report/PrintReport.jsx` and the new `src/billing/reportUnlock.js` into `.gitignore`, then
+   `git rm --cached` them (removes from tracking going forward; leaves the files on local disk untouched,
+   so `npm run build` / `wrangler pages deploy` keep working exactly as today — nothing about the live
+   deploy depends on git tracking).
+3. Commit a tiny always-tracked **stub** at the same path (or a `.example.jsx`/`.example.js` sibling) that
+   exports a no-op "Report unlock isn't available in this build" component/functions, so a fresh OSS clone
+   still compiles even though the real file is absent for them.
+4. `App.jsx` switches the static import to `React.lazy(() => import("./report/PrintReport.jsx").catch(() =>
+   ({ default: ReportUnavailableStub })))` (or an equivalent try/catch dynamic import) so the app degrades
+   instead of failing to build when the real module is missing.
+5. Also gitignore `functions/api/report-unlock.js` the same way (untrack + local stub) since it's a paid-tier
+   backend endpoint too.
+6. Update `src/report/report.test.js` — it currently imports `PrintReport` directly; once the real file is
+   gitignored, this test only runs in the private working copy (document that in the test file), or gate it
+   behind a file-existence check so it skips cleanly in an OSS checkout.
+
+### Open decision — needs your call before executing
+**Does the existing public git history get scrubbed?** `git rm --cached` does NOT remove the files from
+past commits — anyone can still `git log` / check out an old commit / download a release tarball from
+before this change and get the paid-report source. Fully purging it requires a destructive history rewrite
+(`git filter-repo` or BFG) + **force-push to `origin/main`**, which breaks every existing clone/fork's
+ability to fast-forward pull. That is a call only you should make — not attempted here. Two options:
+- **(a) Accept it** — common open-core reality: stop future disclosure, treat the already-public history as
+  sunk (anyone who wanted the code already had the chance to grab it).
+- **(b) Rewrite history** — coordinate a force-push window, warn any collaborators/forks, and treat it as a
+  one-time hard reset of the public repo.
+
+### Why deferred to a fresh session
+Touches revenue-critical billing code (`credits.js` is mid-way through the Stripe go-live in §7/the memory
+index), requires a build-safety change in `App.jsx` (dynamic import fallback) that should be tested against
+an actual `npm run build` with the files removed to prove the OSS path really compiles, and has the
+history-rewrite decision above that's the user's call, not something to default into at 11pm. Estimated
+~1,500 lines touched across 4 files plus a new stub + a `npm run build` verification pass.
