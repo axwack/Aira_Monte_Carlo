@@ -853,3 +853,28 @@ Gate each through a render smoke-test (the RothLadder-crash class of bug) + desi
 section for all your income (paychecks-era contributions, plus Social Security, pension, and rental in
 retirement), a clean 'What You Have' for accounts, 'Money Out' for spending — with the advanced tuning
 tucked at the end. Same math, far easier to fill in."
+
+## 19. NII-Safe bracket-fill option — requested 2026-07-26
+
+**Priority: unscoped idea, not started.**
+
+### Problem
+Today's bracket-fill conversion targets (10/12/22/24%, §6/ENG-13) fill straight to a bracket
+ceiling with no awareness of the NIIT (Net Investment Income Tax) MAGI threshold. For someone
+retiring before 65 and living on capital gains, a conversion (or draw) that crosses the NIIT
+threshold adds a 3.8% surtax on investment income that a naive bracket-fill doesn't account for.
+
+### Idea (from user testing)
+Add a new fill mode — **"NII-Safe"** — that fills to the 24% bracket normally, but auto-throttles
+the fill amount as MAGI approaches the NIIT threshold (same shape as the existing IRMAA guard,
+§16's ACA guard). User reports this outperformed simple bracket-filling in their own testing, for
+the specific case of early retirees (pre-65) drawing from taxable/capital-gains income.
+
+### Notes
+- NIIT threshold + rate constants already exist (`NIIT_THRESHOLD_MFJ/SINGLE`, `NIIT_RATE` in
+  `buildRothExplorer.js`, per §3) — this would reuse them rather than add new ones.
+- Natural sibling to the IRMAA guard and the ACA subsidy guard (§16) — same "guard rail near a
+  MAGI cliff" pattern, third instance.
+- Not yet scoped: needs a design pass on where the mode selector lives (Conversion Plan tab's
+  existing `fill_10`/`fill_12`/`fill_22`/`fill_24` buttons, per §6) and validation against the
+  user's test case before implementation.
