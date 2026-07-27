@@ -203,6 +203,62 @@ const NIIT_THRESHOLD_MFJ = 250_000;
 const NIIT_THRESHOLD_SINGLE = 200_000;
 const NIIT_RATE = 0.038;
 
+// ── OBBBA senior bonus deduction ──────────────────────────────────────────────
+// Canonical source: TAX_REFERENCE.md → "OBBBA Senior Bonus Deduction".
+// A THIRD, independent below-the-line deduction (2025–2028 only), separate from
+// the standard deduction and its age-65 add-on. Deliberately NOT folded into
+// getStandardDeduction(): OBBBA is available to itemizers as well as
+// non-itemizers, so merging it would make an itemizer model impossible later.
+//
+// Like NIIT's thresholds these are STATUTORY and flat — the statute does not
+// index the $6,000 or the phase-out thresholds during 2025–2028, so
+// getSeniorBonusDeduction() takes NO inflFactor parameter, by design. Do not
+// "helpfully" add one.
+const OBBBA_SENIOR_PER_PERSON = 6_000;
+const OBBBA_SENIOR_PHASEOUT_START_MFJ = 150_000;
+const OBBBA_SENIOR_PHASEOUT_START_SINGLE = 75_000;
+const OBBBA_SENIOR_PHASEOUT_RATE = 0.06;   // 6% of MAGI above the threshold
+const OBBBA_SENIOR_MIN_AGE = 65;
+const OBBBA_SENIOR_FIRST_YEAR = 2025;
+const OBBBA_SENIOR_LAST_YEAR = 2028;       // $0 from 2029 — hard cliff, not a phase-down
+
+/**
+ * OBBBA senior bonus deduction for one tax year.
+ *
+ * IMPORTANT — this reduces TAXABLE INCOME ONLY. It must never be subtracted from
+ * AGI / MAGI / totalIncome / totInc. IRMAA is computed on MAGI with no deduction
+ * subtracted (CLAUDE.md rule 3), so netting this against MAGI would silently
+ * move users under IRMAA tiers they actually breach.
+ *
+ * `magi` is the year's own MAGI (ordinary income + realized gains), which in both
+ * engines is computed independently of any deduction — so there is no circular
+ * dependency between this phase-out and the deduction it produces.
+ *
+ * @param {number} age        modeled age in the tax year
+ * @param {string} filingStatus  "single" → 1 person, anything else → MFJ
+ * @param {number} magi       the year's MAGI, for the phase-out
+ * @param {number} yr         calendar tax year (gates the 2025–2028 window)
+ * @returns {number} deduction in nominal dollars, 0 outside the window
+ */
+function getSeniorBonusDeduction(age, filingStatus, magi, yr) {
+  if (yr < OBBBA_SENIOR_FIRST_YEAR || yr > OBBBA_SENIOR_LAST_YEAR) return 0;
+  if (!(age >= OBBBA_SENIOR_MIN_AGE)) return 0;
+  const mfj = filingStatus !== "single";
+  // The engines carry ONE age, and getStandardDeduction() already reads
+  // `age >= 65 && mfj` as BOTH spouses 65+ (it adds 2 × the per-spouse add-on).
+  // Mirror that same assumption here so the two deductions can't disagree about
+  // household composition: MFJ gets 2 × the per-person amount.
+  const persons = mfj ? 2 : 1;
+  const threshold = mfj ? OBBBA_SENIOR_PHASEOUT_START_MFJ : OBBBA_SENIOR_PHASEOUT_START_SINGLE;
+  const excess = Math.max(0, (magi || 0) - threshold);
+  // The phase-out bites EACH person's own $6,000 at 6% of the household's excess
+  // MAGI, so one person is fully phased out at threshold + $100,000 — $175K
+  // single / $250K MFJ. Scaling the reduction by `persons` reproduces that.
+  const gross = OBBBA_SENIOR_PER_PERSON * persons;
+  const reduction = OBBBA_SENIOR_PHASEOUT_RATE * excess * persons;
+  return Math.round(Math.max(0, gross - reduction));
+}
+
 // IRS Pub 590-B Table III (Uniform Lifetime) divisors, 2022+ table.
 // Default table for owners whose sole-beneficiary spouse is NOT >10 years younger.
 const RMD_DIV = {
@@ -661,5 +717,9 @@ export {
   FED_BRACKETS_2026_MFJ, FED_BRACKETS_2026_SINGLE,
   LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,
   NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,
+  getSeniorBonusDeduction,
+  OBBBA_SENIOR_PER_PERSON, OBBBA_SENIOR_PHASEOUT_START_MFJ,
+  OBBBA_SENIOR_PHASEOUT_START_SINGLE, OBBBA_SENIOR_PHASEOUT_RATE,
+  OBBBA_SENIOR_FIRST_YEAR, OBBBA_SENIOR_LAST_YEAR,
   STATE_BRACKETS, RMD_DIV, JOINT_RMD_DIV,
 };

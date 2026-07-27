@@ -10,7 +10,7 @@ Living document tracking the business-logic requirements of the forecaster, what
 been fixed, and the open backlog from the June 2026 code review. Update this file
 whenever engine rules change.
 
-Last updated: **2026-07-25** (branch `main`; merged `src/Requirements.md` → §15)
+Last updated: **2026-07-27** (branch `main`; Slate A engine fixes shipped v1.2.28 — §13.1 #6, §13.2 #11/#15/#16, ENG-8; new §21 spousal Social Security scoped; new ENG-25 opened)
 
 ---
 
@@ -232,12 +232,13 @@ Prioritized; estimated ~2,500–3,000 lines removable from `src/App.jsx` (10.5K 
 
 | # | Severity | Where | Finding | Suggested fix |
 |---|----------|-------|---------|---------------|
-| ENG-8 | MEDIUM | `buildWithdrawalWaterfall.js` Step 6.5 vs Step 5 | `irmaaGuard` only constrains the Step-5 pretax withdrawal ceiling (`irmaaCap`), not the Step-6.5 Roth conversion amount. A large conversion sized to the income-tax bracket ceiling can still push MAGI (`totInc`) across an IRMAA tier even with `irmaaGuard` enabled. | When `irmaaGuard` is on, also cap `ceilingConv`'s effective room at the IRMAA tier-1 MAGI ceiling (mirroring the `irmaaCap` logic already used for Step 5), so conversions never trigger IRMAA the guard is meant to prevent. |
+| ~~ENG-8~~ ✅ | ~~MEDIUM~~ | `buildWithdrawalWaterfall.js` Step 6.5 | ~~`irmaaGuard` only constrains the Step-5 pretax withdrawal ceiling, not the Step-6.5 Roth conversion amount.~~ | **✅ FIXED v1.2.28 (2026-07-27).** `ceilingConv` is now capped at the IRMAA tier-1 MAGI ceiling whenever `irmaaGuard && age >= 63`, mirroring Step 5. Four things to understand before editing it: **(a)** `dedConv` is subtracted only to express the MAGI threshold in the same taxable-income space as `ceilingConv` — it cancels out of `room` algebraically and does NOT reduce true MAGI (rule 3 intact). **(b)** `realizedGain` is ALSO subtracted, because MAGI includes realized gains while `taxNoConv.totInc` (the base `room` is measured against) excludes them — without it the room is overstated by the year's gain and the conversion can still breach the tier. NOTE: Step 5's own `irmaaCap` does not yet do this; that pre-existing LTCG-in-MAGI gap is left unchanged rather than silently widening this fix's scope — see the new ENG-25 below. **(c)** The `age >= 63` gate is deliberately identical to Step 5's and is correct for conversions too: IRMAA runs on a 2-year lookback, so a conversion at 63+ first bites at 65+, exactly when Medicare premiums begin (converting at 62 → lookback lands at 64, pre-Medicare → correctly exempt). **(d)** It caps against the CURRENT year's ceiling even though the MAGI is charged in yr+2 against a higher, inflation-indexed ceiling — making the cap slightly STRICT. It can only under-convert, never let a conversion slip past the real future cliff, which is the correct failure direction for a guardrail. Do NOT "fix" (d) into an off-by-2-years bug. New `convCapReason` row field (bracket / irmaa_ceil / manual / affordability) mirrors `pretaxCapReason` so §17's planned `conversionRoomAllCliffs()` can append ACA/LTCG/NIIT rooms to the same `min(...)` without a rewrite. Propagates to BOTH the Withdrawal Plan tab and the Conversion Plan ladder by construction, since ENG-12/ENG-14 already route both through `buildWithdrawalWaterfall`. 5 new tests. |
 | ENG-13 | LOW | `buildWithdrawalWaterfall.js::BRACKET_CEILINGS_MFJ/SINGLE` + `rothConversionPlan.js::buildConversionLadder` | Only 10/12/22/24% bracket ceilings are defined; the Conversion Plan tab's `fill_32`/`fill_35`/`fill_37` mode buttons map to `rothConversionTarget` values ("32"/"35"/"37") that `bracketCeiling()` doesn't recognize and silently falls back to the 22% ceiling — so those modes currently render identically to `fill_22`. | Add `"32"`, `"35"`, `"37"` (and their inflation-adjusted ceilings) to `BRACKET_CEILINGS_MFJ`/`BRACKET_CEILINGS_SINGLE`. |
 | ENG-15 | LOW | `rothConversionPlan.js::buildConversionLadder` vs `buildRothExplorer`'s FAFSA/CSS guards | `buildWithdrawalWaterfall` (and therefore the new ladder) doesn't implement the `fafsaEndYear`/`cssEndYear` college-aid conversion caps that `buildRothExplorer` had. Profiles using those guards will see a different (uncapped) conversion amount in the ladder during the FAFSA/CSS window. | Port the FAFSA/CSS bracket-ceiling overrides from `buildRothExplorer` (lines ~472-478) into `buildWithdrawalWaterfall`'s Step 6.5 `rothConversionTarget` ceiling calculation. |
 | ENG-10 | LOW | Account model (`accounts[].category === "pretax"`) | No basis tracking for "pretax" accounts — every dollar converted is assumed 100% taxable. The IRS pro-rata rule (Form 8606) requires that if a Traditional IRA holds *any* after-tax (non-deductible) contributions, each conversion is taxed proportionally (taxable % = pretax balance / total balance across all Traditional IRAs). For 401(k)/most IRAs with no after-tax basis (the common case), the current 100%-taxable assumption is already correct, so this has not caused incorrect numbers yet. | If/when a user reports after-tax (non-deductible) contributions to a Traditional IRA, add an optional `afterTaxBasis` field per pretax account, sum it across all pretax accounts to get total basis, and have `buildWithdrawalWaterfall`'s conversion-tax step multiply `conversionAmount` by `(totalPretaxBalance - totalBasis) / totalPretaxBalance` to get the taxable portion (with the remainder reducing total basis pro-rata). |
 | ENG-11 | LOW | `rothConversionPlan.js::checkRothWithdrawalPenalty` | Implements only the per-conversion 5-year/10% penalty clock (IRC §408A(d)(3)(F)), per the spec given. It does NOT implement the separate "forever" 5-year clock (IRC §408A(d)(2)(B)) that governs whether *earnings* can be withdrawn federal-income-tax-free — that clock starts on Jan 1 of the year of a taxpayer's first-ever Roth contribution/conversion (any Roth IRA) and never resets. Distinguishing "contributions/conversions" (always penalty/tax-free to withdraw, subject to the 5-yr clock above) from "earnings" (taxable AND penalized until both the forever-clock and age 59½ are satisfied) requires tracking a running lifetime Roth balance broken into contribution-basis vs. earnings, which AiRA does not currently model. | If users need an "is this Roth withdrawal fully tax-free" answer (not just the penalty), add `firstRothContributionYear` to the profile and a second check `qualifiedDistribution = ageAtWithdrawal >= 59.5 && (currentYear - firstRothContributionYear) >= 5`; gate earnings-taxability on that flag separately from `checkRothWithdrawalPenalty`'s per-conversion result. |
 | ENG-17 | LOW | Profile (Assumptions) — `taxFunding`, `fafsaEndYear`, `cssEndYear` in the "Roth Conversion Strategy" card | After ENG-16, audit whether these remaining Roth-conversion fields are "basic life configuration" (stay in Profile) or "calculation tuning" (belongs on the Conversion Plan / Tax Room tabs, per the design principle established by ENG-16 and the existing Withdrawal Order pointer). `taxFunding` ("how conversion taxes are paid") looks like tuning similar to `rothConversionTarget`; `fafsaEndYear`/`cssEndYear` are arguably life-timeline facts (when a child's college aid window is) so may be fine to keep. Also note ENG-15 (FAFSA/CSS caps not yet wired into `buildWithdrawalWaterfall`) is a prerequisite for `fafsaEndYear`/`cssEndYear` to have any effect on the new ladder. | Review each field against "basic parameter vs. calculation tuning"; move `taxFunding` to the Conversion Plan tab (same pointer pattern) if confirmed as tuning, or leave with a documented rationale if it's genuinely a global default. |
+| ENG-25 | MEDIUM | `buildWithdrawalWaterfall.js` Step 5 `irmaaCap`; `App.jsx` `runMC` bracket-room block | **Found while fixing ENG-8.** Step 5's IRMAA cap (and `runMC`'s equivalent) compares a MAGI ceiling against an ordinary-income floor that EXCLUDES realized capital gains, so the room is overstated by the year's gain and the pretax draw can still push MAGI over an IRMAA tier that `irmaaGuard` is supposed to protect. `runMC`'s own comment already concedes this ("LTCG from the taxable draw is not yet folded into the MAGI base here"). ENG-8 fixed the identical defect on the Step-6.5 conversion path by subtracting `realizedGain`; the two paths are now asymmetric. | Subtract the year's realized gain from the MAGI base in Step 5's `irmaaCap` and in `runMC`'s `irmaaRoom`, exactly as Step 6.5 now does. Ordering caveat: in Step 5 the gain is not yet converged when the ceiling is computed (the cascade solves draw ⇄ tax by fixed point), so either use the prior pass's gain or move the cap inside the fixed-point loop — decide deliberately and comment it. |
 
 ### Known finding (preserved as a video idea)
 
@@ -545,12 +546,41 @@ findings below, most severe first. Verdict: **BLOCKED** on §13.1 items.
 5. ✅ **FIXED v1.1.0.30 (2026-07-11)** — `PROFILE_TO_ROTHMODE` now maps the
    un-prefixed values ("10".."37") the params memo produces, so stored
    fill_10/12/24/32/35 targets no longer silently become fill_22 in the Roth tab.
-6. **OBBBA $6,000/person senior bonus deduction (2025–2028) absent** — only the old
-   age-65 extra standard deduction ($3,300/$1,650) is modeled. Overstates federal tax
-   (understates success/safe spending) for 65+ users below the $75K/$150K phase-out.
-7. **Kitces ratchet broken in deterministic engine** (App.jsx:1260-1264) —
-   `startingPort` re-declared inside the loop, so the high-water mark never re-bases;
-   +10% fires every year above 1.5× original. runMC (App.jsx:782) is correct.
+6. ✅ **FIXED v1.2.28 (2026-07-27)** — ~~OBBBA $6,000/person senior bonus deduction
+   (2025–2028) absent.~~ Verified against IRS newsroom guidance + Tax Foundation +
+   Fidelity (sources recorded in `TAX_REFERENCE.md` → "OBBBA Senior Bonus Deduction"):
+   $6,000 per qualifying person 65+, tax years **2025–2028 only** ($0 from 2029, a hard
+   cliff), available to itemizers AND non-itemizers, stacking on top of both the regular
+   standard deduction and the existing age-65 add-on, MFJ must file jointly, MAGI
+   phase-out from **$75K single / $150K MFJ at 6% of the excess** (fully gone at
+   $175K/$250K), and **NOT inflation-indexed** (so it is deliberately exempt from this
+   project's 2.5%/yr indexing convention — `getSeniorBonusDeduction()` takes no
+   inflFactor by design).
+   Implemented as a **separate additive term**, NOT folded into `getStandardDeduction()`
+   — OBBBA is available to itemizers, so merging it would foreclose an itemizer model.
+   Lives in `buildRothExplorer.js` (the only shared leaf module with no circular-import
+   risk) and is threaded into every LIVE reader, which turned out to be five, not one:
+   `calcYearTax`, `runMC`'s bracket-room sizing, and the waterfall's `yearTax` +
+   Step-5 pretax ceiling + Step-6.5 conversion ceiling. In the two ceiling paths the
+   bonus is estimated at the **high end** of plausible MAGI (floor + pre-bonus room) so
+   the phase-out is worst-cased and the cap can under-fill but never overshoot the
+   bracket — same conservative direction as the existing 85%-SS-inclusion estimate.
+   **Reduces taxable income only**; `magi` is now computed structurally *ahead* of every
+   deduction line in both engines, with a regression test pinning that MAGI is identical
+   with and without the bonus (rule 3 — a deduction must never move the IRMAA base).
+   Impact: a single 65-year-old drawing $40K in FL was charged **$2,422** federal tax
+   instead of **$1,702** — a 30% overstatement, which understated success rate and safe
+   spending for every 65+ user below the phase-out; roughly double for MFJ both-65+.
+   **Adjacent bug fixed in the same pass:** the "This Year" Roth-headroom panel
+   (`App.jsx`, `view === "thisyear"`) computed its own `(isMFJ ? 32200 : 16100) * f`
+   with **no age-65 add-on at all** — a third-generation standard-deduction copy that
+   understated the deduction (and so overstated tax / understated conversion headroom)
+   for every 65+ user, independent of OBBBA. Now routed through the canonical helpers.
+   9 new tests + 3 pre-OBBBA expectations recalibrated with the derivations written out.
+7. ✅ **ALREADY FIXED** (verified in code 2026-07-27) — ~~Kitces ratchet broken in
+   deterministic engine.~~ `startingPort` is hoisted outside the year loop in BOTH
+   engines (`App.jsx:1149` in `runMC`, `~1763` in `simulateDeterministicWithStrategy`,
+   the latter carrying an explicit comment about why it must stay hoisted).
 8. **"95% rule" is not Clyatt's rule** (App.jsx:915-923, 1298-1305) — never reads
    portfolio value (canonical: max(0.95×prior, 4%×current port)); behaves as plain
    Bengen. **"CAPE-based" hardcodes CAPE=20** (App.jsx:893, 1278) → permanently 4%
@@ -561,29 +591,84 @@ findings below, most severe first. Verdict: **BLOCKED** on §13.1 items.
 
 ### 13.2 Cross-screen drift (same profile, different numbers)
 
-10. **SS COLA anchor**: MC/deterministic grow from retirement year (App.jsx:951);
-    waterfall from claim age (waterfall:246). Retire-60/claim-67 → ~18% SS gap.
-11. **Rental/annuity models differ ×3**: MC/det use abGrowth^min(y,20), reliability,
-    abEndYear, no age cap; waterfall hardcodes 1.03 growth, stops at 80, ignores
-    abGrowth/reliability, inflates propIncome at CPI separately (waterfall:248-250).
+10. ✅ **ALREADY FIXED** (verified 2026-07-27) — ~~SS COLA anchor drift.~~ Both engines
+    now grow SS from the CLAIM age (`Math.pow(1 + ssCola/100, age - ssAge)`) —
+    `App.jsx:1210`/`:1805` and `buildWithdrawalWaterfall.js:545`.
+11. ✅ **FIXED v1.2.28 (2026-07-27)** — ~~Rental/annuity models differ ×3.~~ The
+    waterfall now uses the same model as runMC/simulateDeterministicWithStrategy:
+    ab + propIncome are **summed first, then grown once** at the user's abGrowth
+    (default 3.0, newly added to the params destructure — its absence is why the engine
+    silently hardcoded 1.03), capped at 20 years of compounding as both other engines
+    already did, and abEndYear is honored. The separate CPI track on propIncome is gone,
+    including in the ab0 baseline that calibrates initWR.
+    **The age-80 hard stop is deleted, not relabeled** — it existed only in this engine,
+    had no basis in any user input, directly contradicted the user's own abEndYear, and
+    silently understated rental income (thereby overstating pretax/Roth draws and tax) for
+    every profile planning past 80. logic-validator found no defensible reading of it as
+    intentional.
+    **abReliability is deliberately NOT applied here.** It is a per-year all-or-nothing
+    Bernoulli draw (rand() < abReliability/100, App.jsx:1410) that only has meaning across
+    runMC's many paths — rental is paid in FULL or not at all in a given simulated year,
+    never multiplied by 0.8. Adding an expected-value haircut to a single deterministic
+    path would have invented a FOURTH model. (design-authority initially asked for the
+    opposite; the code settled it.)
+    **Consequent labeling fix:** the Income Offsets card read "Rental net (80% reliable)"
+    while displaying the **gross** params.ab — it labeled a gross number "net". Now just
+    "Rental income", with the deterministic-vs-stochastic difference disclosed in the one
+    existing home for that mechanic ("How the Simulation Works"). 4 new tests: age-81
+    rental > 0, abGrowth honored vs hardcoded, single combined growth basis, abEndYear
+    still stops the stream.
 12. **"Portfolio at Retirement" computed 5 ways** — waterfall's (waterfall:76-99)
     ignores ALL future contributions; NetWorth omits employer/HSA contrib; sidebar
     uses real return. Contributing households see a materially smaller waterfall.
-13. **HSA dropped from runMC buckets** (App.jsx:751-758, no hsa branch) but counted
-    in p.port, waterfall (→cash), and Net Worth → discontinuity at retirement.
+13. ✅ **ALREADY FIXED** (verified 2026-07-27) — ~~HSA dropped from runMC buckets.~~
+    `hsa` and unrecognized categories now fall through to the cash bucket in `runMC`
+    (`App.jsx:~1103`), matching `accumulateToRetirement`; the in-code comment records
+    that BLANK_PROFILE ships an HSA account, so every HSA user previously lost it.
 14. **GK in 3 non-identical copies**: App has 6% inflation cap + longevity rule;
     waterfall gkWithdraw has neither; floor/ceiling inflation anchored at retirement
     (App) vs today (waterfall:231-233) → ~28% band gap for retire-in-10-yrs.
-15. **Roth tab useMemos stale** (App.jsx:3038-3134) — dep lists omit sp, endAge,
-    gk bounds, bracket target, state, etc. Sidebar edits update Withdrawal Plan
-    but not the Roth tab. Fix: depend on `params`.
-16. **RMD age ×3**: rulesEngine getRMDAge (rulesEngine.js:42-47) ignores dob
-    precision AND the user override → Action Plan cards can show a different RMD
-    age than every engine. Also: joint-table gating and >90 fallbacks differ
-    between runMC and waterfall; rulesEngine uses hardcoded divisor 24.0.
+15. ✅ **FIXED v1.2.28 (2026-07-27)** — ~~Roth tab useMemos stale.~~ All **four**
+    memos in `RothLadder` (`ex`, `exNoTax`, `convRows`, `conversionPlan`) carried their
+    own hand-maintained field list and each omitted something different. The sharpest
+    symptom: `convRows` tracked `sp`/`gkFloor`/`gkCeiling`/`irmaaGuard` but `ex` did not,
+    and `ex` feeds the summary cards rendered directly ABOVE the `convRows` table — so
+    editing spend in the sidebar refreshed the ladder while the Lifetime Tax Delta / RMD
+    Reduction / Eff. Rate cards above it still described the previous profile. All four
+    now depend on `params` itself (a parent `useMemo`, so referentially stable between
+    real edits — correct AND cheap, and it cannot rot as new fields are added). Verified
+    zero enumerated `params?.x` dependency entries remain anywhere in `App.jsx`.
+    design-authority explicitly ruled AGAINST a staleness badge here: unlike the
+    genuinely expensive 3,000-path Monte Carlo, these are cheap memoized deterministic
+    calls, so once the deps are right there is no window in which "stale" is a real
+    state — a badge would be permanent noise. The countermeasure is a render smoke test
+    (still open — see §9/BUD-5).
+16. ✅ **FIXED v1.2.28 (2026-07-27)** — ~~RMD age ×3 + hardcoded divisor 24.0.~~
+    `rulesEngine.js`'s local `getRMDAge(currentAge, currentYear)` is deleted. New
+    `resolveRmdAge(params)` honors the user's `rmdStartAge` override first, else calls the
+    **shared** `getRmdStartAge({dob, birthYear, currentAge})` — so Action Plan cards and
+    the engines can no longer name different RMD ages. New `rmdDivisorAt(params, age)`
+    replaces the hardcoded `24.0` (which corresponded to no age in either IRS table) with
+    real `RMD_DIV`/`JOINT_RMD_DIV` lookups plus the engines' joint-table gate
+    (`useJointRmdTable && filingStatus !== "single"`, so a stale toggle after widowhood
+    cannot select the wrong table). The divisor is taken at the **RMD start age**, not
+    today's age — the IRS tables are not defined below 72, so `RMD_DIV[currentAge]` would
+    be `undefined` → `NaN` for exactly the pre-retirement users this card targets.
+    Imports come from `buildRothExplorer.js`, the one shared leaf module (its only import
+    is `expectedReturn.js`), so there is no cycle with `App.jsx → rulesEngine.js` and no
+    fourth copy of the SECURE 2.0 ladder.
+    **Labeling:** the projection still uses TODAY's pre-tax balance — deliberately, since
+    every other quantity in this file reads raw current params, and adding growth here
+    would create a fourth place reimplementing portfolio compounding. So the copy states
+    its basis instead of implying a forecast: *"If your pre-tax balance stayed at today's
+    $X, your first RMD at age Y would be ~$Z/yr. The actual RMD will be larger if the
+    account keeps growing."* 9 new tests in `src/rulesEngine.test.js`.
 17. **Conversion tax funding differs**: runMC flat marginal-rate approx from pretax
     (App.jsx:1058-1070, no irmaaGuard check) vs waterfall's exact iterative recompute.
-18. **Cash growth**: MC honors cashRealReturn (1% default); waterfall hardcodes 4.5%.
+18. ✅ **ALREADY FIXED** (verified 2026-07-27) — ~~waterfall hardcodes 4.5% cash
+    growth.~~ Both `accumulateToRetirement` and `runScenario` read
+    `(cashRealReturn ?? 3.0)/100`; the in-code comment records that the old hardcoded
+    `0.045` silently ignored the user's setting.
 19. **Latent**: bracket-index anchor 2026 literal (App) vs getFullYear() (engines) —
     skews on 2027-01-01. buildRothExplorer() dead in UI but exported + tested with
     stale physics — mark deprecated. Duplicated constants byte-identical today.
@@ -989,3 +1074,157 @@ index), requires a build-safety change in `App.jsx` (dynamic import fallback) th
 an actual `npm run build` with the files removed to prove the OSS path really compiles, and has the
 history-rewrite decision above that's the user's call, not something to default into at 11pm. Estimated
 ~1,500 lines touched across 4 files plus a new stub + a `npm run build` verification pass.
+
+## 21. Spousal & Survivor Social Security — requested 2026-07-27
+
+**Priority: P1.** **Status: scoped, NOT started.** Requested by Vincent after comparing
+Boldin's Social Security entry UI (screenshot: separate "You" / "Your Spouse" cards, each
+with a monthly benefit and a *month/year* start date, plus a "Model a benefit reduction in
+the future" toggle and a COLA rate).
+
+### Current state — verified in code 2026-07-27
+
+AiRA models **one** Social Security beneficiary. There is no spouse benefit anywhere.
+
+| What exists | Where |
+|---|---|
+| `ssb` (annual benefit), `ssAge` (claim age), `ssCola` | `BLANK_PROFILE` `App.jsx:534/535/593` — all scalars, one person |
+| SS growth from claim age | `App.jsx:1210`/`:1805`, `buildWithdrawalWaterfall.js:545` |
+| IRC §86 provisional-income taxation | shared `taxableSocialSecurity()` — already correct, takes ONE `ssGross` |
+| Joint & Last Survivor RMD table | `useJointRmdTable` (spouse >10 yrs younger) — the only genuinely spouse-aware engine input today |
+| "SPOUSE PASSES EARLY" stress scenario | `App.jsx:~7003` — the closest thing to a survivor model |
+
+**The stress scenario is an approximation with a hardcoded literal.** It runs
+`ssb × 0.67` + `filingStatus: "single"`. The `0.67` is a **rule-6 violation** and it
+silently hardcodes one household shape: it is only right for a one-earner couple where the
+spouse draws a 50% spousal benefit (lose the 0.5, keep the 1.0 → 67% survives). For two
+similar earners the survivor keeps ~50%, not 67%. With two real benefits on file the
+haircut becomes exact arithmetic — `max(ssbA, ssbB)` — and the literal disappears. Its
+*tax* half (survivor files Single) is already modeled and is the genuinely valuable part;
+keep that.
+
+### What Boldin does (and where its description is subtly incomplete)
+
+Boldin's guidance — enter the spouse's own FRA benefit even if it's $1, and the planner
+auto-applies the spousal benefit "up to 50% of your FRA amount" if that is higher — is the
+right **UX** (one number per person, no separate "are you claiming spousal?" question) and
+we should copy it. Two things it glosses over that we must get right:
+
+1. **The spousal benefit is 50% of the higher earner's PIA — the FRA amount — NOT 50% of
+   their actual (possibly delayed) check.** Delayed retirement credits do **not** flow into
+   the spousal benefit. Boldin's own wording says "50% of your FRA amount", which is
+   correct, but it is easy to implement as 50% of the claimed benefit and be wrong by up to
+   ~12% for a 70-claimer. Model against PIA.
+2. **Delaying the higher earner's claim raises the SURVIVOR benefit, not the spousal one.**
+   The survivor steps up to 100% of the deceased's benefit *including* DRCs. This is the
+   real reason "the higher earner should delay" — and it is exactly the alert Boldin
+   surfaced to Vincent. Our Action Plan should be able to make the same recommendation, but
+   it needs both benefits and both claim ages to compute it.
+
+### Rules to model (each needs a `TAX_REFERENCE.md` entry — no literals in engine)
+
+1. **Own benefit** per person, from PIA, adjusted for claim age.
+2. **Early-claim reduction / delayed credits**: reduction of 5/9 of 1% per month for the
+   first 36 months before FRA, then 5/12 of 1% per month beyond that; delayed credits of
+   2/3 of 1% per month (8%/yr) from FRA to 70. FRA itself is birth-year dependent (66–67
+   for anyone AiRA plans for). **Spousal benefits earn NO delayed credits** — they max out
+   at the spouse's FRA.
+3. **Spousal top-up**: `spousalBenefit = max(0, 0.50 × higherEarnerPIA − ownPIA)`, reduced
+   if the *spouse* claims before their own FRA, and **payable only once the higher earner
+   has filed**. So the household total can step up in a later year than the spouse's own
+   claim — a timing subtlety a naive model misses entirely.
+4. **Survivor benefit**: on first death the survivor's benefit becomes
+   `max(ownBenefit, deceasedBenefit)` — 100% of the deceased's, *including* DRCs, reduced
+   if the survivor claims survivor benefits before their own survivor-FRA. The smaller
+   check simply stops. This replaces the `× 0.67` literal above.
+5. **Widow's penalty (already half-built)**: from the year after first death the survivor
+   files **Single** — standard deduction roughly halves, brackets narrow sharply, IRMAA
+   tiers halve, and (new, per §13.1 #6) the OBBBA senior bonus goes from 2 persons to 1 —
+   against a barely-reduced RMD and an unchanged portfolio. The tax cliff, not the lost
+   check, is what blindsides people.
+6. **Deemed filing**: for anyone born after 1953-01-01, filing for one benefit deems filing
+   for all you're eligible for. "File and suspend" and "restricted application" are gone.
+   Do NOT build a UI that implies those strategies are available.
+7. **Earnings test** before FRA (benefits withheld above an annual exempt amount, restored
+   after FRA). Only matters for users working while claiming early — relevant because AiRA
+   supports part-time `otherIncomes`.
+8. **WEP / GPO**: repealed by the Social Security Fairness Act (signed Jan 2025), so
+   government-pension recipients no longer take a haircut. **[VERIFY before coding]** —
+   flagged rather than asserted, per the discipline that caught the OBBBA constants.
+9. **Divorced-spouse benefits** (marriage ≥ 10 years, currently unmarried) — same 50%
+   math, does not require the ex to have filed. Likely out of scope for v1; note it.
+
+### Separate ask from the same screenshot — trust-fund benefit reduction
+
+Boldin has a **"Model a benefit reduction in the future"** toggle. AiRA has **nothing**
+equivalent — no base-case haircut assumption and not even a stress scenario for it (the
+stress tab has crash / LTC / live-to-100 / survivor only). Given the OASI trust-fund
+depletion date and the statutory ~20–25% across-the-board cut that follows if Congress does
+nothing, this is a credible-and-cheap honesty feature and a natural sibling of §16's
+`acaCliffReturns2026` legislative-uncertainty toggle. Profile keys: `ssBenefitCutPct`,
+`ssBenefitCutYear` (both default off/0 = current law). **Design note:** design-authority
+has already ruled once (§13.1 #6, the OBBBA 2029 sunset) that one-off speculative-extension
+toggles should not proliferate ad hoc — so this and the ACA cliff toggle should be designed
+together as ONE "legislative uncertainty" surface, not two unrelated switches.
+
+### Profile keys (additive; every default preserves today's single-person behavior)
+
+```jsonc
+"spouse": {
+  "enabled": false,          // false => engines behave exactly as today
+  "dob": null,               // drives FRA, RMD age, mortality, and the 65+ deduction
+  "ssPia": 0,                // own benefit at FRA (annual). "$1 means none" per Boldin UX
+  "ssClaimAge": 67,          // 62..70, independent of the primary's
+  "sex": null                // mortality table selection, matching the existing primary field
+},
+"ssBenefitCutPct": 0,        // trust-fund haircut, 0 = current law
+"ssBenefitCutYear": null
+```
+
+### Engine work (the honest part — this is NOT just a UI change)
+
+Every place that reads `ssb`/`ssAge` as a scalar must become a two-person household total,
+and `taxableSocialSecurity()` must receive the **combined** gross. Touch points:
+`runMC` (`App.jsx:~1210`), `simulateDeterministicWithStrategy` (`~1805`),
+`buildWithdrawalWaterfall` (`:545`), `runStress`'s survivor scenario (`~7003`),
+`rulesEngine` SS cards, and the `params` memo. Additionally:
+
+- **A survivor event needs a date.** Today's stress scenario applies widowhood from year 1.
+  A real model needs a first-death age (deterministic assumption, or mortality-drawn per
+  path in `runMC`) and must switch `filingStatus` to `single` from the following year —
+  which means filing status becomes **time-varying**, and it currently is not anywhere. This
+  is the single biggest structural change and the main reason to phase this.
+- **Two mortality curves.** The existing mortality-weighted success rate assumes one life.
+- Golden-window / conversion logic (§16, §17) reads `min(ssAge, rmdStartAge)`; with two
+  claim ages that becomes the min across both people.
+
+### Suggested phasing
+
+- **Phase 1 (biggest value / lowest risk):** two-person SS entry + spousal top-up + combined
+  gross into the existing tax path. No survivor timing, no time-varying filing status.
+  Immediately makes the base case right for every couple and kills the `× 0.67` literal by
+  giving the stress scenario real numbers.
+- **Phase 2:** survivor step-up + time-varying filing status (the widow's penalty as a
+  *scheduled* event with a user-set first-death age, not just a stress toggle).
+- **Phase 3:** the "delay the higher earner to buy survivor insurance" Action Plan
+  recommendation — the Boldin alert Vincent saw. Needs Phases 1–2 to compute.
+- **Phase 4:** trust-fund reduction toggle, designed jointly with §16's ACA cliff toggle.
+- Earnings test / divorced-spouse: backlog unless a user asks.
+
+### Gate
+
+logic-validator on every rule above (SSA currency — FRA table, reduction/credit fractions,
+deemed filing, WEP/GPO repeal status), design-authority on where the second person's fields
+live (this lands squarely in §18 Phase B's "Money In → In Retirement" card, so build it
+with that, not before), and tester. Hand-calc tests: spousal top-up when own PIA < 50% of
+higher PIA; no top-up when own PIA is larger; top-up deferred until the higher earner files;
+spousal gets no DRCs past FRA; survivor keeps the larger check; survivor filing-status
+switch raises tax on an unchanged portfolio; `spouse.enabled = false` reproduces today's
+numbers byte-for-byte (regression lock).
+
+### Reddit-update summary (plain language)
+
+"Coming soon: real spousal Social Security. Enter each person's benefit and claiming age and
+AiRA will apply the spousal top-up automatically, show what happens to the survivor when one
+of you dies — including the tax hit from filing Single — and tell you whether the higher
+earner delaying to 70 is worth it as survivor insurance."

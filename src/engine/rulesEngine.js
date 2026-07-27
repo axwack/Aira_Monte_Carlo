@@ -16,6 +16,12 @@
  * ctx = { params, mc, assumptions, currentYear, retireYear, daysToRetire }
  */
 
+// buildRothExplorer.js is a leaf module (imports only ./expectedReturn.js), so
+// importing from it here cannot create a cycle with App.jsx → rulesEngine.js.
+// These are the SAME symbols the simulation engines use — the point is that the
+// Action Plan cards and the engines can never disagree about RMD age or divisor.
+import { getRmdStartAge, RMD_DIV, JOINT_RMD_DIV } from "./buildRothExplorer.js";
+
 // ─── Shared helpers ────────────────────────────────────────────────────────────
 
 function accts(params) { return params.accounts || []; }
@@ -36,18 +42,49 @@ function rothPct(params)   { return params.port > 0 ? rothTotal(params)   / para
 function swr(params)       { return params.port > 0 ? (params.sp / params.port) * 100 : 0; }
 
 /**
- * SECURE 2.0 Act §107 — RMD age by birth year.
- * Born before 1951 → 72 | Born 1951–1959 → 73 | Born 1960+ → 75
+ * RMD start age for the Action Plan cards — SAME answer as every engine.
+ *
+ * Replaces a local getRMDAge(currentAge, currentYear) that derived birthYear as
+ * `currentYear - currentAge` and bucketed into 72/73/75 itself. That had two
+ * defects (REQUIREMENTS §13.2 #16): it lost `dob` precision near a birthday, and
+ * it ignored `params.rmdStartAge` — the user's explicit override — so an Action
+ * Plan card could name a different RMD age than the number every engine used.
+ *
+ * `getRmdStartAge` is imported from buildRothExplorer.js, which is a leaf module
+ * (its only import is ./expectedReturn.js). App.jsx imports rulesEngine.js, so
+ * rulesEngine must never import App.jsx back; going through the leaf keeps this
+ * acyclic AND avoids adding a fourth copy of the SECURE 2.0 ladder.
+ *
+ * Mirrors the engines' resolution order: an explicit override wins, otherwise the
+ * statutory age from dob/birthYear.
  */
-export function getRMDAge(currentAge, currentYear = new Date().getFullYear()) {
-  const birthYear = currentYear - currentAge;
-  if (birthYear < 1951) return 72;
-  if (birthYear < 1960) return 73;
-  return 75;
+function resolveRmdAge(params) {
+  if (typeof params.rmdStartAge === "number" && params.rmdStartAge > 0) return params.rmdStartAge;
+  return getRmdStartAge({
+    dob: params.dob,
+    birthYear: params.birthYear,
+    currentAge: params.currentAge,
+  });
 }
 
-function yearsToRMD(params, currentYear) {
-  return getRMDAge(params.currentAge, currentYear) - params.currentAge;
+/**
+ * Uniform Lifetime divisor at a given age, with the joint-table gate the engines
+ * use. Replaces a hardcoded `24.0` (CLAUDE.md rule 6 violation) that corresponded
+ * to no age in either IRS table.
+ *
+ * The joint table is only correct while there IS a much-younger spouse, so a
+ * "single" filing status overrides a stale leftover toggle — same guard the
+ * waterfall engine applies.
+ */
+function rmdDivisorAt(params, age) {
+  const useJoint = (params.useJointRmdTable ?? false) && params.filingStatus !== "single";
+  const table = useJoint ? JOINT_RMD_DIV : RMD_DIV;
+  // Tables run to 105+; fall back to the oldest defined entry rather than NaN.
+  return table[age] || RMD_DIV[age] || RMD_DIV[105] || 2.0;
+}
+
+function yearsToRMD(params) {
+  return resolveRmdAge(params) - params.currentAge;
 }
 
 // ─── Rules registry ────────────────────────────────────────────────────────────
@@ -92,7 +129,7 @@ export const RULES = [
     condition: ({ params }) => preTaxPct(params) > 0.75,
     action: "Pre-tax concentration — RMD bomb",
     reason: ({ params, currentYear }) =>
-      `${(preTaxPct(params) * 100).toFixed(0)}% pre-tax — forced RMDs begin age ${getRMDAge(params.currentAge, currentYear)}`,
+      `${(preTaxPct(params) * 100).toFixed(0)}% pre-tax — forced RMDs begin age ${resolveRmdAge(params)}`,
     deadline: ({ params }) => `Before age ${params.retireAge + 2}`,
   },
   {
@@ -144,20 +181,20 @@ export const RULES = [
     category: "RMD",
     law: "SECURE 2.0 Act §107 — IRS Pub 590-B",
     priority: ({ params, currentYear }) =>
-      yearsToRMD(params, currentYear) <= 3 ? "red" : "yellow",
+      yearsToRMD(params) <= 3 ? "red" : "yellow",
     condition: ({ params, currentYear }) => {
-      const yrs = yearsToRMD(params, currentYear);
+      const yrs = yearsToRMD(params);
       return yrs > 0 && yrs <= 7 && preTaxPct(params) > 0.40;
     },
     action: ({ params, currentYear }) =>
-      `RMD window — ${yearsToRMD(params, currentYear)} years to forced distributions`,
+      `RMD window — ${yearsToRMD(params)} years to forced distributions`,
     reason: ({ params, currentYear }) => {
-      const rmdAge = getRMDAge(params.currentAge, currentYear);
+      const rmdAge = resolveRmdAge(params);
       const prePct = (preTaxPct(params) * 100).toFixed(0);
       return `RMD age ${rmdAge} per SECURE 2.0. ${prePct}% pre-tax — convert now to reduce future forced income`;
     },
     deadline: ({ params, currentYear }) =>
-      `Age ${getRMDAge(params.currentAge, currentYear)}`,
+      `Age ${resolveRmdAge(params)}`,
   },
   {
     id: "rmd-bracket-creep",
@@ -165,23 +202,32 @@ export const RULES = [
     law: "SECURE 2.0 Act §107 — IRS Uniform Lifetime Table",
     priority: "yellow",
     condition: ({ params, currentYear }) => {
-      const rmdAge = getRMDAge(params.currentAge, currentYear);
+      const rmdAge = resolveRmdAge(params);
       const preTax = preTaxTotal(params);
       const yearsLeft = rmdAge - params.currentAge;
       if (yearsLeft <= 0 || preTax <= 0) return false;
-      const divisor = 24.0;
-      const projectedRMD = preTax / divisor;
+      // Divisor at the RMD START age (not today's age — the IRS tables aren't even
+      // defined below 72, so RMD_DIV[currentAge] would be undefined → NaN for the
+      // pre-retirement users this card is aimed at).
+      const projectedRMD = preTax / rmdDivisorAt(params, rmdAge);
       return projectedRMD > 50_000;
     },
-    action: "Projected RMD will push into higher bracket",
-    reason: ({ params, currentYear }) => {
+    action: "First RMD would land in a higher bracket",
+    // Deliberately uses TODAY's pre-tax balance, not a balance projected forward
+    // to rmdAge: every other quantity in this file reads raw current params, and
+    // adding growth here would make this a fourth place that reimplements
+    // portfolio compounding (the exact drift-bug class REQUIREMENTS §13.1/§13.2
+    // keeps logging). So the copy states the basis instead of implying a forecast.
+    reason: ({ params }) => {
       const preTax = preTaxTotal(params);
-      const projectedRMD = (preTax / 24.0).toLocaleString("en-US", { maximumFractionDigits: 0 });
-      const rmdAge = getRMDAge(params.currentAge, currentYear);
-      return `~$${projectedRMD}/yr projected RMD at age ${rmdAge} — Roth conversion now reduces future tax drag`;
+      const rmdAge = resolveRmdAge(params);
+      const projectedRMD = (preTax / rmdDivisorAt(params, rmdAge))
+        .toLocaleString("en-US", { maximumFractionDigits: 0 });
+      const bal = Math.round(preTax).toLocaleString("en-US");
+      return `If your pre-tax balance stayed at today's $${bal}, your first RMD at age ${rmdAge} would be ~$${projectedRMD}/yr. The actual RMD will be larger if the account keeps growing. Converting to Roth now reduces future tax drag.`;
     },
     deadline: ({ params, currentYear }) =>
-      `Before age ${getRMDAge(params.currentAge, currentYear)}`,
+      `Before age ${resolveRmdAge(params)}`,
   },
 
   // ── YELLOW ─────────────────────────────────────────────────────────────────
@@ -260,7 +306,7 @@ export const RULES = [
     condition: ({ params }) => rothPct(params) < 0.25,
     action: "Roth balance low — conversion needed",
     reason: ({ params, currentYear }) => {
-      const rmdAge = getRMDAge(params.currentAge, currentYear);
+      const rmdAge = resolveRmdAge(params);
       return `${(rothPct(params) * 100).toFixed(0)}% Roth — target 40%+ before RMDs (age ${rmdAge})`;
     },
     deadline: ({ params }) => `Ages ${params.retireAge}–${params.retireAge + 10}`,
@@ -346,7 +392,7 @@ export const RULES = [
     condition: ({ params }) => rothPct(params) >= 0.30,
     action: "Roth allocation healthy",
     reason: ({ params, currentYear }) => {
-      const rmdAge = getRMDAge(params.currentAge, currentYear);
+      const rmdAge = resolveRmdAge(params);
       return `${(rothPct(params) * 100).toFixed(0)}% Roth — reducing future RMD exposure at age ${rmdAge}`;
     },
     deadline: "Monitor",
