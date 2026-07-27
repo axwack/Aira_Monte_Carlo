@@ -7822,12 +7822,12 @@ function MortgageTab({ values, onChange }) {
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
                 <div>
                   <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Gross value</div>
-                  <DualInput label="" value={prop.value||0} min={0} max={5_000_000} step={5_000}
+                  <DualInput label="" value={prop.value||0} min={0} max={999_000_000_000} step={5_000}
                     format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"value",v)}/>
                 </div>
                 <div>
                   <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Mortgage balance</div>
-                  <DualInput label="" value={prop.mortgage||0} min={0} max={3_000_000} step={1_000}
+                  <DualInput label="" value={prop.mortgage||0} min={0} max={999_000_000_000} step={1_000}
                     format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"mortgage",v)}/>
                 </div>
                 <div>
@@ -9387,7 +9387,7 @@ function SavingsPanel({ values, onChange }) {
                     onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.06)"}
                   />
                   <div style={{ flex: 1 }}>
-                    <ANumInput value={acct.balance || 0} onSet={(v) => handleBalance(acct.id, v)} min={0} max={5_000_000} step={5000} />
+                    <ANumInput value={acct.balance || 0} onSet={(v) => handleBalance(acct.id, v)} min={0} max={999_000_000_000} step={5000} />
                   </div>
                   {hasSplits ? (
                     <span title="Split across buckets — click 🔀 to edit" style={{ fontSize: 9, fontWeight: 700, color: cat.color, fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap" }}>
@@ -10187,6 +10187,7 @@ function ContribPanel({ values, onChange }) {
       <div style={sectionCard}>
         <div style={sectionTitle}>💰 Annual Contributions</div>
         <div style={sectionDesc}>Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.</div>
+        <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 10, lineHeight: 1.4 }}>⚠ Employer Contribution and Brokerage/After-Tax Savings aren't capped by the tool — the IRS doesn't set a hard per-field limit on either, but real-world amounts are still bounded by your actual plan and income. 401(k), HSA, and Roth IRA below stay capped at their real legal limits.</div>
         <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
         </WFieldRow>
@@ -10194,13 +10195,13 @@ function ContribPanel({ values, onChange }) {
           <ANumInput value={hsaMonthly} onSet={(v) => onChange("hsaMonthly", v)} min={0} max={1_000} step={50} suffix="/mo" />
         </WFieldRow>
         <WFieldRow label="Employer Contribution ($/yr)" helper="Fixed annual employer money in dollars — 401(k) match + profit sharing. Compounds in the Monte Carlo accumulation until your retirement age.">
-          <ANumInput value={employerContrib} onSet={(v) => onChange("employerContrib", v)} min={0} max={100_000} step={500} suffix="/yr" />
+          <ANumInput value={employerContrib} onSet={(v) => onChange("employerContrib", v)} min={0} max={999_000_000_000} step={500} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="Roth IRA Contribution" helper="Direct or backdoor Roth. Grows tax‑free and is drawn last, so it never triggers IRMAA or the SS torpedo.">
           <ANumInput value={rothContrib} onSet={(v) => onChange("rothContrib", v)} min={0} max={30_000} step={500} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="Brokerage / After‑Tax Savings" helper="Money you invest OUTSIDE a retirement account. Keep it here rather than adding it to your 401(k) — these dollars are withdrawn at long‑term capital-gains rates against their cost basis, and they don't raise your RMDs at 75.">
-          <ANumInput value={taxableContrib} onSet={(v) => onChange("taxableContrib", v)} min={0} max={500_000} step={1_000} suffix="/yr" />
+          <ANumInput value={taxableContrib} onSet={(v) => onChange("taxableContrib", v)} min={0} max={999_000_000_000} step={1_000} suffix="/yr" />
         </WFieldRow>
         {/* Total belongs WITH the contributions that make it up (logical flow). */}
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
@@ -11048,9 +11049,9 @@ function RetirementLanding({ onEnter }) {
 
   const rows = [
     { label: "Current age", val: curAge, set: setCurAge, min: AGE_LIMITS.current.min, max: AGE_LIMITS.current.max, step: 1, fmt: (v) => v },
-    { label: "What you've saved so far", val: savings, set: setSavings, min: 50000, max: 4000000, step: 25000, fmt: landingMoney },
-    { label: "Adding each year", val: contribL, set: setContribL, min: 0, max: 120000, step: 2500, fmt: landingMoney },
-    { label: "Spending in retirement", val: spend, set: setSpend, min: 40000, max: 220000, step: 2500, fmt: (v) => landingMoney(v) + "/yr" },
+    { label: "What you've saved so far", val: savings, set: setSavings, min: 50000, max: 999_000_000_000, step: 25000, fmt: landingMoney },
+    { label: "Adding each year", val: contribL, set: setContribL, min: 0, max: 999_000_000_000, step: 2500, fmt: landingMoney },
+    { label: "Spending in retirement", val: spend, set: setSpend, min: 40000, max: 999_000_000_000, step: 2500, fmt: (v) => landingMoney(v) + "/yr" },
   ];
 
   return (
