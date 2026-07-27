@@ -88,6 +88,11 @@ function _persistUsage() {
 const _usageRecords = _loadPersistedUsage();
 const _usageListeners = new Set();
 
+/* Whole dollars, grouped, never abbreviated — matches `fmtDollar` in App.jsx.
+ * Duplicated rather than imported because App.jsx imports from this module, so
+ * importing back would be circular. Keep the two in step. */
+const fmtDollar = (n) => `$${Math.round(n).toLocaleString()}`;
+
 export function calcCost(model, inputTokens, outputTokens) {
   const p = GEMINI_PRICING[model] || GEMINI_PRICING[DEFAULT_GEMINI_MODEL];
   return (inputTokens / 1e6) * p.inputPerM + (outputTokens / 1e6) * p.outputPerM;
@@ -698,13 +703,12 @@ export async function analyzeRetirementDate(values, mcResults) {
   const apiKey = values?.geminiApiKey?.trim();
   try {
     if (!apiKey) throw new Error("no api key");
-    const fmtM = (n) => `$${Math.round(n).toLocaleString()}`;
     const scenarioLines = solver.results.map(r =>
-      `- ${r.label} (${(r.rate * 100).toFixed(1)}%): reaches ${fmtM(solver.target)} ${r.crossoverAge != null ? `at age ${r.crossoverAge}` : "beyond age 80"}`
+      `- ${r.label} (${(r.rate * 100).toFixed(1)}%): reaches ${fmtDollar(solver.target)} ${r.crossoverAge != null ? `at age ${r.crossoverAge}` : "beyond age 80"}`
     ).join("\n");
     const userText = [
-      `Target portfolio: ${fmtM(solver.target)}`,
-      `Current portfolio: ${fmtM(solver.currentPort)} at age ${solver.currentAge}`,
+      `Target portfolio: ${fmtDollar(solver.target)}`,
+      `Current portfolio: ${fmtDollar(solver.currentPort)} at age ${solver.currentAge}`,
       `Planned retirement age: ${values.retireAge || 60}`,
       `MC success rate: ${mcResults ? (mcResults.rate * 100).toFixed(1) : "N/A"}%`,
       ``,
@@ -722,19 +726,18 @@ export async function analyzeRetirementDate(values, mcResults) {
     const expected = results.find(r => r.label === "Expected");
     const conservative = results.find(r => r.label === "Conservative");
     const fmt = (n) => n != null ? `age ${n}` : "beyond age 80";
-    const fmtM = (n) => `$${Math.round(n).toLocaleString()}`;
 
     const narrative = [
-      `**Retirement Date Solver** — Target: ${fmtM(target)}`,
+      `**Retirement Date Solver** — Target: ${fmtDollar(target)}`,
       ``,
-      `Current portfolio: ${fmtM(currentPort)} at age ${currentAge}.`,
+      `Current portfolio: ${fmtDollar(currentPort)} at age ${currentAge}.`,
       ``,
-      `| Scenario | Reaches ${fmtM(target)} |`,
+      `| Scenario | Reaches ${fmtDollar(target)} |`,
       `|---|---|`,
       ...results.map(r => `| ${r.label} (${(r.rate * 100).toFixed(1)}%) | ${fmt(r.crossoverAge)} |`),
       ``,
       expected?.crossoverAge != null
-        ? `At expected returns your portfolio crosses ${fmtM(target)} at **${fmt(expected.crossoverAge)}** — ${expected.crossoverAge <= (values.retireAge || 60) ? "on track for your planned retirement." : `${expected.crossoverAge - (values.retireAge || 60)} years after your planned retirement date.`}`
+        ? `At expected returns your portfolio crosses ${fmtDollar(target)} at **${fmt(expected.crossoverAge)}** — ${expected.crossoverAge <= (values.retireAge || 60) ? "on track for your planned retirement." : `${expected.crossoverAge - (values.retireAge || 60)} years after your planned retirement date.`}`
         : `Portfolio does not reach target before age 80 at expected returns — review contributions or target.`,
       ``,
       conservative?.crossoverAge != null && conservative.crossoverAge <= (values.retireAge || 60)
