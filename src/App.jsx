@@ -9885,81 +9885,6 @@ function AssumptionsPanel({ values, onChange }) {
         </div>
       </div>
 
-      {/* ── PLANNED ONE-OFF EXPENSES ───────────────────────────────────────
-          Distinct from the carveouts above: those run from TODAY until an end
-          year, so they can't express a cost that lands in one future year. This
-          is the roof-in-10-years / car-every-7 case. Additive on top of the base
-          spend, so the withdrawal strategy still governs the recurring plan. */}
-      <ACard title="Planned One-Off Expenses" accent="#fb923c"
-        desc="Big costs you can see coming — a new roof, a car, a wedding, a heavy travel year. Enter today's price; AiRA inflates it to the year it happens.">
-        {(values.cashFlowEvents || []).length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 70px 70px 78px 28px", gap: 6, marginBottom: 4, fontSize: 9, color: "#475569" }}>
-            <span>What</span><span style={{ textAlign: "right" }}>Cost</span><span style={{ textAlign: "right" }}>Year</span>
-            <span style={{ textAlign: "right" }}>Every</span><span style={{ textAlign: "right" }}>Until</span><span />
-          </div>
-        )}
-        {(values.cashFlowEvents || []).map((ev, idx) => {
-          const upd = (patch) => {
-            const next = [...(values.cashFlowEvents || [])];
-            next[idx] = { ...ev, ...patch };
-            onChange("cashFlowEvents", next);
-          };
-          const cell = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" };
-          const num = { ...cell, textAlign: "right" };
-          return (
-            <div key={ev.id} style={{ marginBottom: 8 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 70px 70px 78px 28px", gap: 6, alignItems: "center" }}>
-                <input type="text" value={ev.label} placeholder="New roof"
-                  onChange={(e) => upd({ label: e.target.value })} style={cell} />
-                <input type="number" value={ev.amount} min={0} step={1000} placeholder="$"
-                  onChange={(e) => upd({ amount: Number(e.target.value) })} style={num}
-                onFocus={selectAllOnFocus}
-              />
-                <input type="number" value={ev.year} min={new Date().getFullYear()} max={2090} step={1}
-                  onChange={(e) => upd({ year: Number(e.target.value) })} style={num}
-                onFocus={selectAllOnFocus}
-              />
-                {/* Blank = one-time. */}
-                <input type="number" value={ev.recurEveryYears || ""} min={0} max={50} step={1} placeholder="—"
-                  title="Repeat every N years. Leave blank for a one-time cost."
-                  onChange={(e) => upd({ recurEveryYears: Number(e.target.value) || 0 })} style={num}
-                onFocus={selectAllOnFocus}
-              />
-                <input type="number" value={ev.recurUntilYear || ""} min={new Date().getFullYear()} max={2090} step={1} placeholder="—"
-                  title="Stop repeating after this year. Leave blank to repeat for the whole plan."
-                  disabled={!ev.recurEveryYears}
-                  onChange={(e) => upd({ recurUntilYear: Number(e.target.value) || null })}
-                  style={{ ...num, opacity: ev.recurEveryYears ? 1 : 0.35 }}
-                onFocus={selectAllOnFocus}
-              />
-                <button
-                  onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter((_, i) => i !== idx))}
-                  style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 13, padding: "2px 6px" }}
-                >×</button>
-              </div>
-              {/* Committed vs deferrable decides whether the guardrails may trim
-                  this in a bad market — the same idea as Must Spend vs Like to
-                  Spend for recurring costs. A roof can't wait; a trip can. */}
-              <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: 10, color: "#94a3b8", cursor: "pointer" }}>
-                <input type="checkbox" checked={!!ev.deferrable} onChange={(e) => upd({ deferrable: e.target.checked })} />
-                I could delay this in a bad market <span style={{ color: "#475569" }}>(guardrails may trim it)</span>
-              </label>
-            </div>
-          );
-        })}
-        <button
-          onClick={() => onChange("cashFlowEvents", [
-            ...(values.cashFlowEvents || []),
-            { id: Date.now().toString(), label: "", amount: 0, year: new Date().getFullYear() + 5, recurEveryYears: 0, recurUntilYear: null, deferrable: false },
-          ])}
-          style={{ fontSize: 11, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.25)", color: "#fb923c", borderRadius: 6, padding: "5px 12px", cursor: "pointer", marginTop: 4 }}
-        >+ Add planned expense</button>
-        <div style={{ fontSize: 10, color: "#475569", marginTop: 8, lineHeight: 1.5 }}>
-          Leave <strong style={{ color: "#64748b" }}>Every</strong> blank for a one-time cost. Set it to 7 for a car
-          every seven years, and use <strong style={{ color: "#64748b" }}>Until</strong> to stop it (e.g. when you'd stop driving).
-        </div>
-      </ACard>
-
       {/* ROTH CONVERSION CARD */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
@@ -10728,6 +10653,81 @@ function ExpensesPanel({ values, onChange }) {
           </div>
         )}
       </div>
+
+      {/* ── PLANNED ONE-OFF EXPENSES ───────────────────────────────────────
+          Distinct from the recurring spend above: this is the roof-in-10-years
+          / car-every-7 case, a cost that lands in one future year rather than
+          running continuously. Additive on top of the base spend, so the
+          withdrawal strategy still governs the recurring plan. */}
+      <ACard title="Planned One-Off Expenses" accent="#fb923c"
+        desc="Big costs you can see coming — a new roof, a car, a wedding, a heavy travel year. Enter today's price; AiRA inflates it to the year it happens.">
+        {(values.cashFlowEvents || []).length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 70px 70px 78px 28px", gap: 6, marginBottom: 4, fontSize: 9, color: "#475569" }}>
+            <span>What</span><span style={{ textAlign: "right" }}>Cost</span><span style={{ textAlign: "right" }}>Year</span>
+            <span style={{ textAlign: "right" }}>Every</span><span style={{ textAlign: "right" }}>Until</span><span />
+          </div>
+        )}
+        {(values.cashFlowEvents || []).map((ev, idx) => {
+          const upd = (patch) => {
+            const next = [...(values.cashFlowEvents || [])];
+            next[idx] = { ...ev, ...patch };
+            onChange("cashFlowEvents", next);
+          };
+          const cell = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" };
+          const num = { ...cell, textAlign: "right" };
+          return (
+            <div key={ev.id} style={{ marginBottom: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 70px 70px 78px 28px", gap: 6, alignItems: "center" }}>
+                <input type="text" value={ev.label} placeholder="New roof"
+                  onChange={(e) => upd({ label: e.target.value })} style={cell} />
+                <input type="number" value={ev.amount} min={0} step={1000} placeholder="$"
+                  onChange={(e) => upd({ amount: Number(e.target.value) })} style={num}
+                onFocus={selectAllOnFocus}
+              />
+                <input type="number" value={ev.year} min={new Date().getFullYear()} max={2090} step={1}
+                  onChange={(e) => upd({ year: Number(e.target.value) })} style={num}
+                onFocus={selectAllOnFocus}
+              />
+                {/* Blank = one-time. */}
+                <input type="number" value={ev.recurEveryYears || ""} min={0} max={50} step={1} placeholder="—"
+                  title="Repeat every N years. Leave blank for a one-time cost."
+                  onChange={(e) => upd({ recurEveryYears: Number(e.target.value) || 0 })} style={num}
+                onFocus={selectAllOnFocus}
+              />
+                <input type="number" value={ev.recurUntilYear || ""} min={new Date().getFullYear()} max={2090} step={1} placeholder="—"
+                  title="Stop repeating after this year. Leave blank to repeat for the whole plan."
+                  disabled={!ev.recurEveryYears}
+                  onChange={(e) => upd({ recurUntilYear: Number(e.target.value) || null })}
+                  style={{ ...num, opacity: ev.recurEveryYears ? 1 : 0.35 }}
+                onFocus={selectAllOnFocus}
+              />
+                <button
+                  onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter((_, i) => i !== idx))}
+                  style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 13, padding: "2px 6px" }}
+                >×</button>
+              </div>
+              {/* Committed vs deferrable decides whether the guardrails may trim
+                  this in a bad market — the same idea as Must Spend vs Like to
+                  Spend for recurring costs. A roof can't wait; a trip can. */}
+              <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: 10, color: "#94a3b8", cursor: "pointer" }}>
+                <input type="checkbox" checked={!!ev.deferrable} onChange={(e) => upd({ deferrable: e.target.checked })} />
+                I could delay this in a bad market <span style={{ color: "#475569" }}>(guardrails may trim it)</span>
+              </label>
+            </div>
+          );
+        })}
+        <button
+          onClick={() => onChange("cashFlowEvents", [
+            ...(values.cashFlowEvents || []),
+            { id: Date.now().toString(), label: "", amount: 0, year: new Date().getFullYear() + 5, recurEveryYears: 0, recurUntilYear: null, deferrable: false },
+          ])}
+          style={{ fontSize: 11, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.25)", color: "#fb923c", borderRadius: 6, padding: "5px 12px", cursor: "pointer", marginTop: 4 }}
+        >+ Add planned expense</button>
+        <div style={{ fontSize: 10, color: "#475569", marginTop: 8, lineHeight: 1.5 }}>
+          Leave <strong style={{ color: "#64748b" }}>Every</strong> blank for a one-time cost. Set it to 7 for a car
+          every seven years, and use <strong style={{ color: "#64748b" }}>Until</strong> to stop it (e.g. when you'd stop driving).
+        </div>
+      </ACard>
     </div>
   );
 }
