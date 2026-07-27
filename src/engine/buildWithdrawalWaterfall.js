@@ -904,7 +904,12 @@ export function buildWithdrawalWaterfall(params = {}) {
       // never tracked or depleted. Both are gone: every dollar of conversion tax now
       // leaves a balance the user actually entered, and the plan can run out of
       // money paying it. If we don't know about money, we don't spend it.
-      const withholdFromConversion = taxFunding === "from_conversion";
+      // The Profile dropdown emits "from_conv" (App.jsx). "from_conversion" is accepted
+      // too so a stored profile written with either spelling behaves the same — a
+      // mismatch here fails SILENTLY: withholding never fires and the tax quietly
+      // comes from the buckets instead, which is exactly the class of bug this whole
+      // change is fixing.
+      const withholdFromConversion = taxFunding === "from_conv" || taxFunding === "from_conversion";
       // Funds available to pay tax WITHOUT touching pre-tax, after this year's
       // spending draws have already been taken.
       const taxableLeftForConv = Math.max(0, taxable - fromTaxable);

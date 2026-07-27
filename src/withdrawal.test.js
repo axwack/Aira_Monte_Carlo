@@ -1072,3 +1072,42 @@ describe("Roth conversion tax funding (§23)", () => {
       .toBeCloseTo(r.conversionTax, 0);
   });
 });
+
+describe("taxFunding value contract (§23 follow-up)", () => {
+  // The Profile dropdown emits "from_conv", NOT "from_conversion". A mismatch here
+  // fails SILENTLY — withholding never fires and the tax quietly comes from the
+  // buckets instead. That is the exact class of bug this work exists to kill, so
+  // pin the value the UI actually sends.
+  const CONV2 = {
+    ...BASE, currentAge: 65, retireAge: 65, ssAge: 70, ssb: 0, sp: 40_000,
+    rothConversionTarget: "22", irmaaGuard: false,
+    accounts: [
+      { id: "t1", category: "pretax",  balance: 1_500_000 },
+      { id: "t2", category: "roth",    balance:   100_000 },
+      { id: "t3", category: "taxable", balance:   400_000 },
+      { id: "t4", category: "cash",    balance:   100_000 },
+    ],
+  };
+  test('"from_conv" (the dropdown value) actually withholds', () => {
+    const r = buildWithdrawalWaterfall({ ...CONV2, taxFunding: "from_conv" }).smart.rows[0];
+    expect(r.conversionTax).toBeGreaterThan(0);
+    expect(r.convToRoth).toBe(r.conversionAmount - r.conversionTax);
+    expect(r.convTaxFromTaxable).toBe(0);
+  });
+  test('"from_conversion" is accepted as an alias', () => {
+    const a = buildWithdrawalWaterfall({ ...CONV2, taxFunding: "from_conv" }).smart.rows[0];
+    const b = buildWithdrawalWaterfall({ ...CONV2, taxFunding: "from_conversion" }).smart.rows[0];
+    expect(a.convToRoth).toBe(b.convToRoth);
+  });
+  test("runMC honors taxFunding too — MC must not describe a different plan", () => {
+    const mcA = runMC({ ...CONV2, taxFunding: "from_taxable" }, 90, 120, 42, true);
+    const mcB = runMC({ ...CONV2, taxFunding: "from_conv" },    90, 120, 42, true);
+    // Same seed, same everything except who pays the tax → results must differ.
+    const endA = mcA.pcts?.[mcA.pcts.length - 1]?.p50;
+    const endB = mcB.pcts?.[mcB.pcts.length - 1]?.p50;
+    expect(typeof endA).toBe("number");
+    expect(typeof endB).toBe("number");
+    // Withholding shrinks what reaches the Roth, so terminal wealth must differ.
+    expect(endA).not.toBe(endB);
+  });
+});

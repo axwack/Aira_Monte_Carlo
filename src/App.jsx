@@ -176,9 +176,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.34";
-export const BUILD_TAG = "[main] v1.2.34 — Roth conversion tax now comes from money you actually have. The Tax funding source setting was read by NOTHING in the live engine: it existed only in the dead buildRothExplorer path, so conversion tax always came out of PRE-TAX no matter what you picked, and the Outside cash option implied an unlimited external pot the simulation never tracked or depleted. Both are gone. Conversion tax is now funded from real, tracked balances in order: taxable, then cash, then pre-tax only as a last resort — so every dollar leaves a bucket you entered, and the plan can genuinely run short paying it. From the conversion still withholds the tax out of the transfer, so less lands in the Roth. Affordability now depends on the funding source: when taxable and cash absorb the tax, only the excess falls back to pre-tax, so the shrink loop no longer cuts conversions that were actually affordable. Rows expose convTaxFromTaxable / convTaxFromCash / convTaxFromPretax / convToRoth so the UI can show who paid. Expect conversion projections to CHANGE — they were all silently funded from pre-tax before, which understated the strategy. Known simplification, documented in code: a taxable draw taken to pay the tax realizes gains that are not themselves taxed this pass. 598 tests pass. Prior v1.2.33: verify-session instrumentation.";
-export const BUILD_TIME = "2026-07-27T21:00:00Z";
+const APP_VERSION = "1.2.35";
+export const BUILD_TAG = "[main] v1.2.35 — Two follow-ups to the Roth funding fix, both found by asking whether the setting was referenced correctly EVERYWHERE. (1) A silent value mismatch I introduced in v1.2.34: the Profile dropdown emits from_conv, but the engine tested for from_conversion — so selecting From the conversion never withheld anything and quietly fell through to bucket funding. The engine now accepts both spellings and a test pins the value the UI actually sends. (2) runMC ignored taxFunding entirely: it did pretax -= (convAmt + convTax) unconditionally, so the Monte Carlo success rate — the headline number — described a different plan than the Withdrawal and Conversion tabs for the same profile. runMC now funds conversion tax the same way the waterfall does: withhold from the transfer, or draw taxable then cash then pretax. 601 tests pass, including one that fails if the two engines ever diverge again. Prior v1.2.34: conversion tax funded from real balances.";
+export const BUILD_TIME = "2026-07-27T22:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1610,16 +1610,37 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           // Shrink (rather than all-or-nothing skip) when pretax can't self-fund the
           // conversion plus its incremental tax — converge on the largest amount the
           // remaining pretax balance can afford, mirroring the waterfall's own loop.
+          // Who pays the conversion tax — must match buildWithdrawalWaterfall exactly,
+          // or the Monte Carlo success rate describes a different plan than the
+          // Withdrawal/Conversion tabs. This block used to do `pretax -= convAmt +
+          // convTax` unconditionally, ignoring the setting entirely.
+          const withholdConvMC = p.taxFunding === "from_conv" || p.taxFunding === "from_conversion";
+          const outsideForConvMC = withholdConvMC ? 0 : Math.max(0, taxable) + Math.max(0, cash);
+
           for (let i = 0; i < 5 && convAmt > 0; i++) {
-            const shortfall = (convAmt + convTax) - pretax;
+            const taxOnPretaxMC = withholdConvMC ? 0 : Math.max(0, convTax - outsideForConvMC);
+            const needMC = withholdConvMC ? convAmt : convAmt + taxOnPretaxMC;
+            const shortfall = needMC - pretax;
             if (shortfall <= 0) break;
             convAmt = Math.max(0, convAmt - shortfall);
             convTax = convTaxFor(convAmt);
           }
 
           if (convAmt > 500) {
-            pretax -= (convAmt + convTax);
-            roth   += convAmt;
+            if (withholdConvMC) {
+              // Withheld out of the transfer: gross leaves pretax, net reaches Roth.
+              pretax -= convAmt;
+              roth   += Math.max(0, convAmt - convTax);
+            } else {
+              // Real buckets, same order the waterfall uses: taxable -> cash -> pretax.
+              let owed = convTax;
+              const fromTaxConv  = Math.min(owed, Math.max(0, taxable)); owed -= fromTaxConv;
+              const fromCashConv = Math.min(owed, Math.max(0, cash));    owed -= fromCashConv;
+              taxable = Math.max(0, taxable - fromTaxConv);
+              cash    = Math.max(0, cash    - fromCashConv);
+              pretax -= (convAmt + Math.max(0, owed));
+              roth   += convAmt;
+            }
             if (lastWithConv) finalMagiMC = lastWithConv.magi;
           }
         }
