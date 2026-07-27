@@ -1001,3 +1001,74 @@ describe("ENG-8 — irmaaGuard caps the Step-6.5 Roth conversion", () => {
     expect(y0.irmaa).toBe(n0.irmaa);
   });
 });
+
+// ─── §23: conversion tax must come from REAL buckets ──────────────────────────
+// Previously `taxFunding` was read by NOTHING in this engine: conversion tax always
+// came out of pre-tax whatever the user picked, and "outside cash" implied an
+// unlimited external pot the simulation never tracked. Now taxable → cash → pretax.
+
+describe("Roth conversion tax funding (§23)", () => {
+  const CONV = {
+    ...BASE,
+    currentAge: 65, retireAge: 65, ssAge: 70, ssb: 0, sp: 40_000,
+    rothConversionTarget: "22", irmaaGuard: false,
+    accounts: [
+      { id: "t1", category: "pretax",  name: "401k",    balance: 1_500_000 },
+      { id: "t2", category: "roth",    name: "Roth",    balance:   100_000 },
+      { id: "t3", category: "taxable", name: "Taxable", balance:   400_000 },
+      { id: "t4", category: "cash",    name: "Cash",    balance:   100_000 },
+    ],
+  };
+  const y0 = (p) => buildWithdrawalWaterfall(p).smart.rows[0];
+
+  test("from_taxable pays the tax out of taxable, not pre-tax", () => {
+    const r = y0({ ...CONV, taxFunding: "from_taxable" });
+    expect(r.conversionAmount).toBeGreaterThan(0);
+    expect(r.conversionTax).toBeGreaterThan(0);
+    expect(r.convTaxFromTaxable).toBeGreaterThan(0);
+    expect(r.convTaxFromPretax).toBe(0);
+    // Full conversion reaches the Roth when tax is paid from outside it.
+    expect(r.convToRoth).toBe(r.conversionAmount);
+  });
+
+  test("from_conversion withholds instead — less lands in the Roth", () => {
+    const r = y0({ ...CONV, taxFunding: "from_conversion" });
+    expect(r.conversionTax).toBeGreaterThan(0);
+    expect(r.convToRoth).toBe(r.conversionAmount - r.conversionTax);
+    expect(r.convTaxFromTaxable).toBe(0);
+    expect(r.convTaxFromCash).toBe(0);
+  });
+
+  test("the setting is no longer inert — funding sources give different results", () => {
+    const a = y0({ ...CONV, taxFunding: "from_taxable" });
+    const b = y0({ ...CONV, taxFunding: "from_conversion" });
+    expect(a.convToRoth).not.toBe(b.convToRoth);
+  });
+
+  test("no imaginary money: tax falls back to pre-tax only when real buckets run dry", () => {
+    // Almost no taxable/cash, so there is nothing outside pre-tax to pay with.
+    const broke = {
+      ...CONV,
+      accounts: [
+        { id: "t1", category: "pretax",  name: "401k",    balance: 1_500_000 },
+        { id: "t2", category: "roth",    name: "Roth",    balance:   100_000 },
+        { id: "t3", category: "taxable", name: "Taxable", balance:         0 },
+        { id: "t4", category: "cash",    name: "Cash",    balance:         0 },
+      ],
+    };
+    const r = y0({ ...broke, taxFunding: "from_taxable" });
+    if (r.conversionAmount > 0) {
+      expect(r.convTaxFromTaxable).toBe(0);
+      // It must come from somewhere real — pre-tax — never from nowhere.
+      expect(r.convTaxFromPretax).toBeGreaterThan(0);
+      expect(r.convTaxFromTaxable + r.convTaxFromCash + r.convTaxFromPretax)
+        .toBeCloseTo(r.conversionTax, 0);
+    }
+  });
+
+  test("every dollar of conversion tax is accounted to a real bucket", () => {
+    const r = y0({ ...CONV, taxFunding: "from_taxable" });
+    expect(r.convTaxFromTaxable + r.convTaxFromCash + r.convTaxFromPretax)
+      .toBeCloseTo(r.conversionTax, 0);
+  });
+});
