@@ -75,7 +75,7 @@ import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCa
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
-import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability } from "./billing/credits.js";
+import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT } from "./billing/credits.js";
 import { AdminPanel } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 
@@ -176,9 +176,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.31";
-export const BUILD_TAG = "[main] v1.2.31 — Fix: the Run Monte Carlo button was invisible on shorter screens. It was an ordinary last child of .sidebar, which is overflow-y:auto, so on a MacBook viewport in Chrome it sat below the fold and users did not know the sidebar scrolled. That button is both the control that RUNS the simulation and the host of the 'Inputs changed — Re-run' state, so an invisible button meant users could change inputs and keep reading stale numbers with no visible prompt to recompute. Now position:sticky; bottom:0 so it stays in view while the panel above it scrolls normally. Reported by a user on Chrome for macOS. Prior v1.2.30: report tests skip loudly; v1.2.29 sliding session refresh; v1.2.28 five engine-correctness fixes.";
-export const BUILD_TIME = "2026-07-27T18:30:00Z";
+const APP_VERSION = "1.2.32";
+export const BUILD_TAG = "[main] v1.2.32 — Two fixes. (1) Sidebar values are now TYPEABLE. Every sidebar control was drag-only, so values above the slider max were simply unreachable — annual contribution capped at $100K and US spend at $300K — and precise amounts were luck even inside the range. The value on the right of each row is now an input: click it and type. A typed value may EXCEED the slider max (the thumb just pins at the end); the minimum is still enforced. It accepts $1,250,000 / 1.25M / 1250k / plain digits. The slider stays as a fast approximate control over the common range. (2) The AiRA Credits panel no longer shows a bare 0 when the browser simply has no session. Credits live in the database against a Stripe customer; the browser’s only claim on them is a token in localStorage, which does not travel between browsers, devices or origins and is not part of a profile export. Showing 0 next to a Buy Credits button told paying customers they had nothing and invited them to pay twice. With no token it now says the credits are safe and points at the restore path. Prior v1.2.31: pinned the Run button.";
+export const BUILD_TIME = "2026-07-27T19:15:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2448,7 +2448,12 @@ const CSS = `
   .sidebar { border-right:1px solid rgba(228, 24, 24, 0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
   .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:11px; padding:13px; }
   .sb-title { font-size:14px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.12em; margin-bottom:12px; }
-  .sl-row { display:grid; grid-template-columns:84px 1fr 58px; align-items:center; gap:8px; margin-bottom:13px; }
+  .sl-row { display:grid; grid-template-columns:84px 1fr 92px; align-items:center; gap:8px; margin-bottom:13px; }
+  /* The value cell is now an editable input (typed entry can exceed the slider max).
+     Styled to read as text until focused, so the sidebar looks unchanged at rest. */
+  .sl-val-input { width:100%; background:transparent; border:1px solid transparent; border-radius:5px; padding:2px 4px; cursor:text; }
+  .sl-val-input:hover { border-color:rgba(255,255,255,0.18); background:rgba(255,255,255,0.04); }
+  .sl-val-input:focus { outline:none; border-color:#14b8a6; background:rgba(20,184,166,0.10); color:#f1f5f9; text-align:right; }
   .sl-label { font-size:12px; color:#cbd5e1; font-weight:500; }
   .sl-val { font-size:12px; font-weight:700; text-align:right; color:#f1f5f9; font-family:'JetBrains Mono',monospace; }
   input[type=range] { display:none; }
@@ -2566,7 +2571,7 @@ const CSS = `
     .main { padding:10px; overflow-y:visible; min-height:unset; }
     .main > * { flex-shrink:0; }
     .metrics { grid-template-columns:1fr 1fr; }
-    .sl-row { grid-template-columns:1fr 52px; }
+    .sl-row { grid-template-columns:1fr 88px; }
     .tabs { gap:2px; }
     .tab { min-width:56px; padding:6px 4px; font-size:10px; }
     .wizard-grid { grid-template-columns:1fr !important; }
@@ -3041,6 +3046,31 @@ function Slider({ label, value, min, max, step, format, onChange }) {
   const clamped = Math.max(min, Math.min(max, value));
   const pct = ((clamped - min) / (max - min)) * 100;
   const trackRef = useRef(null);
+  // Typed entry. The slider alone made values above `max` unreachable — contrib
+  // capped at $100K and US spend at $300K — so anyone with a larger plan simply
+  // could not enter their real number. Dragging is also hopeless for precision:
+  // landing on exactly $850,000 across a few hundred pixels is luck.
+  //
+  // So the field is the source of truth and the slider is a fast approximate
+  // control over the COMMON range. A typed value may exceed `max`; the thumb just
+  // pins at the end (pct uses `clamped`) rather than the value being rejected.
+  // `min` is still enforced — a negative spend is meaningless, not merely unusual.
+  //
+  // `draft` is non-null only while the field is focused: during editing we show
+  // exactly what was typed (so it doesn't fight the caret), and on commit we go
+  // back to the formatted display.
+  const [draft, setDraft] = useState(null);
+  const commitDraft = useCallback(() => {
+    setDraft((d) => {
+      if (d === null) return null;
+      // Tolerate "$1,250,000", "1.25M", spaces — people paste real numbers.
+      const cleaned = String(d).trim().replace(/[$,\s]/g, "");
+      const mult = /m$/i.test(cleaned) ? 1e6 : /k$/i.test(cleaned) ? 1e3 : 1;
+      const n = Number(cleaned.replace(/[mk]$/i, "")) * mult;
+      if (Number.isFinite(n)) onChange(Math.max(min, Math.round(n)));
+      return null;
+    });
+  }, [min, onChange]);
   const handleClick = useCallback(
     (e) => {
       if (!trackRef.current) return;
@@ -3137,7 +3167,21 @@ function Slider({ label, value, min, max, step, format, onChange }) {
           onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
         />
       </div>
-      <span className="sl-val">{format(value)}</span>
+      <input
+        className="sl-val sl-val-input"
+        type="text"
+        inputMode="decimal"
+        aria-label={label}
+        value={draft !== null ? draft : format(value)}
+        title="Click to type an exact value — you can enter more than the slider's range"
+        onFocus={(e) => { setDraft(String(value)); requestAnimationFrame(() => e.target.select()); }}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commitDraft}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { commitDraft(); e.currentTarget.blur(); }
+          else if (e.key === "Escape") { setDraft(null); e.currentTarget.blur(); }
+        }}
+      />
     </div>
   );
 }
@@ -8693,9 +8737,31 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
               <div style={{ fontSize: 10, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
                 AiRA Credits
               </div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: creditBalance < 500 ? "#f87171" : "#e2e8f0", lineHeight: 1 }}>
-                {creditBalance.toLocaleString()}
-              </div>
+              {/* "You have 0 credits" and "this browser has no session" are completely
+                  different situations, and showing a bare 0 for both told paying
+                  customers they had nothing — right next to a Buy Credits button, so
+                  the natural response was to pay a second time. Credits live in the
+                  database against a Stripe customer; the browser's only claim on them
+                  is a JWT in localStorage, which does not travel between browsers,
+                  devices, or origins, and is not part of a profile export. With no
+                  token we genuinely do not know the balance, so say that instead of
+                  asserting zero. */}
+              {!getStoredJWT() ? (
+                <div style={{ maxWidth: 230 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24", lineHeight: 1.25 }}>
+                    No credits found on this device
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3, lineHeight: 1.35 }}>
+                    Already bought credits? They're safe — this browser just isn't linked
+                    to your purchase. Use your restore link, or contact support and we'll
+                    send one.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 22, fontWeight: 700, color: creditBalance < 500 ? "#f87171" : "#e2e8f0", lineHeight: 1 }}>
+                  {creditBalance.toLocaleString()}
+                </div>
+              )}
             </div>
             <button
               onClick={() => setShowBuyModal(true)}
