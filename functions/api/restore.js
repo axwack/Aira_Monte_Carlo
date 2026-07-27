@@ -20,9 +20,8 @@
  * Required env vars: JWT_SECRET, DB
  */
 
-import { json, handleOptions, signJWT } from "../_shared/jwt.js";
+import { json, handleOptions, mintCustomerJWT } from "../_shared/jwt.js";
 
-const JWT_TTL_SECONDS = 30 * 24 * 3600; // matches verify-session
 
 export function onRequestOptions() {
   return handleOptions();
@@ -93,10 +92,7 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "Account suspended. Please contact support." }, 403);
   }
 
-  const jwt = await signJWT(
-    { customerId, exp: Math.floor(Date.now() / 1000) + JWT_TTL_SECONDS },
-    env.JWT_SECRET
-  );
+  const jwt = await mintCustomerJWT(customerId, env.JWT_SECRET);
 
   console.log(`[restore] issued JWT for ${customerId}`);
   return json({ token: jwt, credits: customer?.credits ?? 0, customerId });

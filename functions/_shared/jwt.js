@@ -73,6 +73,52 @@ export async function verifyJWT(token, secret) {
   return payload;
 }
 
+// ─── Customer session tokens (single source of truth) ────────────────────────────
+//
+// There is NO login in this product. A customer's only proof that they own the
+// credits they paid for is this JWT, held in one browser's localStorage. If it
+// expires, the credits are still safe in D1 but become unreachable — and the client
+// degrades silently to non-AI output rather than erroring, so it reads as a worse
+// product instead of a bug.
+//
+// The lifetime therefore has to survive the way people actually use a retirement
+// planner: they check in occasionally, not daily. `shouldRefreshJWT` + the sliding
+// refresh in /api/balance mean any customer who opens the app at least once inside
+// the window never expires at all.
+//
+// TRADEOFF, stated plainly: there is no revocation mechanism for these tokens, so a
+// longer TTL also lengthens how long a stolen token stays usable. That was already
+// true at 30 days; this makes it 90. It is ONE constant — dial it here and every
+// mint site follows, because they all import from this file.
+export const JWT_TTL_SECONDS = 90 * 24 * 3600; // 90 days
+
+/**
+ * Mint a customer session token. The ONLY place the payload shape is decided —
+ * verify-session, restore, admin and the /api/balance refresh all go through here so
+ * they cannot drift (three of them previously each declared their own TTL constant).
+ */
+export async function mintCustomerJWT(customerId, secret, nowSeconds = Date.now() / 1000) {
+  return signJWT(
+    { customerId, exp: Math.floor(nowSeconds) + JWT_TTL_SECONDS },
+    secret
+  );
+}
+
+/**
+ * Should this token be swapped for a fresh one? True once it is more than halfway
+ * through its life, so a returning customer's window silently rolls forward.
+ *
+ * Pure and exported so the decision is unit-testable without WebCrypto or D1.
+ * Returns false for a payload with no `exp` (non-expiring legacy token — nothing to
+ * extend) and for anything already past expiry (verifyJWT rejects those first).
+ */
+export function shouldRefreshJWT(payload, nowSeconds = Date.now() / 1000) {
+  if (!payload || typeof payload.exp !== "number") return false;
+  const remaining = payload.exp - nowSeconds;
+  if (remaining <= 0) return false;
+  return remaining < JWT_TTL_SECONDS / 2;
+}
+
 // ─── Stripe API helpers ──────────────────────────────────────────────────────────
 
 const STRIPE_BASE = "https://api.stripe.com/v1";
