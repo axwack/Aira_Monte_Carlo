@@ -263,6 +263,10 @@ export function buildWithdrawalWaterfall(params = {}) {
     // Default matches BLANK_PROFILE.abGrowth in App.jsx. Previously absent here,
     // which is why this engine silently hardcoded 1.03 growth (REQUIREMENTS §13.2 #11).
     abGrowth     = 3.0,
+    // Who pays the conversion tax. "from_conversion" withholds it out of the
+    // transfer; anything else pays from real tracked buckets (taxable -> cash ->
+    // pretax). Default matches BLANK_PROFILE.
+    taxFunding   = "from_taxable",
     inf          = 2.5,
     accounts     = [],
     filingStatus = "mfj",
@@ -887,10 +891,43 @@ export function buildWithdrawalWaterfall(params = {}) {
       // Affordability: pretax must cover both the conversion and its incremental tax.
       // Shrink (rather than zero out) when the full fill can't be afforded — converging
       // toward the largest conversion the remaining pretax balance can self-fund.
+      // Who actually pays the conversion tax.
+      //   "from_conversion" — withhold it out of the amount transferred, so less
+      //                       lands in the Roth. Nothing else is touched.
+      //   anything else     — pay it from REAL, TRACKED buckets: taxable first,
+      //                       then cash, then pre-tax as the last resort.
+      //
+      // Before this, `taxFunding` was read by NOTHING in this engine (it existed
+      // only in the dead buildRothExplorer path), so conversion tax always came out
+      // of pre-tax whatever the user chose — silently the most punitive option, and
+      // the "outside cash" choice implied an unlimited external pot the simulation
+      // never tracked or depleted. Both are gone: every dollar of conversion tax now
+      // leaves a balance the user actually entered, and the plan can run out of
+      // money paying it. If we don't know about money, we don't spend it.
+      const withholdFromConversion = taxFunding === "from_conversion";
+      // Funds available to pay tax WITHOUT touching pre-tax, after this year's
+      // spending draws have already been taken.
+      const taxableLeftForConv = Math.max(0, taxable - fromTaxable);
+      const cashLeftForConv    = Math.max(0, cash    - fromCash);
+      const outsideFundsForConv = withholdFromConversion
+        ? 0
+        : taxableLeftForConv + cashLeftForConv;
+
       if (convAmt > 0) {
         const convAmtBeforeShrink = convAmt;
         for (let i = 0; i < 5 && convAmt > 0; i++) {
-          const shortfall = (convAmt + convTax) - (pretax - fromPretax);
+          // Affordability now depends on WHERE the tax comes from.
+          //   withholding: the conversion pays for itself, so pre-tax only needs to
+          //                cover the gross conversion.
+          //   real buckets: taxable+cash absorb the tax first; only the excess falls
+          //                back to pre-tax, so that is all pre-tax must cover.
+          const taxOnPretax = withholdFromConversion
+            ? 0
+            : Math.max(0, convTax - outsideFundsForConv);
+          const needFromPretax = withholdFromConversion
+            ? convAmt
+            : convAmt + taxOnPretax;
+          const shortfall = needFromPretax - (pretax - fromPretax);
           if (shortfall <= 0) break;
           convAmt = Math.max(0, convAmt - shortfall);
           tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain, magiLookback) : taxNoConv;
@@ -928,10 +965,44 @@ export function buildWithdrawalWaterfall(params = {}) {
       // dollar-for-dollar. No growth on basis — only the balance grows below.
       const consumedBasis = fromTaxable - realizedGain;
       taxableBasis = Math.max(0, taxableBasis - consumedBasis) + rmdExcess;
-      cash    = Math.max(0, cash    - fromCash)    * (1 + cashGr);
-      taxable = (Math.max(0, taxable - fromTaxable) + rmdExcess) * (1 + gr);
-      pretax  = Math.max(0, pretax  - fromPretax - convAmt - convTax) * (1 + gr);
-      roth    = Math.max(0, roth    - fromRoth + convAmt) * (1 + gr);
+      // ── Pay the conversion tax from the chosen source ────────────────────
+      // Ordered draw: taxable → cash → pre-tax. Each step can only take what is
+      // actually there, so the plan genuinely runs out rather than pretending.
+      let convTaxFromTaxable = 0, convTaxFromCash = 0, convTaxFromPretax = 0;
+      let convToRoth = convAmt;
+      if (convAmt > 0 && convTax > 0) {
+        if (withholdFromConversion) {
+          // Withheld out of the transfer: the full gross leaves pre-tax, but only
+          // the net reaches the Roth. No other bucket moves.
+          convToRoth = Math.max(0, convAmt - convTax);
+          convTaxFromPretax = convTax;
+        } else {
+          let owed = convTax;
+          convTaxFromTaxable = Math.min(owed, Math.max(0, taxable - fromTaxable));
+          owed -= convTaxFromTaxable;
+          convTaxFromCash = Math.min(owed, Math.max(0, cash - fromCash));
+          owed -= convTaxFromCash;
+          // Last resort. Reaching here means taxable+cash were exhausted, which the
+          // shrink loop above already tried to avoid by cutting the conversion.
+          convTaxFromPretax = Math.max(0, owed);
+        }
+      }
+
+      cash    = Math.max(0, cash    - fromCash    - convTaxFromCash)    * (1 + cashGr);
+      // NOTE (documented simplification): a taxable draw taken to PAY the conversion
+      // tax would itself realize capital gains, creating a second-order tax on the
+      // tax. The year's realizedGain/basis figures above are already converged
+      // against the spending draw, so folding this in means another fixed point.
+      // Basis is consumed proportionally below, but that extra gain is not taxed
+      // this pass — it understates tax slightly in years with a large conversion
+      // funded from a low-basis taxable account. Tracked, not hidden.
+      const convBasisConsumed = taxable > 0
+        ? convTaxFromTaxable * (taxableBasis / Math.max(taxable, 1))
+        : 0;
+      taxableBasis = Math.max(0, taxableBasis - convBasisConsumed);
+      taxable = (Math.max(0, taxable - fromTaxable - convTaxFromTaxable) + rmdExcess) * (1 + gr);
+      pretax  = Math.max(0, pretax  - fromPretax - convAmt - convTaxFromPretax) * (1 + gr);
+      roth    = Math.max(0, roth    - fromRoth + convToRoth) * (1 + gr);
 
       lastRet = gr;
       cTax += tax.totalTax;
@@ -946,6 +1017,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         ss, annuityRental: annuity, fixedIncomeTotal: fixedIncome,
         rmd, rmdActive,
         fromCash, fromTaxable, fromPretax, pretaxCapReason, convCapReason,
+        convTaxFromTaxable, convTaxFromCash, convTaxFromPretax, convToRoth,
         fromRoth, rothReserveHeld,
         conversionAmount: Math.round(convAmt), conversionTax: convTax,
         fedTax: tax.fedTax, stateTax: tax.stateTax, irmaa: tax.irmaa,
