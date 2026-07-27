@@ -1494,7 +1494,51 @@ earner delaying to 70 is worth it as survivor insurance."
 ## 23. Roth conversion tax funded from "unlimited outside cash" — requested 2026-07-27
 
 **Priority: P1 (correctness — it overstates the headline benefit of the flagship feature).**
-**Status: warned but NOT fixed.**
+**Status: warned but NOT fixed — and the setting turns out to be INERT. See the finding below.**
+
+### ⚠️ FINDING THAT CHANGES THIS ENTIRELY — `taxFunding` is a GHOST SETTING (2026-07-27)
+
+Verified by grep before scoping the fix: **`taxFunding` is never read by the live
+engine.** It appears only in `buildRothExplorer.js` (~630, ~696), which is dead in the
+UI — `RothLadder` sources from `buildWaterfallComparison` / `buildConversionLadder`,
+and both wrap `buildWithdrawalWaterfall`, which contains **no `taxFunding` handling at
+all**. That engine unconditionally does:
+
+```js
+pretax = Math.max(0, pretax - fromPretax - convAmt - convTax) * (1 + gr);
+```
+
+So conversion tax is **always** taken from PRE-TAX, whichever option the user picks.
+
+This inverts the original complaint. The worry was that "outside cash" models infinite
+money and flatters the result. In the live engine it does not model anything — and the
+behaviour it silently falls back to (funding from pre-tax) is the *most punitive*
+option, the one that shrinks the conversion's value most. The dropdown, the
+"recommended" label on From taxable, and the v1.2.27 warning banner all describe
+behaviour that does not exist. Same class as the `smile` / healthcare-shock ghost
+models (§13.1 #9): configurable, persisted, described as active, read by nothing.
+
+**Vincent's instruction (2026-07-27), which is the right design:** conversion tax
+should draw from **taxable first, then cash, then deplete the others**. That removes
+the fiction rather than sizing it — there is no imaginary pot to bound, because every
+dollar comes from a bucket the simulation already tracks and can run out of.
+
+**So the fix is NOT the `outsideCashBalance` field proposed below.** It is:
+1. Implement `taxFunding` in `buildWithdrawalWaterfall` for real — the one live engine.
+2. Fund `convTax` through an ordered draw: `taxable → cash → pretax` (Roth last or never
+   — paying Roth-conversion tax out of the Roth defeats the point).
+3. Reuse the existing `resolveDrawOrder` / `WITHDRAWAL_BUCKETS` machinery from §12
+   rather than writing a second ordering mechanism — the drift risk is the whole reason
+   that resolver exists.
+4. When the funding buckets are exhausted, shrink the conversion (the Step-6.5
+   affordability loop already does exactly this for the pre-tax case) and report it via
+   `convCapReason`, so the UI can say why.
+5. Then either delete the "outside cash" option or redefine it as a real, finite,
+   user-entered balance — but only if a user actually needs it. Deleting is cleaner.
+
+**Consequence to expect:** every existing conversion projection changes, because today
+they are all silently funded from pre-tax. That is a correction, not a regression, but
+it must be called out. Needs a regression lock and logic-validator sign-off.
 
 ### The problem
 
