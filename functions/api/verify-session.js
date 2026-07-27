@@ -19,9 +19,8 @@
  * Required env vars: STRIPE_SECRET_KEY, JWT_SECRET, DB
  */
 
-import { json, handleOptions, signJWT, stripeGet } from "../_shared/jwt.js";
+import { json, handleOptions, mintCustomerJWT, stripeGet } from "../_shared/jwt.js";
 
-const JWT_TTL_SECONDS = 30 * 24 * 3600; // 30 days
 
 export function onRequestOptions() {
   return handleOptions();
@@ -106,10 +105,7 @@ export async function onRequestPost({ request, env }) {
       console.error("[verify-session] D1 query failed:", e.message);
     }
 
-    const token = await signJWT(
-      { customerId, exp: Math.floor(Date.now() / 1000) + JWT_TTL_SECONDS },
-      env.JWT_SECRET
-    );
+    const token = await mintCustomerJWT(customerId, env.JWT_SECRET);
 
     return json({ token, credits, customerId });
 

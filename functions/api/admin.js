@@ -20,9 +20,8 @@
  * Required env vars: ADMIN_SECRET, STRIPE_SECRET_KEY (optional override), JWT_SECRET, DB
  */
 
-import { json, handleOptions, signJWT, stripeGet } from "../_shared/jwt.js";
+import { json, handleOptions, mintCustomerJWT, stripeGet } from "../_shared/jwt.js";
 
-const JWT_TTL_SECONDS  = 30 * 24 * 3600;
 const RATE_LIMIT_MAX   = 10;   // max requests per IP per window
 const RATE_LIMIT_SECS  = 60;   // rolling window in seconds
 
@@ -214,10 +213,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
             VALUES (?, 'purchase', ?, ?)
           `).bind(customerId, credits, sessionId),
         ]);
-        const token = await signJWT(
-          { customerId, exp: Math.floor(Date.now() / 1000) + JWT_TTL_SECONDS },
-          env.JWT_SECRET
-        );
+        const token = await mintCustomerJWT(customerId, env.JWT_SECRET);
         const row = await env.DB.prepare(
           "SELECT credits FROM customers WHERE stripe_customer_id = ?"
         ).bind(customerId).first();
@@ -264,10 +260,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
       if (!env.JWT_SECRET)       return json({ ok: false, error: "JWT_SECRET not configured" }, 500);
 
       const customerId = explicitId || fakeCustomerId(email);
-      const token = await signJWT(
-        { customerId, exp: Math.floor(Date.now() / 1000) + JWT_TTL_SECONDS },
-        env.JWT_SECRET
-      );
+      const token = await mintCustomerJWT(customerId, env.JWT_SECRET);
       return json({
         ok: true,
         customerId,

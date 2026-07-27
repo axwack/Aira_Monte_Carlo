@@ -138,7 +138,13 @@ export async function fetchCreditBalance() {
       return null;
     }
     if (!res.ok) return null;
-    const { credits } = await res.json();
+    const { credits, token } = await res.json();
+    // SLIDING SESSION: /api/balance returns a fresh `token` once the current one is
+    // past halfway through its life. Storing it here — on a call that already happens
+    // on essentially every app open — is what keeps a paying customer from silently
+    // losing access to credits they still own. `token` is absent when no refresh is
+    // due, so this must stay conditional; never clear the existing token on absence.
+    if (token) setStoredJWT(token);
     try { localStorage.setItem(CACHED_BALANCE_KEY, String(credits)); } catch {}
     _notifyListeners(credits);
     return credits;
