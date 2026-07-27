@@ -176,9 +176,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.30";
-export const BUILD_TAG = "[main] v1.2.30 — Report tests skip loudly instead of failing. The public repo ships a placeholder PrintReport (REQUIREMENTS §20) while the real paid report is kept private, so report.test.js asserted on content that cannot exist in a public checkout and 7 tests were permanently red for a by-design reason — which trains you to ignore a red suite. The placeholder now exports IS_PLACEHOLDER (the private file deliberately does not), and the tests skip on it while printing a warning that the private file is missing and a deploy from this working copy would ship the placeholder to paying customers. Suite is fully green: 593 pass, 13 skipped, 0 fail. NOTE: this does not restore the real report — that file is absent from this machine and must come from the private copy before any deploy. Prior v1.2.29: sliding session refresh; v1.2.28: five engine-correctness fixes.";
-export const BUILD_TIME = "2026-07-27T17:15:00Z";
+const APP_VERSION = "1.2.31";
+export const BUILD_TAG = "[main] v1.2.31 — Fix: the Run Monte Carlo button was invisible on shorter screens. It was an ordinary last child of .sidebar, which is overflow-y:auto, so on a MacBook viewport in Chrome it sat below the fold and users did not know the sidebar scrolled. That button is both the control that RUNS the simulation and the host of the 'Inputs changed — Re-run' state, so an invisible button meant users could change inputs and keep reading stale numbers with no visible prompt to recompute. Now position:sticky; bottom:0 so it stays in view while the panel above it scrolls normally. Reported by a user on Chrome for macOS. Prior v1.2.30: report tests skip loudly; v1.2.29 sliding session refresh; v1.2.28 five engine-correctness fixes.";
+export const BUILD_TIME = "2026-07-27T18:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2456,7 +2456,15 @@ const CSS = `
   .tog-label { font-size:12px; color:#cbd5e1; font-weight:500; }
   .tog { width:34px; height:18px; border-radius:9px; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
   .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.4); }
-  .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); }
+  /* Pinned to the bottom of the scrolling sidebar. It used to be an ordinary last
+     child of .sidebar (which is overflow-y:auto), so on a shorter viewport — a
+     MacBook in Chrome was the reported case — it sat below the fold and users
+     never saw it. Worse, it is the control that RUNS the simulation, and the
+     "Inputs changed — Re-run" state lives on this same button, so an invisible
+     button means the numbers on screen silently stay stale. sticky keeps it in
+     view while still scrolling naturally with the panel above it; the gradient is
+     opaque so sidebar content cannot show through underneath. */
+  .run-btn { position:sticky; bottom:0; z-index:5; width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); }
   .run-btn:hover { opacity:0.9; box-shadow:0 6px 20px rgba(14,165,233,0.35); }
   .run-btn:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
   .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; min-height:0; }
