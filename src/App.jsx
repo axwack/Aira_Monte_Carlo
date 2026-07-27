@@ -176,9 +176,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.35";
-export const BUILD_TAG = "[main] v1.2.35 — Two follow-ups to the Roth funding fix, both found by asking whether the setting was referenced correctly EVERYWHERE. (1) A silent value mismatch I introduced in v1.2.34: the Profile dropdown emits from_conv, but the engine tested for from_conversion — so selecting From the conversion never withheld anything and quietly fell through to bucket funding. The engine now accepts both spellings and a test pins the value the UI actually sends. (2) runMC ignored taxFunding entirely: it did pretax -= (convAmt + convTax) unconditionally, so the Monte Carlo success rate — the headline number — described a different plan than the Withdrawal and Conversion tabs for the same profile. runMC now funds conversion tax the same way the waterfall does: withhold from the transfer, or draw taxable then cash then pretax. 601 tests pass, including one that fails if the two engines ever diverge again. Prior v1.2.34: conversion tax funded from real balances.";
-export const BUILD_TIME = "2026-07-27T22:00:00Z";
+const APP_VERSION = "1.2.36";
+export const BUILD_TAG = "[main] v1.2.36 — Correct the Tax funding source copy, which v1.2.34/35 made false. The UI still warned that Outside cash assumes an UNLIMITED pot and overstates your Roth benefit. That was true before the engine fix and is not true now: outside_cash routes through the same real-bucket path as From taxable (taxable, then cash, then pre-tax). Stale copy on a projection tool is the same defect as a stale number, so the option is relabelled legacy, documented as identical to From taxable, and the warning is replaced with what the engine actually does. The value is retained so older saved profiles keep loading. Prior v1.2.35: dropdown value contract + runMC honours taxFunding.";
+export const BUILD_TIME = "2026-07-27T22:40:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -10008,7 +10008,7 @@ function AssumptionsPanel({ values, onChange }) {
             with a warning: do you have a money tree?" It stays available because
             some people genuinely hold cash outside the modeled accounts, but it
             no longer passes as a neutral default. */}
-        <ARow label="Tax funding source" desc="Who pays the tax on each conversion. 'From taxable' debits your real taxable / HSA / cash buckets — the honest default for most people. 'From the conversion' withholds the tax out of the amount transferred, so less lands in the Roth. 'Outside cash' assumes an UNLIMITED external pot the simulation never depletes.">
+        <ARow label="Tax funding source" desc="Who pays the tax on each conversion. 'From taxable' debits your real taxable / HSA / cash buckets — the honest default for most people. 'From the conversion' withholds the tax out of the amount transferred, so less lands in the Roth. 'Outside cash' is kept only so older saved profiles still load — it now behaves exactly like 'From taxable'.">
           <select
             value={values.taxFunding || "from_taxable"}
             onChange={(e) => onChange("taxFunding", e.target.value)}
@@ -10016,7 +10016,7 @@ function AssumptionsPanel({ values, onChange }) {
           >
             <option value="from_taxable">From taxable / HSA / cash bucket (recommended)</option>
             <option value="from_conv">From the conversion (withhold)</option>
-            <option value="outside_cash">Outside cash — assumes UNLIMITED funds ⚠️</option>
+            <option value="outside_cash">Outside cash (legacy — same as From taxable)</option>
           </select>
         </ARow>
         {(values.taxFunding === "outside_cash") && (
@@ -10025,13 +10025,13 @@ function AssumptionsPanel({ values, onChange }) {
             background: "rgba(251,146,60,0.10)", border: "1px solid rgba(251,146,60,0.35)",
             fontSize: 11, color: "#fdba74", lineHeight: 1.55,
           }}>
-            <strong>⚠️ This overstates your Roth benefit.</strong> Conversion tax is paid from money
-            AiRA never tracks or depletes — an unlimited outside pot. Every dollar converted lands in
-            the Roth intact, so the strategy looks better than it can actually perform.
+            <strong>Legacy setting — now identical to 'From taxable'.</strong> This option used to
+            pay conversion tax from an unlimited outside pot the simulation never tracked, which
+            overstated the benefit. AiRA no longer models money you have not entered.
             <div style={{ marginTop: 6, color: "#fcd9b6" }}>
-              Only use this if you genuinely hold cash outside the accounts in your profile, and
-              remember the simulation will never run it out. Otherwise pick <strong>From taxable</strong>,
-              which pays the tax from money you actually have.
+              Conversion tax is now drawn from your real balances — taxable first, then cash, then
+              pre-tax only if those run out — so the plan can genuinely run short paying it. Switch to
+              <strong> From taxable</strong> when convenient; the numbers will not change.
             </div>
           </div>
         )}
