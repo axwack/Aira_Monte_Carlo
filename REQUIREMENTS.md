@@ -142,6 +142,46 @@ which hid the bug for months. So do not probe; transact.
 7. Clear `localStorage` → confirm the UI says "restore access" rather than `0` (after
    fix 1 lands), and that a restore link recovers the balance.
 
+### ⭐ NEXT UP (set 2026-07-27, by Vincent): dual Social Security + NIIT bracket fill
+
+Two priorities named at the end of the session. Both were already scoped; this
+records the ordering and what today's work changed about the cost.
+
+**1. NIIT-aware bracket fill (§19) — DO THIS FIRST. It is now much cheaper than when
+it was scoped.**
+ENG-8 (shipped today, v1.2.28) added the IRMAA cap to the Step-6.5 conversion ceiling
+and — deliberately — built it in a `min(...)`-absorbing shape with a named
+`convCapReason` ("bracket" | "irmaa_ceil" | "manual" | "affordability"). Adding NIIT is
+now: compute the NIIT room, add it to that same `min(...)`, and add an `"niit"` reason
+code. The constants already exist and need no new source — `NIIT_THRESHOLD_MFJ` /
+`NIIT_THRESHOLD_SINGLE` / `NIIT_RATE` in `buildRothExplorer.js`, statutory and NOT
+inflation-indexed.
+Two things to get right:
+- NIIT is charged on the LESSER of net investment income and MAGI over the threshold,
+  so the binding quantity is MAGI headroom, exactly like the IRMAA cap — and, per the
+  ENG-8 lesson, the realized gain must be subtracted from the MAGI base or the room is
+  overstated by the year's gain.
+- It must apply to the Step-5 pre-tax draw ceiling as well, not only the conversion,
+  or the same asymmetry ENG-25 already records will repeat.
+The user-facing ask was a "NII-Safe" fill mode; decide with design-authority whether
+that is a new mode button or simply always-on behaviour of the existing guards —
+a third mode button next to fill_10/12/22/24 risks the mode/guard confusion that
+§12's naming verdict already had to untangle once.
+
+**2. Dual Social Security entry (§21) — bigger, genuinely multi-session.**
+Full scope is in §21. The honest blocker is NOT the UI: it is that **filing status is
+nowhere time-varying** in this codebase. A real spousal/survivor model needs a first
+death that flips MFJ → Single mid-projection, which changes brackets, the standard
+deduction, IRMAA tiers AND (new as of today) the OBBBA senior bonus from 2 persons to
+1. That is the structural work; two benefit amounts and two claim ages are the easy
+part.
+Recommended: ship §21 Phase 1 alone first — two-person entry + the spousal top-up
+(50% of the HIGHER earner's PIA, which earns no delayed credits) + the combined gross
+feeding the existing `taxableSocialSecurity()`. That makes the base case correct for
+every couple and immediately kills the hardcoded `× 0.67` survivor haircut in the
+stress scenario, without touching filing-status timing. Phase 2 (survivor step-up +
+time-varying filing status) can follow.
+
 ### Shipped this session (all on `main`)
 
 | Version | Commit | What |
