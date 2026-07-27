@@ -74,7 +74,7 @@ import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCa
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
-import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked } from "./billing/credits.js";
+import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability } from "./billing/credits.js";
 import { AdminPanel } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 
@@ -11192,6 +11192,11 @@ export default function AiRAForecaster() {
   // Re-checked from the server each time the report is opened, so a window that
   // expired (or was unlocked on another device) is picked up without a reload.
   const reportUnlocked = useReportUnlocked(showReport ? 1 : 0);
+  // Fail-closed capability probe (GEMINI_API_KEY presence) — see
+  // functions/api/report-capability.js. Independent of BILLING_ENABLED so
+  // flipping that source-level flag can no longer unlock the report for free
+  // on a deployment that isn't actually the operator's own.
+  const reportCapable = useReportCapability();
   // { msg, tone: "ok" | "err" }. Failures must be visible: a silent failure on
   // a paid return or a restore link leaves the customer stuck with no idea why,
   // and no way to tell us what went wrong. Errors persist longer than successes.
@@ -12705,13 +12710,19 @@ export default function AiRAForecaster() {
           rmdAge={rmdAge}
           buildTag={BUILD_TAG}
           onClose={() => setShowReport(false)}
-          // Paywall gate. Self-host/dev mode (BILLING_ENABLED=false) always
-          // opens the report free, exactly as before this feature. In billing
-          // mode the 24h window comes from useReportUnlocked(), which reconciles
-          // against the LEDGER — previously this read a localStorage flag, so
-          // editing one value granted access and clearing it caused a second
-          // 250-credit charge for a window the customer already owned.
-          locked={BILLING_ENABLED && !reportUnlocked}
+          // Paywall gate. `!reportCapable` always wins: the report stays locked
+          // on any deployment whose server doesn't have GEMINI_API_KEY configured,
+          // regardless of BILLING_ENABLED — closes the "flip one source-level
+          // boolean and self-host it free" loophole (BILLING_ENABLED=false used
+          // to unconditionally unlock, since the report's data is 100%
+          // client-computed and BILLING_ENABLED isn't a real secret). On the
+          // operator's real deployment reportCapable is true and behavior is
+          // unchanged: BILLING_ENABLED=false still opens the report free for
+          // local/dev convenience; BILLING_ENABLED=true gates on useReportUnlocked(),
+          // which reconciles against the LEDGER — previously this read a
+          // localStorage flag, so editing one value granted access and clearing
+          // it caused a second 250-credit charge for a window already owned.
+          locked={!reportCapable || (BILLING_ENABLED && !reportUnlocked)}
         />
       )}
     </>

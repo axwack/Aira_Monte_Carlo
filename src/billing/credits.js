@@ -284,6 +284,36 @@ export function isReportUnlocked() {
   } catch { return false; }
 }
 
+// ─── Report capability (Gemini-key gate) ───────────────────────────────────
+
+/**
+ * Fail-closed capability probe — see functions/api/report-capability.js for
+ * why this exists (closes the "flip BILLING_ENABLED locally" free-report
+ * loophole). Any failure (network error, missing endpoint, non-2xx) reports
+ * `false`: unlike the balance/unlock helpers above, which fail OPEN to avoid
+ * punishing a paying customer for a transient error, this is an anti-abuse
+ * check with no customer on the other end to protect — default to locked.
+ */
+export async function fetchReportCapability() {
+  try {
+    const res = await fetch("/api/report-capability");
+    if (!res.ok) return false;
+    const { available } = await res.json();
+    return !!available;
+  } catch { return false; }
+}
+
+/** Hook form of fetchReportCapability() — starts false (locked), flips true once the server confirms. */
+export function useReportCapability() {
+  const [capable, setCapable] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchReportCapability().then(v => { if (alive) setCapable(v); });
+    return () => { alive = false; };
+  }, []);
+  return capable;
+}
+
 /** Authoritative check — asks the server for the ledger-derived window. */
 export async function fetchReportUnlockStatus() {
   const jwt = getStoredJWT();
