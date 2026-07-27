@@ -899,3 +899,105 @@ describe("Account draw order — runMC honors it (cross-engine, shared resolver)
     expect(rothFirst.rate).toBeLessThanOrEqual(taxReactive.rate);
   });
 });
+
+// ─── Item 11: rental/annuity single model (REQUIREMENTS §13.2 #11) ────────────
+// The waterfall used to hardcode 1.03 growth, ignore abGrowth/abEndYear, inflate
+// propIncome on a separate CPI track, and stop ALL rental income at age 80.
+
+describe("waterfall rental income — one model, matching the other engines", () => {
+  const RENTAL = { ...BASE, ab: 12_000, abGrowth: 3, endAge: 90, abEndYear: null };
+
+  test("rental does NOT stop at age 80 (the undisclosed age-80 cliff is gone)", () => {
+    const rows = buildWithdrawalWaterfall(RENTAL).smart.rows;
+    const at81 = rows.find(r => r.age === 81);
+    expect(at81).toBeTruthy();
+    // Would have been exactly 0 before the fix, for every profile planning past 80.
+    expect(at81.annuityRental).toBeGreaterThan(0);
+  });
+
+  test("abGrowth is honored rather than a hardcoded 3%", () => {
+    const slow = buildWithdrawalWaterfall({ ...RENTAL, abGrowth: 3 }).smart.rows;
+    const fast = buildWithdrawalWaterfall({ ...RENTAL, abGrowth: 6 }).smart.rows;
+    const age75slow = slow.find(r => r.age === 75).annuityRental;
+    const age75fast = fast.find(r => r.age === 75).annuityRental;
+    expect(age75fast).toBeGreaterThan(age75slow);
+    // 10 years of compounding at 6% vs 3% on 12,000: 21,490 vs 16,127.
+    expect(age75fast).toBe(Math.round(12_000 * Math.pow(1.06, 10)));
+    expect(age75slow).toBe(Math.round(12_000 * Math.pow(1.03, 10)));
+  });
+
+  test("ab and propIncome are summed first, then grown on ONE basis", () => {
+    // At the retirement year the growth factor is exactly 1.0, so year 0 must be
+    // the plain sum. Previously propIncome was inflated by CPI separately here.
+    const rows = buildWithdrawalWaterfall({
+      ...RENTAL, ab: 8_000, propIncome: 10_000,
+    }).smart.rows;
+    expect(rows[0].annuityRental).toBe(18_000);
+  });
+
+  test("abEndYear still stops the stream", () => {
+    const rows = buildWithdrawalWaterfall({ ...RENTAL, abEndYear: 2030 }).smart.rows;
+    const after = rows.filter(r => r.yr > 2030);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.every(r => r.annuityRental === 0)).toBe(true);
+  });
+});
+
+// ─── Item 10 / ENG-8: IRMAA guard caps the Roth conversion ────────────────────
+
+describe("ENG-8 — irmaaGuard caps the Step-6.5 Roth conversion", () => {
+  // Age 64 so the age>=63 gate is open; big pretax balance so the bracket ceiling
+  // (24%) is well above the IRMAA tier-1 ceiling and the guard is what binds.
+  const CONV = {
+    ...BASE,
+    currentAge: 64, retireAge: 64, ssAge: 70, ssb: 0,
+    rothConversionTarget: "24",
+    accounts: [
+      { id: "t1", category: "pretax",  name: "401k",    balance: 3_000_000 },
+      { id: "t2", category: "roth",    name: "Roth",    balance:   200_000 },
+      { id: "t3", category: "taxable", name: "Taxable", balance:   500_000 },
+      { id: "t4", category: "cash",    name: "Cash",    balance:   200_000 },
+    ],
+  };
+
+  test("guard ON produces a smaller conversion than guard OFF", () => {
+    const off = buildWithdrawalWaterfall({ ...CONV, irmaaGuard: false }).smart.rows[0];
+    const on  = buildWithdrawalWaterfall({ ...CONV, irmaaGuard: true  }).smart.rows[0];
+    expect(off.conversionAmount).toBeGreaterThan(0);
+    expect(on.conversionAmount).toBeLessThan(off.conversionAmount);
+  });
+
+  test("guard ON keeps MAGI at or under the IRMAA tier-1 ceiling", () => {
+    const on = buildWithdrawalWaterfall({ ...CONV, irmaaGuard: true }).smart.rows[0];
+    // Tier-1 MFJ 2026 = 218,000 per TAX_REFERENCE.md, indexed to the row's year.
+    const ceiling = 218_000 * Math.pow(1 + 2.5 / 100, on.yr - new Date().getFullYear());
+    expect(on.magi).toBeLessThanOrEqual(Math.round(ceiling) + 1);
+  });
+
+  test("the row reports WHY the conversion was capped", () => {
+    const on = buildWithdrawalWaterfall({ ...CONV, irmaaGuard: true }).smart.rows[0];
+    expect(on.convCapReason).toBe("irmaa_ceil");
+    const off = buildWithdrawalWaterfall({ ...CONV, irmaaGuard: false }).smart.rows[0];
+    expect(off.convCapReason).not.toBe("irmaa_ceil");
+  });
+
+  test("below the age gate (62) the conversion cap does NOT bind", () => {
+    // age 62 → the 2-year lookback lands at 64, still pre-Medicare, so IRMAA
+    // cannot be charged on it and the guard must not throttle the conversion.
+    const young = { ...CONV, currentAge: 62, retireAge: 62 };
+    const off = buildWithdrawalWaterfall({ ...young, irmaaGuard: false }).smart.rows[0];
+    const on  = buildWithdrawalWaterfall({ ...young, irmaaGuard: true  }).smart.rows[0];
+    expect(on.conversionAmount).toBe(off.conversionAmount);
+  });
+
+  test("a same-year conversion never moves that same year's own IRMAA charge", () => {
+    // Pins the 2-year-lookback invariant: IRMAA comes from MAGI[age-2], which is
+    // fixed before conversion sizing, so it must be identical with and without a
+    // conversion in the same year.
+    const withC = buildWithdrawalWaterfall({ ...CONV, irmaaGuard: false }).smart.rows;
+    const noC   = buildWithdrawalWaterfall({ ...CONV, rothConversionTarget: "off" }).smart.rows;
+    const y0 = withC[0], n0 = noC[0];
+    expect(y0.conversionAmount).toBeGreaterThan(0);
+    expect(y0.irmaa).toBe(n0.irmaa);
+  });
+});

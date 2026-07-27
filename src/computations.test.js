@@ -685,13 +685,19 @@ describe("Roth conversion tax cost — progressive bracket stacking (A1 regressi
     const noConv = calcYearTax(65, 2026, 0, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
     expect(noConv.marginalBracket).toBe(0);
 
-    // conversionAmount is ORDINARY INCOME (pre-standard-deduction); at age 65
-    // MFJ the std deduction is 35,500, so a $211,400 conversion leaves taxable
-    // income of 175,900 — squarely inside the 22% bracket (100,800–211,400).
+    // conversionAmount is ORDINARY INCOME (pre-deduction); at age 65 MFJ the std
+    // deduction is 35,500, PLUS the OBBBA senior bonus (2026 is inside the
+    // 2025–2028 window). MAGI here is the full 211,400, which is above the
+    // 150,000 MFJ phase-out start, so the bonus is partly phased out:
+    //   excess    = 211,400 − 150,000 = 61,400
+    //   reduction = 6% × 61,400 × 2 persons = 7,368
+    //   bonus     = 12,000 − 7,368       = 4,632
+    // taxable income = 211,400 − 35,500 − 4,632 = 171,268 — still inside the 22%
+    // bracket (100,800–211,400), which is what this test is really about.
     const convAmt = 211_400;
     const withConv = calcYearTax(65, 2026, 0, 0, 0, 0, convAmt, false, 0.025, "mfj", "FL");
     const trueCost = withConv.totalTax - noConv.totalTax;
-    expect(withConv.taxableIncome).toBe(175_900);
+    expect(withConv.taxableIncome).toBe(171_268);
 
     // Old buggy cost estimate: convAmt × pre-conversion marginal bracket (0%) = $0.
     const buggyCost = Math.round(convAmt * (noConv.marginalBracket || 0));
@@ -1131,12 +1137,15 @@ describe("Net income = gross withdrawal − total taxes", () => {
 
   // IRC §86: $30K draw + $24K SS → provisional = 30000 + 12000 = 42000 (single, above $34K)
   // taxableSS = min(0.85 × (42000 − 34000) + min(0.5 × 9000, 12000), 20400) = 6800 + 4500 = 11300
-  // totalIncome = 41,300; single 65+ std ded = 17,750 → taxable = 23,550
-  // fedTax = 12400 × 10% + (23550 − 12400) × 12% = 1240 + 1338 = 2578
+  // totalIncome = 41,300; single 65+ std ded = 17,750
+  // OBBBA senior bonus: MAGI 41,300 is below the 75,000 single phase-out start,
+  // so the full 6,000 applies → total deduction 23,750
+  // taxable = 41,300 − 23,750 = 17,550
+  // fedTax = 12,400 × 10% + (17,550 − 12,400) × 12% = 1,240 + 618 = 1,858
   test("Single, age 68, FL: SS taxed per provisional-income tiers, correct taxableIncome", () => {
     const r = calcYearTax(68, 2026, 30_000, 24_000, 0, 0, 0, false, 0.025, "single", "FL");
-    expect(r.taxableIncome).toBe(23_550);
-    expect(r.fedTax).toBeCloseTo(2_578, 0);
+    expect(r.taxableIncome).toBe(17_550);
+    expect(r.fedTax).toBeCloseTo(1_858, 0);
   });
 
   test("totalTax === fedTax + stateTax + irmaa for single filer", () => {
@@ -1347,12 +1356,14 @@ describe("Full scenario: single filer, age 65, FL, $500K IRA, $40K GK spend", ()
   });
 
   // Age 65, single 65+, $40K, FL:
-  //   std ded = 17,750 → taxable = 22,250
-  //   10%×12,400=1,240 + 12%×9,850=1,182 → fedTax = 2,422
-  test("Year-1 federal tax: single 65+, $40K, FL → fedTax ≈ $2,422", () => {
+  //   std ded = 17,750; OBBBA senior bonus = full 6,000 (MAGI 40,000 < 75,000
+  //   single phase-out start) → total deduction 23,750
+  //   taxable = 40,000 − 23,750 = 16,250
+  //   10%×12,400=1,240 + 12%×3,850=462 → fedTax = 1,702
+  test("Year-1 federal tax: single 65+, $40K, FL → fedTax ≈ $1,702", () => {
     const r = calcYearTax(65, 2026, 40_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
-    expect(r.taxableIncome).toBe(22_250);
-    expect(r.fedTax).toBeCloseTo(2_422, 0);
+    expect(r.taxableIncome).toBe(16_250);
+    expect(r.fedTax).toBeCloseTo(1_702, 0);
     expect(r.stateTax).toBe(0);
   });
 
@@ -2334,5 +2345,94 @@ describe("mortality-weighted success rate (money outlives you)", () => {
     const boost = r.mwRate - r.rate;
     expect(boost).toBeGreaterThan(0);
     expect(boost).toBeLessThan(failureMass); // discount can't exceed the failures themselves
+  });
+});
+
+// ─── OBBBA senior bonus deduction (REQUIREMENTS §13.1 #6) ─────────────────────
+// Constants per TAX_REFERENCE.md → "OBBBA Senior Bonus Deduction": $6,000 per
+// qualifying person 65+, tax years 2025–2028 only, MAGI phase-out from
+// $75,000 single / $150,000 MFJ at 6% of the excess, NOT inflation-indexed.
+
+describe("OBBBA senior bonus deduction", () => {
+  test("below the phase-out: single 65+ gets the full per-person amount", () => {
+    // MAGI = 50,000 < 75,000 → no phase-out.
+    // std ded (single 65+, 2026) = 16,100 + 1,650 = 17,750; bonus = 6,000
+    // taxable = 50,000 − 17,750 − 6,000 = 26,250
+    const r = calcYearTax(66, 2026, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    expect(r.seniorBonus).toBe(6_000);
+    expect(r.taxableIncome).toBe(26_250);
+  });
+
+  test("MFJ both 65+ gets 2x the per-person amount", () => {
+    // MAGI = 100,000 < 150,000 MFJ threshold → full 2 × 6,000 = 12,000.
+    // std ded (MFJ 65+, 2026) = 32,200 + 3,300 = 35,500
+    // taxable = 100,000 − 35,500 − 12,000 = 52,500
+    const r = calcYearTax(70, 2026, 100_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(r.seniorBonus).toBe(12_000);
+    expect(r.taxableIncome).toBe(52_500);
+  });
+
+  test("partial phase-out reduces the bonus by 6% of excess MAGI, per person", () => {
+    // MFJ, MAGI 180,000 → excess 30,000 over 150,000.
+    // reduction = 6% × 30,000 × 2 = 3,600 → bonus = 12,000 − 3,600 = 8,400
+    const r = calcYearTax(70, 2026, 180_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(r.seniorBonus).toBe(8_400);
+  });
+
+  test("fully phased out at threshold + $100,000 of MAGI", () => {
+    // Single: 75,000 + 100,000 = 175,000 → 6% × 100,000 = 6,000 = the whole bonus.
+    const atCliff = calcYearTax(66, 2026, 175_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    expect(atCliff.seniorBonus).toBe(0);
+    // MFJ: 150,000 + 100,000 = 250,000, since the 6% bites each person's own 6,000.
+    const mfjAtCliff = calcYearTax(70, 2026, 250_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
+    expect(mfjAtCliff.seniorBonus).toBe(0);
+    // Never negative beyond the cliff.
+    const beyond = calcYearTax(66, 2026, 400_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    expect(beyond.seniorBonus).toBe(0);
+  });
+
+  test("under 65 never qualifies, whatever the year", () => {
+    const r = calcYearTax(64, 2026, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    expect(r.seniorBonus).toBe(0);
+  });
+
+  test("sunsets: $0 in 2029 even for a qualifying 65+ filer", () => {
+    const in2028 = calcYearTax(70, 2028, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    const in2029 = calcYearTax(70, 2029, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    expect(in2028.seniorBonus).toBe(6_000);
+    expect(in2029.seniorBonus).toBe(0);
+    // The sunset must RAISE tax, all else equal — this is the 2028→2029 cliff the
+    // UI discloses. Compared on taxableIncome so bracket indexing doesn't muddy it.
+    expect(in2029.taxableIncome).toBeGreaterThan(in2028.taxableIncome);
+  });
+
+  test("is NOT inflation-indexed: same nominal amount in 2026 and 2028", () => {
+    // Both years below the phase-out, so any indexing would show up directly.
+    const a = calcYearTax(70, 2026, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    const b = calcYearTax(70, 2028, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    expect(a.seniorBonus).toBe(6_000);
+    expect(b.seniorBonus).toBe(6_000);
+  });
+
+  test("REGRESSION (CLAUDE.md rule 3): the bonus must not reduce MAGI", () => {
+    // Same income, one year inside the window and one after it. taxableIncome must
+    // differ (the deduction works) while MAGI must be identical (it is an
+    // AGI-level quantity that no deduction touches). If MAGI ever moves here, the
+    // IRMAA tier check has been corrupted.
+    const inWindow = calcYearTax(70, 2028, 120_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    const afterSunset = calcYearTax(70, 2029, 120_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    expect(inWindow.seniorBonus).toBeGreaterThan(0);
+    expect(inWindow.taxableIncome).toBeLessThan(afterSunset.taxableIncome);
+    expect(inWindow.magi).toBe(afterSunset.magi);
+  });
+
+  test("stacks additively on top of the standard deduction, not merged into it", () => {
+    // getStandardDeduction must be unchanged by OBBBA — it is a separate line so an
+    // itemizer model stays possible later (OBBBA is available to itemizers too).
+    expect(getStandardDeduction(70, "single", 1)).toBe(17_750);
+    expect(getStandardDeduction(70, "mfj", 1)).toBe(35_500);
+    const r = calcYearTax(70, 2026, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
+    expect(r.stdDeduction).toBe(17_750);
+    expect(r.taxableIncome).toBe(50_000 - r.stdDeduction - r.seniorBonus);
   });
 });

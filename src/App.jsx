@@ -66,6 +66,7 @@ import {
   taxableSocialSecurity,
   LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,
   NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,
+  getSeniorBonusDeduction, OBBBA_SENIOR_LAST_YEAR,
 } from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
@@ -175,9 +176,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.27";
-export const BUILD_TAG = "[main] v1.2.27 — Two honesty fixes. (1) Roth tax funding: 'Outside cash' pays conversion tax from a pot the simulation never tracks or depletes, so every converted dollar lands in the Roth intact and the strategy looks better than it can perform. It is no longer listed first, is labelled UNLIMITED, and now raises an inline warning when selected; 'From taxable' is marked recommended. (2) Real dollars now has a tooltip stating what it actually does: it converts FUTURE dollars to present-day purchasing power (not an adjustment of past data), and because the chart begins at your retirement year the figures are in RETIREMENT-year purchasing power — inflation between today and retirement is NOT removed. Prior v1.2.26: equity % documentation."
-export const BUILD_TIME = "2026-07-27T03:45:00Z";
+const APP_VERSION = "1.2.28";
+export const BUILD_TAG = "[main] v1.2.28 — Five engine-correctness fixes (REQUIREMENTS Slate A). (1) OBBBA senior deduction (§13.1 #6): the $6,000/person deduction for filers 65+ (tax years 2025–2028, 6% MAGI phase-out from $75K single / $150K MFJ, NOT inflation-indexed, $0 from 2029) was entirely absent, so federal tax was overstated for every 65+ user below the phase-out — a single 65-year-old drawing $40K in FL was charged $2,422 instead of $1,702, a 30% overstatement, which understated success rate and safe spending. Implemented as a SEPARATE additive term (not merged into the standard deduction, since OBBBA is available to itemizers too) in the shared leaf module, and threaded into ALL live readers: calcYearTax, runMC bracket-room sizing, the waterfall yearTax + Step-5 pretax ceiling + Step-6.5 conversion ceiling, and the 'This Year' headroom panel — which separately had NO age-65 bump at all. It reduces taxable income only and provably never touches MAGI (regression-tested), so IRMAA tiers are unaffected. (2) ENG-8: irmaaGuard now caps the Step-6.5 Roth conversion, not just the pretax draw — a conversion sized to the bracket ceiling could still cross an IRMAA tier, the exact thing the guard promises to prevent. The cap subtracts realized capital gains from the MAGI base and reports convCapReason so the UI can say which cliff bound. (3) §13.2 #11: rental income was modeled three different ways — the waterfall hardcoded 3% growth, ignored abGrowth/abEndYear, inflated propIncome on a separate CPI track, and silently stopped ALL rental income at age 80. Now one model matching runMC: ab + propIncome summed then grown once at the user abGrowth; the age-80 haircut is gone. (4) §13.2 #16: Action Plan RMD cards derived the RMD age themselves (ignoring dob precision AND the user override) and projected the first RMD with a hardcoded divisor of 24.0 belonging to no age in either IRS table — now one shared getRmdStartAge plus real Uniform/Joint divisors with the joint-table gate, and the card states its today-balance basis instead of implying a forecast. (5) §13.2 #15: all four Roth-tab useMemos depended on hand-enumerated field subsets, so sidebar edits refreshed the ladder table while the summary cards above it kept showing the previous profile — they now depend on params itself. Also fixed a documentation error: RMD_TABLES.md had 13.0 at age 89 where the IRS Uniform Lifetime Table says 12.9. 589 tests pass (25 new); the 7 red PrintReport tests are pre-existing, caused by the paid-report stub, and unrelated. Prior v1.2.27: Roth tax-funding + Real-dollars honesty fixes.";
+export const BUILD_TIME = "2026-07-27T14:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -920,15 +921,30 @@ function calcYearTax(
   const totalIncome = taxableSS + otherIncome; // ordinary income total (excludes LTCG)
   const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - CURRENT_YEAR));
 
+  // IRMAA MAGI = AGI + tax-exempt interest; untaxed SS is NOT added back.
+  // AGI includes the full realized gain (pre-deduction), unlike taxableIncome
+  // below. Computed HERE, ahead of every deduction, for two reasons: it genuinely
+  // does not depend on deductions, and the OBBBA senior bonus deduction's
+  // phase-out is keyed to MAGI, so MAGI has to exist first. Keeping it above the
+  // deduction lines is also the structural guard against anyone ever netting a
+  // deduction out of MAGI (CLAUDE.md rule 3 — IRMAA takes no deduction).
+  const magi = totalIncome + ltcgAmount;
+
   // Standard deduction (incl. age-65+ add-on), inflation-adjusted forward.
   // Single source: getStandardDeduction → TAX_REFERENCE.md (CLAUDE.md Rule 6).
   const stdDeduction = getStandardDeduction(age, filingStatus, inflationFactor);
-  const taxableIncome = Math.max(0, totalIncome - stdDeduction);
+  // OBBBA senior bonus deduction (2025–2028 only, $0 from 2029) — a separate,
+  // additive, deliberately NON-inflation-indexed deduction stacked on top of the
+  // standard deduction and its age-65 add-on. Taxable income only; `magi` above
+  // is already fixed and is never reduced by it.
+  const seniorBonus = getSeniorBonusDeduction(age, filingStatus, magi, yr);
+  const totalDeduction = stdDeduction + seniorBonus;
+  const taxableIncome = Math.max(0, totalIncome - totalDeduction);
   // LTCG stacks ON TOP of ordinary income (IRS stacking rule): gains occupy the
   // taxable-income band from `taxableIncome` up to `taxableIncome + gainTaxable`.
-  // If ordinary income didn't fully use the standard deduction, gains soak up
-  // whatever's left of it first.
-  const gainTaxable = Math.max(0, totalIncome + ltcgAmount - stdDeduction) - taxableIncome;
+  // If ordinary income didn't fully use the deductions, gains soak up
+  // whatever's left of them first.
+  const gainTaxable = Math.max(0, totalIncome + ltcgAmount - totalDeduction) - taxableIncome;
 
   // Select federal brackets by filing status
   const rawBrackets = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
@@ -940,11 +956,6 @@ function calcYearTax(
   const ltcgTax = Math.round(
     progTax(taxableIncome + gainTaxable, ltcgBrackets) - progTax(taxableIncome, ltcgBrackets)
   );
-
-  // IRMAA MAGI = AGI + tax-exempt interest; untaxed SS is NOT added back.
-  // AGI includes the full realized gain (pre-standard-deduction), unlike
-  // taxableIncome above.
-  const magi = totalIncome + ltcgAmount;
 
   // NIIT (IRC §1411): 3.8% of the lesser of net investment income (LTCG here)
   // or the excess of MAGI over the statutory (non-inflation-indexed) threshold.
@@ -980,6 +991,9 @@ function calcYearTax(
   return {
     fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket, taxableIncome,
     ltcgTax, niit, realizedGain: Math.round(ltcgAmount),
+    // Deduction components, surfaced separately so the UI can explain the
+    // 2028→2029 jump when the OBBBA senior bonus sunsets.
+    stdDeduction, seniorBonus,
     // This year's OWN MAGI (never the lookback substitution) — callers store
     // this in a per-age history so it becomes the magiLookback input two years
     // from now.
@@ -1449,9 +1463,22 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC);
         // 85% SS inclusion is a deliberate worst-case estimate so the cap never overshoots.
         const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable);
-        const taxableSoFarMC = Math.max(0, ordinaryFloorMC - sdMC);
-        // Bracket room lives in taxable-income space (ceiling is post-std-deduction).
-        bracketRoomMC = Math.max(0, getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC) - taxableSoFarMC);
+        const ceilingMC = getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC);
+        // The OBBBA senior bonus shelters ordinary income exactly as the standard
+        // deduction does, so the bracket room must include it or sourcing will
+        // under-fill the bracket that calcYearTax now actually grants. Its
+        // phase-out is MAGI-keyed and MAGI rises with the very draw being sized,
+        // so estimate the bonus at the HIGH end of this year's plausible MAGI
+        // (floor + the room before the bonus) → worst-case phase-out → smallest
+        // bonus. Same conservative spirit as the 85% SS inclusion above: the cap
+        // can under-fill the bracket but must never overshoot it.
+        const roomBeforeBonusMC = Math.max(0, ceilingMC - Math.max(0, ordinaryFloorMC - sdMC));
+        const seniorBonusMC = getSeniorBonusDeduction(
+          age, filingStatus, ordinaryFloorMC + roomBeforeBonusMC, yr
+        );
+        const taxableSoFarMC = Math.max(0, ordinaryFloorMC - (sdMC + seniorBonusMC));
+        // Bracket room lives in taxable-income space (ceiling is post-deduction).
+        bracketRoomMC = Math.max(0, ceilingMC - taxableSoFarMC);
         // IRMAA room lives in MAGI space — do NOT subtract the std deduction. A pretax
         // draw raises taxable income and MAGI by the same dollar, so both rooms cap the
         // same incremental draw; take the tighter. (LTCG from the taxable draw is not
@@ -3970,41 +3997,25 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
   const cySGOV = cySGOVOverride ?? profileCashForTaxes;
   // ───────────────────────────────────────────────────────────────────────
 
+  // Depend on `params` ITSELF, never an enumerated subset of its fields.
+  // These four memos each carried their own hand-maintained field list and each
+  // list was missing something different: `ex` omitted sp / endAge / gkFloor /
+  // gkCeiling / stateOfResidence / irmaaGuard while `convRows` (the table
+  // rendered directly BELOW ex's summary cards) tracked them — so editing spend
+  // in the sidebar refreshed the ladder table but left the Lifetime Tax Delta /
+  // RMD Reduction / Eff. Rate cards above it showing the previous profile.
+  // `params` is itself a useMemo in the parent, so it is referentially stable
+  // between real edits; depending on it is both correct and cheap, and it can
+  // never go stale as new profile fields are added.
   const ex = useMemo(
     () => buildWaterfallComparison(params ?? {}, rothMode),
-    [
-      params?.currentAge,
-      params?.retireAge,
-      params?.ssAge,
-      params?.ab,
-      params?.inf,
-      params?.port,
-      params?.twoHousehold,
-      params?.useAb,
-      params?.ssb,
-      params?.accounts,
-      params?.dob,
-      params?.birthYear,
-      params?.filingStatus,
-      params?.rmdStartAge,
-      params?.taxFunding,
-      params?.fafsaEndYear,
-      params?.cssEndYear,
-      params?.conversionOverrides,
-      rothMode,
-    ]
+    [params, rothMode]
   );
 
   // No-tax state scenario: same profile but state tax zeroed out (twoHousehold flag)
   const exNoTax = useMemo(
     () => buildWaterfallComparison({ ...(params ?? {}), twoHousehold: true }, rothMode),
-    [
-      params?.currentAge, params?.retireAge, params?.ssAge, params?.ab,
-      params?.inf, params?.port, params?.useAb, params?.ssb, params?.accounts,
-      params?.dob, params?.birthYear, params?.filingStatus, params?.rmdStartAge,
-      params?.taxFunding, params?.fafsaEndYear, params?.cssEndYear,
-      params?.conversionOverrides, rothMode,
-    ]
+    [params, rothMode]
   );
 
   const {
@@ -4027,56 +4038,14 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
   // figure for the same year (see rothConversionPlan.js::buildConversionLadder).
   const convRows = useMemo(
     () => buildConversionLadder(params ?? {}, rothMode).rows,
-    [
-      params?.currentAge,
-      params?.retireAge,
-      params?.ssAge,
-      params?.ab,
-      params?.inf,
-      params?.port,
-      params?.useAb,
-      params?.ssb,
-      params?.accounts,
-      params?.dob,
-      params?.birthYear,
-      params?.filingStatus,
-      params?.stateOfResidence,
-      params?.rmdStartAge,
-      params?.taxFunding,
-      params?.gkFloor,
-      params?.gkCeiling,
-      params?.sp,
-      params?.gr,
-      params?.irmaaGuard,
-      params?.conversionOverrides,
-      rothMode,
-    ]
+    [params, rothMode]
   );
 
   // Reconciled conversion plan — single source of truth, matches the
   // Withdrawal Schedule tab's "Roth Conv" figures (see rothConversionPlan.js).
   const conversionPlan = useMemo(
     () => buildConversionPlan(params ?? {}),
-    [
-      params?.currentAge,
-      params?.retireAge,
-      params?.ssAge,
-      params?.ab,
-      params?.inf,
-      params?.port,
-      params?.useAb,
-      params?.ssb,
-      params?.accounts,
-      params?.dob,
-      params?.birthYear,
-      params?.filingStatus,
-      params?.rmdStartAge,
-      params?.taxFunding,
-      params?.fafsaEndYear,
-      params?.cssEndYear,
-      params?.conversionOverrides,
-      params?.rothConversionTarget,
-    ]
+    [params]
   );
 
 const state = params.stateOfResidence || "NJ";   // fallback to your actual state
@@ -4506,7 +4475,6 @@ const modeDescs = {
         const f       = Math.pow(1 + infRate, cyYear - CURRENT_YEAR);
         const fedBase = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
         const fB      = idxB(fedBase, f);
-        const stdD    = Math.round((isMFJ ? 32200 : 16100) * f);
         const b12t    = fB.find(b => b.rate === 0.12)?.hi ?? 0;
         const b22t    = fB.find(b => b.rate === 0.22)?.hi ?? 0;
         const b24t    = fB.find(b => b.rate === 0.24)?.hi ?? 0;
@@ -4517,7 +4485,20 @@ const modeDescs = {
         // SS provisional income → 0% / 50% / 85% taxable per IRC §86 tiers
         const ssTaxable = Math.round(taxableSocialSecurity(cySS, cyW2 + cyRental + cyOther, isMFJ));
         const grossInc  = cyW2 + ssTaxable + cyRental + cyOther;
-        const taxableBC = Math.max(0, grossInc - stdD);           // taxable before conversion
+        // Deduction for THIS panel's year. This used to be a bare
+        // `(isMFJ ? 32200 : 16100) * f` with no age-65 add-on at all — a
+        // third-generation copy of the standard deduction that understated the
+        // deduction (and so overstated tax and understated conversion headroom)
+        // for every 65+ user. Now routed through the same canonical helpers as
+        // calcYearTax so all three can't drift: age-aware standard deduction plus
+        // the OBBBA senior bonus, whose phase-out reads this year's own MAGI.
+        const cyAge     = (params?.currentAge || 0) + (cyYear - CURRENT_YEAR);
+        const stdD      = getStandardDeduction(cyAge, params?.filingStatus || "mfj", f);
+        const cySeniorBonus = getSeniorBonusDeduction(
+          cyAge, params?.filingStatus || "mfj", grossInc, cyYear
+        );
+        const dedD      = stdD + cySeniorBonus;
+        const taxableBC = Math.max(0, grossInc - dedD);           // taxable before conversion
         const fedTaxBC  = Math.round(progTax(taxableBC, fB));
 
         // State tax on non-conversion income
@@ -7469,7 +7450,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                     [`Age ${Math.min(90, params.endAge)}`, `${Math.round(spendingSmileFactor(Math.min(90, params.endAge), params.retireAge) * 100)}% of base (real)`],
                   ] : []),
                 ]} />
-                <InputCard title="Income Offsets" rows={[["Social Security", `$${(params.ssb || 0).toLocaleString()}/yr @ ${params.ssAge || "—"}`], ["SS COLA", `${params.ssCola ?? 2.4}%/yr`], [`Rental net (${params.abReliability ?? 80}% reliable)`, params.ab > 0 ? `$${(params.ab || 0).toLocaleString()}/yr` : "Not set"], ["SS gap", `Ages ${params.retireAge}–${(params.ssAge || params.retireAge) - 1}: $0`]]} />
+                <InputCard title="Income Offsets" rows={[["Social Security", `$${(params.ssb || 0).toLocaleString()}/yr @ ${params.ssAge || "—"}`], ["SS COLA", `${params.ssCola ?? 2.4}%/yr`], ["Rental income", params.ab > 0 ? `$${(params.ab || 0).toLocaleString()}/yr` : "Not set"], ["SS gap", `Ages ${params.retireAge}–${(params.ssAge || params.retireAge) - 1}: $0`]]} />
                 <InputCard title="Additional Costs" rows={[[`Healthcare (age ${params.hcShockAge ?? 72}+)`, `${params.hcProb ?? 3.5}% shock prob/yr`], ["Shock range", `${fmtK(params.hcMin ?? 70000)}–${fmtK(params.hcMax ?? 130000)}`], ["Mortgage annual", mortAnnual > 0 ? fmtM(mortAnnual) + "/yr" : "Paid off"], ["Mortgage payoff", mortPayoffAge > 0 ? "~" + mortPayoffAge : "—"]]} />
               </div>
             </div>
@@ -7691,7 +7672,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                 [`${MC_PATHS_LABEL} randomized return sequences`, "#5eead4"],
                 ["99yr S&P 500 + 50yr Bloomberg Agg bootstrap", "#5eead4"],
                 ["Separate equity & bond draws each year", "#5eead4"],
-                [`Rental income fails ${100 - (params.abReliability || 80)}% of years randomly`, "#fbbf24"],
+                [`Rental income fails ${100 - (params.abReliability || 80)}% of years randomly in Monte Carlo — the Withdrawal Plan, Income chart, and Conversion Plan tabs show full planned rental every year (one deterministic path, no failure applied)`, "#fbbf24"],
                 [`Healthcare shocks ${params.hcProb || 3.5}%/yr from age ${params.hcShockAge || 72}`, "#fbbf24"],
                 [`${getStrategyLabel(withdrawalStrategy)} each path`, "#a78bfa"],
                 ["Blanchett smile spending (not flat)", "#a78bfa"],

@@ -35,6 +35,7 @@ import {
   NIIT_THRESHOLD_MFJ,
   NIIT_THRESHOLD_SINGLE,
   NIIT_RATE,
+  getSeniorBonusDeduction,
   RMD_DIV,
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
@@ -259,6 +260,9 @@ export function buildWithdrawalWaterfall(params = {}) {
     ssCola       = 2.4,
     ab           = 0,
     abEndYear    = null,
+    // Default matches BLANK_PROFILE.abGrowth in App.jsx. Previously absent here,
+    // which is why this engine silently hardcoded 1.03 growth (REQUIREMENTS §13.2 #11).
+    abGrowth     = 3.0,
     inf          = 2.5,
     accounts     = [],
     filingStatus = "mfj",
@@ -407,26 +411,31 @@ export function buildWithdrawalWaterfall(params = {}) {
   function yearTax(age, yr, fromPretax, ssGross, annuityTaxable, rmd, inflFactor, otherTaxable = 0, ltcg = 0, magiLookback = null) {
     const iF  = inflFactor;
     const fB  = idxB(fedBase, iF);
-    const sd  = stdDed(age, isMFJ, iF);
     // IRC §86 provisional-income tiers (0% / 50% / 85% of SS taxable). Realized
     // gains count toward provisional income (they're part of MAGI) even though
     // they are NOT part of ordinary otherOrdInc/totInc below.
     const otherOrdInc = annuityTaxable + rmd + fromPretax + otherTaxable;
     const taxSS = Math.round(taxableSocialSecurity(ssGross, otherOrdInc + ltcg, isMFJ));
     const totInc = taxSS + otherOrdInc; // ordinary income total (excludes LTCG)
-    const txInc  = Math.max(0, totInc - sd);
-    // LTCG stacks ON TOP of ordinary income — the standard deduction soaks into
-    // gains first if ordinary income didn't fully use it.
-    const gainTxInc = Math.max(0, totInc + ltcg - sd) - txInc;
+    // IRMAA MAGI = AGI (incl. the full realized gain) + tax-exempt interest;
+    // untaxed SS is NOT added back. Computed HERE, ahead of the deductions,
+    // because the OBBBA senior bonus's phase-out is MAGI-keyed — and to keep it
+    // structurally impossible to net a deduction out of MAGI (CLAUDE.md rule 3).
+    const magi = totInc + ltcg;
+    const sd  = stdDed(age, isMFJ, iF);
+    // OBBBA senior bonus (2025–2028 only, $0 from 2029) — separate, additive,
+    // NOT inflation-indexed. Reduces taxable income only, never `magi` above.
+    const seniorBonus = getSeniorBonusDeduction(age, isMFJ ? "mfj" : "single", magi, yr);
+    const ded = sd + seniorBonus;
+    const txInc  = Math.max(0, totInc - ded);
+    // LTCG stacks ON TOP of ordinary income — the deductions soak into
+    // gains first if ordinary income didn't fully use them.
+    const gainTxInc = Math.max(0, totInc + ltcg - ded) - txInc;
     const fedOrdinary = progTax(txInc, fB);
 
     // LTCG bracket walk over the stacked interval [txInc, txInc + gainTxInc).
     const ltcgBr = idxB(isMFJ ? LTCG_BRACKETS_2026_MFJ : LTCG_BRACKETS_2026_SINGLE, iF);
     const ltcgTax = Math.round(progTax(txInc + gainTxInc, ltcgBr) - progTax(txInc, ltcgBr));
-
-    // IRMAA MAGI = AGI (incl. the full realized gain) + tax-exempt interest;
-    // untaxed SS is NOT added back.
-    const magi = totInc + ltcg;
 
     // NIIT (IRC §1411): 3.8% of the lesser of net investment income (LTCG here)
     // or the excess of MAGI over the statutory (NOT inflation-indexed) threshold.
@@ -494,8 +503,15 @@ export function buildWithdrawalWaterfall(params = {}) {
     // otherwise the baseline and the tracked ratio would drift apart even
     // within this one engine.
     const ss0  = retireAge >= ssAge ? ssb : 0;
+    // Cumulative CPI factor at the retirement year — still used by the rent and
+    // carveout baselines below (those DO inflate at CPI). It is deliberately no
+    // longer applied to rental income; see ab0.
     const iF0  = Math.pow(1 + infR, retireYear - BASE_YEAR);
-    const ab0  = (ab > 0 ? ab : 0) + Math.round((propIncome || 0) * iF0);
+    // Same basis as the yearly `annuity` term: ab + propIncome summed, grown at
+    // abGrowth. At the retirement year the growth factor is exactly 1.0 (age ===
+    // retireAge), so no factor is applied here. propIncome is NOT inflated by iF0
+    // any more — that separate CPI track was half of the §13.2 #11 drift.
+    const ab0  = (ab > 0 ? ab : 0) + (propIncome || 0);
     const { total: otherInc0 } = computeOtherIncome(otherIncomes, retireYear);
     let housing0 = 0;
     if (housingType === "own") {
@@ -538,9 +554,28 @@ export function buildWithdrawalWaterfall(params = {}) {
       const ss = age >= ssAge
         ? Math.round(ssb * Math.pow(1 + (ssCola || 2.4) / 100, age - ssAge))
         : 0;
-      const annuity = (ab > 0 && (abEndYear == null || yr <= abEndYear) && age <= 80
-        ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
-        : 0) + Math.round((propIncome || 0) * iF);
+      // Rental / Airbnb income — must match runMC and
+      // simulateDeterministicWithStrategy exactly (REQUIREMENTS §13.2 #11). This
+      // used to be a third, divergent model: it hardcoded 1.03 growth (ignoring
+      // the user's abGrowth), stopped ALL rental income at age 80, and inflated
+      // propIncome at CPI on a separate track from ab. Now: sum the two streams
+      // first, then grow the combined total once at the user's abGrowth, capped at
+      // 20 years of compounding (the same cap both other engines already apply).
+      //
+      // The age-80 stop is gone deliberately — it had no basis in anything the
+      // user set, contradicted their own abEndYear input, and silently understated
+      // rental income (and so overstated pretax/Roth draws and tax) for every
+      // profile planning past 80.
+      //
+      // abReliability is deliberately NOT applied here: it is a per-year
+      // all-or-nothing coin flip that only has meaning across runMC's many paths
+      // (App.jsx: `rand() < abReliability/100`). Applying it as an expected-value
+      // haircut in a single deterministic path would invent a fourth model.
+      // simulateDeterministicWithStrategy likewise shows full planned rental.
+      const abGrowthFactor = Math.pow(1 + (abGrowth || 3) / 100, Math.min(Math.max(0, age - retireAge), 20));
+      const annuity = (abEndYear == null || yr <= abEndYear)
+        ? Math.round(((ab > 0 ? ab : 0) + (propIncome || 0)) * abGrowthFactor)
+        : 0;
       const fixedIncome = ss + annuity;
 
       // Other income streams (pensions, part-time work, etc.) — offset "need"
@@ -684,12 +719,30 @@ export function buildWithdrawalWaterfall(params = {}) {
             // 85% SS inclusion here is a deliberate worst-case estimate: the pretax draw
             // being sized below itself raises provisional income, so assuming max inclusion
             // keeps the bracket cap conservative (never overshoots the target ceiling).
-            const taxSoFar = Math.max(0, Math.round(ss * 0.85) + rmd + annuity + otherIncTaxable - sd);
+            const ordFloor = Math.round(ss * 0.85) + rmd + annuity + otherIncTaxable;
             let ceiling = bracketCeiling(withdrawalBracketTarget, isMFJ, iF);
+            // The OBBBA senior bonus shelters ordinary income exactly as the
+            // standard deduction does, so it belongs in this room calc too. Its
+            // phase-out is MAGI-keyed and MAGI rises with the very draw being
+            // sized, so estimate the bonus at the HIGH end of plausible MAGI
+            // (floor + the room before the bonus) → worst-case phase-out →
+            // smallest bonus. Same conservative direction as the 85% SS inclusion
+            // above: this may under-fill the bracket but can never overshoot it.
+            const roomPreBonus = Math.max(0, ceiling - Math.max(0, ordFloor - sd));
+            const ded = sd + getSeniorBonusDeduction(
+              age, isMFJ ? "mfj" : "single", ordFloor + roomPreBonus, yr
+            );
+            const taxSoFar = Math.max(0, ordFloor - ded);
 
             if (irmaaGuard && age >= 63) {
               const irmaaTier1 = isMFJ ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
-              const irmaaCap = Math.round(irmaaTier1 * iF) - sd;
+              // `ded` is subtracted here only to move the IRMAA MAGI threshold into
+              // the same taxable-income space as `ceiling`/`taxSoFar`. It cancels
+              // out of `room = ceiling - taxSoFar` algebraically, so this does NOT
+              // reduce true MAGI (CLAUDE.md rule 3 is intact). It must be the SAME
+              // `ded` used for taxSoFar above for that cancellation to hold — do
+              // not "fix" one without the other.
+              const irmaaCap = Math.round(irmaaTier1 * iF) - ded;
               if (irmaaCap < ceiling) {
                 ceiling = irmaaCap;
                 pretaxCapReason = "irmaa_ceil";
@@ -755,16 +808,66 @@ export function buildWithdrawalWaterfall(params = {}) {
       // to rothConversionTarget's bracket ceiling, sized off the taxable income
       // from the spending draw alone (mirrors runMC's bracket-fill behavior).
       let convAmt = 0;
+      // Why the conversion was limited: "bracket" | "irmaa_ceil" | "manual" | null.
+      // Kept as a named reason (mirroring pretaxCapReason) so §17's planned
+      // conversionRoomAllCliffs() can extend the min(...) below with ACA / LTCG /
+      // NIIT rooms and report which cliff actually bound, without a rewrite.
+      let convCapReason = null;
       if (isSmart) {
         const pretaxAfterDraw = Math.max(0, pretax - fromPretax);
         const override = overrideMap.get(yr);
         if (override != null) {
           convAmt = Math.min(Math.max(0, override), pretaxAfterDraw);
+          convCapReason = "manual";
         } else if (rothConversionTarget && rothConversionTarget !== "off" && pretaxAfterDraw > 1000) {
           const sdConv = stdDed(age, isMFJ, iF);
-          const ceilingConv = bracketCeiling(rothConversionTarget, isMFJ, iF);
-          const room = Math.max(0, ceilingConv + sdConv - taxNoConv.totInc);
+          let ceilingConv = bracketCeiling(rothConversionTarget, isMFJ, iF);
+          convCapReason = "bracket";
+          // OBBBA senior bonus, estimated at the HIGH end of plausible MAGI
+          // (pre-conversion MAGI + the room before the bonus) so the phase-out is
+          // worst-cased and the conversion can't be over-sized.
+          const roomPreBonus = Math.max(0, ceilingConv + sdConv - taxNoConv.totInc);
+          const dedConv = sdConv + getSeniorBonusDeduction(
+            age, isMFJ ? "mfj" : "single", taxNoConv.magi + roomPreBonus, yr
+          );
+          // ENG-8: the IRMAA guard used to cap only the Step-5 pretax draw, so a
+          // conversion sized to the income-tax bracket ceiling could still push
+          // MAGI across an IRMAA tier — the exact thing the guard is sold as
+          // preventing. Mirror Step 5's cap here.
+          //
+          // Two things to understand before editing this:
+          //  1. `dedConv` is subtracted only to express the MAGI threshold in the
+          //     same space as `ceilingConv`; it cancels out of `room` below, so
+          //     this does NOT reduce true MAGI (CLAUDE.md rule 3).
+          //  2. `realizedGain` is subtracted because MAGI includes realized gains
+          //     while `taxNoConv.totInc` (the base `room` is measured against)
+          //     excludes them. Without it the room would be overstated by the
+          //     year's gain and the conversion could still breach the tier.
+          //     NOTE: Step 5's own irmaaCap does NOT yet do this — that pre-existing
+          //     LTCG-in-MAGI gap is documented in runMC and left unchanged here
+          //     rather than silently widening this fix's scope.
+          //  3. The `age >= 63` gate is deliberately the SAME as Step 5's, and it
+          //     is correct for conversions too: IRMAA runs on a 2-year lookback, so
+          //     a conversion at age >= 63 first bites at age >= 65 — exactly when
+          //     Medicare premiums begin. Converting at 62 (lookback lands at 64,
+          //     pre-Medicare) is correctly exempt.
+          //  4. This caps against the CURRENT year's tier ceiling, though the MAGI
+          //     it produces is actually charged in yr+2 (whose ceiling is higher,
+          //     being inflation-indexed). That makes this cap slightly STRICT, not
+          //     loose — it can only under-convert, never let a conversion slip past
+          //     the real future cliff. That is the correct failure direction for a
+          //     guardrail; do not "fix" it into an off-by-2-years bug.
+          if (irmaaGuard && age >= 63) {
+            const irmaaTier1 = isMFJ ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
+            const irmaaCapConv = Math.round(irmaaTier1 * iF) - realizedGain - dedConv;
+            if (irmaaCapConv < ceilingConv) {
+              ceilingConv = irmaaCapConv;
+              convCapReason = "irmaa_ceil";
+            }
+          }
+          const room = Math.max(0, ceilingConv + dedConv - taxNoConv.totInc);
           if (room > 500) convAmt = Math.min(room, pretaxAfterDraw);
+          else convCapReason = null;
         }
       }
 
@@ -785,6 +888,7 @@ export function buildWithdrawalWaterfall(params = {}) {
       // Shrink (rather than zero out) when the full fill can't be afforded — converging
       // toward the largest conversion the remaining pretax balance can self-fund.
       if (convAmt > 0) {
+        const convAmtBeforeShrink = convAmt;
         for (let i = 0; i < 5 && convAmt > 0; i++) {
           const shortfall = (convAmt + convTax) - (pretax - fromPretax);
           if (shortfall <= 0) break;
@@ -792,10 +896,15 @@ export function buildWithdrawalWaterfall(params = {}) {
           tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain, magiLookback) : taxNoConv;
           convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
         }
+        // If affordability shrank the fill, THAT is the binding constraint now —
+        // not the bracket/IRMAA ceiling that sized the original attempt. Report the
+        // reason the user can actually act on.
+        if (convAmt > 0 && convAmt < convAmtBeforeShrink) convCapReason = "affordability";
         if (convAmt <= 500) {
           convAmt = 0;
           convTax = 0;
           tax = taxNoConv;
+          convCapReason = null;
         }
       }
 
@@ -836,7 +945,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         age, yr,
         ss, annuityRental: annuity, fixedIncomeTotal: fixedIncome,
         rmd, rmdActive,
-        fromCash, fromTaxable, fromPretax, pretaxCapReason,
+        fromCash, fromTaxable, fromPretax, pretaxCapReason, convCapReason,
         fromRoth, rothReserveHeld,
         conversionAmount: Math.round(convAmt), conversionTax: convTax,
         fedTax: tax.fedTax, stateTax: tax.stateTax, irmaa: tax.irmaa,
