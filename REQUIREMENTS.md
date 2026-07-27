@@ -1379,10 +1379,62 @@ history-rewrite decision above that's the user's call, not something to default 
 
 ## 21. Spousal & Survivor Social Security — requested 2026-07-27
 
-**Priority: P1.** **Status: scoped, NOT started.** Requested by Vincent after comparing
+**Priority: P1 — the next release.** **Status: approach AGREED 2026-07-27 (see below), not yet built.** Requested by Vincent after comparing
 Boldin's Social Security entry UI (screenshot: separate "You" / "Your Spouse" cards, each
 with a monthly benefit and a *month/year* start date, plus a "Model a benefit reduction in
 the future" toggle and a COLA rate).
+
+### ✅ AGREED APPROACH (Vincent, 2026-07-27): ask the user, don't derive it
+
+**This is the decided shape for shipping §21. It supersedes the "model everything"
+framing below, which is kept for reference.** Rationale: dual Social Security is
+genuinely missing from the product today, and a couple cannot model their real plan
+without it. Shipping a correct, smaller version beats a perfect one that never lands.
+
+The insight is that most of the expensive machinery exists only to derive numbers the
+user can already read off their SSA statement.
+
+| Instead of computing | Ask for |
+|---|---|
+| PIA → claim-age adjustment (FRA-by-birth-year table, 5/9 of 1% per month for the first 36, 5/12 of 1% beyond, 8%/yr delayed credits) | **"Your estimated monthly benefit at the age you plan to claim"** — ssa.gov quotes exactly this, per person |
+| Survivor benefit derivation | Nothing. With both benefits on file it is `max(personA, personB)` |
+| Mortality-drawn first death | **"Model the first death at age ___"** — one number |
+
+That deletes an entire category of currency risk: no FRA table, no reduction/credit
+schedule, no new `TAX_REFERENCE.md` constants to keep in sync with SSA. Fewer numbers
+we can be wrong about.
+
+**The one real trap — the spousal top-up.** It is 50% of the higher earner's **PIA**
+(the FRA amount), NOT 50% of their claimed benefit, and delayed credits never flow
+into it. So claim-age-adjusted figures alone are not sufficient to derive it. Decision:
+**collect the FRA amount as well** (SSA shows both), making the top-up exact — one extra
+field, and it keeps the app able to tell the user something they did not already know,
+which is the point of the tool. The alternative (asking "enter the spousal amount SSA
+quoted") needs no math but leans on the user knowing, and silently produces nothing
+for the people most likely to benefit.
+
+**What data entry cannot avoid:** time-varying filing status. On first death the
+survivor files Single — brackets narrow, the standard deduction roughly halves, IRMAA
+tiers halve, and (as of v1.2.28) the OBBBA senior bonus drops from two persons to one.
+That is engine work regardless. But a user-supplied death age makes it a deterministic,
+explainable event in a known year rather than a stochastic draw threaded through 3,000
+Monte Carlo paths — a contained change instead of a structural one. This is the whole
+reason the phasing below now works.
+
+#### Revised phases
+
+- **Phase 1 — no engine restructuring.** Inputs: two benefits at claim age, two claim
+  ages, plus each person's FRA amount for the top-up. Apply the spousal top-up, sum to
+  a household gross, feed the existing `taxableSocialSecurity()`. This alone makes the
+  base case correct for every couple and lets the "SPOUSE PASSES EARLY" stress scenario
+  compute its haircut exactly — retiring the hardcoded `× 0.67` (a rule-6 violation that
+  is only right for a one-earner couple; two similar earners keep ~50%, not 67%).
+- **Phase 2 — one more input (`firstDeathAge`) plus the filing-status switch.** Survivor
+  steps up to `max(own, deceased)`; filing status flips to Single the following year.
+  Now a contained feature.
+- **Phase 3+** — as originally scoped (delay-the-higher-earner survivor advice, etc.).
+
+**Ship Phase 1 on its own.** It is the release that closes the actual gap.
 
 ### Current state — verified in code 2026-07-27
 
