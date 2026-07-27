@@ -10,6 +10,19 @@
  */
 import React from "react";
 
+/**
+ * Marks THIS file as the public placeholder rather than the real report.
+ *
+ * The private implementation deliberately does not export this, so `undefined`
+ * (falsy) there and `true` here. report.test.js reads it to decide whether to run
+ * the paid-report assertions or skip them: in a public checkout the real component
+ * is absent, and a test suite that fails for an expected, by-design absence is
+ * noise that trains you to ignore red. See REQUIREMENTS §20.
+ *
+ * Do NOT add this export to the private file.
+ */
+export const IS_PLACEHOLDER = true;
+
 export function formatMoney(v) {
   if (v == null || isNaN(v)) return "—";
   const n = Math.round(v);

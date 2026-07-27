@@ -7,7 +7,26 @@
  */
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import PrintReport, { formatMoney } from "./PrintReport";
+import PrintReport, { formatMoney, IS_PLACEHOLDER } from "./PrintReport";
+
+// The real printable report is not part of the public repository (REQUIREMENTS §20):
+// what ships here is a placeholder with the same export shape, so `npm run build`
+// stays green for anyone who clones this. These assertions describe the PAID
+// report's content, so against the placeholder they would fail for an expected,
+// by-design reason — and a suite that is permanently red for a non-bug trains you
+// to stop reading it. Skip instead, loudly, and run in full wherever the private
+// implementation is present (it does not export IS_PLACEHOLDER).
+const describeReport = IS_PLACEHOLDER ? describe.skip : describe;
+
+if (IS_PLACEHOLDER) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[report.test] SKIPPED: src/report/PrintReport.jsx is the public placeholder, " +
+    "not the real report. If you expected the paid report here, the private file is " +
+    "missing from this working copy — restore it before deploying, or the deploy " +
+    "ships the placeholder to paying customers. See REQUIREMENTS §20."
+  );
+}
 
 const BASE_PARAMS = {
   name: "Jane Retiree",
@@ -54,7 +73,7 @@ const BASE_MC = {
 
 const BASE_STRESS = { rate: 0.74, N: 2000 };
 
-describe("PrintReport", () => {
+describeReport("PrintReport", () => {
   test("renders without crashing given a minimal params+mc fixture", () => {
     const html = renderToStaticMarkup(
       <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" />
