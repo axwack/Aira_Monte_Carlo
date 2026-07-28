@@ -185,9 +185,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.47";
-export const BUILD_TAG = "[main] v1.2.47 — Results summary bar corrected, and money labels put into plain language. THE BUG: the portfolio figure rendered mc.medR — the median balance at the START of retirement, captured before the drawdown loop — under the label 'at age {endAge}'. It reported the balance before a single withdrawal as though it were the balance after a full retirement. Now uses mc.term.p50, the median of each path's final year, which is what the label claims; medR stays correct on the Portfolio at Retirement card. THE MISLABEL: '$X/mo safe spend' was params.sp/12 — the user's own typed target echoed back — while the wording claimed the app had computed a certified safe amount. It is also after-tax (runMC sizes the draw as need + totalTax, so tax is drawn on top of the target, never netted out of it) and nothing said so. Now reads 'your spend target (after tax)'. THE JARGON: 'Real $' / 'Nominal $' on both charts and their toggle are now 'today's dollars' / 'future dollars', technical terms kept in the tooltip; Bengen's '(Fixed Real $)' is now '(fixed, inflation-adjusted)'. Two About cards added — spending figures are after tax, and today's vs future dollars. Labels and copy only; no engine or math change. 648 tests."
-export const BUILD_TIME = "2026-07-28T23:40:00Z";
+const APP_VERSION = "1.2.50";
+export const BUILD_TAG = "[main] v1.2.50 — Three fixes, all display-layer; no engine or math change. (1) NET WORTH CARD: 'Safe spending target' rendered three different quantities under one label and one strategy caption — computed for fixed %, an echo of p.sp/12 for every other strategy, and a hardcoded 4% fallback — so a GK user saw their own typed number captioned 'GK guardrails', attributing it to a strategy that never touched it. Each branch now labels itself and states the after-tax basis; the 0.04 literal reads the user's safeWithdrawalRate. (2) STRATEGY PREVIEW: the Analysis dropdown previews without saving, and the only control in the app that saves the strategy (verified by grep — the Profile tab has no selector) was an 11px ghost button below it. The app's own author read the screen as broken wiring. Added a state banner ABOVE the dropdown naming the saved strategy at all times, a tooltip explaining where and how to save, and promoted the commit button to a solid primary naming its effect. Behaviour unchanged. (3) LEGIBILITY: helper prose raised 11px to 12px — the .ms metric sub-line, .li helper lists, and the strategy panel's explanatory text. Scoped to sentences meant to be read; chart ticks and dense table cells keep their size pending a deliberate typography pass (REQUIREMENTS 28)."
+export const BUILD_TIME = "2026-07-29T01:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2579,7 +2579,7 @@ const CSS = `
   .met { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:10px; padding:13px 15px; }
   .ml { font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.09em; margin-bottom:7px; font-weight:600; }
   .mv { font-size:22px; font-weight:800; font-family:'JetBrains Mono',monospace; line-height:1; }
-  .ms { font-size:11px; color:#64748b; margin-top:5px; }
+  .ms { font-size:12px; color:#64748b; margin-top:5px; }
   .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:#cbd5e1; font-style:italic; }
   .analogue-fade { animation: analogueFade 0.6s ease; }
   @keyframes analogueFade { from { opacity: 0; } to { opacity: 1; } }
@@ -2590,7 +2590,7 @@ const CSS = `
   .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:15px 17px; }
   .ct { font-size:18px; color:#94a3b8; margin-bottom:12px; font-weight:500; }
   .leg { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
-  .li { display:flex; align-items:center; gap:5px; font-size:11px; color:#64748b; }
+  .li { display:flex; align-items:center; gap:5px; font-size:12px; color:#64748b; }
   .ll { width:18px; height:2px; border-radius:1px; }
   .ppl-grid { display:flex; flex-wrap:wrap; gap:4px; margin:8px 0; }
   .ppl-dot { width:18px; height:18px; border-radius:50%; }
@@ -5948,6 +5948,35 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           subtitle="Preview any strategy's year-by-year schedule below — this does NOT change your Profile default or your Monte Carlo run until you click 'Set as default'."
         />
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+          {/* Persistent state banner. The commit affordance used to be an 11px amber
+              line BELOW the dropdown, plus a subtitle in the collapsible header — and
+              the app's own author read this screen as broken wiring, concluding the
+              strategy "doesn't switch". It switches; it just does not SAVE, because
+              this dropdown drives a preview. If the author misses that, everyone does.
+              The state now sits directly above the control you are about to touch, and
+              names the saved default at all times so the two screens visibly agree. */}
+          <div
+            title={
+              "HOW THIS WORKS\n\n" +
+              "The dropdown below is a PREVIEW. Changing it redraws the year-by-year table on this page so you can compare strategies — it does not change your plan, and it does not re-run the Monte Carlo.\n\n" +
+              "TO ACTUALLY CHANGE YOUR PLAN: pick a strategy in the dropdown, then click the yellow \"Use ... in my plan\" button that appears just below it. That is the only place in the app that saves your strategy — there is no strategy setting in the Profile tab.\n\n" +
+              "ONCE SAVED, it drives everything: the Monte Carlo success rate, the Net Worth summary card on the home page, and every projection tab. Until you click it, all of those keep using your saved strategy — which is why the home card can show a different strategy than this dropdown."
+            }
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              gap: 8, flexWrap: "wrap", padding: "6px 10px", borderRadius: 6, cursor: "help",
+              border: `1px solid ${previewIsDefault ? "rgba(52,211,153,0.35)" : "rgba(251,191,36,0.55)"}`,
+              background: previewIsDefault ? "rgba(52,211,153,0.08)" : "rgba(251,191,36,0.12)",
+            }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".04em", color: previewIsDefault ? "#34d399" : "#fbbf24" }}>
+              {previewIsDefault ? "✓ SAVED — USED EVERYWHERE" : "👁 PREVIEW ONLY — NOT SAVED"}
+              <span style={{ marginLeft: 5, fontSize: 10, color: "#94a3b8" }}>ⓘ</span>
+            </span>
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>
+              Your saved plan uses <strong style={{ color: "#e2e8f0" }}>{getStrategyLabel(withdrawalStrategy)}</strong>
+            </span>
+          </div>
           <select
             value={previewStrategy}
             onChange={(e) => setPreviewStrategy(e.target.value)}
@@ -5975,29 +6004,35 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
             <option value="one_n">1/N (Remaining Years)</option>
             <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
           </select>
-          <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(previewStrategy)}</div>
+          <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>{getStrategyDescription(previewStrategy)}</div>
           {/* Commit action — only shown when the preview differs from the saved default.
               This is the single, explicit path from "previewing" to "applied app-wide". */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 24 }}>
             {previewIsDefault ? (
-              <span style={{ fontSize: 11, color: "#64748b" }}>
+              <span style={{ fontSize: 12, color: "#94a3b8" }}>
                 ✓ Previewing your saved default — the whole app (including Monte Carlo) uses this strategy.
               </span>
             ) : (
               <>
-                <span style={{ fontSize: 11, color: "#fbbf24" }}>
-                  Preview only — your saved default is still <strong>{getStrategyLabel(withdrawalStrategy)}</strong>.
+                <span style={{ fontSize: 12, color: "#fbbf24" }}>
+                  Nothing has changed in your plan yet.
                 </span>
+                {/* Promoted from a ghost button to a solid primary. This is the ONLY
+                    control in the entire app that writes withdrawalStrategy — verified
+                    by grep; the Profile panel displays it but has no selector. A
+                    single, conditional, low-contrast button being the sole commit path
+                    is why the preview/saved split read as a bug. */}
                 <button
                   onClick={() => onAssumptionChange("withdrawalStrategy", previewStrategy)}
                   style={{
-                    padding: "4px 12px", fontSize: 11, fontWeight: 700, borderRadius: 6,
-                    border: "1px solid rgba(251,191,36,0.5)", background: "rgba(251,191,36,0.12)",
-                    color: "#fbbf24", cursor: "pointer", whiteSpace: "nowrap",
+                    padding: "7px 16px", fontSize: 12, fontWeight: 800, borderRadius: 6,
+                    border: "none", background: "#fbbf24", color: "#0d1b2a",
+                    cursor: "pointer", whiteSpace: "nowrap",
+                    boxShadow: "0 2px 10px rgba(251,191,36,0.35)",
                   }}
-                  title="Save this strategy as your Profile default. This re-runs the Monte Carlo simulation and updates every tab."
+                  title="Save this strategy to your plan. This re-runs the Monte Carlo simulation and updates every tab, including the Net Worth summary card."
                 >
-                  Set as default
+                  Use {getStrategyLabel(previewStrategy)} in my plan →
                 </button>
                 <button
                   onClick={() => setPreviewStrategy(withdrawalStrategy)}
@@ -8211,31 +8246,51 @@ function NetWorthTab({ p, mc, inf }) {
           </div>
           <div className="ms">NOT in liquid total</div>
         </div>
-        <div className="met">
-          <div className="ml">Safe spending target</div>
-          <div className="mv" style={{ color: "#4ade80", fontSize: 18 }}>
-            {(() => {
-              const port     = (p.accounts||[]).reduce((s,a)=>s+(a.balance||0),0) || p.port || 0;
-              const strategy = p.withdrawalStrategy || "gk";
-              const rate     = p.fixedWithdrawalRate || 0.04; // always decimal in params
-              const monthly  = strategy === "fixed"
-                ? Math.round(port * rate / 12)
-                : p.sp > 0
-                  ? Math.round(p.sp / 12)
-                  : Math.round(port * 0.04 / 12);
-              return `$${monthly.toLocaleString()}`;
-            })()}
-          </div>
-          <div className="ms">
-            {(() => {
-              const s    = p.withdrawalStrategy || "gk";
-              const rate = p.fixedWithdrawalRate || 0.04;
-              const pct  = (rate * 100).toFixed(1).replace(/\.0$/, ""); // "4" not "4.0"
-              const labels = { gk:"GK guardrails", fixed:`Fixed ${pct}%`, vanguard:"Vanguard dynamic", vpw:"VPW", kitces:"Kitces ratchet", cape:"CAPE-based", endowment:"Endowment", risk:"Risk-based", one_n:"1/N rule", ninety_five_rule:"95% rule", bengen:"Bengen 4% rule", smart:"Smart Waterfall" };
-              return `${labels[s] || s} · per month`;
-            })()}
-          </div>
-        </div>
+        {/* This card rendered THREE different quantities under one label
+            ("Safe spending target") and one strategy caption. Only two of the
+            three are computed; the middle branch — by far the most common,
+            since it fires for every strategy except `fixed` once a target is
+            entered — just echoes the user's own number back. Captioning that
+            "GK guardrails" attributed the figure to a strategy that had not
+            touched it. Each branch now states what it actually is, and all
+            three disclose the after-tax basis (runMC draws tax on top of the
+            target, never out of it — see the fixed-point loop in runMC). */}
+        {(() => {
+          const port     = (p.accounts||[]).reduce((s,a)=>s+(a.balance||0),0) || p.port || 0;
+          const strategy = p.withdrawalStrategy || "gk";
+          const rate     = p.fixedWithdrawalRate || 0.04; // always decimal in params (normalized in the params memo)
+          // No literal fallback rate: the benchmark the rest of the app shows
+          // is the user's own safeWithdrawalRate, so this card uses the same one.
+          const benchRate = p.safeWithdrawalRate ?? 0.04;
+          const pctOf     = (r) => (r * 100).toFixed(1).replace(/\.0$/, "");
+          const STRAT = { gk:"Guyton-Klinger guardrails", fixed:"Fixed %", vanguard:"Vanguard dynamic", vpw:"VPW", kitces:"Kitces ratchet", cape:"CAPE-based", endowment:"Endowment", risk:"Risk-based", one_n:"1/N rule", ninety_five_rule:"95% rule", bengen:"Bengen 4% rule", smart:"Smart Waterfall" };
+
+          let monthly, label, note, hint;
+          if (strategy === "fixed") {
+            monthly = Math.round(port * rate / 12);
+            label   = "Spending target";
+            note    = `${pctOf(rate)}% of portfolio · per month · after tax`;
+            hint    = `Computed: ${pctOf(rate)}% of your ${fmtDollar(port)} portfolio, divided by 12. This is money to spend after tax — the engine withdraws extra to cover the tax bill on top of it.`;
+          } else if (p.sp > 0) {
+            monthly = Math.round(p.sp / 12);
+            label   = "Your spending target";
+            note    = `what you entered · per month · after tax`;
+            hint    = `The annual spending target you entered (${fmtDollar(p.sp)}), shown monthly. This is not a figure AiRA computed — the success rate is what tells you whether it holds. ${STRAT[strategy] || strategy} adjusts it year to year during the simulation. Money to spend after tax: the engine withdraws extra to cover the tax bill on top of it.`;
+          } else {
+            monthly = Math.round(port * benchRate / 12);
+            label   = "Estimated spending target";
+            note    = `${pctOf(benchRate)}% of portfolio · no target set · after tax`;
+            hint    = `You have not entered a spending target, so this is a placeholder: ${pctOf(benchRate)}% of your ${fmtDollar(port)} portfolio, divided by 12. Enter your real target in Profile → Spending. Money to spend after tax.`;
+          }
+
+          return (
+            <div className="met" title={hint}>
+              <div className="ml">{label}</div>
+              <div className="mv" style={{ color: "#4ade80", fontSize: 18 }}>${monthly.toLocaleString()}</div>
+              <div className="ms">{note}</div>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="chart-card">
