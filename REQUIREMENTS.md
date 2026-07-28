@@ -1832,3 +1832,60 @@ the "Not modelled yet" note currently sitting there.
 usually exceeds the lost benefit — the survivor keeps the larger of the two checks but
 files Single, so brackets narrow, the standard deduction roughly halves, IRMAA tiers halve,
 and the senior bonus halves, against a barely-reduced RMD and an unchanged portfolio.
+
+## 24. Per-person (You / Spouse) modelling — raised 2026-07-28
+
+Vincent, comparing against Boldin: *"in Boldin each income has a YOU and a SPOUSE, like
+Pension. Same with Work and income. The same is with Medicare and medical."* Screenshots
+show Medicare expenses and Long-Term Care split per person, each with its own lifetime
+cost and its own strategy.
+
+### The root cause — AiRA has ONE age
+
+Verified: `spouse.ssAge` (added v1.2.42) is a **claim** age, not the spouse's actual age.
+There is **no spouse date of birth anywhere in the codebase**. Every engine walks a single
+`age` from `retireAge` to `endAge`.
+
+That one fact blocks everything on Boldin's per-person list, because what makes per-person
+modelling matter financially is almost always an **age difference**:
+- Medicare starts at each person's own 65 — a 4-year gap means 4 years of one premium.
+- RMDs start at each person's own SECURE 2.0 age, off their own pre-tax balance.
+- The age-65 standard-deduction add-on and the OBBBA senior bonus apply per person
+  (v1.2.28 already made the bonus person-count aware, so that half is ready).
+- A realistic first-death age is usually the older or less healthy partner.
+
+So `spouse.dob` is the enabler. Per-person UI without it just computes the same thing
+twice in two columns.
+
+### Priority by financial impact, NOT by Boldin's layout
+
+1. **`spouse.dob`** — the enabler. One field; unlocks everything below.
+2. **Long-term care, per person.** The scenario that actually bankrupts couples is
+   ASYMMETRIC: one spouse in memory care at ~$110k/yr while the other still runs a
+   household. AiRA models LTC only as a household-level stress scenario
+   (`LTC_ANNUAL_COST`, `LTC_YEARS` at `App.jsx:~7077`), so it cannot express "one of us,
+   not both". Boldin also lets each person hold a different STRATEGY (deferred annuity vs
+   spend-down to Medicaid) — a real modelling difference, not a label.
+3. **Medicare / IRMAA start age per person.** IRMAA is charged per beneficiary and
+   `irmaaCost` is already filing-status aware (MFJ = 2× the single per-person amount), so
+   the AMOUNT is roughly right — but the START is not: both people are assumed to reach 65
+   together, so an age gap overstates early-retirement Medicare cost.
+4. **Pension per person + survivor percentage.** `otherIncomes` entries carry no owner, so
+   a joint-and-survivor election (typically 50% or 100% continuing to the survivor) cannot
+   be expressed. Pairs naturally with §22's widow's penalty — both fire on the same event.
+5. **Work income per person.** Lowest impact: no pre-retirement wages are modelled at all
+   today, so "one of us keeps working part-time" is already approximated by `otherIncomes`.
+
+### What should stay household-level
+
+**Account balances.** Splitting them doubles data entry to produce the same answer — the
+household draws from one pool. The one real exception is RMDs, which key off each person's
+own pre-tax balance; that matters only with a large age gap and is better served by an
+optional owner tag on pre-tax accounts than by splitting the whole account model.
+
+### Sequencing warning
+
+Do NOT build the two-column UI first. Honest order: `spouse.dob` → §22's `mfjAt(age)`
+time-varying filing status (the same refactor unlocks per-person age logic) → then LTC and
+Medicare per person. Building the columns ahead of the age model produces a screen full of
+controls that compute nothing — the ghost-setting failure mode at feature scale.
