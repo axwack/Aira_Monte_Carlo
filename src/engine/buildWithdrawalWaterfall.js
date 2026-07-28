@@ -26,6 +26,7 @@ import {
   idxB,
   irmaaCost,
   taxableSocialSecurity,
+  computeHouseholdSS,
   getStateBrackets,
   getRmdStartAge,
   FED_BRACKETS_2026_MFJ,
@@ -255,9 +256,8 @@ export function buildWithdrawalWaterfall(params = {}) {
     currentAge,
     endAge       = 90,
     sp: baseSp   = 80_000,
-    ssAge        = 67,
-    ssb          = 0,
-    ssCola       = 2.4,
+    // ssAge/ssb/ssCola removed from this destructure — computeHouseholdSS(params, age)
+    // reads them (and spouse.*) directly off the full params object instead.
     ab           = 0,
     abEndYear    = null,
     // Default matches BLANK_PROFILE.abGrowth in App.jsx. Previously absent here,
@@ -506,7 +506,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     // propIncome to match this engine's own `annuity` term below (Step 1) —
     // otherwise the baseline and the tracked ratio would drift apart even
     // within this one engine.
-    const ss0  = retireAge >= ssAge ? ssb : 0;
+    const ss0  = computeHouseholdSS(params, retireAge);
     // Cumulative CPI factor at the retirement year — still used by the rent and
     // carveout baselines below (those DO inflate at CPI). It is deliberately no
     // longer applied to rental income; see ab0.
@@ -555,9 +555,7 @@ export function buildWithdrawalWaterfall(params = {}) {
 
       // ── Step 1: Fixed income (computed BEFORE the spend adjustment so GK's
       // netNeed offset can use this year's own income/fixed-cost figures) ──
-      const ss = age >= ssAge
-        ? Math.round(ssb * Math.pow(1 + (ssCola || 2.4) / 100, age - ssAge))
-        : 0;
+      const ss = computeHouseholdSS(params, age);
       // Rental / Airbnb income — must match runMC and
       // simulateDeterministicWithStrategy exactly (REQUIREMENTS §13.2 #11). This
       // used to be a third, divergent model: it hardcoded 1.03 growth (ignoring

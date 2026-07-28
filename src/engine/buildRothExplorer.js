@@ -362,6 +362,51 @@ function taxableSocialSecurity(ssGross, otherIncome, isMFJ = true) {
   );
 }
 
+/**
+ * Combined household gross Social Security for a given age, COLA growth
+ * included — Phase 1 of §21 (REQUIREMENTS.md). Growth must live INSIDE this
+ * helper rather than in each caller: with two people able to claim at
+ * different ages, there is no single "age - claimAge" exponent a caller could
+ * apply to an already-combined number, so each component grows from its own
+ * start age and the pieces are summed after.
+ *
+ * `p.spouse.enabled === false` (the default) returns exactly the primary's own
+ * grown benefit — byte-for-byte identical to every call site's pre-existing
+ * single-person behavior, so existing profiles are unaffected.
+ *
+ * Spousal top-up: 50% of the HIGHER EARNER's PIA (FRA amount) minus the lower
+ * earner's own PIA, floored at 0. Payable only once BOTH have filed (deemed
+ * filing means filing for your own benefit and any spousal top-up happen
+ * together — see §21 rule 6), growing with COLA from that point. Delayed
+ * retirement credits never flow into it — it is capped at the FRA amount
+ * regardless of either person's actual claim age. `ssPia` falls back to `ssb`
+ * when not entered (claiming at exactly FRA, where the two amounts are equal).
+ */
+function computeHouseholdSS(p, age) {
+  const cola = 1 + (p.ssCola ?? 2.4) / 100;
+  const ssAge = p.ssAge || 67;
+  const own = age >= ssAge ? (p.ssb || 0) * Math.pow(cola, age - ssAge) : 0;
+  if (!p.spouse?.enabled) return Math.round(own);
+
+  const spouseSsAge = p.spouse.ssAge || 67;
+  const spouseOwn = age >= spouseSsAge ? (p.spouse.ssb || 0) * Math.pow(cola, age - spouseSsAge) : 0;
+
+  const primaryPia = p.ssPia || p.ssb || 0;
+  const spousePia = p.spouse.ssPia || p.spouse.ssb || 0;
+  const primaryIsHigher = primaryPia >= spousePia;
+  const bothFiledAge = Math.max(ssAge, spouseSsAge);
+
+  let topUp = 0;
+  if (age >= bothFiledAge) {
+    const raw = primaryIsHigher
+      ? Math.max(0, 0.5 * primaryPia - spousePia)  // tops up the SPOUSE's check
+      : Math.max(0, 0.5 * spousePia - primaryPia); // tops up the PRIMARY's check
+    topUp = raw * Math.pow(cola, age - bothFiledAge);
+  }
+
+  return Math.round(own + spouseOwn + topUp);
+}
+
 const ROTH_BASE_YEAR = new Date().getFullYear();
 
 function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
@@ -384,8 +429,7 @@ function buildRothExplorer(params = {}) {
   const {
     currentAge,
     retireAge,
-    ssAge,
-    ssb,
+    ssAge,   // primary's own claim age — still used for the Golden Year label and summary; combined gross now comes from computeHouseholdSS(params, age)
     ab,
     useAb,
     inf,
@@ -475,7 +519,7 @@ function buildRothExplorer(params = {}) {
     let sp = baseSp,
       lastReturn = retireAge < 62 ? preGr : postGr;
     const totalPort0 = pretaxBal + rothBal;
-    const ss0 = retireAge >= ssAge ? ssb : 0;
+    const ss0 = computeHouseholdSS(params, retireAge);
     const ab0 = ab > 0 ? ab : 0;
     const initDraw0 = Math.max(0, baseSp - ss0 - ab0);
     const initWR = totalPort0 > 0 ? initDraw0 / totalPort0 : 0.04;
@@ -511,7 +555,7 @@ function buildRothExplorer(params = {}) {
         );
       }
 
-      const ss = age >= ssAge ? Math.round(ssb * Math.pow(1.024, age - ssAge)) : 0;
+      const ss = computeHouseholdSS(params, age);
       const abn = ab > 0 && age <= 80
         ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
         : 0;
@@ -713,7 +757,7 @@ function buildRothLadder(params = {}) {
 
 export {
   buildRothExplorer, buildRothLadder,
-  progTax, idxB, irmaaCost, taxableSocialSecurity, getStateBrackets, getRmdStartAge,
+  progTax, idxB, irmaaCost, taxableSocialSecurity, computeHouseholdSS, getStateBrackets, getRmdStartAge,
   FED_BRACKETS_2026_MFJ, FED_BRACKETS_2026_SINGLE,
   LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,
   NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,
