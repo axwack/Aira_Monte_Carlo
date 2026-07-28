@@ -1889,3 +1889,58 @@ Do NOT build the two-column UI first. Honest order: `spouse.dob` → §22's `mfj
 time-varying filing status (the same refactor unlocks per-person age logic) → then LTC and
 Medicare per person. Building the columns ahead of the age model produces a screen full of
 controls that compute nothing — the ghost-setting failure mode at feature scale.
+
+## 25. HANDOFF TO THE HIGH-BUDGET ACCOUNT — 2026-07-28
+
+Vincent is doing cheap items on the low-budget account and the heavy work elsewhere.
+This is the split. **Shipped through v1.2.43** (639 tests pass, deployed).
+
+### Done today (do not redo)
+- v1.2.42 spouse Social Security UI — toggle, spouse benefit, spouse claim age, both FRA
+  amounts, live spousal top-up panel. Off by default.
+- v1.2.43 three small fixes: the 401(k) label that was routing Roth deferrals into pre-tax,
+  restore-link errors that conflated unknown/expired/used-up, and admin auth returning the
+  same 401 whether the secret was wrong or simply unset.
+- Spousal engine wiring (from another machine) **verified** by new tests in
+  `ghostSettings.test.js` — including that the top-up keys off the HIGHER earner's PIA.
+
+### Heavy items, in the order they unblock each other
+1. **§22 widow's penalty** — `mfjAt(age)` time-varying filing status, ~24 sites × 2 engines.
+   Plan and required tests already written in §22. **This is the highest-value single item**:
+   two separate users have now asked for it, and the tax hit exceeds the lost benefit.
+2. **§24 `spouse.dob`** — the enabler for all per-person modelling. Same refactor as (1)
+   touches the same code, so do them together or back-to-back.
+3. **§24 LTC per person** — the asymmetric case (one spouse in memory care, the other at
+   home) is what actually bankrupts couples and cannot be expressed today.
+4. **§19 NIIT-aware bracket fill** — cheap now: ENG-8 built the `min(...)`/`convCapReason`
+   shape specifically so more cliffs could be appended. Constants already exist.
+5. **§22.2 per-bucket returns** — the Bucket Strategy tab currently implies per-bucket risk
+   while the engine models one blended return. Correlation warning is in §22.2: do NOT draw
+   independently per bucket or diversification is fabricated.
+6. **§22.1 `roth401kContrib`** — v1.2.43 fixed the misleading label; the real field is still
+   missing. Needs the shared elective-deferral limit from TAX_REFERENCE (VERIFY first).
+
+### Cheap items still open (fine for the low-budget account)
+- `inspect` / `issue-jwt` resolve a synthetic `cus_ADMIN_*` id from an email instead of
+  querying the `email` column the way `issue-restore-link` already does — which is why the
+  admin panel could not find a real Stripe customer.
+- ENG-25: Step 5's `irmaaCap` omits realized gains from the MAGI base (ENG-8 fixed the
+  same defect on the conversion path; the two are now asymmetric).
+- Second-order gains: a taxable draw taken to PAY conversion tax realizes gains that are
+  not themselves taxed this pass. Documented in `buildWithdrawalWaterfall.js`.
+- `outside_cash` is now a behavioural duplicate of `from_taxable` — remove with a migration.
+- The 23 entries in `ghostSettings.test.js`'s `NEEDS_A_TARGETED_FIXTURE` — roughly 6
+  fixtures covers them. Start with `preRetireEq`/`postRetireEq`, since a fault there skews
+  every success rate.
+- Hero landing sliders: typed entry + `LANDING_SLIDER_LIMITS` (three have a $999B max with
+  a $25K step). design-authority already approved the dual-bound approach.
+
+### Not code — Vincent only
+- **`PrintReport.jsx` is the public placeholder on RED-DRAGON.** The real file is on
+  another machine and is not in git by design (§20). Production currently serves the
+  placeholder. Restore it, then `git update-index --skip-worktree src/report/PrintReport.jsx`.
+- **Drive-sync `aira-forecaster-agents/`** — gitignored, so the OBBBA section added to
+  `TAX_REFERENCE.md` and the `RMD_TABLES.md` age-89 correction (13.0 → 12.9) exist on one
+  machine only. The RMD one is a live trap for whoever ports doc values into code next.
+- **Check `[verify-session]` logs after the next sale** — v1.2.33 instrumented every exit
+  with a distinct reason. That names the credits root cause instead of a fourth guess.
