@@ -1,34 +1,92 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# AiRA — ignore rules
+#
+# REWRITTEN for the v1.0 repo. The previous version had three rules that were
+# actively dangerous, and they only failed to bite because the affected files
+# had been force-added earlier:
+#
+#   *.json   also matched package.json / package-lock.json / .eslintrc.json.
+#            A clean init would have produced a repo that cannot npm install.
+#   *.md     sat AFTER the !aira-forecaster-agents/knowledge/… un-ignores, and
+#            in gitignore the LAST matching rule wins — so TAX_REFERENCE.md and
+#            RMD_TABLES.md, deliberately tracked as the canonical tax constants,
+#            were re-ignored.
+#   main*    matched anything starting with "main" anywhere in the tree.
+#
+# Two ordering rules to preserve if you edit this file:
+#   1. A later rule overrides an earlier one. Un-ignores (!) must come AFTER
+#      the broad rule they carve an exception out of.
+#   2. You cannot re-include a file whose PARENT DIRECTORY is excluded. To keep
+#      one file out of an ignored folder you must ignore `dir/*` (its contents),
+#      not `dir` (the directory itself).
+#
+# And the lesson that made this necessary: .gitignore does nothing for files
+# already tracked. Adding a rule here does NOT remove anything from the repo —
+# that needs `git rm --cached`. Archive/ was listed here for months while its
+# contents sat public.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Dependencies
 node_modules
+
+# Build output. Generated from public/ + src/ by `npm run build`; every asset
+# in here has a tracked source, so the folder is pure artifact.
+/build
+
+# Local tooling / editor / OS
 desktop.ini
 public/desktop.ini
-main*
-*.json
 *-workspace
-# Local Netlify folder
-.netlify
-.env
-Archive
-/netlify
-.wrangler
-.dev.vars
-aira-forecaster-agents
-# ...except the tax reference tables. They contain no user data and no proprietary
-# logic, and keeping them untracked meant a correction on one machine never reached
-# the other two — RMD_TABLES.md carried a wrong age-89 divisor (13.0 vs the IRS 12.9)
-# on 2 of 3 machines while CLAUDE.md calls these files the canonical source. That is a
-# live trap: the next person to port doc values into code introduces a real RMD bug.
-!aira-forecaster-agents/
-!aira-forecaster-agents/knowledge/
-!aira-forecaster-agents/knowledge/TAX_REFERENCE.md
-!aira-forecaster-agents/knowledge/RMD_TABLES.md
+.vscode
 
-# Markdown docs — only README tracked (CLAUDE.md is private, synced manually)
+# Secrets and deploy state — never commit
+.env
+.env.*
+.dev.vars
+.wrangler
+.netlify
+/netlify
+
+# ── Personal data ────────────────────────────────────────────────────────────
+# Legacy app builds. These carried a real date of birth, portfolio balance,
+# Social Security benefit and domicile, and were public. Never track this again.
+Archive/
+
+# Profile data is user-specific by definition — the generic-first rule in
+# CLAUDE.md means none of it belongs in the repo.
+data/profile.json
+profile.json
+profile*.json
+*.local.json
+
+# Agent memory and definitions — private working notes, synced out-of-band.
+memory/
+.claude/
+
+# ── Markdown ─────────────────────────────────────────────────────────────────
+# Only README ships. CLAUDE.md and REQUIREMENTS.md are private planning docs,
+# synced between machines outside git.
 *.md
 !README.md
 
-# Local/integration tests — never commit
+# ── Agent workspace ──────────────────────────────────────────────────────────
+# Ignore the folder's CONTENTS (not the folder itself, or the un-ignores below
+# could not apply), then re-include only the two canonical reference tables.
+# These are tracked deliberately: they contain no user data, and keeping them
+# untracked meant a correction on one machine never reached the others —
+# RMD_TABLES.md carried a wrong age-89 divisor (13.0 vs the IRS 12.9) on two of
+# three machines while CLAUDE.md calls these files the canonical source. That
+# is a live trap for whoever ports a doc value into code next.
+#
+# This block is LAST on purpose: its un-ignores must outrank the *.md rule.
+aira-forecaster-agents/*
+!aira-forecaster-agents/knowledge/
+aira-forecaster-agents/knowledge/*
+!aira-forecaster-agents/knowledge/TAX_REFERENCE.md
+!aira-forecaster-agents/knowledge/RMD_TABLES.md
+
+# ── Local-only tests and reports ─────────────────────────────────────────────
 *.local.js
 *.local.ts
 TEST_REPORT.md
 tests/local/
-
