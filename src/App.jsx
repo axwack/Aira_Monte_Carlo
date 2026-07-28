@@ -183,8 +183,8 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.40";
-export const BUILD_TAG = "[main] v1.2.40 — Social Security claiming bounds move into AGE_LIMITS.ss (62-70) instead of being retyped inline in the sidebar slider and the wizard input. Both already allowed 70, but they were two independent literals, which is exactly how the retire-age controls came to disagree (50-68 slider vs 50-100 wizard). 70 is statutory: delayed retirement credits stop accruing there, so a cap below it would hide the highest-value decision this tool models. Also fixed landing hero copy that claimed no age before 72 clears 85% confidence while the search actually runs to AGE_LIMITS.retire.max. Prior v1.2.39: one money formatter, one number parser.";
+const APP_VERSION = "1.2.41";
+export const BUILD_TAG = "[main] v1.2.41 — The visitor landing is the homepage, not a one-time splash. It was gated on a aira_welcomed_v1 flag as well as the saved profile, so the first click through (or Skip) made it permanently unreachable — nothing in the app links back to it, so a visitor who bounced and returned never saw it again despite never entering a number. Now gated on the saved profile alone: unregistered visitors always land there, anyone with a saved profile goes straight to their dashboard, and dismissal still holds for the session. Removed the flag and a welcome banner in the Profile tab that could never render, since showWelcome early-returns to the landing above it. Prior v1.2.40: Social Security claiming bounds (62-70) moved into AGE_LIMITS.ss.";
 export const BUILD_TIME = "2026-07-28T01:05:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -11080,7 +11080,6 @@ function formatDate(dateString) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-const LS_WELCOMED_KEY = "aira_welcomed_v1";
 
 // ── Landing quick-estimate ───────────────────────────────────────────────────
 // A deliberately simple heuristic used ONLY on the visitor landing so the sliders
@@ -11382,9 +11381,16 @@ export default function AiRAForecaster() {
   const [activeTab, setTab] = useState(() =>
     loadProfileFromLocal() ? "networth" : "assumptions"
   );
-  const [showWelcome, setShowWelcome] = useState(
-    () => !loadProfileFromLocal() && !localStorage.getItem(LS_WELCOMED_KEY)
-  );
+  // The visitor landing is the homepage for anyone without a saved profile —
+  // not a one-time splash. It used to be gated on a `aira_welcomed_v1` flag as
+  // well, so the moment a visitor clicked through (or hit Skip) the page became
+  // permanently unreachable: no link anywhere returns to it. A visitor who
+  // bounced and came back tomorrow never saw it again despite never having
+  // entered a single number. Gating on the saved profile alone means unregistered
+  // visitors always land here, while anyone who has saved a profile goes straight
+  // to their dashboard and never sees it. Dismissal still holds for the session
+  // (React state), so entering the app is a one-click, non-repeating action.
+  const [showWelcome, setShowWelcome] = useState(() => !loadProfileFromLocal());
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
   const [mc, setMc] = useState(null);
@@ -11508,7 +11514,6 @@ export default function AiRAForecaster() {
   });
 
   const dismissWelcome = () => {
-    localStorage.setItem(LS_WELCOMED_KEY, "1");
     setShowWelcome(false);
   };
 
@@ -12701,39 +12706,6 @@ export default function AiRAForecaster() {
                 {/* AiraAITab is dormant — integration target is INSIDE ActionPlanTab (above), not as its own tab. See memory/project_aira_ai_tab.md. */}
                 {activeTab === "assumptions" && (
                   <>
-                  {showWelcome && (
-                    <div style={{
-                      background: "linear-gradient(135deg, rgba(37,99,235,0.18), rgba(16,185,129,0.12))",
-                      border: "1px solid rgba(37,99,235,0.35)",
-                      borderRadius: 12,
-                      padding: "18px 22px",
-                      marginBottom: 18,
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 14,
-                    }}>
-                      <span style={{ fontSize: 28, lineHeight: 1 }}>👋</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 700, fontSize: 15, color: "#e2e8f0", marginBottom: 4 }}>
-                          Welcome to AiRA Freedom Financial
-                        </div>
-                        <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
-                          Fill in your profile below to get started, or use the <strong style={{ color: "#60a5fa" }}>⬆ Import</strong> button
-                          in the toolbar to load a saved profile. Once your data is entered, hit <strong style={{ color: "#34d399" }}>▶ Run Monte Carlo</strong> to
-                          see your retirement forecast.
-                        </div>
-                      </div>
-                      <button
-                        onClick={dismissWelcome}
-                        title="Dismiss"
-                        style={{
-                          background: "none", border: "none", color: "#64748b",
-                          cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 2px",
-                          flexShrink: 0,
-                        }}
-                      >×</button>
-                    </div>
-                  )}
                   <ProfileWizard
                     values={{
                       ...assumptions,
