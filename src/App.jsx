@@ -184,9 +184,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.41";
-export const BUILD_TAG = "[main] v1.2.41 — The visitor landing is the homepage, not a one-time splash. It was gated on a aira_welcomed_v1 flag as well as the saved profile, so the first click through (or Skip) made it permanently unreachable — nothing in the app links back to it, so a visitor who bounced and returned never saw it again despite never entering a number. Now gated on the saved profile alone: unregistered visitors always land there, anyone with a saved profile goes straight to their dashboard, and dismissal still holds for the session. Removed the flag and a welcome banner in the Profile tab that could never render, since showWelcome early-returns to the landing above it. Prior v1.2.40: Social Security claiming bounds (62-70) moved into AGE_LIMITS.ss.";
-export const BUILD_TIME = "2026-07-28T01:05:00Z";
+const APP_VERSION = "1.2.42";
+export const BUILD_TAG = "[main] v1.2.42 — Spouse Social Security inputs (§21 Phase 1 UI). The engine wiring for a second benefit landed earlier without any UI, so the feature was unreachable. Adds an opt-in 'Add my spouse's Social Security' toggle plus the spouse's benefit, claim age, and both partners' full-retirement (FRA) amounts. Everything is a number read straight off ssa.gov — AiRA deliberately does not derive benefits from a PIA and claim-age schedule, because SSA’s own estimate beats our reconstruction of it and cannot drift out of date. The FRA amounts are asked for separately because the spousal top-up is 50% of the HIGHER earner’s FRA amount, not 50% of whatever they actually claim, and delayed credits never raise it — it is the one figure that cannot be inferred from what someone receives. A live panel shows the resulting top-up, or says plainly when there is none. Off by default, so every existing plan is untouched. NOT added: a 'when does my spouse die' input — the engine does not model that event yet, and shipping the control first would create exactly the dead setting ghostSettings.test.js exists to catch. An inline note says so and points at the Stress Test scenario that does cover it. 639 tests pass.";
+export const BUILD_TIME = "2026-07-28T14:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -10979,6 +10979,92 @@ function RetirementPanel({ values, onChange }) {
         <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
           <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs"/>
         </WFieldRow>
+
+        {/* ── Spouse Social Security (§21 Phase 1) ────────────────────────────
+            Everything here is a number the user reads off ssa.gov. We deliberately
+            do NOT derive benefits from a PIA + claim-age schedule: SSA's own
+            estimate beats our reconstruction of it, and it cannot drift out of
+            date on us. See REQUIREMENTS §21 "agreed approach".
+
+            Only fields the engine actually reads are shown. There is no
+            "when does my spouse die" input yet, because the engine does not model
+            that event — shipping the control first would create exactly the kind of
+            dead setting src/ghostSettings.test.js exists to catch. */}
+        <WFieldRow
+          label="Add my spouse's Social Security"
+          helper="Model two benefits instead of one. Off leaves your plan exactly as it is today."
+        >
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "#cbd5e1" }}>
+            <input
+              type="checkbox"
+              checked={!!values.spouse?.enabled}
+              onChange={(e) =>
+                onChange("spouse", { ...(values.spouse || { ssb: 0, ssAge: 67, ssPia: 0 }), enabled: e.target.checked })
+              }
+              style={{ width: 15, height: 15, accentColor: "#14b8a6", cursor: "pointer" }}
+            />
+            {values.spouse?.enabled ? "Included" : "Not included"}
+          </label>
+        </WFieldRow>
+
+        {values.spouse?.enabled && (() => {
+          const sp = values.spouse || {};
+          const setSpouse = (patch) => onChange("spouse", { ...sp, ...patch });
+          // The spousal top-up is 50% of the HIGHER earner's PIA (the full-retirement-age
+          // amount) — not 50% of whatever they actually claim, and delayed credits never
+          // raise it. So we have to ask for the FRA amount separately; it is the one
+          // number that cannot be inferred from what someone is receiving.
+          const primaryPia = Number(values.ssPia) || 0;
+          const spousePia  = Number(sp.ssPia) || 0;
+          const higherPia  = Math.max(primaryPia, spousePia);
+          const topUp      = Math.max(0, higherPia * 0.5 - spousePia);
+          return (
+            <>
+              <WFieldRow label="Spouse's benefit" helper="What SSA estimates your spouse will receive at the age they plan to claim. (Per Month)">
+                <ANumInput value={Math.round((sp.ssb || 0) / 12)} onSet={(v) => setSpouse({ ssb: Math.round(v * 12) })} min={0} max={5000} step={50} suffix="/mo" />
+              </WFieldRow>
+              <WFieldRow label="Spouse's SS start age" helper="Can differ from yours — each of you claims independently.">
+                <ANumInput value={sp.ssAge || 67} onSet={(v) => setSpouse({ ssAge: v })} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs" />
+              </WFieldRow>
+              <WFieldRow label="Your benefit at full retirement age" helper="From your SSA statement — the amount at FRA, not at the age you plan to claim. Used only for the spousal top-up. (Per Month)">
+                <ANumInput value={Math.round(primaryPia / 12)} onSet={(v) => onChange("ssPia", Math.round(v * 12))} min={0} max={5000} step={50} suffix="/mo" />
+              </WFieldRow>
+              <WFieldRow label="Spouse's benefit at full retirement age" helper="Same, for your spouse. Enter it even if they never worked — a $0 here still earns the spousal top-up. (Per Month)">
+                <ANumInput value={Math.round(spousePia / 12)} onSet={(v) => setSpouse({ ssPia: Math.round(v * 12) })} min={0} max={5000} step={50} suffix="/mo" />
+              </WFieldRow>
+
+              {higherPia > 0 && (
+                <div style={{
+                  margin: "2px 0 14px", padding: "9px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
+                  background: topUp > 0 ? "rgba(20,184,166,0.09)" : "rgba(148,163,184,0.08)",
+                  border: `1px solid ${topUp > 0 ? "rgba(20,184,166,0.3)" : "rgba(148,163,184,0.22)"}`,
+                  color: topUp > 0 ? "#5eead4" : "#94a3b8",
+                }}>
+                  {topUp > 0 ? (
+                    <>
+                      <strong>Spousal top-up: {fmtDollar(Math.round(topUp / 12))}/mo</strong> — your spouse's own
+                      benefit is below half of the higher earner's full-retirement amount, so Social Security
+                      tops it up to that level. Already included in your plan.
+                    </>
+                  ) : (
+                    <>No spousal top-up: your spouse's own benefit already exceeds half of the higher
+                    earner's full-retirement amount, so they simply receive their own.</>
+                  )}
+                </div>
+              )}
+
+              <div style={{
+                margin: "0 0 16px", padding: "9px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
+                background: "rgba(251,146,60,0.09)", border: "1px solid rgba(251,146,60,0.28)", color: "#fdba74",
+              }}>
+                <strong>Not modelled yet:</strong> what happens when one of you dies. The survivor keeps the
+                larger of the two checks and files taxes as Single, which narrows the brackets and roughly
+                halves the standard deduction — often a bigger hit than the lost benefit. Today that is only
+                available as the <em>Spouse passes early</em> scenario on the Stress Test tab.
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       <div>
