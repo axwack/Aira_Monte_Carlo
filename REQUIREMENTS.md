@@ -1386,6 +1386,35 @@ Boldin's Social Security entry UI (screenshot: separate "You" / "Your Spouse" ca
 with a monthly benefit and a *month/year* start date, plus a "Model a benefit reduction in
 the future" toggle and a COLA rate).
 
+### ✅ CROSS-MACHINE STATUS (RED-DRAGON, 2026-07-28) — engine wiring VERIFIED
+
+Vincent pulled on RED-DRAGON and flagged a discrepancy between this section and the
+code. Resolved. Three machines share this repo (RED-DRAGON main, WHITE-GAMING, T14),
+and the spousal engine wiring was committed from another one in `8c1986b` **without
+tests and without the suite being re-run** — its own note said so.
+
+**Verified on RED-DRAGON:**
+- The `ghostSettings` detector (added the day before) immediately failed on `ssPia`,
+  which is exactly the job it was written for: a new profile field that reached no
+  engine. It turned out to be conditionally inert (only read when `spouse.enabled`),
+  not dead — but nothing had proven that either way.
+- Added a **spousal Social Security block to `src/ghostSettings.test.js`** which now
+  proves the wiring is real: enabling a spouse changes the model; the spouse's own
+  benefit moves it; **the higher earner's PIA moves it via the top-up** (the rule most
+  likely to be implemented wrong, since the top-up keys off PIA and not the claimed
+  benefit); and `spouse.enabled === false` reproduces the single-person result exactly,
+  so no existing profile is disturbed.
+- **Full suite green on the merged state: 639 pass, 13 skipped, 0 fail.** Production
+  build compiles. That is the check the originating session did not run.
+
+**So the engine half of Phase 1 is DONE and now proven.** Still outstanding for Phase 1:
+1. **UI** — no "Add my spouse's Social Security" toggle or spouse benefit/claim-age/PIA
+   inputs exist in `RetirementPanel`. Without them the feature is unreachable by users,
+   which is why it must not be announced yet.
+2. A dedicated `spousalSS.test.js` for the benefit arithmetic itself (the ghost-detector
+   block proves the fields are *wired*, not that the dollar amounts are *right*).
+3. logic-validator review of the top-up rule and the COLA-per-person choice.
+
 ### ⏸️ Session status (2026-07-27 evening) — engine wiring done, UI/tests NOT done
 
 Phase 1 (below) was **partially implemented on one machine this session, then explicitly

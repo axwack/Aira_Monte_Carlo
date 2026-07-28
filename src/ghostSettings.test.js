@@ -138,6 +138,12 @@ const NEEDS_A_TARGETED_FIXTURE = {
   rothEmergencyReserve:    "this fixture never draws Roth, so the floor never binds",
   useAb:                   "gates rental; ab is already non-zero here",
   useJointRmdTable:        "needs a fixture that reaches RMD age with the joint gate open",
+  // Added by the spousal-SS engine wiring (§21, 2026-07-27, from another machine).
+  // Only read when spouse.enabled is true, which BLANK_PROFILE defaults to false.
+  // Proven live by the "spousal Social Security" block at the bottom of this file —
+  // do NOT move these to INERT_BY_DESIGN, they are real inputs.
+  ssPia:                   "only read when spouse.enabled; see the spousal SS block below",
+  spouse:                  "object; exercised directly by the spousal SS block below",
 };
 
 /** A number summarising everything the engines computed. Any real change moves it. */
@@ -228,5 +234,49 @@ describe("no ghost settings — runMC must honour them too", () => {
     ["rothConversionTarget", "22", "off"],
   ])("runMC responds to '%s'", (key, a, b) => {
     expect(mcFingerprint({ ...BASE, [key]: a })).not.toBe(mcFingerprint({ ...BASE, [key]: b }));
+  });
+});
+
+// ─── Spousal Social Security (§21 Phase 1 engine wiring) ─────────────────────
+// The engine wiring landed from another machine WITHOUT tests and without the
+// suite being re-run. These are the missing checks: they prove the new fields are
+// real inputs rather than a fifth ghost setting, and they pin the one rule that is
+// easy to get wrong.
+describe("spousal Social Security is wired to the engines", () => {
+  const COUPLE = {
+    ...BASE,
+    ssPia: 30_000,
+    spouse: { enabled: true, ssb: 12_000, ssAge: 67, ssPia: 12_000 },
+  };
+
+  test("enabling a spouse changes the model at all", () => {
+    const off = fingerprint({ ...COUPLE, spouse: { ...COUPLE.spouse, enabled: false } });
+    const on  = fingerprint(COUPLE);
+    expect(Math.round(on)).not.toBe(Math.round(off));
+  });
+
+  test("the spouse's own benefit moves the result", () => {
+    const a = fingerprint(COUPLE);
+    const b = fingerprint({ ...COUPLE, spouse: { ...COUPLE.spouse, ssb: 20_000 } });
+    expect(Math.round(a)).not.toBe(Math.round(b));
+  });
+
+  test("the higher earner's PIA moves the result via the spousal top-up", () => {
+    // The top-up is 50% of the HIGHER earner's PIA, so raising the primary's PIA
+    // must raise household SS even though the primary's own benefit is unchanged.
+    // If this passes only because ssb changed, the top-up is not really wired.
+    const a = fingerprint({ ...COUPLE, ssPia: 30_000 });
+    const b = fingerprint({ ...COUPLE, ssPia: 60_000 });
+    expect(Math.round(a)).not.toBe(Math.round(b));
+  });
+
+  test("spouse.enabled = false reproduces the single-person result exactly", () => {
+    // Regression lock: every existing profile must be untouched by this feature.
+    const single = fingerprint(BASE);
+    const disabled = fingerprint({
+      ...BASE, ssPia: 30_000,
+      spouse: { enabled: false, ssb: 99_000, ssAge: 62, ssPia: 99_000 },
+    });
+    expect(Math.round(disabled)).toBe(Math.round(single));
   });
 });
