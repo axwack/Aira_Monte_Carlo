@@ -1945,10 +1945,48 @@ This is the split. **Shipped through v1.2.43** (639 tests pass, deployed).
 - **Check `[verify-session]` logs after the next sale** — v1.2.33 instrumented every exit
   with a distinct reason. That names the credits root cause instead of a fourth guess.
 
-## 26. ⚠️ Equity glidepath: hardcoded 62 bug + user-set switch age — 2026-07-28
+## 26. ✅ SHIPPED v1.2.45 — Equity glidepath: hardcoded 62 bug + user-set switch age
 
-**Priority: DO THIS FIRST next session.** Vincent: *"I plan on 90/10 until 67 — can we do
-that?"* Answer today: no. And while checking, found a real bug in the same code.
+**Status: DONE 2026-07-28.** 648 tests pass, production build compiles. Answer to
+*"I plan on 90/10 until 67 — can we do that?"* is now yes: Profile → Assumptions →
+"Switch to the post-retirement mix at age".
+
+**What shipped, vs what this section originally scoped:**
+- New `src/engine/glidepath.js` — `resolveGlidepathSwitchAge()` / `glidepathEqPct()` /
+  `glidepathEquityWeight()`. Single source of truth; every engine imports it.
+- The hardcoded 62 was in **five** places, not two. §26 found the `runMC` pair; the same
+  literal was also in `simulateDeterministicWithStrategy`, `buildRothExplorer` and
+  `buildConversionLadder`, none of them agreeing with `portReturn`. All five fixed.
+- `glidepathSwitchAge` added to `BLANK_PROFILE` (null), forwarded through the `params`
+  memo, and given a UI row directly under the two equity-weight inputs it arbitrates
+  between (blank = "shift at your retirement age").
+- `accumulateToRetirement` grows per-age rather than at a pinned `preGr`, so a switch age
+  set BEFORE retirement is honoured in the accumulation phase too.
+
+**Correction to this section's Part A framing:** the claim that a 67-year-old retiree was
+"de-risked five years early in every stress run" is wrong in that direction. The
+`seqOverride` branch only covers RETIREMENT years, so with `retireAge` 67 every year in it
+is past 62 and the old code and the fix agree. The bug actually bit (a) anyone retiring
+BEFORE 62 — ages `retireAge`..61 got the accumulation weight in stress runs but the
+retirement weight in the headline run — and (b) every user of the new later switch age.
+The regression test is written against case (b) and was verified to FAIL against the old
+line before being kept.
+
+**Behaviour change to know about:** for profiles retiring before 62, the Roth Explorer and
+the deterministic schedule previously grew the first drawdown years at the ACCUMULATION
+rate while the Monte Carlo beside them used the retirement rate. They now agree. This is
+why `roth.test.js` §14 (ALEX_FULL, retireAge 60) needed its `grForAge` helper updated — it
+now derives from `ALEX_FULL.retireAge` instead of a literal 62. The `glidepathSwitchAge =
+null` regression lock holds in all three engines.
+
+**Tests:** six, in `ghostSettings.test.js` → `describe("glidepathSwitchAge …")`.
+
+---
+
+### Original entry (kept for context)
+
+Vincent: *"I plan on 90/10 until 67 — can we do that?"* Answer today: no. And while
+checking, found a real bug in the same code.
 
 ### Part A — THE BUG (fix regardless of the feature)
 

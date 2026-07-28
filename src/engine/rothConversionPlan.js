@@ -11,6 +11,7 @@
 import { buildWithdrawalWaterfall } from "./buildWithdrawalWaterfall.js";
 import { getRmdStartAge, getStateBrackets } from "./buildRothExplorer.js";
 import { expectedReturn } from "./expectedReturn.js";
+import { resolveGlidepathSwitchAge } from "./glidepath.js";
 
 const MIN_REMAINING_BALANCE = 10_000;
 
@@ -232,13 +233,13 @@ export function buildConversionLadder(params = {}, rothMode = "fill_22") {
   const { ssAge, retireAge } = params;
   // Row 0 of buildWithdrawalWaterfall's smart.rows is always age === retireAge,
   // so this must derive the SAME growth rate that engine applied internally to
-  // grow that row (age < 62 ? preRetireEq-derived : postRetireEq-derived,
-  // mirroring runMC's portReturn age-62 switch) — otherwise "backing out" the
-  // pre-conversion starting balance below would divide by the wrong rate. An
-  // explicit params.gr override still wins, matching buildWithdrawalWaterfall.
+  // grow that row — otherwise "backing out" the pre-conversion starting balance
+  // below would divide by the wrong rate. That engine's test is
+  // `age < glidepathSwitchAge`; this one hardcoded 62, so the two disagreed for
+  // anyone retiring before 62. An explicit params.gr override still wins.
   const preGr  = params.gr ?? (expectedReturn(params.preRetireEq ?? 91) / 100);
   const postGr = params.gr ?? (expectedReturn(params.postRetireEq ?? 70) / 100);
-  const gr = retireAge < 62 ? preGr : postGr;
+  const gr = retireAge < resolveGlidepathSwitchAge(params) ? preGr : postGr;
 
   const { smart } = buildWithdrawalWaterfall({ ...params, rothConversionTarget: target, irmaaGuard });
   const rows = smart.rows;

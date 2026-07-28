@@ -26,8 +26,9 @@
  * "…wait, why DOESN'T this affect anything?"
  */
 
-import { BLANK_PROFILE, runMC } from "./App";
+import { BLANK_PROFILE, runMC, runStress, simulateDeterministicWithStrategy } from "./App";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
+import { resolveGlidepathSwitchAge, glidepathEqPct, LEGACY_GLIDEPATH_SWITCH_AGE } from "./engine/glidepath.js";
 
 // A profile with enough money and enough happening that most settings have room
 // to show an effect. BLANK_PROFILE itself is mostly zeros, so perturbing a field
@@ -148,6 +149,10 @@ const NEEDS_A_TARGETED_FIXTURE = {
   // do NOT move these to INERT_BY_DESIGN, they are real inputs.
   ssPia:                   "only read when spouse.enabled; see the spousal SS block below",
   spouse:                  "object; exercised directly by the spousal SS block below",
+  // Defaults to null (→ switch at retireAge), so the generic sweep skips it as a
+  // non-number. It is a REAL input — proven live in runMC, the stress path and the
+  // deterministic schedule by the equity glidepath block below. REQUIREMENTS §26.
+  glidepathSwitchAge:      "null by default; proven by the equity glidepath block below",
 };
 
 /** A number summarising everything the engines computed. Any real change moves it. */
@@ -319,5 +324,93 @@ describe("equity glidepath reaches runMC", () => {
       return r.pcts?.[r.pcts.length - 1]?.p50 ?? 0;
     };
     expect(p50(85)).toBeGreaterThan(p50(25));
+  });
+});
+
+// ─── glidepathSwitchAge (REQUIREMENTS §26) ───────────────────────────────────
+// Two defects motivated this field, and both are guarded here.
+//
+// (A) THE BUG. runMC computes the equity weight in TWO places: portReturn, which
+//     switched at the retirement age, and the seqOverride branch — the one every
+//     Stress Test scenario runs through — which switched at a HARDCODED 62. The
+//     same function modelled two different investors depending on which branch
+//     produced the year. The same literal was also in the deterministic schedule,
+//     buildRothExplorer and buildConversionLadder.
+//
+// (B) THE FEATURE. The switch was welded to retireAge, so "stay 90/10 until 67
+//     even though I retire at 62" was inexpressible. When you de-risk and when
+//     you stop working are different decisions.
+//
+// Both now resolve through engine/glidepath.js. Note what the fix does NOT do:
+// it does not make the stress and normal paths produce the same NUMBERS. They
+// consume the RNG differently (the stress branch prescribes the equity leg and
+// draws only the bond leg), so the paths legitimately diverge. What must hold is
+// that they use the same equity WEIGHT at each age — enforced below by proving
+// the stress path honours the field at all, which the hardcoded 62 could not.
+describe("glidepathSwitchAge — one switch age, honoured by every engine", () => {
+  // Retire at 70 so a switch age set LATER (75) lands inside the drawdown years
+  // the stress sequence overrides. This is the shape the old hardcoded 62 could
+  // not represent: at 62 every one of these ages is already "post-retirement".
+  const LATE = { ...BASE, currentAge: 60, retireAge: 70, endAge: 90, preRetireEq: 90, postRetireEq: 40 };
+  const mcPrint = (p) => {
+    const r = runMC(p, p.endAge, 120, 42, true);
+    return `${r.rate}|${r.pcts?.[r.pcts.length - 1]?.p50}`;
+  };
+  const stressPrint = (p) => {
+    const r = runStress(p, p.endAge, 120, 99);
+    return `${r.rate}|${r.pcts?.[r.pcts.length - 1]?.p50}`;
+  };
+  const detPrint = (p) => {
+    const { schedule, portAtRetire } = simulateDeterministicWithStrategy(p, p.inf, "gk");
+    return `${portAtRetire}|${schedule[schedule.length - 1]?.portfolioEnd}`;
+  };
+
+  test("the resolver: explicit value wins, else retireAge, else the legacy 62", () => {
+    expect(resolveGlidepathSwitchAge({ glidepathSwitchAge: 67, retireAge: 62 })).toBe(67);
+    expect(resolveGlidepathSwitchAge({ glidepathSwitchAge: null, retireAge: 62 })).toBe(62);
+    expect(resolveGlidepathSwitchAge({ retireAge: 58 })).toBe(58);
+    expect(resolveGlidepathSwitchAge({})).toBe(LEGACY_GLIDEPATH_SWITCH_AGE);
+  });
+
+  test("switch age 67 with retireAge 62 keeps the PRE-retirement weight through 66", () => {
+    const sw = resolveGlidepathSwitchAge({ glidepathSwitchAge: 67, retireAge: 62 });
+    for (let age = 62; age <= 66; age++) {
+      expect(glidepathEqPct(age, 90, 40, sw)).toBe(90);
+    }
+    // The switch age itself is the FIRST year at the post-retirement mix.
+    expect(glidepathEqPct(67, 90, 40, sw)).toBe(40);
+    expect(glidepathEqPct(68, 90, 40, sw)).toBe(40);
+  });
+
+  test("REGRESSION LOCK: null reproduces the retireAge behaviour exactly, in all three engines", () => {
+    // The whole point of defaulting to null: every existing saved plan must be
+    // byte-identical until the user touches the field.
+    expect(mcPrint({ ...LATE, glidepathSwitchAge: null })).toBe(mcPrint({ ...LATE, glidepathSwitchAge: LATE.retireAge }));
+    expect(stressPrint({ ...LATE, glidepathSwitchAge: null })).toBe(stressPrint({ ...LATE, glidepathSwitchAge: LATE.retireAge }));
+    expect(detPrint({ ...LATE, glidepathSwitchAge: null })).toBe(detPrint({ ...LATE, glidepathSwitchAge: LATE.retireAge }));
+  });
+
+  test("THE BUG: the stress path honours the switch age (it used to hardcode 62)", () => {
+    // With the hardcoded 62 these two were identical — every age in the drawdown
+    // was past 62, so the stress branch pinned the whole run to postRetireEq no
+    // matter what the user set. This is the assertion that would have caught it.
+    expect(stressPrint({ ...LATE, glidepathSwitchAge: 75 }))
+      .not.toBe(stressPrint({ ...LATE, glidepathSwitchAge: null }));
+  });
+
+  test("runMC and the deterministic schedule both honour it too", () => {
+    expect(mcPrint({ ...LATE, glidepathSwitchAge: 75 })).not.toBe(mcPrint({ ...LATE, glidepathSwitchAge: null }));
+    expect(detPrint({ ...LATE, glidepathSwitchAge: 75 })).not.toBe(detPrint({ ...LATE, glidepathSwitchAge: null }));
+  });
+
+  test("direction: staying at the higher equity weight longer grows the portfolio more", () => {
+    // Guards against the field being read but applied backwards — "they differ"
+    // alone would pass either way. preRetireEq 90 vs postRetireEq 40, same seed,
+    // so only the length of the aggressive phase changes.
+    const end = (switchAge) => {
+      const { schedule } = simulateDeterministicWithStrategy({ ...LATE, glidepathSwitchAge: switchAge }, LATE.inf, "gk");
+      return schedule[schedule.length - 1]?.portfolioEnd ?? 0;
+    };
+    expect(end(80)).toBeGreaterThan(end(null));
   });
 });

@@ -71,6 +71,7 @@ import {
 } from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
+import { resolveGlidepathSwitchAge, glidepathEquityWeight, glidepathEqPct } from "./engine/glidepath.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, healthcareShockDraw, expectedHealthcareShock } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
@@ -184,9 +185,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.44";
-export const BUILD_TAG = "[main] v1.2.44 — Two small fixes. (1) The admin panel could not find a real paying customer: inspect and issue-jwt called fakeCustomerId(email), which INVENTS a cus_ADMIN_ id matching only simulate-purchase test rows, so a genuine Stripe customer always came back not found while their credits sat in D1 under a real cus_ id. Both now resolve the email against customers.email first — the same lookup issue-restore-link already used — falling back to the synthetic id only so admin test flows keep working. (2) preRetireEq/postRetireEq are now proven to reach runMC, with a direction check that more equity raises the median outcome, so the fields cannot be read but wired backwards. They set the stock/bond mix for the entire portfolio, so a fault there would skew every success rate in the product. 642 tests.";
-export const BUILD_TIME = "2026-07-28T17:30:00Z";
+const APP_VERSION = "1.2.45";
+export const BUILD_TAG = "[main] v1.2.45 — Equity glidepath: one switch age, honoured everywhere (REQUIREMENTS §26). THE BUG: runMC computed the equity weight in two places — portReturn (switched at the retirement age) and the seqOverride branch every Stress Test runs through (switched at a HARDCODED 62). The same function modelled two different investors depending on which branch produced the year, so a stress run could not be compared with the headline run. The same literal was also in the deterministic schedule, buildRothExplorer and buildConversionLadder — four copies, none agreeing with portReturn. All five now resolve through the new engine/glidepath.js. THE FEATURE: the switch was welded to retireAge, so 'stay 90/10 until 67 even though I retire at 62' was inexpressible — when you de-risk and when you stop working are different decisions. New profile field glidepathSwitchAge, default null → retireAge, so every saved plan is byte-identical until it is set; forwarded through the params memo (the classic miss) and editable under the two equity-weight inputs it arbitrates between. Six new tests including a regression lock across all three engines and one that fails on the old hardcoded line. 648 tests pass.";
+export const BUILD_TIME = "2026-07-28T21:45:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -609,7 +610,11 @@ export const BLANK_PROFILE = {
   ssCola: 2.4,
   preRetireEq: 91,
   postRetireEq: 70,
-  fixedWithdrawalRate: 4.0, 
+  // null → the glidepath shifts at retireAge (previous behaviour). Set it to
+  // separate "when I de-risk" from "when I stop working" — e.g. 90/10 until 67
+  // while retiring at 62. See engine/glidepath.js.
+  glidepathSwitchAge: null,
+  fixedWithdrawalRate: 4.0,
   hcShockAge: 72,
   hcProb: 3.5,
   hcMin: 70_000,
@@ -812,15 +817,12 @@ function clip(v, lo, hi) {
 function bootstrapDraw(arr, rand) {
   return arr[Math.floor(rand() * arr.length)];
 }
-function portReturn(age, rand, preRetireEq, postRetireEq, retireAge) {
-  // The glidepath switches at the user's RETIREMENT age. This was hardcoded to
-  // 62, so anyone retiring early kept an accumulation-weight equity allocation
-  // years into drawdown (understating sequence risk), while anyone retiring late
-  // was derisked years before they stopped working (understating their growth).
-  // Falls back to 62 only when no retireAge is supplied, preserving old
-  // behavior for any caller that hasn't been updated.
-  const switchAge = Number.isFinite(Number(retireAge)) ? Number(retireAge) : 62;
-  const eqW = age < switchAge ? (preRetireEq || 91) / 100 : (postRetireEq || 70) / 100;
+function portReturn(age, rand, preRetireEq, postRetireEq, switchAge) {
+  // The glidepath switches at `glidepathSwitchAge`, defaulting to the user's
+  // RETIREMENT age. Callers pass the already-resolved age from
+  // resolveGlidepathSwitchAge — see engine/glidepath.js for why this is
+  // single-sourced (four call sites had drifted onto a hardcoded 62).
+  const eqW = glidepathEquityWeight(age, preRetireEq, postRetireEq, switchAge);
   return (
     eqW * bootstrapDraw(SP500, rand) + (1 - eqW) * bootstrapDraw(BONDS, rand)
   );
@@ -1081,6 +1083,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // the past. Balances are always TODAY's, so starting the drawdown there would
   // replay years that already happened. See effectiveRetireAge.
   const retAgeMC = effectiveRetireAge(p.retireAge, p.currentAge);
+  // Equity glidepath switch age — resolved ONCE here so the accumulation loop,
+  // the normal drawdown draw, and the stress-sequence branch below cannot
+  // disagree (the stress branch used to hardcode 62). Uses the EFFECTIVE
+  // retirement age as the fallback, matching every other age in this engine.
+  const glideSwitchAgeMC = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeMC });
   const accYrs = Math.max(0, retAgeMC - p.currentAge);
   const retYrs = endAge - retAgeMC;
   const results = [];
@@ -1147,7 +1154,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     // Accumulation phase
     for (let y = 0; y < accYrs; y++) {
-      const ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, retAgeMC);
+      const ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
       pretax   = Math.max(0, pretax   * (1 + ret));
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
@@ -1219,10 +1226,15 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // same age-based equity weight portReturn uses. No override → normal draw.
       let r;
       if (seqOverride && y < seqOverride.length) {
-        const eqW = age < 62 ? (p.preRetireEq || 91) / 100 : (p.postRetireEq || 70) / 100;
+        // Same weight portReturn would have used at this age. This line had a
+        // hardcoded 62 while portReturn switched at the retirement age, so every
+        // Stress Test scenario modelled a DIFFERENT investor than the headline
+        // run: a 67 retiree was de-risked five years early, a 60 retiree stayed
+        // aggressive two years too long.
+        const eqW = glidepathEquityWeight(age, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
         r = eqW * seqOverride[y] + (1 - eqW) * bootstrapDraw(BONDS, rand);
       } else {
-        r = portReturn(age, rand, p.preRetireEq, p.postRetireEq, retAgeMC);
+        r = portReturn(age, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
       }
       const inflY = bootstrapDraw(INFL, rand);
 
@@ -1772,13 +1784,17 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
 
   // Clamped for already-retired users — see effectiveRetireAge.
   const retAgeDet = effectiveRetireAge(p.retireAge, p.currentAge);
+  // Same resolved switch age runMC uses, so the deterministic table and the
+  // Monte Carlo it sits beside model the same investor (this engine used to
+  // hardcode 62 in its retirement loop).
+  const glideSwitchAgeDet = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeDet });
   const accYrs = Math.max(0, retAgeDet - p.currentAge);
   const retYrs = p.endAge - retAgeDet;
   let port = p.port;
 
   // Accumulation using median returns
   for (let y = 0; y < accYrs; y++) {
-    const ret = expectedReturn(p.preRetireEq ?? 91) / 100;
+    const ret = expectedReturn(glidepathEqPct(p.currentAge + y, p.preRetireEq, p.postRetireEq, glideSwitchAgeDet)) / 100;
     // Aggregate portfolio here (no per-bucket split in this engine), but the
     // total must include every contribution stream runMC applies or the two
     // engines report different portfolio-at-retirement figures.
@@ -1853,7 +1869,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   for (let y = 0; y < retYrs; y++) {
     const age = retAgeDet + y;
     const yr = CURRENT_YEAR + (age - p.currentAge);
-    const ret = age < 62 ? expectedReturn(p.preRetireEq ?? 91) / 100 : expectedReturn(p.postRetireEq ?? 70) / 100;
+    const ret = expectedReturn(glidepathEqPct(age, p.preRetireEq, p.postRetireEq, glideSwitchAgeDet)) / 100;
     const inflY = inf / 100;
     const cumInfl = Math.pow(1 + inflY, y);
     const adjFloor = gkFloor * cumInfl;
@@ -6339,7 +6355,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
       <div className="chart-card">
         <div className="ct">
           📈 Deterministic Schedule – {strategyLabel} · Median historical returns
-          ({expectedReturn(p.preRetireEq ?? 91).toFixed(2)}% pre‑62 / {expectedReturn(p.postRetireEq ?? 70).toFixed(2)}% after) · Inflation {inf}%
+          ({expectedReturn(p.preRetireEq ?? 91).toFixed(2)}% before age {resolveGlidepathSwitchAge(p)} / {expectedReturn(p.postRetireEq ?? 70).toFixed(2)}% after) · Inflation {inf}%
         </div>
         <ResponsiveContainer width="100%" height={540}>
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -7829,7 +7845,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                 ["Blanchett smile spending (not flat)", "#a78bfa"],
                 [`SS COLA ${params.ssCola || 2.4}%/yr · Rental growth ${params.abGrowth || 3}%/yr`, "#94a3b8"],
                 [params.tax !== false ? "Full tax model: brackets, SS torpedo, IRMAA, state" : "Tax OFF — pre-tax view (no tax anywhere)", "#94a3b8"],
-                [`Glide path: ${params.preRetireEq || 91}/${100 - (params.preRetireEq || 91)} → ${params.postRetireEq || 70}/${100 - (params.postRetireEq || 70)} at age 62`, "#94a3b8"],
+                [`Glide path: ${params.preRetireEq || 91}/${100 - (params.preRetireEq || 91)} → ${params.postRetireEq || 70}/${100 - (params.postRetireEq || 70)} at age ${resolveGlidepathSwitchAge(params)}`, "#94a3b8"],
               ].map(([text, color]) => (
                 <div key={text} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 7, fontSize: 11 }}>
                   <div style={{ width: 5, height: 5, borderRadius: "50%", background: color, marginTop: 5, flexShrink: 0 }} />
@@ -10185,6 +10201,25 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Post-retirement equity weight" desc="Stock share once you retire. This is your sequence-of-returns dial: raising it lifts the median outcome but widens the downside, so success rate can FALL even as the median rises. Lower it if an early crash would end the plan. Default 70%.">
           <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} suffix="%" />
         </ARow>
+        {/* Sits directly under the two weights it arbitrates between — this
+            field answers "which one applies this year?", so it belongs beside
+            them, not with the retirement-age inputs it is deliberately NOT
+            tied to. Blank = the default, so the row reads as optional. */}
+        <ARow
+          label="Switch to the post-retirement mix at age"
+          desc={`When you shift from the pre- to the post-retirement stock share. Leave blank to shift at your retirement age (${values.retireAge}) — the default. Set it LATER to stay aggressive into early retirement (a bridge job or pension can fund the gap), or EARLIER to de-risk before you stop working. This is a separate decision from when you retire.`}
+        >
+          <input
+            type="number"
+            value={values.glidepathSwitchAge ?? ""}
+            onChange={(e) => onChange("glidepathSwitchAge", e.target.value ? parseInt(e.target.value) : null)}
+            placeholder={`${values.retireAge ?? ""}`}
+            min={AGE_LIMITS.retire.min}
+            max={AGE_LIMITS.retire.max}
+            style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
+            onFocus={selectAllOnFocus}
+          />
+        </ARow>
       </div>
 
       {/* HEALTHCARE SHOCK CARD */}
@@ -11771,6 +11806,9 @@ export default function AiRAForecaster() {
       conversionOverrides: assumptions.conversionOverrides || [],
       preRetireEq: assumptions.preRetireEq,
       postRetireEq: assumptions.postRetireEq,
+      // MUST be forwarded — the engines read `params`, not `assumptions`.
+      // null keeps the default (switch at retireAge).
+      glidepathSwitchAge: assumptions.glidepathSwitchAge ?? null,
       hcShockAge: assumptions.hcShockAge,
       hcProb: assumptions.hcProb,
       hcMin: assumptions.hcMin,

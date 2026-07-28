@@ -1,4 +1,5 @@
 import { expectedReturn } from "./expectedReturn.js";
+import { resolveGlidepathSwitchAge } from "./glidepath.js";
 
 // Progressive state income tax brackets (2025). null = no state income tax.
 // Brackets are inflation-indexed in calcYearTax / buildRothExplorer via idxB().
@@ -492,11 +493,15 @@ function buildRothExplorer(params = {}) {
   // instead of a hardcoded flat 7% that ignored preRetireEq/postRetireEq.
   // This engine has no separate pre-retirement accumulation phase (it starts
   // from `port`/accounts as-of retirement), but the per-year retirement loop
-  // below still mirrors runMC's portReturn age-62 switch (preRetireEq below
-  // 62, postRetireEq from 62 on) for profiles that retire before 62. An
-  // explicit gr override (grParam) still wins for backward compatibility.
+  // below still mirrors runMC's portReturn glidepath switch (preRetireEq below
+  // glideSwitchAge, postRetireEq from it on). The switch age was hardcoded to
+  // 62 here while portReturn switched at the retirement age, so a profile
+  // retiring at 60 was grown at the ACCUMULATION rate for its first two
+  // drawdown years in this tab and the post-retirement rate in the Monte
+  // Carlo. An explicit gr override (grParam) still wins for both phases.
   const preGr  = grParam ?? (expectedReturn(preRetireEq) / 100);
   const postGr = grParam ?? (expectedReturn(postRetireEq) / 100);
+  const glideSwitchAge = resolveGlidepathSwitchAge({ ...params, retireAge });
 
   function irmaaCeiling(yr) {
     const f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
@@ -517,7 +522,7 @@ function buildRothExplorer(params = {}) {
       cRmd = 0;
     const rows = [];
     let sp = baseSp,
-      lastReturn = retireAge < 62 ? preGr : postGr;
+      lastReturn = retireAge < glideSwitchAge ? preGr : postGr;
     const totalPort0 = pretaxBal + rothBal;
     const ss0 = computeHouseholdSS(params, retireAge);
     const ab0 = ab > 0 ? ab : 0;
@@ -527,9 +532,9 @@ function buildRothExplorer(params = {}) {
     for (let age = retireAge; age <= endAge; age++) {
       const yr = retireYear + (age - retireAge),
         f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
-      // Per-year growth rate — mirrors runMC's portReturn age-62 switch
-      // (preRetireEq below 62, postRetireEq from 62 on).
-      const gr = age < 62 ? preGr : postGr;
+      // Per-year growth rate — mirrors runMC's portReturn glidepath switch
+      // (preRetireEq below glideSwitchAge, postRetireEq from it on).
+      const gr = age < glideSwitchAge ? preGr : postGr;
       const fB = idxB(fedBase, f);
       const nB = stateBr0 ? idxB(stateBr0, f) : [];
 
