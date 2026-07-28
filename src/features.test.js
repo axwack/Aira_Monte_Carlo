@@ -251,3 +251,29 @@ describe('Plan shape scores + check-in merge', () => {
     expect(merged.find(c => c.id === 'a').name).toBe('kept');
   });
 });
+
+// ─── Age input bounds (v1.2.40) ────────────────────────────────────────────────
+// A user reported Social Security "capped at 68". These lock the statutory
+// claiming window so no future UI edit can silently narrow it again — the same
+// way the retire-age slider once capped at 68 while the wizard allowed 100.
+
+describe('AGE_LIMITS — statutory Social Security claiming window', () => {
+  const { AGE_LIMITS } = require('./App');
+
+  test('SS claiming runs 62 through 70 — delayed credits stop at 70, never 68', () => {
+    expect(AGE_LIMITS.ss.min).toBe(62);
+    expect(AGE_LIMITS.ss.max).toBe(70);
+  });
+
+  test('retirement age reaches at least 70 so delayed SS is modelable', () => {
+    expect(AGE_LIMITS.retire.max).toBeGreaterThanOrEqual(70);
+  });
+
+  test('every age range is well-formed (min < max)', () => {
+    for (const [key, r] of Object.entries(AGE_LIMITS)) {
+      expect(typeof r.min).toBe('number');
+      expect(typeof r.max).toBe('number');
+      expect(r.min).toBeLessThan(r.max);
+    }
+  });
+});

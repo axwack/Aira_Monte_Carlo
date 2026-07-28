@@ -173,11 +173,18 @@ const AGE_LIMITS = {
   current: { min: 25, max: 85 },   // was 30–62 on the landing hero
   retire:  { min: 45, max: 80 },   // was 50–68 (slider) vs 50–100 (wizard)
   end:     { min: 60, max: 105 },
+  // Social Security claiming window is statutory, not a UI preference: 62 is the
+  // earliest possible claim and 70 is the last age that earns delayed retirement
+  // credits (8%/yr past FRA — waiting past 70 gains nothing). Listed here rather
+  // than inline so the sidebar slider and the wizard input cannot drift apart the
+  // way the retire-age controls did; a cap below 70 would hide the single
+  // highest-value decision this app exists to model.
+  ss:      { min: 62, max: 70 },
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.39";
-export const BUILD_TAG = "[main] v1.2.39 — Money is one formatter and number entry is one parser. Deleted fmtK and fmtM: both were byte-identical to fmtDollar, and three names implying three formats are what let an actual abbreviator (landingMoney) look normal. All 147 call sites now use fmtDollar — whole dollars, grouped, never abbreviated, since retirement figures get compared, not skimmed. Entry side: ANumInput used raw Number(), so a pasted '$5,000,000' or a typed '5m' became NaN and was dropped silently while blur restored the old value, and '1e999' passed !isNaN as Infinity and rendered the field as INF. ANumInput, Slider and the landing hero now share parseNumericEntry ('$', commas, '%', spaces, k/m suffixes; non-finite rejected; non-numbers leave the value untouched). Clear-to-zero and blur-clamp unchanged. Purchase/AI-cost prices deliberately keep cents. Prior v1.2.37: landing hero log slider + typed entry (the 999B linear max made one pixel worth $1.4B).";
+const APP_VERSION = "1.2.40";
+export const BUILD_TAG = "[main] v1.2.40 — Social Security claiming bounds move into AGE_LIMITS.ss (62-70) instead of being retyped inline in the sidebar slider and the wizard input. Both already allowed 70, but they were two independent literals, which is exactly how the retire-age controls came to disagree (50-68 slider vs 50-100 wizard). 70 is statutory: delayed retirement credits stop accruing there, so a cap below it would hide the highest-value decision this tool models. Also fixed landing hero copy that claimed no age before 72 clears 85% confidence while the search actually runs to AGE_LIMITS.retire.max. Prior v1.2.39: one money formatter, one number parser.";
 export const BUILD_TIME = "2026-07-28T01:05:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -10949,7 +10956,7 @@ function RetirementPanel({ values, onChange }) {
           <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={5000} step={50} suffix="/mo" />
         </WFieldRow>
         <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
-          <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={62} max={70} step={1} suffix=" yrs"/>
+          <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs"/>
         </WFieldRow>
       </div>
 
@@ -11306,7 +11313,7 @@ function RetirementLanding({ onEnter }) {
             ? <>Based on your savings and spending, the math says you reach financial independence{" "}
                 <b style={{ color: "#f1f5f9" }}>{age - curAge <= 0 ? "right now" : `${age - curAge} year${age - curAge === 1 ? "" : "s"} from now`}</b>
                 {conf >= 0.92 ? " — with real margin." : " — with a modest cushion."}</>
-            : <>No age before 72 clears 85% confidence at these numbers yet — try saving more, or trimming the spend.</>}
+            : <>No age up to {AGE_LIMITS.retire.max} clears 85% confidence at these numbers yet — try saving more, or trimming the spend.</>}
         </p>
 
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
@@ -12316,8 +12323,8 @@ export default function AiRAForecaster() {
                 key={`ssAge-${assumptions.ssAge}`}
                 label="SS start age"
                 value={assumptions.ssAge}
-                min={62}
-                max={70}
+                min={AGE_LIMITS.ss.min}
+                max={AGE_LIMITS.ss.max}
                 step={1}
                 format={(v) => "Age " + v}
                 onChange={(v) => updateAssumption("ssAge", v)}
@@ -12974,4 +12981,4 @@ export default function AiRAForecaster() {
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS };
