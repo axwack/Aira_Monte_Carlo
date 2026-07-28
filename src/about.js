@@ -16,6 +16,27 @@ export const ABOUT_ME = {
   ],
 };
 
+// ─────────────────────────────────────────────────────────────
+//  Special thanks — people who took the time to find something
+//  wrong and say so precisely.
+//
+//  Entries are display-only. Keep them to a real contribution:
+//  "gave feedback" is not one; finding a defect nobody else saw
+//  is. `handle` is whatever the person uses publicly — do not add
+//  real names, emails or anything they have not published
+//  themselves.
+// ─────────────────────────────────────────────────────────────
+export const ABOUT_THANKS = {
+  intro: "AiRA is better because people took the time to tell me what was wrong with it — precisely, with the numbers, and usually more than once. Named here with thanks.",
+  people: [
+    {
+      handle: "u/garylapointe",
+      url:    "https://www.reddit.com/user/garylapointe/",
+      note:   "Pension modelling. Spotted that the funding table's components did not add up to its own total — the math was right, but income from a pension was missing from the breakdown, so the plan looked short when it was not. Also pushed for the after-tax basis to be stated where you enter your spending, not just where the results appear.",
+    },
+  ],
+};
+
 export const ABOUT_PRODUCT = {
   name:        "AiRA Freedom Financial",
   tagline:     "A DIY retirement planner built for the modern retiree.",
