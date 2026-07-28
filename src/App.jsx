@@ -61,7 +61,7 @@ consult your fiduciary, CPA or tax accountant.
  * ============================================================ */
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import ReactDOM from "react-dom";
-import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
+import { ABOUT_ME, ABOUT_THANKS, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import {
   taxableSocialSecurity,
   computeHouseholdSS,
@@ -185,9 +185,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.50";
-export const BUILD_TAG = "[main] v1.2.50 — Three fixes, all display-layer; no engine or math change. (1) NET WORTH CARD: 'Safe spending target' rendered three different quantities under one label and one strategy caption — computed for fixed %, an echo of p.sp/12 for every other strategy, and a hardcoded 4% fallback — so a GK user saw their own typed number captioned 'GK guardrails', attributing it to a strategy that never touched it. Each branch now labels itself and states the after-tax basis; the 0.04 literal reads the user's safeWithdrawalRate. (2) STRATEGY PREVIEW: the Analysis dropdown previews without saving, and the only control in the app that saves the strategy (verified by grep — the Profile tab has no selector) was an 11px ghost button below it. The app's own author read the screen as broken wiring. Added a state banner ABOVE the dropdown naming the saved strategy at all times, a tooltip explaining where and how to save, and promoted the commit button to a solid primary naming its effect. Behaviour unchanged. (3) LEGIBILITY: helper prose raised 11px to 12px — the .ms metric sub-line, .li helper lists, and the strategy panel's explanatory text. Scoped to sentences meant to be read; chart ticks and dense table cells keep their size pending a deliberate typography pass (REQUIREMENTS 28)."
-export const BUILD_TIME = "2026-07-29T01:30:00Z";
+const APP_VERSION = "1.2.53";
+export const BUILD_TAG = "[main] v1.2.53 — Pension income is now visible, and the column is called Income. Reported by u/garylapointe: 'the total is correct, but all the numbers that make the total aren't there.' The engine was right — otherIncome (pensions, annuities, any user-added stream) is netted from need at buildWithdrawalWaterfall ~702, exactly as Social Security is — but the column rendered only fixedIncomeTotal (= SS + annuity/rental), so a $44,668 pension appeared nowhere in the one table whose job is showing where the money comes from. The funding identity had the omission written into it as a trailing '− Other Income' correction term. Column now sums all three sources with the split in the tooltip, and the identity needs no correction. RENAMED 'Fixed Income' to 'Income': the app used that phrase with two incompatible meanings — this column, and the bond asset class in the allocation card — and naming it 'Pension' would have hidden Social Security the way the old label hid the pension. The allocation card now says Bonds. Display only: the engine field is untouched because withdrawal.test.js asserts the identity as fixedIncomeTotal + otherIncome + rmd, so folding them would double-count (72 withdrawal tests pass). Also adds About > Special Thanks."
+export const BUILD_TIME = "2026-07-29T02:40:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2962,6 +2962,41 @@ function AboutButton() {
                 </a>
               ))}
             </div>
+
+            {/* Special thanks. Credit belongs to the people who found a defect and
+                described it precisely enough to fix — that is rarer and more useful
+                than generic feedback, and naming it publicly is the only payment on
+                offer. Content lives in about.js (ABOUT_THANKS) so adding someone
+                needs no JSX. */}
+            {ABOUT_THANKS?.people?.length > 0 && (
+              <div style={{ marginTop: 26, paddingTop: 20, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+                  ⭐ Special thanks
+                </div>
+                <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, marginBottom: 14 }}>
+                  {ABOUT_THANKS.intro}
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {ABOUT_THANKS.people.map(pr => (
+                    <div key={pr.handle} style={{
+                      padding: "11px 14px", borderRadius: 9,
+                      background: "rgba(251,191,36,0.06)",
+                      border: "1px solid rgba(251,191,36,0.22)",
+                    }}>
+                      {pr.url ? (
+                        <a href={pr.url} target="_blank" rel="noreferrer"
+                          style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24", textDecoration: "none" }}>
+                          {pr.handle} <span style={{ fontSize: 10, color: "#78716c" }}>↗</span>
+                        </a>
+                      ) : (
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24" }}>{pr.handle}</span>
+                      )}
+                      <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.55, marginTop: 5 }}>{pr.note}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -6208,14 +6243,14 @@ function WaterfallPlanView({ p, result }) {
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
           Bracket cap reason shown in Pre-Tax column
           <br />
-          Columns read left→right in draw order. Funding identity each year: <strong>Fixed Income + Cash + Taxable + Pre-Tax (incl. RMD) + Roth = Spending + Housing + Carveouts + Fed/State/IRMAA taxes − Other Income</strong> (any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown.
+          Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD) + Roth = Spending + Housing + Carveouts + Fed/State/IRMAA taxes</strong> (Income = Social Security + pension/other + annuity/rental — all of it offsets spending before any draw) (any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown.
         </div>
         <table className="roth-tbl">
           <thead>
             <tr>
               <th>Age</th><th title="Target spending this year. Hover each row's value for the full need breakdown (housing, carveouts, other income, taxes).">Spending</th>
               <th style={opThStyle} title="Spending is funded by the income + draw columns to the right — see the funding identity above the table.">←</th>
-              <th title="Social Security + annuity/rental income — covered first, before any portfolio draw">Fixed Income</th>
+              <th title="Money that arrives whether or not you sell anything — it is used first, before any portfolio draw.&#10;&#10;WHAT COUNTS AS INCOME HERE:&#10;• Social Security — your benefit, once claiming starts&#10;• Pension / other income — any stream you added under Other Income (pensions, annuities, part-time work, royalties)&#10;• Annuity / rental — property and Airbnb income, after the reliability haircut&#10;&#10;All of it reduces what the portfolio has to cover. Only the shortfall becomes a withdrawal.&#10;&#10;Hover any cell for that year's split.">Income</th>
               <th style={opThStyle}>+</th>
               <th title="Step 3 — drawn first from the portfolio">Cash</th>
               <th style={opThStyle}>+</th>
@@ -6263,8 +6298,31 @@ function WaterfallPlanView({ p, result }) {
                   {fmtDollar(r.spending)}</td>
                 <td style={opTdStyle}>←</td>
                 <td style={{ textAlign: "right", color: "#5eead4" }}
-                    title={r.annuityRental > 0 ? `SS ${fmtDollar(r.ss)} + Annuity/Rental ${fmtDollar(r.annuityRental)} = ${fmtDollar(r.fixedIncomeTotal)}` : `Social Security: ${fmtDollar(r.ss)}`}>
-                  {r.fixedIncomeTotal > 0 ? fmtDollar(r.fixedIncomeTotal) : "—"}
+                    title={(() => {
+                      // Reported by u/garylapointe: the components shown did not add up
+                      // to the total. The engine was right — otherIncome (pensions,
+                      // annuities, any user-defined stream) is netted from need at
+                      // buildWithdrawalWaterfall ~702 — but this column rendered only
+                      // `fixedIncomeTotal` (= SS + annuity/rental), so a pension simply
+                      // never appeared. A retiree with a $44k pension saw a shortfall
+                      // that did not exist.
+                      //
+                      // Fixed in the DISPLAY only. The engine field is deliberately
+                      // untouched: withdrawal.test.js asserts the funding identity as
+                      // `fixedIncomeTotal + otherIncome + rmd + ...`, so folding the
+                      // pension into the engine's value would double-count it and break
+                      // a real invariant.
+                      const parts = [`Social Security ${fmtDollar(r.ss)}`];
+                      if (r.annuityRental > 0) parts.push(`Annuity/Rental ${fmtDollar(r.annuityRental)}`);
+                      if (r.otherIncome > 0)   parts.push(`Pension/Other ${fmtDollar(r.otherIncome)}`);
+                      const total = (r.fixedIncomeTotal || 0) + (r.otherIncome || 0);
+                      return parts.length > 1
+                        ? `${parts.join(" + ")} = ${fmtDollar(total)}\n\nCovered first, before any portfolio draw.`
+                        : `Social Security: ${fmtDollar(r.ss)}`;
+                    })()}>
+                  {((r.fixedIncomeTotal || 0) + (r.otherIncome || 0)) > 0
+                    ? fmtDollar((r.fixedIncomeTotal || 0) + (r.otherIncome || 0))
+                    : "—"}
                 </td>
                 <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#64748b" }} title={fmtDollar(r.fromCash)}>{r.fromCash > 0 ? fmtDollar(r.fromCash) : "—"}</td>
@@ -6814,7 +6872,7 @@ function BucketsTab({ params = {} }) {
         <BucketCard num={2} color="#a78bfa" label="Bucket 2 — Income" horizon={`${b1Years}–${b1Years + b2Years} years · refills B1`}
           actual={b2Actual} floor={b2Floor} target={b2Target} accounts={b2Accts} monthly={monthly}
           role={`Bridges ${ssGapYears}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`}
-          holdings="30–50% Equities · 50–70% Fixed Income · Bonds · REITs" />
+          holdings="30–50% Equities · 50–70% Bonds · REITs" />
         <BucketCard num={3} color="#10b981" label="Bucket 3 — Growth" horizon={`${b1Years + b2Years}+ years · last resort`}
           actual={b3Actual} floor={0} target={0} accounts={b3Accts} monthly={monthly}
           role="Protects against inflation & grows wealth for a decade or more."
