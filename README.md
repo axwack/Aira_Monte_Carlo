@@ -2,9 +2,9 @@
 
 # AiRA Financial Freedom - Retirement Forecaster and Planner
 
-**AI Retirement Assessment — Dedicated to AERA**
+**AI Retirement Assessment — Dedicated to Aera**
 
-AiRA Forecaster is a comprehensive, client‑side web application for retirement planning. It uses historical market data, Monte Carlo simulations, and a variety of dynamic withdrawal strategies to help users explore how different savings and spending decisions might impact their financial future.
+AiRA Forecaster is a comprehensive, client‑side web application for retirement planning. It uses historical market data, Monte Carlo simulations, and a variety of dynamic withdrawal strategies to help users explore how different savings and spending decisions might impact their financial future. I wrote this because I could not find a tool that was cost effective for what I needed. I also found some of the vendor solutions a little too cumbersome and didn't answer questions I needed. The real problem was I didn't speak their language. So rather than fight it, using AI, I developed this app to help me with the process. It has been an incredible journey to the point where now I know that this will be my main hustle in pre-and post retirement. I also YT about this topic where the end state will be a life in SE Asia vlogging about it and making this software better for you. If it helps you then I accomplished my mission.
 
 ## ✨ Why I Built This
 
