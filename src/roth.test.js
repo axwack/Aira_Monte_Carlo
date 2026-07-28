@@ -639,16 +639,23 @@ describe("buildRothLadder — net-Roth accounting", () => {
 //       ro update:  ro_end = max(0, ro_start + conv - portDraw*0.4) * (1+gr)  (outside_cash)
 //       continuity: row[N].pT === row[N+1].pTStart (and same for ro / roStart)
 //
-//     gr is no longer a hardcoded flat 7% — it now derives from the equity-glide
+//     gr is no longer a hardcoded flat 7% — it derives from the equity-glide
 //     formula runMC's portReturn uses (expectedReturn(eqPct)/100), switching at
-//     age 62 exactly like portReturn's own preRetireEq/postRetireEq cutoff.
-//     ALEX_FULL doesn't set preRetireEq/postRetireEq, so the engine's defaults
-//     (91/70) apply: expectedReturn(91) ≈ 7.6% below 62, expectedReturn(70) ≈
-//     7.34% at 62+ — both above the old flat 7% this test previously assumed.
+//     the SAME age portReturn switches at. That age used to be a hardcoded 62
+//     here (and in buildRothExplorer); it is now `glidepathSwitchAge`, which
+//     defaults to the profile's retireAge — so ALEX_FULL (retireAge 60) is at
+//     the post-retirement mix from 60, not from 62. That change is the fix:
+//     this engine previously grew Alex's first two DRAWDOWN years at the
+//     ACCUMULATION rate while the Monte Carlo beside it used the retirement
+//     rate. ALEX_FULL doesn't set preRetireEq/postRetireEq, so the engine
+//     defaults (91/70) apply: expectedReturn(91) ≈ 7.6%, expectedReturn(70) ≈
+//     7.34% — both above the old flat 7% this test once assumed.
 // ═══════════════════════════════════════════════════════════════════════════════
-const PRE_GR  = expectedReturn(91) / 100;  // preRetireEq default, ages < 62
-const POST_GR = expectedReturn(70) / 100;  // postRetireEq default, ages >= 62
-const grForAge = (age) => (age < 62 ? PRE_GR : POST_GR);
+const PRE_GR  = expectedReturn(91) / 100;  // preRetireEq default, ages < switch
+const POST_GR = expectedReturn(70) / 100;  // postRetireEq default, ages >= switch
+// Derived from the fixture, not a literal — if ALEX_FULL.retireAge moves, the
+// expected growth rate moves with it exactly as the engine's does.
+const grForAge = (age) => (age < ALEX_FULL.retireAge ? PRE_GR : POST_GR);
 
 const ALEX_FULL = {
   currentAge: 56,

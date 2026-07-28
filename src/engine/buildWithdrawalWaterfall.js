@@ -43,6 +43,7 @@ import {
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, expectedHealthcareShock } from "./expenses.js";
 import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
+import { resolveGlidepathSwitchAge } from "./glidepath.js";
 
 const BASE_YEAR = new Date().getFullYear();
 
@@ -160,8 +161,8 @@ export function effectiveRetireAge(retireAge, currentAge) {
 
 export function accumulateToRetirement(params = {}) {
   const {
-    currentAge, retireAge, accounts = [], preRetireEq = 91, cashRealReturn,
-    gr: grParam, taxableBasisPct = 70,
+    currentAge, retireAge, accounts = [], preRetireEq = 91, postRetireEq = 70,
+    cashRealReturn, gr: grParam, taxableBasisPct = 70,
     // Annual contribution streams. These were previously ignored entirely, so
     // this engine reported a retirement portfolio with zero savings added —
     // understating balances for every user still working, and contradicting the
@@ -169,10 +170,13 @@ export function accumulateToRetirement(params = {}) {
     contrib = 0, employerContrib = 0, hsaContrib = 0,
     taxableContrib = 0, rothContrib = 0,
   } = params;
-  // This function only models the PRE-retirement accumulation phase, so the
-  // pre-retirement equity glide (preRetireEq) — not postRetireEq — drives the
-  // default growth rate here, mirroring runMC's portReturn age<62 branch.
-  const gr     = grParam ?? (expectedReturn(preRetireEq) / 100);
+  // This function only models the PRE-retirement accumulation phase, so
+  // preRetireEq normally drives the growth rate here. The one exception is a
+  // user who chooses to de-risk BEFORE they retire (glidepathSwitchAge <
+  // retireAge) — those years must use postRetireEq, or this engine's
+  // portfolio-at-retirement would exceed runMC's, which switches per age.
+  const glideSwitchAge = resolveGlidepathSwitchAge(params);
+  const grFor  = (age) => grParam ?? (expectedReturn(age < glideSwitchAge ? preRetireEq : postRetireEq) / 100);
   // Cash growth honors the profile's "Cash return" field — the SAME value
   // runMC applies to the cash bucket ((p.cashRealReturn ?? 3.0)/100). This was
   // a hardcoded 0.045 that silently ignored the user's setting, so the profile
@@ -195,6 +199,7 @@ export function accumulateToRetirement(params = {}) {
 
   const accYrs = Math.max(0, (retireAge ?? 0) - (currentAge ?? 0));
   for (let y = 0; y < accYrs; y++) {
+    const gr = grFor((currentAge ?? 0) + y);
     pretax0  *= (1 + gr);
     roth0    *= (1 + gr);
     taxable0 *= (1 + gr);
@@ -337,6 +342,9 @@ export function buildWithdrawalWaterfall(params = {}) {
   // for backward compatibility with callers/tests that pin a specific rate.
   const preGr      = grParam ?? (expectedReturn(preRetireEq) / 100);
   const postGr     = grParam ?? (expectedReturn(postRetireEq) / 100);
+  // Age the mix shifts pre→post. Defaults to the (effective) retirement age,
+  // which is what this engine's loop assumed all along — see engine/glidepath.js.
+  const glideSwitchAge = resolveGlidepathSwitchAge({ ...params, retireAge });
   // Cash growth honors the profile's "Cash return" field — the SAME value
   // runMC applies ((p.cashRealReturn ?? 3.0)/100). Was a hardcoded 0.045 that
   // ignored the user's setting entirely (profile field changed the Monte
@@ -357,11 +365,15 @@ export function buildWithdrawalWaterfall(params = {}) {
   }
 
   // ── Initialise buckets from accounts, grown to retirement ──────────────────
-  // Accumulation (pre-retirement) phase uses preGr — accumulateToRetirement
-  // derives its own default from preRetireEq too, but pass it explicitly here
-  // so an explicit grParam override (if given) also applies to this phase.
+  // Accumulation (pre-retirement) phase normally uses preGr. Pass the glide
+  // inputs rather than a pinned rate so a switch age set BEFORE retirement is
+  // honoured year-by-year; an explicit grParam override still wins for both
+  // phases (grParam is forwarded as `gr` only when the caller supplied one —
+  // passing preGr unconditionally would re-pin it and defeat the glide).
   const { pretax0, roth0, taxable0, cash0, taxableBasis0 } = accumulateToRetirement({
-    currentAge, retireAge, accounts, cashRealReturn, gr: preGr, taxableBasisPct,
+    currentAge, retireAge, accounts, cashRealReturn, taxableBasisPct,
+    preRetireEq, postRetireEq, glidepathSwitchAge: glideSwitchAge,
+    ...(grParam != null ? { gr: grParam } : {}),
     contrib, employerContrib, hsaContrib, taxableContrib, rothContrib,
   });
 
@@ -493,11 +505,12 @@ export function buildWithdrawalWaterfall(params = {}) {
     // by age, populated with each year's final (post-conversion) MAGI at the
     // bottom of the loop below.
     const magiByAge = new Map();
-    // Post-retirement per-year growth mirrors runMC's portReturn age-62 switch:
-    // preGr below 62 (even though already retired), postGr from 62 on.
-    // Glidepath switches at the user's retirement age, not a hardcoded 62 —
-    // see portReturn in App.jsx for the same fix. At/after retirement the
-    // post-retirement weight applies, which is always true inside this loop.
+    // Post-retirement per-year growth mirrors runMC's portReturn glidepath:
+    // preGr below the switch age, postGr from it on. The switch age is
+    // `glidepathSwitchAge`, defaulting to the retirement age — so by default
+    // every year in this loop is at/after the switch and uses postGr, exactly
+    // as before. Setting the field later than retirement (e.g. "90/10 until
+    // 67, retire at 62") is what makes the preGr branch reachable here.
     let sp = baseSp, lastRet = postGr;
     const totalPort0 = pretax + roth + taxable + cash;
     // Baseline initWR = NET PORTFOLIO NEED at retirement / portfolio — the same
@@ -535,11 +548,10 @@ export function buildWithdrawalWaterfall(params = {}) {
       const iF  = Math.pow(1 + infR, yr - BASE_YEAR);
       const adjFloor   = Math.round(gkFloor   * iF);
       const adjCeiling = Math.round(gkCeiling * iF);
-      // Per-year growth rate — mirrors runMC's portReturn age-62 switch
-      // (preRetireEq below 62, postRetireEq from 62 on), not just a flat
-      // post-retirement rate, so a profile that retires before 62 still
-      // tracks runMC's glide path exactly.
-      const gr = age < retireAge ? preGr : postGr;
+      // Per-year growth rate — mirrors runMC's portReturn glidepath switch
+      // (preRetireEq below glideSwitchAge, postRetireEq from it on), not a flat
+      // post-retirement rate, so this engine tracks runMC's glide path exactly.
+      const gr = age < glideSwitchAge ? preGr : postGr;
 
       // IRMAA 2-year lookback: this year's charge is based on MAGI from
       // age-2, already stored in magiByAge from that year's own iteration.
