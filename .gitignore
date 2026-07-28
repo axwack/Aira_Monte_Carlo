@@ -12,6 +12,15 @@ Archive
 .wrangler
 .dev.vars
 aira-forecaster-agents
+# ...except the tax reference tables. They contain no user data and no proprietary
+# logic, and keeping them untracked meant a correction on one machine never reached
+# the other two — RMD_TABLES.md carried a wrong age-89 divisor (13.0 vs the IRS 12.9)
+# on 2 of 3 machines while CLAUDE.md calls these files the canonical source. That is a
+# live trap: the next person to port doc values into code introduces a real RMD bug.
+!aira-forecaster-agents/
+!aira-forecaster-agents/knowledge/
+!aira-forecaster-agents/knowledge/TAX_REFERENCE.md
+!aira-forecaster-agents/knowledge/RMD_TABLES.md
 
 # Markdown docs — only README tracked (CLAUDE.md is private, synced manually)
 *.md
