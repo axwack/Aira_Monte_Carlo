@@ -1944,3 +1944,56 @@ This is the split. **Shipped through v1.2.43** (639 tests pass, deployed).
   machine only. The RMD one is a live trap for whoever ports doc values into code next.
 - **Check `[verify-session]` logs after the next sale** — v1.2.33 instrumented every exit
   with a distinct reason. That names the credits root cause instead of a fourth guess.
+
+## 26. ⚠️ Equity glidepath: hardcoded 62 bug + user-set switch age — 2026-07-28
+
+**Priority: DO THIS FIRST next session.** Vincent: *"I plan on 90/10 until 67 — can we do
+that?"* Answer today: no. And while checking, found a real bug in the same code.
+
+### Part A — THE BUG (fix regardless of the feature)
+
+The glidepath exists in **two places in `runMC` and they disagree**:
+
+| Site | Switch condition | |
+|---|---|---|
+| `App.jsx:823` (`portReturn`) | `age < switchAge`, derived from `retireAge` | ✅ correct |
+| `App.jsx:1222` (stress-sequence branch) | **`age < 62` — HARDCODED** | ❌ wrong |
+
+Line 1222 is inside `runMC`'s `seqOverride` path — the branch used whenever a prescribed
+market sequence is applied, i.e. **every Stress Test scenario**. So stress results use a
+glidepath that flips at 62 no matter what the user set: someone retiring at 67 is
+de-risked five years early in every stress run, someone retiring at 60 stays aggressive
+two years too long. The two branches of the SAME function model different investors.
+
+Same defect class as everything else this week — `portReturn` was fixed to honour
+`retireAge` and the copy 400 lines below was missed — plus a bare literal, so it is also a
+CLAUDE.md rule-6 violation.
+
+### Part B — THE FEATURE
+
+The switch age is welded to `retireAge`; there is no separate control. "Stay 90/10 until
+67" is only expressible by someone retiring exactly at 67. **When you de-risk and when you
+retire are different decisions** — a bridge, a pension, or plain risk tolerance all justify
+staying aggressive past retirement, and the model cannot say so.
+
+**Fix (one change covers both parts):**
+1. New profile field `glidepathSwitchAge`, **default `null` → falls back to `retireAge`**, so
+   every existing plan is byte-identical until the user touches it.
+2. Use it at BOTH sites. Delete the `62`.
+3. Thread through the `params` memo (the classic miss — engines read `params`, not
+   `assumptions`).
+4. UI: next to the existing pre/post equity inputs, labelled so the distinction from
+   retirement age is obvious, e.g. "Shift to my post-retirement mix at age ___
+   (default: my retirement age)".
+
+**Tests required:**
+- The two sites agree: for the same profile, the stress path and the normal path use the
+  same equity weight at every age. This is the test that would have caught the bug and it
+  is the one that matters most.
+- `glidepathSwitchAge = null` reproduces today's numbers exactly (regression lock).
+- Setting it to 67 with `retireAge` 62 keeps `preRetireEq` weighting through age 66.
+- Add `glidepathSwitchAge` to `ghostSettings.test.js` — it is a runMC-only input, so it
+  belongs with the equity-glidepath block, not the waterfall sweep.
+
+**Effort: small.** One field, two call sites, four tests. The only care needed is that the
+`params` memo actually forwards it.
