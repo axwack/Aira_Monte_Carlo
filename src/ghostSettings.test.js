@@ -132,8 +132,12 @@ const NEEDS_A_TARGETED_FIXTURE = {
   spOutOfCountry:          "only applies when twoHousehold is on",
   spSpendOutofState:       "only applies when twoHousehold is on",
   gkFloorSpendOutofState:  "only applies when twoHousehold is on",
-  preRetireEq:             "runMC return path; the waterfall fingerprint uses gr directly",
-  postRetireEq:            "runMC return path; the waterfall fingerprint uses gr directly",
+  // Excluded from the SWEEP only because the sweep's fingerprint is waterfall-only
+  // and the waterfall takes `gr` directly. These are runMC inputs and are now PROVEN
+  // live by the "equity glidepath" block at the bottom of this file, including a
+  // direction check. Do not read this as untested.
+  preRetireEq:             "runMC-only; proven by the equity glidepath block below",
+  postRetireEq:            "runMC-only; proven by the equity glidepath block below",
   port:                    "waterfall derives balances from accounts[], not port",
   rothEmergencyReserve:    "this fixture never draws Roth, so the floor never binds",
   useAb:                   "gates rental; ab is already non-zero here",
@@ -278,5 +282,42 @@ describe("spousal Social Security is wired to the engines", () => {
       spouse: { enabled: false, ssb: 99_000, ssAge: 62, ssPia: 99_000 },
     });
     expect(Math.round(disabled)).toBe(Math.round(single));
+  });
+});
+
+// ─── Equity glidepath (highest-value fixture from NEEDS_A_TARGETED_FIXTURE) ───
+// preRetireEq/postRetireEq set the stock/bond mix before and after retirement and
+// feed expectedReturn() inside runMC's portReturn(). They drive the return on the
+// whole portfolio, so a fault here would skew EVERY success rate in the product —
+// which is why this was the first deferred fixture worth writing. The waterfall
+// fingerprint could not see them (it takes `gr` directly), so they are tested
+// against runMC.
+describe("equity glidepath reaches runMC", () => {
+  // Retire in the future so BOTH sides of the glidepath get exercised: currentAge
+  // 60 vs retireAge 70 means ten pre-retirement years, then twenty post.
+  const GLIDE = { ...BASE, currentAge: 60, retireAge: 70, endAge: 90 };
+  const mcEnd = (p) => {
+    const r = runMC(p, p.endAge, 150, 42, true);
+    const last = r.pcts?.[r.pcts.length - 1];
+    return `${r.rate}|${last?.p50}`;
+  };
+
+  test("preRetireEq changes the outcome", () => {
+    expect(mcEnd({ ...GLIDE, preRetireEq: 90 })).not.toBe(mcEnd({ ...GLIDE, preRetireEq: 40 }));
+  });
+
+  test("postRetireEq changes the outcome", () => {
+    expect(mcEnd({ ...GLIDE, postRetireEq: 80 })).not.toBe(mcEnd({ ...GLIDE, postRetireEq: 30 }));
+  });
+
+  test("more equity raises the median outcome (direction, not just difference)", () => {
+    // Guards against the fields being READ but wired backwards — a plain
+    // "these differ" assertion would pass either way. Same seed throughout, so the
+    // market draws are identical and only the weighting changes.
+    const p50 = (eq) => {
+      const r = runMC({ ...GLIDE, preRetireEq: eq, postRetireEq: eq }, GLIDE.endAge, 150, 42, true);
+      return r.pcts?.[r.pcts.length - 1]?.p50 ?? 0;
+    };
+    expect(p50(85)).toBeGreaterThan(p50(25));
   });
 });
