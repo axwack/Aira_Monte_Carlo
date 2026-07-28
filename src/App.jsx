@@ -185,9 +185,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.53";
-export const BUILD_TAG = "[main] v1.2.53 — Pension income is now visible, and the column is called Income. Reported by u/garylapointe: 'the total is correct, but all the numbers that make the total aren't there.' The engine was right — otherIncome (pensions, annuities, any user-added stream) is netted from need at buildWithdrawalWaterfall ~702, exactly as Social Security is — but the column rendered only fixedIncomeTotal (= SS + annuity/rental), so a $44,668 pension appeared nowhere in the one table whose job is showing where the money comes from. The funding identity had the omission written into it as a trailing '− Other Income' correction term. Column now sums all three sources with the split in the tooltip, and the identity needs no correction. RENAMED 'Fixed Income' to 'Income': the app used that phrase with two incompatible meanings — this column, and the bond asset class in the allocation card — and naming it 'Pension' would have hidden Social Security the way the old label hid the pension. The allocation card now says Bonds. Display only: the engine field is untouched because withdrawal.test.js asserts the identity as fixedIncomeTotal + otherIncome + rmd, so folding them would double-count (72 withdrawal tests pass). Also adds About > Special Thanks."
-export const BUILD_TIME = "2026-07-29T02:40:00Z";
+const APP_VERSION = "1.2.54";
+export const BUILD_TAG = "[main] v1.2.54 — Visible info markers on table headers. Vincent: 'how do people know to hover over things? I wouldn't know to do that.' Correct — App.jsx carried 109 hover-only title= attributes against 7 visible markers, so ~94% of the app's explanation was invisible unless you happened to hover, and title= does not exist on touch devices AT ALL, making all of it unreachable on phones and tablets. Added a visible marker to 18 table headers that carried a tooltip and showed no cue. This signals that an explanation exists; it does NOT fix touch. The real fix — triaging all 109 sites into must-be-visible / click-to-open InfoModal / leave-as-is, using the InfoModal component that already exists but is barely used — is specified in REQUIREMENTS 28.2 for Friday. Also guards the Special Thanks note against empty strings. Display only."
+export const BUILD_TIME = "2026-07-29T03:05:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2384,12 +2384,12 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
               <thead>
                 <tr>
                   <th>Age</th><th>Year</th>
-                  <th title="Share of simulated paths whose portfolio has not run out by this age">Still Funded</th>
-                  <th title="Pessimistic — 90% of simulated outcomes were better than this">10th %ile</th>
+                  <th title="Share of simulated paths whose portfolio has not run out by this age">Still Funded ⓘ</th>
+                  <th title="Pessimistic — 90% of simulated outcomes were better than this">10th %ile ⓘ</th>
                   <th>25th %ile</th>
-                  <th title="The median outcome — half of paths above, half below">Median</th>
+                  <th title="The median outcome — half of paths above, half below">Median ⓘ</th>
                   <th>75th %ile</th>
-                  <th title="Optimistic — only 10% of simulated outcomes were better than this">90th %ile</th>
+                  <th title="Optimistic — only 10% of simulated outcomes were better than this">90th %ile ⓘ</th>
                 </tr>
               </thead>
               <tbody>
@@ -2991,7 +2991,9 @@ function AboutButton() {
                       ) : (
                         <span style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24" }}>{pr.handle}</span>
                       )}
-                      <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.55, marginTop: 5 }}>{pr.note}</div>
+                      {pr.note ? (
+                        <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.55, marginTop: 5 }}>{pr.note}</div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -5045,15 +5047,15 @@ const modeDescs = {
                   <th>Age</th>
                   <th>Label</th>
                   <th>Source</th>
-                  <th title="Pre-tax IRA/401k balance at the start of this year, before the conversion">Pre-Tax (before)</th>
+                  <th title="Pre-tax IRA/401k balance at the start of this year, before the conversion">Pre-Tax (before) ⓘ</th>
                   <th>Conversion</th>
                   <th>Fed Tax</th>
                   <th>State Tax</th>
                   <th>Bracket</th>
-                  <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg</th>
+                  <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg ⓘ</th>
                   <th>Eff Rate</th>
                   <th>Net→Roth</th>
-                  <th title="Cumulative Roth balance at end of this year (includes growth and withdrawals)">Roth Bal</th>
+                  <th title="Cumulative Roth balance at end of this year (includes growth and withdrawals)">Roth Bal ⓘ</th>
                 </tr>
               </thead>
               <tbody>
@@ -6248,24 +6250,24 @@ function WaterfallPlanView({ p, result }) {
         <table className="roth-tbl">
           <thead>
             <tr>
-              <th>Age</th><th title="Target spending this year. Hover each row's value for the full need breakdown (housing, carveouts, other income, taxes).">Spending</th>
-              <th style={opThStyle} title="Spending is funded by the income + draw columns to the right — see the funding identity above the table.">←</th>
-              <th title="Money that arrives whether or not you sell anything — it is used first, before any portfolio draw.&#10;&#10;WHAT COUNTS AS INCOME HERE:&#10;• Social Security — your benefit, once claiming starts&#10;• Pension / other income — any stream you added under Other Income (pensions, annuities, part-time work, royalties)&#10;• Annuity / rental — property and Airbnb income, after the reliability haircut&#10;&#10;All of it reduces what the portfolio has to cover. Only the shortfall becomes a withdrawal.&#10;&#10;Hover any cell for that year's split.">Income</th>
+              <th>Age</th><th title="Target spending this year. Hover each row's value for the full need breakdown (housing, carveouts, other income, taxes).">Spending ⓘ</th>
+              <th style={opThStyle} title="Spending is funded by the income + draw columns to the right — see the funding identity above the table.">← ⓘ</th>
+              <th title="Money that arrives whether or not you sell anything — it is used first, before any portfolio draw.&#10;&#10;WHAT COUNTS AS INCOME HERE:&#10;• Social Security — your benefit, once claiming starts&#10;• Pension / other income — any stream you added under Other Income (pensions, annuities, part-time work, royalties)&#10;• Annuity / rental — property and Airbnb income, after the reliability haircut&#10;&#10;All of it reduces what the portfolio has to cover. Only the shortfall becomes a withdrawal.&#10;&#10;Hover any cell for that year's split.">Income ⓘ</th>
               <th style={opThStyle}>+</th>
-              <th title="Step 3 — drawn first from the portfolio">Cash</th>
+              <th title="Step 3 — drawn first from the portfolio">Cash ⓘ</th>
               <th style={opThStyle}>+</th>
-              <th title="Step 4 — drawn after cash is exhausted">Taxable</th>
+              <th title="Step 4 — drawn after cash is exhausted">Taxable ⓘ</th>
               <th style={opThStyle}>+</th>
-              <th title="Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k.">Pre-Tax</th>
+              <th title="Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k.">Pre-Tax ⓘ</th>
               <th style={opThStyle}>+</th>
-              <th title="Step 6 — last resort; emergency reserve floor maintained">Roth</th>
+              <th title="Step 6 — last resort; emergency reserve floor maintained">Roth ⓘ</th>
               <th style={opThStyle}>=</th>
-              <th title="Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes.">Total Draw</th>
+              <th title="Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes.">Total Draw ⓘ</th>
               {anyConversion && (
-                <th title="Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total.">Roth Conv</th>
+                <th title="Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total.">Roth Conv ⓘ</th>
               )}
-              <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End</th>
-              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR</th>
+              <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End ⓘ</th>
+              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR ⓘ</th>
               <th>
                 <LandmineTip
                   emoji="💣"
