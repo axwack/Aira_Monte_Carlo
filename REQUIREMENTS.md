@@ -1379,10 +1379,67 @@ history-rewrite decision above that's the user's call, not something to default 
 
 ## 21. Spousal & Survivor Social Security — requested 2026-07-27
 
-**Priority: P1 — the next release.** **Status: approach AGREED 2026-07-27 (see below), not yet built.** Requested by Vincent after comparing
+**Priority: P1 — the next release.** **Status: PAUSED mid-Phase-1, 2026-07-27 evening —
+Vincent said "don't do anything with social security" and stopped the session here.
+Do NOT continue this without fresh direction from Vincent.** Requested after comparing
 Boldin's Social Security entry UI (screenshot: separate "You" / "Your Spouse" cards, each
 with a monthly benefit and a *month/year* start date, plus a "Model a benefit reduction in
 the future" toggle and a COLA rate).
+
+### ⏸️ Session status (2026-07-27 evening) — engine wiring done, UI/tests NOT done
+
+Phase 1 (below) was **partially implemented on one machine this session, then explicitly
+halted** before finishing. What exists right now, on that machine only, uncommitted:
+
+- `BLANK_PROFILE` gained `ssPia` (primary FRA amount) and a nested `spouse: { enabled:
+  false, ssb, ssAge, ssPia }` object (`src/App.jsx`).
+- New `computeHouseholdSS(p, age)` helper in `src/engine/buildRothExplorer.js` (exported
+  alongside `taxableSocialSecurity`) — computes combined two-person gross SS including the
+  spousal top-up, WITH its own COLA growth applied per-person (see note below on why this
+  differs from the original plan).
+- Every engine call site that used to gate/grow `ssb`/`ssAge` directly now calls
+  `computeHouseholdSS(...)` instead: `runMC`, `simulateDeterministicWithStrategy`,
+  `computeInitialWR` (all `App.jsx`), `buildWithdrawalWaterfall.js`, and
+  `buildRothExplorer.js`'s own `runScenario`.
+- The `runStress` "SPOUSE PASSES EARLY" scenario's hardcoded `ssb × 0.67` now branches:
+  exact `max(primary, spouse)` when `spouse.enabled`, unchanged `× 0.67` fallback otherwise
+  (preserves today's behavior for every profile that hasn't entered spousal data).
+- `ssPia`/`spouse` are threaded through the `params` `useMemo`.
+
+**What is deliberately NOT done:** no UI fields (the "Add my spouse's Social Security"
+toggle + spouse benefit/age/PIA inputs were never added to `RetirementPanel`), no
+`spousalSS.test.js`, and **the full build/test suite has NOT been re-run since these
+edits**. Since `spouse.enabled` defaults to `false` everywhere and every new code path is
+gated on it, this should be inert/dormant (byte-for-byte same behavior as before) — but
+that is an unverified claim until the regression-lock test from the plan actually runs.
+**Do not deploy or merge this machine's `App.jsx` / `buildRothExplorer.js` /
+`buildWithdrawalWaterfall.js` without either finishing Phase 1 (UI + tests + verification)
+or reverting these specific edits** — treat it as a half-finished branch, not a shippable
+state, if you're the other machine looking at this file.
+
+**One real design deviation from the original plan below, worth knowing about before
+resuming:** the plan originally said `computeHouseholdSS` would return a pre-COLA-growth
+gross and each caller would keep applying its own growth formula. That breaks once two
+people can claim at different ages (you can't compound one combined number off a single
+age). Fixed by moving COLA growth inside the helper, applied per-person from each
+person's own claim age, then summed. Side effect: this also fixes a pre-existing,
+unrelated bug in `buildRothExplorer.js` where SS growth was hardcoded to 2.4% and ignored
+the user's actual `ssCola` input — that bug is now gone as a byproduct, not a separate fix.
+
+### Reinforced principle (Vincent, same session): favor manual entry over derived calculation
+
+Restating/generalizing the "ask the user, don't derive it" call already made below for SS
+specifically: the broader lesson from this session is that **too much in-app calculation
+to solve a hard problem has been a repeated source of bugs** (see the FRA/claim-age
+adjustment math this section already opted out of, and the general pattern of drift
+between App.jsx/buildWithdrawalWaterfall.js/buildRothExplorer.js duplicating the same
+formula slightly differently — §4 item 3, §6 ENG-9/12/14, the `ssCola` bug just found
+above). Going forward, when a feature could either (a) ask the user for a number they can
+read off an authoritative source (SSA statement, brokerage statement, mortgage
+paperwork), or (b) derive/project that number ourselves from other inputs — **prefer (a)**
+unless the derivation is simple, well-tested, and low-risk. This isn't a new rule so much
+as naming a pattern this project keeps re-discovering the hard way; apply it when scoping
+future features, not just Social Security.
 
 ### ✅ AGREED APPROACH (Vincent, 2026-07-27): ask the user, don't derive it
 

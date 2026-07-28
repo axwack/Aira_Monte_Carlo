@@ -64,6 +64,7 @@ import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import {
   taxableSocialSecurity,
+  computeHouseholdSS,
   LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,
   NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,
   getSeniorBonusDeduction, OBBBA_SENIOR_LAST_YEAR,
@@ -272,7 +273,6 @@ const SEQ_2000_2012 = [
 function computeInitialWR(p) {
   const currentAge = p.currentAge || 35;
   const retireAge = p.retireAge || 65;
-  const ssAge = p.ssAge || 67;
   const yrsToRetire = Math.max(0, retireAge - currentAge);
   const eqPct = p.preRetireEq ?? 91;
   const nominalRate = expectedReturn(eqPct) / 100;
@@ -289,7 +289,7 @@ function computeInitialWR(p) {
   // p.sp must be the total combined household spending (US + out-of-country).
   // The params useMemo already sums these; raw-profile callers must sum before calling.
   const baseSpend = p.sp || 0;
-  const ssAtRetire = retireAge >= ssAge ? (p.ssb || 0) : 0;
+  const ssAtRetire = computeHouseholdSS(p, retireAge);
   const rentalAtRetire = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const retireCalYear = CURRENT_YEAR + (retireAge - currentAge);
   const { total: otherIncAtRetire } = computeOtherIncome(p.otherIncomes, retireCalYear);
@@ -540,6 +540,15 @@ export const BLANK_PROFILE = {
   portfolioGoal: 1_000_000,
   ssAge: 67,
   ssb: 24_000,
+  ssPia: 0,                    // own FRA/PIA annual amount — only needed if claiming before/after FRA; see §21
+  // Spousal Social Security (Phase 1, §21 REQUIREMENTS): additive, off by default so every
+  // existing single-person profile computes identically to before this feature existed.
+  spouse: {
+    enabled: false,
+    ssb: 0,                    // spouse's own annual benefit at THEIR claim age
+    ssAge: 67,                 // spouse's own claim age, independent of the primary's
+    ssPia: 0,                  // spouse's own FRA/PIA annual amount, for the spousal top-up
+  },
   ab: 0,
   useAb: true,
   smile: true,
@@ -1177,7 +1186,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // carveout0 mirror the exact formulas the retirement loop applies for
     // age === p.retireAge (y === 0), so this engine's own year-0 netNeed is
     // what initWR is calibrated against.
-    const ss0 = retAgeMC >= p.ssAge ? p.ssb : 0;
+    const ss0 = computeHouseholdSS(p, retAgeMC);
     const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
     const calYear0 = CURRENT_YEAR + (retAgeMC - p.currentAge);
     const { total: otherInc0 } = computeOtherIncome(p.otherIncomes, calYear0);
@@ -1227,9 +1236,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // of these consume rand(), so r/inflY/abReliable's draw sequence is
       // unaffected. abReliable itself stays in its original position (right
       // after `lastReturn = r`) — only these deterministic values move earlier.
-      const ss = age >= p.ssAge
-        ? p.ssb * Math.pow(1 + (p.ssCola || 2.4) / 100, Math.max(0, age - p.ssAge))
-        : 0;
+      const ss = computeHouseholdSS(p, age);
       const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
       const totalRental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * growthFactor);
       // Deterministic expected rental (abEndYear cutoff applied, but NOT the
@@ -1795,7 +1802,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   // same quantity the yearly loop's GK netNeed offset computes (mirrors
   // runMC/buildWithdrawalWaterfall's calibration). ab0 includes propIncome to
   // match this engine's own `ab` term in the yearly loop below.
-  const ss0 = retAgeDet >= p.ssAge ? p.ssb : 0;
+  const ss0 = computeHouseholdSS(p, retAgeDet);
   const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const calYear0 = CURRENT_YEAR + (retAgeDet - p.currentAge);
   const { total: otherInc0 } = computeOtherIncome(p.otherIncomes, calYear0);
@@ -1857,7 +1864,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // this engine, so there's no draw-order concern to preserve here).
     // COLA compounds from the claiming age (p.ssAge), not the retirement-year
     // loop counter `y` — see runMC's identical fix above.
-    const ss = age >= p.ssAge ? Math.round(p.ssb * Math.pow(1 + (p.ssCola || 2.4)/100, Math.max(0, age - p.ssAge))) : 0;
+    const ss = computeHouseholdSS(p, age);
     const growthFactor = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
     const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
     const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
@@ -7138,10 +7145,24 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
       // same portfolio, materially more tax. That tax cliff, not the lost check,
       // is what actually blindsides surviving spouses, and it only applies to
       // couples, so leave a single filer's scenario alone.
+      //
+      // Survivor's new SS: with real two-person data on file (§21 Phase 1),
+      // the survivor keeps the LARGER of the two checks — exact arithmetic,
+      // no approximation. Without it (spouse.enabled=false, the legacy/default
+      // case) we still don't know the spouse's own benefit, so this falls back
+      // to the pre-existing 0.67 rule-of-thumb unchanged (only right for a
+      // one-earner couple, but it's what every profile without spousal SS data
+      // has always seen here — not silently regressing that case to "no
+      // haircut at all"). `spouse.enabled: false` on the mutated profile stops
+      // computeHouseholdSS from also applying a spousal top-up on top of a
+      // benefit that's already the post-death survivor amount.
       run: (N, seed) => runMC(
         {
           ...p,
-          ssb: Math.round((p.ssb || 0) * 0.67),
+          ssb: p.spouse?.enabled
+            ? Math.max(p.ssb || 0, p.spouse.ssb || 0)
+            : Math.round((p.ssb || 0) * 0.67),
+          spouse: { ...(p.spouse || {}), enabled: false },
           filingStatus: "single",
           twoHousehold: false,
         },
@@ -11601,6 +11622,8 @@ export default function AiRAForecaster() {
       retireAge: retAge,
       endAge,
       ssAge: assumptions.ssAge,
+      ssPia: assumptions.ssPia || 0,
+      spouse: assumptions.spouse || { enabled: false, ssb: 0, ssAge: 67, ssPia: 0 },
       port,
       contrib,
       employerContrib: assumptions.employerContrib || 0,
