@@ -78,6 +78,14 @@ export async function onRequestPost({ request, env, waitUntil }) {
   }
   const authHeader = request.headers.get("Authorization") || "";
   const presented  = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  // A missing ADMIN_SECRET used to fall through to the same 401 as a wrong one,
+  // because constantTimeEqual(x, undefined) simply compares against the string
+  // "undefined". That cost real debugging time: "Unauthorized" gave no hint that the
+  // env var was never set on this deployment. Leaks nothing — it describes server
+  // config, not the secret.
+  if (!env.ADMIN_SECRET) {
+    return json({ ok: false, error: "ADMIN_SECRET is not configured on this deployment." }, 500);
+  }
   if (!presented || !constantTimeEqual(presented, env.ADMIN_SECRET)) {
     // Brief constant-ish randomized delay to mask any residual timing signal.
     await new Promise(r => setTimeout(r, 80 + Math.floor(Math.random() * 40)));

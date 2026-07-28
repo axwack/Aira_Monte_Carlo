@@ -54,9 +54,26 @@ export async function onRequestPost({ request, env }) {
     `).bind(token).run();
 
     if (consume.meta?.changes !== 1) {
-      return json({
-        error: "This restore link has expired or has already been used too many times. Please contact support.",
-      }, 401);
+      // "unknown", "expired" and "used up" are three different problems and one
+      // shared message hid which — it sent an operator debugging a mistyped/legacy
+      // token hunting for an expiry that was never the cause. One extra read only on
+      // the failure path, so it costs nothing normally.
+      let why = "unknown";
+      try {
+        const row = await env.DB.prepare(
+          "SELECT uses, max_uses, expires_at, unixepoch() AS now FROM restore_tokens WHERE token = ?"
+        ).bind(token).first();
+        if (!row) why = "not_found";
+        else if (row.expires_at <= row.now) why = "expired";
+        else if (row.uses >= row.max_uses) why = "used_up";
+      } catch { why = "lookup_failed"; }
+      console.error(JSON.stringify({ tag: "[restore]", ok: false, reason: why }));
+      const msg = why === "not_found"
+        ? "That restore link isn't recognised. Please check you copied the whole link, or contact support."
+        : why === "used_up"
+          ? "This restore link has already been used on the maximum number of devices. Contact support for a new one."
+          : "This restore link has expired. Contact support for a new one.";
+      return json({ error: msg }, 401);
     }
   } catch (e) {
     console.error("[restore] token consume failed:", e.message);

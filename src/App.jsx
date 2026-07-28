@@ -184,9 +184,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.42";
-export const BUILD_TAG = "[main] v1.2.42 — Spouse Social Security inputs (§21 Phase 1 UI). The engine wiring for a second benefit landed earlier without any UI, so the feature was unreachable. Adds an opt-in 'Add my spouse's Social Security' toggle plus the spouse's benefit, claim age, and both partners' full-retirement (FRA) amounts. Everything is a number read straight off ssa.gov — AiRA deliberately does not derive benefits from a PIA and claim-age schedule, because SSA’s own estimate beats our reconstruction of it and cannot drift out of date. The FRA amounts are asked for separately because the spousal top-up is 50% of the HIGHER earner’s FRA amount, not 50% of whatever they actually claim, and delayed credits never raise it — it is the one figure that cannot be inferred from what someone receives. A live panel shows the resulting top-up, or says plainly when there is none. Off by default, so every existing plan is untouched. NOT added: a 'when does my spouse die' input — the engine does not model that event yet, and shipping the control first would create exactly the dead setting ghostSettings.test.js exists to catch. An inline note says so and points at the Stress Test scenario that does cover it. 639 tests pass.";
-export const BUILD_TIME = "2026-07-28T14:00:00Z";
+const APP_VERSION = "1.2.43";
+export const BUILD_TAG = "[main] v1.2.43 — Three small correctness/diagnosability fixes. (1) The 401(k) field told users to enter their 'total employee deferral (pre-tax + Roth)' — but that field routes 100% to the PRE-TAX bucket, so anyone with a Roth 401(k) was inflating their projected RMDs, overstating future tax, and understating their tax-free balance. Relabelled to 401(k)/403(b)/457(b) — pre-tax only, with the consequence stated; a dedicated Roth 401(k) field is REQUIREMENTS §22.1. (2) The restore link error said 'expired or already used' for three different failures, sending operators hunting an expiry that was never the cause; it now distinguishes not-found, expired and used-up, and logs the reason. (3) A missing ADMIN_SECRET returned the same 401 as a wrong one, because the constant-time compare just tested against the string 'undefined' — it now returns an explicit 'not configured' 500, which leaks nothing since it describes server config rather than the secret.";
+export const BUILD_TIME = "2026-07-28T16:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -10279,7 +10279,7 @@ function ContribPanel({ values, onChange }) {
         <div style={sectionTitle}>💰 Annual Contributions</div>
         <div style={sectionDesc}>Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.</div>
         <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 10, lineHeight: 1.4 }}>⚠ Employer Contribution and Brokerage/After-Tax Savings aren't capped by the tool — the IRS doesn't set a hard per-field limit on either, but real-world amounts are still bounded by your actual plan and income. 401(k), HSA, and Roth IRA below stay capped at their real legal limits.</div>
-        <WFieldRow label="401(k) Annual Contribution" helper="Total employee deferral (pre‑tax + Roth).">
+        <WFieldRow label="401(k) / 403(b) / 457(b) — pre-tax only" helper="Your PRE-TAX employee deferral. Roth 401(k)/403(b) money does NOT belong here — this field is taxed as ordinary income on withdrawal and drives your future RMDs. Put Roth deferrals in the Roth line below until a dedicated Roth 401(k) field exists (REQUIREMENTS §22.1).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="HSA Monthly Contribution" helper="Family limit $8,550 + $1,000 catch‑up (2026).">
