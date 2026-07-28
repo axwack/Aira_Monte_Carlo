@@ -1777,3 +1777,58 @@ Make outside cash a real, finite, depleting balance.
 - Gate through logic-validator (does the pot belong in MAGI/provisional income? it is
   after-tax money being spent, so it should not be income — confirm) and
   design-authority (where the balance input lives, and the exhausted-state copy).
+
+## 22. Widow's-penalty implementation plan — derived 2026-07-28, NOT built
+
+Requested by a second user: *"I'd also like ability to predict the effect of an early
+passing of one partner."* Last piece of §21. Route recorded so it is not re-derived.
+
+**The blocker, precisely.** `isMFJ` is a closure CONSTANT in both engines
+(`buildWithdrawalWaterfall.js:331` and the `runMC` mirror), read by ~24 sites: federal
+brackets, `stdDed`, `bracketCeiling`, `taxableSocialSecurity`, LTCG brackets, the NIIT
+threshold, the IRMAA tier, the OBBBA senior bonus, the joint-RMD gate, and state
+brackets. Filing status is nowhere time-varying.
+
+**The insight that makes it small:** `yearTax(age, yr, …)` already receives `age`, and so
+does every draw step — so filing status needs no new plumbing through call signatures. It
+can be derived from the age already in scope:
+
+```js
+const isMFJBase    = filingStatus !== "single";
+const survivorFrom = (spouse?.enabled && spouse?.deathAge) ? spouse.deathAge : Infinity;
+const mfjAt = (age) => isMFJBase && age < survivorFrom;   // Single from the death year on
+```
+
+Replace `isMFJ` with `mfjAt(age)` at those sites and make `fedBase` / `stateBr0` per-age
+lookups instead of hoisted constants. Mechanical — but it is TAX MATH across ~24 sites in
+two engines, so it wants a dedicated session, not the tail of one.
+
+**Also required in the same change:**
+- SS becomes `max(primary, spouse)` from `deathAge`: the survivor keeps the larger check,
+  the smaller one stops.
+- The OBBBA senior bonus drops from 2 persons to 1 — automatic, since v1.2.28 made it
+  person-count aware.
+- `useJointRmdTable` must switch off: the joint table is only valid while the
+  much-younger spouse is alive (the guard already exists, keyed on filing status).
+
+**Profile field:** `spouse.deathAge` (null = not modelled). Deliberately ONE user-entered
+age, not a mortality draw — per §21's agreed approach. That is what keeps this a
+deterministic event in a known year instead of a variable threaded through 3,000 Monte
+Carlo paths, and it is the reason the change is contained at all.
+
+**Tests that must exist before it ships:**
+1. `deathAge = null` reproduces today's numbers byte-for-byte (regression lock).
+2. In the death year + 1, taxable income RISES on an unchanged portfolio — the penalty
+   itself, and the entire point of the feature.
+3. SS drops to exactly `max(primary, spouse)`, not the sum.
+4. Standard deduction, IRMAA tier and senior bonus all step down together — one of them
+   lagging is the likely bug.
+5. Cross-engine: `runMC` and the waterfall agree on the survivor year.
+
+**UI:** the input belongs directly under the spouse SS block shipped in v1.2.42, replacing
+the "Not modelled yet" note currently sitting there.
+
+**About page:** worth a short entry once built. The teachable point is that the tax hit
+usually exceeds the lost benefit — the survivor keeps the larger of the two checks but
+files Single, so brackets narrow, the standard deduction roughly halves, IRMAA tiers halve,
+and the senior bonus halves, against a barely-reduced RMD and an unchanged portfolio.
