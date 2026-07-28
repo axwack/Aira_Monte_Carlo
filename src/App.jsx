@@ -184,9 +184,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.43";
-export const BUILD_TAG = "[main] v1.2.43 — Three small correctness/diagnosability fixes. (1) The 401(k) field told users to enter their 'total employee deferral (pre-tax + Roth)' — but that field routes 100% to the PRE-TAX bucket, so anyone with a Roth 401(k) was inflating their projected RMDs, overstating future tax, and understating their tax-free balance. Relabelled to 401(k)/403(b)/457(b) — pre-tax only, with the consequence stated; a dedicated Roth 401(k) field is REQUIREMENTS §22.1. (2) The restore link error said 'expired or already used' for three different failures, sending operators hunting an expiry that was never the cause; it now distinguishes not-found, expired and used-up, and logs the reason. (3) A missing ADMIN_SECRET returned the same 401 as a wrong one, because the constant-time compare just tested against the string 'undefined' — it now returns an explicit 'not configured' 500, which leaks nothing since it describes server config rather than the secret.";
-export const BUILD_TIME = "2026-07-28T16:00:00Z";
+const APP_VERSION = "1.2.44";
+export const BUILD_TAG = "[main] v1.2.44 — Two small fixes. (1) The admin panel could not find a real paying customer: inspect and issue-jwt called fakeCustomerId(email), which INVENTS a cus_ADMIN_ id matching only simulate-purchase test rows, so a genuine Stripe customer always came back not found while their credits sat in D1 under a real cus_ id. Both now resolve the email against customers.email first — the same lookup issue-restore-link already used — falling back to the synthetic id only so admin test flows keep working. (2) preRetireEq/postRetireEq are now proven to reach runMC, with a direction check that more equity raises the median outcome, so the fields cannot be read but wired backwards. They set the stock/bond mix for the entire portfolio, so a fault there would skew every success rate in the product. 642 tests.";
+export const BUILD_TIME = "2026-07-28T17:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console

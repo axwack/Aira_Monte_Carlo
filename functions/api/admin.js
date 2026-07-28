@@ -38,6 +38,29 @@ function fakeCustomerId(email) {
   return `cus_ADMIN_${local}`;
 }
 
+/**
+ * Resolve an email to the customer id that actually holds the credits.
+ *
+ * `inspect` and `issue-jwt` used to call fakeCustomerId(email) directly, which
+ * INVENTS a cus_ADMIN_<local-part> identity. That only ever matches rows created by
+ * simulate-purchase, so looking up a real paying customer by their email returned
+ * "not found" while their credits sat in D1 under a genuine cus_… id. That is exactly
+ * how the admin panel failed to find a live customer during the 2026-07-27 incident.
+ *
+ * Real customer first (same query issue-restore-link already used); the synthetic id
+ * is only a fallback so admin test flows keep working.
+ */
+async function resolveCustomerId(db, email) {
+  if (!email) return null;
+  try {
+    const row = await db.prepare(
+      "SELECT stripe_customer_id FROM customers WHERE email = ? ORDER BY updated_at DESC"
+    ).bind(email).first();
+    if (row?.stripe_customer_id) return row.stripe_customer_id;
+  } catch { /* fall through to the synthetic id */ }
+  return fakeCustomerId(email);
+}
+
 function fakeSessionId() {
   return `cs_admin_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -245,7 +268,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
       if (!email && !explicitId) return json({ ok: false, error: "Provide email or customerId" }, 400);
       if (!env.DB)               return json({ ok: false, error: "D1 not bound" }, 500);
 
-      const customerId = explicitId || fakeCustomerId(email);
+      const customerId = explicitId || await resolveCustomerId(env.DB, email);
       try {
         const customer = await env.DB.prepare(
           "SELECT * FROM customers WHERE stripe_customer_id = ?"
@@ -267,7 +290,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
       if (!email && !explicitId) return json({ ok: false, error: "Provide email or customerId" }, 400);
       if (!env.JWT_SECRET)       return json({ ok: false, error: "JWT_SECRET not configured" }, 500);
 
-      const customerId = explicitId || fakeCustomerId(email);
+      const customerId = explicitId || await resolveCustomerId(env.DB, email);
       const token = await mintCustomerJWT(customerId, env.JWT_SECRET);
       return json({
         ok: true,
