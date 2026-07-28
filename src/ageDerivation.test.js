@@ -74,8 +74,8 @@ describe("ageFromDob — calendar birthday semantics", () => {
 
   describe("age as of an arbitrary date (checkpoints)", () => {
     test("computes age on a given past date, not today", () => {
-      expect(ageFromDob("1970-03-14", "2020-06-01")).toBe(50);
-      expect(ageFromDob("1970-03-14", "2020-01-01")).toBe(49);
+      expect(ageFromDob("1970-04-22", "2020-06-01")).toBe(50);
+      expect(ageFromDob("1970-04-22", "2020-01-01")).toBe(49);
     });
 
     test("month-day comparison is numeric, not lexical", () => {
@@ -90,7 +90,7 @@ describe("ageFromDob — calendar birthday semantics", () => {
     });
 
     test("an unparseable asOf yields null rather than a wrong number", () => {
-      expect(ageFromDob("1970-03-14", "garbage")).toBeNull();
+      expect(ageFromDob("1970-04-22", "garbage")).toBeNull();
     });
   });
 
