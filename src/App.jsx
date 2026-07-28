@@ -185,9 +185,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.45";
-export const BUILD_TAG = "[main] v1.2.45 — Equity glidepath: one switch age, honoured everywhere (REQUIREMENTS §26). THE BUG: runMC computed the equity weight in two places — portReturn (switched at the retirement age) and the seqOverride branch every Stress Test runs through (switched at a HARDCODED 62). The same function modelled two different investors depending on which branch produced the year, so a stress run could not be compared with the headline run. The same literal was also in the deterministic schedule, buildRothExplorer and buildConversionLadder — four copies, none agreeing with portReturn. All five now resolve through the new engine/glidepath.js. THE FEATURE: the switch was welded to retireAge, so 'stay 90/10 until 67 even though I retire at 62' was inexpressible — when you de-risk and when you stop working are different decisions. New profile field glidepathSwitchAge, default null → retireAge, so every saved plan is byte-identical until it is set; forwarded through the params memo (the classic miss) and editable under the two equity-weight inputs it arbitrates between. Six new tests including a regression lock across all three engines and one that fails on the old hardcoded line. 648 tests pass.";
-export const BUILD_TIME = "2026-07-28T21:45:00Z";
+const APP_VERSION = "1.2.47";
+export const BUILD_TAG = "[main] v1.2.47 — Results summary bar corrected, and money labels put into plain language. THE BUG: the portfolio figure rendered mc.medR — the median balance at the START of retirement, captured before the drawdown loop — under the label 'at age {endAge}'. It reported the balance before a single withdrawal as though it were the balance after a full retirement. Now uses mc.term.p50, the median of each path's final year, which is what the label claims; medR stays correct on the Portfolio at Retirement card. THE MISLABEL: '$X/mo safe spend' was params.sp/12 — the user's own typed target echoed back — while the wording claimed the app had computed a certified safe amount. It is also after-tax (runMC sizes the draw as need + totalTax, so tax is drawn on top of the target, never netted out of it) and nothing said so. Now reads 'your spend target (after tax)'. THE JARGON: 'Real $' / 'Nominal $' on both charts and their toggle are now 'today's dollars' / 'future dollars', technical terms kept in the tooltip; Bengen's '(Fixed Real $)' is now '(fixed, inflation-adjusted)'. Two About cards added — spending figures are after tax, and today's vs future dollars. Labels and copy only; no engine or math change. 648 tests."
+export const BUILD_TIME = "2026-07-28T23:40:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2344,7 +2344,7 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
     <div className="chart-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show || showExplainer ? 8 : 0, flexWrap: "wrap", gap: 6 }}>
         <div className="ct" style={{ marginBottom: 0 }}>
-          📊 Age-by-Age Projection Bands · {useReal ? "Real $" : "Nominal $"}
+          📊 Age-by-Age Projection Bands · {useReal ? "today's dollars" : "future dollars"}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button
@@ -3580,7 +3580,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     <div className="chart-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
         <div className="ct" style={{ margin: 0 }}>
-          {title} · {useReal ? "Real $" : "Nominal $"}
+          {title} · {useReal ? "today's dollars" : "future dollars"}
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <Toggle val={showMortality} onChange={setShowMortality} label="Mortality" accent="#ef4444" />
@@ -5964,7 +5964,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           >
             <option value="smart">📋 Smart Waterfall (Tax-Optimal · GK→Bengen at 15yr)</option>
             <option value="gk">Guyton‑Klinger (Dynamic)</option>
-            <option value="bengen">Bengen 4% Rule (Fixed Real $)</option>
+            <option value="bengen">Bengen 4% Rule (fixed, inflation-adjusted)</option>
             <option value="fixed">Fixed % of Portfolio</option>
             <option value="vanguard">Vanguard Dynamic Spending</option>
             <option value="risk">Risk‑Based Guardrails</option>
@@ -12506,8 +12506,8 @@ export default function AiRAForecaster() {
                 </div>
               </div>
               <Toggle
-                val={real} onChange={setReal} label="📉 Real dollars" accent="#0ea5e9"
-                hint={"Converts FUTURE dollars back to present-day purchasing power, so a balance decades out is readable in money you recognise — it does not adjust past data. Note: the chart begins at your retirement year, so amounts are shown in RETIREMENT-year purchasing power; inflation between now and retirement is not removed. If you are already retired, that is the same as today."}
+                val={real} onChange={setReal} label="📉 Show in today's dollars" accent="#0ea5e9"
+                hint={"OFF = future dollars: the actual balance you'd see on a statement that year, inflation included. $3M at 85 sounds like a lot, but decades of inflation are baked into it.\n\nON = today's dollars: the same money re-expressed in what it would buy right now, so you can judge it against prices you know.\n\n(Economists call these 'nominal' and 'real' — same thing, plainer name.)\n\nOne limit: the chart starts at your retirement year, so 'today' means retirement-year purchasing power. Inflation between now and retirement is not removed. If you are already retired, that is the same as today."}
               />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -12596,12 +12596,34 @@ export default function AiRAForecaster() {
                   {/* Row 2 — secondary metrics, one line (paths + strategy name removed; strategy
                       lives in its own strip below, withdrawal rate kept here only). */}
                   <div style={{ fontSize: 14, color: "#64748b", marginTop: 11, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 12px" }}>
-                    <span title="Median projected portfolio value at your plan age.">
-                      <strong style={{ color: "#94a3b8" }}>{mc ? fmtDollar(mc.medR) : "—"}</strong> at age {endAge}
+                    {/* `mc.medR` is the median portfolio at the START of retirement
+                        (runMC captures portAtRetire before the drawdown loop), so
+                        showing it under "at age {endAge}" reported the wrong metric
+                        entirely — the balance before a single withdrawal, labelled as
+                        the balance after a full retirement. `mc.term.p50` is the median
+                        of each path's LAST year, which is what this label claims.
+                        medR is still correct on the "Portfolio at Retirement" card.
+                        Figure is nominal (future dollars); the Real$/Nominal$ toggle
+                        does not reach this row yet, so it says so rather than implying
+                        today's purchasing power. */}
+                    <span title="Median projected portfolio value left at your plan age, across all simulated paths. Shown in future (nominal) dollars — not adjusted to today's purchasing power.">
+                      <strong style={{ color: "#94a3b8" }}>{mc ? fmtDollar(mc.term?.p50 ?? 0) : "—"}</strong> at age {endAge} <span style={{ fontSize: 12, opacity: 0.75 }}>(future $)</span>
                     </span>
                     {sep}
-                    <span title="The amount that is safe to spend on expenses — covered by Social Security, rental &amp; other income + your portfolio draw. See the Income &amp; Expenses tab.">
-                      <strong style={{ color: "#fbbf24" }}>${(Math.round(params.sp / 12)).toLocaleString()}/mo</strong> safe spend
+                    {/* This is params.sp — the spending target the USER typed — divided
+                        by 12. The engine does not solve for it. Labelling it "safe
+                        spend" claimed a number the app had computed and certified,
+                        when all it does is echo the input back; the success rate to
+                        the left is what says whether the target holds. "Your target"
+                        is the honest frame.
+
+                        It is also AFTER TAX. runMC sizes the portfolio draw as
+                        `need + totalTax` (~line 1538) — tax is an additional draw on
+                        top of the spend target, never netted out of it — so this is
+                        money that reaches the household to spend. Nothing said so,
+                        which is why it had to be asked. */}
+                    <span title="Your spending target — the figure you entered, shown monthly. This is money to spend AFTER tax: the engine withdraws enough extra from the portfolio to cover the tax bill on top of this amount, so taxes are not taken out of it. Covered by Social Security, rental and other income first, then your portfolio draw. The success rate on the left is what tells you whether this target holds.">
+                      <strong style={{ color: "#fbbf24" }}>${(Math.round(params.sp / 12)).toLocaleString()}/mo</strong> your spend target <span style={{ fontSize: 12, opacity: 0.75 }}>(after tax)</span>
                     </span>
                     {sep}
                     <span title="Initial withdrawal rate = (First year spending − guaranteed income) ÷ Portfolio at retirement.">

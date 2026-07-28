@@ -46,6 +46,13 @@ export const ABOUT_PRODUCT = {
 export const ABOUT_FEATURES = [
   // ── Getting Started ──────────────────────────────────────
   {
+    id:    "after-tax",
+    group: "Getting Started",
+    icon:  "🧾",
+    title: "Spending numbers are AFTER tax",
+    body:  "When you enter a spending target, that is money to actually spend — groceries, travel, insurance. It is not a pre-tax figure you then pay tax out of. The engine works out the tax bill on your withdrawals and pulls that amount from the portfolio ON TOP of your target, so the full target still reaches you. If you plan to spend $90,000 and the tax on the year's withdrawals is $11,000, the portfolio gives up $101,000 and you spend $90,000. Two consequences worth knowing. First, when you compare AiRA to a calculator that treats spending as pre-tax, AiRA will look like it needs a bigger portfolio — it is answering a harder, more useful question. Second, the withdrawal order matters enormously precisely because the tax is a real, separate cost: drawing the same money in a smarter order shrinks that extra draw, year after year.",
+  },
+  {
     id:    "solo-mode",
     group: "Getting Started",
     icon:  "🌴",
@@ -129,6 +136,13 @@ export const ABOUT_FEATURES = [
   },
 
   // ── Reading the Charts ────────────────────────────────────
+  {
+    id:    "todays-vs-future-dollars",
+    group: "Reading the Charts",
+    icon:  "💵",
+    title: "Today's dollars vs. future dollars",
+    body:  "The same pile of money can be written two ways, and the difference is inflation. FUTURE DOLLARS is the number that would actually print on a statement in that year — $3M at age 85 really is $3M on paper. TODAY'S DOLLARS re-expresses that money as what it would buy right now, which is the only way to judge whether it is enough, because you know what things cost today. A plan showing $3M at 85 might be worth about $1.4M in today's purchasing power at 2.5% inflation over 30 years. Neither number is wrong — they answer different questions. Use the 'Show in today's dollars' toggle above the charts to switch. Economists call these 'real' (today's) and 'nominal' (future); AiRA uses the plainer words, and every chart and table states which one it is showing so you never have to guess. One limit worth knowing: the charts begin at your retirement year, so 'today's dollars' means retirement-year purchasing power — inflation between now and the day you retire is not stripped out. If you are already retired, the two are the same.",
+  },
   {
     id:    "reassess-trigger",
     group: "Reading the Charts",
