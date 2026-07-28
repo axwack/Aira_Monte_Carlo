@@ -31,9 +31,19 @@ export const ABOUT_THANKS = {
   people: [
     {
       handle: "u/garylapointe",
-      url:    "https://www.reddit.com/user/garylapointe/",
-      note:   "Pension modelling. Spotted that the funding table's components did not add up to its own total — the math was right, but income from a pension was missing from the breakdown, so the plan looked short when it was not. Also pushed for the after-tax basis to be stated where you enter your spending, not just where the results appear.",
+      url:    "",
+      note:   ""
     },
+    {
+      handle: "u/beckers666",
+      url:    "",
+      note:   ""
+    },
+    {
+      handle: "topshot.rhit",
+      url:    "",
+      note:   ""
+    }
   ],
 };
 
