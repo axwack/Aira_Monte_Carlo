@@ -185,9 +185,9 @@ const AGE_LIMITS = {
 };
 
 /* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.54";
-export const BUILD_TAG = "[main] v1.2.54 — Visible info markers on table headers. Vincent: 'how do people know to hover over things? I wouldn't know to do that.' Correct — App.jsx carried 109 hover-only title= attributes against 7 visible markers, so ~94% of the app's explanation was invisible unless you happened to hover, and title= does not exist on touch devices AT ALL, making all of it unreachable on phones and tablets. Added a visible marker to 18 table headers that carried a tooltip and showed no cue. This signals that an explanation exists; it does NOT fix touch. The real fix — triaging all 109 sites into must-be-visible / click-to-open InfoModal / leave-as-is, using the InfoModal component that already exists but is barely used — is specified in REQUIREMENTS 28.2 for Friday. Also guards the Special Thanks note against empty strings. Display only."
-export const BUILD_TIME = "2026-07-29T03:05:00Z";
+const APP_VERSION = "1.2.56";
+export const BUILD_TAG = "[main] v1.2.56 — Disclose the 11 engine fields the UI was throwing away. A sweep of every field the waterfall emits against every field App.jsx renders found 13 with no display site; 11 required fixing. Planned one-off expenses (eventCost/eventLabels) are CHARGED to the draw yet appeared in no column and no tooltip, so a 40k roof spiked the withdrawal with nothing on screen explaining it — the same defect as the phantom age-72 jump, still live for a different field. One-off inflows (eventInflow) are deposited into a bucket, so balances jumped unaccounted for. Fed Tax is a SUM of ordinary + LTCG + NIIT, and the engine returned all three plus taxSS and realizedGain; none were rendered. Roth conversion tax sourcing (convTaxFromCash/Pretax, convToRoth) is fully computed — which account actually pays, and whether withholding shrinks what lands in the Roth — and was never shown. Also emits rmdSurplus from the engine instead of the Pre-Tax tooltip re-deriving it: the duplicate agreed exactly in ordinary years, but in Roth CONVERSION years it double-subtracted the conversion tax (irmaaFull is the with-conversion figure; the engine offset excludes it, since conversion tax is funded separately) and understated reinvested RMD by up to 32k on a test profile. Visible markers added, since hover-only disclosure is unreachable on touch. Display + one engine field.";
+export const BUILD_TIME = "2026-07-29T18:15:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1770,6 +1770,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       portfolioDraw: r.needFromPort,
       housingCost: r.housingCost,
       carveoutCost: r.carveoutCost,
+      healthcareRisk: r.healthcareRisk,
       conversionAmount: r.conversionAmount,
       fedTax: r.fedTax,
       stateTax: r.stateTax,
@@ -1907,13 +1908,16 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // buildWithdrawalWaterfall.
     if (evDet.inflow > 0) port += evDet.inflow;
 
-    // Deterministic schedule is one median path, so it charges the EXPECTED
-    // annual cost rather than a coin flip — keeping it consistent in
-    // expectation with the Monte Carlo instead of ignoring the cost entirely.
-    const hcShockDet = expectedHealthcareShock(age, p, cumInfl);
+    // ADVISORY ONLY — deliberately NOT charged to this year's draw. See the
+    // matching note in buildWithdrawalWaterfall: this is E[X] on a MEDIAN path,
+    // and this table is what a real person enacts. At the default 3.5%/yr the
+    // median shock is $0, so charging $3,500 produced a withdrawal figure that
+    // is wrong in every actual year. runMC still draws it stochastically, so
+    // the success rate beside this table continues to price the risk.
+    const hcRiskDet = expectedHealthcareShock(age, p, cumInfl);
 
     const gkIncomeOffset = ss + ab + otherIncTotal;
-    const gkFixedCosts = housingCost + carveoutCost + evDet.committed + hcShockDet;
+    const gkFixedCosts = housingCost + carveoutCost + evDet.committed;
 
     // Apply withdrawal strategy (deterministic version)
     if (p.spSchedule && p.spSchedule.length) {
@@ -2031,7 +2035,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // the smile year over year and corrupt GK's own inflation logic. This is
     // an overlay on what the strategy decided, not a change to the strategy.
     const spSmiledDet = sp * spendingSmileFactor(age, retAgeDet, p.smile !== false);
-    const need = Math.max(0, spSmiledDet - ss - ab - otherIncTotal) + housingCost + carveoutCost + eventCostDet + hcShockDet;
+    // hcRiskDet is NOT in this sum — see its declaration above. Every term here
+    // is a cash obligation the user actually pays this year.
+    const need = Math.max(0, spSmiledDet - ss - ab - otherIncTotal) + housingCost + carveoutCost + eventCostDet;
 
     // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab) —
     // this path automatically carries LTCG/cost-basis AND the IRMAA 2-year lookback
@@ -2054,6 +2060,8 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
       portfolioDraw: Math.round(need),
       housingCost: Math.round(housingCost),
       carveoutCost: Math.round(carveoutCost),
+      // Advisory, NOT included in portfolioDraw/totalWithdrawal above.
+      healthcareRisk: Math.round(hcRiskDet),
       conversionAmount: 0,
       fedTax: taxEnabled ? taxResult.fedTax : 0,
       stateTax: taxEnabled ? taxResult.stateTax : 0,
@@ -6245,7 +6253,7 @@ function WaterfallPlanView({ p, result }) {
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
           Bracket cap reason shown in Pre-Tax column
           <br />
-          Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD)  + Roth = Spending + Housing + Carveouts + Fed/State/IRMAA taxes</strong> (Income = Social Security + Pension/Other + Annuity/Rental Inc. — All of it offsets spending before any draw) (Any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown.
+          Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD)  + Roth = Spending + Housing + Carveouts + Planned one-off expenses + Fed/State/IRMAA taxes</strong> (Income = Social Security + Pension/Other + Annuity/Rental Inc. — All of it offsets spending before any draw) (Any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown.
         </div>
         <table className="roth-tbl">
           <thead>
@@ -6294,10 +6302,27 @@ function WaterfallPlanView({ p, result }) {
                     title={`Spending ${fmtDollar(r.spending)}`
                       + (r.housingCost > 0 ? ` + housing ${fmtDollar(r.housingCost)}` : "")
                       + (r.carveoutCost > 0 ? ` + carveouts ${fmtDollar(r.carveoutCost)}` : "")
+                      // Planned one-off / periodic expenses. These ARE charged to the
+                      // draw, and until now appeared in no column and no tooltip — so a
+                      // $40k roof spiked the withdrawal with nothing on screen to explain
+                      // it. Same defect that produced u/garylapointe's phantom age-72 jump.
+                      + (r.eventCost > 0
+                          ? ` + planned expense${(r.eventLabels || []).length > 1 ? "s" : ""} ${fmtDollar(r.eventCost)}`
+                            + ((r.eventLabels || []).length ? ` (${r.eventLabels.join(", ")})` : "")
+                          : "")
                       + ` + taxes ${fmtDollar(r.fedTax + r.stateTax + r.irmaa)}`
                       + (r.otherIncome > 0 ? ` − other income ${fmtDollar(r.otherIncome)}` : "")
-                      + ` = total need funded by the income + draw columns to the right`}>
-                  {fmtDollar(r.spending)}</td>
+                      + ` = total need funded by the income + draw columns to the right`
+                      // Healthcare shock is deliberately absent: it is a probability-
+                      // weighted risk priced by the Monte Carlo, never charged here (v1.2.55).
+                      }>
+                  {fmtDollar(r.spending)}
+                  {r.eventCost > 0 && (
+                    // Visible cue — hover-only disclosure is unreachable on touch.
+                    <span style={{ color: "#fb7185", fontSize: 10, marginLeft: 3 }}
+                          title={`Includes ${fmtDollar(r.eventCost)} of planned one-off spending`}>+📌</span>
+                  )}
+                </td>
                 <td style={opTdStyle}>←</td>
                 <td style={{ textAlign: "right", color: "#5eead4" }}
                     title={(() => {
@@ -6318,13 +6343,28 @@ function WaterfallPlanView({ p, result }) {
                       if (r.annuityRental > 0) parts.push(`Annuity/Rental ${fmtDollar(r.annuityRental)}`);
                       if (r.otherIncome > 0)   parts.push(`Pension/Other ${fmtDollar(r.otherIncome)}`);
                       const total = (r.fixedIncomeTotal || 0) + (r.otherIncome || 0);
-                      return parts.length > 1
+                      let t = parts.length > 1
                         ? `${parts.join(" + ")} = ${fmtDollar(total)}\n\nCovered first, before any portfolio draw.`
                         : `Social Security: ${fmtDollar(r.ss)}`;
+                      // One-off money ARRIVING (inheritance, home sale, pension lump sum).
+                      // It is DEPOSITED into an account bucket rather than netted against
+                      // spending, so it never showed in this column — the balance simply
+                      // jumped with nothing on screen accounting for it.
+                      if (r.eventInflow > 0) {
+                        t += `\n\nPLUS ${fmtDollar(r.eventInflow)} arriving this year`
+                          + ((r.eventLabels || []).length ? ` (${r.eventLabels.join(", ")})` : "")
+                          + ` — deposited into your accounts, not spent. It raises the balances`
+                          + ` on the right rather than reducing this year's draw.`;
+                      }
+                      return t;
                     })()}>
                   {((r.fixedIncomeTotal || 0) + (r.otherIncome || 0)) > 0
                     ? fmtDollar((r.fixedIncomeTotal || 0) + (r.otherIncome || 0))
                     : "—"}
+                  {r.eventInflow > 0 && (
+                    <span style={{ color: "#34d399", fontSize: 10, marginLeft: 3 }}
+                          title={`${fmtDollar(r.eventInflow)} one-off money arriving, deposited into your accounts`}>+💰</span>
+                  )}
                 </td>
                 <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#64748b" }} title={fmtDollar(r.fromCash)}>{r.fromCash > 0 ? fmtDollar(r.fromCash) : "—"}</td>
@@ -6339,7 +6379,13 @@ function WaterfallPlanView({ p, result }) {
                       // part used to display "—" in RMD-funded years while six figures
                       // were actually leaving the IRA.)
                       const totalPretaxOut = r.fromPretax + r.rmd;
-                      const rmdExcess = Math.max(0, r.rmd - ((r.needFromPort || 0) + (r.irmaaFull || 0)));
+                      // Read the ENGINE's figure — it is the number that actually moved
+                      // money into the taxable bucket. This used to be re-derived here as
+                      // `rmd - (needFromPort + irmaaFull)`, which matched in ordinary
+                      // years but double-subtracted the conversion tax in Roth conversion
+                      // years (irmaaFull is with-conversion; the engine's offset is not),
+                      // understating the reinvested surplus by up to five figures.
+                      const rmdExcess = r.rmdSurplus || 0;
                       let t = `${fmtDollar(totalPretaxOut)} total from pretax`;
                       if (r.rmd > 0) t += ` = forced RMD ${fmtDollar(r.rmd)} + discretionary ${fmtDollar(r.fromPretax)}`;
                       t += ` — ${r.pretaxCapReason}`;
@@ -6358,12 +6404,64 @@ function WaterfallPlanView({ p, result }) {
                 </td>
                 {anyConversion && (
                   <td style={{ textAlign: "right", color: "#a78bfa" }}
-                      title={r.conversionAmount > 0 ? `Converted ${fmtDollar(r.conversionAmount)} pretax → Roth — adds ~${fmtDollar(r.conversionTax)} to this year's tax (included in Fed/State below)` : "No conversion this year"}>
+                      title={(() => {
+                        if (!(r.conversionAmount > 0)) return "No conversion this year";
+                        let t = `Converted ${fmtDollar(r.conversionAmount)} pretax → Roth`
+                          + ` — adds ~${fmtDollar(r.conversionTax)} to this year's tax (included in Fed/State).`;
+                        // WHERE THE CONVERSION TAX CAME FROM. The engine already routes it
+                        // (taxable → cash → pretax, or withheld from the transfer) and
+                        // records each source; none of it was ever displayed, so the user
+                        // could not see which account actually paid — or whether that was
+                        // the right account.
+                        const src = [];
+                        if (r.convTaxFromTaxable > 0) src.push(`Taxable ${fmtDollar(r.convTaxFromTaxable)}`);
+                        if (r.convTaxFromCash > 0)    src.push(`Cash ${fmtDollar(r.convTaxFromCash)}`);
+                        if (r.convTaxFromPretax > 0)  src.push(`Pre-Tax ${fmtDollar(r.convTaxFromPretax)}`);
+                        if (src.length) t += `\n\nTax paid from: ${src.join(" + ")}.`;
+                        // Withholding out of the transfer means less money lands in the Roth.
+                        if (r.convToRoth > 0 && r.convToRoth < r.conversionAmount) {
+                          t += `\n\nOnly ${fmtDollar(r.convToRoth)} actually reaches the Roth —`
+                            + ` the tax was withheld from the transfer. Paying it from Taxable or Cash`
+                            + ` instead would move the full ${fmtDollar(r.conversionAmount)} across.`;
+                        } else if (r.convToRoth > 0) {
+                          t += `\nFull ${fmtDollar(r.convToRoth)} reaches the Roth.`;
+                        }
+                        if (r.convTaxFromPretax > 0 && r.convToRoth >= r.conversionAmount) {
+                          t += `\n\n⚠ Part of the tax came from Pre-Tax — that draw is itself`
+                            + ` ordinary income. Taxable or Cash is the cheaper source.`;
+                        }
+                        return t;
+                      })()}>
                     {r.conversionAmount > 0 ? fmtDollar(r.conversionAmount) : "—"}
+                    {r.conversionAmount > 0 && r.convToRoth > 0 && r.convToRoth < r.conversionAmount && (
+                      <span style={{ color: "#fbbf24", fontSize: 9, marginLeft: 2 }}
+                            title={`Only ${fmtDollar(r.convToRoth)} of the ${fmtDollar(r.conversionAmount)} reaches the Roth — tax withheld from the transfer`}>◑</span>
+                    )}
                   </td>
                 )}
                 <td style={{ textAlign: "right", color: b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "#475569", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }} title={fmtDollar(b1End)}>{b1End > 0 ? fmtDollar(b1End) : "—"}</td>
-                <td style={{ textAlign: "right", color: "#f87171" }} title={fmtDollar(r.fedTax)}>{fmtDollar(r.fedTax)}</td>
+                <td style={{ textAlign: "right", color: "#f87171" }}
+                    title={(() => {
+                      // "Fed Tax" is a SUM of three separately-computed pieces, and the
+                      // engine returns all three — they were simply never rendered.
+                      // fedTax = ordinary + ltcgTax + niit (buildWithdrawalWaterfall ~464).
+                      const ltcg = r.ltcgTax || 0, niit = r.niit || 0;
+                      const ordinary = Math.max(0, (r.fedTax || 0) - ltcg - niit);
+                      const parts = [`ordinary income ${fmtDollar(ordinary)}`];
+                      if (ltcg > 0) parts.push(`long-term capital gains ${fmtDollar(ltcg)}`);
+                      if (niit > 0) parts.push(`net investment income tax ${fmtDollar(niit)}`);
+                      let t = `${fmtDollar(r.fedTax)} federal = ${parts.join(" + ")}`;
+                      if (r.realizedGain > 0) t += `\n\nRealized gain on the taxable draw: ${fmtDollar(r.realizedGain)}.`;
+                      if (r.taxSS > 0) t += `\n${fmtDollar(r.taxSS)} of your Social Security is taxable this year`
+                        + (r.ss > 0 ? ` (${Math.round(r.taxSS / r.ss * 100)}% of ${fmtDollar(r.ss)}).` : ".");
+                      return t;
+                    })()}>
+                  {fmtDollar(r.fedTax)}
+                  {(r.ltcgTax > 0 || r.niit > 0) && (
+                    <span style={{ color: "#fca5a5", fontSize: 9, marginLeft: 2 }}
+                          title="Includes capital-gains tax and/or net investment income tax — not just ordinary income">*</span>
+                  )}
+                </td>
                 <td style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "#475569" }} title={fmtDollar(r.stateTax)}>
                   {r.stateTax > 0 ? fmtDollar(r.stateTax) : "—"}
                 </td>

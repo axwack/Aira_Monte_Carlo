@@ -14,6 +14,7 @@
 
 import { healthcareShockDraw, expectedHealthcareShock } from "./engine/expenses";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall";
+import { runMC } from "./App";
 
 const DEFAULTS = { hcShockAge: 72, hcProb: 3.5, hcMin: 70_000, hcMax: 130_000 };
 
@@ -92,7 +93,26 @@ describe("healthcareShockDraw (stochastic)", () => {
   });
 });
 
-describe("healthcare shocks reach the plan (regression: they were inert)", () => {
+/**
+ * Where the shock is allowed to bite.
+ *
+ * Reported by u/garylapointe: an all-Roth plan showed a $3,960 portfolio draw
+ * appearing from nowhere at exactly age 72. It was expectedHealthcareShock —
+ * E[X] = 3.5% x mean($70k,$130k), inflated 5 years — charged into the
+ * DETERMINISTIC schedule.
+ *
+ * That is a category error. The deterministic engines produce a MEDIAN path that
+ * a real person enacts ("withdraw this much from this account this year"), and
+ * the median of a 3.5%/yr shock is $0. Nobody withdraws $3,960 for a hip
+ * replacement; they withdraw nothing, or ~$100k. The charge also leaked into the
+ * GK guardrails as a fixed cost, suppressing recommended spending against an
+ * expense nobody pays.
+ *
+ * Contract now: the deterministic engines DISCLOSE the risk (row.healthcareRisk)
+ * and never charge it. runMC draws it stochastically, so the success rate — the
+ * number that is supposed to carry risk — still prices it fully.
+ */
+describe("healthcare shocks: priced in the Monte Carlo, never charged to the plan", () => {
   const P = {
     currentAge: 65, retireAge: 65, endAge: 95,
     sp: 80_000, ssAge: 67, ssb: 36_000, inf: 2.5,
@@ -103,28 +123,55 @@ describe("healthcare shocks reach the plan (regression: they were inert)", () =>
     ],
   };
 
-  test("enabling shocks lowers the ending balance", () => {
+  // ── The plan must be untouched by it ──────────────────────────────────────
+  test("shock probability does NOT move the deterministic ending balance", () => {
     const off = buildWithdrawalWaterfall({ ...P, hcProb: 0 });
-    const on  = buildWithdrawalWaterfall(P);
-    expect(on.smart.rows.at(-1).totalPort).toBeLessThan(off.smart.rows.at(-1).totalPort);
+    const on  = buildWithdrawalWaterfall({ ...P, hcProb: 10 });
+    expect(on.smart.rows.at(-1).totalPort).toBe(off.smart.rows.at(-1).totalPort);
   });
 
-  test("the cost appears only from the start age onward", () => {
-    const r = buildWithdrawalWaterfall(P);
-    expect(r.smart.rows.find(x => x.age === 71).healthcareCost).toBe(0);
-    expect(r.smart.rows.find(x => x.age === 72).healthcareCost).toBeGreaterThan(0);
+  test("shock probability does NOT move any yearly draw (Gary's $3,960)", () => {
+    const off = buildWithdrawalWaterfall({ ...P, hcProb: 0 }).smart.rows;
+    const on  = buildWithdrawalWaterfall({ ...P, hcProb: 10 }).smart.rows;
+    on.forEach((r, i) => {
+      expect(r.totalWithdrawal).toBe(off[i].totalWithdrawal);
+      expect(r.needFromPort).toBe(off[i].needFromPort);
+    });
   });
 
-  test("the charged cost grows over time — inflation is applied in the plan", () => {
-    const r = buildWithdrawalWaterfall(P);
-    const at72 = r.smart.rows.find(x => x.age === 72).healthcareCost;
-    const at90 = r.smart.rows.find(x => x.age === 90).healthcareCost;
-    expect(at90).toBeGreaterThan(at72);
+  test("no draw discontinuity at the shock start age", () => {
+    const rows = buildWithdrawalWaterfall(P).smart.rows;
+    const at71 = rows.find(x => x.age === 71).needFromPort;
+    const at72 = rows.find(x => x.age === 72).needFromPort;
+    // Year-over-year need moves by inflation-ish amounts, never by a ~$4k step.
+    expect(Math.abs(at72 - at71)).toBeLessThan(at71 * 0.10);
   });
 
-  test("a higher shock probability costs more", () => {
-    const low  = buildWithdrawalWaterfall({ ...P, hcProb: 1 });
-    const high = buildWithdrawalWaterfall({ ...P, hcProb: 10 });
-    expect(high.smart.rows.at(-1).totalPort).toBeLessThan(low.smart.rows.at(-1).totalPort);
+  // ── ...but the risk must still be VISIBLE ─────────────────────────────────
+  test("the risk is disclosed on the row, from the start age onward", () => {
+    const rows = buildWithdrawalWaterfall(P).smart.rows;
+    expect(rows.find(x => x.age === 71).healthcareRisk).toBe(0);
+    expect(rows.find(x => x.age === 72).healthcareRisk).toBeGreaterThan(0);
+  });
+
+  test("the disclosed risk inflates over time", () => {
+    const rows = buildWithdrawalWaterfall(P).smart.rows;
+    expect(rows.find(x => x.age === 90).healthcareRisk)
+      .toBeGreaterThan(rows.find(x => x.age === 72).healthcareRisk);
+  });
+
+  test("the advisory field is not named like a charged cost", () => {
+    // Guards the rename. `healthcareCost` read as a funded obligation, and a
+    // funding-identity test duly folded it back in — re-hiding the defect.
+    const row = buildWithdrawalWaterfall(P).smart.rows.find(x => x.age === 80);
+    expect(row.healthcareCost).toBeUndefined();
+    expect(row).toHaveProperty("healthcareRisk");
+  });
+
+  // ── The Monte Carlo still carries the risk ────────────────────────────────
+  test("runMC success rate STILL falls as shock probability rises", () => {
+    const safe   = runMC({ ...P, hcProb: 0,  sp: 95_000 }, 95, 1500, 42, true);
+    const risky  = runMC({ ...P, hcProb: 25, sp: 95_000 }, 95, 1500, 42, true);
+    expect(risky.rate).toBeLessThan(safe.rate);
   });
 });

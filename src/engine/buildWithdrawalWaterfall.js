@@ -611,10 +611,22 @@ export function buildWithdrawalWaterfall(params = {}) {
       // so the guardrails keep governing the recurring plan. See
       // computeCashFlowEvents.
       const ev = computeCashFlowEvents(cashFlowEvents, yr, inf, BASE_YEAR);
-      // Expected annual healthcare cost, inflated to this year. Declared here
-      // rather than beside the spend calc because the guardrail block below
-      // consumes it first.
-      const hcShock = expectedHealthcareShock(age, { hcShockAge, hcProb, hcMin, hcMax }, iF);
+      // ADVISORY ONLY — deliberately NOT charged to this year's draw.
+      //
+      // This is a probability-weighted EXPECTATION (hcProb x mean cost), and this
+      // engine produces a MEDIAN path that a real person enacts: "withdraw this
+      // much from this account this year". Charging E[X] into a median path is a
+      // category error — at the default 3.5%/yr the median shock is $0, not
+      // $3,500. The charge produced a draw that is wrong in 100% of actual years:
+      // a retiree either has no shock, or has a ~$100k hip replacement.
+      //
+      // It also silently contaminated the GK guardrails below, which read it as a
+      // fixed cost and lowered recommended spending against an expense nobody pays.
+      //
+      // Real shock risk is modeled where it belongs: runMC draws it stochastically
+      // (healthcareShockDraw), so the success rate still prices it. This value is
+      // emitted on the row purely so the UI can DISCLOSE the risk beside the plan.
+      const hcRisk = expectedHealthcareShock(age, { hcShockAge, hcProb, hcMin, hcMax }, iF);
 
       // INFLOWS (lump-sum pension, cash-balance rollover, inheritance, home
       // sale) are DEPOSITED into their destination bucket before this year's
@@ -661,12 +673,12 @@ export function buildWithdrawalWaterfall(params = {}) {
             plannedSpend: baseSp,
             cumInfl: Math.pow(1 + infR, age - retireAge),
             incomeOffset: fixedIncome + otherIncTotal,
-            fixedCosts: housingCost + carveoutCost + ev.committed + hcShock,
+            fixedCosts: housingCost + carveoutCost + ev.committed,
             portAtRetire: totalPort0,
           });
           sp = gkWithdraw(
             totalPort, refWR, sp, lastRet, infR, adjFloor, adjCeiling,
-            fixedIncome + otherIncTotal, housingCost + carveoutCost + ev.committed + hcShock
+            fixedIncome + otherIncTotal, housingCost + carveoutCost + ev.committed
           );
         } else {
           sp = sp * (1 + infR);
@@ -699,7 +711,9 @@ export function buildWithdrawalWaterfall(params = {}) {
       // the smile year over year and corrupt GK's own inflation logic. This is
       // an overlay on what the strategy decided, not a change to the strategy.
       const spSmiled = sp * spendingSmileFactor(age, retireAge, smile !== false);
-      const baseNeed = Math.max(0, spSmiled - fixedIncome - otherIncTotal) + housingCost + carveoutCost + ev.total + hcShock;
+      // hcRisk is NOT in this sum — see its declaration above. Every term here is
+      // a cash obligation the user actually pays this year.
+      const baseNeed = Math.max(0, spSmiled - fixedIncome - otherIncTotal) + housingCost + carveoutCost + ev.total;
 
       // Steps 3-5: portfolio draws. The draw ORDER differs by scenario:
       //   • smart — cash → taxable → pretax (bracket-capped) → Roth (tax-optimal)
@@ -1040,6 +1054,20 @@ export function buildWithdrawalWaterfall(params = {}) {
         effectiveRate: tax.effectiveRate, marginalBracket: tax.marginalBracket,
         taxableIncome: tax.taxableIncome, totInc: tax.totInc, magi: Math.round(tax.magi),
         realizedGain: Math.round(realizedGain), ltcgTax: tax.ltcgTax, niit: tax.niit, taxSS: tax.taxSS,
+        // Forced RMD beyond what spending + taxes consumed; reinvested into the
+        // taxable bucket above. EMITTED rather than left internal because the
+        // Pre-Tax tooltip was recomputing it as `rmd - (needFromPort + irmaaFull)`.
+        //
+        // That duplicate agreed exactly in ordinary years — but NOT in Roth
+        // conversion years, and by up to $32k on a test profile. `taxDue` above
+        // converges on the NO-conversion tax (the conversion's own tax is funded
+        // separately, via convTaxFrom*), while the row's `irmaaFull` is the
+        // WITH-conversion figure. The tooltip therefore subtracted the conversion
+        // tax a second time and UNDERSTATED how much RMD was reinvested.
+        //
+        // This value is the one that actually moved money (`taxable += rmdExcess`
+        // above), so it is authoritative. One formula, one owner: the engine.
+        rmdSurplus: Math.round(rmdExcess),
         landmines: { ssTorpedo, irmaaTriggered, rmdActive },
         cashEnd:    Math.round(cash),
         taxableEnd: Math.round(taxable),
@@ -1050,7 +1078,10 @@ export function buildWithdrawalWaterfall(params = {}) {
         housingCost: Math.round(housingCost),
         carveoutCost: Math.round(carveoutCost),
         eventCost: Math.round(ev.total),
-        healthcareCost: Math.round(hcShock),
+        // Advisory, NOT charged to any draw above. Renamed from `healthcareCost`
+        // so no caller can mistake it for a funded obligation and fold it back
+        // into a funding identity (withdrawal.test.js did exactly that).
+        healthcareRisk: Math.round(hcRisk),
         eventInflow: Math.round(ev.inflow),
         eventLabels: ev.hits.map(h => h.label),
         otherIncome: Math.round(otherIncTotal),
