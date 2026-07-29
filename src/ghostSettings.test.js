@@ -153,6 +153,17 @@ const NEEDS_A_TARGETED_FIXTURE = {
   // non-number. It is a REAL input — proven live in runMC, the stress path and the
   // deterministic schedule by the equity glidepath block below. REQUIREMENTS §26.
   glidepathSwitchAge:      "null by default; proven by the equity glidepath block below",
+  // Healthcare shock params (v1.2.55). These are REAL inputs — they are simply no
+  // longer read by the DETERMINISTIC engines that `fingerprint` samples, and the
+  // removal was deliberate: charging E[X] into a median withdrawal plan produced a
+  // draw figure wrong in every actual year (u/garylapointe's phantom $3,960 at 72).
+  // They now live exclusively in runMC's stochastic path, where shock risk belongs.
+  // Do NOT move these to INERT_BY_DESIGN — they are proven live by the
+  // "healthcare shock params reach runMC" block at the bottom of this file.
+  hcShockAge:              "runMC-only since v1.2.55; proven by the healthcare block below",
+  hcProb:                  "runMC-only since v1.2.55; proven by the healthcare block below",
+  hcMin:                   "runMC-only since v1.2.55; proven by the healthcare block below",
+  hcMax:                   "runMC-only since v1.2.55; proven by the healthcare block below",
 };
 
 /** A number summarising everything the engines computed. Any real change moves it. */
@@ -412,5 +423,46 @@ describe("glidepathSwitchAge — one switch age, honoured by every engine", () =
       return schedule[schedule.length - 1]?.portfolioEnd ?? 0;
     };
     expect(end(80)).toBeGreaterThan(end(null));
+  });
+});
+
+/**
+ * Healthcare shock params — live in runMC, deliberately NOT in the plan.
+ *
+ * These four were one of the original four ghost settings this file exists to
+ * catch, so exempting them from the generic sweep without proof would re-open
+ * exactly the hole the file was written to close. v1.2.55 removed them from both
+ * DETERMINISTIC engines on purpose (see NEEDS_A_TARGETED_FIXTURE above); this
+ * block proves they still reach the engine that is supposed to price risk.
+ */
+describe("healthcare shock params reach runMC", () => {
+  const HC = {
+    ...BASE,
+    // Spend hard enough that a shock can actually break a path — otherwise the
+    // success rate pins at 100% and no shock setting can move it.
+    sp: 150_000,
+    hcShockAge: 72, hcProb: 5, hcMin: 70_000, hcMax: 130_000,
+  };
+  const rate = (over) => runMC({ ...HC, ...over }, 92, 1500, 42, true).rate;
+
+  test("hcProb moves the success rate", () => {
+    expect(rate({ hcProb: 40 })).toBeLessThan(rate({ hcProb: 0 }));
+  });
+
+  test("hcMin / hcMax move the success rate", () => {
+    expect(rate({ hcMin: 300_000, hcMax: 500_000 })).toBeLessThan(rate({}));
+  });
+
+  test("hcShockAge moves the success rate", () => {
+    // Shocks starting at 65 hit more years than shocks starting at 85.
+    expect(rate({ hcShockAge: 65 })).toBeLessThan(rate({ hcShockAge: 85 }));
+  });
+
+  test("and they are NOT charged to the deterministic plan", () => {
+    // The other half of the contract. If a future change re-charges them, the
+    // withdrawal schedule silently stops being enactable again.
+    const calm  = buildWithdrawalWaterfall({ ...HC, hcProb: 0 });
+    const rough = buildWithdrawalWaterfall({ ...HC, hcProb: 40, hcMin: 300_000, hcMax: 500_000 });
+    expect(rough.smart.rows.at(-1).totalPort).toBe(calm.smart.rows.at(-1).totalPort);
   });
 });

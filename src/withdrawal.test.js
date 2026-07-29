@@ -271,12 +271,16 @@ describe("buildWithdrawalWaterfall — funding identity holds with IRMAA-trigger
       const rmdExcess = Math.max(0, r.rmd - (r.needFromPort + taxTotal));
       const lhs = r.fixedIncomeTotal + r.otherIncome + r.rmd
         + (r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth) - rmdExcess;
-      // healthcareCost and eventCost are real spending the draws must fund, so
-      // they belong on this side of the identity alongside housing and
-      // carveouts. Omitting them made the identity fail by exactly the
-      // healthcare charge once shocks were implemented.
+      // eventCost is real spending the draws must fund, so it belongs on this
+      // side alongside housing and carveouts.
+      //
+      // healthcareRisk deliberately does NOT appear here. It is a probability-
+      // weighted advisory (E[X]), not a cash obligation — see its declaration in
+      // buildWithdrawalWaterfall. It was previously charged to the draw as
+      // `healthcareCost`, which is what made this identity fail on screen: the
+      // rendered table was off by exactly the healthcare charge from age 72 on.
       const rhs = r.spending + r.housingCost + r.carveoutCost + taxTotal
-        + (r.healthcareCost || 0) + (r.eventCost || 0);
+        + (r.eventCost || 0);
       expect(Math.abs(lhs - rhs)).toBeLessThan(2);
     });
   }
@@ -1109,5 +1113,75 @@ describe("taxFunding value contract (§23 follow-up)", () => {
     expect(typeof endB).toBe("number");
     // Withholding shrinks what reaches the Roth, so terminal wealth must differ.
     expect(endA).not.toBe(endB);
+  });
+});
+
+/**
+ * Engine fields that the UI needs in order to explain a number.
+ *
+ * Every field below was computed by the engine and rendered NOWHERE, which is the
+ * defect class u/garylapointe found twice: a table that invites reconciliation and
+ * then fails it. `rmdSurplus` was worse than missing — the UI recomputed it with a
+ * DIFFERENT formula (omitting fed + state tax from the offset), so the "reinvested
+ * into Taxable" figure on screen was overstated in every year with income tax.
+ */
+describe("disclosure: engine emits what the UI must explain", () => {
+  const P = {
+    currentAge: 70, retireAge: 70, endAge: 92,
+    sp: 60_000, ssAge: 70, ssb: 40_000, inf: 2.5,
+    filingStatus: "mfj", stateOfResidence: "NJ", gr: 0.06,
+    birthYear: 1956,
+    accounts: [
+      { id: "d1", category: "pretax",  balance: 3_000_000 },
+      { id: "d2", category: "taxable", balance:   200_000 },
+    ],
+  };
+
+  test("rmdSurplus is emitted, not left for the UI to re-derive", () => {
+    const rows = buildWithdrawalWaterfall(P).smart.rows;
+    rows.forEach(r => expect(typeof r.rmdSurplus).toBe("number"));
+    // This fixture must actually force RMD beyond need, or the test proves nothing.
+    expect(rows.some(r => r.rmdSurplus > 0)).toBe(true);
+  });
+
+  test("rmdSurplus diverges from the old UI formula in CONVERSION years", () => {
+    // The tooltip's `rmd - (needFromPort + irmaaFull)` agreed exactly in ordinary
+    // years — irmaaFull is fed + state + IRMAA, despite the name. It broke only
+    // when a Roth conversion ran: irmaaFull is the WITH-conversion tax, while the
+    // engine's offset excludes conversion tax (funded separately via convTaxFrom*),
+    // so the tooltip subtracted it twice and understated the reinvestment.
+    const rows = buildWithdrawalWaterfall({ ...P, rothConversionTarget: "24" }).smart.rows;
+    const stale = (r) => Math.max(0, r.rmd - ((r.needFromPort || 0) + (r.irmaaFull || 0)));
+
+    const convYear = rows.find(r => r.conversionAmount > 0 && r.rmdSurplus > 0);
+    expect(convYear).toBeDefined();
+    expect(convYear.rmdSurplus).toBeGreaterThan(stale(convYear));
+
+    // And it must still agree where there is no conversion — otherwise this
+    // "fix" would be silently changing correct numbers.
+    rows.filter(r => !(r.conversionAmount > 0))
+        .forEach(r => expect(Math.abs(r.rmdSurplus - stale(r))).toBeLessThan(2));
+  });
+
+  test("fed tax components are exposed and reconcile to fedTax", () => {
+    const rows = buildWithdrawalWaterfall(P).smart.rows;
+    rows.forEach(r => {
+      const ordinary = r.fedTax - (r.ltcgTax || 0) - (r.niit || 0);
+      expect(ordinary).toBeGreaterThanOrEqual(-1);
+      expect(typeof r.taxSS).toBe("number");
+      expect(typeof r.realizedGain).toBe("number");
+    });
+  });
+
+  test("planned-expense fields travel with the row that charges them", () => {
+    const withEvent = buildWithdrawalWaterfall({
+      ...P,
+      cashFlowEvents: [{ id: "e1", label: "New roof", year: 2032, amount: 40_000 }],
+    }).smart.rows;
+    const hit = withEvent.find(r => r.eventCost > 0);
+    expect(hit).toBeDefined();
+    // The label must ride along, or the UI can name the cost but not the cause.
+    expect(hit.eventLabels).toContain("New roof");
+    expect(hit.needFromPort).toBeGreaterThan(0);
   });
 });
