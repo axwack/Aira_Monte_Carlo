@@ -160,6 +160,15 @@ const NEEDS_A_TARGETED_FIXTURE = {
   // They now live exclusively in runMC's stochastic path, where shock risk belongs.
   // Do NOT move these to INERT_BY_DESIGN — they are proven live by the
   // "healthcare shock params reach runMC" block at the bottom of this file.
+  // IRC 72(t) exceptions (v1.2.57). BASE retires at 62, so there is no pre-59½
+  // year for either to bind on — not ghosts, just outside this fixture's window.
+  // PROVEN live in earlyWithdrawal.test.js ("Rule of 55 on a former-employer 401k
+  // removes it" / "a running 72(t) SEPP removes it"), which asserts each one
+  // changes buildWithdrawalWaterfall's charged penalty. Do not move to
+  // INERT_BY_DESIGN.
+  ruleOf55:                "needs retireAge < 59.5; proven in earlyWithdrawal.test.js",
+  sepp72t:                 "needs retireAge < 59.5; proven in earlyWithdrawal.test.js",
+  sepp72tStartAge:         "null by default; proven in earlyWithdrawal.test.js",
   hcShockAge:              "runMC-only since v1.2.55; proven by the healthcare block below",
   hcProb:                  "runMC-only since v1.2.55; proven by the healthcare block below",
   hcMin:                   "runMC-only since v1.2.55; proven by the healthcare block below",
