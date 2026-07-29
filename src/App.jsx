@@ -6245,7 +6245,7 @@ function WaterfallPlanView({ p, result }) {
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
           Bracket cap reason shown in Pre-Tax column
           <br />
-          Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD) + Roth = Spending + Housing + Carveouts + Fed/State/IRMAA taxes</strong> (Income = Social Security + pension/other + annuity/rental — all of it offsets spending before any draw) (any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown.
+          Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD)  + Roth = Spending + Housing + Carveouts + Fed/State/IRMAA taxes</strong> (Income = Social Security + Pension/Other + Annuity/Rental Inc. — All of it offsets spending before any draw) (Any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown.
         </div>
         <table className="roth-tbl">
           <thead>
