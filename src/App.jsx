@@ -76,6 +76,7 @@ import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } 
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, healthcareShockDraw, expectedHealthcareShock } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
+import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_AGE } from "./engine/earlyWithdrawal.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT } from "./billing/credits.js";
 import { AdminPanel } from "./billing/admin-panel.js";
@@ -184,10 +185,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-/* ════ REFERENCE DATA ════ updated to 2026-05-08 */
-const APP_VERSION = "1.2.56";
-export const BUILD_TAG = "[main] v1.2.56 — Disclose the 11 engine fields the UI was throwing away. A sweep of every field the waterfall emits against every field App.jsx renders found 13 with no display site; 11 required fixing. Planned one-off expenses (eventCost/eventLabels) are CHARGED to the draw yet appeared in no column and no tooltip, so a 40k roof spiked the withdrawal with nothing on screen explaining it — the same defect as the phantom age-72 jump, still live for a different field. One-off inflows (eventInflow) are deposited into a bucket, so balances jumped unaccounted for. Fed Tax is a SUM of ordinary + LTCG + NIIT, and the engine returned all three plus taxSS and realizedGain; none were rendered. Roth conversion tax sourcing (convTaxFromCash/Pretax, convToRoth) is fully computed — which account actually pays, and whether withholding shrinks what lands in the Roth — and was never shown. Also emits rmdSurplus from the engine instead of the Pre-Tax tooltip re-deriving it: the duplicate agreed exactly in ordinary years, but in Roth CONVERSION years it double-subtracted the conversion tax (irmaaFull is the with-conversion figure; the engine offset excludes it, since conversion tax is funded separately) and understated reinvested RMD by up to 32k on a test profile. Visible markers added, since hover-only disclosure is unreachable on touch. Display + one engine field.";
-export const BUILD_TIME = "2026-07-29T18:15:00Z";
+const APP_VERSION = "1.2.57";
+export const BUILD_TAG = "[main] v1.2.57 - IRC 72(t): charge the 10% early-distribution penalty. Known gap, now closed. Neither engine penalized a pre-tax draw before 59.5, so the smart waterfall would fill the 12%/22% bracket from a Rollover IRA for a 56-year-old and bill income tax only - understating those dollars by a tenth and recommending an order that is wrong for anyone retiring early. New engine/earlyWithdrawal.js charges it in BOTH buildWithdrawalWaterfall and runMC, inside each tax fixed point so the draws actually FUND it (a bigger draw owes a bigger penalty owes a bigger draw). Roth CONVERSIONS are correctly NOT penalized - they are taxable, not distributed - but pre-tax dollars spent paying conversion tax never reach the Roth, so those ARE penalized, which is exactly why funding conversion tax from pre-tax under 59.5 is a bad trade. Exceptions, both default OFF and asked in Profile only when retireAge < 59.5: Rule of 55 (offered only when a former-employer 401k/403b/457 is actually detected among pretax accounts, applied pro-rata since the engines hold one aggregated pretax bucket, and never available to a rollover IRA) and 72(t) SEPP (with the series-start age, showing the LATER of 5 years or 59.5 it must run to). Penalty is its own row field and its own line item - never folded into fedTax - with a no-entry marker in the landmines column. Lifetime tax now carries it, so smart-vs-no-plan comparisons stop rating early retirement as cheaper than it is. Engine math.";
+export const BUILD_TIME = "2026-07-29T20:05:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -626,6 +626,12 @@ export const BLANK_PROFILE = {
   irmaaGuard: false,              // cap pretax draws below IRMAA tier-1 ceiling (ages 63+)
   ssTorpedoGuard: false,          // show SS torpedo landmine warnings in Withdrawal Plan tab
   rothEmergencyReserve: 0,        // never draw Roth below this $ floor
+  // IRC 72(t) exceptions to the 10% early-distribution tax. Both default OFF:
+  // the penalty is the law, and an exception is something the user must affirm.
+  // Only asked when retireAge < 59.5 (see the Early Retirement card).
+  ruleOf55: false,                // separated from employer at 55+, plan NOT rolled over
+  sepp72t: false,                 // a 72(t) SEPP is running
+  sepp72tStartAge: null,          // series start age; must run to max(start+5, 59.5)
   orderingMode: "tax_reactive",   // "tax_reactive"|"custom"|"pretax_first" — which bucket drains first (orthogonal to strategy + guardrails)
   withdrawalOrder: ["cash", "taxable", "pretax", "roth"], // used only when orderingMode === "custom"
   geminiApiKey: "",
@@ -1087,6 +1093,9 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // the normal drawdown draw, and the stress-sequence branch below cannot
   // disagree (the stress branch used to hardcode 62). Uses the EFFECTIVE
   // retirement age as the fallback, matching every other age in this engine.
+  // Share of pre-tax sitting in a former-employer plan — the only slice Rule of
+  // 55 can reach. Constant for the run (detected off starting balances).
+  const ruleOf55ShareMC = detectEmployerPlan(p.accounts).share;
   const glideSwitchAgeMC = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeMC });
   const accYrs = Math.max(0, retAgeMC - p.currentAge);
   const retYrs = endAge - retAgeMC;
@@ -1527,6 +1536,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       let totalTax = 0;
       let fromCash = 0, fromTaxable = 0, fromPretax = 0, fromRoth = 0;
       let shortfall = 0;
+      let earlyPenMC = { penalty: 0, exemptAmount: 0, reason: "" };
       // 12 passes, not 4 — the tax↔draw fixed point converges geometrically at
       // ~the marginal rate (≈0.3×/pass); 4 passes exited ~$100-350 short of the
       // true tax bill every year. The <$1 break makes extra passes free once
@@ -1555,7 +1565,18 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, 0,
           p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", gPass, magiLookbackMC
         );
-        const newTax = taxEnabled ? taxResult.totalTax : 0;
+        // IRC §72(t) additional tax on pre-59½ distributions. Inside the fixed
+        // point for the same reason as the rest of the bill: a bigger pretax draw
+        // owes a bigger penalty, which widens the need, which grows the draw.
+        // Without this the MC's success rate rated an early-retirement plan as
+        // cheaper than it is, while the waterfall (which does charge it) said
+        // otherwise — the two engines must price the same dollars.
+        earlyPenMC = earlyWithdrawalPenalty({
+          age, pretaxDistribution: fromPretax + rmd,
+          ruleOf55: p.ruleOf55, ruleOf55Share: ruleOf55ShareMC, retireAge: retAgeMC,
+          sepp72t: p.sepp72t, sepp72tStartAge: p.sepp72tStartAge ?? retAgeMC,
+        });
+        const newTax = taxEnabled ? taxResult.totalTax + earlyPenMC.penalty : 0;
         if (Math.abs(newTax - totalTax) < 1) { totalTax = newTax; break; }
         totalTax = newTax;
       }
@@ -5874,6 +5895,63 @@ function SourcingGuardrails({ p, onAssumptionChange, summary }) {
                 onFocus={selectAllOnFocus}
               />
       </label>
+      {/* ── IRC 72(t): only asked when it can actually apply ──────────────────
+          Determined at the OUTSET from retireAge, not discovered mid-plan. The
+          Rule of 55 option appears only when a former-employer plan is actually
+          detected among the pretax accounts: it does NOT reach an IRA, so
+          offering it to a pure-rollover holder would invite a wrong answer.
+          Detection is name-based (the account model has no 401k/IRA subtype). */}
+      {(p.retireAge ?? 99) < EARLY_PENALTY_AGE && (() => {
+        const plan = detectEmployerPlan(p.accounts || []);
+        return (
+          <div style={{
+            width: "100%", marginTop: 6, padding: "8px 10px", borderRadius: 8,
+            background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)",
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#fca5a5", marginBottom: 4 }}>
+              Retiring at {p.retireAge} — before 59.5
+            </div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6, lineHeight: 1.5 }}>
+              Pre-tax withdrawals before 59.5 owe a <strong>10% penalty</strong> on top of income tax
+              (IRC 72(t)). AiRA charges it. Tick an exception only if it genuinely applies to you.
+            </div>
+            {plan.hasEmployerPlan ? (
+              <label style={lbl} title="Rule of 55: penalty-free withdrawals from the plan of the employer you separated from, if you left in or after the year you turned 55. It does NOT apply to an IRA — rolling the 401k over forfeits it permanently.">
+                <input type="checkbox" checked={p.ruleOf55 || false}
+                  onChange={(e) => set("ruleOf55", e.target.checked)}
+                  style={{ cursor: "pointer", width: 15, height: 15 }} />
+                Rule of 55 — I left this employer at 55+ and did NOT roll it over
+                <span style={{ color: "#64748b", fontSize: 10, marginLeft: 4 }}>
+                  ({plan.matches.join(", ")} = {Math.round(plan.share * 100)}% of pre-tax)
+                </span>
+              </label>
+            ) : (
+              <div style={{ fontSize: 10, color: "#64748b", fontStyle: "italic", marginBottom: 4 }}>
+                No former-employer 401k/403b/457 found in your pre-tax accounts, so the Rule of 55
+                is unavailable — it never applies to an IRA. If you still hold one, name the account
+                so it contains "401k".
+              </div>
+            )}
+            <label style={lbl} title="72(t) SEPP: substantially equal periodic payments. Penalty-free, but the series must continue for the LONGER of 5 years or until age 59.5 — breaking it early retroactively penalizes every payment.">
+              <input type="checkbox" checked={p.sepp72t || false}
+                onChange={(e) => set("sepp72t", e.target.checked)}
+                style={{ cursor: "pointer", width: 15, height: 15 }} />
+              72(t) SEPP starting at age
+              <input type="number" value={p.sepp72tStartAge ?? p.retireAge ?? 55}
+                onChange={(e) => set("sepp72tStartAge", Number(e.target.value) || null)}
+                min={30} max={59} step={1} disabled={!p.sepp72t}
+                style={{ ...ctl, width: 60, fontFamily: "'DM Mono',monospace", textAlign: "right",
+                         opacity: p.sepp72t ? 1 : 0.4 }}
+                onFocus={selectAllOnFocus} />
+              {p.sepp72t && (
+                <span style={{ color: "#fbbf24", fontSize: 10, marginLeft: 4 }}>
+                  must run to age {Math.max((p.sepp72tStartAge ?? p.retireAge ?? 55) + 5, EARLY_PENALTY_AGE)}
+                </span>
+              )}
+            </label>
+          </div>
+        );
+      })()}
       <label style={lbl} title="The 'tax torpedo': as income rises, up to 85% of your Social Security becomes taxable. This flags the years where that happens (thresholds frozen since the 1980s).">
         <input type="checkbox" checked={p.ssTorpedoGuard ?? false} onChange={(e) => set("ssTorpedoGuard", e.target.checked)} style={{ cursor: "pointer", width: 15, height: 15 }} />
         Flag when Social Security gets taxed at 85%
@@ -6452,6 +6530,7 @@ function WaterfallPlanView({ p, result }) {
                       if (niit > 0) parts.push(`net investment income tax ${fmtDollar(niit)}`);
                       let t = `${fmtDollar(r.fedTax)} federal = ${parts.join(" + ")}`;
                       if (r.realizedGain > 0) t += `\n\nRealized gain on the taxable draw: ${fmtDollar(r.realizedGain)}.`;
+                      if (r.earlyPenalty > 0) t += `\n\n⛔ PLUS ${fmtDollar(r.earlyPenalty)} early-withdrawal penalty (IRC 72(t), 10%) — a SEPARATE additional tax, NOT included in the federal figure above.`;
                       if (r.taxSS > 0) t += `\n${fmtDollar(r.taxSS)} of your Social Security is taxable this year`
                         + (r.ss > 0 ? ` (${Math.round(r.taxSS / r.ss * 100)}% of ${fmtDollar(r.ss)}).` : ".");
                       return t;
@@ -6495,6 +6574,14 @@ function WaterfallPlanView({ p, result }) {
                       />
                     );
                   })()}
+                  {r.earlyPenalty > 0 && (
+                    <LandmineTip
+                      emoji="⛔"
+                      label="Early Withdrawal Penalty"
+                      color="#f87171"
+                      detail={`IRC 72(t): at age ${r.age} you are under 59.5, so the ${fmtDollar(r.fromPretax + r.rmd)} taken from pre-tax owes a 10% additional tax of ${fmtDollar(r.earlyPenalty)} ON TOP of income tax. Reason: ${r.earlyPenaltyReason}.${r.earlyPenaltyExempt > 0 ? ` ${fmtDollar(r.earlyPenaltyExempt)} was exempt.` : ""}\n\nWays out: fund spending from taxable / cash / Roth basis until 59.5; keep a former-employer 401k UNROLLED and use the Rule of 55; or start a 72(t) SEPP, which must then run to the LATER of 5 years or age 59.5.`}
+                    />
+                  )}
                   {r.landmines.rmdActive && (() => {
                     return (
                       <LandmineTip
@@ -12039,6 +12126,9 @@ export default function AiRAForecaster() {
       withdrawalBracketTarget: assumptions.withdrawalBracketTarget || "22",
       irmaaGuard: assumptions.irmaaGuard || false,
       rothEmergencyReserve: assumptions.rothEmergencyReserve || 0,
+      ruleOf55: assumptions.ruleOf55 || false,
+      sepp72t: assumptions.sepp72t || false,
+      sepp72tStartAge: assumptions.sepp72tStartAge ?? null,
       ssTorpedoGuard: assumptions.ssTorpedoGuard || false,
       // Account draw order (which bucket drains first) — orthogonal to strategy + guardrails.
       orderingMode: assumptions.orderingMode || "tax_reactive",

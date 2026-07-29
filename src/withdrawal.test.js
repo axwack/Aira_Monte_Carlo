@@ -279,8 +279,10 @@ describe("buildWithdrawalWaterfall — funding identity holds with IRMAA-trigger
       // buildWithdrawalWaterfall. It was previously charged to the draw as
       // `healthcareCost`, which is what made this identity fail on screen: the
       // rendered table was off by exactly the healthcare charge from age 72 on.
+      // The §72(t) early-distribution penalty is funded by the draws like any
+      // other tax, so it sits on this side too (it is $0 from age 59½ on).
       const rhs = r.spending + r.housingCost + r.carveoutCost + taxTotal
-        + (r.eventCost || 0);
+        + (r.eventCost || 0) + (r.earlyPenalty || 0);
       expect(Math.abs(lhs - rhs)).toBeLessThan(2);
     });
   }

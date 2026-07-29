@@ -41,6 +41,7 @@ import {
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, expectedHealthcareShock } from "./expenses.js";
+import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_RATE, EARLY_PENALTY_AGE } from "./earlyWithdrawal.js";
 import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
 import { resolveGlidepathSwitchAge } from "./glidepath.js";
@@ -322,7 +323,19 @@ export function buildWithdrawalWaterfall(params = {}) {
     otherIncomes = [],
     spSchedule   = null,
     retireAge: retireAgeRaw,
+    // IRC §72(t) exceptions. Both default OFF: the penalty is the law, and an
+    // exception is something the user must affirm, not something the app assumes
+    // on their behalf.
+    ruleOf55     = false,
+    sepp72t      = false,
+    sepp72tStartAge = null,
   } = params;
+
+  // Fraction of pre-tax money sitting in a former-employer plan — the only part
+  // Rule of 55 can reach. Detected from account NAMES (the account model has no
+  // 401k/IRA subtype); a user who mislabels a rollover IRA gets the wrong answer,
+  // which is the accepted tradeoff rather than a new field on every account.
+  const ruleOf55Share = detectEmployerPlan(params.accounts).share;
 
   // Already-retired users: see effectiveRetireAge. Every use below must be the
   // clamped value, or the projection replays years that have already happened.
@@ -725,6 +738,7 @@ export function buildWithdrawalWaterfall(params = {}) {
       let rothReserveHeld = 0;
       let taxNoConv = null;
       let taxDue = 0;
+      let earlyPenalty = { penalty: 0, exemptAmount: 0, reason: "" };
 
       // 12 passes, not 4: the tax↔draw fixed point converges geometrically at
       // ~the marginal rate (≈0.3×/pass), so 4 passes systematically exited
@@ -820,7 +834,20 @@ export function buildWithdrawalWaterfall(params = {}) {
         // itself part of the step function the fixed point had to converge
         // through.
         taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable, gPass, magiLookback);
-        const newTax = taxNoConv.irmaaFull; // fed + state + IRMAA are all real cash costs
+        // IRC §72(t) 10% additional tax. Inside the fixed point because it is a
+        // real cash cost that the draws themselves must fund: a bigger pretax
+        // draw owes a bigger penalty, which widens the need, which grows the
+        // draw. Converges with the rest of the tax bill.
+        //
+        // Base is the pretax DISTRIBUTION (spending draw + RMD). A Roth
+        // conversion is not a distribution and is added after the conversion is
+        // sized, below — never here.
+        earlyPenalty = earlyWithdrawalPenalty({
+          age, pretaxDistribution: fromPretax + rmd,
+          ruleOf55, ruleOf55Share, retireAge,
+          sepp72t, sepp72tStartAge: sepp72tStartAge ?? retireAge,
+        });
+        const newTax = taxNoConv.irmaaFull + earlyPenalty.penalty; // all real cash costs
         if (Math.abs(newTax - taxDue) < 1) { taxDue = newTax; break; }
         taxDue = newTax;
       }
@@ -1017,6 +1044,24 @@ export function buildWithdrawalWaterfall(params = {}) {
         }
       }
 
+      // Pre-tax dollars spent PAYING the conversion tax never reach the Roth, so
+      // they are an ordinary early distribution and carry §72(t) like any other.
+      // The conversion itself does not — it is taxable, not distributed. This is
+      // precisely why funding conversion tax from pre-tax under 59½ is a bad
+      // trade, and the plan must price it rather than hide it.
+      if (convTaxFromPretax > 0) {
+        const convPen = earlyWithdrawalPenalty({
+          age, pretaxDistribution: convTaxFromPretax,
+          ruleOf55, ruleOf55Share, retireAge,
+          sepp72t, sepp72tStartAge: sepp72tStartAge ?? retireAge,
+        });
+        earlyPenalty = {
+          penalty: earlyPenalty.penalty + convPen.penalty,
+          exemptAmount: earlyPenalty.exemptAmount + convPen.exemptAmount,
+          reason: earlyPenalty.reason || convPen.reason,
+        };
+      }
+
       cash    = Math.max(0, cash    - fromCash    - convTaxFromCash)    * (1 + cashGr);
       // NOTE (documented simplification): a taxable draw taken to PAY the conversion
       // tax would itself realize capital gains, creating a second-order tax on the
@@ -1034,7 +1079,10 @@ export function buildWithdrawalWaterfall(params = {}) {
       roth    = Math.max(0, roth    - fromRoth + convToRoth) * (1 + gr);
 
       lastRet = gr;
-      cTax += tax.totalTax;
+      // The §72(t) penalty is a real dollar leaving the plan, so lifetime tax
+      // must carry it — otherwise "smart vs no plan" comparisons would rate an
+      // early-retirement order as cheaper than it is.
+      cTax += tax.totalTax + earlyPenalty.penalty;
 
       // IRMAA lookback history: this year's FINAL MAGI (post-conversion when
       // one executed — `tax` is already the with-conversion result whenever
@@ -1051,6 +1099,12 @@ export function buildWithdrawalWaterfall(params = {}) {
         conversionAmount: Math.round(convAmt), conversionTax: convTax,
         fedTax: tax.fedTax, stateTax: tax.stateTax, irmaa: tax.irmaa,
         totalTax: tax.totalTax, irmaaFull: tax.irmaaFull,
+        // IRC §72(t) additional tax — its own line, never folded into fedTax, so
+        // the user can see the cost of retiring before 59½ rather than wondering
+        // why their effective rate looks high.
+        earlyPenalty: earlyPenalty.penalty,
+        earlyPenaltyReason: earlyPenalty.reason,
+        earlyPenaltyExempt: earlyPenalty.exemptAmount,
         effectiveRate: tax.effectiveRate, marginalBracket: tax.marginalBracket,
         taxableIncome: tax.taxableIncome, totInc: tax.totInc, magi: Math.round(tax.magi),
         realizedGain: Math.round(realizedGain), ltcgTax: tax.ltcgTax, niit: tax.niit, taxSS: tax.taxSS,
