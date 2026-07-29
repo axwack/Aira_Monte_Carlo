@@ -185,9 +185,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.57";
-export const BUILD_TAG = "[main] v1.2.57 - IRC 72(t): charge the 10% early-distribution penalty. Known gap, now closed. Neither engine penalized a pre-tax draw before 59.5, so the smart waterfall would fill the 12%/22% bracket from a Rollover IRA for a 56-year-old and bill income tax only - understating those dollars by a tenth and recommending an order that is wrong for anyone retiring early. New engine/earlyWithdrawal.js charges it in BOTH buildWithdrawalWaterfall and runMC, inside each tax fixed point so the draws actually FUND it (a bigger draw owes a bigger penalty owes a bigger draw). Roth CONVERSIONS are correctly NOT penalized - they are taxable, not distributed - but pre-tax dollars spent paying conversion tax never reach the Roth, so those ARE penalized, which is exactly why funding conversion tax from pre-tax under 59.5 is a bad trade. Exceptions, both default OFF and asked in Profile only when retireAge < 59.5: Rule of 55 (offered only when a former-employer 401k/403b/457 is actually detected among pretax accounts, applied pro-rata since the engines hold one aggregated pretax bucket, and never available to a rollover IRA) and 72(t) SEPP (with the series-start age, showing the LATER of 5 years or 59.5 it must run to). Penalty is its own row field and its own line item - never folded into fedTax - with a no-entry marker in the landmines column. Lifetime tax now carries it, so smart-vs-no-plan comparisons stop rating early retirement as cheaper than it is. Engine math.";
-export const BUILD_TIME = "2026-07-29T20:05:00Z";
+const APP_VERSION = "1.2.58";
+export const BUILD_TAG = "[main] v1.2.58 — The info affordance is a vector. Every hover-for-help marker was the Unicode glyph U+24D8, whose ring weight, diameter and baseline offset come from whichever font resolves it — at the 10-12px it is used at, hairline-thin and sitting a pixel above the text it annotates, and differently per platform and per typeface. No amount of CSS reaches inside a glyph. New InfoIcon draws it as SVG (crisp at any size, lands on the text baseline, inherits currentColor so hover transitions still work) and InfoDot wraps the muted-well-plus-tooltip pattern that was hand-rolled per call site; the dead infoDot style object is gone. All 25 markers converted, including the 18 table headers v1.2.54 added. Marker contrast also lifted off #475569 (2.5:1 on this background, below the WCAG floor) to #94a3b8 at 7.45:1. This is the marker's APPEARANCE only — the hover-only-is-unreachable-on-touch problem is still REQUIREMENTS 28.2. Prior v1.2.57: IRC 72(t) early-distribution penalty charged in both engines.";
+export const BUILD_TIME = "2026-07-29T21:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2216,6 +2216,62 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   return 72;
 }
 
+/* ════ ICONS ════ */
+/**
+ * Info icon, drawn as SVG rather than the Unicode "ⓘ" (U+24D8) it replaces.
+ *
+ * The glyph looked wrong for reasons no amount of CSS could fix: its shape comes
+ * from whatever font happens to resolve it, so the circle's weight, diameter and
+ * baseline offset all changed between platforms and between the app's two
+ * typefaces. At the 10–11px it was used at, the ring rendered hairline-thin and
+ * sat a pixel or two above the text it annotated. A vector draws identically
+ * everywhere, stays crisp at any size, and lines up on the text baseline.
+ *
+ * Inherits color through `currentColor`, so callers keep styling it with plain
+ * `color` — including hover transitions — exactly as they did the glyph.
+ */
+function InfoIcon({ size = 14, title, style }) {
+  return (
+    <svg
+      width={size} height={size} viewBox="0 0 16 16"
+      fill="none" aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      focusable="false"
+      style={{ flexShrink: 0, verticalAlign: "-0.15em", ...style }}
+    >
+      {title && <title>{title}</title>}
+      <circle cx="8" cy="8" r="6.9" stroke="currentColor" strokeWidth="1.3" opacity="0.75" />
+      <circle cx="8" cy="4.9" r="0.95" fill="currentColor" />
+      <path d="M8 7.15v4.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * The standard hoverable info affordance: an InfoIcon in a muted circular well
+ * that brightens on hover, with the explanation as a native tooltip. Replaces
+ * the hand-rolled `infoDot` style object that was retyped at each call site.
+ */
+function InfoDot({ title, size = 14, color = "#94a3b8", hoverColor = "#e2e8f0" }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <span
+      title={title}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: size + 6, height: size + 6, borderRadius: "50%",
+        background: hover ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.08)",
+        color: hover ? hoverColor : color,
+        cursor: "help", transition: "background 0.15s, color 0.15s",
+      }}
+    >
+      <InfoIcon size={size} />
+    </span>
+  );
+}
+
 /* ════ FORMATTERS ════ */
 /* The one money formatter. Whole dollars, grouped, no abbreviation — ever.
  * There used to be `fmtK` and `fmtM` alongside this, byte-identical to it and
@@ -2413,12 +2469,12 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
               <thead>
                 <tr>
                   <th>Age</th><th>Year</th>
-                  <th title="Share of simulated paths whose portfolio has not run out by this age">Still Funded ⓘ</th>
-                  <th title="Pessimistic — 90% of simulated outcomes were better than this">10th %ile ⓘ</th>
+                  <th title="Share of simulated paths whose portfolio has not run out by this age">Still Funded <InfoIcon size={12} /></th>
+                  <th title="Pessimistic — 90% of simulated outcomes were better than this">10th %ile <InfoIcon size={12} /></th>
                   <th>25th %ile</th>
-                  <th title="The median outcome — half of paths above, half below">Median ⓘ</th>
+                  <th title="The median outcome — half of paths above, half below">Median <InfoIcon size={12} /></th>
                   <th>75th %ile</th>
-                  <th title="Optimistic — only 10% of simulated outcomes were better than this">90th %ile ⓘ</th>
+                  <th title="Optimistic — only 10% of simulated outcomes were better than this">90th %ile <InfoIcon size={12} /></th>
                 </tr>
               </thead>
               <tbody>
@@ -2872,7 +2928,7 @@ function Toggle({ val, onChange, label, accent = "#0d9488", hint }) {
     <div className="tog-row" title={hint || undefined}>
       <span className="tog-label">
         {label}
-        {hint && <span style={{ marginLeft: 5, fontSize: 10, color: "#475569", cursor: "help" }}>ⓘ</span>}
+        {hint && <span style={{ marginLeft: 5, color: "#94a3b8", cursor: "help", display: "inline-flex" }}><InfoIcon size={12} /></span>}
       </span>
       <div
         className="tog"
@@ -5076,15 +5132,15 @@ const modeDescs = {
                   <th>Age</th>
                   <th>Label</th>
                   <th>Source</th>
-                  <th title="Pre-tax IRA/401k balance at the start of this year, before the conversion">Pre-Tax (before) ⓘ</th>
+                  <th title="Pre-tax IRA/401k balance at the start of this year, before the conversion">Pre-Tax (before) <InfoIcon size={12} /></th>
                   <th>Conversion</th>
                   <th>Fed Tax</th>
                   <th>State Tax</th>
                   <th>Bracket</th>
-                  <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg ⓘ</th>
+                  <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg <InfoIcon size={12} /></th>
                   <th>Eff Rate</th>
                   <th>Net→Roth</th>
-                  <th title="Cumulative Roth balance at end of this year (includes growth and withdrawals)">Roth Bal ⓘ</th>
+                  <th title="Cumulative Roth balance at end of this year (includes growth and withdrawals)">Roth Bal <InfoIcon size={12} /></th>
                 </tr>
               </thead>
               <tbody>
@@ -5679,13 +5735,13 @@ const modeDescs = {
                 {/* Row 2: measure sub-headers */}
                 <tr>
                   <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", borderLeft: "2px solid rgba(239,68,68,0.35)" }}>Roth $</th>
-                  <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax ⓘ</th>
+                  <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax <InfoIcon size={12} /></th>
                   <th style={{ color: "#94a3b8", background: "rgba(239,68,68,0.07)" }}>IRA Bal</th>
                   <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", borderLeft: "2px solid rgba(20,184,166,0.35)" }}>Roth $</th>
-                  <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax ⓘ</th>
+                  <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax <InfoIcon size={12} /></th>
                   <th style={{ color: "#94a3b8", background: "rgba(20,184,166,0.07)" }}>IRA Bal</th>
                   <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", borderLeft: "2px solid rgba(52,211,153,0.35)" }}>Roth $</th>
-                  <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", cursor: "help" }} title="Federal income tax only — no state income tax applies in this scenario (no-tax state). Hover any data cell to confirm the $0 state split.">Total Tax ⓘ</th>
+                  <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", cursor: "help" }} title="Federal income tax only — no state income tax applies in this scenario (no-tax state). Hover any data cell to confirm the $0 state split.">Total Tax <InfoIcon size={12} /></th>
                   <th style={{ color: "#94a3b8", background: "rgba(52,211,153,0.07)" }}>IRA Bal</th>
                 </tr>
               </thead>
@@ -6094,7 +6150,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           >
             <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".04em", color: previewIsDefault ? "#34d399" : "#fbbf24" }}>
               {previewIsDefault ? "✓ SAVED — USED EVERYWHERE" : "👁 PREVIEW ONLY — NOT SAVED"}
-              <span style={{ marginLeft: 5, fontSize: 10, color: "#94a3b8" }}>ⓘ</span>
+              <span style={{ marginLeft: 5, color: "#94a3b8", display: "inline-flex" }}><InfoIcon size={12} /></span>
             </span>
             <span style={{ fontSize: 12, color: "#94a3b8" }}>
               Your saved plan uses <strong style={{ color: "#e2e8f0" }}>{getStrategyLabel(withdrawalStrategy)}</strong>
@@ -6336,24 +6392,24 @@ function WaterfallPlanView({ p, result }) {
         <table className="roth-tbl">
           <thead>
             <tr>
-              <th>Age</th><th title="Target spending this year. Hover each row's value for the full need breakdown (housing, carveouts, other income, taxes).">Spending ⓘ</th>
-              <th style={opThStyle} title="Spending is funded by the income + draw columns to the right — see the funding identity above the table.">← ⓘ</th>
-              <th title="Money that arrives whether or not you sell anything — it is used first, before any portfolio draw.&#10;&#10;WHAT COUNTS AS INCOME HERE:&#10;• Social Security — your benefit, once claiming starts&#10;• Pension / other income — any stream you added under Other Income (pensions, annuities, part-time work, royalties)&#10;• Annuity / rental — property and Airbnb income, after the reliability haircut&#10;&#10;All of it reduces what the portfolio has to cover. Only the shortfall becomes a withdrawal.&#10;&#10;Hover any cell for that year's split.">Income ⓘ</th>
+              <th>Age</th><th title="Target spending this year. Hover each row's value for the full need breakdown (housing, carveouts, other income, taxes).">Spending <InfoIcon size={12} /></th>
+              <th style={opThStyle} title="Spending is funded by the income + draw columns to the right — see the funding identity above the table.">← <InfoIcon size={12} /></th>
+              <th title="Money that arrives whether or not you sell anything — it is used first, before any portfolio draw.&#10;&#10;WHAT COUNTS AS INCOME HERE:&#10;• Social Security — your benefit, once claiming starts&#10;• Pension / other income — any stream you added under Other Income (pensions, annuities, part-time work, royalties)&#10;• Annuity / rental — property and Airbnb income, after the reliability haircut&#10;&#10;All of it reduces what the portfolio has to cover. Only the shortfall becomes a withdrawal.&#10;&#10;Hover any cell for that year's split.">Income <InfoIcon size={12} /></th>
               <th style={opThStyle}>+</th>
-              <th title="Step 3 — drawn first from the portfolio">Cash ⓘ</th>
+              <th title="Step 3 — drawn first from the portfolio">Cash <InfoIcon size={12} /></th>
               <th style={opThStyle}>+</th>
-              <th title="Step 4 — drawn after cash is exhausted">Taxable ⓘ</th>
+              <th title="Step 4 — drawn after cash is exhausted">Taxable <InfoIcon size={12} /></th>
               <th style={opThStyle}>+</th>
-              <th title="Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k.">Pre-Tax ⓘ</th>
+              <th title="Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k.">Pre-Tax <InfoIcon size={12} /></th>
               <th style={opThStyle}>+</th>
-              <th title="Step 6 — last resort; emergency reserve floor maintained">Roth ⓘ</th>
+              <th title="Step 6 — last resort; emergency reserve floor maintained">Roth <InfoIcon size={12} /></th>
               <th style={opThStyle}>=</th>
-              <th title="Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes.">Total Draw ⓘ</th>
+              <th title="Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes.">Total Draw <InfoIcon size={12} /></th>
               {anyConversion && (
-                <th title="Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total.">Roth Conv ⓘ</th>
+                <th title="Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total.">Roth Conv <InfoIcon size={12} /></th>
               )}
-              <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End ⓘ</th>
-              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR ⓘ</th>
+              <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End <InfoIcon size={12} /></th>
+              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR <InfoIcon size={12} /></th>
               <th>
                 <LandmineTip
                   emoji="💣"
@@ -6733,7 +6789,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
           style={{ position: "absolute", top: 0, right: 0, paddingTop: 6, paddingRight: 6, paddingLeft: 10, paddingBottom: showInfo ? 8 : 4, cursor: "help" }}
           aria-label="Bucket role and recommended holdings"
         >
-          <span style={{ color: showInfo ? color : "#475569", fontSize: 11, userSelect: "none", transition: "color 0.15s" }}>ⓘ</span>
+          <span style={{ color: showInfo ? color : "#94a3b8", userSelect: "none", transition: "color 0.15s", display: "inline-flex" }}><InfoIcon size={13} /></span>
           {showInfo && (
             <div
               onMouseEnter={openTip}
@@ -12867,11 +12923,6 @@ export default function AiRAForecaster() {
                 See requirements.md §12-adjacent design audit (2026-06-29). */}
             {(() => {
               const heroColor = mc ? (mc.rate >= 0.85 ? "#0d9488" : mc.rate >= 0.7 ? "#f59e0b" : "#ef4444") : "#334155";
-              const infoDot = {
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                width: 14, height: 14, borderRadius: "50%", background: "rgba(255,255,255,0.1)",
-                color: "#64748b", fontSize: 10, fontWeight: 600, cursor: "help",
-              };
               const sep = <span style={{ color: "#475569" }}>·</span>;
               const strat = assumptions.withdrawalStrategy;
               return (
@@ -12884,7 +12935,7 @@ export default function AiRAForecaster() {
                       </div>
                       <div style={{ fontSize: 15, color: "#94a3b8", display: "flex", alignItems: "center", gap: 5 }}>
                         success to age {endAge}
-                        <span style={infoDot} title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`}>ⓘ</span>
+                        <InfoDot size={12} title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`} />
                       </div>
                     </div>
                     {mc && (
@@ -13425,4 +13476,4 @@ export default function AiRAForecaster() {
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot };
