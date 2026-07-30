@@ -148,7 +148,7 @@ const NEEDS_A_TARGETED_FIXTURE = {
   // Proven live by the "spousal Social Security" block at the bottom of this file —
   // do NOT move these to INERT_BY_DESIGN, they are real inputs.
   ssPia:                   "only read when spouse.enabled; see the spousal SS block below",
-  spouse:                  "object; exercised directly by the spousal SS block below",
+  spouse:                  "object; exercised directly by the spousal SS block below (incl. dob, deathAge, survivorClaimAge, survivorBenefitAtClaim)",
   // Defaults to null (→ switch at retireAge), so the generic sweep skips it as a
   // non-number. It is a REAL input — proven live in runMC, the stress path and the
   // deterministic schedule by the equity glidepath block below. REQUIREMENTS §26.
@@ -307,6 +307,89 @@ describe("spousal Social Security is wired to the engines", () => {
       spouse: { enabled: false, ssb: 99_000, ssAge: 62, ssPia: 99_000 },
     });
     expect(Math.round(disabled)).toBe(Math.round(single));
+  });
+
+  // ── survivor claiming (§30) ───────────────────────────────────────────────
+  // These two must move the model, or the survivor claiming strategy is a screen
+  // full of controls that compute nothing — the ghost-setting failure at feature
+  // scale, which §24's sequencing warning names explicitly.
+  test("spouse.survivorClaimAge moves the result once a death is modelled", () => {
+    const primaryDob = `${new Date().getFullYear() - 62}-01-01`;
+    const base = {
+      ...COUPLE, dob: primaryDob,
+      spouse: { ...COUPLE.spouse, dob: primaryDob, ssAge: 62, deathAge: 63 },
+    };
+    const early = fingerprint({ ...base, spouse: { ...base.spouse, survivorClaimAge: 60 } });
+    const atFra = fingerprint({ ...base, spouse: { ...base.spouse, survivorClaimAge: 67 } });
+    expect(Math.round(early)).not.toBe(Math.round(atFra));
+
+    // DIRECTION — and this is the strategy the feature exists to expose, so the
+    // reasoning matters more than the assertion.
+    //
+    // In THIS fixture the survivor's own benefit ($30K at 67) is far larger than the
+    // survivor benefit ($12K), so from 67 onward the household is paid the own
+    // benefit either way and the survivor benefit is irrelevant after that point.
+    // The only years that differ are 63-66. Claiming early therefore collects four
+    // years of a reduced survivor benefit at ZERO long-run cost, and delaying to FRA
+    // buys an unreduced benefit that will never be paid because the own benefit
+    // dominates it.
+    //
+    // So claiming EARLY wins here — which is exactly the real "take the reduced
+    // survivor benefit now, let my own grow" play. An engine that always preferred
+    // the unreduced benefit would be wrong.
+    expect(early).toBeGreaterThan(atFra);
+  });
+
+  test("delaying to FRA collects MORE lifetime Social Security when the survivor benefit is the big one", () => {
+    // The mirror case, which proves the reduction is really applied rather than early
+    // claiming merely always looking good.
+    //
+    // Deliberately asserted on CUMULATIVE SOCIAL SECURITY, not on the portfolio
+    // fingerprint. The fingerprint is a portfolio measure, and money received early
+    // is left invested and compounds for thirty years — at a 7% growth rate that
+    // advantage can outweigh a larger benefit received later, so the fingerprint
+    // answers "did this help the portfolio", not "is this the bigger benefit". Both
+    // are real questions; only the second isolates the claiming rule, and mixing
+    // them up is how a reduction applied backwards would slip through.
+    const { computeHouseholdSS } = require("./engine/buildRothExplorer.js");
+    const primaryDob = `${new Date().getFullYear() - 62}-01-01`;
+    const base = {
+      ssCola: 0,
+      dob: primaryDob,
+      ssAge: 62, ssb: 9_000, ssPia: 9_000,          // survivor's own benefit is small
+      spouse: {
+        enabled: true, dob: primaryDob,
+        ssAge: 62, ssb: 48_000, ssPia: 48_000,      // deceased was the high earner
+        deathAge: 62,
+      },
+    };
+    const lifetime = (claimAge) => {
+      let total = 0;
+      for (let age = 62; age <= 92; age++) {
+        total += computeHouseholdSS(
+          { ...base, spouse: { ...base.spouse, survivorClaimAge: claimAge } },
+          age
+        );
+      }
+      return total;
+    };
+    expect(lifetime(67)).toBeGreaterThan(lifetime(62));
+    // And the reduced claim really is reduced — about 80.7% at 62 against a
+    // survivor FRA of 67.
+    const at62 = computeHouseholdSS({ ...base, spouse: { ...base.spouse, survivorClaimAge: 62 } }, 62);
+    expect(at62).toBeLessThan(48_000);
+    expect(at62).toBeGreaterThan(48_000 * 0.715);
+  });
+
+  test("spouse.survivorBenefitAtClaim overrides the derived amount", () => {
+    const primaryDob = `${new Date().getFullYear() - 62}-01-01`;
+    const base = {
+      ...COUPLE, dob: primaryDob,
+      spouse: { ...COUPLE.spouse, dob: primaryDob, ssAge: 62, deathAge: 63 },
+    };
+    const derived = fingerprint(base);
+    const quoted  = fingerprint({ ...base, spouse: { ...base.spouse, survivorBenefitAtClaim: 60_000 } });
+    expect(Math.round(derived)).not.toBe(Math.round(quoted));
   });
 
   // ── spouse.dob (§24) ──────────────────────────────────────────────────────

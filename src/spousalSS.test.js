@@ -505,3 +505,229 @@ describe("§24 per-person Medicare / IRMAA start", () => {
     expect(personsAtLeastAge(77, 66, true, 65)).toBe(2);
   });
 });
+
+// ─── §30 — survivor benefit rules ─────────────────────────────────────────────
+//
+// v1.2.63 modelled the survivor's income as max(ownCheck, deceasedCheck) from the
+// death year. That was wrong in TWO OPPOSITE DIRECTIONS at once, and they do not
+// cancel — they hit different households:
+//
+//   OVERSTATED — it paid 100% of the deceased's check immediately. A survivor
+//   claiming below survivor FRA actually receives 71.5% (at 60) to 99%; the
+//   reduction is permanent.
+//
+//   UNDERSTATED, badly — the inherited check was gated on the DECEASED's claim age,
+//   so a death before they filed paid $0 until the year they *would* have filed.
+//   The survivor benefit actually derives from the deceased's PIA and is claimable
+//   from 60 whether or not the deceased ever filed. That is the early-death case
+//   the whole feature exists to explore.
+//
+// Constants cited from TAX_REFERENCE.md → "Survivor benefits".
+describe("§30 survivorBenefit — the statutory rules", () => {
+  const {
+    survivorFra, survivorReductionFactor, survivorBasis,
+    resolveSurvivorClaimAge, survivorYearBenefit,
+    SURVIVOR_MIN_CLAIM_AGE, SURVIVOR_MIN_FACTOR,
+  } = require("./engine/survivorBenefit.js");
+
+  test("survivor benefits start at 60, not 62 like an own benefit", () => {
+    expect(SURVIVOR_MIN_CLAIM_AGE).toBe(60);
+  });
+
+  describe("survivorFra — NOT the same schedule as retirement FRA", () => {
+    test("66 for 1945-1956", () => {
+      expect(survivorFra(1950)).toBe(66);
+      expect(survivorFra(1956)).toBe(66);
+    });
+    test("stepped in months for 1957-1961 — not rounded to a whole year", () => {
+      expect(survivorFra(1957)).toBeCloseTo(66 + 2 / 12, 6);
+      expect(survivorFra(1959)).toBeCloseTo(66 + 6 / 12, 6);
+      expect(survivorFra(1961)).toBeCloseTo(66 + 10 / 12, 6);
+    });
+    test("67 for 1962 and later", () => {
+      expect(survivorFra(1962)).toBe(67);
+      expect(survivorFra(1980)).toBe(67);
+    });
+    test("unknown birth year falls back to the modern value, never NaN", () => {
+      expect(survivorFra(null)).toBe(67);
+      expect(survivorFra(undefined)).toBe(67);
+      expect(Number.isNaN(survivorFra("x"))).toBe(false);
+    });
+  });
+
+  describe("survivorReductionFactor", () => {
+    test("71.5% at exactly 60", () => {
+      expect(survivorReductionFactor(60, 67)).toBeCloseTo(SURVIVOR_MIN_FACTOR, 6);
+      expect(SURVIVOR_MIN_FACTOR).toBe(0.715);
+    });
+    test("100% at survivor FRA", () => {
+      expect(survivorReductionFactor(67, 67)).toBe(1);
+      expect(survivorReductionFactor(66, 66)).toBe(1);
+    });
+    test("NO credit for delaying past survivor FRA — unlike an own benefit", () => {
+      expect(survivorReductionFactor(68, 67)).toBe(1);
+      expect(survivorReductionFactor(70, 67)).toBe(1);
+    });
+    test("straight line in between — the midpoint is half the reduction", () => {
+      expect(survivorReductionFactor(63.5, 67)).toBeCloseTo(0.8575, 4);
+    });
+    test("claiming at 62 is roughly 81%, NOT the 100% the old code paid", () => {
+      const f = survivorReductionFactor(62, 67);
+      expect(f).toBeGreaterThan(0.79);
+      expect(f).toBeLessThan(0.83);
+      expect(f).toBeLessThan(1);
+    });
+    test("never returns below the floor or above 1", () => {
+      for (const a of [55, 60, 61, 64, 67, 75]) {
+        const f = survivorReductionFactor(a, 66.5);
+        expect(f).toBeGreaterThanOrEqual(SURVIVOR_MIN_FACTOR);
+        expect(f).toBeLessThanOrEqual(1);
+      }
+    });
+  });
+
+  describe("survivorBasis — DEFECT 1: death before the deceased ever claimed", () => {
+    test("uses the deceased's CHECK when they had claimed (DRCs included)", () => {
+      expect(survivorBasis({ deceasedCheck: 44000, deceasedPia: 36000, deceasedHadClaimed: true }))
+        .toBe(44000);
+    });
+    test("uses the deceased's PIA when they had NOT claimed — never zero", () => {
+      expect(survivorBasis({ deceasedCheck: 0, deceasedPia: 36000, deceasedHadClaimed: false }))
+        .toBe(36000);
+    });
+    test("delaying the higher earner raises the SURVIVOR benefit (DRCs pass through)", () => {
+      const plain   = survivorBasis({ deceasedCheck: 36000, deceasedPia: 36000, deceasedHadClaimed: true });
+      const delayed = survivorBasis({ deceasedCheck: 44640, deceasedPia: 36000, deceasedHadClaimed: true });
+      expect(delayed).toBeGreaterThan(plain);
+    });
+  });
+
+  describe("resolveSurvivorClaimAge", () => {
+    test("floors at 60", () => {
+      expect(resolveSurvivorClaimAge(55, 50)).toBe(60);
+      expect(resolveSurvivorClaimAge(null, 50)).toBe(60);
+    });
+    test("cannot precede the death", () => {
+      expect(resolveSurvivorClaimAge(60, 72)).toBe(72);
+      expect(resolveSurvivorClaimAge(null, 72)).toBe(72);
+    });
+    test("honours a later user-chosen age (the delay strategy)", () => {
+      expect(resolveSurvivorClaimAge(67, 62)).toBe(67);
+    });
+  });
+
+  describe("survivorYearBenefit — deemed filing does NOT apply", () => {
+    const BASE = {
+      ownClaimAge: 70, ownBenefitAtClaim: 40000,
+      survivorClaimAge: 60, survivorBasisAtFra: 30000,
+      survivorFraAge: 67, cola: 0,
+    };
+
+    test("the two benefits are independent — survivor paid at 60, own not yet", () => {
+      const r = survivorYearBenefit({ ...BASE, survivorAge: 62 });
+      expect(r.own).toBe(0);
+      expect(r.survivor).toBeCloseTo(30000 * 0.715, 0);
+      expect(r.source).toBe("survivor");
+    });
+
+    test("THE SWITCHING STRATEGY: reduced survivor at 60, own at 70, larger wins", () => {
+      const early = survivorYearBenefit({ ...BASE, survivorAge: 65 });
+      expect(early.source).toBe("survivor");
+      const later = survivorYearBenefit({ ...BASE, survivorAge: 70 });
+      expect(later.source).toBe("own");
+      expect(later.paid).toBe(40000);
+    });
+
+    test("never pays BOTH benefits — always the larger of those claimed", () => {
+      const r = survivorYearBenefit({ ...BASE, survivorAge: 72 });
+      expect(r.paid).toBe(Math.max(r.own, r.survivor));
+      expect(r.paid).toBeLessThan(r.own + r.survivor);
+    });
+
+    test("the reverse play: own early, switch to an unreduced survivor at FRA", () => {
+      const P = {
+        ownClaimAge: 62, ownBenefitAtClaim: 18000,
+        survivorClaimAge: 67, survivorBasisAtFra: 40000,
+        survivorFraAge: 67, cola: 0,
+      };
+      expect(survivorYearBenefit({ ...P, survivorAge: 64 }).source).toBe("own");
+      const at67 = survivorYearBenefit({ ...P, survivorAge: 67 });
+      expect(at67.source).toBe("survivor");
+      expect(at67.paid).toBe(40000);
+    });
+
+    test("nothing is paid before either benefit is claimed", () => {
+      const r = survivorYearBenefit({ ...BASE, survivorAge: 58 });
+      expect(r.paid).toBe(0);
+      expect(r.source).toBe("none");
+    });
+
+    test("reports the components, not just the total", () => {
+      const r = survivorYearBenefit({ ...BASE, survivorAge: 70 });
+      expect(typeof r.own).toBe("number");
+      expect(typeof r.survivor).toBe("number");
+      expect(["own", "survivor", "none"]).toContain(r.source);
+    });
+  });
+});
+
+describe("§30 — computeHouseholdSS honours the survivor rules end to end", () => {
+  const PRIMARY_BY = NOW.getFullYear() - 62;   // survivor born 1964 ⇒ survivor FRA 67
+
+  function widow(over = {}) {
+    return {
+      ssCola: 0,
+      dob: `${PRIMARY_BY}-01-01`,
+      ssAge: 70, ssb: 20000, ssPia: 20000,
+      spouse: {
+        enabled: true,
+        dob: `${PRIMARY_BY}-01-01`,
+        ssAge: 70, ssb: 44640, ssPia: 36000,   // higher earner, delayed to 70
+        deathAge: 66,                          // dies BEFORE claiming
+      },
+      ...over,
+    };
+  }
+
+  test("DEFECT 1 FIXED: a death before claiming still produces a survivor benefit", () => {
+    const P = widow();
+    const atDeath = computeHouseholdSS(P, 66);
+    expect(atDeath).toBeGreaterThan(0);
+    expect(atDeath).toBeLessThan(36000);
+    expect(atDeath).toBeGreaterThan(36000 * 0.715);
+  });
+
+  test("the survivor benefit exceeds the survivor's own small benefit", () => {
+    expect(computeHouseholdSS(widow(), 67)).toBeGreaterThan(20000);
+  });
+
+  test("DEFECT 2 FIXED: claiming below survivor FRA is reduced, not paid at 100%", () => {
+    const P = widow({
+      ssAge: 70, ssb: 20000,
+      spouse: { enabled: true, dob: `${PRIMARY_BY}-01-01`, ssAge: 62, ssb: 40000, ssPia: 40000, deathAge: 63 },
+    });
+    const got = computeHouseholdSS(P, 63);
+    expect(got).toBeLessThan(40000);
+    expect(got).toBeGreaterThan(40000 * 0.715);
+  });
+
+  test("an SSA-QUOTED survivor amount is used as given, with no double reduction", () => {
+    const P = widow({
+      spouse: { ...widow().spouse, survivorBenefitAtClaim: 31000, survivorClaimAge: 66 },
+    });
+    expect(computeHouseholdSS(P, 66)).toBe(31000);
+  });
+
+  test("regression: death AFTER the deceased claimed at FRA still pays 100%", () => {
+    const P = widow({
+      ssAge: 70, ssb: 20000,
+      spouse: { enabled: true, dob: `${PRIMARY_BY}-01-01`, ssAge: 67, ssb: 40000, ssPia: 40000, deathAge: 68 },
+    });
+    expect(computeHouseholdSS(P, 68)).toBe(40000);
+  });
+
+  test("no deathAge ⇒ none of this engages", () => {
+    const P = widow({ spouse: { ...widow().spouse, deathAge: null } });
+    expect(computeHouseholdSS(P, 70)).toBe(20000 + 44640);
+  });
+});

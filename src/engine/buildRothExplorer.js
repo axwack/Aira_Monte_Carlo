@@ -1,6 +1,7 @@
 import { expectedReturn } from "./expectedReturn.js";
 import { resolveGlidepathSwitchAge } from "./glidepath.js";
 import { spouseAgeOffset, personsAtLeastAge, spouseAgeAt, filesJointlyAt } from "./ages.js";
+import { survivorFra, survivorBasis, resolveSurvivorClaimAge, survivorYearBenefit } from "./survivorBenefit.js";
 
 // Progressive state income tax brackets (2025). null = no state income tax.
 // Brackets are inflation-indexed in calcYearTax / buildRothExplorer via idxB().
@@ -395,6 +396,76 @@ function taxableSocialSecurity(ssGross, otherIncome, isMFJ = true) {
  * regardless of either person's actual claim age. `ssPia` falls back to `ssb`
  * when not entered (claiming at exactly FRA, where the two amounts are equal).
  */
+/**
+ * Household Social Security AFTER the first death, with the survivor's own benefit
+ * and the survivor benefit treated as the INDEPENDENT benefits they legally are.
+ *
+ * Exported (via the barrel at the bottom of this file) because the UI needs the
+ * `own` / `survivor` / `source` breakdown, not just the total: a number that jumps
+ * because the household switched from one benefit to the other has to be able to say
+ * so. Returning only the total is how "the components don't add up" reports happen.
+ *
+ * `p.spouse.deathAge` is the DECEASED's age; the survivor here is the primary, whose
+ * age is the clock every engine walks. See REQUIREMENTS §30 for the remaining
+ * limitation (which of the two people can be the one who dies).
+ */
+function survivorHouseholdSS(p, age, ctx) {
+  const { offset, cola, ssAge, spouseClaimOnPrimaryClock, deathAge } = ctx;
+  const sp = p.spouse || {};
+
+  // The survivor's own age when the death happens, on the primary's clock.
+  const deathOnPrimaryClock = deathAge + offset;
+
+  // Did the deceased ever start their benefit? This single question is what the old
+  // implementation got wrong: it paid $0 until the deceased's claim age, when in
+  // fact the survivor benefit derives from the deceased's PIA and is claimable from
+  // 60 whether or not the deceased ever filed.
+  const deceasedHadClaimed = deathOnPrimaryClock >= spouseClaimOnPrimaryClock;
+
+  // Basis = 100% of what the deceased was receiving or entitled to, in TODAY's terms
+  // as the user entered it. DRCs are included when they had claimed, because the
+  // user's `ssb` is "what SSA estimates at the age they plan to claim".
+  const basisToday = survivorBasis({
+    deceasedCheck: Number(sp.ssb) || 0,
+    deceasedPia:   Number(sp.ssPia) || 0,
+    deceasedHadClaimed,
+  });
+
+  const survivorClaimAge = resolveSurvivorClaimAge(sp.survivorClaimAge, deathOnPrimaryClock);
+
+  // Grow the basis by COLA from the point at which it was quoted up to the survivor's
+  // claim age, so the reduction applies to a same-year amount.
+  const basisRefAge = deceasedHadClaimed ? spouseClaimOnPrimaryClock : deathOnPrimaryClock;
+  const growYears = Math.max(0, survivorClaimAge - basisRefAge);
+  const basisAtClaim = basisToday * Math.pow(cola, growYears);
+
+  // An explicit SSA-quoted survivor amount wins and is used AS QUOTED: SSA's figure
+  // already has the early-claim reduction in it, so applying our factor on top would
+  // double-count it. That is the §21 "ask, don't derive" path.
+  const quoted = Number(sp.survivorBenefitAtClaim) || 0;
+  const useQuoted = quoted > 0;
+
+  const survivorFraAge = survivorFra(
+    // The SURVIVOR's birth year — here the primary, whose dob drives the plan.
+    (typeof p.dob === "string" && p.dob.length >= 4) ? parseInt(p.dob.slice(0, 4), 10)
+      : (typeof p.birthYear === "number" ? p.birthYear
+        : (typeof p.currentAge === "number" ? ROTH_BASE_YEAR - p.currentAge : null))
+  );
+
+  const res = survivorYearBenefit({
+    survivorAge: age,
+    ownClaimAge: ssAge,
+    ownBenefitAtClaim: Number(p.ssb) || 0,
+    survivorClaimAge,
+    // When quoted, hand in the already-reduced figure and neutralise our factor by
+    // passing the survivor's own claim age as the FRA (factor === 1).
+    survivorBasisAtFra: useQuoted ? quoted : basisAtClaim,
+    survivorFraAge: useQuoted ? survivorClaimAge : survivorFraAge,
+    cola: cola - 1,
+  });
+  return { ...res, survivorClaimAge, survivorFraAge, deceasedHadClaimed, basisAtClaim };
+}
+
 function computeHouseholdSS(p, age) {
   const cola = 1 + (p.ssCola ?? 2.4) / 100;
   const ssAge = p.ssAge || 67;
@@ -439,15 +510,9 @@ function computeHouseholdSS(p, age) {
    */
   const deathAge = Number(p.spouse.deathAge) > 0 ? Number(p.spouse.deathAge) : null;
   if (deathAge != null && age >= deathAge + offset) {
-    const primaryCheck = age >= ssAge
-      ? (p.ssb || 0) * Math.pow(cola, age - ssAge)
-      : 0;
-    // The deceased spouse's check as it would have grown to this year — the
-    // survivor inherits that amount, not the amount at the date of death.
-    const spouseCheck = age >= spouseClaimOnPrimaryClock
-      ? (p.spouse.ssb || 0) * Math.pow(cola, age - spouseClaimOnPrimaryClock)
-      : 0;
-    return Math.round(Math.max(primaryCheck, spouseCheck));
+    return Math.round(survivorHouseholdSS(p, age, {
+      offset, cola, ssAge, spouseClaimOnPrimaryClock, deathAge,
+    }).paid);
   }
   const spouseOwn = age >= spouseClaimOnPrimaryClock
     ? (p.spouse.ssb || 0) * Math.pow(cola, age - spouseClaimOnPrimaryClock)
@@ -842,7 +907,7 @@ function buildRothLadder(params = {}) {
 
 export {
   buildRothExplorer, buildRothLadder,
-  progTax, idxB, irmaaCost, taxableSocialSecurity, computeHouseholdSS, getStateBrackets, getRmdStartAge,
+  progTax, idxB, irmaaCost, taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS, getStateBrackets, getRmdStartAge,
   FED_BRACKETS_2026_MFJ, FED_BRACKETS_2026_SINGLE,
   LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,
   NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,

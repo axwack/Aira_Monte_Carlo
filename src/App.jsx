@@ -79,6 +79,7 @@ import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_AGE } from "./engine/earlyWithdrawal.js";
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock } from "./engine/ages.js";
+import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT } from "./billing/credits.js";
 import { AdminPanel, useOwnerVerified } from "./billing/admin-panel.js";
@@ -174,9 +175,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.63";
-export const BUILD_TAG = "[main] v1.2.63 - SS28 display-provenance audit + enforcement. D1: all 36 metric cards traced (the 18 that compute across multiple lines had never been). One real mismatch found and fixed - Portfolio at Retirement was captioned MEDIAN ACCUMULATION but the value is accumulateToRetirement(), a single deterministic projection at the expected return with no distribution and so no median; same defect class as the safe-spend and GK-guardrails labels. Also: the conversion Savings-at-age cards now disclose that they hold all four buckets while the chart above them stacks only two, and one card formatted money with an inline toLocaleString instead of fmtDollar. Verified NOT bugs: nw is r.totalPort so the Savings scope is right, and Peak liquid (median) really is max of the MC p50 with its asterisk footnoted. D2: new src/provenance.test.js - a registry declaring every card label, its exact source expression and its kind (computed | echoed | point-in-time | count), with the App.jsx card count asserted against the registry size, so ADDING A CARD WITHOUT DECLARING ITS PROVENANCE TURNS THE BUILD RED. Modelled on ghostSettings.test.js. D3: new aira-forecaster-agents/specs/UI_DESIGN_SPEC.md with the provenance rule, the three disclosure tiers, and the conventions not to re-derive. SS28.2: 20 table headers converted from hover-only title= to the new ThInfo component, which keeps the visible marker but opens on CLICK - title= does not exist on touch devices at all, so every column explanation was unreachable on phones. 759 -> 768 tests, 28 suites.";
-export const BUILD_TIME = "2026-07-30T20:15:00Z";
+const APP_VERSION = "1.2.64";
+export const BUILD_TAG = "[main] v1.2.64 - SS30 survivor benefit rules. v1.2.63 modelled the survivor side as max(own, deceased) from the death year, which was WRONG IN TWO OPPOSITE DIRECTIONS and they do not cancel. OVERSTATED: it paid 100% of the deceased check immediately, when a survivor claiming below survivor FRA gets 71.5% at 60 rising to 100% at survivor FRA, permanently. UNDERSTATED badly: the inherited check was gated on the DECEASED claim age, so a death before they filed paid $0 until the year they would have filed - the survivor benefit actually derives from the deceased PIA and is claimable from 60 whether or not the deceased ever filed, so it was wrong in exactly the early-death case the feature exists to explore. New src/engine/survivorBenefit.js: survivorFra by birth year (66 to 67 on its OWN schedule, in months, not the retirement FRA schedule), the reduction factor, the PIA-vs-check basis rule, and survivorYearBenefit which treats the own benefit and the survivor benefit as the INDEPENDENT benefits they legally are - deemed filing does not apply to survivors, the only place in Social Security where that is true. That makes the SWITCHING STRATEGY expressible: two independent claim ages, take whichever is larger, so take-reduced-survivor-at-60-and-let-my-own-grow-to-70 (or the reverse) now models correctly. Also: no delay credit past survivor FRA, and the deceased DRCs do pass through (unlike the spousal top-up). New profile fields spouse.survivorClaimAge (floor 60) and optional spouse.survivorBenefitAtClaim (an SSA quote, used as-is with no double reduction - the SS21 ask-do-not-derive path). Survivor constants added to TAX_REFERENCE.md. NOT modelled and stated in the UI: the earnings test. 771 -> 800 tests.";
+export const BUILD_TIME = "2026-07-30T22:05:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -551,6 +552,17 @@ export const BLANK_PROFILE = {
     // it a deterministic event in a known year instead of a variable threaded
     // through 3,000 Monte Carlo paths.
     deathAge: null,
+    // ── Survivor benefit (§30) ───────────────────────────────────────────────
+    // Deemed filing does NOT apply to survivor benefits, so the survivor's OWN
+    // retirement benefit and the survivor benefit are independent: either can be
+    // claimed first and switched later. That flexibility exists nowhere else in
+    // Social Security, and it is only expressible with a separate claim age.
+    // null ⇒ claim as soon as eligible (60, or the death year if later).
+    survivorClaimAge: null,
+    // Optional: the survivor benefit as SSA QUOTES it at that claim age — already
+    // reduced. Supplying it bypasses our reduction schedule entirely (§21 "ask,
+    // don't derive"). 0/blank ⇒ derive from the deceased's check or PIA.
+    survivorBenefitAtClaim: 0,
   },
   ab: 0,
   useAb: true,
@@ -12008,28 +12020,93 @@ function RetirementPanel({ values, onChange }) {
               </WFieldRow>
               {sp.deathAge > 0 ? (() => {
                 const deathAtYourAge = sp.deathAge + gap;
-                const survivorSS = Math.max(Number(values.ssb) || 0, Number(sp.ssb) || 0);
-                const lostSS = ((Number(values.ssb) || 0) + (Number(sp.ssb) || 0) + topUp) - survivorSS;
+                const survFraAge = survivorFra(
+                  values.dob ? parseInt(String(values.dob).slice(0, 4), 10) : null
+                );
+                const survClaim = resolveSurvivorClaimAge(sp.survivorClaimAge, deathAtYourAge);
+                const deceasedHadClaimed = deathAtYourAge >= (sp.ssAge || 67) + gap;
+                const basis = survivorBasis({
+                  deceasedCheck: Number(sp.ssb) || 0,
+                  deceasedPia: Number(sp.ssPia) || 0,
+                  deceasedHadClaimed,
+                });
+                const quoted = Number(sp.survivorBenefitAtClaim) || 0;
+                const factor = quoted > 0 ? 1 : survivorReductionFactor(survClaim, survFraAge);
+                const survAmt = quoted > 0 ? quoted : basis * factor;
+                const ownAmt = Number(values.ssb) || 0;
+                const jointTotal = ownAmt + (Number(sp.ssb) || 0) + topUp;
                 return (
-                  <div style={{
-                    margin: "-8px 0 16px", padding: "9px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.6,
-                    background: "rgba(251,146,60,0.09)", border: "1px solid rgba(251,146,60,0.3)", color: "#fdba74",
-                  }}>
-                    <strong>Modelled from your age {deathAtYourAge}.</strong> Two things change together, and
-                    the second is the one people miss:
-                    <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-                      <li>
-                        Social Security drops to the larger single check —{" "}
-                        <strong>{fmtDollar(Math.round(survivorSS / 12))}/mo</strong>, a loss of{" "}
-                        <strong>{fmtDollar(Math.round(lostSS / 12))}/mo</strong>.
-                      </li>
-                      <li>
-                        You file <strong>Single</strong> from the following year: narrower brackets, roughly
-                        half the standard deduction, halved IRMAA thresholds and half the senior bonus —
-                        on a portfolio and an RMD that barely changed.
-                      </li>
-                    </ul>
-                  </div>
+                  <>
+                    {/* §30 — the survivor's own benefit and the survivor benefit are
+                        INDEPENDENT (deemed filing does not apply), so this needs its
+                        own claim age. It is the only real flexibility a survivor has
+                        and the app could not express it before. */}
+                    <WFieldRow
+                      label="Survivor claims the survivor benefit at age"
+                      helper={`Survivor benefits can start at 60 — earlier than the 62 floor on your own benefit — and they are a SEPARATE benefit, so this age is independent of your own claim age. Blank = claim as soon as eligible (${survClaim}).`}
+                    >
+                      <ANumInput
+                        value={sp.survivorClaimAge ?? 0}
+                        onSet={(v) => setSpouse({ survivorClaimAge: v > 0 ? v : null })}
+                        min={0} max={AGE_LIMITS.ss.max} step={1}
+                        suffix={sp.survivorClaimAge ? " yrs" : ""}
+                      />
+                    </WFieldRow>
+                    <WFieldRow
+                      label="Survivor benefit SSA quotes at that age"
+                      helper="Optional. If SSA has given you a figure, enter it and AiRA uses it as-is. Leave blank and AiRA derives it from the deceased's benefit, reduced for claiming before survivor full retirement age. (Per Month)"
+                    >
+                      <ANumInput
+                        value={Math.round(quoted / 12)}
+                        onSet={(v) => setSpouse({ survivorBenefitAtClaim: Math.round(v * 12) })}
+                        min={0} max={6000} step={50} suffix="/mo"
+                      />
+                    </WFieldRow>
+
+                    <div style={{
+                      margin: "-8px 0 16px", padding: "10px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.6,
+                      background: "rgba(251,146,60,0.09)", border: "1px solid rgba(251,146,60,0.3)", color: "#fdba74",
+                    }}>
+                      <strong>Modelled from your age {deathAtYourAge}.</strong> Three things change, and the
+                      last is the one people miss:
+                      <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                        <li>
+                          The survivor benefit is{" "}
+                          <strong>{fmtDollar(Math.round(survAmt / 12))}/mo</strong>
+                          {quoted > 0 ? " (as you entered it, SSA-quoted)" : (
+                            <>
+                              {" "}— {Math.round(factor * 1000) / 10}% of the{" "}
+                              {deceasedHadClaimed ? "benefit they were receiving" : "full-retirement amount they were entitled to"}
+                              {factor < 1
+                                ? `, permanently reduced for claiming at ${survClaim}, before the survivor full retirement age of ${Math.round(survFraAge * 12) / 12 === survFraAge ? survFraAge : survFraAge.toFixed(2)}`
+                                : ", unreduced"}
+                            </>
+                          )}.
+                          {!deceasedHadClaimed && " They died before claiming, so it is based on their FRA amount — eligibility does not depend on them having filed."}
+                        </li>
+                        <li>
+                          Household Social Security falls from{" "}
+                          <strong>{fmtDollar(Math.round(jointTotal / 12))}/mo</strong> to the larger of the
+                          survivor benefit and the survivor's own{" "}
+                          <strong>{fmtDollar(Math.round(ownAmt / 12))}/mo</strong> — never both.
+                          {ownAmt > 0 && survAmt > ownAmt && (values.ssAge || 67) > survClaim
+                            ? " Because the two are independent, the survivor benefit can be drawn now while your own keeps growing, then switched when yours is larger."
+                            : ""}
+                        </li>
+                        <li>
+                          You file <strong>Single</strong> from the following year: narrower brackets, roughly
+                          half the standard deduction, halved IRMAA thresholds and half the senior bonus —
+                          on a portfolio and an RMD that barely changed.
+                        </li>
+                      </ul>
+                      <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(251,146,60,0.25)", color: "#fcd9b6" }}>
+                        Survivor claiming is one of the highest-stakes decisions in Social Security and it
+                        turns on both benefit amounts, two different full-retirement ages, health, and whether
+                        the survivor is still working. AiRA does not model the earnings test. Get both figures
+                        from SSA and have a fee-only advisor check the sequence before anyone files.
+                      </div>
+                    </div>
+                  </>
                 );
               })() : (
                 <div style={{
@@ -12697,7 +12774,10 @@ export default function AiRAForecaster() {
       // Spread wholesale so newly-added spouse fields (dob, and deathAge below)
       // cannot be silently dropped here — this memo is where ghost settings are
       // born. `dob` in the default keeps the shape identical to BLANK_PROFILE.
-      spouse: assumptions.spouse || { enabled: false, dob: "", ssb: 0, ssAge: 67, ssPia: 0, deathAge: null },
+      spouse: assumptions.spouse || {
+        enabled: false, dob: "", ssb: 0, ssAge: 67, ssPia: 0,
+        deathAge: null, survivorClaimAge: null, survivorBenefitAtClaim: 0,
+      },
       port,
       contrib,
       employerContrib: assumptions.employerContrib || 0,
