@@ -186,9 +186,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.60";
-export const BUILD_TAG = "[main] v1.2.60 - Withdrawal Plan: strategy selector hoisted to tab level. Vincent: the withdrawal type and the indicator looks weird there. Correct - the state banner, dropdown, description and commit row rendered unconditionally BETWEEN Section 2s header and Section 2s collapsible body: a dead zone belonging to no visible container, and structurally inconsistent with Section 1, which puts every control inside its collapsible. design-authority verdict APPROVE-WITH-CHANGES: hoist to tab level (between the orientation card and Section 1), NOT into Section 2s collapsible. Rationale is blast radius - this is the single control in the app that writes withdrawalStrategy, consumed by runMC, simulateDeterministicWithStrategy, the home Net Worth card, the MCTab InputCard row, the engine InfoModal and buildRothExplorer; a control with that reach must not be visually subordinate to one per-section question, and gating it behind a twisty would re-create the exact misread the banner was built to fix. RELOCATED ONLY: banner copy, button styling, tooltip and commit logic untouched. Section 2 subtitle now names the selected strategy instead of re-explaining preview mechanics, which the relocated block now owns. Sections 1 and 2 are finally structurally identical: header then collapsible body. Display only.";
-export const BUILD_TIME = "2026-07-29T23:15:00Z";
+const APP_VERSION = "1.2.61";
+export const BUILD_TAG = "[main] v1.2.61 - MERGE of two machines. Red-Dragon stream (v1.2.57-60): IRC 72(t) 10% early-distribution penalty now charged in BOTH buildWithdrawalWaterfall and runMC inside each tax fixed point so the draws fund it (Roth conversions correctly NOT penalized; pre-tax paying conversion tax IS), with Rule of 55 gated on a detected former-employer 401k and 72(t) SEPP, asked only when retireAge < 59.5; landmine hover card portalled to document.body after overflowX:auto clipped it; year-end Dec 1-31 check with bracket/IRMAA room and a checkpoint prompt (?yearend=1 to preview); Withdrawal Plan strategy selector hoisted to tab level per design-authority ruling. Other machine (v1.2.58): the info affordance is a vector - every hover-for-help marker moved from the Unicode glyph U+24D8 to a proper SVG icon, plus graph changes. Both version streams collided at 1.2.58; resolved forward to 1.2.61 so the tag is unambiguous across machines.";
+export const BUILD_TIME = "2026-07-30T00:20:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2217,6 +2217,62 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   return 72;
 }
 
+/* ════ ICONS ════ */
+/**
+ * Info icon, drawn as SVG rather than the Unicode "ⓘ" (U+24D8) it replaces.
+ *
+ * The glyph looked wrong for reasons no amount of CSS could fix: its shape comes
+ * from whatever font happens to resolve it, so the circle's weight, diameter and
+ * baseline offset all changed between platforms and between the app's two
+ * typefaces. At the 10–11px it was used at, the ring rendered hairline-thin and
+ * sat a pixel or two above the text it annotated. A vector draws identically
+ * everywhere, stays crisp at any size, and lines up on the text baseline.
+ *
+ * Inherits color through `currentColor`, so callers keep styling it with plain
+ * `color` — including hover transitions — exactly as they did the glyph.
+ */
+function InfoIcon({ size = 14, title, style }) {
+  return (
+    <svg
+      width={size} height={size} viewBox="0 0 16 16"
+      fill="none" aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      focusable="false"
+      style={{ flexShrink: 0, verticalAlign: "-0.15em", ...style }}
+    >
+      {title && <title>{title}</title>}
+      <circle cx="8" cy="8" r="6.9" stroke="currentColor" strokeWidth="1.3" opacity="0.75" />
+      <circle cx="8" cy="4.9" r="0.95" fill="currentColor" />
+      <path d="M8 7.15v4.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * The standard hoverable info affordance: an InfoIcon in a muted circular well
+ * that brightens on hover, with the explanation as a native tooltip. Replaces
+ * the hand-rolled `infoDot` style object that was retyped at each call site.
+ */
+function InfoDot({ title, size = 14, color = "#94a3b8", hoverColor = "#e2e8f0" }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <span
+      title={title}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: size + 6, height: size + 6, borderRadius: "50%",
+        background: hover ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.08)",
+        color: hover ? hoverColor : color,
+        cursor: "help", transition: "background 0.15s, color 0.15s",
+      }}
+    >
+      <InfoIcon size={size} />
+    </span>
+  );
+}
+
 /* ════ FORMATTERS ════ */
 /* The one money formatter. Whole dollars, grouped, no abbreviation — ever.
  * There used to be `fmtK` and `fmtM` alongside this, byte-identical to it and
@@ -2414,12 +2470,12 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
               <thead>
                 <tr>
                   <th>Age</th><th>Year</th>
-                  <th title="Share of simulated paths whose portfolio has not run out by this age">Still Funded ⓘ</th>
-                  <th title="Pessimistic — 90% of simulated outcomes were better than this">10th %ile ⓘ</th>
+                  <th title="Share of simulated paths whose portfolio has not run out by this age">Still Funded <InfoIcon size={12} /></th>
+                  <th title="Pessimistic — 90% of simulated outcomes were better than this">10th %ile <InfoIcon size={12} /></th>
                   <th>25th %ile</th>
-                  <th title="The median outcome — half of paths above, half below">Median ⓘ</th>
+                  <th title="The median outcome — half of paths above, half below">Median <InfoIcon size={12} /></th>
                   <th>75th %ile</th>
-                  <th title="Optimistic — only 10% of simulated outcomes were better than this">90th %ile ⓘ</th>
+                  <th title="Optimistic — only 10% of simulated outcomes were better than this">90th %ile <InfoIcon size={12} /></th>
                 </tr>
               </thead>
               <tbody>
@@ -2873,7 +2929,7 @@ function Toggle({ val, onChange, label, accent = "#0d9488", hint }) {
     <div className="tog-row" title={hint || undefined}>
       <span className="tog-label">
         {label}
-        {hint && <span style={{ marginLeft: 5, fontSize: 10, color: "#475569", cursor: "help" }}>ⓘ</span>}
+        {hint && <span style={{ marginLeft: 5, color: "#94a3b8", cursor: "help", display: "inline-flex" }}><InfoIcon size={12} /></span>}
       </span>
       <div
         className="tog"
@@ -3658,7 +3714,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 8, padding: "6px 10px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="rgba(239,68,68,0.6)" strokeWidth="1.5" strokeDasharray="5 3"/></svg>
-            <span style={{ fontSize: 11, color: "rgba(239,68,68,0.8)", fontWeight: 600 }}>P(alive) — right axis</span>
+            <span style={{ fontSize: 11, color: "rgba(239,68,68,0.8)", fontWeight: 600 }}>P(alive) — chart below</span>
           </div>
           <span style={{ fontSize: 11, color: "#64748b" }}>
             SSA {sex === "male" ? "male" : sex === "female" ? "female" : "blended"} survival probability by age.
@@ -3745,33 +3801,12 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             width={MONEY_AXIS_WIDTH}
             domain={[0, maxY]}
           />
-          {showMortality && (
-            <YAxis
-              yAxisId="mort"
-              orientation="right"
-              stroke="rgba(239,68,68,0.3)"
-              tick={{ fill: "rgba(239,68,68,0.5)", fontSize: 10 }}
-              tickFormatter={(v) => `${Math.round(v * 100)}%`}
-              domain={[0, 1]}
-              tickCount={6}
-            />
-          )}
           <Tooltip content={<Tip />} />
-          
+
           {/* Vertical reference lines (D-Day, SS, RMD) */}
           <ReferenceLine yAxisId="port" x={retireAge} stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day", fill: "#fbbf24", fontSize: 10, position: "top" }} />
           <ReferenceLine yAxisId="port" x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: 10, position: "top" }} />
           <ReferenceLine yAxisId="port" x={rmdAge} stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "#34d399", fontSize: 10, position: "top" }} />
-
-          {/* Mortality reference lines */}
-          {showMortality && medianDeathAge && (
-            <ReferenceLine yAxisId="port" x={medianDeathAge} stroke="rgba(239,68,68,0.5)" strokeWidth={1} strokeDasharray="3 3"
-              label={{ value: "50% alive", fill: "rgba(239,68,68,0.7)", fontSize: 9, position: "insideTopRight" }} />
-          )}
-          {showMortality && q25DeathAge && (
-            <ReferenceLine yAxisId="port" x={q25DeathAge} stroke="rgba(239,68,68,0.3)" strokeWidth={1} strokeDasharray="2 4"
-              label={{ value: "25% alive", fill: "rgba(239,68,68,0.5)", fontSize: 9, position: "insideTopRight" }} />
-          )}
 
           {/* Fan areas and percentile lines */}
           <Area yAxisId="port" type="monotone" dataKey="p90" stroke="#5eead4" strokeWidth={1} strokeDasharray="4 2" fill="url(#g90v5)" dot={false} name="90th" legendType="none" />
@@ -3801,12 +3836,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
               </>
             );
           })()}
-
-          {/* Survival probability curve (right axis, red dashed) */}
-          {showMortality && (
-            <Line yAxisId="mort" type="monotone" dataKey="survival" stroke="rgba(239,68,68,0.6)"
-              strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="P(alive)" connectNulls />
-          )}
 
           {/* Deterministic accumulation path (pre-retirement) */}
           {showTargets && accumData.length > 0 && (
@@ -3937,6 +3966,37 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           })()}
         </ComposedChart>
       </ResponsiveContainer>
+
+      {/* Survival probability — own chart, own axis (%), sharing the age x-axis
+          with the portfolio chart above so the two still read together without
+          a fabricated dual-axis alignment between dollars and probability. */}
+      {showMortality && (
+        <ResponsiveContainer width="100%" height={140}>
+          <ComposedChart data={dataWithMortality} margin={{ top: 8, right: 48, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 11 }} />
+            <YAxis
+              stroke="rgba(239,68,68,0.3)"
+              tick={{ fill: "rgba(239,68,68,0.5)", fontSize: 10 }}
+              tickFormatter={(v) => `${Math.round(v * 100)}%`}
+              domain={[0, 1]}
+              tickCount={6}
+              width={MONEY_AXIS_WIDTH}
+            />
+            <Tooltip content={<Tip />} />
+            {medianDeathAge && (
+              <ReferenceLine x={medianDeathAge} stroke="rgba(239,68,68,0.5)" strokeWidth={1} strokeDasharray="3 3"
+                label={{ value: "50% alive", fill: "rgba(239,68,68,0.7)", fontSize: 9, position: "insideTopRight" }} />
+            )}
+            {q25DeathAge && (
+              <ReferenceLine x={q25DeathAge} stroke="rgba(239,68,68,0.3)" strokeWidth={1} strokeDasharray="2 4"
+                label={{ value: "25% alive", fill: "rgba(239,68,68,0.5)", fontSize: 9, position: "insideTopRight" }} />
+            )}
+            <Line type="monotone" dataKey="survival" stroke="rgba(239,68,68,0.6)"
+              strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="P(alive)" connectNulls />
+          </ComposedChart>
+        </ResponsiveContainer>
+      )}
 
       {/* Unified Legend */}
       <div className="leg">
@@ -5077,15 +5137,15 @@ const modeDescs = {
                   <th>Age</th>
                   <th>Label</th>
                   <th>Source</th>
-                  <th title="Pre-tax IRA/401k balance at the start of this year, before the conversion">Pre-Tax (before) ⓘ</th>
+                  <th title="Pre-tax IRA/401k balance at the start of this year, before the conversion">Pre-Tax (before) <InfoIcon size={12} /></th>
                   <th>Conversion</th>
                   <th>Fed Tax</th>
                   <th>State Tax</th>
                   <th>Bracket</th>
-                  <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg ⓘ</th>
+                  <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg <InfoIcon size={12} /></th>
                   <th>Eff Rate</th>
                   <th>Net→Roth</th>
-                  <th title="Cumulative Roth balance at end of this year (includes growth and withdrawals)">Roth Bal ⓘ</th>
+                  <th title="Cumulative Roth balance at end of this year (includes growth and withdrawals)">Roth Bal <InfoIcon size={12} /></th>
                 </tr>
               </thead>
               <tbody>
@@ -5680,13 +5740,13 @@ const modeDescs = {
                 {/* Row 2: measure sub-headers */}
                 <tr>
                   <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", borderLeft: "2px solid rgba(239,68,68,0.35)" }}>Roth $</th>
-                  <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax ⓘ</th>
+                  <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax <InfoIcon size={12} /></th>
                   <th style={{ color: "#94a3b8", background: "rgba(239,68,68,0.07)" }}>IRA Bal</th>
                   <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", borderLeft: "2px solid rgba(20,184,166,0.35)" }}>Roth $</th>
-                  <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax ⓘ</th>
+                  <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax <InfoIcon size={12} /></th>
                   <th style={{ color: "#94a3b8", background: "rgba(20,184,166,0.07)" }}>IRA Bal</th>
                   <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", borderLeft: "2px solid rgba(52,211,153,0.35)" }}>Roth $</th>
-                  <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", cursor: "help" }} title="Federal income tax only — no state income tax applies in this scenario (no-tax state). Hover any data cell to confirm the $0 state split.">Total Tax ⓘ</th>
+                  <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", cursor: "help" }} title="Federal income tax only — no state income tax applies in this scenario (no-tax state). Hover any data cell to confirm the $0 state split.">Total Tax <InfoIcon size={12} /></th>
                   <th style={{ color: "#94a3b8", background: "rgba(52,211,153,0.07)" }}>IRA Bal</th>
                 </tr>
               </thead>
@@ -6283,7 +6343,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           >
             <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".04em", color: previewIsDefault ? "#34d399" : "#fbbf24" }}>
               {previewIsDefault ? "✓ SAVED — USED EVERYWHERE" : "👁 PREVIEW ONLY — NOT SAVED"}
-              <span style={{ marginLeft: 5, fontSize: 10, color: "#94a3b8" }}>ⓘ</span>
+              <span style={{ marginLeft: 5, color: "#94a3b8", display: "inline-flex" }}><InfoIcon size={12} /></span>
             </span>
             <span style={{ fontSize: 12, color: "#94a3b8" }}>
               Your saved plan uses <strong style={{ color: "#e2e8f0" }}>{getStrategyLabel(withdrawalStrategy)}</strong>
@@ -6557,24 +6617,24 @@ function WaterfallPlanView({ p, result }) {
         <table className="roth-tbl">
           <thead>
             <tr>
-              <th>Age</th><th title="Target spending this year. Hover each row's value for the full need breakdown (housing, carveouts, other income, taxes).">Spending ⓘ</th>
-              <th style={opThStyle} title="Spending is funded by the income + draw columns to the right — see the funding identity above the table.">← ⓘ</th>
-              <th title="Money that arrives whether or not you sell anything — it is used first, before any portfolio draw.&#10;&#10;WHAT COUNTS AS INCOME HERE:&#10;• Social Security — your benefit, once claiming starts&#10;• Pension / other income — any stream you added under Other Income (pensions, annuities, part-time work, royalties)&#10;• Annuity / rental — property and Airbnb income, after the reliability haircut&#10;&#10;All of it reduces what the portfolio has to cover. Only the shortfall becomes a withdrawal.&#10;&#10;Hover any cell for that year's split.">Income ⓘ</th>
+              <th>Age</th><th title="Target spending this year. Hover each row's value for the full need breakdown (housing, carveouts, other income, taxes).">Spending <InfoIcon size={12} /></th>
+              <th style={opThStyle} title="Spending is funded by the income + draw columns to the right — see the funding identity above the table.">← <InfoIcon size={12} /></th>
+              <th title="Money that arrives whether or not you sell anything — it is used first, before any portfolio draw.&#10;&#10;WHAT COUNTS AS INCOME HERE:&#10;• Social Security — your benefit, once claiming starts&#10;• Pension / other income — any stream you added under Other Income (pensions, annuities, part-time work, royalties)&#10;• Annuity / rental — property and Airbnb income, after the reliability haircut&#10;&#10;All of it reduces what the portfolio has to cover. Only the shortfall becomes a withdrawal.&#10;&#10;Hover any cell for that year's split.">Income <InfoIcon size={12} /></th>
               <th style={opThStyle}>+</th>
-              <th title="Step 3 — drawn first from the portfolio">Cash ⓘ</th>
+              <th title="Step 3 — drawn first from the portfolio">Cash <InfoIcon size={12} /></th>
               <th style={opThStyle}>+</th>
-              <th title="Step 4 — drawn after cash is exhausted">Taxable ⓘ</th>
+              <th title="Step 4 — drawn after cash is exhausted">Taxable <InfoIcon size={12} /></th>
               <th style={opThStyle}>+</th>
-              <th title="Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k.">Pre-Tax ⓘ</th>
+              <th title="Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k.">Pre-Tax <InfoIcon size={12} /></th>
               <th style={opThStyle}>+</th>
-              <th title="Step 6 — last resort; emergency reserve floor maintained">Roth ⓘ</th>
+              <th title="Step 6 — last resort; emergency reserve floor maintained">Roth <InfoIcon size={12} /></th>
               <th style={opThStyle}>=</th>
-              <th title="Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes.">Total Draw ⓘ</th>
+              <th title="Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes.">Total Draw <InfoIcon size={12} /></th>
               {anyConversion && (
-                <th title="Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total.">Roth Conv ⓘ</th>
+                <th title="Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total.">Roth Conv <InfoIcon size={12} /></th>
               )}
-              <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End ⓘ</th>
-              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR ⓘ</th>
+              <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End <InfoIcon size={12} /></th>
+              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR <InfoIcon size={12} /></th>
               <th>
                 <LandmineTip
                   emoji="💣"
@@ -6858,22 +6918,36 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
           📈 Deterministic Schedule – {strategyLabel} · Median historical returns
           ({expectedReturn(p.preRetireEq ?? 91).toFixed(2)}% before age {resolveGlidepathSwitchAge(p)} / {expectedReturn(p.postRetireEq ?? 70).toFixed(2)}% after) · Inflation {inf}%
         </div>
-        <ResponsiveContainer width="100%" height={540}>
+        {/* Portfolio Balance is a genuine running total — a line, one $ axis. */}
+        <ResponsiveContainer width="100%" height={340}>
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
             <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 10 }} />
-            <YAxis yAxisId="port" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 10 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
-            <YAxis yAxisId="spend" orientation="right" stroke="#1e3a5f" tick={{ fill: "#64748b", fontSize: 9 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 10 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
             <Tooltip content={<Tip />} />
-            <Line yAxisId="spend" type="monotone" dataKey="Spending" stroke="#fbbf24" strokeWidth={2.5} dot={false} name="Spending" />
-            <Line yAxisId="spend" type="monotone" dataKey="Total Withdrawal" stroke="#f87171" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name="Total Withdrawal (inc. tax)" />
-            <Line yAxisId="port" type="monotone" dataKey="Portfolio End" stroke="#14b8a6" strokeWidth={2.5} dot={false} name="Portfolio Balance" />
+            <Line type="monotone" dataKey="Portfolio End" stroke="#14b8a6" strokeWidth={2.5} dot={false} name="Portfolio Balance" />
           </ComposedChart>
+        </ResponsiveContainer>
+        <div className="leg">
+          <div className="li"><div className="ll" style={{ background: "#14b8a6" }} />Portfolio Balance</div>
+        </div>
+
+        {/* Spending/Withdrawal are each year's OWN number, not a flow between
+            years — bars, not lines, sharing the same age x-axis as the chart
+            above instead of a fabricated second $ scale on one plot. */}
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
+            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 10 }} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "#64748b", fontSize: 9 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+            <Tooltip content={<Tip />} />
+            <Bar dataKey="Spending" fill="#fbbf24" name="Spending" />
+            <Bar dataKey="Total Withdrawal" fill="#f87171" name="Total Withdrawal (inc. tax)" />
+          </BarChart>
         </ResponsiveContainer>
         <div className="leg">
           <div className="li"><div className="ll" style={{ background: "#fbbf24" }} />Spending</div>
           <div className="li"><div className="ll" style={{ background: "#f87171" }} />Total Withdrawal (inc. tax)</div>
-          <div className="li"><div className="ll" style={{ background: "#14b8a6" }} />Portfolio Balance</div>
         </div>
       </div>
 
@@ -6954,7 +7028,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
           style={{ position: "absolute", top: 0, right: 0, paddingTop: 6, paddingRight: 6, paddingLeft: 10, paddingBottom: showInfo ? 8 : 4, cursor: "help" }}
           aria-label="Bucket role and recommended holdings"
         >
-          <span style={{ color: showInfo ? color : "#475569", fontSize: 11, userSelect: "none", transition: "color 0.15s" }}>ⓘ</span>
+          <span style={{ color: showInfo ? color : "#94a3b8", userSelect: "none", transition: "color 0.15s", display: "inline-flex" }}><InfoIcon size={13} /></span>
           {showInfo && (
             <div
               onMouseEnter={openTip}
@@ -7505,21 +7579,39 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
       {sorted.length >= 2 ? (
         <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
           <div className="ct">Plan trend</div>
-          <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="date" tick={CHECKIN_TICK} />
-              <YAxis yAxisId="rate" domain={[0, 100]} tick={CHECKIN_TICK} tickFormatter={(v) => `${v}%`} width={42} />
-              <YAxis yAxisId="port" orientation="right" tick={CHECKIN_TICK} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
-              <Tooltip
-                contentStyle={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, fontSize: 12 }}
-                formatter={(value, name) => name === "Success rate" ? [`${value}%`, name] : [fmtDollar(value), name]}
-              />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line yAxisId="rate" type="monotone" dataKey="successPct" name="Success rate" stroke="#5eead4" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-              <Line yAxisId="port" type="monotone" dataKey="port" name="Portfolio" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-            </ComposedChart>
-          </ResponsiveContainer>
+          {/* Success rate (%) and Portfolio ($) are unrelated scales — two
+              single-axis charts sharing the same date x-axis instead of one
+              dual-axis plot whose alignment would be arbitrary. */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" tick={CHECKIN_TICK} />
+                <YAxis domain={[0, 100]} tick={CHECKIN_TICK} tickFormatter={(v) => `${v}%`} width={42} />
+                <Tooltip
+                  contentStyle={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, fontSize: 12 }}
+                  formatter={(value, name) => [`${value}%`, name]}
+                />
+                <Line type="monotone" dataKey="successPct" name="Success rate" stroke="#5eead4" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" tick={CHECKIN_TICK} />
+                <YAxis tick={CHECKIN_TICK} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+                <Tooltip
+                  contentStyle={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, fontSize: 12 }}
+                  formatter={(value, name) => [fmtDollar(value), name]}
+                />
+                <Line type="monotone" dataKey="port" name="Portfolio" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="leg">
+            <div className="li"><div className="ll" style={{ background: "#5eead4" }} />Success rate</div>
+            <div className="li"><div className="ll" style={{ background: "#0ea5e9" }} />Portfolio</div>
+          </div>
         </div>
       ) : (
         <div style={{ fontSize: 12, color: "#94a3b8", background: "rgba(94,234,212,0.05)", border: "1px solid rgba(94,234,212,0.15)", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
@@ -13145,11 +13237,6 @@ export default function AiRAForecaster() {
                 See requirements.md §12-adjacent design audit (2026-06-29). */}
             {(() => {
               const heroColor = mc ? (mc.rate >= 0.85 ? "#0d9488" : mc.rate >= 0.7 ? "#f59e0b" : "#ef4444") : "#334155";
-              const infoDot = {
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                width: 14, height: 14, borderRadius: "50%", background: "rgba(255,255,255,0.1)",
-                color: "#64748b", fontSize: 10, fontWeight: 600, cursor: "help",
-              };
               const sep = <span style={{ color: "#475569" }}>·</span>;
               const strat = assumptions.withdrawalStrategy;
               return (
@@ -13162,7 +13249,7 @@ export default function AiRAForecaster() {
                       </div>
                       <div style={{ fontSize: 15, color: "#94a3b8", display: "flex", alignItems: "center", gap: 5 }}>
                         success to age {endAge}
-                        <span style={infoDot} title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`}>ⓘ</span>
+                        <InfoDot size={12} title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`} />
                       </div>
                     </div>
                     {mc && (
@@ -13703,4 +13790,4 @@ export default function AiRAForecaster() {
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot };

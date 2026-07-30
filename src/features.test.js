@@ -277,3 +277,48 @@ describe('AGE_LIMITS — statutory Social Security claiming window', () => {
     }
   });
 });
+
+// ─── InfoIcon (v1.2.42) ────────────────────────────────────────────────────────
+// The Unicode "ⓘ" it replaces rendered at whatever weight and baseline the
+// resolving font chose, so it looked thin and misaligned at 10-11px. These lock
+// the vector in: no font dependency, scales, and inherits colour.
+
+describe('InfoIcon — SVG info affordance', () => {
+  const { InfoIcon, InfoDot } = require('./App');
+  const React = require('react');
+  const { createRoot } = require('react-dom/client');
+  const { act } = require('react-dom/test-utils');
+  global.IS_REACT_ACT_ENVIRONMENT = true;
+
+  const renderToDiv = (el) => {
+    const div = document.createElement('div');
+    document.body.appendChild(div);
+    act(() => { createRoot(div).render(el); });
+    return div;
+  };
+
+  test('renders an svg, not a text glyph', () => {
+    const div = renderToDiv(React.createElement(InfoIcon, {}));
+    expect(div.querySelector('svg')).not.toBeNull();
+    expect(div.textContent).not.toContain('ⓘ');
+  });
+
+  test('honours the size prop and keeps a square viewBox', () => {
+    const div = renderToDiv(React.createElement(InfoIcon, { size: 20 }));
+    const svg = div.querySelector('svg');
+    expect(svg.getAttribute('width')).toBe('20');
+    expect(svg.getAttribute('height')).toBe('20');
+    expect(svg.getAttribute('viewBox')).toBe('0 0 16 16');
+  });
+
+  test('inherits colour via currentColor so callers keep styling with `color`', () => {
+    const div = renderToDiv(React.createElement(InfoIcon, {}));
+    expect(div.innerHTML).toContain('currentColor');
+  });
+
+  test('InfoDot exposes its explanation as a tooltip', () => {
+    const div = renderToDiv(React.createElement(InfoDot, { title: 'Explains the number' }));
+    expect(div.querySelector('[title="Explains the number"]')).not.toBeNull();
+    expect(div.querySelector('svg')).not.toBeNull();
+  });
+});
