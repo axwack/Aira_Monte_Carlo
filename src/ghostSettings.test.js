@@ -308,6 +308,42 @@ describe("spousal Social Security is wired to the engines", () => {
     });
     expect(Math.round(disabled)).toBe(Math.round(single));
   });
+
+  // ── spouse.dob (§24) ──────────────────────────────────────────────────────
+  // The field that puts the spouse on their own clock. It must move the model:
+  // if it does not, the engines are still gating the spouse's benefit on the
+  // PRIMARY's age, which is the bug it was added to fix.
+  test("spouse.dob moves the result — a younger spouse claims LATER", () => {
+    const primaryDob = `${new Date().getFullYear() - 60}-01-01`;
+    const sameAge = fingerprint({
+      ...COUPLE, dob: primaryDob,
+      spouse: { ...COUPLE.spouse, dob: primaryDob },
+    });
+    const tenYearsYounger = fingerprint({
+      ...COUPLE, dob: primaryDob,
+      spouse: { ...COUPLE.spouse, dob: `${new Date().getFullYear() - 50}-01-01` },
+    });
+    expect(Math.round(sameAge)).not.toBe(Math.round(tenYearsYounger));
+    // And the direction must be right: a younger spouse's benefit starts later,
+    // so the household receives LESS Social Security over the plan and ends with
+    // a smaller portfolio. A test that only asserts "different" would pass with
+    // the sign inverted.
+    expect(tenYearsYounger).toBeLessThan(sameAge);
+  });
+
+  test("a missing spouse.dob is treated as same-age, not as NaN", () => {
+    const primaryDob = `${new Date().getFullYear() - 60}-01-01`;
+    const blank = fingerprint({
+      ...COUPLE, dob: primaryDob,
+      spouse: { ...COUPLE.spouse, dob: "" },
+    });
+    const sameAge = fingerprint({
+      ...COUPLE, dob: primaryDob,
+      spouse: { ...COUPLE.spouse, dob: primaryDob },
+    });
+    expect(Number.isFinite(blank)).toBe(true);
+    expect(Math.round(blank)).toBe(Math.round(sameAge));
+  });
 });
 
 // ─── Equity glidepath (highest-value fixture from NEEDS_A_TARGETED_FIXTURE) ───

@@ -41,6 +41,7 @@ import {
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, expectedHealthcareShock } from "./expenses.js";
+import { spouseAgeAt, personsAtLeastAge, spouseDeathOnPrimaryClock, filesJointlyAt } from "./ages.js";
 import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_RATE, EARLY_PENALTY_AGE } from "./earlyWithdrawal.js";
 import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
@@ -67,10 +68,18 @@ const GK_INFLATION_CAP = 0.06;
 const BRACKET_CEILINGS_MFJ    = { "10": 24_800, "12": 100_800, "22": 211_400, "24": 403_550, "32": 512_450, "35": 768_700, "37": Infinity, "irmaa": 218_000 };
 const BRACKET_CEILINGS_SINGLE = { "10": 12_400, "12": 50_400,  "22": 105_700, "24": 201_800, "32": 256_225, "35": 640_600, "37": Infinity, "irmaa": 109_000 };
 
-function stdDed(age, isMFJ, inflFactor) {
-  const base  = isMFJ ? STD_DED_MFJ    : STD_DED_SINGLE;
-  const bonus = isMFJ ? AGE_BONUS_MFJ  : AGE_BONUS_SINGLE;
-  return Math.round((base + (age >= 65 ? bonus : 0)) * inflFactor);
+/**
+ * `spouseAge` (null when unknown) makes the age-65 add-on PER FILER, matching
+ * App.jsx's getStandardDeduction. AGE_BONUS_MFJ is two people's add-on, and it
+ * used to be granted in full the moment the PRIMARY reached 65 — so a couple with
+ * a 10-year gap was handed the younger spouse's $1,650 a decade early. null
+ * reproduces that old behaviour exactly, for profiles with no spouse birthdate.
+ */
+function stdDed(age, isMFJ, inflFactor, spouseAge = null) {
+  const base    = isMFJ ? STD_DED_MFJ : STD_DED_SINGLE;
+  const perHead = AGE_BONUS_SINGLE;                       // AGE_BONUS_MFJ === 2 × this
+  const seniors = personsAtLeastAge(age, spouseAge, isMFJ, 65);
+  return Math.round((base + seniors * perHead) * inflFactor);
 }
 
 function bracketCeiling(target, isMFJ, inflFactor) {
@@ -347,6 +356,12 @@ export function buildWithdrawalWaterfall(params = {}) {
   }
 
   const isMFJ      = filingStatus !== "single";
+  // The spouse's age in the year the primary is `a` — null when unknown, which
+  // reproduces the pre-spouse-DOB behaviour. Hoisted so the tax closure and the
+  // sourcing/conversion blocks all read ONE derivation of the second person's
+  // clock (§24). Only per-person amounts consume it today: the age-65 standard
+  // deduction add-on and the OBBBA senior bonus.
+  const spAgeAt    = (a) => spouseAgeAt(params, a);
   const infR       = inf / 100;
   // Expected growth now derives from the SAME equity-glide formula runMC's
   // portReturn uses (expectedReturn(eqPct), shared via ./expectedReturn.js)
@@ -368,8 +383,38 @@ export function buildWithdrawalWaterfall(params = {}) {
     ? rmdStartAge
     : getRmdStartAge({ dob, birthYear, currentAge });
 
-  const fedBase    = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
-  const stateBr0   = twoHousehold ? null : getStateBrackets(stateOfResidence, isMFJ);
+  /* ── The widow's penalty (§22) — time-varying filing status ────────────────
+   *
+   * Filing status used to be a closure CONSTANT read by ~24 sites here: federal
+   * brackets, the standard deduction, the bracket ceiling, SS taxation, LTCG
+   * brackets, the NIIT threshold, the IRMAA tier, the senior bonus, the joint-RMD
+   * gate and state brackets. So the survivor's tax bill could not be modelled at
+   * all, even though the tax hit on a survivor usually EXCEEDS the benefit they
+   * lose — brackets narrow, the standard deduction roughly halves, IRMAA tiers
+   * halve and the senior bonus halves, against a barely-reduced RMD on an
+   * unchanged portfolio.
+   *
+   * `spouse.deathAge` is the SPOUSE's own age at death, so it has to be moved onto
+   * the primary's clock (the only clock the loop walks) with the same age offset
+   * the spouse's Social Security uses.
+   *
+   * MFJ is kept THROUGH the year of death and Single applies from the year after:
+   * a surviving spouse may file jointly for the tax year in which their spouse
+   * died (IRS Pub 501). Filing Single from the death year itself would overstate
+   * tax by one year. (Qualifying-surviving-spouse status, which extends MFJ rates
+   * for two more years, requires a dependent child and is deliberately not
+   * modelled — it does not apply to the retiree case this tool serves.)
+   *
+   * deathAge null/absent ⇒ survivorFrom is Infinity ⇒ mfjAt is constant, which is
+   * the pre-feature behaviour for every existing profile.
+   */
+  const survivorFrom = spouseDeathOnPrimaryClock(params);
+  const mfjAt = (a) => filesJointlyAt(params, a);
+  /** True once the primary is filing as a survivor (the year AFTER the death). */
+  const isSurvivorAt = (a) => a > survivorFrom;
+
+  const fedBaseAt  = (a) => (mfjAt(a) ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE);
+  const stateBrAt  = (a) => (twoHousehold ? null : getStateBrackets(stateOfResidence, mfjAt(a)));
 
   // Pinned per-year conversion amounts from the Conversion Plan tab (calendar year → $).
   const overrideMap = new Map();
@@ -439,22 +484,22 @@ export function buildWithdrawalWaterfall(params = {}) {
   // isn't modeled, so there's nothing real to look back on yet).
   function yearTax(age, yr, fromPretax, ssGross, annuityTaxable, rmd, inflFactor, otherTaxable = 0, ltcg = 0, magiLookback = null) {
     const iF  = inflFactor;
-    const fB  = idxB(fedBase, iF);
+    const fB  = idxB(fedBaseAt(age), iF);
     // IRC §86 provisional-income tiers (0% / 50% / 85% of SS taxable). Realized
     // gains count toward provisional income (they're part of MAGI) even though
     // they are NOT part of ordinary otherOrdInc/totInc below.
     const otherOrdInc = annuityTaxable + rmd + fromPretax + otherTaxable;
-    const taxSS = Math.round(taxableSocialSecurity(ssGross, otherOrdInc + ltcg, isMFJ));
+    const taxSS = Math.round(taxableSocialSecurity(ssGross, otherOrdInc + ltcg, mfjAt(age)));
     const totInc = taxSS + otherOrdInc; // ordinary income total (excludes LTCG)
     // IRMAA MAGI = AGI (incl. the full realized gain) + tax-exempt interest;
     // untaxed SS is NOT added back. Computed HERE, ahead of the deductions,
     // because the OBBBA senior bonus's phase-out is MAGI-keyed — and to keep it
     // structurally impossible to net a deduction out of MAGI (CLAUDE.md rule 3).
     const magi = totInc + ltcg;
-    const sd  = stdDed(age, isMFJ, iF);
+    const sd  = stdDed(age, mfjAt(age), iF, spAgeAt(age));
     // OBBBA senior bonus (2025–2028 only, $0 from 2029) — separate, additive,
     // NOT inflation-indexed. Reduces taxable income only, never `magi` above.
-    const seniorBonus = getSeniorBonusDeduction(age, isMFJ ? "mfj" : "single", magi, yr);
+    const seniorBonus = getSeniorBonusDeduction(age, mfjAt(age) ? "mfj" : "single", magi, yr, spAgeAt(age));
     const ded = sd + seniorBonus;
     const txInc  = Math.max(0, totInc - ded);
     // LTCG stacks ON TOP of ordinary income — the deductions soak into
@@ -463,12 +508,12 @@ export function buildWithdrawalWaterfall(params = {}) {
     const fedOrdinary = progTax(txInc, fB);
 
     // LTCG bracket walk over the stacked interval [txInc, txInc + gainTxInc).
-    const ltcgBr = idxB(isMFJ ? LTCG_BRACKETS_2026_MFJ : LTCG_BRACKETS_2026_SINGLE, iF);
+    const ltcgBr = idxB(mfjAt(age) ? LTCG_BRACKETS_2026_MFJ : LTCG_BRACKETS_2026_SINGLE, iF);
     const ltcgTax = Math.round(progTax(txInc + gainTxInc, ltcgBr) - progTax(txInc, ltcgBr));
 
     // NIIT (IRC §1411): 3.8% of the lesser of net investment income (LTCG here)
     // or the excess of MAGI over the statutory (NOT inflation-indexed) threshold.
-    const niitThreshold = isMFJ ? NIIT_THRESHOLD_MFJ : NIIT_THRESHOLD_SINGLE;
+    const niitThreshold = mfjAt(age) ? NIIT_THRESHOLD_MFJ : NIIT_THRESHOLD_SINGLE;
     const niit = ltcg > 0 ? Math.round(NIIT_RATE * Math.min(ltcg, Math.max(0, magi - niitThreshold))) : 0;
 
     // LTCG tax + NIIT fold into fedT so the funding-identity math (irmaaFull =
@@ -477,7 +522,8 @@ export function buildWithdrawalWaterfall(params = {}) {
     const fedT   = Math.round(fedOrdinary) + ltcgTax + niit;
     // States generally tax capital gains as ordinary income (no LTCG preferential
     // rate) — add the realized gain to the state taxable base.
-    const stT    = stateBr0 ? Math.round(progTax(txInc + ltcg, idxB(stateBr0, iF))) : 0;
+    const stBr   = stateBrAt(age);
+    const stT    = stBr ? Math.round(progTax(txInc + ltcg, idxB(stBr, iF))) : 0;
     // IRMAA 2-year lookback: charge uses the 2-years-ago MAGI when supplied,
     // else this year's own MAGI (pre-lookback fallback). Because magiLookback
     // is fixed before the tax↔draw fixed point runs (it doesn't depend on this
@@ -485,7 +531,11 @@ export function buildWithdrawalWaterfall(params = {}) {
     // an improvement over the old same-year charge, which was itself part of
     // the step-function the fixed point had to converge through.
     const irmaaMagi = (typeof magiLookback === "number" && !isNaN(magiLookback)) ? magiLookback : magi;
-    const irmaa  = age >= 65 ? irmaaCost(irmaaMagi, yr, infR, isMFJ) : 0;
+    // Per-person Medicare start (§24) — see irmaaCost's `beneficiaries` param.
+    const medicareHeads = personsAtLeastAge(age, spAgeAt(age), mfjAt(age), 65);
+    const irmaa  = medicareHeads > 0
+      ? irmaaCost(irmaaMagi, yr, infR, mfjAt(age), medicareHeads)
+      : 0;
     let margR = 0;
     for (const b of fB) { if (txInc > b.lo) margR = b.rate; else break; }
     // NOTE: `totalTax` here is fed+state ONLY (irmaa is reported separately /
@@ -705,7 +755,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         // useJointRmdTable=true left over from switching filingStatus to
         // "single" (e.g. modeling widowhood) must fall back to the standard
         // Uniform Lifetime table, matching runMC's `useJointTable` gate.
-        const tbl     = (useJointRmdTable && isMFJ) ? JOINT_RMD_DIV : RMD_DIV;
+        const tbl     = (useJointRmdTable && mfjAt(age)) ? JOINT_RMD_DIV : RMD_DIV;
         const divisor = tbl[age] || 15.0;
         rmd = Math.round(pretax / divisor);
         pretax -= rmd;
@@ -723,7 +773,8 @@ export function buildWithdrawalWaterfall(params = {}) {
       // withdrawal strategy's running state: multiplying that would compound
       // the smile year over year and corrupt GK's own inflation logic. This is
       // an overlay on what the strategy decided, not a change to the strategy.
-      const spSmiled = sp * spendingSmileFactor(age, retireAge, smile !== false);
+      const smileFactor = spendingSmileFactor(age, retireAge, smile !== false);
+      const spSmiled = sp * smileFactor;
       // hcRisk is NOT in this sum — see its declaration above. Every term here is
       // a cash obligation the user actually pays this year.
       const baseNeed = Math.max(0, spSmiled - fixedIncome - otherIncTotal) + housingCost + carveoutCost + ev.total;
@@ -757,12 +808,12 @@ export function buildWithdrawalWaterfall(params = {}) {
         const drawPretax = () => {
           let pretaxAllowed = need;
           if (isSmart && withdrawalBracketTarget && withdrawalBracketTarget !== "off") {
-            const sd      = stdDed(age, isMFJ, iF);
+            const sd      = stdDed(age, mfjAt(age), iF, spAgeAt(age));
             // 85% SS inclusion here is a deliberate worst-case estimate: the pretax draw
             // being sized below itself raises provisional income, so assuming max inclusion
             // keeps the bracket cap conservative (never overshoots the target ceiling).
             const ordFloor = Math.round(ss * 0.85) + rmd + annuity + otherIncTaxable;
-            let ceiling = bracketCeiling(withdrawalBracketTarget, isMFJ, iF);
+            let ceiling = bracketCeiling(withdrawalBracketTarget, mfjAt(age), iF);
             // The OBBBA senior bonus shelters ordinary income exactly as the
             // standard deduction does, so it belongs in this room calc too. Its
             // phase-out is MAGI-keyed and MAGI rises with the very draw being
@@ -772,12 +823,12 @@ export function buildWithdrawalWaterfall(params = {}) {
             // above: this may under-fill the bracket but can never overshoot it.
             const roomPreBonus = Math.max(0, ceiling - Math.max(0, ordFloor - sd));
             const ded = sd + getSeniorBonusDeduction(
-              age, isMFJ ? "mfj" : "single", ordFloor + roomPreBonus, yr
+              age, mfjAt(age) ? "mfj" : "single", ordFloor + roomPreBonus, yr, spAgeAt(age)
             );
             const taxSoFar = Math.max(0, ordFloor - ded);
 
             if (irmaaGuard && age >= 63) {
-              const irmaaTier1 = isMFJ ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
+              const irmaaTier1 = mfjAt(age) ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
               // `ded` is subtracted here only to move the IRMAA MAGI threshold into
               // the same taxable-income space as `ceiling`/`taxSoFar`. It cancels
               // out of `room = ceiling - taxSoFar` algebraically, so this does NOT
@@ -875,15 +926,15 @@ export function buildWithdrawalWaterfall(params = {}) {
           convAmt = Math.min(Math.max(0, override), pretaxAfterDraw);
           convCapReason = "manual";
         } else if (rothConversionTarget && rothConversionTarget !== "off" && pretaxAfterDraw > 1000) {
-          const sdConv = stdDed(age, isMFJ, iF);
-          let ceilingConv = bracketCeiling(rothConversionTarget, isMFJ, iF);
+          const sdConv = stdDed(age, mfjAt(age), iF, spAgeAt(age));
+          let ceilingConv = bracketCeiling(rothConversionTarget, mfjAt(age), iF);
           convCapReason = "bracket";
           // OBBBA senior bonus, estimated at the HIGH end of plausible MAGI
           // (pre-conversion MAGI + the room before the bonus) so the phase-out is
           // worst-cased and the conversion can't be over-sized.
           const roomPreBonus = Math.max(0, ceilingConv + sdConv - taxNoConv.totInc);
           const dedConv = sdConv + getSeniorBonusDeduction(
-            age, isMFJ ? "mfj" : "single", taxNoConv.magi + roomPreBonus, yr
+            age, mfjAt(age) ? "mfj" : "single", taxNoConv.magi + roomPreBonus, yr, spAgeAt(age)
           );
           // ENG-8: the IRMAA guard used to cap only the Step-5 pretax draw, so a
           // conversion sized to the income-tax bracket ceiling could still push
@@ -913,7 +964,7 @@ export function buildWithdrawalWaterfall(params = {}) {
           //     the real future cliff. That is the correct failure direction for a
           //     guardrail; do not "fix" it into an off-by-2-years bug.
           if (irmaaGuard && age >= 63) {
-            const irmaaTier1 = isMFJ ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
+            const irmaaTier1 = mfjAt(age) ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
             const irmaaCapConv = Math.round(irmaaTier1 * iF) - realizedGain - dedConv;
             if (irmaaCapConv < ceilingConv) {
               ceilingConv = irmaaCapConv;
@@ -1006,7 +1057,7 @@ export function buildWithdrawalWaterfall(params = {}) {
       // IRC §86 lower threshold ($32,000 MFJ / $25,000 single), dragging SS benefits
       // into taxation (up to $0.85 per extra $1 in the phase-in range).
       const provisional = ss * 0.5 + rmd + fromPretax + convAmt + annuity + otherIncTaxable;
-      const torpedoThresh = isMFJ ? 32_000 : 25_000;
+      const torpedoThresh = mfjAt(age) ? 32_000 : 25_000;
       const ssTorpedo     = ssTorpedoGuard && ss > 0 && provisional > torpedoThresh
         && tax.taxSS > 0;
       const irmaaTriggered = tax.irmaa > 0;
@@ -1129,6 +1180,13 @@ export function buildWithdrawalWaterfall(params = {}) {
         rothEnd:    Math.round(roth),
         totalPort:  Math.round(cash + taxable + pretax + roth),
         spending:   Math.round(spSmiled),
+        // The smile multiplier actually applied to THIS year's spend, published
+        // so the table can disclose it where the number is shown (§28.1 OPEN 3:
+        // a user suspected the smile was padding his spending and could neither
+        // find the control nor see its effect). Display must not recompute this
+        // from its own copy of the formula — that is how the two drift.
+        smileFactor: smileFactor,
+        smileBase:  Math.round(sp),
         housingCost: Math.round(housingCost),
         carveoutCost: Math.round(carveoutCost),
         eventCost: Math.round(ev.total),

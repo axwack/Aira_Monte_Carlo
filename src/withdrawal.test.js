@@ -1187,3 +1187,51 @@ describe("disclosure: engine emits what the UI must explain", () => {
     expect(hit.needFromPort).toBeGreaterThan(0);
   });
 });
+
+// ─── §28.1 — a pension holder's income covers his spending ────────────────────
+//
+// u/garylapointe, 2026-07-28: with his $44,668 pension counted, income is
+// ~$81,400, "which is more than enough to cover the taxes listed there and does
+// not need to take the Roth." v1.2.52 fixed the DISPLAY (the pension appeared in
+// no column), but nobody had verified the DRAW. If a Roth draw is real here it is
+// an engine bug and outranks every display fix in §28.
+//
+// These lock the behaviour either way, so the question cannot go unverified again.
+describe("§28.1 — income-covered retiree does not touch Roth", () => {
+  const GARY = {
+    ...BASE,
+    sp: 60_000,
+    ssb: 36_732,          // ~$3,061/mo
+    ssAge: 65,            // already claiming at retirement
+    smile: false,         // isolate the funding question from the spending curve
+    housingType: "none",
+    otherIncomes: [
+      { id: "pen", name: "Pension", annual: 44_668, startYear: 2000,
+        endYear: 9999, growthMode: "pct", growthRate: 0, taxable: true },
+    ],
+  };
+
+  test("fixed income + pension exceeds spending, so the portfolio funds only tax", () => {
+    const r = buildWithdrawalWaterfall(GARY).smart.rows[0];
+    const income = (r.fixedIncomeTotal || 0) + (r.otherIncome || 0);
+    expect(income).toBeGreaterThan(r.spending);
+    // Whatever leaves the portfolio must be small relative to income — it is the
+    // tax bill on the pension/SS, not a spending shortfall.
+    const drawn = r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth;
+    expect(drawn).toBeLessThan(income * 0.35);
+  });
+
+  test("Roth is untouched while cheaper buckets remain — every year", () => {
+    const rows = buildWithdrawalWaterfall(GARY).smart.rows;
+    rows.forEach(r => {
+      const cheaperLeft = r.cashEnd > 1 || r.taxableEnd > 1;
+      // Roth is the last resort. If cash or taxable money is still on the books,
+      // a Roth draw means the waterfall skipped a cheaper bucket.
+      if (cheaperLeft) expect(r.fromRoth).toBe(0);
+    });
+  });
+
+  test("no Roth draw at all in the first year for this profile", () => {
+    expect(buildWithdrawalWaterfall(GARY).smart.rows[0].fromRoth).toBe(0);
+  });
+});
