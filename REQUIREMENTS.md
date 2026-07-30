@@ -10,7 +10,8 @@ Living document tracking the business-logic requirements of the forecaster, what
 been fixed, and the open backlog from the June 2026 code review. Update this file
 whenever engine rules change.
 
-Last updated: **2026-07-30** — Friday build SHIPPED, read §29 FIRST (v1.2.63, 771 tests)
+Last updated: **2026-07-30** — Friday build SHIPPED (v1.2.65, 815 tests). Read §29 first.
+**NEXT SESSION (2026-07-31): §31** — the death model is authored in two places that disagree.
 
 Previous update: **2026-07-27** (branch `main`; **read §0 SESSION HANDOFF first**; Slate A engine fixes shipped v1.2.28 — §13.1 #6, §13.2 #11/#15/#16, ENG-8; new §21 spousal Social Security scoped; new ENG-25 opened)
 
@@ -2432,6 +2433,79 @@ life expectancy, and whether the survivor is still working. Model it and show th
 comparison; point at SSA for the actual quoted figures and recommend a fee-only
 advisor before anyone files. AiRA's existing disclaimer language covers the app, but
 this surface deserves an explicit pointer of its own.
+
+---
+
+## 31. 🟡 Two doors to the same room — the death model is authored twice
+
+**Found 2026-07-30 while explaining the intended workflow to Vincent. Scheduled to
+fix 2026-07-31.** Not a wrong number — a design defect that will become a wrong
+number the first time someone edits one door and not the other.
+
+### The two doors
+
+| | Stress Test → "Spouse passes early" | Profile → death fields (v1.2.62–65) |
+|---|---|---|
+| When the death happens | **Day one of retirement**, always | at `spouse.deathAge`, the age you entered |
+| Filing status | `single` from the first projected year | MFJ **through** the death year, Single after (IRS Pub 501) |
+| Survivor SS | `max(own, spouse)`, or the legacy `× 0.67` when no spousal data | reduced per the survivor schedule, PIA basis, independent claim ages |
+| Who dies | always the spouse | `spouse.firstToDie` — either partner |
+| Plan horizon | unchanged | follows the survivor (extends for a younger one) |
+| Persists? | no, one-off | yes, part of the base plan |
+
+`App.jsx` ~7997. The stress scenario spreads `...p` and then sets
+`spouse.enabled: false`, which makes `firstDeathOnPrimaryClock` return Infinity —
+so it **neutralises** whatever the user authored in the Profile rather than
+double-counting it. That is the correct outcome, but it happens by accident, not by
+design, and nothing in either surface says so.
+
+### Why it matters
+
+- It violates this project's own **single point of control** rule
+  (`specs/UI_DESIGN_SPEC.md`, Rule 3): one concept, two controls, silently
+  different models behind them.
+- A user who carefully models a death at 78 and then clicks the stress scenario
+  gets an answer computed from a *different* death (day one) and a *different*
+  survivor rule, with no indication that their setting was discarded.
+- The stress version is now the LESS accurate of the two on every axis except one
+  — it is harsher on filing status (single immediately) but softer on the horizon
+  (no extension for a younger survivor). So it is not even reliably conservative.
+
+### The fix (decided direction, not yet built)
+
+**Make the stress scenario a VARIATION on the authored model, not a second model.**
+
+- If the user has modelled a death: run *their* death, moved earlier — e.g.
+  "10 years sooner than you planned" — reusing `firstToDie`, the survivor benefit
+  rules, and the horizon logic. The stress tab then answers the question a user
+  actually has, which is *"how much worse if the timing is bad?"*, rather than
+  re-answering *"what if there were a death at all?"*.
+- If the user has NOT modelled a death: keep something like today's behaviour as
+  the day-one bound, but **label it as that** — it is a worst case, not a forecast.
+- Either way the scenario must stop silently discarding `spouse.deathAge`.
+
+Preserve the legacy `× 0.67` fallback for profiles with no spousal data (it is what
+those profiles have always seen), and keep the existing `runStress` seed handling so
+the scenario stays comparable run to run.
+
+### Test to write with it
+
+The one that would have caught this: for a profile WITH a modelled death, the
+stress scenario's survivor year must use the same filing status, the same survivor
+benefit and the same horizon rule as the base plan — i.e. the two surfaces must not
+be able to disagree about the household. Same shape as the cross-engine agreement
+test in `spousalSS.test.js` §22.
+
+### Related, and worth doing in the same pass
+
+While explaining the workflow it became clear the app never states what the success
+rate actually varies. `runMC` randomises **four** things — market returns,
+inflation, rental reliability and healthcare-shock incidence — and holds everything
+else (spending, claim ages, death age, retirement age) fixed at what the user typed.
+So the number answers *"how much market-sequence risk can this plan absorb?"*, not
+*"how likely is my retirement to work?"*. That is a §28-class provenance issue: the
+figure is read as a probability of success in life. One visible sentence near the
+success rate would fix it.
 
 ## 28. 🔴 P0 — Display-provenance audit + regression test — RIDES WITH THE FRIDAY SS WORK
 
