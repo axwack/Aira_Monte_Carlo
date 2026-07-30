@@ -1,6 +1,6 @@
 import { expectedReturn } from "./expectedReturn.js";
 import { resolveGlidepathSwitchAge } from "./glidepath.js";
-import { spouseAgeOffset, personsAtLeastAge, spouseAgeAt, filesJointlyAt } from "./ages.js";
+import { spouseAgeOffset, personsAtLeastAge, spouseAgeAt, filesJointlyAt, survivorIsPrimary, survivorAgeOnPrimaryClock, planEndAgeOnPrimaryClock, firstDeathOnPrimaryClock } from "./ages.js";
 import { survivorFra, survivorBasis, resolveSurvivorClaimAge, survivorYearBenefit } from "./survivorBenefit.js";
 
 // Progressive state income tax brackets (2025). null = no state income tax.
@@ -405,65 +405,91 @@ function taxableSocialSecurity(ssGross, otherIncome, isMFJ = true) {
  * because the household switched from one benefit to the other has to be able to say
  * so. Returning only the total is how "the components don't add up" reports happen.
  *
- * `p.spouse.deathAge` is the DECEASED's age; the survivor here is the primary, whose
- * age is the clock every engine walks. See REQUIREMENTS §30 for the remaining
- * limitation (which of the two people can be the one who dies).
+ * EVERYTHING HERE IS ON THE SURVIVOR'S OWN CLOCK. `spouse.deathAge` is the
+ * DECEDENT's own age and `spouse.firstToDie` says whose age that is; the engines walk
+ * the PRIMARY's age, so the two have to be translated exactly once, at the top. An
+ * earlier version mixed the clocks — it floored a survivor claim age at 60 against
+ * the primary's age — which silently shifted the survivor's claim by the age gap.
  */
 function survivorHouseholdSS(p, age, ctx) {
-  const { offset, cola, ssAge, spouseClaimOnPrimaryClock, deathAge } = ctx;
+  const { offset, cola, ssAge, deathAge } = ctx;
   const sp = p.spouse || {};
 
-  // The survivor's own age when the death happens, on the primary's clock.
-  const deathOnPrimaryClock = deathAge + offset;
+  // Which of the two survives decides whose benefit is "own" and whose is inherited,
+  // and whose birthday every milestone after the death belongs to.
+  const primarySurvives = survivorIsPrimary(p);
 
-  // Did the deceased ever start their benefit? This single question is what the old
-  // implementation got wrong: it paid $0 until the deceased's claim age, when in
-  // fact the survivor benefit derives from the deceased's PIA and is claimable from
-  // 60 whether or not the deceased ever filed.
-  const deceasedHadClaimed = deathOnPrimaryClock >= spouseClaimOnPrimaryClock;
+  // ── Translate onto the SURVIVOR's own clock, once ────────────────────────────
+  const survivorAge      = primarySurvives ? age : age - offset;
+  const ownClaimAge      = primarySurvives ? ssAge : (Number(sp.ssAge) || 67);
+  const ownBenefit       = primarySurvives ? (Number(p.ssb) || 0) : (Number(sp.ssb) || 0);
+  const decCheck         = primarySurvives ? (Number(sp.ssb) || 0) : (Number(p.ssb) || 0);
+  const decPia           = primarySurvives ? (Number(sp.ssPia) || 0) : (Number(p.ssPia) || 0);
+  const decOwnClaimAge   = primarySurvives ? (Number(sp.ssAge) || 67) : ssAge;
+  // The survivor's own age in the year of the death.
+  const survivorAgeAtDeath = primarySurvives ? deathAge + offset : deathAge - offset;
 
-  // Basis = 100% of what the deceased was receiving or entitled to, in TODAY's terms
-  // as the user entered it. DRCs are included when they had claimed, because the
-  // user's `ssb` is "what SSA estimates at the age they plan to claim".
+  // Did the deceased ever start their benefit? Both sides of this comparison are the
+  // DECEDENT's own ages, so no translation is needed — and this single question is
+  // what the pre-§30 code got wrong: it paid $0 until the deceased's claim age, when
+  // the survivor benefit actually derives from their PIA and is claimable from 60
+  // whether or not they ever filed.
+  const deceasedHadClaimed = deathAge >= decOwnClaimAge;
+
+  // Basis = 100% of what the deceased was receiving or was entitled to.
   const basisToday = survivorBasis({
-    deceasedCheck: Number(sp.ssb) || 0,
-    deceasedPia:   Number(sp.ssPia) || 0,
+    deceasedCheck: decCheck,
+    deceasedPia:   decPia,
     deceasedHadClaimed,
   });
 
-  const survivorClaimAge = resolveSurvivorClaimAge(sp.survivorClaimAge, deathOnPrimaryClock);
+  // Survivor claim age, on the survivor's clock: never before 60, never before the
+  // death, and honouring a later chosen age (the delay strategy).
+  const survivorClaimAge = resolveSurvivorClaimAge(sp.survivorClaimAge, survivorAgeAtDeath);
 
-  // Grow the basis by COLA from the point at which it was quoted up to the survivor's
-  // claim age, so the reduction applies to a same-year amount.
-  const basisRefAge = deceasedHadClaimed ? spouseClaimOnPrimaryClock : deathOnPrimaryClock;
-  const growYears = Math.max(0, survivorClaimAge - basisRefAge);
+  // Grow the basis by COLA from where it was quoted to the survivor's claim, so the
+  // reduction is applied to a same-year amount. Both ages below are the DECEDENT's,
+  // converted to elapsed years, which is clock-independent.
+  const refAgeOnSurvivorClock = deceasedHadClaimed
+    ? (primarySurvives ? decOwnClaimAge + offset : decOwnClaimAge - offset)
+    : survivorAgeAtDeath;
+  const growYears  = Math.max(0, survivorClaimAge - refAgeOnSurvivorClock);
   const basisAtClaim = basisToday * Math.pow(cola, growYears);
 
-  // An explicit SSA-quoted survivor amount wins and is used AS QUOTED: SSA's figure
-  // already has the early-claim reduction in it, so applying our factor on top would
-  // double-count it. That is the §21 "ask, don't derive" path.
+  // An explicit SSA-quoted survivor amount is used AS QUOTED: SSA's figure already
+  // contains the early-claim reduction, so applying ours on top would double-count
+  // it. That is §21's "ask, don't derive" path.
   const quoted = Number(sp.survivorBenefitAtClaim) || 0;
   const useQuoted = quoted > 0;
 
-  const survivorFraAge = survivorFra(
-    // The SURVIVOR's birth year — here the primary, whose dob drives the plan.
-    (typeof p.dob === "string" && p.dob.length >= 4) ? parseInt(p.dob.slice(0, 4), 10)
-      : (typeof p.birthYear === "number" ? p.birthYear
-        : (typeof p.currentAge === "number" ? ROTH_BASE_YEAR - p.currentAge : null))
-  );
+  // The SURVIVOR's birth year — whichever of the two is still alive. Using the
+  // primary's unconditionally would price the benefit off a dead person's FRA.
+  const survivorBirthYear = (() => {
+    const who = primarySurvives ? p : sp;
+    if (typeof who.dob === "string" && who.dob.length >= 4) {
+      const y = parseInt(who.dob.slice(0, 4), 10);
+      if (!isNaN(y)) return y;
+    }
+    if (typeof who.birthYear === "number") return who.birthYear;
+    if (typeof who.currentAge === "number") return ROTH_BASE_YEAR - who.currentAge;
+    return null;
+  })();
+  const survivorFraAge = survivorFra(survivorBirthYear);
 
   const res = survivorYearBenefit({
-    survivorAge: age,
-    ownClaimAge: ssAge,
-    ownBenefitAtClaim: Number(p.ssb) || 0,
+    survivorAge,
+    ownClaimAge,
+    ownBenefitAtClaim: ownBenefit,
     survivorClaimAge,
-    // When quoted, hand in the already-reduced figure and neutralise our factor by
-    // passing the survivor's own claim age as the FRA (factor === 1).
     survivorBasisAtFra: useQuoted ? quoted : basisAtClaim,
+    // Neutralise our reduction when the amount was quoted (factor === 1).
     survivorFraAge: useQuoted ? survivorClaimAge : survivorFraAge,
     cola: cola - 1,
   });
-  return { ...res, survivorClaimAge, survivorFraAge, deceasedHadClaimed, basisAtClaim };
+  return {
+    ...res, survivorClaimAge, survivorFraAge, deceasedHadClaimed, basisAtClaim,
+    survivorIsPrimary: primarySurvives,
+  };
 }
 
 function computeHouseholdSS(p, age) {
@@ -509,7 +535,12 @@ function computeHouseholdSS(p, age) {
    * mfjAt in buildWithdrawalWaterfall.js.)
    */
   const deathAge = Number(p.spouse.deathAge) > 0 ? Number(p.spouse.deathAge) : null;
-  if (deathAge != null && age >= deathAge + offset) {
+  // The death year ON THE PRIMARY'S CLOCK. `deathAge + offset` was only correct when
+  // the SPOUSE was the one who dies; when the primary dies, `deathAge` is already
+  // their own age and needs no shift. Getting this gate wrong meant the survivor
+  // branch simply never ran for a "primary dies first" plan — it silently kept
+  // paying both benefits for `offset` more years.
+  if (deathAge != null && age >= firstDeathOnPrimaryClock(p)) {
     return Math.round(survivorHouseholdSS(p, age, {
       offset, cola, ssAge, spouseClaimOnPrimaryClock, deathAge,
     }).paid);
@@ -641,6 +672,7 @@ function buildRothExplorer(params = {}) {
   const preGr  = grParam ?? (expectedReturn(preRetireEq) / 100);
   const postGr = grParam ?? (expectedReturn(postRetireEq) / 100);
   const glideSwitchAge = resolveGlidepathSwitchAge({ ...params, retireAge });
+  const planEndAge = planEndAgeOnPrimaryClock(params, endAge);
 
   function irmaaCeiling(yr, age = null) {
     const f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
@@ -669,7 +701,8 @@ function buildRothExplorer(params = {}) {
     const initDraw0 = Math.max(0, baseSp - ss0 - ab0);
     const initWR = totalPort0 > 0 ? initDraw0 / totalPort0 : 0.04;
 
-    for (let age = retireAge; age <= endAge; age++) {
+    // §30 — horizon follows whoever is alive; see planEndAgeOnPrimaryClock.
+    for (let age = retireAge; age <= planEndAge; age++) {
       const yr = retireYear + (age - retireAge),
         f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
       // Per-year growth rate — mirrors runMC's portReturn glidepath switch
