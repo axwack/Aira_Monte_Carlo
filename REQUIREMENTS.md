@@ -2318,7 +2318,27 @@ unlocked, so an owner preview can never be mistaken for the customer view.
 
 ---
 
-## 30. 🔴 Survivor benefit CLAIMING STRATEGY — the gap v1.2.63 does not close
+## 30. ✅ Survivor benefit CLAIMING STRATEGY — FIXED in v1.2.64
+
+**Status: shipped 2026-07-30, 803 tests green.** New `src/engine/survivorBenefit.js`;
+constants in TAX_REFERENCE.md → "Survivor benefits"; tests in `spousalSS.test.js`
+(§30 blocks) and two ghost-setting proofs. Both defects below are fixed and the
+switching strategy is now expressible via `spouse.survivorClaimAge` +
+`spouse.survivorBenefitAtClaim`.
+
+**Still NOT modelled, by decision:** the earnings test (no wage income exists in the
+engine), and which of the two people dies — `spouse.deathAge` still means the SPOUSE
+dies, so a first death of the primary earner is not expressible. That is defect 2
+below and it remains open; it pairs with §24's per-person work.
+
+**One thing worth knowing that the tests surfaced:** whether claiming early or at FRA
+is better depends on the measure. On CUMULATIVE Social Security, delaying to survivor
+FRA wins when the survivor benefit is the larger lifetime benefit. On the PORTFOLIO,
+claiming early can win anyway, because money received at 62 stays invested and
+compounds for thirty years. Both are legitimate answers to different questions. Do not
+"fix" a test that shows early claiming helping the portfolio.
+
+### Original entry (the gap, kept for the reasoning)
 
 **Raised by Vincent 2026-07-30, immediately after §22 shipped.** He is right, and
 this section exists so nobody reads §22 as "survivor benefits are done."

@@ -75,6 +75,45 @@ Verified 2026-07-27 against:
 - 85% of benefits included in federal AGI
 - NJ fully exempts SS from state tax
 
+### Survivor (widow/widower) benefits
+Source: SSA — "Survivors Benefits" (Pub 05-10084) and RS 00615 of the POMS.
+Consumed by `src/engine/survivorBenefit.js`. **Do not inline these anywhere else.**
+
+- **Earliest claim age: 60** (50 if disabled; any age if caring for the deceased's
+  child under 16 or disabled). This is distinct from **62** for one's OWN retirement
+  benefit — the whole reason a survivor has strategic flexibility.
+- **Deemed filing does NOT apply to survivor benefits.** The own retirement benefit
+  and the survivor benefit are independent: either may be claimed first and the
+  claimant may switch to the other later. This is the only place in Social Security
+  where that is true, and it is what makes the "take reduced survivor at 60, let my
+  own grow to 70" (or the reverse) strategy possible.
+- **Survivor full retirement age (survivor FRA)** — differs from retirement FRA:
+  | Year of birth | Survivor FRA |
+  |---|---|
+  | 1945–1956 | 66 |
+  | 1957 | 66 + 2 mo |
+  | 1958 | 66 + 4 mo |
+  | 1959 | 66 + 6 mo |
+  | 1960 | 66 + 8 mo |
+  | 1961 | 66 + 10 mo |
+  | 1962 and later | 67 |
+- **Reduction for claiming before survivor FRA:** from **71.5%** at age 60 rising on
+  a straight line to **100%** at survivor FRA. (SSA computes 28.5% total reduction
+  spread over the months between 60 and survivor FRA.)
+- **No credit for delaying past survivor FRA.** A survivor benefit stops growing at
+  survivor FRA — unlike an own retirement benefit, which earns delayed retirement
+  credits until 70. There is never a reason to delay a survivor claim past its FRA.
+- **Delayed retirement credits earned by the DECEASED pass through** to the survivor
+  benefit: the survivor receives 100% of what the deceased was receiving or was
+  entitled to, including their DRCs. Contrast the **spousal** benefit, which is 50%
+  of the higher earner's PIA and into which DRCs do **not** flow.
+- **Basis when the deceased had not yet claimed:** the survivor benefit derives from
+  the deceased's PIA (plus any DRCs actually earned before death), NOT from zero.
+  Eligibility does not depend on the deceased having filed.
+- **Earnings test (2026): $1 withheld per $2 earned above $24,480** for a
+  beneficiary under FRA for the whole year. NOT modelled by AiRA — the engine models
+  no wage income (REQUIREMENTS §24 #5, §30).
+
 ## RMD Ages (SECURE 2.0)
 - Born before July 1, 1949: 70½
 - Born July 1, 1949 – Dec 31, 1950: 72
