@@ -33,6 +33,34 @@ export function useAdminMode() {
   return new URLSearchParams(window.location.search).has("aira_admin");
 }
 
+/* ── Owner verification (drives the un-nagged report preview) ────────────────
+ * `?aira_admin=1` alone must NOT unlock anything: the param name ships in the
+ * bundle, so a client-side-only check would hand every reader a free
+ * 250-credit report. The flag below is set ONLY after /api/admin answers "ok"
+ * to a `ping` carrying ADMIN_SECRET, which is a server-side env var and is not
+ * in the bundle. It lives in memory (never persisted), so it is re-earned by
+ * the auto-connect ping on every page load.
+ */
+let ownerVerified = false;
+const ownerListeners = new Set();
+
+function setOwnerVerified(v) {
+  if (ownerVerified === v) return;
+  ownerVerified = v;
+  ownerListeners.forEach(fn => { try { fn(v); } catch {} });
+}
+
+/** True once the admin secret has been verified BY THE SERVER this session. */
+export function useOwnerVerified() {
+  const [v, setV] = useState(ownerVerified);
+  useEffect(() => {
+    ownerListeners.add(setV);
+    setV(ownerVerified);
+    return () => { ownerListeners.delete(setV); };
+  }, []);
+  return v;
+}
+
 async function adminCall(secret, action, params = {}) {
   const res = await fetch("/api/admin", {
     method:  "POST",
@@ -293,6 +321,7 @@ function LocalStateSection() {
   const clearAdminCfg = () => {
     try {
       localStorage.removeItem(ADMIN_CFG_KEY);
+      setOwnerVerified(false);   // drops the un-nagged report preview too
       setMsg("Admin config cleared — secret and email wiped.");
     } catch (e) { setMsg("Error: " + e.message); }
   };
@@ -331,7 +360,7 @@ export function AdminPanel() {
   useEffect(() => {
     const saved = loadAdminCfg().adminSecret;
     if (saved && active) {
-      adminCall(saved, "ping").then(r => { if (r.ok) setAuthed(true); });
+      adminCall(saved, "ping").then(r => { if (r.ok) { setAuthed(true); setOwnerVerified(true); } });
     }
   }, [active]);
 
@@ -339,7 +368,7 @@ export function AdminPanel() {
     setPinging(true); setPingResult(null);
     const r = await adminCall(secret, "ping");
     setPingResult(r);
-    if (r.ok) { setAuthed(true); saveAdminCfg({ adminSecret: secret }); }
+    if (r.ok) { setAuthed(true); setOwnerVerified(true); saveAdminCfg({ adminSecret: secret }); }
     setPinging(false);
   }, [secret]);
 

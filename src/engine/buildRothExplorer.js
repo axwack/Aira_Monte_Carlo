@@ -1,5 +1,6 @@
 import { expectedReturn } from "./expectedReturn.js";
 import { resolveGlidepathSwitchAge } from "./glidepath.js";
+import { spouseAgeOffset, personsAtLeastAge, spouseAgeAt, filesJointlyAt } from "./ages.js";
 
 // Progressive state income tax brackets (2025). null = no state income tax.
 // Brackets are inflation-indexed in calcYearTax / buildRothExplorer via idxB().
@@ -241,15 +242,17 @@ const OBBBA_SENIOR_LAST_YEAR = 2028;       // $0 from 2029 — hard cliff, not a
  * @param {number} yr         calendar tax year (gates the 2025–2028 window)
  * @returns {number} deduction in nominal dollars, 0 outside the window
  */
-function getSeniorBonusDeduction(age, filingStatus, magi, yr) {
+function getSeniorBonusDeduction(age, filingStatus, magi, yr, spouseAge = null) {
   if (yr < OBBBA_SENIOR_FIRST_YEAR || yr > OBBBA_SENIOR_LAST_YEAR) return 0;
-  if (!(age >= OBBBA_SENIOR_MIN_AGE)) return 0;
   const mfj = filingStatus !== "single";
-  // The engines carry ONE age, and getStandardDeduction() already reads
-  // `age >= 65 && mfj` as BOTH spouses 65+ (it adds 2 × the per-spouse add-on).
-  // Mirror that same assumption here so the two deductions can't disagree about
-  // household composition: MFJ gets 2 × the per-person amount.
-  const persons = mfj ? 2 : 1;
+  // PER PERSON, counted per person. This used to be `mfj ? 2 : 1` gated on the
+  // primary's age alone, which both (a) gave a couple $12,000 the year the older
+  // one turned 65 while the younger was still 55, and (b) gave them $0 in the
+  // reverse case, where the OLDER spouse qualifies but the primary does not.
+  // personsAtLeastAge is shared with getStandardDeduction so the two deductions
+  // can never disagree about household composition.
+  const persons = personsAtLeastAge(age, spouseAge, mfj, OBBBA_SENIOR_MIN_AGE);
+  if (persons === 0) return 0;
   const threshold = mfj ? OBBBA_SENIOR_PHASEOUT_START_MFJ : OBBBA_SENIOR_PHASEOUT_START_SINGLE;
   const excess = Math.max(0, (magi || 0) - threshold);
   // The phase-out bites EACH person's own $6,000 at 6% of the household's excess
@@ -324,16 +327,25 @@ function idxB(br, f) {
   }));
 }
 
-function irmaaCost(magi, yr, infR = 0.025, isMFJ = true) {
+/**
+ * `beneficiaries` = how many people in the household are actually ON Medicare
+ * (65+) this year. Thresholds are per TAX RETURN so they follow filing status;
+ * the surcharge is per BENEFICIARY, so an age-gapped couple pays ONE surcharge
+ * against the MFJ threshold until the younger reaches 65 (§24). Must stay
+ * byte-identical to App.jsx's irmaaCost — the two are a known duplication.
+ */
+function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
   // Anchored to ROTH_BASE_YEAR (today), not a hardcoded 2026, so this stays
   // consistent with the rest of this file as real calendar time passes.
   const f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
+  // IRMAA_2026[i].f is the TWO-person MFJ surcharge; half of it is one person's.
+  const n = beneficiaries != null ? Math.max(0, beneficiaries) : (isMFJ ? 2 : 1);
+  if (n === 0) return 0;
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
     // Single tiers are half the MFJ thresholds, except the top tier ($500,000 vs $750,000).
-    // Surcharge is per person, so single pays half the two-person MFJ amount.
     const thresh = isMFJ ? IRMAA_2026[i].m
       : (i === IRMAA_2026.length - 1 ? 500_000 : IRMAA_2026[i].m / 2);
-    const cost = isMFJ ? IRMAA_2026[i].f : IRMAA_2026[i].f / 2;
+    const cost = (IRMAA_2026[i].f / 2) * n;
     if (magi >= thresh * f) return Math.round(cost * f);
   }
   return 0;
@@ -389,13 +401,64 @@ function computeHouseholdSS(p, age) {
   const own = age >= ssAge ? (p.ssb || 0) * Math.pow(cola, age - ssAge) : 0;
   if (!p.spouse?.enabled) return Math.round(own);
 
+  // `age` is the PRIMARY's age — it is the only clock the engines walk. Every
+  // spouse milestone must therefore be expressed on that clock, shifted by the
+  // age gap. Without this, `age >= spouse.ssAge` asked "has the PRIMARY reached
+  // the SPOUSE's claim age", which starts a younger spouse's benefit early by
+  // exactly the gap: a spouse 10 years younger claiming at 67 was paid from the
+  // primary's 67 (spouse aged 57) — ten years of benefits, plus the spousal
+  // top-up, that the household will not actually receive. It inflated the
+  // success rate for every couple with an age gap.
+  //
+  // offset > 0 ⇒ the spouse is younger ⇒ their milestones land LATER on the
+  // primary's clock. Unknown spouse age ⇒ offset 0 ⇒ identical to the old
+  // behaviour (regression lock in spousalSS.test.js).
+  const offset = spouseAgeOffset(p);
   const spouseSsAge = p.spouse.ssAge || 67;
-  const spouseOwn = age >= spouseSsAge ? (p.spouse.ssb || 0) * Math.pow(cola, age - spouseSsAge) : 0;
+  const spouseClaimOnPrimaryClock = spouseSsAge + offset;
+
+  /* ── Survivor benefit (§22) ────────────────────────────────────────────────
+   * On the first death the household keeps the LARGER of the two checks and
+   * loses the smaller — plus the spousal top-up, which a survivor benefit
+   * replaces. This is what retires the hardcoded `× 0.67` haircut in the stress
+   * scenario: 0.67 is only right for a one-earner couple (lose the 0.5 spousal,
+   * keep the 1.0), whereas two similar earners keep ~50%. With both benefits on
+   * file it is exact arithmetic and no literal is needed.
+   *
+   * The survivor benefit is 100% of the deceased's check INCLUDING any delayed
+   * retirement credits, which is why this compares the grown checks rather than
+   * the PIAs (delaying the higher earner raises the SURVIVOR benefit — the one
+   * place DRCs do flow through, unlike the spousal top-up above).
+   *
+   * Modelled from the death year itself, at this engine's one-year granularity.
+   * Benefits stop the month of death, so a partial year is unavoidable either
+   * way; stepping down in the death year understates income slightly rather than
+   * overstating it, which is the right direction for a plan's safety margin.
+   * (Filing status is separate and correctly stays MFJ for that year — see
+   * mfjAt in buildWithdrawalWaterfall.js.)
+   */
+  const deathAge = Number(p.spouse.deathAge) > 0 ? Number(p.spouse.deathAge) : null;
+  if (deathAge != null && age >= deathAge + offset) {
+    const primaryCheck = age >= ssAge
+      ? (p.ssb || 0) * Math.pow(cola, age - ssAge)
+      : 0;
+    // The deceased spouse's check as it would have grown to this year — the
+    // survivor inherits that amount, not the amount at the date of death.
+    const spouseCheck = age >= spouseClaimOnPrimaryClock
+      ? (p.spouse.ssb || 0) * Math.pow(cola, age - spouseClaimOnPrimaryClock)
+      : 0;
+    return Math.round(Math.max(primaryCheck, spouseCheck));
+  }
+  const spouseOwn = age >= spouseClaimOnPrimaryClock
+    ? (p.spouse.ssb || 0) * Math.pow(cola, age - spouseClaimOnPrimaryClock)
+    : 0;
 
   const primaryPia = p.ssPia || p.ssb || 0;
   const spousePia = p.spouse.ssPia || p.spouse.ssb || 0;
   const primaryIsHigher = primaryPia >= spousePia;
-  const bothFiledAge = Math.max(ssAge, spouseSsAge);
+  // A spousal benefit requires BOTH that the claimant has filed and that the
+  // higher earner has filed, so it starts at the later of the two — on one clock.
+  const bothFiledAge = Math.max(ssAge, spouseClaimOnPrimaryClock);
 
   let topUp = 0;
   if (age >= bothFiledAge) {
@@ -467,15 +530,26 @@ function buildRothExplorer(params = {}) {
 
 
   const isMFJ = filingStatus !== "single";
-  const fedBase = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
-  const stdDedBase = isMFJ ? 32200 : 16100;
-  const stdDedAgeBonus = isMFJ ? 3300 : 1650;
+  /* §22 — time-varying filing status, the SAME rule the other two engines use
+   * (engine/ages.js). This engine advises on Roth conversions, and a survivor's
+   * narrower brackets change that advice materially: converting into what looks
+   * like 12% headroom while filing jointly can land in 22% for the survivor. All
+   * three engines must agree about the household or the tabs contradict one
+   * another — the recurring defect class in this codebase. */
+  const mfjAt = (a) => filesJointlyAt(params, a);
+  const spAgeAt = (a) => spouseAgeAt(params, a);
+  const fedBaseAt = (a) => (mfjAt(a) ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE);
+  const stdDedBaseAt = (a) => (mfjAt(a) ? 32200 : 16100);
+  // Per FILER, not per household (§24): counted by personsAtLeastAge below.
+  const STD_DED_AGE_BONUS_PER_HEAD = 1650;
   const _statutoryRmdAge = getRmdStartAge({ dob, birthYear, currentAge });
   const rmdAge = Math.max(
     typeof rmdStartAge === "number" && rmdStartAge > 0 ? rmdStartAge : _statutoryRmdAge,
     _statutoryRmdAge
   );
 
+  const stateBrAt = (a) => getStateBrackets(stateOfResidence, mfjAt(a));
+  // Retained for the no-tax-state test below, which is filing-status independent.
   const stateBr0 = getStateBrackets(stateOfResidence, isMFJ);
   const infR = inf / 100,
     retireYear = ROTH_BASE_YEAR + (retireAge - currentAge),
@@ -503,9 +577,10 @@ function buildRothExplorer(params = {}) {
   const postGr = grParam ?? (expectedReturn(postRetireEq) / 100);
   const glideSwitchAge = resolveGlidepathSwitchAge({ ...params, retireAge });
 
-  function irmaaCeiling(yr) {
+  function irmaaCeiling(yr, age = null) {
     const f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
-    return Math.round((isMFJ ? 218_000 : 109_000) * f);
+    const mfj = age == null ? isMFJ : mfjAt(age);
+    return Math.round((mfj ? 218_000 : 109_000) * f);
   }
 
   const gkF = params.gkFloor || 48000;
@@ -535,16 +610,20 @@ function buildRothExplorer(params = {}) {
       // Per-year growth rate — mirrors runMC's portReturn glidepath switch
       // (preRetireEq below glideSwitchAge, postRetireEq from it on).
       const gr = age < glideSwitchAge ? preGr : postGr;
-      const fB = idxB(fedBase, f);
-      const nB = stateBr0 ? idxB(stateBr0, f) : [];
+      const fB = idxB(fedBaseAt(age), f);
+      const stBr = stateBrAt(age);
+      const nB = stBr ? idxB(stBr, f) : [];
 
-      const stdD = Math.round(stdDedBase * f) + (age >= 65 ? Math.round(stdDedAgeBonus * f) : 0);
-      const b10t = fB.find((b) => b.rate === 0.10)?.hi || Math.round((isMFJ ? 24800 : 12400) * f);
-      const b12t = fB.find((b) => b.rate === 0.12)?.hi || Math.round((isMFJ ? 100800 : 50400) * f);
-      const b22t = fB.find((b) => b.rate === 0.22)?.hi || Math.round((isMFJ ? 211400 : 105700) * f);
-      const b24t = fB.find((b) => b.rate === 0.24)?.hi || Math.round((isMFJ ? 403550 : 201800) * f);
-      const b32t = fB.find((b) => b.rate === 0.32)?.hi || Math.round((isMFJ ? 512450 : 256225) * f);
-      const b35t = fB.find((b) => b.rate === 0.35)?.hi || Math.round((isMFJ ? 768700 : 384350) * f);
+      // Age-65 add-on is PER FILER (§24) — counted, not granted wholesale the
+      // moment the primary turns 65.
+      const stdD = Math.round(stdDedBaseAt(age) * f)
+        + personsAtLeastAge(age, spAgeAt(age), mfjAt(age), 65) * Math.round(STD_DED_AGE_BONUS_PER_HEAD * f);
+      const b10t = fB.find((b) => b.rate === 0.10)?.hi || Math.round((mfjAt(age) ? 24800 : 12400) * f);
+      const b12t = fB.find((b) => b.rate === 0.12)?.hi || Math.round((mfjAt(age) ? 100800 : 50400) * f);
+      const b22t = fB.find((b) => b.rate === 0.22)?.hi || Math.round((mfjAt(age) ? 211400 : 105700) * f);
+      const b24t = fB.find((b) => b.rate === 0.24)?.hi || Math.round((mfjAt(age) ? 403550 : 201800) * f);
+      const b32t = fB.find((b) => b.rate === 0.32)?.hi || Math.round((mfjAt(age) ? 512450 : 256225) * f);
+      const b35t = fB.find((b) => b.rate === 0.35)?.hi || Math.round((mfjAt(age) ? 768700 : 384350) * f);
       const b37t = Infinity; // top bracket has no ceiling
 
       const totalPort = pT + ro;
@@ -573,7 +652,7 @@ function buildRothExplorer(params = {}) {
         // useJointRmdTable=true left over from switching filingStatus to
         // "single" must fall back to the standard Uniform Lifetime table,
         // matching runMC's `useJointTable` gate.
-        const rmdTable = (useJointRmdTable && isMFJ) ? JOINT_RMD_DIV : RMD_DIV;
+        const rmdTable = (useJointRmdTable && mfjAt(age)) ? JOINT_RMD_DIV : RMD_DIV;
         const divisor = rmdTable[age] || 15.0;
         rmd = Math.round(pT / divisor);
       }
@@ -590,7 +669,7 @@ function buildRothExplorer(params = {}) {
       const pretaxSpend = additionalPretax;
       // IRC §86: taxable SS depends on provisional income (other ordinary income + ½ SS)
       const otherOrdInc = abn + rmd + pretaxSpend;
-      const ssT = Math.round(taxableSocialSecurity(ss, otherOrdInc, isMFJ));
+      const ssT = Math.round(taxableSocialSecurity(ss, otherOrdInc, mfjAt(age)));
       const incBC = ssT + otherOrdInc;
       const txBC = Math.max(0, incBC - stdD);
 
@@ -616,7 +695,7 @@ function buildRothExplorer(params = {}) {
           else if (rothMode === "fill_35") { targetTop = b35t; capReason = "mode 35%"; }
           else if (rothMode === "fill_37") { targetTop = b37t; capReason = "mode 37%"; }
           else if (rothMode === "irmaa_safe") {
-            const irmaaTop = irmaaCeiling(yr) + stdD;
+            const irmaaTop = irmaaCeiling(yr, age) + stdD;
             if (irmaaTop < b22t) { targetTop = irmaaTop; capReason = "IRMAA ceiling"; }
             else { targetTop = b22t; capReason = "mode 22%"; }
           } else { targetTop = b22t; capReason = "mode 22%"; }
@@ -643,7 +722,7 @@ function buildRothExplorer(params = {}) {
 
       // Conversion income raises provisional income, dragging more SS into taxation
       const ssTConv = conv > 0
-        ? Math.round(taxableSocialSecurity(ss, otherOrdInc + conv, isMFJ))
+        ? Math.round(taxableSocialSecurity(ss, otherOrdInc + conv, mfjAt(age)))
         : ssT;
       const totInc = ssTConv + otherOrdInc + conv,
         txInc = Math.max(0, totInc - stdD);
@@ -653,7 +732,8 @@ function buildRothExplorer(params = {}) {
         effR = totInc > 0 ? totT / totInc : 0;
       // IRMAA MAGI = AGI + tax-exempt interest; the untaxed portion of SS is NOT added back
       const magi = totInc;
-      const irmaa = age >= 65 ? irmaaCost(magi, yr, infR, isMFJ) : 0;
+      const medicareHeads = personsAtLeastAge(age, spAgeAt(age), mfjAt(age), 65);
+      const irmaa = medicareHeads > 0 ? irmaaCost(magi, yr, infR, mfjAt(age), medicareHeads) : 0;
 
       let margR = 0;
       if (conv > 0) {
@@ -661,7 +741,7 @@ function buildRothExplorer(params = {}) {
         const fedTNo = Math.round(progTax(txIncNo, fB));
         const stTNo = isNoTaxState ? 0 : Math.round(progTax(txIncNo, nB));
         const magiNo = incBC;
-        const irmaaNo = age >= 65 ? irmaaCost(magiNo, yr, infR, isMFJ) : 0;
+        const irmaaNo = medicareHeads > 0 ? irmaaCost(magiNo, yr, infR, mfjAt(age), medicareHeads) : 0;
         const dTax = (fedT + stT + irmaa) - (fedTNo + stTNo + irmaaNo);
         margR = dTax / conv;
       }

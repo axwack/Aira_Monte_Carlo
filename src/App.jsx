@@ -78,9 +78,10 @@ import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_Y
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_AGE } from "./engine/earlyWithdrawal.js";
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
+import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock } from "./engine/ages.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT } from "./billing/credits.js";
-import { AdminPanel } from "./billing/admin-panel.js";
+import { AdminPanel, useOwnerVerified } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 
 import emailjs from '@emailjs/browser';
@@ -126,18 +127,11 @@ if (typeof document !== "undefined") {
  * `dob` is the input of record. Always derive from it. Treat stored
  * `currentAge` purely as a fallback for imported profiles that have no dob.
  */
-function ageFromDob(dob, asOf) {
-  if (!dob) return null;
-  try {
-    const d = parseCalendarDate(dob);
-    const ref = asOf ? parseCalendarDate(asOf) : new Date();
-    if (!d || !ref || isNaN(d.getTime()) || isNaN(ref.getTime())) return null;
-    let age = ref.getFullYear() - d.getFullYear();
-    const m = ref.getMonth() - d.getMonth();
-    if (m < 0 || (m === 0 && ref.getDate() < d.getDate())) age--;
-    return age;
-  } catch { return null; }
-}
+/* Implementation moved to src/engine/ages.js — the engines need it too and they
+ * cannot import from App.jsx (that would be a cycle). Re-exported at the bottom
+ * of this file, so every existing caller and ageDerivation.test.js are
+ * unaffected. Do NOT reintroduce a local copy: age was once computed four
+ * different ways here and two of them were wrong. */
 
 /**
  * Parse a date that represents a CALENDAR day (a birthday, a checkpoint date) —
@@ -150,15 +144,9 @@ function ageFromDob(dob, asOf) {
  * age by a full year for the whole year. Date-only strings are therefore split
  * and rebuilt with the local-time constructor. Values that already carry a time
  * (or are Date objects) are passed through untouched.
+ *
+ * Implementation now lives in src/engine/ages.js — same reason as ageFromDob.
  */
-function parseCalendarDate(value) {
-  if (value instanceof Date) return value;
-  if (typeof value === "string") {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  }
-  return new Date(value);
-}
 
 /**
  * Age input bounds — ONE definition, used by every age control.
@@ -186,9 +174,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.61";
-export const BUILD_TAG = "[main] v1.2.61 - MERGE of two machines. Red-Dragon stream (v1.2.57-60): IRC 72(t) 10% early-distribution penalty now charged in BOTH buildWithdrawalWaterfall and runMC inside each tax fixed point so the draws fund it (Roth conversions correctly NOT penalized; pre-tax paying conversion tax IS), with Rule of 55 gated on a detected former-employer 401k and 72(t) SEPP, asked only when retireAge < 59.5; landmine hover card portalled to document.body after overflowX:auto clipped it; year-end Dec 1-31 check with bracket/IRMAA room and a checkpoint prompt (?yearend=1 to preview); Withdrawal Plan strategy selector hoisted to tab level per design-authority ruling. Other machine (v1.2.58): the info affordance is a vector - every hover-for-help marker moved from the Unicode glyph U+24D8 to a proper SVG icon, plus graph changes. Both version streams collided at 1.2.58; resolved forward to 1.2.61 so the tag is unambiguous across machines.";
-export const BUILD_TIME = "2026-07-30T00:20:00Z";
+const APP_VERSION = "1.2.62";
+export const BUILD_TAG = "[main] v1.2.62 - SPOUSE: per-person age model. FOUND AND FIXED a real bug in the shipped v1.2.42 spousal SS: computeHouseholdSS gated the spouse's benefit on `age >= spouse.ssAge`, i.e. whether the PRIMARY had reached the SPOUSE's claim age - a spouse 10 yrs younger was paid their full benefit AND the spousal top-up from the primary's 67th birthday (spouse aged 57), inflating the success rate for every couple with an age gap. New profile field spouse.dob (blank = same age = old behaviour) plus new src/engine/ages.js as the single age/date implementation (ageFromDob/parseCalendarDate moved out of App.jsx so the engines can share it instead of copying it). Same bug class fixed in the deductions: the age-65 standard-deduction add-on and the OBBBA senior bonus are PER FILER but were granted for both spouses the moment the primary turned 65 (and denied entirely when only the OLDER spouse qualified) - now counted by personsAtLeastAge. Per-person Medicare: IRMAA thresholds stay per-return, the surcharge is now per beneficiary. SS22 WIDOW'S PENALTY shipped: new spouse.deathAge, time-varying filing status via filesJointlyAt (MFJ through the death year, Single after, IRS Pub 501) replacing the closure constant at ~24 sites across ALL THREE engines (runMC, buildWithdrawalWaterfall, buildRothExplorer), survivor SS = max(primary, spouse) retiring the hardcoded x0.67 haircut, joint-RMD table switched off after death. SS28.1: after-tax basis now stated at the spending INPUT (Gary), one income vocabulary across every surface (Social Security / Pension/Other / Annuity/Rental), spending-curve renamed + its per-year % disclosed in the Spend column, Gary's Roth-draw report VERIFIED as not an engine bug (3 tests). SS28.2: Toggle hints now open an InfoModal on CLICK instead of a hover-only title= (dead on touch). Owner report preview: ?aira_admin=1 plus a SERVER-verified ADMIN_SECRET suppresses the purchase prompt. 705 -> 759 tests.";
+export const BUILD_TIME = "2026-07-30T18:40:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -547,9 +535,22 @@ export const BLANK_PROFILE = {
   // existing single-person profile computes identically to before this feature existed.
   spouse: {
     enabled: false,
+    // Spouse's date of birth (§24). THE enabler for per-person modelling: every
+    // engine walks one `age`, which is the primary's, so without this the
+    // spouse's Social Security claim age was compared against the PRIMARY's age
+    // and a younger spouse started collecting years early. Blank ⇒ the spouse is
+    // assumed to be the same age as the primary, which is exactly the old
+    // behaviour, so no saved profile changes until this is filled in.
+    dob: "",
     ssb: 0,                    // spouse's own annual benefit at THEIR claim age
     ssAge: 67,                 // spouse's own claim age, independent of the primary's
     ssPia: 0,                  // spouse's own FRA/PIA annual amount, for the spousal top-up
+    // The spouse's OWN age at a modelled first death (§22 widow's penalty).
+    // null = not modelled, which leaves filing status constant exactly as before.
+    // Deliberately one user-entered age rather than a mortality draw: that keeps
+    // it a deterministic event in a known year instead of a variable threaded
+    // through 3,000 Monte Carlo paths.
+    deathAge: null,
   },
   ab: 0,
   useAb: true,
@@ -921,7 +922,12 @@ function calcYearTax(
   // only the MAGI used to walk the table changes. `null` (default) preserves the
   // pre-lookback same-year-MAGI behavior for every caller that hasn't threaded
   // history through yet (backward compatible).
-  magiLookback = null
+  magiLookback = null,
+  // Spouse's age in this same tax year, or null when unknown. Only the PER-PERSON
+  // amounts read it: the age-65 standard-deduction add-on and the OBBBA senior
+  // bonus. null reproduces the previous behaviour (one age standing for both
+  // filers), so every caller that has not threaded a spouse age is unchanged.
+  spouseAge = null
 ) {
   // Replace any NaN arguments with 0
   withdrawalAmount = isNaN(withdrawalAmount) ? 0 : withdrawalAmount;
@@ -957,12 +963,12 @@ function calcYearTax(
 
   // Standard deduction (incl. age-65+ add-on), inflation-adjusted forward.
   // Single source: getStandardDeduction → TAX_REFERENCE.md (CLAUDE.md Rule 6).
-  const stdDeduction = getStandardDeduction(age, filingStatus, inflationFactor);
+  const stdDeduction = getStandardDeduction(age, filingStatus, inflationFactor, spouseAge);
   // OBBBA senior bonus deduction (2025–2028 only, $0 from 2029) — a separate,
   // additive, deliberately NON-inflation-indexed deduction stacked on top of the
   // standard deduction and its age-65 add-on. Taxable income only; `magi` above
   // is already fixed and is never reduced by it.
-  const seniorBonus = getSeniorBonusDeduction(age, filingStatus, magi, yr);
+  const seniorBonus = getSeniorBonusDeduction(age, filingStatus, magi, yr, spouseAge);
   const totalDeduction = stdDeduction + seniorBonus;
   const taxableIncome = Math.max(0, totalIncome - totalDeduction);
   // LTCG stacks ON TOP of ordinary income (IRS stacking rule): gains occupy the
@@ -1004,7 +1010,14 @@ function calcYearTax(
       // IRMAA charge uses the 2-year-old MAGI when the caller supplied one;
       // otherwise falls back to this year's own MAGI (pre-lookback behavior).
       const irmaaMagi = (typeof magiLookback === "number" && !isNaN(magiLookback)) ? magiLookback : magi;
-      const irmaa = age >= 65 ? irmaaCost(irmaaMagi, yr, inflationRate, isMFJ) : 0;
+      // Medicare starts at EACH person's own 65 (§24). `medicareHeads` is 0
+      // before either qualifies, 1 during an age gap, 2 once both are on
+      // Medicare — so an age-gapped couple is no longer charged two surcharges
+      // from the older one's 65th birthday.
+      const medicareHeads = personsAtLeastAge(age, spouseAge, isMFJ, 65);
+      const irmaa = medicareHeads > 0
+        ? irmaaCost(irmaaMagi, yr, inflationRate, isMFJ, medicareHeads)
+        : 0;
       const totalTax = fedTax + stateTax + irmaa;
       const effectiveRate = (totalIncome + ltcgAmount) > 0 ? totalTax / (totalIncome + ltcgAmount) : 0;
       let marginalBracket = 0;
@@ -1032,10 +1045,15 @@ function calcYearTax(
  * Single source of truth — calcYearTax and the sourcing waterfall both call this
  * instead of re-declaring the literals (CLAUDE.md Rule 6).
  */
-function getStandardDeduction(age, filingStatus, inflFactor) {
+function getStandardDeduction(age, filingStatus, inflFactor, spouseAge = null) {
   const mfj = filingStatus !== "single";
   let sd = mfj ? 32_200 : 16_100;          // base, 2026
-  if (age >= 65) sd += mfj ? 3_300 : 1_650; // +$1,650 per spouse at 65+
+  // The age-65 add-on is PER FILER ($1,650 each). It used to be granted for both
+  // spouses as soon as the primary reached 65, which overstated the deduction by
+  // $1,650/yr for the whole age gap. `spouseAge = null` keeps the old behaviour
+  // for profiles with no spouse birthdate. See engine/ages.js.
+  const seniors = personsAtLeastAge(age, spouseAge, mfj, 65);
+  sd += seniors * 1_650;
   return Math.round(sd * inflFactor);
 }
 
@@ -1107,7 +1125,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
   // User settings for cash return and RMD table
   const cashRealReturn = (p.cashRealReturn ?? 3.0) / 100;
-  const useJointTable = (p.useJointRmdTable ?? false) && p.filingStatus !== "single";
+  // Joint & Last Survivor is only legal while the much-younger spouse is ALIVE
+  // and is the sole beneficiary, so this has to be a per-year test once a first
+  // death is modelled (§22) — a hoisted constant would keep using the longer
+  // divisors, understating every post-death RMD. filesJointlyAt carries both
+  // conditions (filing status AND the death year).
+  const useJointTableAt = (age) => (p.useJointRmdTable ?? false) && filesJointlyAt(p, age);
   const UNIFORM_TABLE = RMD_DIV;
 
   // SECURE 2.0 RMD start age (72/73/75 by birth year), user override wins
@@ -1473,7 +1496,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       let rmd = 0;
       if (age >= rmdStartAge && pretax > 0) {
         let divisor;
-        if (useJointTable && JOINT_RMD_TABLE[age]) {
+        if (useJointTableAt(age) && JOINT_RMD_TABLE[age]) {
           divisor = JOINT_RMD_TABLE[age];
         } else {
           divisor = UNIFORM_TABLE[age] || 15.0;
@@ -1487,7 +1510,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // (need + taxes), which depends on taxes — iterate to convergence.
       // RMD proceeds fund spending first; any excess is reinvested in taxable.
       const yr = CURRENT_YEAR + (age - p.currentAge);
-      const filingStatus = p.filingStatus || "mfj";
+      // §22 — TIME-VARYING filing status. This was `p.filingStatus || "mfj"`, a
+      // constant, so the survivor's tax bill could not be modelled: on a first
+      // death the brackets narrow, the standard deduction roughly halves, the
+      // IRMAA tiers halve and the senior bonus halves. Single rule, shared with
+      // buildWithdrawalWaterfall via engine/ages.js, or the two engines would
+      // describe different households.
+      const filingStatus = filingStatusAt(p, age);
 
       // Sourcing guardrails (bracket cap, IRMAA guard, Roth reserve) are ORTHOGONAL
       // to the distribution strategy — they apply to any strategy once the user has
@@ -1496,7 +1525,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       let bracketRoomMC = Infinity;
       if (p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off") {
         const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
-        const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC);
+        const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC, spouseAgeAt(p, age));
         // 85% SS inclusion is a deliberate worst-case estimate so the cap never overshoots.
         const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable);
         const ceilingMC = getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC);
@@ -1510,7 +1539,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         // can under-fill the bracket but must never overshoot it.
         const roomBeforeBonusMC = Math.max(0, ceilingMC - Math.max(0, ordinaryFloorMC - sdMC));
         const seniorBonusMC = getSeniorBonusDeduction(
-          age, filingStatus, ordinaryFloorMC + roomBeforeBonusMC, yr
+          age, filingStatus, ordinaryFloorMC + roomBeforeBonusMC, yr, spouseAgeAt(p, age)
         );
         const taxableSoFarMC = Math.max(0, ordinaryFloorMC - (sdMC + seniorBonusMC));
         // Bracket room lives in taxable-income space (ceiling is post-deduction).
@@ -1564,7 +1593,8 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const gPass = realizedGainFromDraw(fromTaxable, taxable, taxableBasis);
         taxResult = calcYearTax(
           age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, 0,
-          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", gPass, magiLookbackMC
+          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", gPass, magiLookbackMC,
+          spouseAgeAt(p, age)
         );
         // IRC §72(t) additional tax on pre-59½ distributions. Inside the fixed
         // point for the same reason as the rest of the bill: a bigger pretax draw
@@ -1648,7 +1678,8 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
             // taxResult's — it's this year's charge, unaffected by convAmt.
             const withConv = calcYearTax(
               age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, amt,
-              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC, magiLookbackMC
+              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC, magiLookbackMC,
+              spouseAgeAt(p, age)
             );
             lastWithConv = withConv;
             return Math.max(0, withConv.totalTax - totalTax);
@@ -2070,7 +2101,7 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // defaults to null → same-year MAGI, the pre-lookback approximation) — both left
     // unchanged, out of scope here.
     const wfTax = smartTaxByAge.get(age);
-    const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, p.filingStatus || "mfj", p.stateOfResidence || "NJ");
+    const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, filingStatusAt(p, age), p.stateOfResidence || "NJ", 0, null, spouseAgeAt(p, age));
     const totalTax = taxEnabled ? taxResult.totalTax : 0;
     const totalDraw = need + totalTax;
     port = port * (1 + ret) - totalDraw;
@@ -2180,14 +2211,25 @@ function idxB(br, f) {
     rate: b.rate,
   }));
 }
-function irmaaCost(magi, yr, infR = 0.025, isMFJ = true) {
+/**
+ * @param {number|null} beneficiaries  How many people in the household are
+ *   actually ON Medicare this year (i.e. 65+). IRMAA thresholds are per TAX
+ *   RETURN — they stay keyed to filing status — but the surcharge is per
+ *   BENEFICIARY, so a couple where only one has reached 65 pays one surcharge
+ *   against the MFJ threshold. Previously MFJ always charged two, which
+ *   overstated Medicare cost for the whole age gap. `null` keeps the old
+ *   assumption (2 for MFJ, 1 for single) for callers with no spouse age.
+ */
+function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
   const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - CURRENT_YEAR);
+  // IRMAA_2026[i].f is the TWO-person MFJ surcharge, so half of it is one person's.
+  const n = beneficiaries != null ? Math.max(0, beneficiaries) : (isMFJ ? 2 : 1);
+  if (n === 0) return 0;
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
     // Single tiers are half the MFJ thresholds, except the top tier ($500,000 vs $750,000).
-    // Surcharge is per person, so single pays half the two-person MFJ amount.
     const thresh = isMFJ ? IRMAA_2026[i].m
       : (i === IRMAA_2026.length - 1 ? 500_000 : IRMAA_2026[i].m / 2);
-    const cost = isMFJ ? IRMAA_2026[i].f : IRMAA_2026[i].f / 2;
+    const cost = (IRMAA_2026[i].f / 2) * n;
     if (magi >= thresh * f) return Math.round(cost * f);
   }
   return 0;
@@ -2924,12 +2966,39 @@ const IncYearTip = ({ active, payload, label }) => {
     </div>
   );
 };
-function Toggle({ val, onChange, label, accent = "#0d9488", hint }) {
+/**
+ * `hint` used to render as a native `title=` tooltip, which meant the
+ * explanation was hover-only: undiscoverable to anyone who doesn't think to
+ * hover, and NON-EXISTENT on touch devices (§28.2). It now opens an InfoModal on
+ * CLICK via the existing InfoIcon affordance, which fixes discoverability and
+ * touch in one move. `title` is kept on the icon only as harmless extra colour
+ * for mouse users, never as the sole channel.
+ *
+ * `infoTitle` names the modal; it defaults to the toggle's own label so callers
+ * that only pass `hint` get a correct heading for free.
+ */
+function Toggle({ val, onChange, label, accent = "#0d9488", hint, infoTitle }) {
   return (
-    <div className="tog-row" title={hint || undefined}>
+    <div className="tog-row">
       <span className="tog-label">
         {label}
-        {hint && <span style={{ marginLeft: 5, color: "#94a3b8", cursor: "help", display: "inline-flex" }}><InfoIcon size={12} /></span>}
+        {hint && (
+          <InfoModal
+            title={infoTitle || (typeof label === "string" ? label : "About this option")}
+            accent={accent}
+            trigger={
+              <span style={{ marginLeft: 5, color: "#94a3b8", cursor: "pointer", display: "inline-flex" }}
+                    title="Tap or click for more info">
+                <InfoIcon size={12} />
+              </span>
+            }
+          >
+            {/* Hints are authored as plain strings with \n\n paragraph breaks. */}
+            {String(hint).split("\n\n").map((para, i) => (
+              <p key={i} style={{ margin: i === 0 ? "0 0 10px" : "0 0 10px" }}>{para}</p>
+            ))}
+          </InfoModal>
+        )}
       </span>
       <div
         className="tog"
@@ -4040,11 +4109,25 @@ function categorizeCarveouts(carveouts, yr, inf) {
   return { medical, ltc, other };
 }
 
+/* §28.1 OPEN 2 — ONE vocabulary for income, everywhere.
+ *
+ * Gary: "on the Income tab you don't call it fixed income, you call it SS on
+ * that chart (so that wouldn't map well)." The same three streams were named
+ * three ways across surfaces — "SS"/"Rental"/"Other Inc" in the schedule table,
+ * "Social Security"/"Rental/Passive"/"Other Income" here, and enumerated as
+ * "Social Security + Pension/Other + Annuity/Rental" in the withdrawal table's
+ * own legend. A label must mean the same thing everywhere it appears, and the
+ * component names must be recognisable as the parts of the "Income" aggregate.
+ *
+ * Canonical names (match the engine fields they render — r.ss, r.otherIncome,
+ * r.annuityRental): "Social Security", "Pension/Other", "Annuity/Rental".
+ * Aggregate of the three: "Income". Do not introduce a fourth spelling.
+ */
 const INCOME_CATS = [
   ["Savings Drawdown", "#5eead4"],
   ["Social Security", "#7c3aedcc"],
-  ["Rental/Passive", "#295ff1cc"],
-  ["Other Income", "#eab308cc"],
+  ["Annuity/Rental", "#295ff1cc"],
+  ["Pension/Other", "#eab308cc"],
   ["Roth Conversion", "#f59e0b"],
 ];
 
@@ -4071,8 +4154,8 @@ function IncomeExpensesChart({ p, inf }) {
     return {
       yr: r.yr, age: r.age,
       "Social Security": r.ss,
-      "Rental/Passive": r.annuityRental,
-      "Other Income": r.otherIncome,
+      "Annuity/Rental": r.annuityRental,
+      "Pension/Other": r.otherIncome,
       "Savings Drawdown": r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth,
       "Roth Conversion": r.conversionAmount,
       "General/Living": r.spending,
@@ -4150,7 +4233,7 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
   // taxes are funded separately from the pre-tax bucket (see footnote).
   const sumKey = (k) => hoverRow ? (hoverRow[k] || 0) : data.reduce((s, d) => s + (d[k] || 0), 0);
   const recon = reconcile ? (() => {
-    const guaranteed   = sumKey("Social Security") + sumKey("Rental/Passive") + sumKey("Other Income");
+    const guaranteed   = sumKey("Social Security") + sumKey("Annuity/Rental") + sumKey("Pension/Other");
     const draw         = sumKey("Savings Drawdown");                 // true portfolio draw
     const coreSpend    = sumKey("General/Living");
     const housingCarve = sumKey("Mortgage/Housing") + sumKey("Medical") + sumKey("Long-Term Care") + sumKey("Other Expenses");
@@ -4381,16 +4464,26 @@ const modeDescs = {
             ["Filing Status", filingStatus === "mfj" ? "MFJ" : "Single", "#94a3b8"],
             ["Bracket Target", modeLabels[rothMode], "#5eead4"],
             [
-              "Std Deduction (2026)",
-              (filingStatus === "mfj" ? "$32,200" : "$16,100") +
-                " (indexed " + params.inf + "%/yr)",
+              // Was two hardcoded literals ($32,200 / $16,100) — a rule-6
+              // violation and a second copy of a TAX_REFERENCE constant that
+              // would silently disagree with the engine the moment one changed.
+              // Reads the engine's own helper at inflFactor 1 (today's dollars),
+              // and states the age basis, which the old label never did.
+              "Std Deduction (under 65)",
+              fmtDollar(getStandardDeduction(64, filingStatus, 1)) +
+                " (indexed " + params.inf + "%/yr; higher from 65)",
               "#94a3b8",
             ],
             [
-              "Other Income",
-              "Rental $" +
-                (params.ab || 20000).toLocaleString() +
-                "/yr (3% growth)",
+              // Was labelled "Other Income" while showing RENTAL, with a
+              // hardcoded $20,000 fallback and a hardcoded "3% growth" that
+              // ignored params.abGrowth. Three defects in five lines: wrong
+              // name, invented value, asserted rate the plan may not use.
+              "Annuity/Rental",
+              (params.ab > 0
+                ? fmtDollar(params.ab) + "/yr"
+                : "Not set") +
+                " (" + (params.abGrowth ?? 3) + "% growth)",
               "#94a3b8",
             ],
             [
@@ -6612,14 +6705,36 @@ function WaterfallPlanView({ p, result }) {
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
           Bracket cap reason shown in Pre-Tax column
           <br />
-          Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD)  + Roth = Spending + Housing + Carveouts + Planned one-off expenses + Fed/State/IRMAA taxes</strong> (Income = Social Security + Pension/Other + Annuity/Rental Inc. — All of it offsets spending before any draw) (Any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown.
+          Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD)  + Roth = Spending + Housing + Carveouts + Planned one-off expenses + Fed/State/IRMAA taxes</strong> (Income = Social Security + Pension/Other + Annuity/Rental — All of it offsets spending before any draw) (Any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown.
         </div>
         <table className="roth-tbl">
           <thead>
             <tr>
               <th>Age</th><th title="Target spending this year. Hover each row's value for the full need breakdown (housing, carveouts, other income, taxes).">Spending <InfoIcon size={12} /></th>
               <th style={opThStyle} title="Spending is funded by the income + draw columns to the right — see the funding identity above the table.">← <InfoIcon size={12} /></th>
-              <th title="Money that arrives whether or not you sell anything — it is used first, before any portfolio draw.&#10;&#10;WHAT COUNTS AS INCOME HERE:&#10;• Social Security — your benefit, once claiming starts&#10;• Pension / other income — any stream you added under Other Income (pensions, annuities, part-time work, royalties)&#10;• Annuity / rental — property and Airbnb income, after the reliability haircut&#10;&#10;All of it reduces what the portfolio has to cover. Only the shortfall becomes a withdrawal.&#10;&#10;Hover any cell for that year's split.">Income <InfoIcon size={12} /></th>
+              {/* §28.2 tier 2: this is the aggregate whose components Gary could
+                  not find, and its explanation was hover-only — i.e. absent on
+                  every phone. Click-open modal, visible affordance. */}
+              <th>
+                Income{" "}
+                <InfoModal title="Income — what this column contains" accent="#5eead4"
+                  trigger={<span style={{ cursor: "pointer", display: "inline-flex", color: "#5eead4" }}><InfoIcon size={12} /></span>}>
+                  <p style={{ margin: "0 0 10px" }}>
+                    Money that arrives whether or not you sell anything. It is used <strong style={{ color: "#e2e8f0" }}>first</strong>,
+                    before any portfolio draw — only the shortfall becomes a withdrawal.
+                  </p>
+                  <p style={{ margin: "0 0 6px", color: "#e2e8f0" }}><strong>This column is the sum of exactly three things:</strong></p>
+                  <ul style={{ margin: "0 0 10px", paddingLeft: 18 }}>
+                    <li><strong style={{ color: "#c4b5fd" }}>Social Security</strong> — your benefit, once claiming starts</li>
+                    <li><strong style={{ color: "#fde047" }}>Pension/Other</strong> — any stream you added under Other Income (pensions, annuities, part-time work, royalties)</li>
+                    <li><strong style={{ color: "#93c5fd" }}>Annuity/Rental</strong> — property and Airbnb income, after the reliability haircut</li>
+                  </ul>
+                  <p style={{ margin: 0 }}>
+                    Those three names are used identically on the Income &amp; Expenses chart and in the
+                    Year-by-Year Schedule, where they appear as separate columns instead of one total.
+                  </p>
+                </InfoModal>
+              </th>
               <th style={opThStyle}>+</th>
               <th title="Step 3 — drawn first from the portfolio">Cash <InfoIcon size={12} /></th>
               <th style={opThStyle}>+</th>
@@ -6659,6 +6774,10 @@ function WaterfallPlanView({ p, result }) {
                 <td>{r.age}</td>
                 <td style={{ textAlign: "right" }}
                     title={`Spending ${fmtDollar(r.spending)}`
+                      // §28.1 OPEN 3: the smile silently re-scales this cell. Say so.
+                      + (r.smileFactor != null && Math.abs(r.smileFactor - 1) >= 0.005
+                          ? ` (spending-curve ${r.smileFactor > 1 ? "+" : "−"}${Math.abs(Math.round((r.smileFactor - 1) * 1000) / 10)}% applied to your ${fmtDollar(r.smileBase)} target)`
+                          : "")
                       + (r.housingCost > 0 ? ` + housing ${fmtDollar(r.housingCost)}` : "")
                       + (r.carveoutCost > 0 ? ` + carveouts ${fmtDollar(r.carveoutCost)}` : "")
                       // Planned one-off / periodic expenses. These ARE charged to the
@@ -6680,6 +6799,15 @@ function WaterfallPlanView({ p, result }) {
                     // Visible cue — hover-only disclosure is unreachable on touch.
                     <span style={{ color: "#fb7185", fontSize: 10, marginLeft: 3 }}
                           title={`Includes ${fmtDollar(r.eventCost)} of planned one-off spending`}>+📌</span>
+                  )}
+                  {/* Visible, not hover-only: this cell is NOT the number the user
+                      typed — the spending curve has re-scaled it. Gary suspected
+                      exactly this and had no way to see it (§28.1 OPEN 3). */}
+                  {r.smileFactor != null && Math.abs(r.smileFactor - 1) >= 0.005 && (
+                    <span style={{ color: "#a78bfa", fontSize: 10, marginLeft: 3, fontFamily: "'DM Mono',monospace" }}
+                          title={`Spending curve: your ${fmtDollar(r.smileBase)} target × ${r.smileFactor.toFixed(3)} for age ${r.age}. Turn it off with "Smile spending" in the sidebar Options.`}>
+                      {r.smileFactor > 1 ? "+" : "−"}{Math.abs(Math.round((r.smileFactor - 1) * 1000) / 10)}%
+                    </span>
                   )}
                 </td>
                 <td style={opTdStyle}>←</td>
@@ -6965,7 +7093,11 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
         {showTable && (
           <div style={{ overflowX: "auto" }}>
             <table className="nw-table" style={{ fontSize: 12 }}>
-              <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>SS</th><th>Rental</th><th>Other Inc</th><th>Housing</th><th>Carveouts</th><th>Portfolio Draw</th><th>Roth Conv.</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
+              {/* §28.1 OPEN 2: these three were "SS" / "Rental" / "Other Inc"
+                  here and three other things elsewhere. Canonical names only —
+                  see INCOME_CATS. Together they are the "Income" aggregate the
+                  Withdrawal Plan table shows as one column. */}
+              <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>Social Security</th><th>Annuity/Rental</th><th>Pension/Other</th><th>Housing</th><th>Carveouts</th><th>Portfolio Draw</th><th>Roth Conv.</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
               <tbody>
                 {schedule.map((s) => (
                   <tr key={s.age}>
@@ -11438,15 +11570,51 @@ function ExpensesPanel({ values, onChange }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
-        <WFieldRow label="US Spending (annual)" helper="Domestic household spending in today's dollars. Subject to state income tax when residing in-state.">
+        {/* §28.1 OPEN 1 (Gary): the after-tax basis was stated on the RESULTS
+            surfaces and in the About tab, but not HERE — which is where the user
+            forms their mental model of what number to type. Wording deliberately
+            matches the results-bar tooltip and the About card so the three agree.
+            Inline and visible, not a tooltip: per §28.2 this is tier-1 (it changes
+            how the number is READ), and `title=` does not exist on touch. */}
+        <div style={{
+          marginBottom: 16, padding: "9px 12px", borderRadius: 8,
+          background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.28)",
+          fontSize: 12, color: "#cbd5e1", lineHeight: 1.55,
+        }}>
+          <strong style={{ color: "#fbbf24" }}>Enter what you want to spend — after tax.</strong>{" "}
+          This is money that reaches your household. AiRA withdraws extra from the portfolio
+          to pay the tax bill <em>on top of</em> this figure, so do not add taxes in yourself
+          and do not reduce it for them.
+        </div>
+        <WFieldRow label="US Spending (annual)" helper="Domestic household spending in today's dollars, after tax. Subject to state income tax when residing in-state.">
           <ANumInput value={values.sp || 0} onSet={(v) => onChange("sp", v)} min={0} max={MAX_MONEY_INPUT} step={1000} suffix="/yr" />
         </WFieldRow>
-        <WFieldRow label="Out-of-Country Spending (annual)" helper="Spending that occurs abroad in today's dollars. Always drawn from the portfolio but never subject to US state tax.">
+        <WFieldRow label="Out-of-Country Spending (annual)" helper="Spending that occurs abroad in today's dollars, after tax. Always drawn from the portfolio but never subject to US state tax.">
           <ANumInput value={values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={MAX_MONEY_INPUT} step={1000} suffix="/yr" />
         </WFieldRow>
         <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span>Total combined annual spending (used for portfolio draw)</span>
+          <span>Total combined annual spending, after tax (used for portfolio draw)</span>
           <strong style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace", fontSize: 14 }}>{fmtDollar(combinedSp)}/yr</strong>
+        </div>
+        {/* §28.1 OPEN 3, discoverability half. The spending curve is the one
+            setting that silently changes the number typed above, and it lives in
+            the sidebar — so a user who suspects his spending is being padded looks
+            HERE and finds nothing. Read-only pointer, not a second control: the
+            toggle stays a single point of control (design principle 1). */}
+        <div style={{ marginTop: 8, fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
+          {values.smile !== false ? (
+            <>
+              <span style={{ color: "#a78bfa" }}>Spending curve is ON</span> — this target is re-scaled
+              per year (down through the active years, up again in late retirement), so year-by-year
+              spending will not equal the figure above. The Withdrawal Plan table shows the exact
+              percentage each year. Turn it off under <strong style={{ color: "#cbd5e1" }}>Options → Spending curve</strong> in the sidebar.
+            </>
+          ) : (
+            <>
+              <span style={{ color: "#64748b" }}>Spending curve is OFF</span> — this target stays flat
+              in real terms for every year of the plan. Enable it under <strong style={{ color: "#cbd5e1" }}>Options → Spending curve</strong> in the sidebar.
+            </>
+          )}
         </div>
       </div>
 
@@ -11608,7 +11776,7 @@ function RetirementPanel({ values, onChange }) {
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
         <div style={{ padding: "10px 12px", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <span>
-            Combined annual spending{values.spImportMeta ? (
+            Combined annual spending <span style={{ color: "#fbbf24" }}>(after tax)</span>{values.spImportMeta ? (
               <> · 📄 <strong style={{ color: "#c4b5fd" }}>{values.spImportMeta.mode === "multi" ? "multi-year budget active" : "budget-driven"}</strong></>
             ) : null}
           </span>
@@ -11666,12 +11834,61 @@ function RetirementPanel({ values, onChange }) {
           const spousePia  = Number(sp.ssPia) || 0;
           const higherPia  = Math.max(primaryPia, spousePia);
           const topUp      = Math.max(0, higherPia * 0.5 - spousePia);
+          // Per-person clock (§24). The engines walk ONE age — the primary's — so
+          // the gap is what places the spouse's milestones on that timeline.
+          const gap        = spouseAgeOffset(values);
+          const spouseAge  = personAgeNow(sp);
+          const yourAge    = personAgeNow(values);
+          const spouseClaimAtYourAge = (sp.ssAge || 67) + gap;
           return (
             <>
+              {/* §24 #1 — THE enabler. Without it the spouse's claim age was
+                  compared against the PRIMARY's age, so a younger spouse started
+                  collecting early by exactly the age gap (see spousalSS.test.js).
+                  Asked for first, because every other spouse figure below is
+                  interpreted against it. */}
+              <WFieldRow
+                label="Spouse's date of birth"
+                helper="Their own age drives when their benefit starts, when they reach Medicare at 65, and their own RMD age. Leave blank to assume they are the same age as you."
+              >
+                <input
+                  type="date"
+                  value={sp.dob || ""}
+                  onChange={(e) => setSpouse({ dob: e.target.value })}
+                  style={{
+                    background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0",
+                    borderRadius: 6, padding: "5px 8px", fontSize: 12,
+                    fontFamily: "'DM Mono',monospace", width: 130,
+                  }}
+                />
+              </WFieldRow>
+              {/* Disclose the derivation where it is entered: a date field that
+                  silently shifts ten years of income needs to show its own effect. */}
+              <div style={{
+                margin: "-8px 0 16px", padding: "8px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
+                background: sp.dob ? "rgba(124,58,237,0.08)" : "rgba(148,163,184,0.07)",
+                border: `1px solid ${sp.dob ? "rgba(167,139,250,0.28)" : "rgba(148,163,184,0.2)"}`,
+                color: sp.dob ? "#c4b5fd" : "#94a3b8",
+              }}>
+                {sp.dob && spouseAge != null && yourAge != null ? (
+                  <>
+                    Your spouse is <strong>{spouseAge}</strong> and you are <strong>{yourAge}</strong> —
+                    {gap === 0 ? " the same age" : ` a ${Math.abs(gap)}-year gap (${gap > 0 ? "they are younger" : "they are older"})`}.
+                    {" "}Their benefit therefore starts when <strong>you</strong> are {spouseClaimAtYourAge},
+                    since the plan is drawn on your age.
+                  </>
+                ) : (
+                  <>
+                    No spouse birthdate entered, so the plan assumes you are the <strong>same age</strong>.
+                    If there is a real gap this matters: a younger spouse's benefit would otherwise be
+                    counted years before it actually starts.
+                  </>
+                )}
+              </div>
               <WFieldRow label="Spouse's benefit" helper="What SSA estimates your spouse will receive at the age they plan to claim. (Per Month)">
                 <ANumInput value={Math.round((sp.ssb || 0) / 12)} onSet={(v) => setSpouse({ ssb: Math.round(v * 12) })} min={0} max={5000} step={50} suffix="/mo" />
               </WFieldRow>
-              <WFieldRow label="Spouse's SS start age" helper="Can differ from yours — each of you claims independently.">
+              <WFieldRow label="Spouse's SS start age" helper="Their own age when they claim — can differ from yours, since each of you claims independently.">
                 <ANumInput value={sp.ssAge || 67} onSet={(v) => setSpouse({ ssAge: v })} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs" />
               </WFieldRow>
               <WFieldRow label="Your benefit at full retirement age" helper="From your SSA statement — the amount at FRA, not at the age you plan to claim. Used only for the spousal top-up. (Per Month)">
@@ -11701,15 +11918,56 @@ function RetirementPanel({ values, onChange }) {
                 </div>
               )}
 
-              <div style={{
-                margin: "0 0 16px", padding: "9px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
-                background: "rgba(251,146,60,0.09)", border: "1px solid rgba(251,146,60,0.28)", color: "#fdba74",
-              }}>
-                <strong>Not modelled yet:</strong> what happens when one of you dies. The survivor keeps the
-                larger of the two checks and files taxes as Single, which narrows the brackets and roughly
-                halves the standard deduction — often a bigger hit than the lost benefit. Today that is only
-                available as the <em>Spouse passes early</em> scenario on the Stress Test tab.
-              </div>
+              {/* §22 — the widow's penalty, now modelled. Replaces the
+                  "Not modelled yet" note that sat here. One user-entered age, not
+                  a mortality draw, so the event lands in a known year and can be
+                  explained rather than merely averaged. */}
+              <WFieldRow
+                label="Model the first death at spouse's age"
+                helper="Optional. Leave blank to skip. This is the hardest thing for a couple to plan for and the easiest to underestimate — the tax increase is usually larger than the benefit lost."
+              >
+                <ANumInput
+                  value={sp.deathAge ?? 0}
+                  onSet={(v) => setSpouse({ deathAge: v > 0 ? v : null })}
+                  min={0} max={AGE_LIMITS.end.max} step={1}
+                  suffix={sp.deathAge ? " yrs" : ""}
+                />
+              </WFieldRow>
+              {sp.deathAge > 0 ? (() => {
+                const deathAtYourAge = sp.deathAge + gap;
+                const survivorSS = Math.max(Number(values.ssb) || 0, Number(sp.ssb) || 0);
+                const lostSS = ((Number(values.ssb) || 0) + (Number(sp.ssb) || 0) + topUp) - survivorSS;
+                return (
+                  <div style={{
+                    margin: "-8px 0 16px", padding: "9px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.6,
+                    background: "rgba(251,146,60,0.09)", border: "1px solid rgba(251,146,60,0.3)", color: "#fdba74",
+                  }}>
+                    <strong>Modelled from your age {deathAtYourAge}.</strong> Two things change together, and
+                    the second is the one people miss:
+                    <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                      <li>
+                        Social Security drops to the larger single check —{" "}
+                        <strong>{fmtDollar(Math.round(survivorSS / 12))}/mo</strong>, a loss of{" "}
+                        <strong>{fmtDollar(Math.round(lostSS / 12))}/mo</strong>.
+                      </li>
+                      <li>
+                        You file <strong>Single</strong> from the following year: narrower brackets, roughly
+                        half the standard deduction, halved IRMAA thresholds and half the senior bonus —
+                        on a portfolio and an RMD that barely changed.
+                      </li>
+                    </ul>
+                  </div>
+                );
+              })() : (
+                <div style={{
+                  margin: "-8px 0 16px", padding: "9px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
+                  background: "rgba(148,163,184,0.07)", border: "1px solid rgba(148,163,184,0.2)", color: "#94a3b8",
+                }}>
+                  No first death modelled — the plan assumes you both live to the end of it and file jointly
+                  throughout. The <em>Spouse passes early</em> scenario on the Stress Test tab is a one-off
+                  version of the same question.
+                </div>
+              )}
             </>
           );
         })()}
@@ -12211,6 +12469,11 @@ export default function AiRAForecaster() {
   // flipping that source-level flag can no longer unlock the report for free
   // on a deployment that isn't actually the operator's own.
   const reportCapable = useReportCapability();
+  // Owner preview: true only after /api/admin verified ADMIN_SECRET server-side
+  // this session (see admin-panel.js). Lets the operator read the real report
+  // without the purchase prompt end users see. `?aira_admin=1` on its own does
+  // NOT grant this — the param is in the bundle, the secret is not.
+  const ownerVerified = useOwnerVerified();
   // { msg, tone: "ok" | "err" }. Failures must be visible: a silent failure on
   // a paid return or a restore link leaves the customer stuck with no idea why,
   // and no way to tell us what went wrong. Errors persist longer than successes.
@@ -12358,7 +12621,10 @@ export default function AiRAForecaster() {
       endAge,
       ssAge: assumptions.ssAge,
       ssPia: assumptions.ssPia || 0,
-      spouse: assumptions.spouse || { enabled: false, ssb: 0, ssAge: 67, ssPia: 0 },
+      // Spread wholesale so newly-added spouse fields (dob, and deathAge below)
+      // cannot be silently dropped here — this memo is where ghost settings are
+      // born. `dob` in the default keeps the shape identical to BLANK_PROFILE.
+      spouse: assumptions.spouse || { enabled: false, dob: "", ssb: 0, ssAge: 67, ssPia: 0, deathAge: null },
       port,
       contrib,
       employerContrib: assumptions.employerContrib || 0,
@@ -13158,7 +13424,32 @@ export default function AiRAForecaster() {
 
             <div className="sb-card">
               <div className="sb-title">Options</div>
-              <Toggle val={smile} onChange={setSmile} label="🙂 Smile spending" />
+              {/* §28.1 OPEN 3 (Gary): "there are a LOT of tabs with sub tabs and
+                  I'll be darned if I can find that one." The control was findable
+                  only if you already knew the word "smile", and nothing said what
+                  it did to your numbers. Renamed to what it IS, and the effect is
+                  now stated with the engine's own factors (no second copy of the
+                  curve — spendingSmileFactor is the single source). The matching
+                  per-year disclosure is the badge in the Spend column. */}
+              <Toggle
+                val={smile} onChange={setSmile} accent="#a78bfa"
+                label="🙂 Spending curve (go-go / slow-go)"
+                infoTitle="🙂 Spending curve — go-go, slow-go, no-go"
+                hint={
+                  "ON (default): your spending target is re-scaled each year to follow the "
+                  + "Blanchett retirement-spending curve — real spending drifts down through the "
+                  + "active 'go-go' years, flattens in the 'slow-go' 80s, then rises again in the "
+                  + "'no-go' late 80s as health and care costs take over.\n\n"
+                  + `On YOUR plan (retiring at ${retAge}), that means spending of `
+                  + `${Math.round(spendingSmileFactor(Math.min(80, endAge), retAge) * 100)}% of your target at age ${Math.min(80, endAge)} and `
+                  + `${Math.round(spendingSmileFactor(Math.min(90, endAge), retAge) * 100)}% at age ${Math.min(90, endAge)}. `
+                  + "Year one is always 100% — the number you enter is what you spend when you stop working, not a lifetime average.\n\n"
+                  + "OFF: spending stays flat in real terms for the whole plan. That is the more "
+                  + "conservative assumption and it will lower your success rate.\n\n"
+                  + "Where to see it: the Spend column of the Withdrawal Plan table shows the exact "
+                  + "percentage applied in each year, so you can tell curve effects from your own target."
+                }
+              />
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span className="tog-label">🏛 Tax</span>
@@ -13783,8 +14074,26 @@ export default function AiRAForecaster() {
           // which reconciles against the LEDGER — previously this read a
           // localStorage flag, so editing one value granted access and clearing
           // it caused a second 250-credit charge for a window already owned.
-          locked={!reportCapable || (BILLING_ENABLED && !reportUnlocked)}
+          // A server-verified owner reads the real report with no purchase
+          // prompt. This deliberately also bypasses `reportCapable`: proving
+          // ADMIN_SECRET is strictly stronger evidence of being the operator
+          // than the GEMINI_API_KEY probe it replaces.
+          locked={ownerVerified ? false : (!reportCapable || (BILLING_ENABLED && !reportUnlocked))}
         />
+      )}
+      {/* Says WHY the report is unlocked, so an owner preview can never be
+          mistaken for what a paying customer sees. Sits above the report
+          overlay (z-index 20000 in PrintReport's own CSS). */}
+      {showReport && mc && ownerVerified && (
+        <div style={{
+          position: "fixed", top: 10, left: "50%", transform: "translateX(-50%)",
+          zIndex: 20001, background: "rgba(124,58,237,0.95)", color: "#fff",
+          borderRadius: 999, padding: "5px 16px", fontSize: 12, fontWeight: 700,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.4)", pointerEvents: "none",
+          whiteSpace: "nowrap",
+        }}>
+          🔧 Owner preview — purchase prompt suppressed (admin secret verified)
+        </div>
       )}
     </>
   );
