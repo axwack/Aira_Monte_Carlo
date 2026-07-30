@@ -174,9 +174,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.62";
-export const BUILD_TAG = "[main] v1.2.62 - SPOUSE: per-person age model. FOUND AND FIXED a real bug in the shipped v1.2.42 spousal SS: computeHouseholdSS gated the spouse's benefit on `age >= spouse.ssAge`, i.e. whether the PRIMARY had reached the SPOUSE's claim age - a spouse 10 yrs younger was paid their full benefit AND the spousal top-up from the primary's 67th birthday (spouse aged 57), inflating the success rate for every couple with an age gap. New profile field spouse.dob (blank = same age = old behaviour) plus new src/engine/ages.js as the single age/date implementation (ageFromDob/parseCalendarDate moved out of App.jsx so the engines can share it instead of copying it). Same bug class fixed in the deductions: the age-65 standard-deduction add-on and the OBBBA senior bonus are PER FILER but were granted for both spouses the moment the primary turned 65 (and denied entirely when only the OLDER spouse qualified) - now counted by personsAtLeastAge. Per-person Medicare: IRMAA thresholds stay per-return, the surcharge is now per beneficiary. SS22 WIDOW'S PENALTY shipped: new spouse.deathAge, time-varying filing status via filesJointlyAt (MFJ through the death year, Single after, IRS Pub 501) replacing the closure constant at ~24 sites across ALL THREE engines (runMC, buildWithdrawalWaterfall, buildRothExplorer), survivor SS = max(primary, spouse) retiring the hardcoded x0.67 haircut, joint-RMD table switched off after death. SS28.1: after-tax basis now stated at the spending INPUT (Gary), one income vocabulary across every surface (Social Security / Pension/Other / Annuity/Rental), spending-curve renamed + its per-year % disclosed in the Spend column, Gary's Roth-draw report VERIFIED as not an engine bug (3 tests). SS28.2: Toggle hints now open an InfoModal on CLICK instead of a hover-only title= (dead on touch). Owner report preview: ?aira_admin=1 plus a SERVER-verified ADMIN_SECRET suppresses the purchase prompt. 705 -> 759 tests.";
-export const BUILD_TIME = "2026-07-30T18:40:00Z";
+const APP_VERSION = "1.2.63";
+export const BUILD_TAG = "[main] v1.2.63 - SS28 display-provenance audit + enforcement. D1: all 36 metric cards traced (the 18 that compute across multiple lines had never been). One real mismatch found and fixed - Portfolio at Retirement was captioned MEDIAN ACCUMULATION but the value is accumulateToRetirement(), a single deterministic projection at the expected return with no distribution and so no median; same defect class as the safe-spend and GK-guardrails labels. Also: the conversion Savings-at-age cards now disclose that they hold all four buckets while the chart above them stacks only two, and one card formatted money with an inline toLocaleString instead of fmtDollar. Verified NOT bugs: nw is r.totalPort so the Savings scope is right, and Peak liquid (median) really is max of the MC p50 with its asterisk footnoted. D2: new src/provenance.test.js - a registry declaring every card label, its exact source expression and its kind (computed | echoed | point-in-time | count), with the App.jsx card count asserted against the registry size, so ADDING A CARD WITHOUT DECLARING ITS PROVENANCE TURNS THE BUILD RED. Modelled on ghostSettings.test.js. D3: new aira-forecaster-agents/specs/UI_DESIGN_SPEC.md with the provenance rule, the three disclosure tiers, and the conventions not to re-derive. SS28.2: 20 table headers converted from hover-only title= to the new ThInfo component, which keeps the visible marker but opens on CLICK - title= does not exist on touch devices at all, so every column explanation was unreachable on phones. 759 -> 768 tests, 28 suites.";
+export const BUILD_TIME = "2026-07-30T20:15:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2512,12 +2512,12 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
               <thead>
                 <tr>
                   <th>Age</th><th>Year</th>
-                  <th title="Share of simulated paths whose portfolio has not run out by this age">Still Funded <InfoIcon size={12} /></th>
-                  <th title="Pessimistic — 90% of simulated outcomes were better than this">10th %ile <InfoIcon size={12} /></th>
+                  <ThInfo tip={"Share of simulated paths whose portfolio has not run out by this age"}>Still Funded</ThInfo>
+                  <ThInfo tip={"Pessimistic — 90% of simulated outcomes were better than this"}>10th %ile</ThInfo>
                   <th>25th %ile</th>
-                  <th title="The median outcome — half of paths above, half below">Median <InfoIcon size={12} /></th>
+                  <ThInfo tip={"The median outcome — half of paths above, half below"}>Median</ThInfo>
                   <th>75th %ile</th>
-                  <th title="Optimistic — only 10% of simulated outcomes were better than this">90th %ile <InfoIcon size={12} /></th>
+                  <ThInfo tip={"Optimistic — only 10% of simulated outcomes were better than this"}>90th %ile</ThInfo>
                 </tr>
               </thead>
               <tbody>
@@ -3330,6 +3330,57 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger }) {
       )}
       {overlay}
     </>
+  );
+}
+
+/**
+ * A table header whose explanation opens on CLICK.
+ *
+ * §28.2. These were `<th title="…">Label <InfoIcon/></th>`: v1.2.54 added the
+ * visible ⓘ marker, which fixed DISCOVERABILITY (you can see an explanation
+ * exists) but not REACHABILITY — `title=` does not exist on touch devices at all,
+ * so every phone and tablet user could see the marker and never read the text.
+ * The explanation is what tells you how to read the column, which makes it the
+ * load-bearing tier-2 case: visible affordance, opens on click.
+ *
+ * `tip` accepts the same plain strings the old `title=` used, including the
+ * `&#10;&#10;` / "\n\n" paragraph breaks and "• " bullets they were written with.
+ */
+function ThInfo({ children, tip, style, accent = "#93c5fd", modalTitle }) {
+  const paras = String(tip)
+    .replace(/&#10;/g, "\n")
+    .split(/\n\s*\n/)
+    .filter(Boolean);
+  return (
+    <th style={style}>
+      {children}{" "}
+      <InfoModal
+        title={modalTitle || (typeof children === "string" ? children.trim() : "About this column")}
+        accent={accent}
+        trigger={
+          <span style={{ cursor: "pointer", display: "inline-flex", color: accent }}
+                title="Tap or click for more info">
+            <InfoIcon size={12} />
+          </span>
+        }
+      >
+        {paras.map((para, i) => {
+          const bullets = para.split("\n").filter(l => l.trim().startsWith("•"));
+          if (bullets.length) {
+            const lead = para.split("\n").filter(l => !l.trim().startsWith("•")).join(" ").trim();
+            return (
+              <div key={i} style={{ marginBottom: 10 }}>
+                {lead && <p style={{ margin: "0 0 6px" }}>{lead}</p>}
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {bullets.map((b, j) => <li key={j}>{b.replace(/^\s*•\s*/, "")}</li>)}
+                </ul>
+              </div>
+            );
+          }
+          return <p key={i} style={{ margin: "0 0 10px" }}>{para}</p>;
+        })}
+      </InfoModal>
+    </th>
   );
 }
 
@@ -5230,15 +5281,15 @@ const modeDescs = {
                   <th>Age</th>
                   <th>Label</th>
                   <th>Source</th>
-                  <th title="Pre-tax IRA/401k balance at the start of this year, before the conversion">Pre-Tax (before) <InfoIcon size={12} /></th>
+                  <ThInfo tip={"Pre-tax IRA/401k balance at the start of this year, before the conversion"}>Pre-Tax (before)</ThInfo>
                   <th>Conversion</th>
                   <th>Fed Tax</th>
                   <th>State Tax</th>
                   <th>Bracket</th>
-                  <th title="True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer.">True Marg <InfoIcon size={12} /></th>
+                  <ThInfo tip={"True marginal rate: Δ(fed+state+IRMAA) / conversion. Compare to BETR to decide convert vs defer."}>True Marg</ThInfo>
                   <th>Eff Rate</th>
                   <th>Net→Roth</th>
-                  <th title="Cumulative Roth balance at end of this year (includes growth and withdrawals)">Roth Bal <InfoIcon size={12} /></th>
+                  <ThInfo tip={"Cumulative Roth balance at end of this year (includes growth and withdrawals)"}>Roth Bal</ThInfo>
                 </tr>
               </thead>
               <tbody>
@@ -5452,17 +5503,25 @@ const modeDescs = {
           <div
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
           >
+          {/* §28 D1 — traced, and the VALUE is correct: `nw` here is
+              `r.totalPort` (rothConversionPlan.js ~225), i.e. all four buckets.
+              But the chart directly above stacks only Pre-Tax and Roth, so these
+              cards are legitimately LARGER than the bars a reader just looked at,
+              with nothing saying why. Disclosing the composition rather than
+              changing the number — an aggregate must name what it contains. */}
           <div className="met">
               <div className="ml">Savings at Age {params.endAge || 90} — Without</div>
               <div className="mv" style={{ color: "#94a3b8", fontSize: 16 }}>
                 {fmtDollar(cur.rows[cur.rows.length - 1]?.nw || 0)}
               </div>
+              <div className="ms">All buckets: cash + taxable + pre-tax + Roth</div>
             </div>
             <div className="met">
               <div className="ml">Savings at Age {params.endAge || 90} — With Conversions</div>
               <div className="mv" style={{ color: "#5eead4", fontSize: 16 }}>
                 {fmtDollar(opt.rows[opt.rows.length - 1]?.nw || 0)}
               </div>
+              <div className="ms">All buckets — more than the two bars above</div>
             </div>
           </div>
           {rmdYears.length > 0 && (
@@ -5833,13 +5892,13 @@ const modeDescs = {
                 {/* Row 2: measure sub-headers */}
                 <tr>
                   <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", borderLeft: "2px solid rgba(239,68,68,0.35)" }}>Roth $</th>
-                  <th style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax <InfoIcon size={12} /></th>
+                  <ThInfo style={{ color: "#f87171", background: "rgba(239,68,68,0.07)", cursor: "help" }} tip={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax</ThInfo>
                   <th style={{ color: "#94a3b8", background: "rgba(239,68,68,0.07)" }}>IRA Bal</th>
                   <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", borderLeft: "2px solid rgba(20,184,166,0.35)" }}>Roth $</th>
-                  <th style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", cursor: "help" }} title={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax <InfoIcon size={12} /></th>
+                  <ThInfo style={{ color: "#5eead4", background: "rgba(20,184,166,0.07)", cursor: "help" }} tip={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax</ThInfo>
                   <th style={{ color: "#94a3b8", background: "rgba(20,184,166,0.07)" }}>IRA Bal</th>
                   <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", borderLeft: "2px solid rgba(52,211,153,0.35)" }}>Roth $</th>
-                  <th style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", cursor: "help" }} title="Federal income tax only — no state income tax applies in this scenario (no-tax state). Hover any data cell to confirm the $0 state split.">Total Tax <InfoIcon size={12} /></th>
+                  <ThInfo style={{ color: "#34d399", background: "rgba(52,211,153,0.07)", cursor: "help" }} tip={"Federal income tax only — no state income tax applies in this scenario (no-tax state). Hover any data cell to confirm the $0 state split."}>Total Tax</ThInfo>
                   <th style={{ color: "#94a3b8", background: "rgba(52,211,153,0.07)" }}>IRA Bal</th>
                 </tr>
               </thead>
@@ -6710,8 +6769,9 @@ function WaterfallPlanView({ p, result }) {
         <table className="roth-tbl">
           <thead>
             <tr>
-              <th>Age</th><th title="Target spending this year. Hover each row's value for the full need breakdown (housing, carveouts, other income, taxes).">Spending <InfoIcon size={12} /></th>
-              <th style={opThStyle} title="Spending is funded by the income + draw columns to the right — see the funding identity above the table.">← <InfoIcon size={12} /></th>
+              <th>Age</th>
+              <ThInfo tip={"Target spending this year.\n\nOpen any row's Spending cell for the full need breakdown — housing, carveouts, planned one-off costs, other income and taxes."}>Spending</ThInfo>
+              <ThInfo style={opThStyle} tip={"Spending is funded by the income + draw columns to the right — see the funding identity above the table."}>←</ThInfo>
               {/* §28.2 tier 2: this is the aggregate whose components Gary could
                   not find, and its explanation was hover-only — i.e. absent on
                   every phone. Click-open modal, visible affordance. */}
@@ -6736,20 +6796,21 @@ function WaterfallPlanView({ p, result }) {
                 </InfoModal>
               </th>
               <th style={opThStyle}>+</th>
-              <th title="Step 3 — drawn first from the portfolio">Cash <InfoIcon size={12} /></th>
+              <ThInfo tip={"Step 3 — drawn first from the portfolio"}>Cash</ThInfo>
               <th style={opThStyle}>+</th>
-              <th title="Step 4 — drawn after cash is exhausted">Taxable <InfoIcon size={12} /></th>
+              <ThInfo tip={"Step 4 — drawn after cash is exhausted"}>Taxable</ThInfo>
               <th style={opThStyle}>+</th>
-              <th title="Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k.">Pre-Tax <InfoIcon size={12} /></th>
+              <ThInfo tip={"Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k."}>Pre-Tax</ThInfo>
               <th style={opThStyle}>+</th>
-              <th title="Step 6 — last resort; emergency reserve floor maintained">Roth <InfoIcon size={12} /></th>
+              <ThInfo tip={"Step 6 — last resort; emergency reserve floor maintained"}>Roth</ThInfo>
               <th style={opThStyle}>=</th>
-              <th title="Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes.">Total Draw <InfoIcon size={12} /></th>
+              <ThInfo tip={"Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes."}>Total Draw</ThInfo>
               {anyConversion && (
-                <th title="Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total.">Roth Conv <InfoIcon size={12} /></th>
+                <ThInfo tip={"Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total."}>Roth Conv</ThInfo>
               )}
-              <th style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} title="Bucket 1 ending balance this year">B1 End <InfoIcon size={12} /></th>
-              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th><th title="Annual withdrawal rate vs portfolio — green within GK guardrails">WR <InfoIcon size={12} /></th>
+              <ThInfo style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} tip={"Bucket 1 ending balance this year"}>B1 End</ThInfo>
+              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th>
+              <ThInfo tip={"Annual withdrawal rate vs portfolio — green when inside your Guyton-Klinger guardrails."}>WR</ThInfo>
               <th>
                 <LandmineTip
                   emoji="💣"
@@ -7080,7 +7141,16 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-        <div className="met"><div className="ml">Portfolio at Retirement</div><div className="mv" style={{ color: "#5eead4" }}>{fmtDollar(portAtRetire)}</div><div className="ms">Median accumulation</div></div>
+        {/* §28 D1 — PROVENANCE FIX. This said "Median accumulation", which claims
+            the figure is the 50th percentile of the Monte Carlo distribution. It
+            is not: `simulateDeterministicWithStrategy` gets it from
+            `accumulateToRetirement(p)`, a single deterministic compound-growth
+            projection at the expected return (App.jsx ~1818). No distribution is
+            involved and there is no median to take. Same defect class as the
+            "safe spend" and "GK guardrails" labels: the caption asserted an
+            authority the number never got. The whole view is deterministic, so
+            the caption now says that. */}
+        <div className="met"><div className="ml">Portfolio at Retirement</div><div className="mv" style={{ color: "#5eead4" }}>{fmtDollar(portAtRetire)}</div><div className="ms">Single projection at the expected return — not a median</div></div>
         <div className="met"><div className="ml">Initial Withdrawal Rate</div><div className="mv" style={{ color: "#fbbf24" }}>{(initWR * 100).toFixed(1)}%</div><div className="ms">Net portfolio draw / portfolio</div></div>
         <div className="met"><div className="ml">Final Portfolio (Age {schedule[schedule.length - 1]?.age})</div><div className="mv" style={{ color: schedule[schedule.length - 1]?.portfolioEnd > 0 ? "#34d399" : "#ef4444" }}>{fmtDollar(schedule[schedule.length - 1]?.portfolioEnd || 0)}</div><div className="ms">{schedule[schedule.length - 1]?.portfolioEnd > 0 ? "Survives" : "Exhausted"}</div></div>
       </div>
@@ -8976,7 +9046,10 @@ function NetWorthTab({ p, mc, inf }) {
           return (
             <div className="met" title={hint}>
               <div className="ml">{label}</div>
-              <div className="mv" style={{ color: "#4ade80", fontSize: 18 }}>${monthly.toLocaleString()}</div>
+              {/* fmtDollar, not an inline toLocaleString — one money helper
+                  (CLAUDE.md). Inline formatting is how an abbreviator slipped in
+                  unnoticed once already. */}
+              <div className="mv" style={{ color: "#4ade80", fontSize: 18 }}>{fmtDollar(monthly)}</div>
               <div className="ms">{note}</div>
             </div>
           );
