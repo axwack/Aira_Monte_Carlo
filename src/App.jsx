@@ -3713,7 +3713,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 8, padding: "6px 10px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="rgba(239,68,68,0.6)" strokeWidth="1.5" strokeDasharray="5 3"/></svg>
-            <span style={{ fontSize: 11, color: "rgba(239,68,68,0.8)", fontWeight: 600 }}>P(alive) — right axis</span>
+            <span style={{ fontSize: 11, color: "rgba(239,68,68,0.8)", fontWeight: 600 }}>P(alive) — chart below</span>
           </div>
           <span style={{ fontSize: 11, color: "#64748b" }}>
             SSA {sex === "male" ? "male" : sex === "female" ? "female" : "blended"} survival probability by age.
@@ -3800,33 +3800,12 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             width={MONEY_AXIS_WIDTH}
             domain={[0, maxY]}
           />
-          {showMortality && (
-            <YAxis
-              yAxisId="mort"
-              orientation="right"
-              stroke="rgba(239,68,68,0.3)"
-              tick={{ fill: "rgba(239,68,68,0.5)", fontSize: 10 }}
-              tickFormatter={(v) => `${Math.round(v * 100)}%`}
-              domain={[0, 1]}
-              tickCount={6}
-            />
-          )}
           <Tooltip content={<Tip />} />
-          
+
           {/* Vertical reference lines (D-Day, SS, RMD) */}
           <ReferenceLine yAxisId="port" x={retireAge} stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day", fill: "#fbbf24", fontSize: 10, position: "top" }} />
           <ReferenceLine yAxisId="port" x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: 10, position: "top" }} />
           <ReferenceLine yAxisId="port" x={rmdAge} stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "#34d399", fontSize: 10, position: "top" }} />
-
-          {/* Mortality reference lines */}
-          {showMortality && medianDeathAge && (
-            <ReferenceLine yAxisId="port" x={medianDeathAge} stroke="rgba(239,68,68,0.5)" strokeWidth={1} strokeDasharray="3 3"
-              label={{ value: "50% alive", fill: "rgba(239,68,68,0.7)", fontSize: 9, position: "insideTopRight" }} />
-          )}
-          {showMortality && q25DeathAge && (
-            <ReferenceLine yAxisId="port" x={q25DeathAge} stroke="rgba(239,68,68,0.3)" strokeWidth={1} strokeDasharray="2 4"
-              label={{ value: "25% alive", fill: "rgba(239,68,68,0.5)", fontSize: 9, position: "insideTopRight" }} />
-          )}
 
           {/* Fan areas and percentile lines */}
           <Area yAxisId="port" type="monotone" dataKey="p90" stroke="#5eead4" strokeWidth={1} strokeDasharray="4 2" fill="url(#g90v5)" dot={false} name="90th" legendType="none" />
@@ -3856,12 +3835,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
               </>
             );
           })()}
-
-          {/* Survival probability curve (right axis, red dashed) */}
-          {showMortality && (
-            <Line yAxisId="mort" type="monotone" dataKey="survival" stroke="rgba(239,68,68,0.6)"
-              strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="P(alive)" connectNulls />
-          )}
 
           {/* Deterministic accumulation path (pre-retirement) */}
           {showTargets && accumData.length > 0 && (
@@ -3992,6 +3965,37 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           })()}
         </ComposedChart>
       </ResponsiveContainer>
+
+      {/* Survival probability — own chart, own axis (%), sharing the age x-axis
+          with the portfolio chart above so the two still read together without
+          a fabricated dual-axis alignment between dollars and probability. */}
+      {showMortality && (
+        <ResponsiveContainer width="100%" height={140}>
+          <ComposedChart data={dataWithMortality} margin={{ top: 8, right: 48, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 11 }} />
+            <YAxis
+              stroke="rgba(239,68,68,0.3)"
+              tick={{ fill: "rgba(239,68,68,0.5)", fontSize: 10 }}
+              tickFormatter={(v) => `${Math.round(v * 100)}%`}
+              domain={[0, 1]}
+              tickCount={6}
+              width={MONEY_AXIS_WIDTH}
+            />
+            <Tooltip content={<Tip />} />
+            {medianDeathAge && (
+              <ReferenceLine x={medianDeathAge} stroke="rgba(239,68,68,0.5)" strokeWidth={1} strokeDasharray="3 3"
+                label={{ value: "50% alive", fill: "rgba(239,68,68,0.7)", fontSize: 9, position: "insideTopRight" }} />
+            )}
+            {q25DeathAge && (
+              <ReferenceLine x={q25DeathAge} stroke="rgba(239,68,68,0.3)" strokeWidth={1} strokeDasharray="2 4"
+                label={{ value: "25% alive", fill: "rgba(239,68,68,0.5)", fontSize: 9, position: "insideTopRight" }} />
+            )}
+            <Line type="monotone" dataKey="survival" stroke="rgba(239,68,68,0.6)"
+              strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="P(alive)" connectNulls />
+          </ComposedChart>
+        </ResponsiveContainer>
+      )}
 
       {/* Unified Legend */}
       <div className="leg">
@@ -6693,22 +6697,36 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
           📈 Deterministic Schedule – {strategyLabel} · Median historical returns
           ({expectedReturn(p.preRetireEq ?? 91).toFixed(2)}% before age {resolveGlidepathSwitchAge(p)} / {expectedReturn(p.postRetireEq ?? 70).toFixed(2)}% after) · Inflation {inf}%
         </div>
-        <ResponsiveContainer width="100%" height={540}>
+        {/* Portfolio Balance is a genuine running total — a line, one $ axis. */}
+        <ResponsiveContainer width="100%" height={340}>
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
             <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 10 }} />
-            <YAxis yAxisId="port" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 10 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
-            <YAxis yAxisId="spend" orientation="right" stroke="#1e3a5f" tick={{ fill: "#64748b", fontSize: 9 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 10 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
             <Tooltip content={<Tip />} />
-            <Line yAxisId="spend" type="monotone" dataKey="Spending" stroke="#fbbf24" strokeWidth={2.5} dot={false} name="Spending" />
-            <Line yAxisId="spend" type="monotone" dataKey="Total Withdrawal" stroke="#f87171" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name="Total Withdrawal (inc. tax)" />
-            <Line yAxisId="port" type="monotone" dataKey="Portfolio End" stroke="#14b8a6" strokeWidth={2.5} dot={false} name="Portfolio Balance" />
+            <Line type="monotone" dataKey="Portfolio End" stroke="#14b8a6" strokeWidth={2.5} dot={false} name="Portfolio Balance" />
           </ComposedChart>
+        </ResponsiveContainer>
+        <div className="leg">
+          <div className="li"><div className="ll" style={{ background: "#14b8a6" }} />Portfolio Balance</div>
+        </div>
+
+        {/* Spending/Withdrawal are each year's OWN number, not a flow between
+            years — bars, not lines, sharing the same age x-axis as the chart
+            above instead of a fabricated second $ scale on one plot. */}
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
+            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "#475569", fontSize: 10 }} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "#64748b", fontSize: 9 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+            <Tooltip content={<Tip />} />
+            <Bar dataKey="Spending" fill="#fbbf24" name="Spending" />
+            <Bar dataKey="Total Withdrawal" fill="#f87171" name="Total Withdrawal (inc. tax)" />
+          </BarChart>
         </ResponsiveContainer>
         <div className="leg">
           <div className="li"><div className="ll" style={{ background: "#fbbf24" }} />Spending</div>
           <div className="li"><div className="ll" style={{ background: "#f87171" }} />Total Withdrawal (inc. tax)</div>
-          <div className="li"><div className="ll" style={{ background: "#14b8a6" }} />Portfolio Balance</div>
         </div>
       </div>
 
@@ -7340,21 +7358,39 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
       {sorted.length >= 2 ? (
         <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
           <div className="ct">Plan trend</div>
-          <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="date" tick={CHECKIN_TICK} />
-              <YAxis yAxisId="rate" domain={[0, 100]} tick={CHECKIN_TICK} tickFormatter={(v) => `${v}%`} width={42} />
-              <YAxis yAxisId="port" orientation="right" tick={CHECKIN_TICK} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
-              <Tooltip
-                contentStyle={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, fontSize: 12 }}
-                formatter={(value, name) => name === "Success rate" ? [`${value}%`, name] : [fmtDollar(value), name]}
-              />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line yAxisId="rate" type="monotone" dataKey="successPct" name="Success rate" stroke="#5eead4" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-              <Line yAxisId="port" type="monotone" dataKey="port" name="Portfolio" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-            </ComposedChart>
-          </ResponsiveContainer>
+          {/* Success rate (%) and Portfolio ($) are unrelated scales — two
+              single-axis charts sharing the same date x-axis instead of one
+              dual-axis plot whose alignment would be arbitrary. */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" tick={CHECKIN_TICK} />
+                <YAxis domain={[0, 100]} tick={CHECKIN_TICK} tickFormatter={(v) => `${v}%`} width={42} />
+                <Tooltip
+                  contentStyle={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, fontSize: 12 }}
+                  formatter={(value, name) => [`${value}%`, name]}
+                />
+                <Line type="monotone" dataKey="successPct" name="Success rate" stroke="#5eead4" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" tick={CHECKIN_TICK} />
+                <YAxis tick={CHECKIN_TICK} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+                <Tooltip
+                  contentStyle={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, fontSize: 12 }}
+                  formatter={(value, name) => [fmtDollar(value), name]}
+                />
+                <Line type="monotone" dataKey="port" name="Portfolio" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="leg">
+            <div className="li"><div className="ll" style={{ background: "#5eead4" }} />Success rate</div>
+            <div className="li"><div className="ll" style={{ background: "#0ea5e9" }} />Portfolio</div>
+          </div>
         </div>
       ) : (
         <div style={{ fontSize: 12, color: "#94a3b8", background: "rgba(94,234,212,0.05)", border: "1px solid rgba(94,234,212,0.15)", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
