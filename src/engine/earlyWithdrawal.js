@@ -119,7 +119,7 @@ export function earlyWithdrawalPenalty({
     return { penalty: 0, exemptAmount: 0, reason: "" };
   }
   if (age >= EARLY_PENALTY_AGE) {
-    return { penalty: 0, exemptAmount: pretaxDistribution, reason: "age 59½+" };
+    return { penalty: 0, exemptAmount: pretaxDistribution, reason: "age 59.5+" };
   }
 
   // A running SEPP exempts the whole distribution — the series IS the exception.
@@ -147,7 +147,7 @@ export function earlyWithdrawalPenalty({
     reason = `Rule of 55 covers ${Math.round(exemptShare * 100)}% (employer plan); ` +
       `the IRA remainder is penalized`;
   } else {
-    reason = `under 59½ — 10% early-distribution tax`;
+    reason = `under 59.5 — 10% early-distribution tax`;
   }
   return { penalty, exemptAmount: Math.round(exemptAmount), reason };
 }
