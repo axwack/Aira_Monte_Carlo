@@ -78,7 +78,7 @@ import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_Y
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_AGE } from "./engine/earlyWithdrawal.js";
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
-import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock } from "./engine/ages.js";
+import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT } from "./billing/credits.js";
@@ -175,9 +175,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.64";
-export const BUILD_TAG = "[main] v1.2.64 - SS30 survivor benefit rules. v1.2.63 modelled the survivor side as max(own, deceased) from the death year, which was WRONG IN TWO OPPOSITE DIRECTIONS and they do not cancel. OVERSTATED: it paid 100% of the deceased check immediately, when a survivor claiming below survivor FRA gets 71.5% at 60 rising to 100% at survivor FRA, permanently. UNDERSTATED badly: the inherited check was gated on the DECEASED claim age, so a death before they filed paid $0 until the year they would have filed - the survivor benefit actually derives from the deceased PIA and is claimable from 60 whether or not the deceased ever filed, so it was wrong in exactly the early-death case the feature exists to explore. New src/engine/survivorBenefit.js: survivorFra by birth year (66 to 67 on its OWN schedule, in months, not the retirement FRA schedule), the reduction factor, the PIA-vs-check basis rule, and survivorYearBenefit which treats the own benefit and the survivor benefit as the INDEPENDENT benefits they legally are - deemed filing does not apply to survivors, the only place in Social Security where that is true. That makes the SWITCHING STRATEGY expressible: two independent claim ages, take whichever is larger, so take-reduced-survivor-at-60-and-let-my-own-grow-to-70 (or the reverse) now models correctly. Also: no delay credit past survivor FRA, and the deceased DRCs do pass through (unlike the spousal top-up). New profile fields spouse.survivorClaimAge (floor 60) and optional spouse.survivorBenefitAtClaim (an SSA quote, used as-is with no double reduction - the SS21 ask-do-not-derive path). Survivor constants added to TAX_REFERENCE.md. NOT modelled and stated in the UI: the earnings test. 771 -> 800 tests.";
-export const BUILD_TIME = "2026-07-30T22:05:00Z";
+const APP_VERSION = "1.2.65";
+export const BUILD_TAG = "[main] v1.2.65 - SS30 defect 2: WHICH of the two dies first. spouse.deathAge could only ever mean the SPOUSE dies, so modelling the higher earner dying with a younger spouse surviving - the more commonly asked case, since the higher earner is often the older partner - applied a dead person milestones to a living one. New spouse.firstToDie (me | my spouse), default my spouse so every existing plan is unchanged. Four things now follow whoever is ALIVE: (1) THE PLAN HORIZON, Vincent decision - the money must last until the SURVIVOR reaches endAge, so a 10-year-younger survivor extends the projection by 10 years and the success rate correctly DROPS; the old behaviour stopped at the dead partner end age and flattered every such plan. (2) Medicare and the age-65 standard-deduction add-on start on the survivor own 65th. (3) RMDs key to the survivor own birth year - a surviving spouse who inherits an IRA may treat it as their own - instead of forcing taxable income up to a decade early. (4) the survivor benefit is priced off the SURVIVOR full retirement age. Also fixed: the survivor branch gate itself used deathAge+offset, which is only right when the spouse dies, so for a primary-dies plan the branch never ran and both benefits kept being paid. Reduction confirmed PERMANENT - reaching survivor FRA later does not restore the full amount. 803 -> 815 tests.";
+export const BUILD_TIME = "2026-07-30T23:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -552,6 +552,13 @@ export const BLANK_PROFILE = {
     // it a deterministic event in a known year instead of a variable threaded
     // through 3,000 Monte Carlo paths.
     deathAge: null,
+    // WHOSE age `deathAge` is. "spouse" (default) = the spouse dies and the primary
+    // survives, which was the only case the model could express. "primary" = the
+    // higher earner dies first, often the more realistic scenario since they are
+    // frequently the older partner. This is not a label: the survivor's identity
+    // decides the plan horizon, the Medicare start, the age-65 add-on, the RMD clock
+    // and the survivor's own FRA. Default preserves every existing plan.
+    firstToDie: "spouse",
     // ── Survivor benefit (§30) ───────────────────────────────────────────────
     // Deemed filing does NOT apply to survivor benefits, so the survivor's OWN
     // retirement benefit and the survivor benefit are independent: either can be
@@ -1129,7 +1136,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   const ruleOf55ShareMC = detectEmployerPlan(p.accounts).share;
   const glideSwitchAgeMC = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeMC });
   const accYrs = Math.max(0, retAgeMC - p.currentAge);
-  const retYrs = endAge - retAgeMC;
+  // §30 — the horizon follows whoever is alive. When the primary dies first and a
+  // younger spouse survives, the money must last until the SURVIVOR reaches endAge,
+  // so the projection runs past the age the primary would have reached. Identical to
+  // endAge whenever no first death is modelled or the primary is the survivor, so no
+  // existing plan changes length.
+  const planEndMC = planEndAgeOnPrimaryClock(p, endAge);
+  const retYrs = planEndMC - retAgeMC;
   const results = [];
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
@@ -1855,7 +1868,9 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   // hardcode 62 in its retirement loop).
   const glideSwitchAgeDet = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeDet });
   const accYrs = Math.max(0, retAgeDet - p.currentAge);
-  const retYrs = p.endAge - retAgeDet;
+  // §30 — same horizon rule as runMC.
+  const planEndDet = planEndAgeOnPrimaryClock(p, p.endAge);
+  const retYrs = planEndDet - retAgeDet;
   let port = p.port;
 
   // Accumulation using median returns
@@ -12007,8 +12022,32 @@ function RetirementPanel({ values, onChange }) {
                   "Not modelled yet" note that sat here. One user-entered age, not
                   a mortality draw, so the event lands in a known year and can be
                   explained rather than merely averaged. */}
+              {/* §30 — WHO dies first. Not cosmetic: it decides whose age drives the
+                  plan horizon, Medicare, the age-65 add-on, the RMD clock and the
+                  survivor's own FRA. Asked before the age, because the age below is
+                  read as belonging to whoever is selected here. */}
               <WFieldRow
-                label="Model the first death at spouse's age"
+                label="Who passes first"
+                helper="The higher earner is often the older partner, so this is frequently the more realistic case — and it changes far more than the benefit: the plan then has to fund the survivor's whole life, not yours."
+              >
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[["spouse", "My spouse"], ["primary", "Me"]].map(([val, lbl]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setSpouse({ firstToDie: val })}
+                      style={{
+                        background: (sp.firstToDie || "spouse") === val ? "rgba(251,146,60,0.18)" : "transparent",
+                        border: `1px solid ${(sp.firstToDie || "spouse") === val ? "rgba(251,146,60,0.55)" : "#1e3a5f"}`,
+                        color: (sp.firstToDie || "spouse") === val ? "#fdba74" : "#94a3b8",
+                        borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600,
+                      }}
+                    >{lbl}</button>
+                  ))}
+                </div>
+              </WFieldRow>
+              <WFieldRow
+                label={(sp.firstToDie === "primary") ? "Model my death at my age" : "Model the first death at spouse's age"}
                 helper="Optional. Leave blank to skip. This is the hardest thing for a couple to plan for and the easiest to underestimate — the tax increase is usually larger than the benefit lost."
               >
                 <ANumInput
@@ -12019,21 +12058,29 @@ function RetirementPanel({ values, onChange }) {
                 />
               </WFieldRow>
               {sp.deathAge > 0 ? (() => {
-                const deathAtYourAge = sp.deathAge + gap;
+                // §30 — everything here depends on WHO dies. `deathAge` is always the
+                // decedent's OWN age, so translate once and derive the rest from the
+                // survivor's perspective, exactly as the engine does.
+                const primarySurvives = (sp.firstToDie || "spouse") !== "primary";
+                const deathAtYourAge = primarySurvives ? sp.deathAge + gap : sp.deathAge;
+                const survivorDob = primarySurvives ? values.dob : sp.dob;
                 const survFraAge = survivorFra(
-                  values.dob ? parseInt(String(values.dob).slice(0, 4), 10) : null
+                  survivorDob ? parseInt(String(survivorDob).slice(0, 4), 10) : null
                 );
-                const survClaim = resolveSurvivorClaimAge(sp.survivorClaimAge, deathAtYourAge);
-                const deceasedHadClaimed = deathAtYourAge >= (sp.ssAge || 67) + gap;
+                // The survivor's own age in the death year.
+                const survAgeAtDeath = primarySurvives ? deathAtYourAge : sp.deathAge - gap;
+                const survClaim = resolveSurvivorClaimAge(sp.survivorClaimAge, survAgeAtDeath);
+                const decOwnClaimAge = primarySurvives ? (sp.ssAge || 67) : (values.ssAge || 67);
+                const deceasedHadClaimed = sp.deathAge >= decOwnClaimAge;
                 const basis = survivorBasis({
-                  deceasedCheck: Number(sp.ssb) || 0,
-                  deceasedPia: Number(sp.ssPia) || 0,
+                  deceasedCheck: primarySurvives ? (Number(sp.ssb) || 0) : (Number(values.ssb) || 0),
+                  deceasedPia:   primarySurvives ? (Number(sp.ssPia) || 0) : (Number(values.ssPia) || 0),
                   deceasedHadClaimed,
                 });
                 const quoted = Number(sp.survivorBenefitAtClaim) || 0;
                 const factor = quoted > 0 ? 1 : survivorReductionFactor(survClaim, survFraAge);
                 const survAmt = quoted > 0 ? quoted : basis * factor;
-                const ownAmt = Number(values.ssb) || 0;
+                const ownAmt = primarySurvives ? (Number(values.ssb) || 0) : (Number(sp.ssb) || 0);
                 const jointTotal = ownAmt + (Number(sp.ssb) || 0) + topUp;
                 return (
                   <>
@@ -12067,8 +12114,19 @@ function RetirementPanel({ values, onChange }) {
                       margin: "-8px 0 16px", padding: "10px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.6,
                       background: "rgba(251,146,60,0.09)", border: "1px solid rgba(251,146,60,0.3)", color: "#fdba74",
                     }}>
-                      <strong>Modelled from your age {deathAtYourAge}.</strong> Three things change, and the
-                      last is the one people miss:
+                      <strong>
+                        {primarySurvives
+                          ? `Modelled from your age ${deathAtYourAge}. Your spouse survives.`
+                          : `Modelled from your age ${deathAtYourAge} — you die first and your spouse, then ${survAgeAtDeath}, survives.`}
+                      </strong>{" "}
+                      {!primarySurvives && gap > 0 && (
+                        <span>
+                          The plan now runs {gap} year{gap === 1 ? "" : "s"} longer, because the money has to
+                          last until <em>your spouse</em> reaches your planning age — not until you would have.
+                          That is why the success rate drops.{" "}
+                        </span>
+                      )}
+                      Three things change, and the last is the one people miss:
                       <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                         <li>
                           The survivor benefit is{" "}
@@ -12776,7 +12834,8 @@ export default function AiRAForecaster() {
       // born. `dob` in the default keeps the shape identical to BLANK_PROFILE.
       spouse: assumptions.spouse || {
         enabled: false, dob: "", ssb: 0, ssAge: 67, ssPia: 0,
-        deathAge: null, survivorClaimAge: null, survivorBenefitAtClaim: 0,
+        deathAge: null, firstToDie: "spouse",
+        survivorClaimAge: null, survivorBenefitAtClaim: 0,
       },
       port,
       contrib,

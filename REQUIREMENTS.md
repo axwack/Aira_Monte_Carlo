@@ -2326,10 +2326,18 @@ constants in TAX_REFERENCE.md → "Survivor benefits"; tests in `spousalSS.test.
 switching strategy is now expressible via `spouse.survivorClaimAge` +
 `spouse.survivorBenefitAtClaim`.
 
-**Still NOT modelled, by decision:** the earnings test (no wage income exists in the
-engine), and which of the two people dies — `spouse.deathAge` still means the SPOUSE
-dies, so a first death of the primary earner is not expressible. That is defect 2
-below and it remains open; it pairs with §24's per-person work.
+**Defect 2 also FIXED, v1.2.65.** New `spouse.firstToDie` ("spouse" default | "primary").
+Four things now follow whoever is ALIVE: the PLAN HORIZON (Vincent's call — the money must
+last until the SURVIVOR reaches `endAge`, so a 10-year-younger survivor extends the
+projection by 10 years and the success rate correctly DROPS; the old behaviour stopped at
+the dead partner's end age and flattered every such plan), Medicare + the age-65 add-on,
+the RMD clock (a surviving spouse may treat an inherited IRA as their own), and the
+survivor's own FRA. Also fixed: the survivor branch GATE used `deathAge + offset`, correct
+only when the spouse dies — so for a primary-dies plan the branch never ran at all and both
+benefits kept being paid for `offset` more years.
+
+**Still NOT modelled, by decision:** the earnings test — the engine models no wage income,
+so there is nothing to withhold against (§24 #5). Stated in the UI.
 
 **One thing worth knowing that the tests surfaced:** whether claiming early or at FRA
 is better depends on the measure. On CUMULATIVE Social Security, delaying to survivor

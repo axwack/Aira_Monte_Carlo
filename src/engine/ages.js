@@ -151,11 +151,84 @@ export function spouseAgeOffset(p = {}, asOf) {
  * clock, which is the only clock the engines walk.
  */
 export function spouseDeathOnPrimaryClock(p, asOf) {
+  return firstDeathOnPrimaryClock(p, asOf);
+}
+
+/**
+ * WHICH of the two people dies first. `spouse.deathAge` is always expressed as the
+ * DECEDENT's own age, so this says whose age it is.
+ *
+ * Default "spouse" is the pre-existing behaviour: the spouse dies, the primary
+ * survives. "primary" is the case the model could not express at all — and it is
+ * the more commonly asked one, because the higher earner is often the older
+ * partner. Getting it wrong is not cosmetic: with the wrong survivor, the plan
+ * horizon, the Medicare start, the age-65 deduction and the RMD clock are all keyed
+ * to a person who is dead.
+ */
+export function firstToDie(p) {
+  return (p?.spouse?.firstToDie === "primary") ? "primary" : "spouse";
+}
+
+/** True when the PRIMARY is the one who survives (i.e. the spouse dies first). */
+export function survivorIsPrimary(p) {
+  return firstToDie(p) !== "primary";
+}
+
+/**
+ * The PRIMARY's age in the year of the first death — Infinity when not modelled.
+ *
+ * Everything downstream is measured on the primary's clock because that is the only
+ * clock the engines walk, so the decedent's own age has to be translated onto it.
+ */
+export function firstDeathOnPrimaryClock(p, asOf) {
   const sp = p?.spouse || {};
   if (!sp.enabled) return Infinity;
   const deathAge = Number(sp.deathAge);
   if (!(deathAge > 0)) return Infinity;
-  return deathAge + spouseAgeOffset(p, asOf);
+  // The spouse's age + the gap = the primary's age that year. The primary's own age
+  // needs no translation.
+  return survivorIsPrimary(p) ? deathAge + spouseAgeOffset(p, asOf) : deathAge;
+}
+
+/**
+ * The SURVIVOR's own age in the year the primary would be `primaryAge`.
+ *
+ * When the primary survives this is just `primaryAge`. When the SPOUSE survives it
+ * is shifted by the age gap — and that shift is what every per-person amount after
+ * the death depends on: their Medicare start, their age-65 deduction, their own RMD
+ * age, their survivor FRA. Keeping the primary's age here would apply a dead
+ * person's milestones to a living one.
+ */
+export function survivorAgeOnPrimaryClock(p, primaryAge, asOf) {
+  if (survivorIsPrimary(p)) return primaryAge;
+  return primaryAge - spouseAgeOffset(p, asOf);
+}
+
+/**
+ * The last age on the PRIMARY's clock that the projection must cover.
+ *
+ * `endAge` is one profile field and it means "the age I plan through". When the
+ * primary dies first and a YOUNGER spouse survives, the money still has to last
+ * until the SURVIVOR reaches that age — so the projection has to run past the age
+ * the primary would have reached, by the age gap.
+ *
+ * Vincent's decision, 2026-07-30: the horizon follows whoever is alive. It lowers
+ * the success rate for anyone with a younger spouse, which is correct — their money
+ * genuinely has to last longer, and the previous behaviour (stopping at the dead
+ * partner's end age) flattered every such plan.
+ *
+ * An older surviving spouse shortens the horizon symmetrically, and the result is
+ * never allowed to fall below the death year itself.
+ */
+export function planEndAgeOnPrimaryClock(p, endAge, asOf) {
+  const end = Number(endAge);
+  if (!Number.isFinite(end)) return endAge;
+  if (survivorIsPrimary(p)) return end;
+  const death = firstDeathOnPrimaryClock(p, asOf);
+  if (!Number.isFinite(death)) return end;
+  // Survivor reaches `end` when the primary's clock reads end + offset.
+  const extended = end + spouseAgeOffset(p, asOf);
+  return Math.max(Math.ceil(death), Math.round(extended));
 }
 
 /**

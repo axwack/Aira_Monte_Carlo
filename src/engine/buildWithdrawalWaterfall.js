@@ -41,7 +41,7 @@ import {
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, expectedHealthcareShock } from "./expenses.js";
-import { spouseAgeAt, personsAtLeastAge, spouseDeathOnPrimaryClock, filesJointlyAt } from "./ages.js";
+import { spouseAgeAt, personsAtLeastAge, spouseDeathOnPrimaryClock, filesJointlyAt, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, spouseAgeOffset } from "./ages.js";
 import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_RATE, EARLY_PENALTY_AGE } from "./earlyWithdrawal.js";
 import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
@@ -409,6 +409,37 @@ export function buildWithdrawalWaterfall(params = {}) {
    * the pre-feature behaviour for every existing profile.
    */
   const survivorFrom = spouseDeathOnPrimaryClock(params);
+  const planEnd      = planEndAgeOnPrimaryClock(params, endAge);
+
+  /* §30 — after the first death, PER-PERSON milestones belong to whoever is ALIVE.
+   *
+   * Before the death the household has two ages and personsAtLeastAge counts both.
+   * After it there is one person, and if the SPOUSE is the survivor their age is the
+   * primary's shifted by the gap. Keeping the primary's age here would grant a dead
+   * partner's age-65 standard-deduction add-on, charge Medicare from their 65th, and
+   * force RMDs on their birth year — to a survivor who may be a decade younger.
+   */
+  const perPersonAgeAt = (a) => (isSurvivorAt(a) ? survivorAgeOnPrimaryClock(params, a) : a);
+
+  /* The age on the PRIMARY's clock at which RMDs begin.
+   *
+   * Normally the primary's own SECURE 2.0 age. But a surviving spouse who inherits
+   * an IRA may treat it as their own, so RMDs restart on THEIR age — which for a
+   * younger survivor is years later. Modelling the dead partner's clock would force
+   * taxable income (and the tax on it) up to a decade too early.
+   */
+  const rmdStartOnPrimaryClock = (() => {
+    if (survivorIsPrimary(params)) return rmdAge;
+    const off = spouseAgeOffset(params);
+    const spouseRmdAge = getRmdStartAge({
+      dob: params.spouse?.dob, birthYear: params.spouse?.birthYear,
+      currentAge: params.spouse?.currentAge,
+    });
+    // Before the death the primary is alive and their own RMDs apply; after it the
+    // survivor's do. Take whichever governs in a given year via rmdAgeAt below.
+    return spouseRmdAge + off;
+  })();
+  const rmdAgeAt = (a) => (isSurvivorAt(a) ? rmdStartOnPrimaryClock : rmdAge);
   const mfjAt = (a) => filesJointlyAt(params, a);
   /** True once the primary is filing as a survivor (the year AFTER the death). */
   const isSurvivorAt = (a) => a > survivorFrom;
@@ -496,10 +527,10 @@ export function buildWithdrawalWaterfall(params = {}) {
     // because the OBBBA senior bonus's phase-out is MAGI-keyed — and to keep it
     // structurally impossible to net a deduction out of MAGI (CLAUDE.md rule 3).
     const magi = totInc + ltcg;
-    const sd  = stdDed(age, mfjAt(age), iF, spAgeAt(age));
+    const sd  = stdDed(perPersonAgeAt(age), mfjAt(age), iF, spAgeAt(age));
     // OBBBA senior bonus (2025–2028 only, $0 from 2029) — separate, additive,
     // NOT inflation-indexed. Reduces taxable income only, never `magi` above.
-    const seniorBonus = getSeniorBonusDeduction(age, mfjAt(age) ? "mfj" : "single", magi, yr, spAgeAt(age));
+    const seniorBonus = getSeniorBonusDeduction(perPersonAgeAt(age), mfjAt(age) ? "mfj" : "single", magi, yr, spAgeAt(age));
     const ded = sd + seniorBonus;
     const txInc  = Math.max(0, totInc - ded);
     // LTCG stacks ON TOP of ordinary income — the deductions soak into
@@ -532,7 +563,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     // the step-function the fixed point had to converge through.
     const irmaaMagi = (typeof magiLookback === "number" && !isNaN(magiLookback)) ? magiLookback : magi;
     // Per-person Medicare start (§24) — see irmaaCost's `beneficiaries` param.
-    const medicareHeads = personsAtLeastAge(age, spAgeAt(age), mfjAt(age), 65);
+    const medicareHeads = personsAtLeastAge(perPersonAgeAt(age), spAgeAt(age), mfjAt(age), 65);
     const irmaa  = medicareHeads > 0
       ? irmaaCost(irmaaMagi, yr, infR, mfjAt(age), medicareHeads)
       : 0;
@@ -606,7 +637,11 @@ export function buildWithdrawalWaterfall(params = {}) {
     const initWR = totalPort0 > 0 ? initNeed0 / totalPort0 : 0.04;
     let cTax = 0;
 
-    for (let age = retireAge; age <= endAge; age++) {
+    // §30: when the primary dies first and a YOUNGER spouse survives, the money
+    // still has to last until the SURVIVOR reaches endAge — so the projection runs
+    // past the age the primary would have reached, by the age gap. Identical to
+    // endAge whenever no death is modelled or the primary is the survivor.
+    for (let age = retireAge; age <= planEnd; age++) {
       const yr  = retireYear + (age - retireAge);
       const iF  = Math.pow(1 + infR, yr - BASE_YEAR);
       const adjFloor   = Math.round(gkFloor   * iF);
@@ -750,7 +785,7 @@ export function buildWithdrawalWaterfall(params = {}) {
 
       // ── Step 2: RMD (forced) ────────────────────────────────────────────
       let rmd = 0;
-      if (age >= rmdAge && pretax > 0) {
+      if (age >= rmdAgeAt(age) && pretax > 0) {
         // Joint table only applies when actually filing jointly — a stale
         // useJointRmdTable=true left over from switching filingStatus to
         // "single" (e.g. modeling widowhood) must fall back to the standard
@@ -808,7 +843,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         const drawPretax = () => {
           let pretaxAllowed = need;
           if (isSmart && withdrawalBracketTarget && withdrawalBracketTarget !== "off") {
-            const sd      = stdDed(age, mfjAt(age), iF, spAgeAt(age));
+            const sd      = stdDed(perPersonAgeAt(age), mfjAt(age), iF, spAgeAt(age));
             // 85% SS inclusion here is a deliberate worst-case estimate: the pretax draw
             // being sized below itself raises provisional income, so assuming max inclusion
             // keeps the bracket cap conservative (never overshoots the target ceiling).
@@ -823,7 +858,7 @@ export function buildWithdrawalWaterfall(params = {}) {
             // above: this may under-fill the bracket but can never overshoot it.
             const roomPreBonus = Math.max(0, ceiling - Math.max(0, ordFloor - sd));
             const ded = sd + getSeniorBonusDeduction(
-              age, mfjAt(age) ? "mfj" : "single", ordFloor + roomPreBonus, yr, spAgeAt(age)
+              perPersonAgeAt(age), mfjAt(age) ? "mfj" : "single", ordFloor + roomPreBonus, yr, spAgeAt(age)
             );
             const taxSoFar = Math.max(0, ordFloor - ded);
 
@@ -926,7 +961,7 @@ export function buildWithdrawalWaterfall(params = {}) {
           convAmt = Math.min(Math.max(0, override), pretaxAfterDraw);
           convCapReason = "manual";
         } else if (rothConversionTarget && rothConversionTarget !== "off" && pretaxAfterDraw > 1000) {
-          const sdConv = stdDed(age, mfjAt(age), iF, spAgeAt(age));
+          const sdConv = stdDed(perPersonAgeAt(age), mfjAt(age), iF, spAgeAt(age));
           let ceilingConv = bracketCeiling(rothConversionTarget, mfjAt(age), iF);
           convCapReason = "bracket";
           // OBBBA senior bonus, estimated at the HIGH end of plausible MAGI
@@ -934,7 +969,7 @@ export function buildWithdrawalWaterfall(params = {}) {
           // worst-cased and the conversion can't be over-sized.
           const roomPreBonus = Math.max(0, ceilingConv + sdConv - taxNoConv.totInc);
           const dedConv = sdConv + getSeniorBonusDeduction(
-            age, mfjAt(age) ? "mfj" : "single", taxNoConv.magi + roomPreBonus, yr, spAgeAt(age)
+            perPersonAgeAt(age), mfjAt(age) ? "mfj" : "single", taxNoConv.magi + roomPreBonus, yr, spAgeAt(age)
           );
           // ENG-8: the IRMAA guard used to cap only the Step-5 pretax draw, so a
           // conversion sized to the income-tax bracket ceiling could still push
@@ -1061,7 +1096,7 @@ export function buildWithdrawalWaterfall(params = {}) {
       const ssTorpedo     = ssTorpedoGuard && ss > 0 && provisional > torpedoThresh
         && tax.taxSS > 0;
       const irmaaTriggered = tax.irmaa > 0;
-      const rmdActive     = age >= rmdAge && (pretax + rmd + fromPretax) > 0;
+      const rmdActive     = age >= rmdAgeAt(age) && (pretax + rmd + fromPretax) > 0;
 
       // ── Update buckets ──────────────────────────────────────────────────
       // The cascade draws above already include the year's tax bill (taxDue).

@@ -731,3 +731,169 @@ describe("§30 — computeHouseholdSS honours the survivor rules end to end", ()
     expect(computeHouseholdSS(P, 70)).toBe(20000 + 44640);
   });
 });
+
+// ─── §30 defect 2 — WHICH of the two dies first ───────────────────────────────
+//
+// Until now `spouse.deathAge` could only mean "the spouse dies". The engines kept
+// walking the PRIMARY's age, so modelling "the higher earner dies and a younger
+// spouse survives" — the more commonly asked case, since the higher earner is often
+// the older partner — applied a dead person's milestones to a living one:
+//
+//   • the PLAN HORIZON ended at the dead partner's end age, so a younger survivor's
+//     money was never required to last their whole life. That flattered every such
+//     plan, and it is the largest of the four errors.
+//   • Medicare and the age-65 deduction started on the dead partner's 65th.
+//   • RMDs were forced on the dead partner's birth year, up to a decade early.
+//   • the survivor benefit was priced off the dead partner's full retirement age.
+//
+// Vincent's decision (2026-07-30): the horizon follows whoever is alive.
+describe("§30 firstToDie — the survivor's identity drives everything", () => {
+  const {
+    firstToDie, survivorIsPrimary, firstDeathOnPrimaryClock,
+    survivorAgeOnPrimaryClock, planEndAgeOnPrimaryClock,
+  } = require("./engine/ages.js");
+  const { buildWithdrawalWaterfall } = require("./engine/buildWithdrawalWaterfall.js");
+
+  const PRIMARY_BY = NOW.getFullYear() - 70;   // primary is 70
+  const SPOUSE_BY  = NOW.getFullYear() - 60;   // spouse is 60 ⇒ gap of 10
+
+  const COUPLE = {
+    currentAge: 70, retireAge: 70, endAge: 90,
+    dob: `${PRIMARY_BY}-01-01`,
+    sp: 70_000, inf: 2.5, gr: 0.05, ssCola: 0,
+    ssAge: 70, ssb: 48_000, ssPia: 40_000,
+    filingStatus: "mfj", stateOfResidence: "FL", smile: false, housingType: "none",
+    withdrawalBracketTarget: "22",
+    accounts: [
+      { id: "a", category: "pretax",  name: "IRA",     balance: 1_500_000 },
+      { id: "b", category: "roth",    name: "Roth",    balance:   200_000 },
+      { id: "c", category: "taxable", name: "Taxable", balance:   200_000 },
+      { id: "d", category: "cash",    name: "Cash",    balance:    50_000 },
+    ],
+    spouse: {
+      enabled: true, dob: `${SPOUSE_BY}-01-01`,
+      ssAge: 67, ssb: 18_000, ssPia: 18_000,
+    },
+  };
+
+  test("defaults to the spouse dying — every existing plan is unchanged", () => {
+    expect(firstToDie({})).toBe("spouse");
+    expect(firstToDie(COUPLE)).toBe("spouse");
+    expect(survivorIsPrimary(COUPLE)).toBe(true);
+  });
+
+  test("deathAge is always the DECEDENT's own age, translated onto one clock", () => {
+    // Spouse dies at 62; the spouse is 10 years younger, so the primary is 72.
+    const spouseDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 62, firstToDie: "spouse" } };
+    expect(firstDeathOnPrimaryClock(spouseDies)).toBe(72);
+    // Primary dies at 72; that IS the primary's clock, no translation.
+    const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
+    expect(firstDeathOnPrimaryClock(primaryDies)).toBe(72);
+  });
+
+  test("the survivor's own age is the primary's, shifted by the gap", () => {
+    const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
+    // When the primary's clock reads 80, the surviving spouse is 70.
+    expect(survivorAgeOnPrimaryClock(primaryDies, 80)).toBe(70);
+    // And when the PRIMARY survives, no shift at all.
+    const spouseDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 62, firstToDie: "spouse" } };
+    expect(survivorAgeOnPrimaryClock(spouseDies, 80)).toBe(80);
+  });
+
+  describe("the plan horizon follows whoever is alive", () => {
+    test("unchanged when the primary survives", () => {
+      const spouseDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 62, firstToDie: "spouse" } };
+      expect(planEndAgeOnPrimaryClock(spouseDies, 90)).toBe(90);
+    });
+
+    test("unchanged when no death is modelled at all", () => {
+      expect(planEndAgeOnPrimaryClock(COUPLE, 90)).toBe(90);
+      expect(planEndAgeOnPrimaryClock({}, 90)).toBe(90);
+    });
+
+    test("EXTENDS by the age gap when a younger spouse survives", () => {
+      // Spouse is 10 years younger, so reaching 90 happens when the primary's clock
+      // would read 100. The plan must cover those extra ten years.
+      const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
+      expect(planEndAgeOnPrimaryClock(primaryDies, 90)).toBe(100);
+    });
+
+    test("SHORTENS symmetrically when an older spouse survives", () => {
+      const olderSpouse = {
+        ...COUPLE,
+        dob: `${NOW.getFullYear() - 60}-01-01`,          // primary 60
+        spouse: { ...COUPLE.spouse, dob: `${NOW.getFullYear() - 70}-01-01`, deathAge: 65, firstToDie: "primary" },
+      };
+      // Spouse is 10 years OLDER, so they reach 90 when the primary's clock reads 80.
+      expect(planEndAgeOnPrimaryClock(olderSpouse, 90)).toBe(80);
+    });
+
+    test("never ends before the death year", () => {
+      const olderSpouse = {
+        ...COUPLE,
+        dob: `${NOW.getFullYear() - 60}-01-01`,
+        spouse: { ...COUPLE.spouse, dob: `${NOW.getFullYear() - 85}-01-01`, deathAge: 79, firstToDie: "primary" },
+      };
+      // Spouse 25 years older would "reach 90" long before the death — clamp to it.
+      expect(planEndAgeOnPrimaryClock(olderSpouse, 90)).toBeGreaterThanOrEqual(79);
+    });
+
+    test("the waterfall actually projects the longer horizon", () => {
+      const base = buildWithdrawalWaterfall({ ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: null } });
+      const primaryDies = buildWithdrawalWaterfall({
+        ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" },
+      });
+      // 70..90 is 21 rows; 70..100 is 31.
+      expect(base.smart.rows.length).toBe(21);
+      expect(primaryDies.smart.rows.length).toBe(31);
+      expect(primaryDies.smart.rows[primaryDies.smart.rows.length - 1].age).toBe(100);
+    });
+  });
+
+  test("the survivor benefit is priced off the SURVIVOR's FRA, not the deceased's", () => {
+    // Primary dies at 72 having claimed at 70; the surviving spouse is 62 that year,
+    // below their own survivor FRA, so the inherited $48,000 must be REDUCED.
+    const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
+    const got = computeHouseholdSS(primaryDies, 72);
+    expect(got).toBeLessThan(48_000);
+    expect(got).toBeGreaterThan(48_000 * 0.715);
+    // Hand-checked: the spouse was born 1966, so their survivor FRA is 67. Claiming
+    // at 62 is 5 of the 7 years early ⇒ 0.715 + 0.285 × (2/7) = 0.7964.
+    expect(got).toBe(Math.round(48_000 * (0.715 + 0.285 * (2 / 7))));
+
+    // And the reduction is PERMANENT. Reaching survivor FRA later does not restore
+    // the full amount — that is the whole cost of claiming early, and an engine that
+    // quietly un-reduced it at FRA would make early claiming look free.
+    expect(computeHouseholdSS(primaryDies, 77)).toBe(got);
+
+    // Claiming AT survivor FRA instead is unreduced.
+    const waited = { ...primaryDies, spouse: { ...primaryDies.spouse, survivorClaimAge: 67 } };
+    expect(computeHouseholdSS(waited, 77)).toBe(48_000);
+  });
+
+  test("a younger survivor's Medicare and RMDs do NOT start on the dead partner's clock", () => {
+    // Primary dies at 72. The spouse is 62 then and does not reach 65 until the
+    // primary's clock reads 75, nor their own RMD age until much later.
+    const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
+    const rows = buildWithdrawalWaterfall(primaryDies).smart.rows;
+    const at73 = rows.find(r => r.age === 73);   // survivor is 63 — not on Medicare
+    const at77 = rows.find(r => r.age === 77);   // survivor is 67 — on Medicare
+    expect(at73.irmaa).toBe(0);
+
+    // RMDs must not fire on the dead primary's schedule (their age 75 = row 75).
+    // The survivor was born ~1966 ⇒ their own RMD age is 75, reached when the
+    // primary's clock reads 85.
+    const at75 = rows.find(r => r.age === 75);
+    expect(at75.rmd).toBe(0);
+    const at85 = rows.find(r => r.age === 85);
+    expect(at85.rmd).toBeGreaterThan(0);
+    expect(at77).toBeDefined();
+  });
+
+  test("filing status still flips the year AFTER the death, whoever died", () => {
+    const { filesJointlyAt } = require("./engine/ages.js");
+    const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
+    expect(filesJointlyAt(primaryDies, 72)).toBe(true);
+    expect(filesJointlyAt(primaryDies, 73)).toBe(false);
+  });
+});
