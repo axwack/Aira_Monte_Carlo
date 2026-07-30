@@ -77,6 +77,7 @@ import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCa
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_AGE } from "./engine/earlyWithdrawal.js";
+import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT } from "./billing/credits.js";
 import { AdminPanel } from "./billing/admin-panel.js";
@@ -185,9 +186,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.57";
-export const BUILD_TAG = "[main] v1.2.57 - IRC 72(t): charge the 10% early-distribution penalty. Known gap, now closed. Neither engine penalized a pre-tax draw before 59.5, so the smart waterfall would fill the 12%/22% bracket from a Rollover IRA for a 56-year-old and bill income tax only - understating those dollars by a tenth and recommending an order that is wrong for anyone retiring early. New engine/earlyWithdrawal.js charges it in BOTH buildWithdrawalWaterfall and runMC, inside each tax fixed point so the draws actually FUND it (a bigger draw owes a bigger penalty owes a bigger draw). Roth CONVERSIONS are correctly NOT penalized - they are taxable, not distributed - but pre-tax dollars spent paying conversion tax never reach the Roth, so those ARE penalized, which is exactly why funding conversion tax from pre-tax under 59.5 is a bad trade. Exceptions, both default OFF and asked in Profile only when retireAge < 59.5: Rule of 55 (offered only when a former-employer 401k/403b/457 is actually detected among pretax accounts, applied pro-rata since the engines hold one aggregated pretax bucket, and never available to a rollover IRA) and 72(t) SEPP (with the series-start age, showing the LATER of 5 years or 59.5 it must run to). Penalty is its own row field and its own line item - never folded into fedTax - with a no-entry marker in the landmines column. Lifetime tax now carries it, so smart-vs-no-plan comparisons stop rating early retirement as cheaper than it is. Engine math.";
-export const BUILD_TIME = "2026-07-29T20:05:00Z";
+const APP_VERSION = "1.2.60";
+export const BUILD_TAG = "[main] v1.2.60 - Withdrawal Plan: strategy selector hoisted to tab level. Vincent: the withdrawal type and the indicator looks weird there. Correct - the state banner, dropdown, description and commit row rendered unconditionally BETWEEN Section 2s header and Section 2s collapsible body: a dead zone belonging to no visible container, and structurally inconsistent with Section 1, which puts every control inside its collapsible. design-authority verdict APPROVE-WITH-CHANGES: hoist to tab level (between the orientation card and Section 1), NOT into Section 2s collapsible. Rationale is blast radius - this is the single control in the app that writes withdrawalStrategy, consumed by runMC, simulateDeterministicWithStrategy, the home Net Worth card, the MCTab InputCard row, the engine InfoModal and buildRothExplorer; a control with that reach must not be visually subordinate to one per-section question, and gating it behind a twisty would re-create the exact misread the banner was built to fix. RELOCATED ONLY: banner copy, button styling, tooltip and commit logic untouched. Section 2 subtitle now names the selected strategy instead of re-explaining preview mechanics, which the relocated block now owns. Sections 1 and 2 are finally structurally identical: header then collapsible body. Display only.";
+export const BUILD_TIME = "2026-07-29T23:15:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -5750,29 +5751,233 @@ const modeDescs = {
   );
 }
 
+/**
+ * Year-end check — the December deadline.
+ *
+ * Every tax lever here is use-it-or-lose-it on Dec 31: a Roth conversion must
+ * SETTLE (not merely be requested), harvesting must trade, a QCD must clear.
+ * Unused bracket room does not roll over — you cannot go back and fill last
+ * year's 12% bracket. The app modeled all of it and said nothing when it counted.
+ *
+ * Two surfaces, deliberately: a popup once per year so it cannot be missed, and a
+ * persistent strip on the Net Worth card so dismissing the popup does not throw
+ * the information away for the rest of the month.
+ */
+const LS_YEAREND_KEY = "aira_yearend_ack_v1";
+
+function yearEndAcked(year) {
+  try { return Number(localStorage.getItem(LS_YEAREND_KEY)) === year; } catch { return false; }
+}
+function ackYearEnd(year) {
+  try { localStorage.setItem(LS_YEAREND_KEY, String(year)); } catch { /* private mode */ }
+}
+
+/** Shared body: the countdown, the room, and what to do about it. */
+function YearEndBody({ room, days, year, compact }) {
+  const money = (n) => (n === Infinity ? "no limit" : fmtDollar(n));
+  return (
+    <div style={{ fontSize: compact ? 10 : 12, color: "#94a3b8", lineHeight: 1.6 }}>
+      <div style={{ marginBottom: compact ? 4 : 8 }}>
+        <strong style={{ color: days <= 10 ? "#f87171" : "#fbbf24", fontSize: compact ? 11 : 13 }}>
+          {days} day{days === 1 ? "" : "s"} left
+        </strong>{" "}
+        to act in {year}. Conversions must <strong>settle</strong> by Dec 31 — not just be requested.
+      </div>
+      {room.hasData ? (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>Room to top of {room.marginalBracket != null ? "your target" : ""} bracket</span>
+            <strong style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace" }}>{money(room.bracketRoom)}</strong>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>Room before the IRMAA cliff (MAGI)</span>
+            <strong style={{ color: "#a78bfa", fontFamily: "'DM Mono',monospace" }}>{money(room.irmaaRoom)}</strong>
+          </div>
+          <div style={{
+            display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4,
+            paddingTop: 4, borderTop: "1px solid rgba(148,163,184,0.15)",
+          }}>
+            <span style={{ color: "#e2e8f0" }}>
+              Convertible now{" "}
+              <span style={{ color: "#64748b" }}>({room.bindingConstraint === "irmaa" ? "IRMAA binds" : "bracket binds"})</span>
+            </span>
+            <strong style={{ color: "#34d399", fontFamily: "'DM Mono',monospace" }}>{money(room.conversionRoom)}</strong>
+          </div>
+          {room.alreadyConverted > 0 && (
+            <div style={{ fontSize: compact ? 9 : 10, color: "#64748b", marginTop: 3 }}>
+              {fmtDollar(room.alreadyConverted)} already converted this year — the figures above are what remains.
+            </div>
+          )}
+        </>
+      ) : (
+        <div style={{ fontSize: compact ? 9 : 11, color: "#64748b", fontStyle: "italic" }}>
+          No tax-room figure: {room.reason}. Compare your own YTD taxable income against the
+          ceilings on the Withdrawal Plan tab.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Compact strip for the Net Worth card. Visible all December. */
+function YearEndStrip({ room, days, year }) {
+  return (
+    <div style={{
+      marginTop: 8, padding: "6px 8px", borderRadius: 6,
+      background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.25)",
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", marginBottom: 3 }}>
+        Year-end check
+      </div>
+      <YearEndBody room={room} days={days} year={year} compact />
+    </div>
+  );
+}
+
+/** Once-a-year popup. Portalled so no ancestor can clip it. */
+function YearEndModal({ room, days, year, onClose, onSaveCheckIn, canCheckIn }) {
+  const [saved, setSaved] = React.useState(false);
+  if (typeof document === "undefined") return null;
+  return ReactDOM.createPortal(
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(2,6,23,0.72)", zIndex: 10000,
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#0f172a", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 12,
+          padding: "18px 20px", maxWidth: 480, width: "100%", maxHeight: "85vh", overflowY: "auto",
+          boxShadow: "0 10px 40px rgba(0,0,0,0.8)",
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#fbbf24", marginBottom: 4 }}>
+          Year-end check &mdash; {year}
+        </div>
+        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 12 }}>
+          Shown once each December. Two things are worth doing before the 31st.
+        </div>
+
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>
+          1 &middot; Your remaining tax room
+        </div>
+        <YearEndBody room={room} days={days} year={year} />
+
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0", margin: "14px 0 6px" }}>
+          2 &middot; Record a checkpoint
+        </div>
+        <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6, marginBottom: 8 }}>
+          A year-end snapshot of your real balances and success rate. Checkpoints anchor the
+          projection to what actually happened, so next year&rsquo;s plan starts from fact
+          rather than from last year&rsquo;s forecast.
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            className="mbtn"
+            disabled={!canCheckIn || saved}
+            onClick={() => { onSaveCheckIn?.(); setSaved(true); }}
+            style={{ fontSize: 12, padding: "5px 12px", opacity: (!canCheckIn || saved) ? 0.5 : 1 }}
+          >
+            {saved ? "Checkpoint saved" : "Save checkpoint"}
+          </button>
+          <button className="mbtn" onClick={onClose} style={{ fontSize: 12, padding: "5px 12px" }}>
+            Close
+          </button>
+        </div>
+        {!canCheckIn && (
+          <div style={{ fontSize: 10, color: "#64748b", marginTop: 6, fontStyle: "italic" }}>
+            Run the Monte Carlo first — a checkpoint stores the success rate alongside the balances.
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+const LANDMINE_TIP_W = 290;
+
+/**
+ * Landmine hover card.
+ *
+ * Rendered through a PORTAL to document.body rather than as an absolutely
+ * positioned child. The table it lives in sits inside `overflowX: auto`, and per
+ * CSS spec a scroll value on one axis forces the other to `auto` too — so the
+ * old `position:absolute; bottom:100%` card was clipped by its own scroll
+ * container the moment it extended above the first row. (Reported with a
+ * screenshot: the §72(t) card was sheared off by the panel above it.)
+ *
+ * Portalling escapes every ancestor clip. Position is then computed in viewport
+ * space from the trigger's rect, flipped below when there isn't room above, and
+ * clamped horizontally so a landmine in the last column can't run off-screen.
+ */
 function LandmineTip({ emoji, label, detail, color }) {
   const [show, setShow] = React.useState(false);
+  const [pos, setPos] = React.useState(null);
+  const ref = React.useRef(null);
+
+  const place = React.useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    // Measured lazily: the card is ~1 line of title + wrapped detail. Estimating
+    // high is the safe direction — it only decides flip, never final size.
+    const estH = 150;
+    const above = r.top;
+    const flipDown = above < estH + 12;
+    const left = Math.min(
+      Math.max(8, r.left + r.width / 2 - LANDMINE_TIP_W / 2),
+      window.innerWidth - LANDMINE_TIP_W - 8
+    );
+    setPos({
+      left,
+      top: flipDown ? r.bottom + 8 : undefined,
+      bottom: flipDown ? undefined : window.innerHeight - r.top + 8,
+    });
+  }, []);
+
+  const open = () => { place(); setShow(true); };
+  const close = () => setShow(false);
+
+  // A scroll or resize while open would strand the card away from its trigger.
+  React.useEffect(() => {
+    if (!show) return;
+    const onMove = () => place();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [show, place]);
+
   return (
     <span
+      ref={ref}
       style={{ position: "relative", cursor: "help", marginRight: 3, display: "inline-block" }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
+      onMouseEnter={open}
+      onMouseLeave={close}
     >
       {emoji}
-      {show && (
+      {show && pos && typeof document !== "undefined" && ReactDOM.createPortal(
         <div style={{
-          position: "absolute", bottom: "calc(100% + 8px)", left: "50%",
-          transform: "translateX(-50%)", background: "#0f172a",
+          position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom,
+          background: "#0f172a",
           border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8,
-          padding: "9px 13px", minWidth: 230, maxWidth: 290,
-          boxShadow: "0 4px 20px rgba(0,0,0,0.7)", zIndex: 200, pointerEvents: "none",
+          padding: "9px 13px", width: LANDMINE_TIP_W, maxWidth: "calc(100vw - 16px)",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.7)", zIndex: 9999, pointerEvents: "none",
           whiteSpace: "normal", textAlign: "left",
+          maxHeight: "70vh", overflowY: "auto",
         }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: color || "#e2e8f0", marginBottom: 5 }}>
             {emoji} {label}
           </div>
           <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>{detail}</div>
-        </div>
+        </div>,
+        document.body
       )}
     </span>
   );
@@ -6039,37 +6244,21 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         </span>
       </div>
 
-      {/* ── Section 1: Sourcing ──────────────────────────────────────── */}
-      <div>
-        <WithdrawalSectionHeader
-          open={openSourcing}
-          onToggle={() => setOpenSourcing(v => !v)}
-          color="#5eead4"
-          question="Where does each year's spending come from?"
-          subtitle={`Account-by-account sourcing — ${resolveDrawOrder(p.orderingMode, p.withdrawalOrder).map((b) => BUCKET_LABELS_SHORT[b]).join(" → ")} — with tax landmines flagged`}
-        />
-        {/* Guardrails live inside the collapsible now (design update): they're
-            revealed only when the green sourcing section is expanded, alongside the
-            waterfall table they shape. The order control sits above the guardrails
-            strip — ordering is the outer sequence; the guardrails are inner caps. */}
-        {openSourcing && (
-          <div style={{ paddingLeft: 4 }}>
-            <AccountDrawOrder p={p} onAssumptionChange={onAssumptionChange} />
-            <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} summary={waterfall.summary} />
-            <WaterfallPlanView p={p} result={waterfall} />
-          </div>
-        )}
-      </div>
+      {/* ── Global strategy control (design-authority ruling, v1.2.60) ──────
+          This block used to render between Section 2's header and Section 2's
+          collapsible body — a dead zone belonging to no visible container, and
+          structurally inconsistent with Section 1 (which puts every control
+          INSIDE its collapsible).
 
-      {/* ── Section 2: Strategy pacing ───────────────────────────────── */}
-      <div>
-        <WithdrawalSectionHeader
-          open={openStrategy}
-          onToggle={() => setOpenStrategy(v => !v)}
-          color="#fbbf24"
-          question="How does my chosen strategy pace spending year by year?"
-          subtitle="Preview any strategy's year-by-year schedule below — this does NOT change your Profile default or your Monte Carlo run until you click 'Set as default'."
-        />
+          It is hoisted to tab level rather than pushed into Section 2's
+          collapsible because it writes `withdrawalStrategy` — the single global
+          consumed by runMC, simulateDeterministicWithStrategy, the home Net Worth
+          card, the MCTab InputCard row, the engine InfoModal and buildRothExplorer.
+          Gating the app's ONLY strategy-write behind a twisty would re-create the
+          exact failure the banner below was built to fix.
+
+          RELOCATED ONLY: banner copy, button styling, tooltip and commit logic are
+          untouched. ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
           {/* Persistent state banner. The commit affordance used to be an 11px amber
               line BELOW the dropdown, plus a subtitle in the collapsible header — and
@@ -6172,6 +6361,38 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
             )}
           </div>
         </div>
+
+      {/* ── Section 1: Sourcing ──────────────────────────────────────── */}
+      <div>
+        <WithdrawalSectionHeader
+          open={openSourcing}
+          onToggle={() => setOpenSourcing(v => !v)}
+          color="#5eead4"
+          question="Where does each year's spending come from?"
+          subtitle={`Account-by-account sourcing — ${resolveDrawOrder(p.orderingMode, p.withdrawalOrder).map((b) => BUCKET_LABELS_SHORT[b]).join(" → ")} — with tax landmines flagged`}
+        />
+        {/* Guardrails live inside the collapsible now (design update): they're
+            revealed only when the green sourcing section is expanded, alongside the
+            waterfall table they shape. The order control sits above the guardrails
+            strip — ordering is the outer sequence; the guardrails are inner caps. */}
+        {openSourcing && (
+          <div style={{ paddingLeft: 4 }}>
+            <AccountDrawOrder p={p} onAssumptionChange={onAssumptionChange} />
+            <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} summary={waterfall.summary} />
+            <WaterfallPlanView p={p} result={waterfall} />
+          </div>
+        )}
+      </div>
+
+      {/* ── Section 2: Strategy pacing ───────────────────────────────── */}
+      <div>
+        <WithdrawalSectionHeader
+          open={openStrategy}
+          onToggle={() => setOpenStrategy(v => !v)}
+          color="#fbbf24"
+          question="How does my chosen strategy pace spending year by year?"
+          subtitle={`Preview how ${getStrategyLabel(previewStrategy)} paces spending — expand for the full year-by-year schedule and chart.`}
+        />
         {openStrategy && (
           <div style={{ paddingLeft: 4 }}>
             <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={previewStrategy} />
@@ -11845,6 +12066,7 @@ export default function AiRAForecaster() {
   // Requires a completed MC run so the snapshot carries a real success rate.
   const [checkIns, setCheckIns] = useState(loadCheckIns);
   const [checkInFlash, setCheckInFlash] = useState(false);
+
   const handleSaveCheckIn = () => {
     if (!mc) return;
     const entry = {
@@ -12171,6 +12393,51 @@ export default function AiRAForecaster() {
     }
     if (mc) setStale(true);
   }, [params]);
+
+  // Year-end deadline prompt. Reads the BROWSER clock (this app has no server), so
+  // a PC with a wrong system date sees it at the wrong time — accepted, versus
+  // adding a network dependency for a reminder. Placed AFTER `params` because it
+  // reads it; hoisting it above would be a temporal-dead-zone error.
+  //
+  // The waterfall is built inside the December branch only, so eleven months of
+  // the year this memo costs one getMonth() call and nothing else.
+  const yearEndInfo = useMemo(() => {
+    const now = new Date();
+    // ?yearend=1 forces the December view year-round. A seasonal feature is
+    // otherwise unreviewable for eleven months, and "change your PC clock" is a
+    // terrible way to QA something that writes to localStorage.
+    let forced = false;
+    try { forced = new URLSearchParams(window.location.search).get("yearend") === "1"; } catch { /* SSR/test */ }
+    if (!forced && !isYearEndWindow(now)) return { show: false };
+    const year = now.getFullYear();
+    let rows = [];
+    try { rows = buildWithdrawalWaterfall(params)?.smart?.rows || []; } catch { rows = []; }
+    return {
+      show: true,
+      year,
+      days: daysLeftInTaxYear(now),
+      room: yearEndTaxRoom(rows, {
+        year,
+        bracketCeiling: getBracketCeiling,
+        irmaaCeiling: getIrmaaCeiling,
+        filingStatus: params.filingStatus || "mfj",
+        // Prefer the conversion target — this prompt is mostly about conversions —
+        // and fall back to the sourcing bracket cap, then the 22% default.
+        target: params.rothConversionTarget && params.rothConversionTarget !== "off"
+          ? params.rothConversionTarget
+          : (params.withdrawalBracketTarget && params.withdrawalBracketTarget !== "off"
+              ? params.withdrawalBracketTarget
+              : "22"),
+      }),
+    };
+  }, [params]);
+  // Popup fires once per calendar year; the Net Worth strip stays all December.
+  const [showYearEndModal, setShowYearEndModal] = useState(() => {
+    let forced = false;
+    try { forced = new URLSearchParams(window.location.search).get("yearend") === "1"; } catch { /* SSR/test */ }
+    if (forced) return true;   // preview always opens, ignoring the once-a-year ack
+    return isYearEndWindow() && !yearEndAcked(new Date().getFullYear());
+  });
 
   const swr = computeInitialWR(params).initWRpct.toFixed(1);
 
@@ -12671,7 +12938,18 @@ export default function AiRAForecaster() {
                   </div>
                 );
               })()}
+              {yearEndInfo.show && (
+                <YearEndStrip room={yearEndInfo.room} days={yearEndInfo.days} year={yearEndInfo.year} />
+              )}
             </div>
+            {yearEndInfo.show && showYearEndModal && (
+              <YearEndModal
+                room={yearEndInfo.room} days={yearEndInfo.days} year={yearEndInfo.year}
+                canCheckIn={!!mc}
+                onSaveCheckIn={handleSaveCheckIn}
+                onClose={() => { ackYearEnd(yearEndInfo.year); setShowYearEndModal(false); }}
+              />
+            )}
             <div style={{ textAlign: "center", padding: "2px 0" }}>
               <InfoModal
                 title={`MC Engine — v${APP_VERSION}`}
