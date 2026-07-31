@@ -175,9 +175,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.68";
-export const BUILD_TAG = "[main] v1.2.68 - Profile IA part 2 + About entry. Left step tree reordered per design-authority (APPROVE WITH CHANGES): About You is now FIRST and Assumptions LAST, because personal identity is the dependency root (values.dob drives ageFromDob() which later subtitles and the engine read) and global configuration is terminal. Design-authority also ruled that position ALONE does not express global-vs-workflow: every row shared one progress-dot language, which asserts a linear sequence you complete, and a settings panel is never completed. So the Settings row now sits under an App Settings divider with a static square marker instead of a filling step dot. Renamed per the same ruling: Assumptions -> Settings, Model parameters -> Calculation and app settings, now that the five identity fields have moved out. Verified no hardcoded step indices - STEPS/PANELS are index-matched and purely presentational, so the reorder cannot change behaviour. NEW ABOUT ENTRY (SS22 asked for one): Your Income -> Two Social Security benefits, and what happens when one of you dies - the spousal top-up off the higher earner PIA, why the spouse birthday is required, the widow penalty (the tax hit usually exceeds the lost benefit), the survivor claiming flexibility (deemed filing does NOT apply, claimable at 60, permanent reduction, DRCs pass through, no credit past survivor FRA), and the earnings test AiRA does not model. 821 tests, 28 suites.";
-export const BUILD_TIME = "2026-07-31T01:55:00Z";
+const APP_VERSION = "1.2.69";
+export const BUILD_TAG = "[main] v1.2.69 - one section container. Design-authority reviewed Vincent's \"make cards for each section\" question and found the ask was really a request to fix an existing violation: the six Profile panels had FOUR competing section patterns, and ContribPanel had privately reimplemented ACard's chrome under local sectionCard/sectionTitle/sectionDesc objects - byte-identical to the component, i.e. two definitions of one card. Hand-verified before acting, and it also revealed something the review missed: the Pensions card Vincent pointed at IS the duplicate, so converting naively would have LOST the look he liked. ACard therefore adopted the better treatment (14px near-white title, 11.5px muted desc) instead of the duplicate being flattened to the weaker 11px uppercase accent title; accent is now a thin left border. ContribPanel's three sections converted, local styles deleted. Rules 5/5a/5b/5c written into UI_DESIGN_SPEC.md: one container, collapsible keyed to FREQUENCY not length, neutral chrome reserved for the outer wrapper so nesting stays legible, and the two-tier collections-vs-fields split explicitly rejected. NOTE the suite caught a real self-inflicted bug mid-change: a first-match replace put the accent border into ProgressTab instead of ACard (that style string appears 8 times), crashing it with \"accent is not defined\" - reverted and re-anchored inside the ACard function. 821 tests, 28 suites.";
+export const BUILD_TIME = "2026-07-31T02:40:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -7849,7 +7849,11 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
       )}
 
       {/* ── Check-in history (cards) ── */}
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+      <div style={{
+      background: "rgba(255,255,255,0.03)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 12, padding: 16,
+    }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <div className="ct" style={{ marginBottom: 0 }}>Check-in history</div>
           <div style={{ fontSize: 11, display: "flex", gap: 12, alignItems: "center" }}>
@@ -10866,17 +10870,38 @@ function ADateInput({ value, onSet }) {
 }
 
 /**
- * One card = one topic, on this panel. `collapsible` is for set-once groups
- * (identity, API keys) that shouldn't occupy vertical space every visit —
- * progressive disclosure, so the panel opens on what a user actually revisits.
+ * THE section container for a Profile panel. One card = one topic.
+ *
+ * `collapsible` is decided by FREQUENCY, not length: set-once groups (identity,
+ * API keys, tax mechanics) get `collapsible defaultOpen={false}` so they don't
+ * occupy vertical space every visit; anything a user revisits most sessions
+ * (spending, contributions, Social Security, pensions) stays open. A long panel is
+ * fixed by splitting it into more cards, NOT by collapsing one giant one — those
+ * are different problems and conflating them is what turned this into four
+ * competing patterns.
+ *
+ * Heading treatment: 14px near-white with a muted description. This deliberately
+ * REPLACED an 11px uppercase accent-coloured title. `ContribPanel` had privately
+ * reimplemented this card — byte-identical chrome under local `sectionCard` /
+ * `sectionTitle` / `sectionDesc` objects — and its heading was the more legible of
+ * the two. Vincent pointed at one of those cards ("Pensions") and said he liked it,
+ * so the canonical component adopted the better treatment rather than the
+ * duplicate being flattened down to the weaker one. `accent` now draws a thin left
+ * border, keeping the colour-coding without tinting the title.
+ *
+ * NESTING RULE: the neutral card chrome below is reserved for the OUTER section
+ * wrapper. Anything inside it — disclosure strips, totals rows, per-entry rows —
+ * must use a lighter hairline or a coloured tint, never a second instance of this
+ * same grey bordered box, or the panel becomes boxes inside boxes and scanability
+ * drops. See specs/UI_DESIGN_SPEC.md.
  */
 function ACard({ title, accent, desc, children, collapsible = false, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
   const isOpen = collapsible ? open : true;
   const heading = (
     <div style={{
-      fontSize: 11, fontWeight: 700, color: accent, textTransform: "uppercase",
-      letterSpacing: "0.1em", marginBottom: desc || !isOpen ? 4 : 12,
+      fontSize: 14, fontWeight: 700, color: "#e2e8f0",
+      marginBottom: desc || !isOpen ? 5 : 12,
       display: "flex", alignItems: "center", gap: 8,
     }}>
       <span>{title}</span>
@@ -10885,7 +10910,14 @@ function ACard({ title, accent, desc, children, collapsible = false, defaultOpen
   );
 
   return (
-    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+    <div style={{
+      background: "rgba(255,255,255,0.03)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      // `accent` is a thin left edge, not a tinted title — it keeps the colour
+      // coding while every card's heading stays the same legible near-white.
+      borderLeft: accent ? `3px solid ${accent}` : "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 12, padding: 16,
+    }}>
       {collapsible ? (
         <button
           type="button"
@@ -10896,7 +10928,7 @@ function ACard({ title, accent, desc, children, collapsible = false, defaultOpen
         </button>
       ) : heading}
       {desc && isOpen && (
-        <div style={{ fontSize: 11, color: "#475569", marginBottom: 12, lineHeight: 1.5 }}>{desc}</div>
+        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 14, lineHeight: 1.55 }}>{desc}</div>
       )}
       {isOpen && children}
     </div>
@@ -11268,17 +11300,15 @@ function ContribPanel({ values, onChange }) {
 
   // Shared "profile section card" chrome — one consistent look so sections read
   // as a uniform, logically-ordered stack instead of scattered mismatched blocks.
-  const sectionCard = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 16 };
-  const sectionTitle = { fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 5, display: "flex", alignItems: "center", gap: 8 };
-  const sectionDesc = { fontSize: 11.5, color: "#94a3b8", marginBottom: 14, lineHeight: 1.55 };
+  // Section chrome comes from <ACard> — this panel used to define its own
+  // byte-identical copy (sectionCard/sectionTitle/sectionDesc), which is how the
+  // Profile ended up with four competing section styles. One implementation.
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
       {/* ── Income card 1: Annual Contributions (inputs + savings total together) ── */}
-      <div style={sectionCard}>
-        <div style={sectionTitle}>💰 Annual Contributions</div>
-        <div style={sectionDesc}>Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.</div>
+      <ACard title="💰 Annual Contributions" desc="Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.">
         <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 10, lineHeight: 1.4 }}>⚠ Employer Contribution and Brokerage/After-Tax Savings aren't capped by the tool — the IRS doesn't set a hard per-field limit on either, but real-world amounts are still bounded by your actual plan and income. 401(k), HSA, and Roth IRA below stay capped at their real legal limits.</div>
         <WFieldRow label="401(k) / 403(b) / 457(b) — pre-tax only" helper="Your PRE-TAX employee deferral. Roth 401(k)/403(b) money does NOT belong here — this field is taxed as ordinary income on withdrawal and drives your future RMDs. Put Roth deferrals in the Roth line below until a dedicated Roth 401(k) field exists (REQUIREMENTS §22.1).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
@@ -11300,7 +11330,7 @@ function ContribPanel({ values, onChange }) {
           <span style={{ fontSize: 12, color: "#94a3b8" }}>💰 Total annual savings <span style={{ color: "#475569" }}>(incl. employer, HSA, Roth &amp; brokerage)</span></span>
           <span style={{ fontSize: 22, fontWeight: 800, color: "#14b8a6", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(totalSavings)}<span style={{ fontSize: 12, fontWeight: 400, color: "#64748b" }}>/yr</span></span>
         </div>
-      </div>
+      </ACard>
 
       {/* ── Income card 2: PENSIONS ────────────────────────────────────────
           Split from Other Income because a pension is a distinct object with a
@@ -11310,9 +11340,8 @@ function ContribPanel({ values, onChange }) {
           from the year it arrives. The type selector is embedded per pension —
           people commonly have more than one, and each can be a different kind.
           Switching type migrates the entry between the two stores. */}
-      <div style={sectionCard}>
-        <div style={sectionTitle}>🏦 Pensions</div>
-        <div style={sectionDesc}>
+      <ACard title="🏦 Pensions">
+        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 14, lineHeight: 1.55 }}>
           Defined-benefit income. Pick the type for each one — AiRA models them differently, and
           getting it wrong is the most common source of bad numbers here.
         </div>
@@ -11356,12 +11385,11 @@ function ContribPanel({ values, onChange }) {
           }])}
           style={{ background: "rgba(14,165,233,0.1)", border: "1px dashed rgba(14,165,233,0.45)", borderRadius: 6, color: "#38bdf8", fontSize: 12, fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
         >+ Add pension</button>
-      </div>
+      </ACard>
 
       {/* ── Income card 3: OTHER INCOME ─────────────────────────────────── */}
-      <div style={sectionCard}>
-        <div style={sectionTitle}>💵 Other Income</div>
-        <div style={sectionDesc}>
+      <ACard title="💵 Other Income">
+        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 14, lineHeight: 1.55 }}>
           Everything that isn't a pension — part-time work, an annuity, royalties, alimony. Recurring
           amounts paid <em>to</em> you, not balances you draw down.
         </div>
@@ -11380,7 +11408,7 @@ function ContribPanel({ values, onChange }) {
           onMouseEnter={e => e.currentTarget.style.background = "rgba(14,165,233,0.18)"}
           onMouseLeave={e => e.currentTarget.style.background = "rgba(14,165,233,0.1)"}
         >+ Add another income source</button>
-      </div>
+      </ACard>
 
     </div>
   );
