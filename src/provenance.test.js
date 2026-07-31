@@ -110,13 +110,11 @@ describe("§28 — metric-card provenance registry", () => {
     // never displayed helps nobody; five cards used to show a number with no
     // explanation at all. Structural check: every `ml` label must have an `ms`
     // sub-line within its own card block.
-    const lines = SRC.split("
-");
+    const lines = SRC.split("\n");
     const bare = [];
     lines.forEach((l, i) => {
       if (!l.includes('className="ml"')) return;
-      const block = lines.slice(i, i + 13).join("
-");
+      const block = lines.slice(i, i + 13).join("\n");
       if (!block.includes('className="ms"')) bare.push(i + 1);
     });
     expect(bare).toEqual([]);
