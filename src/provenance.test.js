@@ -95,7 +95,7 @@ const METRIC_CARDS = [
   { label: "Tax Savings vs No Plan",         source: "summary.taxSavings",                       kind: "computed" },
   { label: "Roth at Age {endAge}",           source: "summary.finalRothSmart",                   kind: "point-in-time", at: "endAge" },
   { label: "IRMAA Years Triggered",          source: "summary.irmaaYearsTriggered",              kind: "count" },
-  { label: "Avg. Withdrawal Rate",           source: "mean(wrSeries)",                           kind: "computed" },
+  { label: "Avg. Withdrawal Rate",           source: "mean(wrAt(i)) = totalWithdrawal ÷ START-of-year portfolio", kind: "computed" },
   { label: "Portfolio Depletion",            source: "depletionRow.age | 'Never'",               kind: "point-in-time", at: "first depleted year" },
 
   // ── Deterministic withdrawal view ────────────────────────────────────────
@@ -239,6 +239,21 @@ describe("§28 — provenance regressions that already shipped once", () => {
     // back to `title={hint}` the whole set silently becomes touch-unreachable
     // again, with no visual difference on a developer's mouse-driven desktop.
     expect(RENDERED).not.toMatch(/<div className="tog-row" title=/);
+  });
+
+  test("the WR column is a WITHDRAWAL rate, not a spending rate", () => {
+    // Reported by u/garylapointe: the WR column read 17.8% in a year whose actual
+    // draw was $26K. 17.8% was his $100,000 SPENDING over the portfolio — his
+    // pension covered ~$81K of it. Two defects in one expression:
+    // `r.spending / r.totalPort` used spending as the numerator AND the END-of-year
+    // balance as the denominator, so a plan drawing under 5% displayed as 17.8%.
+    //
+    // The same tab already computed this correctly for the "Avg. Withdrawal Rate"
+    // card, so one page carried two withdrawal rates that disagreed fourfold. Both
+    // now come from `wrAt`.
+    expect(RENDERED).not.toMatch(/spending\s*\/\s*r?\.?totalPort/);
+    // And the one definition must exist and be draw-over-start-of-year.
+    expect(RENDERED).toContain("r.totalWithdrawal / startPort");
   });
 
   test("money in metric cards goes through fmtDollar, not inline toLocaleString", () => {

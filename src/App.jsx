@@ -175,9 +175,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.70";
-export const BUILD_TAG = "[main] v1.2.70 - Profile is now ONE section pattern, end to end. Finished the conversion instead of reporting it as remaining work: all 8 bare uppercase headers converted to ACard (WHO YOU ARE, RETIREMENT TIMELINE, SPENDING x2, DETAILED EXPENSE BUDGET, WITHDRAWAL STRATEGY, SOCIAL SECURITY, RENTAL INCOME), SavingsPanel had NO section grouping at all and now has two cards, and six more hand-rolled inline copies of ACard chrome were found and converted - a FIFTH and SIXTH duplication beyond the ContribPanel one, including four in the Settings panel that had their own accent titles and two untitled blocks that had no heading at all (the plan-horizon stats strip and the strategy-detail block). Inline card-chrome copies inside Profile panels: 6 -> 0. Every section now routes through the one component, so the Pensions look Vincent picked is the look everywhere. Rule 5a applied in the same pass rather than piecemeal: Housing & Fixed Obligations, Healthcare Shock Model and Detailed Expense Budget collapse by default (set-once); spending, contributions, Social Security, withdrawal order, Roth strategy and rental stay open (revisited). Verified the conversion touched ONLY the six Profile panels - all 22 ACard uses are inside them, ProgressTab/MCTab untouched. 821 tests, 28 suites.";
-export const BUILD_TIME = "2026-07-31T03:20:00Z";
+const APP_VERSION = "1.2.71";
+export const BUILD_TAG = "[main] v1.2.71 - the WR column was a SPENDING rate wearing a withdrawal-rate label (u/garylapointe). It read 17.8% in a year whose actual draw was $26K; 17.8% was his $100,000 spending over the portfolio, because his pension covered ~$81K of it. Two defects in one expression: r.spending / r.totalPort used SPENDING as the numerator and the END-of-year balance as the denominator, so it divided by the smaller post-draw number and inflated the rate further. A plan drawing under 5% displayed as 17.8%, which reads as severe distress and could push someone into cutting spending they do not need to cut. Worse, the SAME tab already computed this correctly for the Avg. Withdrawal Rate card (totalWithdrawal over start-of-year portfolio), so one page carried two withdrawal rates disagreeing by a factor of four. Both now come from ONE wrAt(i). The guardrail colour was also anchored to p.sp/p.port - a spending rate - so the band and the banded value were different quantities; it is now +/-20% around the first year ACTUAL withdrawal rate, which is what Guyton-Klinger compares against. Header states the basis and says it is the draw, not spending. Regression lock in provenance.test.js. 822 tests.";
+export const BUILD_TIME = "2026-07-31T04:10:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -6682,22 +6682,54 @@ function WaterfallPlanView({ p, result }) {
 
   const anyLandmine = (r) => r.landmines.ssTorpedo || r.landmines.irmaaTriggered || r.landmines.rmdActive;
   const anyConversion = rows.some(r => r.conversionAmount > 0);
-  const initialWR   = (p.sp > 0 && p.port > 0) ? p.sp / p.port : 0.04;
-  const rowWRColor  = (r) => {
-    if (!r.totalPort) return "#94a3b8";
-    const wr = r.spending / r.totalPort;
+  /* ── Withdrawal rate — ONE definition ──────────────────────────────────────
+   *
+   * Reported by u/garylapointe: the WR column read 17.8% in a year whose actual
+   * draw was $26K. He worked out why himself — 17.8% was his $100,000 SPENDING
+   * over the portfolio, not his withdrawal.
+   *
+   * The column was `r.spending / r.totalPort`, which is wrong twice over:
+   *   • NUMERATOR was spending, not the withdrawal. For anyone with meaningful
+   *     income (Gary has a pension covering ~$81K of a $100K spend) those differ
+   *     enormously, and the column claimed to be "withdrawal rate vs portfolio".
+   *     A plan drawing under 5% was displayed as drawing 17.8% — a number that
+   *     reads as severe distress and could push someone into cutting spending
+   *     they do not need to cut.
+   *   • DENOMINATOR was `totalPort`, the END-of-year balance — after the year's
+   *     draw came out. Dividing by the smaller, post-draw number inflates the
+   *     rate further.
+   *
+   * Worse, the SAME tab already computed this correctly for the "Avg. Withdrawal
+   * Rate" card (`totalWithdrawal / start-of-year port`), so one page carried two
+   * different withdrawal rates that disagreed by a factor of four. Both now come
+   * from `wrAt` below — a single definition cannot drift from itself.
+   *
+   * Numerator is `totalWithdrawal` = rmd + cash + taxable + pretax + roth: the
+   * actual gross portfolio outflow, the same figure the "Total Draw" column shows.
+   */
+  const portAtRetire = accumulateToRetirement(p).total;
+  const wrAt = (i) => {
+    const r = rows[i];
+    if (!r) return null;
+    const startPort = i === 0 ? portAtRetire : rows[i - 1].totalPort;
+    return startPort > 0 ? r.totalWithdrawal / startPort : null;
+  };
+
+  /* The GK guardrail band is ±20% around the FIRST year's actual withdrawal rate,
+   * which is what Guyton-Klinger actually compares against — the initial WR. It
+   * used to be anchored to `p.sp / p.port`, a SPENDING rate, so the band and the
+   * value being banded were different quantities. Falls back to the user's own
+   * safe-withdrawal-rate benchmark when year one has no draw at all. */
+  const initialWR = wrAt(0) || (p.safeWithdrawalRate ?? 0.04);
+  const rowWRColor = (i) => {
+    const wr = wrAt(i);
+    if (wr == null) return "#94a3b8";
     return wr > initialWR * 1.2 ? "#f87171" : wr < initialWR * 0.8 ? "#fbbf24" : "#34d399";
   };
 
   // "Average retirement withdrawal rate" / "Out of money date" — Boldin-style
   // decision metrics, computed from this scenario's own rows (no separate model).
-  const portAtRetire = accumulateToRetirement(p).total;
-  const wrSeries = rows
-    .map((r, i) => {
-      const startPort = i === 0 ? portAtRetire : rows[i - 1].totalPort;
-      return startPort > 0 ? r.totalWithdrawal / startPort : null;
-    })
-    .filter(v => v != null);
+  const wrSeries = rows.map((_, i) => wrAt(i)).filter(v => v != null);
   const avgWithdrawalRate = wrSeries.length ? wrSeries.reduce((a, b) => a + b, 0) / wrSeries.length : 0;
   const depletionRow = rows.find(r => r.totalPort <= 0);
 
@@ -6837,7 +6869,7 @@ function WaterfallPlanView({ p, result }) {
               )}
               <ThInfo style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} tip={"Bucket 1 ending balance this year"}>B1 End</ThInfo>
               <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th>
-              <ThInfo tip={"Annual withdrawal rate vs portfolio — green when inside your Guyton-Klinger guardrails."}>WR</ThInfo>
+              <ThInfo tip={"What share of the portfolio this year's DRAW represents: Total Draw ÷ the portfolio at the START of the year.\n\nNot your spending rate. If income covers most of your spending, this stays low even when spending is high — which is the point of the column.\n\nGreen means within ±20% of your first-year rate, the Guyton-Klinger guardrail band. Amber = well below it, red = well above."}>WR <span style={{ fontSize: 9, color: "#64748b" }}>(of draw)</span></ThInfo>
               <th>
                 <LandmineTip
                   emoji="💣"
@@ -6851,7 +6883,7 @@ function WaterfallPlanView({ p, result }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => {
+            {rows.map((r, rowIdx) => {
               const b1End = b1Cats.has("cash")    ? r.cashEnd
                           : b1Cats.has("taxable") ? r.taxableEnd
                           : b1Cats.has("pretax")  ? r.pretaxEnd
@@ -7045,8 +7077,16 @@ function WaterfallPlanView({ p, result }) {
                   {r.irmaa > 0 ? fmtDollar(r.irmaa) : "—"}
                 </td>
                 <td style={{ textAlign: "right" }}>{(r.effectiveRate * 100).toFixed(1)}%</td>
-                <td style={{ textAlign: "right", color: rowWRColor(r), fontWeight: 600, fontSize: 11 }}>
-                  {r.totalPort > 0 ? (r.spending / r.totalPort * 100).toFixed(1) + "%" : "—"}
+                <td style={{ textAlign: "right", color: rowWRColor(rowIdx), fontWeight: 600, fontSize: 11 }}
+                    title={(() => {
+                      const wr = wrAt(rowIdx);
+                      if (wr == null) return "No portfolio at the start of this year.";
+                      const startPort = rowIdx === 0 ? portAtRetire : rows[rowIdx - 1].totalPort;
+                      return `${fmtDollar(r.totalWithdrawal)} drawn ÷ ${fmtDollar(startPort)} portfolio at the START of the year = ${(wr * 100).toFixed(1)}%.
+
+This is the DRAW, not your spending — income covers the rest. Guardrail band is ±20% around your first-year rate of ${(initialWR * 100).toFixed(1)}%.`;
+                    })()}>
+                  {(() => { const wr = wrAt(rowIdx); return wr == null ? "—" : (wr * 100).toFixed(1) + "%"; })()}
                 </td>
                 <td style={{ textAlign: "center", fontSize: 14 }}>
                   {r.landmines.ssTorpedo && (() => {
