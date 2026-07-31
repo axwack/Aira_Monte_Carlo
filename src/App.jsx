@@ -178,9 +178,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.71";
-export const BUILD_TAG = "[main] v1.2.71 - the WR column was a SPENDING rate wearing a withdrawal-rate label (u/garylapointe). It read 17.8% in a year whose actual draw was $26K; 17.8% was his $100,000 spending over the portfolio, because his pension covered ~$81K of it. Two defects in one expression: it used SPENDING as the numerator and the END-of-year balance as the denominator, so it divided by the smaller post-draw number and inflated the rate further. A plan drawing under 5% displayed as 17.8%, which reads as severe distress and could push someone into cutting spending they do not need to cut. Worse, the SAME tab already computed this correctly for the Avg. Withdrawal Rate card (totalWithdrawal over start-of-year portfolio), so one page carried two withdrawal rates disagreeing by a factor of four. Both now come from ONE wrAt(i). The guardrail colour was also anchored to p.sp/p.port - a spending rate - so the band and the banded value were different quantities; it is now +/-20% around the first year ACTUAL withdrawal rate, which is what Guyton-Klinger compares against. Header states the basis and says it is the draw, not spending. Regression lock in provenance.test.js. 822 tests.";
-export const BUILD_TIME = "2026-07-31T04:10:00Z";
+const APP_VERSION = "1.2.72";
+export const BUILD_TAG = "[main] v1.2.72 - every figure now shows its arithmetic, and the mortgage date is pickable. RULE 1a (Vincent: \"each label should have the exactly calculation clear to the user and if it is not important at least show it\"): the provenance registry MOVED out of the test file into src/provenance.js so ONE declaration is both rendered by the app and enforced by the test - leaving it in the test would have forced a second copy of every formula in the app, the exact duplication this codebase keeps paying for. Each of the 38 entries now carries a required user-facing `formula` in plain words, and the test rejects code-shaped text so a formula a user cannot check fails the build. Five cards were showing a bare number with no explanation at all - all now render their formula from the registry via formulaFor(). New tests: every entry has a formula, every card renders an explanation line, ids unique and resolvable. MORTGAGE START DATE: replaced input type=month, whose year is a bare spinner with no visible range, with explicit month + year dropdowns spanning 1986-2036 (derived from the current year, never a literal) - reaching a start date 20 years back used to mean clicking an arrow 240 times. Emits the same YYYY-MM string so mortgageSchedule and stored profiles are unaffected, and a stored value outside the range stays selectable so opening the control cannot silently rewrite it. 824 -> 826 tests.";
+export const BUILD_TIME = "2026-07-31T05:05:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -9019,9 +9019,7 @@ function MortgageTab({ values, onChange }) {
             format={v=>"$"+v.toLocaleString()+"/mo"} onChange={v=>onChange("mortExtra",v)}/>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             <span style={{ fontSize:11, color:"#94a3b8", minWidth:70 }}>Start date</span>
-            <input type="month" value={start} onChange={e=>onChange("mortStart",e.target.value)}
-              style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0",
-                borderRadius:4, padding:"4px 8px", fontSize:11, fontFamily:"'DM Mono',monospace" }}/>
+            <MonthYearSelect value={start} onSet={v=>onChange("mortStart",v)}/>
           </div>
         </div>
 
@@ -10939,6 +10937,55 @@ function ADateInput({ value, onSet }) {
  * same grey bordered box, or the panel becomes boxes inside boxes and scanability
  * drops. See specs/UI_DESIGN_SPEC.md.
  */
+/**
+ * Month + year selects for a "YYYY-MM" value.
+ *
+ * Replaces `<input type="month">`, whose year is a bare spinner: there is no visible
+ * range, you cannot see what is selectable, and reaching a start date 20 years back
+ * means clicking an arrow 240 times. Reported by Vincent — "the year does not show a
+ * range of years in the mortgage drop down".
+ *
+ * The year range is DERIVED, never a literal: `MORT_START_YEARS_BACK` covers an
+ * existing mortgage already part-paid, and `_FORWARD` covers a purchase you are
+ * planning. Anchored to the current year so it can never go stale.
+ *
+ * Emits the same "YYYY-MM" string the native control did, so `mortgageSchedule` and
+ * every stored profile are unaffected.
+ */
+const MONTH_NAMES = ["January","February","March","April","May","June",
+                     "July","August","September","October","November","December"];
+const MORT_START_YEARS_BACK = 40;   // a 30-yr mortgage taken out a decade before that
+const MORT_START_YEARS_FWD  = 10;   // a purchase you are still planning
+
+function MonthYearSelect({ value, onSet }) {
+  const now = new Date();
+  const m = /^(\d{4})-(\d{2})$/.exec(value || "");
+  const year  = m ? Number(m[1]) : now.getFullYear();
+  const month = m ? Number(m[2]) : now.getMonth() + 1;
+  const first = now.getFullYear() - MORT_START_YEARS_BACK;
+  const last  = now.getFullYear() + MORT_START_YEARS_FWD;
+  // A stored value outside the range must still be selectable, or opening the
+  // control would silently rewrite the user's date.
+  const years = [];
+  for (let y = Math.min(first, year); y <= Math.max(last, year); y++) years.push(y);
+  const emit = (yy, mm) => onSet(`${yy}-${String(mm).padStart(2, "0")}`);
+  const sel = {
+    background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0",
+    borderRadius: 4, padding: "4px 6px", fontSize: 11,
+    fontFamily: "'DM Mono',monospace", cursor: "pointer",
+  };
+  return (
+    <span style={{ display: "inline-flex", gap: 6 }}>
+      <select style={sel} value={month} onChange={(e) => emit(year, Number(e.target.value))}>
+        {MONTH_NAMES.map((nm, i) => <option key={nm} value={i + 1}>{nm}</option>)}
+      </select>
+      <select style={sel} value={year} onChange={(e) => emit(Number(e.target.value), month)}>
+        {years.map(y => <option key={y} value={y}>{y}</option>)}
+      </select>
+    </span>
+  );
+}
+
 function ACard({ title, accent, desc, children, collapsible = false, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
   const isOpen = collapsible ? open : true;
