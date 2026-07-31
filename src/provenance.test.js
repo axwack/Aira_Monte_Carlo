@@ -115,6 +115,14 @@ const METRIC_CARDS = [
   { label: "Stress success",                 source: "stress.rate",                              kind: "computed" },
   { label: "Delta vs base",                  source: "stress.rate − mc.rate",                    kind: "computed" },
 
+  // ── Widow's-penalty delta (§31) ───────────────────────────────────────────
+  // Two runs of the USER'S OWN plan at the same seed and path count, differing only
+  // in whether spouse.deathAge is set. Same seed is load-bearing: with a different
+  // one, part of the "penalty" would be RNG noise and the label would be claiming a
+  // derivation the number did not get.
+  { label: "Widow's penalty",                source: "(est.base − est.noDeath) × 100, same seed/N", kind: "computed" },
+  { label: "What this figure is",            source: "static explanatory prose, not a figure",   kind: "computed" },
+
   // ── Bucket strategy (factory: one JSX site, N cards from an array) ───────
   { label: "{m.l} (bucket metrics map)",     source: "m.v from the bucket metrics array",        kind: "computed", factory: true },
 
