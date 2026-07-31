@@ -150,6 +150,29 @@ export const ABOUT_FEATURES = [
   },
 
   {
+    id:    "spousal-survivor-ss",
+    group: "Your Income",
+    icon:  "🕊️",
+    title: "Two Social Security benefits, and what happens when one of you dies",
+    body:  `AiRA models both benefits, not one. Enter each person's expected monthly benefit, each person's claim age, and each person's amount at full retirement age — SSA quotes all of these. The FRA amounts are needed for one reason: the <strong>spousal top-up</strong> is 50% of the HIGHER earner's FRA amount, not 50% of the check they actually receive, and delaying past FRA never increases it. So if your spouse's own benefit is below half of your FRA amount, Social Security tops theirs up to that level, and AiRA includes it automatically.<br/><br/>
+
+<strong>Enter your spouse's date of birth.</strong> It is not decoration. Every projection walks one age, so without a birthday for your spouse the app cannot tell when THEIR benefit starts — a spouse ten years younger would be credited with a check a decade before it arrives. Their birthday also drives when they reach Medicare at 65, their own age-65 standard-deduction add-on, and their own RMD age.<br/><br/>
+
+<div class="ttm-flag"><strong>The widow's penalty — the tax hit is usually bigger than the lost benefit.</strong> This is the part that blindsides people. On a first death the survivor keeps the LARGER of the two checks and the smaller one stops. That loss is visible and people plan for it. What they miss is that the survivor now files as Single: the brackets narrow sharply, the standard deduction roughly halves, the IRMAA thresholds halve, and the senior deduction halves — against a portfolio and a required distribution that barely changed. The same income is simply taxed harder, every year, for the rest of their life.</div>
+
+Set "Model the first death" in Profile → Retirement Plan and the Stress Test tab shows a <strong>Widow's penalty</strong> card: your plan run twice, with and without that death, on identical market paths, so the change in success rate is attributable to the death alone rather than to luck. You also choose WHICH of you goes first — it matters more than it sounds. If the survivor is younger, the money has to last until THEIR planning age, not yours, so the plan runs longer and the success rate correctly falls.<br/><br/>
+
+<strong>The survivor's claiming decision is the one place Social Security gives you real flexibility.</strong> Deemed filing — the rule that normally forces you to take the bigger of two benefits — does NOT apply to survivor benefits. The survivor benefit and the survivor's own retirement benefit are independent, so they can be claimed at different ages and switched between. Two consequences:<br/><br/>
+
+• A survivor benefit can start at <strong>60</strong>, whereas an own retirement benefit cannot start before 62.<br/>
+• A common play is to take the reduced survivor benefit early and let your own benefit grow to 70, then switch — or the reverse, live on your own reduced benefit and switch to an unreduced survivor benefit at full retirement age. Which is better depends on whose benefit is larger; AiRA lets you set the survivor claim age and compare.<br/><br/>
+
+Claiming a survivor benefit before <em>survivor</em> full retirement age (66–67, on a different schedule from retirement FRA) reduces it permanently — 71.5% at 60, rising to 100% at survivor FRA. Permanently means exactly that: reaching FRA later does not restore the full amount. And unlike your own benefit, a survivor benefit earns nothing by waiting past its FRA, so there is never a reason to delay it beyond that point. One genuinely useful asymmetry: any delayed retirement credits the deceased earned DO pass through to the survivor benefit, which is why delaying the higher earner's claim protects the survivor for life.<br/><br/>
+
+<strong>What AiRA does not model here:</strong> the earnings test. If a survivor claims before full retirement age while still working, SSA withholds $1 of benefits for every $2 earned above an annual limit ($24,480 in 2026). AiRA models no wage income, so it cannot apply this — if you plan to keep working, treat an early claim as worth less than the app shows. Get both benefit figures from SSA and have a fee-only advisor check the sequence before anyone files; this is among the highest-stakes claiming decisions there is.`,
+  },
+
+  {
     id:    "pension-guardrails",
     group: "Your Income",
     icon:  "🛡️",
