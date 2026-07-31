@@ -175,9 +175,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.66";
-export const BUILD_TAG = "[main] v1.2.66 - SS31: one death model, and the widow's penalty is now a number. The Stress Test spouse-passes-early card was a SECOND death model - day one instead of a chosen age, Single immediately instead of MFJ through the death year, a max/x0.67 haircut instead of the survivor reduction and PIA basis, spouse-only, and no horizon change - and it set spouse.enabled false, which silently DISCARDED whatever death the user had authored in the Profile. It is now a VARIATION on the authored model: move that death 10 years sooner and let the engine apply every rule it already applies, so the tab answers how much worse if the timing is bad rather than re-answering what if there were a death at all. Profiles with no death modelled keep the legacy day-one bound, relabelled as a worst-case bound not a forecast, with the x0.67 fallback intact for profiles without spousal data. NEW WIDOW'S PENALTY CARD on the Stress tab: the base plan already contains the modelled death, so the scenario grid vs-baseline cannot show what the death costs - this runs the plan twice, with and without it, at the SAME seed and path count so the gap is the death and not RNG, and it self-gates on a death being modelled so it costs nothing for everyone else. Also: the Stress tab now states what the simulation actually varies (market returns, inflation, rental reliability, healthcare shocks) and what it holds fixed, because the success rate is widely read as the odds your retirement works and it is narrower than that. 815 -> 821 tests, 38 cards declared.";
-export const BUILD_TIME = "2026-07-31T00:40:00Z";
+const APP_VERSION = "1.2.67";
+export const BUILD_TAG = "[main] v1.2.67 - Profile IA: personal info was in two places, plus a visible float bug. FIXED: About You showed 'Years to retirement 1.6000000000000014' - retireAge is a decimal (63.6 for a mid-year D-Day) so subtracting a whole age leaked raw binary floating point onto the screen; rounded at the point of display, engines keep full precision. FIXED (SS18): Name, Date of Birth, State of Residence, Employer Start Date and Federal Filing Status all lived under Assumptions -> Model Parameters, which is the last place a user looks for their own details - and About You literally carried a pointer telling them to go there. Those five are WHO YOU ARE, not model parameters; they now sit in a WHO YOU ARE block at the top of About You, next to the age, retirement age and sex they belong with. The returns, inflation and tax assumptions that DO belong under that heading stayed behind. Also removed a duplicate Name control - the emptied Personal Profile card in Assumptions was a second point of control for the same field. One category, one place. 821 tests, 38 cards declared.";
+export const BUILD_TIME = "2026-07-31T01:10:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -10589,17 +10589,62 @@ function SavingsPanel({ values, onChange }) {
 function AboutYouPanel({ values, onChange }) {
   const derivedAge = ageFromDob(values.dob);
   const currentAgeForCalc = derivedAge ?? values.currentAge;
-  const yearsToRetire = Math.max(0, values.retireAge - currentAgeForCalc);
-  const yearsInRetire = Math.max(0, values.endAge - values.retireAge);
-  const totalHorizon = yearsToRetire + yearsInRetire;
+  // Retirement age is a DECIMAL (63.6 for a mid-year D-Day), so subtracting a whole
+  // age produced 1.6000000000000014 on screen — binary floating point, shown raw.
+  // Rounded to one decimal at the point of display; the ENGINES keep the full
+  // precision value, so this changes nothing a projection depends on.
+  const round1 = (n) => Math.round(n * 10) / 10;
+  const yearsToRetire = round1(Math.max(0, values.retireAge - currentAgeForCalc));
+  const yearsInRetire = round1(Math.max(0, values.endAge - values.retireAge));
+  const totalHorizon = round1(yearsToRetire + yearsInRetire);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {derivedAge !== null && (
-        <div style={{ fontSize: 12, color: "#475569" }}>
-          Age <strong style={{ color: "#e2e8f0" }}>{derivedAge}</strong> · Date of birth is set in <em>Assumptions → Model Parameters</em>.
+      {/* These five were in "Assumptions → Model Parameters", which is where a user
+          looking for their own details would never think to look — and About You
+          carried a pointer sending them there. Name, birthday, home state, employer
+          start date and filing status are WHO YOU ARE, not model parameters; the
+          returns, inflation and tax assumptions that belong under that heading stayed
+          behind. One category, one place (REQUIREMENTS §18). */}
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
+          WHO YOU ARE
         </div>
-      )}
+        <ARow label="Name" desc="Appears on the printable report and in the exported JSON filename (AiRA_Profile_&lt;name&gt;_YYYY-MM-DD.json). Not used in any calculation.">
+          <input
+            type="text"
+            value={values.name || ""}
+            placeholder="Full Name"
+            onChange={(e) => onChange("name", e.target.value)}
+            style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
+          />
+        </ARow>
+        <ARow
+          label="Date of Birth"
+          desc={`Current age: ${derivedAge} · Used to derive D-Day and accumulation years`}
+        >
+          <ADateInput value={values.dob} onSet={(v) => onChange("dob", v)} />
+        </ARow>
+        <ARow
+          label="State of Residence at Retirement"
+          desc="State where RMD taxes will be applied. Use the Two Household toggle for out-of-country scenarios."
+        >
+          <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
+        </ARow>
+        <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
+          <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
+        </ARow>
+        <ARow label="Federal Filing Status" desc="Your marital status for federal taxes only — unrelated to the Solo Mode state-tax toggle. MFJ (married): $32,200 std deduction, wider brackets. Single (unmarried): $16,100 deduction, narrower brackets.">
+          <select
+            value={values.filingStatus || "mfj"}
+            onChange={(e) => onChange("filingStatus", e.target.value)}
+            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
+          >
+            <option value="mfj">Married Filing Jointly (MFJ)</option>
+            <option value="single">Single (unmarried)</option>
+          </select>
+        </ARow>
+      </div>
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
           RETIREMENT TIMELINE
@@ -10838,53 +10883,6 @@ function AssumptionsPanel({ values, onChange }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* ── PERSONAL PROFILE — identity only ────────────────────────────────
-          Was a grab bag: cash return, taxable cost basis, RE growth, the
-          joint-RMD toggle and the Gemini key all lived here too, because fields
-          were added to whichever card was open. Now it holds only who you are —
-          five set-once facts — and it's collapsed by default so the panel opens
-          on the settings people actually revisit. Everything evicted from here
-          moved to a card that matches its topic (see below). */}
-      <ACard title="Personal Profile" accent="#0ea5e9" collapsible defaultOpen={false}
-        desc="Who you are. Set once — collapse this and forget it.">
-        <ARow
-          label="Full Name"
-          desc="Used in the exported JSON filename (AiRA_Profile_<name>_YYYY-MM-DD.json)."
-        >
-          <input
-            type="text"
-            value={values.name || ""}
-            placeholder="Full Name"
-            onChange={(e) => onChange("name", e.target.value)}
-            style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" }}
-          />
-        </ARow>
-        <ARow
-          label="Date of Birth"
-          desc={`Current age: ${derivedAge} · Used to derive D-Day and accumulation years`}
-        >
-          <ADateInput value={values.dob} onSet={(v) => onChange("dob", v)} />
-        </ARow>
-        <ARow
-          label="State of Residence at Retirement"
-          desc="State where RMD taxes will be applied. Use the Two Household toggle for out-of-country scenarios."
-        >
-          <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
-        </ARow>
-        <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
-          <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
-        </ARow>
-        <ARow label="Federal Filing Status" desc="Your marital status for federal taxes only — unrelated to the Solo Mode state-tax toggle. MFJ (married): $32,200 std deduction, wider brackets. Single (unmarried): $16,100 deduction, narrower brackets.">
-          <select
-            value={values.filingStatus || "mfj"}
-            onChange={(e) => onChange("filingStatus", e.target.value)}
-            style={{ background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
-          >
-            <option value="mfj">Married Filing Jointly (MFJ)</option>
-            <option value="single">Single (unmarried)</option>
-          </select>
-        </ARow>
-      </ACard>
 
       {/* ── TAX SETTINGS ────────────────────────────────────────────────────
           The two tax knobs that were buried in Personal Profile. Both are
