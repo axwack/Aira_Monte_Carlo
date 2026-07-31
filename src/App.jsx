@@ -175,9 +175,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.67";
-export const BUILD_TAG = "[main] v1.2.67 - Profile IA: personal info was in two places, plus a visible float bug. FIXED: About You showed 'Years to retirement 1.6000000000000014' - retireAge is a decimal (63.6 for a mid-year D-Day) so subtracting a whole age leaked raw binary floating point onto the screen; rounded at the point of display, engines keep full precision. FIXED (SS18): Name, Date of Birth, State of Residence, Employer Start Date and Federal Filing Status all lived under Assumptions -> Model Parameters, which is the last place a user looks for their own details - and About You literally carried a pointer telling them to go there. Those five are WHO YOU ARE, not model parameters; they now sit in a WHO YOU ARE block at the top of About You, next to the age, retirement age and sex they belong with. The returns, inflation and tax assumptions that DO belong under that heading stayed behind. Also removed a duplicate Name control - the emptied Personal Profile card in Assumptions was a second point of control for the same field. One category, one place. 821 tests, 38 cards declared.";
-export const BUILD_TIME = "2026-07-31T01:10:00Z";
+const APP_VERSION = "1.2.68";
+export const BUILD_TAG = "[main] v1.2.68 - Profile IA part 2 + About entry. Left step tree reordered per design-authority (APPROVE WITH CHANGES): About You is now FIRST and Assumptions LAST, because personal identity is the dependency root (values.dob drives ageFromDob() which later subtitles and the engine read) and global configuration is terminal. Design-authority also ruled that position ALONE does not express global-vs-workflow: every row shared one progress-dot language, which asserts a linear sequence you complete, and a settings panel is never completed. So the Settings row now sits under an App Settings divider with a static square marker instead of a filling step dot. Renamed per the same ruling: Assumptions -> Settings, Model parameters -> Calculation and app settings, now that the five identity fields have moved out. Verified no hardcoded step indices - STEPS/PANELS are index-matched and purely presentational, so the reorder cannot change behaviour. NEW ABOUT ENTRY (SS22 asked for one): Your Income -> Two Social Security benefits, and what happens when one of you dies - the spousal top-up off the higher earner PIA, why the spouse birthday is required, the widow penalty (the tax hit usually exceeds the lost benefit), the survivor claiming flexibility (deemed filing does NOT apply, claimable at 60, permanent reduction, DRCs pass through, no credit past survivor FRA), and the earnings test AiRA does not model. 821 tests, 28 suites.";
+export const BUILD_TIME = "2026-07-31T01:55:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -3882,7 +3882,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           const crossYear = currentYear + (cross.age - (currentAge || 60));
           const diff = cross.age - (retireAge || 65);
           const timing = diff < 0
-            ? <span style={{ color: "#34d399" }}>{Math.abs(diff)} yr{Math.abs(diff) !== 1 ? "s" : ""} before D‑Day ✅</span>
+            ? <span style={{ color: "#34d399" }}>{Math.abs(diff)} yr{Math.abs(diff) !== 1 ? "s" : ""} before D‑Day (Retirement) ✅</span>
             : diff === 0
             ? <span style={{ color: "#fbbf24" }}>At retirement ✅</span>
             : <span style={{ color: "#fb923c" }}>{diff} yr{diff !== 1 ? "s" : ""} after D‑Day</span>;
@@ -3951,7 +3951,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           <Tooltip content={<Tip />} />
 
           {/* Vertical reference lines (D-Day, SS, RMD) */}
-          <ReferenceLine yAxisId="port" x={retireAge} stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day", fill: "#fbbf24", fontSize: 10, position: "top" }} />
+          <ReferenceLine yAxisId="port" x={retireAge} stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day (Retirement Date)", fill: "#fbbf24", fontSize: 10, position: "top" }} />
           <ReferenceLine yAxisId="port" x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: 10, position: "top" }} />
           <ReferenceLine yAxisId="port" x={rmdAge} stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "#34d399", fontSize: 10, position: "top" }} />
 
@@ -10096,8 +10096,25 @@ function ProfileWizard({ values, onChange }) {
     }
   })();
 
+  /* Order per design-authority, 2026-07-31 (APPROVE WITH CHANGES).
+   *
+   * Personal identity first, then money in, money out, the plan — and global
+   * configuration LAST. About You is the dependency root: `values.dob` drives
+   * ageFromDob(), which several later subtitles and the engine derive from, so
+   * asking for it first matches what the data actually needs.
+   *
+   * Assumptions used to be step 1 while ALSO holding five identity fields (name,
+   * dob, state, employer start date, filing status). Those moved to About You, so
+   * this panel is now purely engine configuration — returns, inflation, tax
+   * toggles, API key. Vincent's framing: it is the phone's Settings app, not part
+   * of telling us about yourself.
+   *
+   * `isSettings` marks it as a GLOBAL surface rather than a workflow step. The
+   * sidebar reads it to drop the row out of the progress-dot language: a settings
+   * panel is never "completed", so showing a filled step dot for it asserts
+   * something false (design principle 4, global vs workflow actions).
+   */
   const STEPS = [
-    { label: "Assumptions", icon: "⚙️", sub: "Model parameters" },
     { label: "About You", icon: "👤", sub: `You are ${ageFromDob(values.dob) ?? values.currentAge} yrs old` },
     { label: "Current Savings", icon: "💰", sub: `Net worth of ${fmtDollar(values.port)} saved. Congratulations!` },
     { label: "Contributions", icon: "📋", sub: `Total Contributions of ${fmtDollar(values.contrib)}/yr` },
@@ -10110,15 +10127,16 @@ function ProfileWizard({ values, onChange }) {
         : `Spending ${fmtDollar((values.sp || 0) + (values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)))}/yr`,
     },
     { label: "Retirement Plan", icon: "🎯", sub: `Projected Retirement Age ${values.retireAge}` },
+    { label: "Settings", icon: "⚙️", sub: "Calculation & app settings", isSettings: true },
   ];
 
   const PANELS = [
-    <AssumptionsPanel values={values} onChange={onChange} />,
     <AboutYouPanel values={values} onChange={onChange} />,
     <SavingsPanel values={values} onChange={onChange} />,
     <ContribPanel values={values} onChange={onChange} />,
     <ExpensesPanel values={values} onChange={onChange} />,
     <RetirementPanel values={values} onChange={onChange} />,
+    <AssumptionsPanel values={values} onChange={onChange} />,
   ];
 
   useEffect(() => {
@@ -10147,8 +10165,21 @@ function ProfileWizard({ values, onChange }) {
       {/* LEFT SIDEBAR – unchanged */}
       <div className="wizard-sidebar" style={{ borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}>
         {STEPS.map((s, i) => (
+          <React.Fragment key={i}>
+          {/* Visual separation for the global-settings surface. Position alone did
+              not express it: everything in this list shares one progress-dot
+              language, which implies a linear sequence you complete. */}
+          {s.isSettings && (
+            <div style={{
+              marginTop: 14, marginBottom: 6, paddingTop: 10,
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+              fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+              textTransform: "uppercase", color: "#475569",
+            }}>
+              App Settings
+            </div>
+          )}
           <div
-            key={i}
             onClick={() => setStep(i)}
             style={{
               display: "flex",
@@ -10162,15 +10193,21 @@ function ProfileWizard({ values, onChange }) {
               border: i === step ? "1px solid rgba(13,148,136,0.3)" : "1px solid transparent",
             }}
           >
+            {/* A settings panel is never "done", so it gets a static marker instead
+                of a progress dot that fills in as you pass it. */}
             <div
               style={{
                 width: 14,
                 height: 14,
-                borderRadius: "50%",
+                borderRadius: s.isSettings ? 3 : "50%",
                 flexShrink: 0,
-                background: i < step ? "#0d9488" : i === step ? "#14b8a6" : "rgba(255,255,255,0.1)",
-                border: `2px solid ${i <= step ? "#0d9488" : "rgba(255,255,255,0.15)"}`,
-                boxShadow: i === step ? "0 0 8px #0d948866" : "none",
+                background: s.isSettings
+                  ? (i === step ? "rgba(148,163,184,0.35)" : "rgba(255,255,255,0.07)")
+                  : (i < step ? "#0d9488" : i === step ? "#14b8a6" : "rgba(255,255,255,0.1)"),
+                border: s.isSettings
+                  ? "2px solid rgba(148,163,184,0.4)"
+                  : `2px solid ${i <= step ? "#0d9488" : "rgba(255,255,255,0.15)"}`,
+                boxShadow: (!s.isSettings && i === step) ? "0 0 8px #0d948866" : "none",
               }}
             />
             <div>
@@ -10180,6 +10217,7 @@ function ProfileWizard({ values, onChange }) {
               <div style={{ fontSize: 14, color: "#4174bd" }}>{s.sub}</div>
             </div>
           </div>
+          </React.Fragment>
         ))}
       </div>
 
@@ -10621,7 +10659,7 @@ function AboutYouPanel({ values, onChange }) {
         </ARow>
         <ARow
           label="Date of Birth"
-          desc={`Current age: ${derivedAge} · Used to derive D-Day and accumulation years`}
+          desc={`Current age: ${derivedAge} · Used to derive D-Day (Day of Retirement) and accumulation years`}
         >
           <ADateInput value={values.dob} onSet={(v) => onChange("dob", v)} />
         </ARow>
@@ -10631,7 +10669,7 @@ function AboutYouPanel({ values, onChange }) {
         >
           <AStateSelect value={values.stateOfResidence} onSet={(v) => onChange("stateOfResidence", v)} />
         </ARow>
-        <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day progress bar (when you started your last job) and counting days until D-Day">
+        <ARow label="Employer Start Date (Countdown to D-Day)" desc="Used for D-Day (Day of Retirement) progress bar (when you started your last job) and counting days until D-Day">
           <ADateInput value={values.employerStartDate} onSet={(v) => onChange("employerStartDate", v)} />
         </ARow>
         <ARow label="Federal Filing Status" desc="Your marital status for federal taxes only — unrelated to the Solo Mode state-tax toggle. MFJ (married): $32,200 std deduction, wider brackets. Single (unmarried): $16,100 deduction, narrower brackets.">
@@ -13541,7 +13579,7 @@ export default function AiRAForecaster() {
         <div className="layout">
           <div className="sidebar">
             <div className="sb-card">
-              <div className="sb-title">D-Day Countdown</div>
+              <div className="sb-title">D-Day (Retirement) Countdown</div>
               <div className="countdown-grid">
                 {[
                   { v: countdown.days, l: "DAYS" },
