@@ -2436,7 +2436,40 @@ this surface deserves an explicit pointer of its own.
 
 ---
 
-## 31. 🟡 Two doors to the same room — the death model is authored twice
+## 31. ✅ Two doors to the same room — FIXED in v1.2.66
+
+**Status: shipped 2026-07-31, 821 tests green.** Both deliverables done in one pass.
+
+**Deliverable 1 — one death model.** The stress scenario is now a VARIATION on the
+authored death: it moves `spouse.deathAge` `STRESS_DEATH_SOONER_YEARS` (10) earlier and
+lets the engine apply every rule it already applies — `filesJointlyAt` for the filing flip,
+the survivor reduction and PIA basis, and `planEndAgeOnPrimaryClock` for the horizon. The
+tab now answers *"how much worse if the timing is bad?"*. Profiles with no death modelled
+keep the day-one bound, **relabelled** as a worst-case bound rather than a forecast, with
+the ×0.67 fallback intact for profiles carrying no spousal data. The death age is floored
+at the decedent's current age + 1 — a death already in the past is not a scenario.
+
+**Deliverable 2 — the widow's-penalty card** (Stress Test tab, above the scenario grid).
+The base plan already contains the modelled death, so the grid's "vs baseline" could never
+show what the death costs. The card runs the user's own plan twice — with and without the
+death — at the **same seed and path count**, which is load-bearing: with a different seed
+part of the "penalty" would be RNG noise and the label would be claiming a derivation the
+number never got (§28). It self-gates on a death being modelled, so it costs nothing for
+the profiles that don't use the feature. A read-only pointer in the Profile death panel
+points at it; the control stays a single point of control.
+
+**Related item, also done:** the Stress tab now states what the simulation actually varies
+(market returns, inflation, rental reliability, healthcare shocks) and what it holds fixed
+(spending, claim ages, retirement age, any modelled death). The success rate is widely read
+as *"the odds my retirement works"* and it is narrower than that.
+
+**Tests:** `spousalSS.test.js` → `§31 stress death scenario reuses the authored model`. The
+one that matters asserts the two surfaces cannot disagree about the household — same filing
+rule, same horizon rule, and the authored death is no longer discarded. One fixture note:
+the counterfactual test needs a financially TIGHT plan, because a comfortable one succeeds
+on every path both ways and the difference, while real, is invisible in the success rate.
+
+### Original entry (the gap, kept for the reasoning)
 
 **Found 2026-07-30 while explaining the intended workflow to Vincent. Scheduled to
 fix 2026-07-31.** Not a wrong number — a design defect that will become a wrong

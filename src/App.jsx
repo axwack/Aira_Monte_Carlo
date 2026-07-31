@@ -175,9 +175,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.65";
-export const BUILD_TAG = "[main] v1.2.65 - SS30 defect 2: WHICH of the two dies first. spouse.deathAge could only ever mean the SPOUSE dies, so modelling the higher earner dying with a younger spouse surviving - the more commonly asked case, since the higher earner is often the older partner - applied a dead person milestones to a living one. New spouse.firstToDie (me | my spouse), default my spouse so every existing plan is unchanged. Four things now follow whoever is ALIVE: (1) THE PLAN HORIZON, Vincent decision - the money must last until the SURVIVOR reaches endAge, so a 10-year-younger survivor extends the projection by 10 years and the success rate correctly DROPS; the old behaviour stopped at the dead partner end age and flattered every such plan. (2) Medicare and the age-65 standard-deduction add-on start on the survivor own 65th. (3) RMDs key to the survivor own birth year - a surviving spouse who inherits an IRA may treat it as their own - instead of forcing taxable income up to a decade early. (4) the survivor benefit is priced off the SURVIVOR full retirement age. Also fixed: the survivor branch gate itself used deathAge+offset, which is only right when the spouse dies, so for a primary-dies plan the branch never ran and both benefits kept being paid. Reduction confirmed PERMANENT - reaching survivor FRA later does not restore the full amount. 803 -> 815 tests.";
-export const BUILD_TIME = "2026-07-30T23:30:00Z";
+const APP_VERSION = "1.2.66";
+export const BUILD_TAG = "[main] v1.2.66 - SS31: one death model, and the widow's penalty is now a number. The Stress Test spouse-passes-early card was a SECOND death model - day one instead of a chosen age, Single immediately instead of MFJ through the death year, a max/x0.67 haircut instead of the survivor reduction and PIA basis, spouse-only, and no horizon change - and it set spouse.enabled false, which silently DISCARDED whatever death the user had authored in the Profile. It is now a VARIATION on the authored model: move that death 10 years sooner and let the engine apply every rule it already applies, so the tab answers how much worse if the timing is bad rather than re-answering what if there were a death at all. Profiles with no death modelled keep the legacy day-one bound, relabelled as a worst-case bound not a forecast, with the x0.67 fallback intact for profiles without spousal data. NEW WIDOW'S PENALTY CARD on the Stress tab: the base plan already contains the modelled death, so the scenario grid vs-baseline cannot show what the death costs - this runs the plan twice, with and without it, at the SAME seed and path count so the gap is the death and not RNG, and it self-gates on a death being modelled so it costs nothing for everyone else. Also: the Stress tab now states what the simulation actually varies (market returns, inflation, rental reliability, healthcare shocks) and what it holds fixed, because the success rate is widely read as the odds your retirement works and it is narrower than that. 815 -> 821 tests, 38 cards declared.";
+export const BUILD_TIME = "2026-07-31T00:40:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -7911,7 +7911,11 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
 // ── Stress-scenario constants ────────────────────────────────────────────────
 // Scenario knobs (not tax constants): a memory-care shock and its duration.
 // Crash severity is user-driven via the buttons below.
-const STRESS_QUICK_PATHS = 200;                 // fast, noisy estimate
+const STRESS_QUICK_PATHS = 200;
+const STRESS_QUICK_PATHS_LABEL = STRESS_QUICK_PATHS.toLocaleString();                 // fast, noisy estimate
+// How much earlier the stress tab moves an authored first death (§31). Named so the
+// scenario label and the mutation cannot drift apart.
+const STRESS_DEATH_SOONER_YEARS = 10;
 const LTC_ANNUAL_COST = 110000;                 // memory care ≈ $110k/yr, today's $
 const LTC_YEARS = 3;
 
@@ -7949,6 +7953,20 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
   const [running, setRunning] = useState(null);
   const endAge = p.endAge || 90;
 
+  /* §31 — has the user AUTHORED a first death in their Profile? If so the stress
+   * scenario varies their model rather than inventing one. */
+  const authoredDeath = !!(p.spouse?.enabled && Number(p.spouse?.deathAge) > 0);
+  /* The decedent's own age when the death is moved earlier. Floored at their
+   * current age + 1: a death already in the past is not a scenario. */
+  const soonerDeathAge = useMemo(() => {
+    if (!authoredDeath) return null;
+    const decedentIsPrimary = p.spouse?.firstToDie === "primary";
+    const nowAge = decedentIsPrimary
+      ? (personAgeNow(p) ?? p.currentAge ?? 0)
+      : (personAgeNow(p.spouse) ?? p.currentAge ?? 0);
+    return Math.max((nowAge || 0) + 1, Number(p.spouse.deathAge) - STRESS_DEATH_SOONER_YEARS);
+  }, [authoredDeath, p]);
+
   const scenarios = useMemo(() => [
     {
       id: "crash", emoji: "📉", label: "MARKET CRASHES EARLY",
@@ -7975,35 +7993,45 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
       run: (N, seed) => runMC(p, 100, N, seed, true),
     },
     {
-      id: "survivor", emoji: "🕊️", label: "SPOUSE PASSES EARLY",
-      sub: "Survivor keeps the larger SS check AND files Single — the widow's penalty",
-      // The SS haircut alone understated this badly. The survivor files Single
-      // from the following year: the standard deduction roughly halves, the
-      // brackets narrow sharply, and the IRMAA tiers halve too — same RMDs and
-      // same portfolio, materially more tax. That tax cliff, not the lost check,
-      // is what actually blindsides surviving spouses, and it only applies to
-      // couples, so leave a single filer's scenario alone.
+      id: "survivor",
+      emoji: "🕊️",
+      // §31 — this scenario used to be a SECOND death model: it forced
+      // filingStatus "single" from day one of retirement, applied its own SS
+      // haircut, ignored spouse.deathAge entirely (by setting enabled: false) and
+      // never extended the horizon. So a user who carefully modelled a death at 78
+      // clicked here and got an answer computed from a different death and a
+      // different survivor rule, with nothing saying their setting was discarded.
       //
-      // Survivor's new SS: with real two-person data on file (§21 Phase 1),
-      // the survivor keeps the LARGER of the two checks — exact arithmetic,
-      // no approximation. Without it (spouse.enabled=false, the legacy/default
-      // case) we still don't know the spouse's own benefit, so this falls back
-      // to the pre-existing 0.67 rule-of-thumb unchanged (only right for a
-      // one-earner couple, but it's what every profile without spousal SS data
-      // has always seen here — not silently regressing that case to "no
-      // haircut at all"). `spouse.enabled: false` on the mutated profile stops
-      // computeHouseholdSS from also applying a spousal top-up on top of a
-      // benefit that's already the post-death survivor amount.
+      // It is now a VARIATION on the model the user authored. When a first death is
+      // on file we move THAT death earlier and let the engine do everything else —
+      // filesJointlyAt handles the filing-status flip (MFJ through the death year),
+      // the survivor benefit rules apply the permanent reduction and the PIA basis,
+      // and planEndAgeOnPrimaryClock extends the horizon for a younger survivor. The
+      // tab then answers the question a user actually has — "how much worse if the
+      // timing is bad?" — instead of re-answering "what if there were a death at all",
+      // which the base plan already covers and the widow's-penalty card above reports.
+      label: authoredDeath ? `FIRST DEATH ${STRESS_DEATH_SOONER_YEARS} YEARS SOONER` : "SPOUSE PASSES EARLY",
+      sub: authoredDeath
+        ? `Your modelled first death at ${soonerDeathAge} instead of ${p.spouse.deathAge} — same survivor rules, worse timing`
+        : "Survivor keeps the larger SS check AND files Single, from day one — a worst-case bound, not a forecast",
       run: (N, seed) => runMC(
-        {
-          ...p,
-          ssb: p.spouse?.enabled
-            ? Math.max(p.ssb || 0, p.spouse.ssb || 0)
-            : Math.round((p.ssb || 0) * 0.67),
-          spouse: { ...(p.spouse || {}), enabled: false },
-          filingStatus: "single",
-          twoHousehold: false,
-        },
+        authoredDeath
+          // Only the timing changes. Every other survivor rule is inherited.
+          ? { ...p, spouse: { ...p.spouse, deathAge: soonerDeathAge } }
+          // No death on file, so there is nothing to move. Keep the long-standing
+          // day-one bound (relabelled above so it is not mistaken for a forecast).
+          // The 0.67 fallback stays for profiles with no spousal data: it is only
+          // right for a one-earner couple, but it is what those profiles have always
+          // seen here, and regressing them to "no haircut at all" would be worse.
+          : {
+              ...p,
+              ssb: p.spouse?.enabled
+                ? Math.max(p.ssb || 0, p.spouse.ssb || 0)
+                : Math.round((p.ssb || 0) * 0.67),
+              spouse: { ...(p.spouse || {}), enabled: false },
+              filingStatus: "single",
+              twoHousehold: false,
+            },
         endAge, N, seed, true
       ),
     },
@@ -8016,10 +8044,19 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
     const t = setTimeout(() => {
       const out = { base: runMC(p, endAge, STRESS_QUICK_PATHS, 7, true).rate };
       scenarios.forEach((s) => { out[s.id] = s.run(STRESS_QUICK_PATHS, 7).rate; });
+      // The widow's-penalty counterfactual: the SAME plan with the modelled first
+      // death removed. Deliberately the same seed and path count as `base` above —
+      // with a different seed part of the "penalty" would be RNG noise, and a card
+      // labelled "what this death costs" would be reporting randomness (§28).
+      // Only computed when a death is actually modelled, so this costs nothing for
+      // the profiles that don't use the feature.
+      out.noDeath = authoredDeath
+        ? runMC({ ...p, spouse: { ...p.spouse, deathAge: null } }, endAge, STRESS_QUICK_PATHS, 7, true).rate
+        : null;
       if (!cancelled) setEst(out);
     }, 30);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [scenarios, p, endAge]);
+  }, [scenarios, p, endAge, authoredDeath]);
 
   const runFull = (s) => {
     setRunning(s.id);
@@ -8047,7 +8084,55 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
         simulated plans still funded; <b style={{ color: "#94a3b8" }}>pp</b> is the drop vs your
         baseline. Cards show a fast estimate — press <b style={{ color: "#94a3b8" }}>Run full</b> for
         the precise {MC_PATHS_LABEL}-path result.
+        {/* §31 related item — provenance. The success rate is widely read as "the chance
+            my retirement works". It is narrower than that, and saying so is a §28 tier-1
+            disclosure: it changes how the number should be READ. */}
+        <div style={{ marginTop: 6, color: "#475569" }}>
+          What the simulation varies: <b style={{ color: "#94a3b8" }}>market returns, inflation,
+          rental reliability and healthcare shocks</b>. Your spending, claim ages, retirement age and
+          any modelled death are held at what you entered — so this measures how much
+          <em> market</em> risk the plan absorbs, not the overall odds your retirement works out.
+          Those assumptions are the scenarios; that is what these cards are for.
+        </div>
       </div>
+
+      {/* §31 deliverable 2 — the widow's-penalty delta.
+          The base plan ALREADY contains the modelled death, so the scenario grid's
+          "vs baseline" cannot show what that death costs — it compares against a
+          baseline that includes it. This card is the missing comparison: the same
+          plan with the death removed. Without it a user sets a death age, watches
+          the success rate change, and has no way to attribute the change. */}
+      {authoredDeath && est?.noDeath != null && (() => {
+        const withDeath = est.base;
+        const without   = est.noDeath;
+        const pp        = (withDeath - without) * 100;      // negative = it costs you
+        const col       = pp <= -10 ? "#ef4444" : pp <= -3 ? "#f59e0b" : "#0d9488";
+        const whoDies   = p.spouse?.firstToDie === "primary" ? "your" : "your spouse's";
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 10, marginBottom: 12 }}>
+            <div className="met" style={{ background: `${col}0d`, border: `1px solid ${col}33` }}>
+              <div className="ml">Widow's penalty</div>
+              <div className="mv" style={{ color: col }}>
+                {`${pp > 0 ? "+" : ""}${pp.toFixed(1)}pp`}
+              </div>
+              <div className="ms">
+                {fmtPct(without)} without {whoDies} death → {fmtPct(withDeath)} with it, at age {p.spouse.deathAge}
+              </div>
+            </div>
+            <div className="met">
+              <div className="ml">What this figure is</div>
+              <div className="mv" style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.45 }}>
+                Your own plan, run twice
+              </div>
+              <div className="ms">
+                Same {STRESS_QUICK_PATHS_LABEL} market paths and the same random seed both times, so the
+                gap is the death alone — not luck. It is the lost benefit plus the tax
+                increase from filing Single, net of one person's costs.
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 10 }}>
         {scenarios.map((s) => {
@@ -12157,6 +12242,12 @@ function RetirementPanel({ values, onChange }) {
                           on a portfolio and an RMD that barely changed.
                         </li>
                       </ul>
+                      <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(251,146,60,0.25)", color: "#fcd9b6" }}>
+                        <strong>See what it costs:</strong> the <em>Stress Test</em> tab shows a
+                        <strong> Widow&apos;s penalty</strong> card — your plan run twice, with and without this
+                        death, on the same market paths — so the change in success rate is attributable to
+                        the death alone.
+                      </div>
                       <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(251,146,60,0.25)", color: "#fcd9b6" }}>
                         Survivor claiming is one of the highest-stakes decisions in Social Security and it
                         turns on both benefit amounts, two different full-retirement ages, health, and whether

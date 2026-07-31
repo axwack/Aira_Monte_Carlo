@@ -897,3 +897,133 @@ describe("§30 firstToDie — the survivor's identity drives everything", () => 
     expect(filesJointlyAt(primaryDies, 73)).toBe(false);
   });
 });
+
+// ─── §31 — the stress scenario must not be a SECOND death model ────────────────
+//
+// The Stress Test "spouse passes early" card and the Profile death fields both
+// modelled a first death, differently on every axis: day one vs a chosen age,
+// Single immediately vs MFJ through the death year, a max()/×0.67 haircut vs the
+// survivor reduction and PIA basis, spouse-only vs either partner, and no horizon
+// change vs a horizon that follows the survivor. The stress path also set
+// spouse.enabled: false, which silently DISCARDED whatever the user had authored.
+//
+// It is now a variation on the authored model — same rules, worse timing. These
+// tests assert the two surfaces cannot disagree about the household.
+describe("§31 stress death scenario reuses the authored model", () => {
+  const { runMC } = require("./App");
+  const { filesJointlyAt, planEndAgeOnPrimaryClock, firstDeathOnPrimaryClock } = require("./engine/ages.js");
+
+  const BY = NOW.getFullYear() - 66;
+  const AUTHORED = {
+    currentAge: 66, retireAge: 66, endAge: 90,
+    dob: `${BY}-01-01`,
+    sp: 72_000, inf: 2.5, gr: 0.05, ssCola: 0,
+    ssAge: 66, ssb: 42_000, ssPia: 42_000,
+    filingStatus: "mfj", stateOfResidence: "FL", smile: false, housingType: "none",
+    withdrawalBracketTarget: "22",
+    accounts: [
+      { id: "a", category: "pretax",  name: "IRA",     balance: 1_200_000 },
+      { id: "b", category: "roth",    name: "Roth",    balance:   200_000 },
+      { id: "c", category: "taxable", name: "Taxable", balance:   200_000 },
+      { id: "d", category: "cash",    name: "Cash",    balance:    60_000 },
+    ],
+    spouse: {
+      enabled: true, dob: `${BY}-01-01`,
+      ssAge: 66, ssb: 20_000, ssPia: 20_000,
+      deathAge: 80,
+    },
+  };
+
+  // What the stress card now does: move the authored death earlier, change nothing else.
+  const sooner = (yearsSooner = 10) => ({
+    ...AUTHORED,
+    spouse: { ...AUTHORED.spouse, deathAge: AUTHORED.spouse.deathAge - yearsSooner },
+  });
+
+  test("moving the death earlier keeps MFJ-through-the-death-year semantics", () => {
+    // The old scenario forced filingStatus "single" from day one, so this was false
+    // for every year. The rule must be the SAME rule the base plan uses.
+    const s = sooner();
+    expect(filesJointlyAt(s, 69)).toBe(true);    // before the earlier death
+    expect(filesJointlyAt(s, 70)).toBe(true);    // the death year itself
+    expect(filesJointlyAt(s, 71)).toBe(false);   // Single after
+    // And the base plan's own flip is untouched.
+    expect(filesJointlyAt(AUTHORED, 80)).toBe(true);
+    expect(filesJointlyAt(AUTHORED, 81)).toBe(false);
+  });
+
+  test("the scenario does NOT discard the authored death", () => {
+    // The old code set spouse.enabled: false, which made firstDeathOnPrimaryClock
+    // return Infinity — the user's setting vanished. It must still be a real death.
+    const s = sooner();
+    expect(Number.isFinite(firstDeathOnPrimaryClock(s))).toBe(true);
+    expect(firstDeathOnPrimaryClock(s)).toBe(70);
+    expect(firstDeathOnPrimaryClock(AUTHORED)).toBe(80);
+  });
+
+  test("an earlier death is WORSE — the whole point of the scenario", () => {
+    // Same seed and path count both sides, so the gap is the timing, not RNG.
+    const base    = runMC(AUTHORED, AUTHORED.endAge, 200, 7, true).rate;
+    const earlier = runMC(sooner(), AUTHORED.endAge, 200, 7, true).rate;
+    expect(earlier).toBeLessThanOrEqual(base);
+  });
+
+  test("the horizon rule is the same rule, not a second one", () => {
+    // Both surfaces must agree, including when a younger spouse survives.
+    const youngerSpouse = {
+      ...AUTHORED,
+      spouse: { ...AUTHORED.spouse, dob: `${BY + 8}-01-01`, firstToDie: "primary", deathAge: 80 },
+    };
+    const stressed = { ...youngerSpouse, spouse: { ...youngerSpouse.spouse, deathAge: 70 } };
+    // Spouse is 8 years younger, so the horizon extends by 8 in BOTH.
+    expect(planEndAgeOnPrimaryClock(youngerSpouse, 90)).toBe(98);
+    expect(planEndAgeOnPrimaryClock(stressed, 90)).toBe(98);
+  });
+
+  test("with NO authored death the day-one bound still works and is finite", () => {
+    // Profiles that never set a death age keep the legacy behaviour, relabelled in
+    // the UI as a worst-case bound rather than a forecast.
+    const noDeath = { ...AUTHORED, spouse: { ...AUTHORED.spouse, deathAge: null } };
+    const dayOne = {
+      ...noDeath,
+      ssb: Math.max(noDeath.ssb, noDeath.spouse.ssb),
+      spouse: { ...noDeath.spouse, enabled: false },
+      filingStatus: "single",
+      twoHousehold: false,
+    };
+    const r = runMC(dayOne, noDeath.endAge, 200, 7, true).rate;
+    expect(Number.isFinite(r)).toBe(true);
+    expect(r).toBeGreaterThanOrEqual(0);
+    expect(r).toBeLessThanOrEqual(1);
+  });
+
+  test("the widow's-penalty counterfactual differs from the base plan", () => {
+    // The card's two runs: the plan as authored, and the same plan with the death
+    // removed. If these were equal the card would always read 0.0pp and the feature
+    // would look inert.
+    // A financially TIGHT plan: AUTHORED is comfortable enough that both runs
+    // succeed on every path, so the difference is real but invisible in the success
+    // rate. A card built on an insensitive fixture reads 0.0pp and looks broken, so
+    // the test has to use a plan that can actually fail.
+    const TIGHT = {
+      ...AUTHORED,
+      sp: 96_000,
+      accounts: [
+        { id: "a", category: "pretax",  name: "IRA",     balance: 520_000 },
+        { id: "b", category: "roth",    name: "Roth",    balance:  80_000 },
+        { id: "c", category: "taxable", name: "Taxable", balance:  90_000 },
+        { id: "d", category: "cash",    name: "Cash",    balance:  30_000 },
+      ],
+    };
+    const withDeath = runMC(TIGHT, TIGHT.endAge, 300, 7, true).rate;
+    const without   = runMC(
+      { ...TIGHT, spouse: { ...TIGHT.spouse, deathAge: null } },
+      TIGHT.endAge, 300, 7, true
+    ).rate;
+    // Sanity: the fixture must be sensitive, or the assertions below prove nothing.
+    expect(withDeath).toBeLessThan(1);
+    expect(withDeath).not.toBe(without);
+    // Direction: removing a death cannot make the plan worse.
+    expect(without).toBeGreaterThanOrEqual(withDeath);
+  });
+});
