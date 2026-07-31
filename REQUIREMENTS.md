@@ -10,14 +10,14 @@ Living document tracking the business-logic requirements of the forecaster, what
 been fixed, and the open backlog from the June 2026 code review. Update this file
 whenever engine rules change.
 
-Last updated: **2026-07-30** — Friday build SHIPPED (v1.2.65, 815 tests). Read §29 first.
+Last updated: **2026-07-31** — v1.2.70, 821 tests. **§29 = what shipped. §32 = what is open.**
 **NEXT SESSION (2026-07-31): §31** — the death model is authored in two places that disagree.
 
 Previous update: **2026-07-27** (branch `main`; **read §0 SESSION HANDOFF first**; Slate A engine fixes shipped v1.2.28 — §13.1 #6, §13.2 #11/#15/#16, ENG-8; new §21 spousal Social Security scoped; new ENG-25 opened)
 
 ---
 
-## 0. SESSION HANDOFF — 2026-07-27 (read this first)
+## 0. SESSION HANDOFF — 2026-07-27 (SUPERSEDED — read §29 first, then §32 for what's open)
 
 Written for whoever picks this up next, possibly on a different machine/account.
 Everything below is verified against the code, not remembered.
@@ -1382,9 +1382,11 @@ history-rewrite decision above that's the user's call, not something to default 
 
 ## 21. Spousal & Survivor Social Security — requested 2026-07-27
 
-**Priority: P1 — the next release.** **Status: PAUSED mid-Phase-1, 2026-07-27 evening —
-Vincent said "don't do anything with social security" and stopped the session here.
-Do NOT continue this without fresh direction from Vincent.** Requested after comparing
+**Status: ✅ SHIPPED (v1.2.42 UI, v1.2.62 correctness, v1.2.64–65 survivor rules).** The
+2026-07-27 "PAUSED — do not continue without fresh direction" note is SUPERSEDED; Vincent
+directed the work on 2026-07-30. Phase 1 and Phase 2 are both done, plus the per-person age
+model (§24 #1/#3) and the survivor claiming rules (§30). Note that the shipped v1.2.42
+version had a real age-gap bug — see §29.** Requested after comparing
 Boldin's Social Security entry UI (screenshot: separate "You" / "Your Spouse" cards, each
 with a monthly benefit and a *month/year* start date, plus a "Model a benefit reduction in
 the future" toggle and a COLA rate).
@@ -1674,8 +1676,13 @@ earner delaying to 70 is worth it as survivor insurance."
 
 ## 23. Roth conversion tax funded from "unlimited outside cash" — requested 2026-07-27
 
-**Priority: P1 (correctness — it overstates the headline benefit of the flagship feature).**
-**Status: warned but NOT fixed — and the setting turns out to be INERT. See the finding below.**
+**Priority: P2 — downgraded.** **Status: the "INERT" finding below is STALE.** Verified
+2026-07-31: `taxFunding` IS now read by the live engine — 3 references in
+`buildWithdrawalWaterfall.js`, the `withholdConvMC` branch in `runMC` (App.jsx ~1721), and it
+is actively swept in `ghostSettings.test.js` (from_taxable vs from_conv must change the
+result). So it is no longer a ghost setting. What REMAINS open is narrower: `outside_cash` is
+a behavioural duplicate of `from_taxable` and should be removed with a profile migration
+(§25 cheap items). Ghost-setting analysis below kept for the reasoning.
 
 ### ⚠️ FINDING THAT CHANGES THIS ENTIRELY — `taxFunding` is a GHOST SETTING (2026-07-27)
 
@@ -1781,7 +1788,13 @@ Make outside cash a real, finite, depleting balance.
   after-tax money being spent, so it should not be income — confirm) and
   design-authority (where the balance input lives, and the exhausted-state copy).
 
-## 22. Widow's-penalty implementation plan — derived 2026-07-28, NOT built
+## 22. ✅ Widow's penalty — SHIPPED v1.2.65 (was: derived 2026-07-28, NOT built)
+
+**Status: DONE.** `spouse.deathAge` + `spouse.firstToDie`, time-varying filing status via
+`filesJointlyAt` across ALL THREE engines, survivor SS = max(own, deceased) retiring the
+×0.67 literal, joint-RMD table off after death, horizon following the survivor. Survivor
+benefit RULES are §30; the stress-scenario reconciliation is §31. All five tests this
+section required exist in `spousalSS.test.js`. Plan below kept for the reasoning.
 
 Requested by a second user: *"I'd also like ability to predict the effect of an early
 passing of one partner."* Last piece of §21. Route recorded so it is not re-derived.
@@ -1862,14 +1875,15 @@ twice in two columns.
 
 ### Priority by financial impact, NOT by Boldin's layout
 
-1. **`spouse.dob`** — the enabler. One field; unlocks everything below.
+1. **✅ DONE v1.2.62 — `spouse.dob`** — the enabler. Also fixed the age-gap bug it exposed
+   in spousal SS, and made the age-65 deduction add-on + OBBBA senior bonus per-filer.
 2. **Long-term care, per person.** The scenario that actually bankrupts couples is
    ASYMMETRIC: one spouse in memory care at ~$110k/yr while the other still runs a
    household. AiRA models LTC only as a household-level stress scenario
    (`LTC_ANNUAL_COST`, `LTC_YEARS` at `App.jsx:~7077`), so it cannot express "one of us,
    not both". Boldin also lets each person hold a different STRATEGY (deferred annuity vs
    spend-down to Medicaid) — a real modelling difference, not a label.
-3. **Medicare / IRMAA start age per person.** IRMAA is charged per beneficiary and
+3. **✅ DONE v1.2.62 — Medicare / IRMAA start age per person.** IRMAA is charged per beneficiary and
    `irmaaCost` is already filing-status aware (MFJ = 2× the single per-person amount), so
    the AMOUNT is roughly right — but the START is not: both people are assumed to reach 65
    together, so an age gap overstates early-retirement Medicare cost.
@@ -2319,6 +2333,85 @@ unlocked, so an owner preview can never be mistaken for the customer view.
 
 ---
 
+---
+
+## 32. 📋 WHAT IS ACTUALLY OPEN — index as of 2026-07-31 (v1.2.70)
+
+Written because the status markers had drifted: §21 still said "PAUSED, do not
+continue", §22 said "NOT built", §28 said "🔴 P0", and §23 said its setting was inert —
+all four were stale. Corrected in place. **This section is the entry point for open
+work; §29 is the entry point for what shipped.**
+
+Suite baseline: **821 tests, 28 suites, 0 fail.** Production build compiles.
+
+### Tier 1 — correctness, and cheap now
+
+| Item | Why now | Size |
+|---|---|---|
+| **§24 #2 LTC per person** | The asymmetric case (one spouse in memory care at ~$110k/yr while the other runs a household) is what actually bankrupts couples and STILL cannot be expressed — LTC is a household-level stress scenario only. `spouse.dob` and the survivor machinery now exist, so this is unblocked and the hard part is already built. **Highest financial impact of anything open.** | M |
+| **§19 NIIT-aware bracket fill** | ENG-8 deliberately built the Step-6.5 ceiling as a `min(...)` with a named `convCapReason` so more cliffs could be appended. Constants (`NIIT_THRESHOLD_MFJ/SINGLE`, `NIIT_RATE`) already exist. Two traps recorded in §0: the binding quantity is MAGI headroom, and it must apply to the Step-5 pre-tax draw too or ENG-25's asymmetry repeats. | S |
+| **ENG-25** | Step 5's `irmaaCap` omits realized gains from the MAGI base. ENG-8 fixed the identical defect on the conversion path, so the two are now asymmetric — one of them is wrong. | S |
+| **§23 remainder** | `outside_cash` is a behavioural duplicate of `from_taxable`; remove with a profile migration. The ghost-setting part is already fixed. | S |
+
+### Tier 2 — the product gap I'd argue is the real one
+
+| Item | Why | Size |
+|---|---|---|
+| **Claim-age comparison** (new, from the 2026-07-31 discussion) | The app can now EVALUATE a Social Security claiming plan but cannot RECOMMEND one. There is a retirement-*date* solver and no claim-age solver, and no side-by-side view — the user changes an age and re-runs by hand, one combination at a time. For most couples the rule of thumb ("delay the higher earner") is right and this just confirms it; it earns its keep on the cases the rule gets wrong — big age gap, large pre-tax balance where SS timing collides with RMDs and conversions, short life expectancy on the higher earner. Same shape as §16/§17. | M |
+| **§16 ACA-aware conversions → §17 recommendation engine** | Vincent's long-standing P1. §16 (the ACA subsidy cliff model) is the prerequisite for §17. Pre-65 retirees converting into a subsidy clawback is a real and common own-goal. | L |
+
+### Tier 3 — consistency and hygiene (mechanical, no decisions needed)
+
+Per the standing instruction: these fit established patterns, so they get finished in
+one sweep rather than presented for approval.
+
+- **Results-tab card chrome.** `ProgressTab` (4), `MCTab` (3), `MCBandTable` (1) still
+  use inline copies of `ACard`'s chrome. The Profile is now 0. These are results
+  surfaces coexisting with a separate `.sb-card` sidebar pattern, so Rule 5 should not
+  be assumed to transfer unexamined — worth one design-authority look first, unlike the
+  Profile sweep.
+- **§18 remaining IA phases.** Money-In consolidation was the original Phase B. Landing
+  hero sliders still need typed entry + `LANDING_SLIDER_LIMITS` (three have a $999B max
+  with a $25K step; the dual-bound approach is already approved).
+- **`ghostSettings.test.js` `NEEDS_A_TARGETED_FIXTURE`** — ~23 entries, roughly 6
+  fixtures covers them. Start with `preRetireEq`/`postRetireEq`: a fault there skews
+  every success rate.
+- **Typography scale.** ~310 inline `fontSize` values under 12px (172 at 11, 112 at 10,
+  26 at 9). A blanket bump breaks chart ticks and dense table cells — needs a deliberate
+  scale (data / label / prose / caption), not find-and-replace. Deferred in §28 for this
+  reason; still true.
+
+### Tier 4 — bigger, and genuinely optional
+
+- **§27 Marketing site / web portal** — design brief written 2026-07-28, nothing coded.
+- **§12 Custom Order wizard** — user-configurable withdrawal order; scoped 2026-06-29.
+- **§24 #4/#5** — pension owner + survivor percentage (pairs with §22, both fire on the
+  same event); work income per person (lowest impact, nothing models wages today).
+- **§20** — extract the paid report as an OSS-excluded module. The `skip-worktree`
+  protection is in place; the module split is not.
+
+### Known limitations that are NOT bugs — do not "fix" these
+
+Consolidated so they stop being re-discovered (details in §3 and §28):
+
+- The earnings test is not modelled — no wage income exists in the engine (§30).
+- Only the SPOUSE or the PRIMARY can die, one first death, user-specified age — a
+  mortality draw was deliberately rejected to keep it a deterministic, explainable event.
+- Average-cost basis, not per-lot; no tax-loss harvesting.
+- The Analysis strategy dropdown is a PREVIEW by design. Do not convert it to
+  write-through — Vincent rejected that explicitly.
+- Hero dollar figures are nominal; do not add a real/nominal suffix to a hero scalar.
+- The success rate varies market returns, inflation, rental reliability and healthcare
+  shocks only. Spending, claim ages, retirement age and any modelled death are held at
+  what the user entered. Now stated in the UI (§31).
+
+### ⚠️ Cross-machine
+
+`REQUIREMENTS.md` is now git-tracked (forced 2026-07-30) so it travels. Still
+Drive-sync-only: the whole `aira-forecaster-agents/` folder, including
+`specs/UI_DESIGN_SPEC.md` (Rules 1–5, five design rulings) and the OBBBA/survivor
+sections of `TAX_REFERENCE.md`. The `.claude/.../memory/` directory does not sync at all.
+
 ## 30. ✅ Survivor benefit CLAIMING STRATEGY — FIXED in v1.2.64
 
 **Status: shipped 2026-07-30, 803 tests green.** New `src/engine/survivorBenefit.js`;
@@ -2540,7 +2633,12 @@ So the number answers *"how much market-sequence risk can this plan absorb?"*, n
 figure is read as a probability of success in life. One visible sentence near the
 success rate would fix it.
 
-## 28. 🔴 P0 — Display-provenance audit + regression test — RIDES WITH THE FRIDAY SS WORK
+## 28. ✅ Display-provenance audit + regression test — SHIPPED v1.2.63 (see §29)
+
+**Status: DONE.** All 36 cards traced (one real mismatch: "Median accumulation"), registry
+enforcement in `src/provenance.test.js` (undeclared card = red build), and the rules written
+into `specs/UI_DESIGN_SPEC.md`. §28.1 and §28.2 below are also closed — see §29 for what
+shipped. Original brief kept because it defines the defect class.
 
 **Do this in the SAME session as §22 / §24 (Social Security), 2026-07-31.** Vincent's
 instruction: not optional polish, must not be dropped to make room for the SS feature.
