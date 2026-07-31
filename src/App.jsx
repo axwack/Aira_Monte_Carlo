@@ -80,6 +80,9 @@ import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_AGE } from ".
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
+// One declaration of every figure's arithmetic, rendered here and enforced by
+// provenance.test.js. Never inline a formula string — it would drift from the test.
+import { formulaFor } from "./provenance.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT } from "./billing/credits.js";
 import { AdminPanel, useOwnerVerified } from "./billing/admin-panel.js";
@@ -176,7 +179,7 @@ const AGE_LIMITS = {
 };
 
 const APP_VERSION = "1.2.71";
-export const BUILD_TAG = "[main] v1.2.71 - the WR column was a SPENDING rate wearing a withdrawal-rate label (u/garylapointe). It read 17.8% in a year whose actual draw was $26K; 17.8% was his $100,000 spending over the portfolio, because his pension covered ~$81K of it. Two defects in one expression: r.spending / r.totalPort used SPENDING as the numerator and the END-of-year balance as the denominator, so it divided by the smaller post-draw number and inflated the rate further. A plan drawing under 5% displayed as 17.8%, which reads as severe distress and could push someone into cutting spending they do not need to cut. Worse, the SAME tab already computed this correctly for the Avg. Withdrawal Rate card (totalWithdrawal over start-of-year portfolio), so one page carried two withdrawal rates disagreeing by a factor of four. Both now come from ONE wrAt(i). The guardrail colour was also anchored to p.sp/p.port - a spending rate - so the band and the banded value were different quantities; it is now +/-20% around the first year ACTUAL withdrawal rate, which is what Guyton-Klinger compares against. Header states the basis and says it is the draw, not spending. Regression lock in provenance.test.js. 822 tests.";
+export const BUILD_TAG = "[main] v1.2.71 - the WR column was a SPENDING rate wearing a withdrawal-rate label (u/garylapointe). It read 17.8% in a year whose actual draw was $26K; 17.8% was his $100,000 spending over the portfolio, because his pension covered ~$81K of it. Two defects in one expression: it used SPENDING as the numerator and the END-of-year balance as the denominator, so it divided by the smaller post-draw number and inflated the rate further. A plan drawing under 5% displayed as 17.8%, which reads as severe distress and could push someone into cutting spending they do not need to cut. Worse, the SAME tab already computed this correctly for the Avg. Withdrawal Rate card (totalWithdrawal over start-of-year portfolio), so one page carried two withdrawal rates disagreeing by a factor of four. Both now come from ONE wrAt(i). The guardrail colour was also anchored to p.sp/p.port - a spending rate - so the band and the banded value were different quantities; it is now +/-20% around the first year ACTUAL withdrawal rate, which is what Guyton-Klinger compares against. Header states the basis and says it is the draw, not spending. Regression lock in provenance.test.js. 822 tests.";
 export const BUILD_TIME = "2026-07-31T04:10:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -5572,6 +5575,7 @@ const modeDescs = {
                   >
                     {fmtDollar(cur.cRmd)}
                   </div>
+                  <div className="ms">{formulaFor("cmp-rmd-without")}</div>
                 </div>
                 <div className="met">
                   <div className="ml">Lifetime RMDs — With Conversions</div>
@@ -5581,6 +5585,7 @@ const modeDescs = {
                   >
                     {fmtDollar(opt.cRmd)}
                   </div>
+                  <div className="ms">{formulaFor("cmp-rmd-with")}</div>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={340}>
@@ -6688,7 +6693,7 @@ function WaterfallPlanView({ p, result }) {
    * draw was $26K. He worked out why himself — 17.8% was his $100,000 SPENDING
    * over the portfolio, not his withdrawal.
    *
-   * The column was `r.spending / r.totalPort`, which is wrong twice over:
+   * The column divided SPENDING by the END-of-year portfolio, wrong twice over
    *   • NUMERATOR was spending, not the withdrawal. For anyone with meaningful
    *     income (Gary has a pension covering ~$81K of a $100K spend) those differ
    *     enormously, and the column claimed to be "withdrawal rate vs portfolio".
@@ -8369,6 +8374,7 @@ function ScenariosTab({
               >
                 {fmtPct(stress.rate)}
               </div>
+              <div className="ms">{formulaFor("stress-success")}</div>
             </div>
             <div className="met">
               <div className="ml">Delta vs base</div>
@@ -8380,6 +8386,7 @@ function ScenariosTab({
               >
                 {mc ? `${((stress.rate - mc.rate) * 100).toFixed(1)}pp` : "—"}
               </div>
+              <div className="ms">{formulaFor("stress-delta")}</div>
             </div>
           </div>
           <div
@@ -8968,6 +8975,7 @@ function MortgageTab({ values, onChange }) {
             <div key={m.l} className="met">
               <div className="ml">{m.l}</div>
               <div className="mv" style={{ color:m.c, fontSize:16 }}>{fmtDollar(m.v)}</div>
+              <div className="ms">{formulaFor("bucket-metrics")}</div>
             </div>
           ))}
         </div>

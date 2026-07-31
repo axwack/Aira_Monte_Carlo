@@ -44,6 +44,7 @@
  */
 
 import fs from "fs";
+import { METRIC_CARDS, formulaFor, provenanceFor } from "./provenance.js";
 import path from "path";
 
 const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
@@ -63,89 +64,9 @@ const RENDERED = SRC
   .replace(/^\s*\/\/.*$/gm, " ")       // whole-line // comments
   .replace(/([^:"'`\\])\/\/[^\n"'`]*$/gm, "$1"); // trailing // comments (not URLs)
 
-/**
- * Every metric card in App.jsx, in source order.
- *
- * `line` is advisory only (it drifts as the file changes and is NOT asserted) —
- * it is there to make a failure quick to locate.
- */
-const METRIC_CARDS = [
-  // ── Roth Conversion Explorer — plan summary ──────────────────────────────
-  { label: "Conversions",                    source: "convRows.length",                          kind: "count" },
-  { label: "Pinned / Forecast",              source: "convRows.filter(manual|!manual).length",   kind: "count" },
-  { label: "Lifetime Tax Delta",             source: "taxD (opt.cTax − cur.cTax)",               kind: "computed" },
-  { label: "RMD Reduction",                  source: "rmdRed (from cur.cRmd vs opt.cRmd)",       kind: "computed" },
-  { label: "Lifetime Eff. Rate",             source: "leOpt / leCur",                            kind: "computed" },
-
-  // ── Year-end conversion check-in ─────────────────────────────────────────
-  { label: "Convert This Amount",            source: "recConv (yearEndTaxRoom)",                 kind: "computed" },
-  { label: "Total Tax Cost",                 source: "recTax.total",                             kind: "computed" },
-  { label: "Net → Roth",                     source: "cyNetRoth",                                kind: "computed" },
-
-  // ── Conversion comparison (Without vs With) ──────────────────────────────
-  // `nw` is r.totalPort — ALL FOUR buckets, not the two the chart above stacks.
-  // Traced 2026-07-30; value correct, composition now disclosed in the card.
-  { label: "Savings at Age {endAge} — Without",         source: "cur.rows[last].nw = totalPort", kind: "point-in-time", at: "endAge" },
-  { label: "Savings at Age {endAge} — With Conversions", source: "opt.rows[last].nw = totalPort", kind: "point-in-time", at: "endAge" },
-  { label: "Lifetime RMDs — Without",        source: "cur.cRmd",                                 kind: "computed" },
-  { label: "Lifetime RMDs — With Conversions", source: "opt.cRmd",                               kind: "computed" },
-
-  // ── Withdrawal Plan summary ──────────────────────────────────────────────
-  { label: "Smart Lifetime Tax",             source: "summary.lifetimeTaxSmart",                 kind: "computed" },
-  { label: "Tax Savings vs No Plan",         source: "summary.taxSavings",                       kind: "computed" },
-  { label: "Roth at Age {endAge}",           source: "summary.finalRothSmart",                   kind: "point-in-time", at: "endAge" },
-  { label: "IRMAA Years Triggered",          source: "summary.irmaaYearsTriggered",              kind: "count" },
-  { label: "Avg. Withdrawal Rate",           source: "mean(wrAt(i)) = totalWithdrawal ÷ START-of-year portfolio", kind: "computed" },
-  { label: "Portfolio Depletion",            source: "depletionRow.age | 'Never'",               kind: "point-in-time", at: "first depleted year" },
-
-  // ── Deterministic withdrawal view ────────────────────────────────────────
-  // Was captioned "Median accumulation". accumulateToRetirement is a SINGLE
-  // deterministic projection at the expected return — there is no distribution
-  // and therefore no median. Caption fixed 2026-07-30 (§28 D1).
-  { label: "Portfolio at Retirement",        source: "accumulateToRetirement(p).total",          kind: "computed" },
-  { label: "Initial Withdrawal Rate",        source: "initWR = net need ÷ portAtRetire",         kind: "computed" },
-  { label: "Final Portfolio (Age N)",        source: "schedule[last].portfolioEnd",              kind: "point-in-time", at: "schedule[last].age" },
-
-  // ── Progress / check-ins ─────────────────────────────────────────────────
-  { label: "Latest success rate",            source: "latest.successRate (stored check-in)",     kind: "point-in-time", at: "latest check-in date" },
-  { label: "Since first check-in",           source: "ratePP (latest − first)",                  kind: "computed" },
-  { label: "Portfolio change",               source: "portDelta (latest − first)",               kind: "computed" },
-
-  // ── Stress test ──────────────────────────────────────────────────────────
-  { label: "Stress success",                 source: "stress.rate",                              kind: "computed" },
-  { label: "Delta vs base",                  source: "stress.rate − mc.rate",                    kind: "computed" },
-
-  // ── Widow's-penalty delta (§31) ───────────────────────────────────────────
-  // Two runs of the USER'S OWN plan at the same seed and path count, differing only
-  // in whether spouse.deathAge is set. Same seed is load-bearing: with a different
-  // one, part of the "penalty" would be RNG noise and the label would be claiming a
-  // derivation the number did not get.
-  { label: "Widow's penalty",                source: "(est.base − est.noDeath) × 100, same seed/N", kind: "computed" },
-  { label: "What this figure is",            source: "static explanatory prose, not a figure",   kind: "computed" },
-
-  // ── Bucket strategy (factory: one JSX site, N cards from an array) ───────
-  { label: "{m.l} (bucket metrics map)",     source: "m.v from the bucket metrics array",        kind: "computed", factory: true },
-
-  // ── Mortgage calculator ──────────────────────────────────────────────────
-  { label: "Current balance",                source: "bal (mortgage inputs)",                    kind: "echoed" },
-  { label: "Payoff year",                    source: "sched.payoffYr",                           kind: "point-in-time", at: "payoff year" },
-  { label: "Interest saved",                 source: "sched.interestSaved",                      kind: "computed" },
-  { label: "Monthly P&I",                    source: "sched.pmt",                                kind: "computed" },
-
-  // ── Net worth tab ────────────────────────────────────────────────────────
-  // Genuinely a median (max of mc.pcts p50) AND the asterisk is footnoted below
-  // the card — verified 2026-07-30, so the "(median)" claim is earned.
-  { label: "Peak liquid (median)*",          source: "max(mc.pcts[].p50)",                       kind: "point-in-time", at: "peakAge" },
-  { label: "Net worth at age {planAge}",     source: "finalNW",                                  kind: "point-in-time", at: "p.endAge" },
-  { label: "Mortgage-free",                  source: "mortSched.payoffYr",                       kind: "point-in-time", at: "payoff year" },
-  { label: "Real estate equity",             source: "reEquity",                                 kind: "computed" },
-
-  // ── Spending-target card (three branches, one card) ──────────────────────
-  // The middle branch is the one that shipped mislabelled twice: it ECHOES
-  // p.sp / 12. All three branches now disclose which they are, on screen.
-  { label: "{label} — spending target (3 branches)", source: "fixed: port×rate/12 (computed) · target set: p.sp/12 (ECHOED) · no target: port×benchRate/12 (computed)", kind: "echoed", factory: true },
-];
-
+/* The registry moved to src/provenance.js so ONE declaration is both rendered by the
+ * app and enforced here. Keeping it in this file would have forced the app to hold a
+ * second copy of every formula — the duplication this codebase keeps paying for. */
 describe("§28 — metric-card provenance registry", () => {
   test("every metric card in App.jsx is declared here", () => {
     const rendered = (SRC.match(/className="ml"/g) || []).length;
@@ -164,6 +85,58 @@ describe("§28 — metric-card provenance registry", () => {
       "point-in-time / count). If the value is ECHOED from user input, the label " +
       "must say so on screen; if it is POINT-IN-TIME, the label must name the age.";
     expect(rendered === METRIC_CARDS.length ? "" : advice).toBe("");
+  });
+
+  test("EVERY figure states its arithmetic in words a user can check", () => {
+    // Vincent, 2026-07-31: "each label should have the exactly calculation clear to
+    // the user and if it is not important at least show it."
+    //
+    // This is the enforcement half. Three defects were found by users doing sums on
+    // screen — "safe spend" (an echoed input), "Median accumulation" (one projection,
+    // no distribution), and the WR column (a spending rate labelled a withdrawal
+    // rate). A visible formula makes that class obvious on first read instead of
+    // requiring a user to reverse-engineer it.
+    METRIC_CARDS.forEach((c) => {
+      expect(typeof c.formula).toBe("string");
+      expect(c.formula.length).toBeGreaterThan(10);
+      // Plain words, not code. A formula a user cannot check is not a formula.
+      expect(c.formula).not.toMatch(/[a-zA-Z]\.[a-zA-Z]+\s*[/*+-]/);   // e.g. "r.spending / x"
+      expect(c.formula).not.toMatch(/p\.|mc\.|params\./);
+    });
+  });
+
+  test("EVERY card renders an explanation line on screen — none is bare", () => {
+    // The rendering half of Vincent's rule. A formula declared in the registry but
+    // never displayed helps nobody; five cards used to show a number with no
+    // explanation at all. Structural check: every `ml` label must have an `ms`
+    // sub-line within its own card block.
+    const lines = SRC.split("
+");
+    const bare = [];
+    lines.forEach((l, i) => {
+      if (!l.includes('className="ml"')) return;
+      const block = lines.slice(i, i + 13).join("
+");
+      if (!block.includes('className="ms"')) bare.push(i + 1);
+    });
+    expect(bare).toEqual([]);
+  });
+
+  test("displayed formulas come from the registry, not inlined per call site", () => {
+    // If a call site hand-writes its arithmetic, the screen and the registry can
+    // disagree — which is the whole failure mode. At least the cards that had none
+    // must be pulling from formulaFor().
+    expect(SRC).toContain('import { formulaFor } from "./provenance.js"');
+    expect((SRC.match(/formulaFor\(/g) || []).length).toBeGreaterThanOrEqual(5);
+  });
+
+  test("every card has a stable unique id so a component can look it up", () => {
+    const ids = METRIC_CARDS.map(c => c.id);
+    expect(ids.every(Boolean)).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+    // The lookup helpers the app uses must actually resolve.
+    expect(formulaFor(ids[0])).toBe(METRIC_CARDS[0].formula);
+    expect(provenanceFor("nope")).toBeNull();
   });
 
   test("every entry declares a label, a source and a valid kind", () => {
