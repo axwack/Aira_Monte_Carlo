@@ -175,9 +175,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.69";
-export const BUILD_TAG = "[main] v1.2.69 - one section container. Design-authority reviewed Vincent's \"make cards for each section\" question and found the ask was really a request to fix an existing violation: the six Profile panels had FOUR competing section patterns, and ContribPanel had privately reimplemented ACard's chrome under local sectionCard/sectionTitle/sectionDesc objects - byte-identical to the component, i.e. two definitions of one card. Hand-verified before acting, and it also revealed something the review missed: the Pensions card Vincent pointed at IS the duplicate, so converting naively would have LOST the look he liked. ACard therefore adopted the better treatment (14px near-white title, 11.5px muted desc) instead of the duplicate being flattened to the weaker 11px uppercase accent title; accent is now a thin left border. ContribPanel's three sections converted, local styles deleted. Rules 5/5a/5b/5c written into UI_DESIGN_SPEC.md: one container, collapsible keyed to FREQUENCY not length, neutral chrome reserved for the outer wrapper so nesting stays legible, and the two-tier collections-vs-fields split explicitly rejected. NOTE the suite caught a real self-inflicted bug mid-change: a first-match replace put the accent border into ProgressTab instead of ACard (that style string appears 8 times), crashing it with \"accent is not defined\" - reverted and re-anchored inside the ACard function. 821 tests, 28 suites.";
-export const BUILD_TIME = "2026-07-31T02:40:00Z";
+const APP_VERSION = "1.2.70";
+export const BUILD_TAG = "[main] v1.2.70 - Profile is now ONE section pattern, end to end. Finished the conversion instead of reporting it as remaining work: all 8 bare uppercase headers converted to ACard (WHO YOU ARE, RETIREMENT TIMELINE, SPENDING x2, DETAILED EXPENSE BUDGET, WITHDRAWAL STRATEGY, SOCIAL SECURITY, RENTAL INCOME), SavingsPanel had NO section grouping at all and now has two cards, and six more hand-rolled inline copies of ACard chrome were found and converted - a FIFTH and SIXTH duplication beyond the ContribPanel one, including four in the Settings panel that had their own accent titles and two untitled blocks that had no heading at all (the plan-horizon stats strip and the strategy-detail block). Inline card-chrome copies inside Profile panels: 6 -> 0. Every section now routes through the one component, so the Pensions look Vincent picked is the look everywhere. Rule 5a applied in the same pass rather than piecemeal: Housing & Fixed Obligations, Healthcare Shock Model and Detailed Expense Budget collapse by default (set-once); spending, contributions, Social Security, withdrawal order, Roth strategy and rental stay open (revisited). Verified the conversion touched ONLY the six Profile panels - all 22 ACard uses are inside them, ProgressTab/MCTab untouched. 821 tests, 28 suites.";
+export const BUILD_TIME = "2026-07-31T03:20:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -10512,6 +10512,7 @@ function SavingsPanel({ values, onChange }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <ACard title="💰 Accounts" accent="#14b8a6" desc="Every balance the plan draws from, grouped by tax treatment — the grouping is what decides the withdrawal order and the tax on each dollar.">
       {CATEGORIES.map(cat => {
         const catAccounts = accounts.filter(a => a.category === cat.key);
         return (
@@ -10591,8 +10592,9 @@ function SavingsPanel({ values, onChange }) {
           </div>
         );
       })}
+      </ACard>
 
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+      <ACard title="🎯 Early-Retirement Target" accent="#0d9488" desc="Your goal number, and how the accounts above track against it.">
         <WFieldRow label="🎯 Target Portfolio for Early Retirement" helper={`Goal: ${fmtDollar(GOAL)}`}>
           <ANumInput value={values.earlyRetireTarget || 0} onSet={(v) => onChange("earlyRetireTarget", v)} min={0} max={MAX_MONEY_INPUT} step={50_000} />
         </WFieldRow>
@@ -10623,7 +10625,7 @@ function SavingsPanel({ values, onChange }) {
             <span>Remaining: <strong style={{ color: "#f87171" }}>{fmtDollar(remaining)}</strong></span>
           </div>
         </div>
-      </div>
+      </ACard>
     </div>
   );
 }
@@ -10648,10 +10650,7 @@ function AboutYouPanel({ values, onChange }) {
           start date and filing status are WHO YOU ARE, not model parameters; the
           returns, inflation and tax assumptions that belong under that heading stayed
           behind. One category, one place (REQUIREMENTS §18). */}
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
-          WHO YOU ARE
-        </div>
+      <ACard title="Who You Are" accent="#0ea5e9" desc="Who you are. Your birthday is the input of record — age, D-Day and every accumulation year derive from it.">
         <ARow label="Name" desc="Appears on the printable report and in the exported JSON filename (AiRA_Profile_&lt;name&gt;_YYYY-MM-DD.json). Not used in any calculation.">
           <input
             type="text"
@@ -10686,11 +10685,8 @@ function AboutYouPanel({ values, onChange }) {
             <option value="single">Single (unmarried)</option>
           </select>
         </ARow>
-      </div>
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>
-          RETIREMENT TIMELINE
-        </div>
+      </ACard>
+      <ACard title="Retirement Timeline" accent="#14b8a6" desc="When you stop working and how long the plan must last.">
         <WFieldRow label="Retirement Age" helper="Age at which you plan to retire (D‑Day).">
           <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={AGE_LIMITS.retire.min} max={AGE_LIMITS.retire.max} step={1} />
         </WFieldRow>
@@ -10708,9 +10704,9 @@ function AboutYouPanel({ values, onChange }) {
             <option value="female">Female</option>
           </select>
         </WFieldRow>
-      </div>
+      </ACard>
 
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+      <ACard title="📅 Plan Horizon At A Glance" accent="#14b8a6" desc="Derived from your birthday and the two ages above — nothing to edit here.">
         {[
           { label: "Years to retirement", val: yearsToRetire, color: "#14b8a6" },
           { label: "Years in retirement", val: yearsInRetire, color: "#a78bfa" },
@@ -10723,7 +10719,7 @@ function AboutYouPanel({ values, onChange }) {
             </div>
           </div>
         ))}
-      </div>
+      </ACard>
     </div>
   );
 }
@@ -10975,10 +10971,7 @@ function AssumptionsPanel({ values, onChange }) {
       </ACard>
 
       {/* EXPENSE MODEL CARD */}
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
-          Housing & Fixed Obligations 
-        </div>
+      <ACard title="Housing & Fixed Obligations" accent="#f59e0b" collapsible defaultOpen={false}>
         <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
           Separate housing &amp; fixed obligations from core lifestyle spend. The MC engine adds each carveout to the portfolio draw automatically.
         </div>
@@ -11063,13 +11056,10 @@ function AssumptionsPanel({ values, onChange }) {
             style={{ fontSize: 11, background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.25)", color: "#38bdf8", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}
           >+ Add obligation</button>
         </div>
-      </div>
+      </ACard>
 
       {/* ROTH CONVERSION CARD */}
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
-          Roth Conversion Strategy
-        </div>
+      <ACard title="Roth Conversion Strategy" accent="#a78bfa">
         <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
           After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
         </div>
@@ -11140,15 +11130,12 @@ function AssumptionsPanel({ values, onChange }) {
           </div>
         )}
 
-      </div>
+      </ACard>
 
       {/* WITHDRAWAL ORDER — sourcing controls moved to the Withdrawal Plan tab
           (design-authority: single point of control + proximity to the waterfall
           they shape). Profile keeps a read-only pointer for discoverability. */}
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "#5eead4", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
-          Withdrawal Order
-        </div>
+      <ACard title="Withdrawal Order" accent="#5eead4">
         <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5 }}>
           The <strong style={{ color: "#38bdf8" }}>account draw order</strong> (which bucket drains first —
           tax-reactive, custom, or pre-tax first) and the sourcing guardrails — pre-tax bracket ceiling,
@@ -11156,7 +11143,7 @@ function AssumptionsPanel({ values, onChange }) {
           <strong style={{ color: "#5eead4" }}>Scenarios → 📋 Withdrawal Plan</strong>, right above the
           waterfall they shape. The distribution strategy stays here in Profile.
         </div>
-      </div>
+      </ACard>
 
       {/* MONTE CARLO MODEL PARAMETERS CARD */}
       <div
@@ -11221,10 +11208,7 @@ function AssumptionsPanel({ values, onChange }) {
       </div>
 
       {/* HEALTHCARE SHOCK CARD */}
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
-          Healthcare Shock Model
-        </div>
+      <ACard title="Healthcare Shock Model" accent="#f87171" collapsible defaultOpen={false}>
         <div style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>
           In each simulation year after the shock age, there is a random probability of a large one-time healthcare cost.
         </div>
@@ -11240,7 +11224,7 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Shock cost — maximum" desc="High end of randomized healthcare shock cost (default $130,000)">
           <ANumInput value={values.hcMax} onSet={(v) => onChange("hcMax", v)} min={0} max={MAX_MONEY_INPUT} step={5000} />
         </ARow>
-      </div>
+      </ACard>
       <div
         style={{
           fontSize: 10,
@@ -11817,8 +11801,7 @@ function ExpensesPanel({ values, onChange }) {
   const combinedSp = usSp + outOfCountrySp;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
+      <ACard title="Spending" accent="#5eead4">
         {/* §28.1 OPEN 1 (Gary): the after-tax basis was stated on the RESULTS
             surfaces and in the About tab, but not HERE — which is where the user
             forms their mental model of what number to type. Wording deliberately
@@ -11865,10 +11848,9 @@ function ExpensesPanel({ values, onChange }) {
             </>
           )}
         </div>
-      </div>
+      </ACard>
 
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>DETAILED EXPENSE BUDGET</div>
+      <ACard title="Detailed Expense Budget" accent="#c4b5fd" desc="Optional. Upload a real line-item budget instead of typing one number." collapsible defaultOpen={false}>
         <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, marginBottom: 12 }}>
           Instead of typing a single spending number above, upload your real line-item budget.
           A <strong style={{ color: "#cbd5e1" }}>one-year</strong> budget is summed into the US Spending field
@@ -11883,7 +11865,7 @@ function ExpensesPanel({ values, onChange }) {
             No budget loaded — the plan currently uses the typed spending numbers above.
           </div>
         )}
-      </div>
+      </ACard>
 
       {/* ── PLANNED ONE-OFF EXPENSES ───────────────────────────────────────
           Distinct from the recurring spend above: this is the roof-in-10-years
@@ -11998,8 +11980,7 @@ function RetirementPanel({ values, onChange }) {
         <strong>State tax:</strong> {activeScenario} · Sidebar toggle → "Non-resident (no state tax)"
       </div>
 
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>WITHDRAWAL STRATEGY</div>
+      <ACard title="Withdrawal Strategy" accent="#a78bfa">
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{
             width: "100%",
@@ -12016,13 +11997,12 @@ function RetirementPanel({ values, onChange }) {
           <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(strategy)}</div>
           <div style={{ fontSize: 11, color: "#5eead4" }}>Change this in the Withdrawal Schedule tab →</div>
         </div>
-      </div>
+      </ACard>
 
       {/* Spending inputs + the budget uploader live together in the 💸 Spending
           & Expenses tab now. This compact summary keeps the number visible here
           (the WR diagnostic and guardrails below are calibrated to it). */}
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SPENDING</div>
+      <ACard title="Spending" accent="#5eead4">
         <div style={{ padding: "10px 12px", background: "rgba(94,234,212,0.06)", border: "1px solid rgba(94,234,212,0.2)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <span>
             Combined annual spending <span style={{ color: "#fbbf24" }}>(after tax)</span>{values.spImportMeta ? (
@@ -12034,10 +12014,9 @@ function RetirementPanel({ values, onChange }) {
             <span style={{ fontSize: 11, color: "#c4b5fd" }}>Edit in 💸 Spending &amp; Expenses →</span>
           </span>
         </div>
-      </div>
+      </ACard>
 
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>SOCIAL SECURITY</div>
+      <ACard title="Social Security" accent="#7c3aed">
         <WFieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age. (Per Month)">
           <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={5000} step={50} suffix="/mo" />
         </WFieldRow>
@@ -12334,10 +12313,9 @@ function RetirementPanel({ values, onChange }) {
             </>
           );
         })()}
-      </div>
+      </ACard>
 
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5e718d", marginBottom: 16, borderBottom: "1px solid #1e3a5f", paddingBottom: 6 }}>RENTAL INCOME</div>
+      <ACard title="Rental Income" accent="#295ff1" collapsible defaultOpen={false}>
         <WFieldRow
           label="Rental Net Income (annual)"
           helper={(values.properties || []).some((pr) => Number(pr.income) > 0)
@@ -12359,9 +12337,9 @@ function RetirementPanel({ values, onChange }) {
                 onFocus={selectAllOnFocus}
               /> year
         </WFieldRow>
-      </div>
+      </ACard>
 
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18, marginTop: 8 }}>
+      <ACard title="📐 Strategy Detail" accent="#a78bfa" desc="The parameters the strategy you picked above actually uses.">
         {strategy === "gk" && (
           <>
             <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails</div>
@@ -12445,7 +12423,7 @@ function RetirementPanel({ values, onChange }) {
         {!["gk", "fixed", "vanguard"].includes(strategy) && (
           <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center" }}>{getStrategyLabel(strategy)} strategy active — see documentation for details.</div>
         )}
-      </div>
+      </ACard>
     </div>
   );
 }
