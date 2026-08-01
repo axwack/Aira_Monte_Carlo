@@ -150,6 +150,14 @@ export const ABOUT_FEATURES = [
   },
 
   {
+    id:    "windfalls",
+    group: "Your Income",
+    icon:  "💰",
+    title: "Inheritances & other one-off windfalls",
+    body:  "A future inheritance, home sale or business exit goes in the ONE-OFF INCOME & WINDFALLS card on the Income step — not under Other Income. Other Income is a recurring stream that offsets each year's spending, so anything beyond one year's spending gap would be silently discarded: a $1M inheritance against an $80k gap would lose $920k. A windfall is instead DEPOSITED into the account you choose (cash, brokerage, pre-tax or Roth) in the year it arrives, whether that year is before or after you retire, and it compounds from there. Most inheritances are not ordinary income, so leave the taxable box unchecked unless the money arrives as a taxable distribution. Windfalls are income, not spending — they never appear under Planned One-Off Expenses.",
+  },
+
+  {
     id:    "spousal-survivor-ss",
     group: "Your Income",
     icon:  "🕊️",

@@ -179,6 +179,12 @@ export function accumulateToRetirement(params = {}) {
     // docstring's promise that it agrees with runMC's starting balances.
     contrib = 0, employerContrib = 0, hsaContrib = 0,
     taxableContrib = 0, rothContrib = 0,
+    // One-off inflow events (inheritance, home sale, pension lump sum) that
+    // land BEFORE retirement. Previously only the retirement loops processed
+    // cashFlowEvents, so a lump sum arriving in an accumulation year was
+    // silently dropped from every projection — a user testing a $1M future
+    // inheritance saw their numbers not move at all.
+    cashFlowEvents = [], inf = 2.5,
   } = params;
   // This function only models the PRE-retirement accumulation phase, so
   // preRetireEq normally drives the growth rate here. The one exception is a
@@ -223,6 +229,23 @@ export function accumulateToRetirement(params = {}) {
     taxable0 += taxableContrib;
     // After-tax dollars in, so basis rises one-for-one (growth is unrealized).
     taxableBasis0 += taxableContrib;
+    // One-off INFLOWS landing this pre-retirement year are deposited into
+    // their bucket, like contributions (they don't earn a return in the year
+    // they arrive). The retirement loop starts at BASE_YEAR + accYrs, so an
+    // event fires in exactly one of the two phases — never both. Outflow
+    // events stay retirement-only: pre-retirement spending is presumed paid
+    // from wages, which this engine does not model (nor pre-retirement taxes,
+    // so a taxable inflow arrives gross here).
+    const ev = computeCashFlowEvents(cashFlowEvents, BASE_YEAR + y, inf, BASE_YEAR);
+    if (ev.inflow > 0) {
+      pretax0  += ev.byBucket.pretax || 0;
+      roth0    += ev.byBucket.roth   || 0;
+      cash0    += ev.byBucket.cash   || 0;
+      const taxableIn = ev.byBucket.taxable || 0;
+      taxable0 += taxableIn;
+      // Already-taxed (or stepped-up) money arrives as basis.
+      taxableBasis0 += taxableIn;
+    }
   }
 
   return { pretax0, roth0, taxable0, cash0, total: pretax0 + roth0 + taxable0 + cash0, taxableBasis0 };
@@ -464,6 +487,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     preRetireEq, postRetireEq, glidepathSwitchAge: glideSwitchAge,
     ...(grParam != null ? { gr: grParam } : {}),
     contrib, employerContrib, hsaContrib, taxableContrib, rothContrib,
+    cashFlowEvents, inf,
   });
 
   // Pre-compute the actual annual mortgage cash cost per calendar year (incl.
