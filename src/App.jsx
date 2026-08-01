@@ -178,9 +178,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.72";
-export const BUILD_TAG = "[main] v1.2.72 - every figure now shows its arithmetic, and the mortgage date is pickable. RULE 1a (Vincent: \"each label should have the exactly calculation clear to the user and if it is not important at least show it\"): the provenance registry MOVED out of the test file into src/provenance.js so ONE declaration is both rendered by the app and enforced by the test - leaving it in the test would have forced a second copy of every formula in the app, the exact duplication this codebase keeps paying for. Each of the 38 entries now carries a required user-facing `formula` in plain words, and the test rejects code-shaped text so a formula a user cannot check fails the build. Five cards were showing a bare number with no explanation at all - all now render their formula from the registry via formulaFor(). New tests: every entry has a formula, every card renders an explanation line, ids unique and resolvable. MORTGAGE START DATE: replaced input type=month, whose year is a bare spinner with no visible range, with explicit month + year dropdowns spanning 1986-2036 (derived from the current year, never a literal) - reaching a start date 20 years back used to mean clicking an arrow 240 times. Emits the same YYYY-MM string so mortgageSchedule and stored profiles are unaffected, and a stored value outside the range stays selectable so opening the control cannot silently rewrite it. 824 -> 826 tests.";
-export const BUILD_TIME = "2026-07-31T05:05:00Z";
+const APP_VERSION = "1.2.73";
+export const BUILD_TAG = "[main] v1.2.73 - a future lump sum (inheritance, home sale, pension lump) now actually reaches the plan. User report: entering a $1M test inheritance changed nothing, and the same $1M appeared under Planned One-Off Expenses, looking like it cancelled itself out. Two real bugs. ENGINES: all three engines (runMC, buildWithdrawalWaterfall/accumulateToRetirement, simulateDeterministicWithStrategy) processed cashFlowEvents only inside their retirement loops, so an inflow dated during the ACCUMULATION years was silently dropped from every projection - that is why the numbers never moved. Accumulation-phase inflows are now deposited into their bucket (with taxable basis) in the year they arrive and compound to retirement; an event fires in exactly one phase, never both. UI: the Planned One-Off Expenses card rendered the WHOLE cashFlowEvents array, inflows included, so a $1M inflow displayed as a $1M expense row (display only - the engines never charged it, but no user could trust that). The card now shows outflows only, and edits/removals address rows by id, not index. NEW: a One-Off Income & Windfalls card on the Income step, so an inheritance no longer has to be disguised as a lump-sum pension. 826 -> 832 tests.";
+export const BUILD_TIME = "2026-08-01T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1192,6 +1192,18 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     mortByYear = mortgageAnnualPayments(ms);
   }
 
+  // One-off INFLOWS (inheritance, home sale, pension lump sum) landing during
+  // the ACCUMULATION years, precomputed once — they are path-independent, like
+  // the mortgage. Previously only the retirement loop processed cashFlowEvents,
+  // so a lump sum arriving before retirement was silently dropped from every
+  // path — a user testing a $1M future inheritance saw the numbers not move.
+  // Accumulation year y is calendar year CURRENT_YEAR + y; the retirement loop
+  // starts at CURRENT_YEAR + accYrs, so an event fires in exactly one phase.
+  const accInflowByYear = [];
+  for (let y = 0; y < accYrs; y++) {
+    accInflowByYear.push(computeCashFlowEvents(p.cashFlowEvents, CURRENT_YEAR + y, p.inf ?? 2.5, CURRENT_YEAR));
+  }
+
   for (let i = 0; i < N; i++) {
     // Initialize buckets from p.accounts for this path
     let pretax = 0, roth = 0, taxable = 0, cash = 0;
@@ -1233,6 +1245,19 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // Brokerage contributions are already-taxed dollars, so they add basis
       // one-for-one. Only market growth is unrealized gain.
       taxableBasis += (p.taxableContrib || 0);
+      // Pre-retirement one-off inflows are deposited into their bucket, like
+      // contributions (no return in the arrival year). Outflow events stay
+      // retirement-only — pre-retirement spending is presumed paid from wages,
+      // which this engine does not model. See accInflowByYear above.
+      const evAcc = accInflowByYear[y];
+      if (evAcc && evAcc.inflow > 0) {
+        pretax += evAcc.byBucket.pretax || 0;
+        roth   += evAcc.byBucket.roth   || 0;
+        cash   += evAcc.byBucket.cash   || 0;
+        const taxableIn = evAcc.byBucket.taxable || 0;
+        taxable += taxableIn;
+        taxableBasis += taxableIn;   // already-taxed money arrives as basis
+      }
       totalPort = pretax + roth + taxable + cash;
     }
 
@@ -1887,6 +1912,11 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     port = port * (1 + ret)
       + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0)
       + (p.taxableContrib || 0) + (p.rothContrib || 0);
+    // Pre-retirement one-off inflows (inheritance, lump-sum pension) are
+    // deposited like contributions — same fix as runMC's accumulation loop;
+    // this engine tracks one aggregate portfolio, so the inflow simply adds.
+    const evAccDet = computeCashFlowEvents(p.cashFlowEvents, CURRENT_YEAR + y, p.inf ?? 2.5, CURRENT_YEAR);
+    if (evAccDet.inflow > 0) port += evAccDet.inflow;
   }
 
   const portAtRetire = port;
@@ -11516,6 +11546,44 @@ function ContribPanel({ values, onChange }) {
         >+ Add another income source</button>
       </ACard>
 
+      {/* ── Income card 4: ONE-OFF INCOME & WINDFALLS ─────────────────────
+          A single future inflow — an inheritance, a home sale, a business
+          exit. Stored as a cashFlowEvents INFLOW (direction:"in") so the
+          engines DEPOSIT it into the chosen account bucket in the year it
+          arrives and it compounds from there. It must never be entered as
+          recurring Other Income: need = max(0, sp − income) nets a stream
+          against ONE year's spending and silently discards the rest — the
+          trap this card exists to avoid. Before this card existed the only
+          way to enter an inheritance was to disguise it as a lump-sum
+          pension. */}
+      <ACard title="💰 One-Off Income & Windfalls">
+        <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 14, lineHeight: 1.55 }}>
+          Money you expect <em>once</em> — an inheritance, a home or business sale. AiRA deposits it into
+          the account you pick in the year it arrives, and it compounds from there. It is income, not
+          spending — it will never appear under Planned One-Off Expenses.
+        </div>
+        {(values.cashFlowEvents || []).filter(e => e.direction === "in" && e.source !== "pension").map((ev) => {
+          const upd = (patch) => onChange("cashFlowEvents", (values.cashFlowEvents || []).map(x => x.id === ev.id ? { ...x, ...patch } : x));
+          return (
+            <div key={ev.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 12, marginBottom: 10, background: "rgba(255,255,255,0.02)", position: "relative" }}>
+              <button onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter(x => x.id !== ev.id))}
+                title="Remove this windfall"
+                style={{ position: "absolute", top: 8, right: 8, background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 12, padding: "2px 8px" }}>×</button>
+              <LumpPensionFields ev={ev} upd={upd} placeholder="Inheritance"
+                taxHint="(most inheritances are NOT ordinary income — leave unchecked unless it's an inherited pre-tax IRA distribution or similar)" />
+            </div>
+          );
+        })}
+        <button
+          onClick={() => onChange("cashFlowEvents", [...(values.cashFlowEvents || []), {
+            id: Date.now().toString(), source: "windfall", label: "", amount: 0,
+            year: new Date().getFullYear() + 5, direction: "in",
+            bucket: "taxable", taxable: false, inflate: false,
+          }])}
+          style={{ background: "rgba(14,165,233,0.1)", border: "1px dashed rgba(14,165,233,0.45)", borderRadius: 6, color: "#38bdf8", fontSize: 12, fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
+        >+ Add a windfall</button>
+      </ACard>
+
     </div>
   );
 }
@@ -11595,14 +11663,15 @@ function PensionEntry({ type, onTypeChange, onRemove, children }) {
   );
 }
 
-/** Fields for a lump-sum / cash-balance pension (a one-time inflow). */
-function LumpPensionFields({ ev, upd }) {
+/** Fields for a one-time inflow (lump-sum / cash-balance pension, or a
+ *  windfall like an inheritance — the One-Off Income card reuses this). */
+function LumpPensionFields({ ev, upd, placeholder = "Cash balance pension", taxHint = "(uncheck for a direct rollover)" }) {
   const cell = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "5px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", width: "100%" };
   const lbl  = { fontSize: 10, color: "#64748b", marginBottom: 3, display: "block" };
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 0.8fr 1.1fr", gap: 8 }}>
       <label><span style={lbl}>Label</span>
-        <input type="text" value={ev.label || ""} placeholder="Cash balance pension"
+        <input type="text" value={ev.label || ""} placeholder={placeholder}
           onChange={(e) => upd({ label: e.target.value })} style={cell} /></label>
       <label><span style={lbl}>Amount</span>
         <input type="number" value={ev.amount || 0} min={0} step={1000}
@@ -11624,7 +11693,7 @@ function LumpPensionFields({ ev, upd }) {
       <label style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#94a3b8", cursor: "pointer" }}>
         <input type="checkbox" checked={!!ev.taxable} onChange={(e) => upd({ taxable: e.target.checked })} />
         Taxable as ordinary income in {ev.year}
-        <span style={{ color: "#475569" }}>(uncheck for a direct rollover)</span>
+        <span style={{ color: "#475569" }}>{taxHint}</span>
       </label>
     </div>
   );
@@ -11996,18 +12065,23 @@ function ExpensesPanel({ values, onChange }) {
           withdrawal strategy still governs the recurring plan. */}
       <ACard title="Planned One-Off Expenses" accent="#fb923c"
         desc="Big costs you can see coming — a new roof, a car, a wedding, a heavy travel year. Enter today's price; AiRA inflates it to the year it happens.">
-        {(values.cashFlowEvents || []).length > 0 && (
+        {/* OUTFLOWS ONLY. cashFlowEvents also stores inflows (pension lump
+            sums, inheritances — direction:"in"), which are deposits into an
+            account, not spending. Rendering the whole array here made a $1M
+            inheritance appear as a $1M planned EXPENSE, so users reasonably
+            concluded their windfall was being cancelled out. Inflows are
+            managed from the Income step (Pensions / One-Off Income cards). */}
+        {(values.cashFlowEvents || []).filter(e => e.direction !== "in").length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 70px 70px 78px 28px", gap: 6, marginBottom: 4, fontSize: 9, color: "#475569" }}>
             <span>What</span><span style={{ textAlign: "right" }}>Cost</span><span style={{ textAlign: "right" }}>Year</span>
             <span style={{ textAlign: "right" }}>Every</span><span style={{ textAlign: "right" }}>Until</span><span />
           </div>
         )}
-        {(values.cashFlowEvents || []).map((ev, idx) => {
-          const upd = (patch) => {
-            const next = [...(values.cashFlowEvents || [])];
-            next[idx] = { ...ev, ...patch };
-            onChange("cashFlowEvents", next);
-          };
+        {(values.cashFlowEvents || []).filter(e => e.direction !== "in").map((ev) => {
+          // Patch/remove by id, not index — the render list is filtered, so an
+          // index into it does not address the same element in the full array.
+          const upd = (patch) => onChange("cashFlowEvents",
+            (values.cashFlowEvents || []).map(x => x.id === ev.id ? { ...x, ...patch } : x));
           const cell = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace" };
           const num = { ...cell, textAlign: "right" };
           return (
@@ -12037,7 +12111,7 @@ function ExpensesPanel({ values, onChange }) {
                 onFocus={selectAllOnFocus}
               />
                 <button
-                  onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter((_, i) => i !== idx))}
+                  onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter(x => x.id !== ev.id))}
                   style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: 5, cursor: "pointer", fontSize: 13, padding: "2px 6px" }}
                 >×</button>
               </div>
@@ -12054,7 +12128,7 @@ function ExpensesPanel({ values, onChange }) {
         <button
           onClick={() => onChange("cashFlowEvents", [
             ...(values.cashFlowEvents || []),
-            { id: Date.now().toString(), label: "", amount: 0, year: new Date().getFullYear() + 5, recurEveryYears: 0, recurUntilYear: null, deferrable: false },
+            { id: Date.now().toString(), label: "", amount: 0, year: new Date().getFullYear() + 5, recurEveryYears: 0, recurUntilYear: null, deferrable: false, direction: "out" },
           ])}
           style={{ fontSize: 11, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.25)", color: "#fb923c", borderRadius: 6, padding: "5px 12px", cursor: "pointer", marginTop: 4 }}
         >+ Add planned expense</button>
