@@ -10,7 +10,8 @@
  */
 
 import { computeCashFlowEvents } from "./engine/expenses";
-import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall";
+import { buildWithdrawalWaterfall, accumulateToRetirement } from "./engine/buildWithdrawalWaterfall";
+import { runMC, simulateDeterministicWithStrategy } from "./App";
 
 const BASE = 2026;
 // inflate:false keeps arithmetic exact where the test is about timing, not money.
@@ -273,5 +274,88 @@ describe("buildWithdrawalWaterfall — inflows are deposited and compound", () =
     const taken    = buildWithdrawalWaterfall({ ...P, cashFlowEvents: [lump({ bucket: "cash",   taxable: true  })] });
     const taxIn = (r) => r.smart.rows.find(x => x.yr === yr).totalTax;
     expect(taxIn(taken)).toBeGreaterThan(taxIn(rollover));
+  });
+});
+
+/**
+ * REGRESSION — a lump sum arriving BEFORE retirement (user report, 2026-08-01).
+ *
+ * Every engine processed cashFlowEvents only inside its retirement loop, so an
+ * inflow dated during the accumulation years — the reported case was a future
+ * inheritance — was silently dropped from every projection: a $1M test entry
+ * changed nothing anywhere. (The tests above never caught it because they all
+ * use currentAge === retireAge, i.e. zero accumulation years.) These pin the
+ * fix: an accumulation-phase inflow is deposited into its bucket in the year
+ * it arrives and compounds to retirement, in all three engines.
+ */
+describe("inflows BEFORE retirement are deposited during accumulation", () => {
+  const P = {
+    currentAge: 55, retireAge: 65, endAge: 90,
+    sp: 80_000, ssAge: 67, ssb: 36_000, inf: 2.5,
+    filingStatus: "mfj", stateOfResidence: "NJ", gr: 0.05,
+    port: 900_000,
+    accounts: [
+      { id: "1", category: "pretax", name: "IRA",  balance: 800_000 },
+      { id: "2", category: "cash",   name: "Cash", balance: 100_000 },
+    ],
+  };
+  const inheritYr = new Date().getFullYear() + 5; // mid-accumulation, 5 of 10 years in
+  const inherit = (over = {}) => ({
+    id: "w", source: "windfall", label: "Inheritance", year: inheritYr,
+    amount: 1_000_000, direction: "in", bucket: "taxable", taxable: false,
+    inflate: false, ...over,
+  });
+
+  test("accumulateToRetirement deposits it into the named bucket, as basis", () => {
+    const base  = accumulateToRetirement(P);
+    const with_ = accumulateToRetirement({ ...P, cashFlowEvents: [inherit()] });
+    // Deposited in year +5 (after that year's growth, like a contribution),
+    // then grown at the pinned 5% for the remaining 4 accumulation years.
+    expect(with_.taxable0 - base.taxable0).toBeCloseTo(1_000_000 * 1.05 ** 4, 0);
+    // Inherited money arrives as basis (stepped-up); only later growth is gain.
+    expect(with_.taxableBasis0 - base.taxableBasis0).toBe(1_000_000);
+    expect(with_.pretax0).toBeCloseTo(base.pretax0, 6);
+  });
+
+  test("bucket routing holds during accumulation too", () => {
+    const r = accumulateToRetirement({ ...P, cashFlowEvents: [inherit({ bucket: "roth" })] });
+    const base = accumulateToRetirement(P);
+    expect(r.roth0).toBeGreaterThan(base.roth0);
+    expect(r.taxable0).toBeCloseTo(base.taxable0, 6);
+  });
+
+  test("buildWithdrawalWaterfall: the whole retirement plan sees the money", () => {
+    const base  = buildWithdrawalWaterfall(P);
+    const with_ = buildWithdrawalWaterfall({ ...P, cashFlowEvents: [inherit()] });
+    // Bigger portfolio from the first retirement year through the last.
+    expect(with_.smart.rows[0].totalPort).toBeGreaterThan(base.smart.rows[0].totalPort + 1_000_000);
+    expect(with_.smart.rows.at(-1).totalPort).toBeGreaterThan(base.smart.rows.at(-1).totalPort);
+    // And it is NOT double-counted as a retirement-year deposit.
+    for (const row of with_.smart.rows) expect(row.eventInflow || 0).toBe(0);
+  });
+
+  test("the deterministic schedule's portfolio-at-retirement includes it", () => {
+    const base  = simulateDeterministicWithStrategy(P, 2.5, "gk");
+    const with_ = simulateDeterministicWithStrategy({ ...P, cashFlowEvents: [inherit()] }, 2.5, "gk");
+    expect(with_.portAtRetire).toBeGreaterThan(base.portAtRetire + 1_000_000);
+  });
+
+  test("the Monte Carlo moves too — this is the number the user watched", () => {
+    // Same seed ⇒ identical return draws (computeCashFlowEvents consumes no
+    // rand()), so each path's portfolio-at-retirement shifts by the deposit
+    // grown over its own final 4 accumulation years.
+    const base  = runMC(P, 90, 400, 42, true);
+    const with_ = runMC({ ...P, cashFlowEvents: [inherit()] }, 90, 400, 42, true);
+    expect(with_.medR).toBeGreaterThan(base.medR + 500_000);
+    expect(with_.rate).toBeGreaterThanOrEqual(base.rate);
+  });
+
+  test("an outflow before retirement is still ignored (paid from wages, not the portfolio)", () => {
+    const base  = accumulateToRetirement(P);
+    const with_ = accumulateToRetirement({
+      ...P,
+      cashFlowEvents: [{ id: "x", label: "Wedding", year: inheritYr, amount: 50_000, inflate: false }],
+    });
+    expect(with_.total).toBeCloseTo(base.total, 6);
   });
 });
