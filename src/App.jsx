@@ -341,7 +341,9 @@ const STATE_BRACKETS = {
   ID: { single: [{lo:0,hi:4673,rate:0},{lo:4673,hi:Infinity,rate:.05695}],
          mfj:   [{lo:0,hi:9346,rate:0},{lo:9346,hi:Infinity,rate:.05695}] },
   IL: { single: [{lo:0,hi:Infinity,rate:.0495}], mfj: [{lo:0,hi:Infinity,rate:.0495}] },
-  IN: { single: [{lo:0,hi:Infinity,rate:.03}],   mfj: [{lo:0,hi:Infinity,rate:.03}] },
+  // Indiana SB 1 scheduled cuts: 3.05% (2024) -> 3.00% (2025) -> 2.95% (2026) -> 2.90% (2027).
+  // Engine is on a 2026 basis (2026 brackets/std deduction/IRMAA) — use the 2026 rate.
+  IN: { single: [{lo:0,hi:Infinity,rate:.0295}], mfj: [{lo:0,hi:Infinity,rate:.0295}] },
   IA: { single: [{lo:0,hi:Infinity,rate:.038}],   mfj: [{lo:0,hi:Infinity,rate:.038}] },
   KS: { single: [{lo:0,hi:23000,rate:.052},{lo:23000,hi:Infinity,rate:.0558}],
          mfj:   [{lo:0,hi:46000,rate:.052},{lo:46000,hi:Infinity,rate:.0558}] },
@@ -8263,6 +8265,8 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
 }
 
 function ScenariosTab({
+  initialSubTab,
+  onSubTabConsumed,
   baseParams,
   mc,
   stress,
@@ -8293,7 +8297,18 @@ function ScenariosTab({
   onRemoveConversionOverride,
 }) {
 
-  const [scenarioSubTab, setScenarioSubTab] = useState("roth");
+  const [scenarioSubTab, setScenarioSubTab] = useState(initialSubTab || "roth");
+
+  // Consume a pending cross-tab navigation request once, on arrival — a
+  // pointer elsewhere in the app (e.g. RetirementPanel's Withdrawal Strategy
+  // card) asked to land on a specific sub-tab here. Cleared immediately so a
+  // later manual visit to Analysis isn't silently redirected.
+  useEffect(() => {
+    if (initialSubTab) {
+      setScenarioSubTab(initialSubTab);
+      onSubTabConsumed && onSubTabConsumed();
+    }
+  }, [initialSubTab]); // onSubTabConsumed intentionally omitted — see comment above
 
   const SCENARIO_SUBTABS = [
     ["roth",        "🔄 ROTH CONVERSIONS"],
@@ -8491,7 +8506,9 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   cape: "CAPE‑Based — Withdrawal rate is determined by the Shiller CAPE ratio to reflect market valuation.",
   endowment: "Endowment Model — Spending blends a percentage of portfolio with prior year spending (smoothed).",
   one_n: "1/N Rule — Each year, divide the remaining portfolio by the number of years left in the plan.",
-  ninety_five_rule: "95% Rule — Spending can drop to 95% of last year's amount during downturns, otherwise tracks inflation."
+  ninety_five_rule: "95% Rule — Spending can drop to 95% of last year's amount during downturns, otherwise tracks inflation.",
+  bengen: "Bengen 4% Rule — Withdraw a fixed percentage of the STARTING portfolio value in year one, then increase that dollar amount with inflation every year after. Spending never reacts to portfolio performance, for better or worse — an honest model of late-stage risk for fixed-budget retirees.",
+  smart: "Smart Waterfall (hybrid) — Guyton‑Klinger guardrails while more than 15 years remain in the plan, then switches to the Bengen 4% Rule for the final 15 years — the split matches GK's own longevity-safety-brake threshold, so the switch happens exactly where GK's brake would otherwise be disabled."
 };
 
   const startEdit = (cp) => {
@@ -8597,7 +8614,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         {showHow && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each of {MC_PATHS_LABEL} paths independently draws a random S&P 500 year and a random bond year, blended by glide path weight. Contributions are added annually. The result is a unique portfolio value at retirement for each path.</div>
-            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>2. Retirement spending</div>Each path draws fresh random returns year by year. Spending follows the Blanchett smile curve. SS and Rental income offset draws. Rental fails 20% of years randomly. Healthcare shocks hit 3.5% of years after age 72.</div>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>2. Retirement spending</div>Each path draws fresh random returns year by year. {params.smile !== false ? "Spending follows the Blanchett smile curve." : "Spending stays flat in real terms (smile curve off)."} SS{params.ab > 0 ? " and Rental" : ""} income offset draws.{params.ab > 0 ? ` Rental fails ${Math.round(100 - (params.abReliability ?? 80))}% of years randomly.` : ""}{(params.hcProb ?? 3.5) > 0 ? ` Healthcare shocks hit ${params.hcProb ?? 3.5}% of years after age ${params.hcShockAge ?? 72}.` : ""}</div>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>3. {getStrategyLabel(withdrawalStrategy)} {withdrawalStrategy === "gk" ? "guardrails" : "strategy"}</div>{strategyHowItWorks[withdrawalStrategy] || strategyHowItWorks.gk}</div>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>4. Survival check</div>A path "succeeds" if the portfolio balance stays above $0 through the target age. The success rate is the percentage of paths that survive. The fan chart shows the 10th–90th percentile spread of all outcomes.</div>
           </div>
@@ -10108,7 +10125,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   );
 }
 
-function ProfileWizard({ values, onChange }) {
+function ProfileWizard({ values, onChange, onNavigateTab }) {
   const [step, setStep] = useState(0);
   const [saveStatus, setSaveStatus] = useState("");
 
@@ -10185,7 +10202,7 @@ function ProfileWizard({ values, onChange }) {
     <SavingsPanel values={values} onChange={onChange} />,
     <ContribPanel values={values} onChange={onChange} />,
     <ExpensesPanel values={values} onChange={onChange} />,
-    <RetirementPanel values={values} onChange={onChange} />,
+    <RetirementPanel values={values} onChange={onChange} onNavigateStep={setStep} onNavigateTab={onNavigateTab} />,
     <AssumptionsPanel values={values} onChange={onChange} />,
   ];
 
@@ -11279,7 +11296,7 @@ function AssumptionsPanel({ values, onChange }) {
           <ANumInput value={values.preRetireEq} onSet={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} suffix="%" />
         </ARow>
         <ARow label="Post-retirement equity weight" desc="Stock share once you retire. This is your sequence-of-returns dial: raising it lifts the median outcome but widens the downside, so success rate can FALL even as the median rises. Lower it if an early crash would end the plan. Default 70%.">
-          <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={90} step={1} suffix="%" />
+          <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={100} step={1} suffix="%" />
         </ARow>
         {/* Sits directly under the two weights it arbitrates between — this
             field answers "which one applies this year?", so it belongs beside
@@ -12040,7 +12057,7 @@ function ExpensesPanel({ values, onChange }) {
   );
 }
 
-function RetirementPanel({ values, onChange }) {
+function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
   const usSp = values.sp || 0;
   const outOfCountrySp = values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0);
   const combinedSp = usSp + outOfCountrySp;
@@ -12090,7 +12107,23 @@ function RetirementPanel({ values, onChange }) {
             {getStrategyLabel(strategy)}
           </div>
           <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{getStrategyDescription(strategy)}</div>
-          <div style={{ fontSize: 11, color: "#5eead4" }}>Change this in the Withdrawal Schedule tab →</div>
+          {/* Real navigation: jumps to 📋 Analysis and lands directly on its
+              💸 WITHDRAWAL PLAN sub-tab (ScenariosTab's own sub-tab state is
+              seeded from AiRAForecaster's pendingScenarioSubTab — see
+              navigateToTab). There is no "Withdrawal Schedule" tab; that was
+              the original bug — this pointer named a tab that never existed. */}
+          <button
+            type="button"
+            onClick={() => onNavigateTab && onNavigateTab("scenarios", "withdrawals")}
+            style={{
+              fontSize: 11, color: "#5eead4", background: "none", border: "none",
+              padding: 0, cursor: onNavigateTab ? "pointer" : "default",
+              textDecoration: onNavigateTab ? "underline" : "none", textAlign: "left",
+            }}
+            disabled={!onNavigateTab}
+          >
+            Change this on the 💸 Withdrawal Plan tab →
+          </button>
         </div>
       </ACard>
 
@@ -12106,7 +12139,21 @@ function RetirementPanel({ values, onChange }) {
           </span>
           <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <strong style={{ color: "#5eead4", fontFamily: "'DM Mono',monospace", fontSize: 14 }}>{fmtDollar(combinedSp)}/yr</strong>
-            <span style={{ fontSize: 11, color: "#c4b5fd" }}>Edit in 💸 Spending &amp; Expenses →</span>
+            {/* Same wizard, different step — index 3 is ExpensesPanel in
+                ProfileWizard's PANELS array (see the "Spending & Expenses"
+                STEPS entry it's paired with). */}
+            <button
+              type="button"
+              onClick={() => onNavigateStep && onNavigateStep(3)}
+              style={{
+                fontSize: 11, color: "#c4b5fd", background: "none", border: "none",
+                padding: 0, cursor: onNavigateStep ? "pointer" : "default",
+                textDecoration: onNavigateStep ? "underline" : "none",
+              }}
+              disabled={!onNavigateStep}
+            >
+              Edit in 💸 Spending &amp; Expenses →
+            </button>
           </span>
         </div>
       </ACard>
@@ -12830,6 +12877,17 @@ export default function AiRAForecaster() {
   const [activeTab, setTab] = useState(() =>
     loadProfileFromLocal() ? "networth" : "assumptions"
   );
+  // Cross-tab "Edit this on the X tab" pointers (e.g. RetirementPanel's
+  // Withdrawal Strategy card) need to land on a specific sub-tab inside
+  // ScenariosTab, not just the top-level tab. ScenariosTab's own sub-tab state
+  // is local and resets on mount, so it reads this as its initial value —
+  // set right before switching activeTab, consumed once, then cleared so a
+  // later manual visit to Analysis doesn't get silently redirected.
+  const [pendingScenarioSubTab, setPendingScenarioSubTab] = useState(null);
+  const navigateToTab = useCallback((tab, subTab = null) => {
+    if (subTab) setPendingScenarioSubTab(subTab);
+    setTab(tab);
+  }, []);
   // The visitor landing is the homepage for anyone without a saved profile —
   // not a one-time splash. It used to be gated on a `aira_welcomed_v1` flag as
   // well, so the moment a visitor clicked through (or hit Skip) the page became
@@ -14218,6 +14276,8 @@ export default function AiRAForecaster() {
                 )}
                 {activeTab === "scenarios" && (
                   <ScenariosTab
+                    initialSubTab={pendingScenarioSubTab}
+                    onSubTabConsumed={() => setPendingScenarioSubTab(null)}
                     baseParams={params}
                     mc={mc}
                     fmtPct={fmtPct}
@@ -14275,6 +14335,7 @@ export default function AiRAForecaster() {
                 {activeTab === "assumptions" && (
                   <>
                   <ProfileWizard
+                    onNavigateTab={navigateToTab}
                     values={{
                       ...assumptions,
                       currentAge: currentAge,

@@ -2389,6 +2389,15 @@ one sweep rather than presented for approval.
   same event); work income per person (lowest impact, nothing models wages today).
 - **§20** — extract the paid report as an OSS-excluded module. The `skip-worktree`
   protection is in place; the module split is not.
+- **In-app AI chat, requested 2026-07-31 (Vincent)** — a conversational help surface,
+  not a canned About page: answers questions about how the app itself works ("how does
+  Monte Carlo run 3,000 paths so fast?") in addition to questions about the user's own
+  plan. No new hosting needed — extends the existing Gemini plumbing
+  (`ai/ai-analysis.js`, the dormant `AiraAITab`, the Cloudflare Pages Function proxy
+  used for billed calls). The real cost is design, not infrastructure: a multi-turn
+  conversation resends history every call, so token/credit usage per session is well
+  above the current one-shot analysis calls — needs a cost model before it ships, not
+  after.
 
 ### Known limitations that are NOT bugs — do not "fix" these
 
