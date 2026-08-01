@@ -8827,7 +8827,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                 [`Rental income fails ${100 - (params.abReliability || 80)}% of years randomly in Monte Carlo — the Withdrawal Plan, Income chart, and Conversion Plan tabs show full planned rental every year (one deterministic path, no failure applied)`, "#fbbf24"],
                 [`Healthcare shocks ${params.hcProb || 3.5}%/yr from age ${params.hcShockAge || 72}`, "#fbbf24"],
                 [`${getStrategyLabel(withdrawalStrategy)} each path`, "#a78bfa"],
-                ["Blanchett smile spending (not flat)", "#a78bfa"],
+                [params.smile !== false ? "Blanchett smile spending (not flat)" : "Flat real spending (smile curve off)", "#a78bfa"],
                 [`SS COLA ${params.ssCola || 2.4}%/yr · Rental growth ${params.abGrowth || 3}%/yr`, "#94a3b8"],
                 [params.tax !== false ? "Full tax model: brackets, SS torpedo, IRMAA, state" : "Tax OFF — pre-tax view (no tax anywhere)", "#94a3b8"],
                 [`Glide path: ${params.preRetireEq || 91}/${100 - (params.preRetireEq || 91)} → ${params.postRetireEq || 70}/${100 - (params.postRetireEq || 70)} at age ${resolveGlidepathSwitchAge(params)}`, "#94a3b8"],
