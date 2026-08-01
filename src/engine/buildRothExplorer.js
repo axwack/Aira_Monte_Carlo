@@ -32,7 +32,9 @@ const STATE_BRACKETS = {
   ID: { single: [{lo:0,hi:4673,rate:0},{lo:4673,hi:Infinity,rate:.05695}],
          mfj:   [{lo:0,hi:9346,rate:0},{lo:9346,hi:Infinity,rate:.05695}] },
   IL: { single: [{lo:0,hi:Infinity,rate:.0495}], mfj: [{lo:0,hi:Infinity,rate:.0495}] },
-  IN: { single: [{lo:0,hi:Infinity,rate:.03}],   mfj: [{lo:0,hi:Infinity,rate:.03}] },
+  // Indiana SB 1 scheduled cuts: 3.05% (2024) -> 3.00% (2025) -> 2.95% (2026) -> 2.90% (2027).
+  // Engine is on a 2026 basis (2026 brackets/std deduction/IRMAA) — use the 2026 rate.
+  IN: { single: [{lo:0,hi:Infinity,rate:.0295}], mfj: [{lo:0,hi:Infinity,rate:.0295}] },
   IA: { single: [{lo:0,hi:Infinity,rate:.038}],   mfj: [{lo:0,hi:Infinity,rate:.038}] },
   KS: { single: [{lo:0,hi:23000,rate:.052},{lo:23000,hi:Infinity,rate:.0558}],
          mfj:   [{lo:0,hi:46000,rate:.052},{lo:46000,hi:Infinity,rate:.0558}] },
