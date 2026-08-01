@@ -1,10 +1,27 @@
-import { expectedReturn } from "./expectedReturn.js";
-import { resolveGlidepathSwitchAge } from "./glidepath.js";
-import { spouseAgeOffset, personsAtLeastAge, spouseAgeAt, filesJointlyAt, survivorIsPrimary, survivorAgeOnPrimaryClock, planEndAgeOnPrimaryClock, firstDeathOnPrimaryClock } from "./ages.js";
+/**
+ * buildRothExplorer.js — SHARED TAX REFERENCE MODULE
+ *
+ * The filename is historical. `buildRothExplorer()` and `buildRothLadder()` were
+ * deleted here: they were a second, disconnected ~350-line conversion model that
+ * NO UI path ever called. App.jsx imported only constants from this file, and the
+ * live Roth Conversion tab is built on buildWithdrawalWaterfall via
+ * rothConversionPlan.js. The dead pair survived on ~100 tests in roth.test.js
+ * (deleted with them) and actively misled readers — it was still being consulted
+ * to answer "is this rule implemented?", and it gave the wrong answer, because
+ * the engine the app actually runs had already implemented it.
+ *
+ * What lives here now: federal / state / LTCG / NIIT / IRMAA / OBBBA constants,
+ * the RMD divisor tables, and the shared Social Security helpers
+ * (taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS). Importers:
+ * App.jsx, buildWithdrawalWaterfall.js, rothConversionPlan.js, rulesEngine.js.
+ *
+ * Add engine logic somewhere else. This file is a reference table, not a model.
+ */
+import { spouseAgeOffset, personsAtLeastAge, survivorIsPrimary, firstDeathOnPrimaryClock } from "./ages.js";
 import { survivorFra, survivorBasis, resolveSurvivorClaimAge, survivorYearBenefit } from "./survivorBenefit.js";
 
 // Progressive state income tax brackets (2025). null = no state income tax.
-// Brackets are inflation-indexed in calcYearTax / buildRothExplorer via idxB().
+// Brackets are inflation-indexed by consumers (calcYearTax / buildWithdrawalWaterfall) via idxB().
 const STATE_BRACKETS = {
   AL: { single: [{lo:0,hi:500,rate:.02},{lo:500,hi:3000,rate:.04},{lo:3000,hi:Infinity,rate:.05}],
          mfj:   [{lo:0,hi:1000,rate:.02},{lo:1000,hi:6000,rate:.04},{lo:6000,hi:Infinity,rate:.05}] },
@@ -127,31 +144,6 @@ function getStateBrackets(state, isMFJ) {
   const entry = STATE_BRACKETS[state];
   if (!entry) return null;
   return isMFJ ? entry.mfj : entry.single;
-}
-
-function guytonKlingerWithdrawal(
-    portfolioValue,
-    initialWR,
-    lastWithdrawal,
-    lastReturn,
-    inflationRate,
-    floor,
-    ceiling
-  ) {
-    if (isNaN(portfolioValue) || portfolioValue <= 0) return floor || 0;
-    if (isNaN(lastWithdrawal)) lastWithdrawal = floor || 0;
-    if (isNaN(lastReturn)) lastReturn = 0;
-    if (isNaN(inflationRate)) inflationRate = 0.02;
-    if (isNaN(initialWR)) initialWR = 0.04;
-
-    let w =
-      lastReturn >= 0 ? lastWithdrawal * (1 + inflationRate) : lastWithdrawal;
-    const currentWR = portfolioValue !== 0 ? w / portfolioValue : 0;
-
-    if (currentWR <= initialWR * 0.8) w *= 1.1;
-    else if (currentWR >= initialWR * 1.2) w *= 0.9;
-
-    return Math.max(floor || 0, Math.min(ceiling || Infinity, w));
 }
 
 // 2026 MFJ federal brackets (inflation-adjusted from 2025)
@@ -586,362 +578,12 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   return 72;
 }
 
-function buildRothExplorer(params = {}) {
-  console.log("[buildRothExplorer] taxFunding =", params.taxFunding);
-  const {
-    currentAge,
-    retireAge,
-    ssAge,   // primary's own claim age — still used for the Golden Year label and summary; combined gross now comes from computeHouseholdSS(params, age)
-    ab,
-    useAb,
-    inf,
-    endAge = 90,
-    port,
-    twoHousehold,
-    rothMode = "fill_22",           // keep default for mode only
-    filingStatus = "mfj",
-    stateOfResidence = "NJ",
-    dob,
-    birthYear,
-    rmdStartAge,
-    taxFunding = "from_taxable",
-    fafsaGuard = false,
-    fafsaEndYear = null,
-    cssEndYear = null,
-    conversionOverrides = [],
-    useJointRmdTable = false,
-    preRetireEq = 91,
-    postRetireEq = 70,
-    gr: grParam,
-  } = params;
-  // Build a fast year→amount lookup from the overrides array
-  const overrideMap = {};
-  for (const o of conversionOverrides) {
-    if (o.year && o.amount != null) overrideMap[Number(o.year)] = Number(o.amount);
-  }
-
-  // Safeguard: if critical numbers are missing, return empty or throw a helpful error
-  if (currentAge == null || retireAge == null || port == null) {
-    console.warn("buildRothExplorer missing required params:", { currentAge, retireAge, port });
-    return { opt: { rows: [], cTax: 0, cConv: 0 }, cur: { rows: [], cTax: 0, cConv: 0 }, convRows: [] };
-  }
-
-
-  const isMFJ = filingStatus !== "single";
-  /* §22 — time-varying filing status, the SAME rule the other two engines use
-   * (engine/ages.js). This engine advises on Roth conversions, and a survivor's
-   * narrower brackets change that advice materially: converting into what looks
-   * like 12% headroom while filing jointly can land in 22% for the survivor. All
-   * three engines must agree about the household or the tabs contradict one
-   * another — the recurring defect class in this codebase. */
-  const mfjAt = (a) => filesJointlyAt(params, a);
-  const spAgeAt = (a) => spouseAgeAt(params, a);
-  const fedBaseAt = (a) => (mfjAt(a) ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE);
-  const stdDedBaseAt = (a) => (mfjAt(a) ? 32200 : 16100);
-  // Per FILER, not per household (§24): counted by personsAtLeastAge below.
-  const STD_DED_AGE_BONUS_PER_HEAD = 1650;
-  const _statutoryRmdAge = getRmdStartAge({ dob, birthYear, currentAge });
-  const rmdAge = Math.max(
-    typeof rmdStartAge === "number" && rmdStartAge > 0 ? rmdStartAge : _statutoryRmdAge,
-    _statutoryRmdAge
-  );
-
-  const stateBrAt = (a) => getStateBrackets(stateOfResidence, mfjAt(a));
-  // Retained for the no-tax-state test below, which is filing-status independent.
-  const stateBr0 = getStateBrackets(stateOfResidence, isMFJ);
-  const infR = inf / 100,
-    retireYear = ROTH_BASE_YEAR + (retireAge - currentAge),
-    isNoTaxState = twoHousehold || !stateBr0;
-
-  const _pretaxSum = (params.accounts || []).filter(a => a.category === "pretax").reduce((s, a) => s + (a.balance || 0), 0);
-  const _rothSum = (params.accounts || []).filter(a => a.category === "roth").reduce((s, a) => s + (a.balance || 0), 0);
-  const _otherSum = (params.accounts || []).filter(a => !["pretax","roth"].includes(a.category)).reduce((s, a) => s + (a.balance || 0), 0);
-  const _totalFromAccounts = _pretaxSum + _rothSum + _otherSum;
-  const pretaxBal = _totalFromAccounts > 0 ? _pretaxSum : port * 0.6,
-    rothBal = _totalFromAccounts > 0 ? _rothSum : port * 0.4,
-    taxBal0 = _totalFromAccounts > 0 ? _otherSum : 0;
-  // Expected growth now derives from the same equity-glide formula runMC's
-  // portReturn uses (expectedReturn(eqPct), shared via ./expectedReturn.js)
-  // instead of a hardcoded flat 7% that ignored preRetireEq/postRetireEq.
-  // This engine has no separate pre-retirement accumulation phase (it starts
-  // from `port`/accounts as-of retirement), but the per-year retirement loop
-  // below still mirrors runMC's portReturn glidepath switch (preRetireEq below
-  // glideSwitchAge, postRetireEq from it on). The switch age was hardcoded to
-  // 62 here while portReturn switched at the retirement age, so a profile
-  // retiring at 60 was grown at the ACCUMULATION rate for its first two
-  // drawdown years in this tab and the post-retirement rate in the Monte
-  // Carlo. An explicit gr override (grParam) still wins for both phases.
-  const preGr  = grParam ?? (expectedReturn(preRetireEq) / 100);
-  const postGr = grParam ?? (expectedReturn(postRetireEq) / 100);
-  const glideSwitchAge = resolveGlidepathSwitchAge({ ...params, retireAge });
-  const planEndAge = planEndAgeOnPrimaryClock(params, endAge);
-
-  function irmaaCeiling(yr, age = null) {
-    const f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
-    const mfj = age == null ? isMFJ : mfjAt(age);
-    return Math.round((mfj ? 218_000 : 109_000) * f);
-  }
-
-  const gkF = params.gkFloor || 48000;
-  const gkC = params.gkCeiling || 115000;
-  const baseSp = params.sp || 100000;
-
-  function runScenario(doConvert) {
-    let pT = pretaxBal,
-      ro = rothBal,
-      taxBal = taxBal0,
-      cTax = 0,
-      cConv = 0,
-      cIrmaa = 0,
-      cRmd = 0;
-    const rows = [];
-    let sp = baseSp,
-      lastReturn = retireAge < glideSwitchAge ? preGr : postGr;
-    const totalPort0 = pretaxBal + rothBal;
-    const ss0 = computeHouseholdSS(params, retireAge);
-    const ab0 = ab > 0 ? ab : 0;
-    const initDraw0 = Math.max(0, baseSp - ss0 - ab0);
-    const initWR = totalPort0 > 0 ? initDraw0 / totalPort0 : 0.04;
-
-    // §30 — horizon follows whoever is alive; see planEndAgeOnPrimaryClock.
-    for (let age = retireAge; age <= planEndAge; age++) {
-      const yr = retireYear + (age - retireAge),
-        f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
-      // Per-year growth rate — mirrors runMC's portReturn glidepath switch
-      // (preRetireEq below glideSwitchAge, postRetireEq from it on).
-      const gr = age < glideSwitchAge ? preGr : postGr;
-      const fB = idxB(fedBaseAt(age), f);
-      const stBr = stateBrAt(age);
-      const nB = stBr ? idxB(stBr, f) : [];
-
-      // Age-65 add-on is PER FILER (§24) — counted, not granted wholesale the
-      // moment the primary turns 65.
-      const stdD = Math.round(stdDedBaseAt(age) * f)
-        + personsAtLeastAge(age, spAgeAt(age), mfjAt(age), 65) * Math.round(STD_DED_AGE_BONUS_PER_HEAD * f);
-      const b10t = fB.find((b) => b.rate === 0.10)?.hi || Math.round((mfjAt(age) ? 24800 : 12400) * f);
-      const b12t = fB.find((b) => b.rate === 0.12)?.hi || Math.round((mfjAt(age) ? 100800 : 50400) * f);
-      const b22t = fB.find((b) => b.rate === 0.22)?.hi || Math.round((mfjAt(age) ? 211400 : 105700) * f);
-      const b24t = fB.find((b) => b.rate === 0.24)?.hi || Math.round((mfjAt(age) ? 403550 : 201800) * f);
-      const b32t = fB.find((b) => b.rate === 0.32)?.hi || Math.round((mfjAt(age) ? 512450 : 256225) * f);
-      const b35t = fB.find((b) => b.rate === 0.35)?.hi || Math.round((mfjAt(age) ? 768700 : 384350) * f);
-      const b37t = Infinity; // top bracket has no ceiling
-
-      const totalPort = pT + ro;
-      if (age > retireAge && totalPort > 0) {
-        sp = guytonKlingerWithdrawal(
-          totalPort,
-          initWR,
-          sp,
-          lastReturn,
-          infR,
-          gkF,
-          gkC
-        );
-      }
-
-      const ss = computeHouseholdSS(params, age);
-      const abn = ab > 0 && age <= 80
-        ? Math.round(ab * Math.pow(1.03, Math.min(age - retireAge, 20)))
-        : 0;
-      const portDraw = Math.max(0, sp - ss - abn);
-
-      // RMD calculation — table selected by useJointRmdTable param
-      let rmd = 0;
-      if (age >= rmdAge && pT > 0) {
-        // Joint table only applies when actually filing jointly — a stale
-        // useJointRmdTable=true left over from switching filingStatus to
-        // "single" must fall back to the standard Uniform Lifetime table,
-        // matching runMC's `useJointTable` gate.
-        const rmdTable = (useJointRmdTable && mfjAt(age)) ? JOINT_RMD_DIV : RMD_DIV;
-        const divisor = rmdTable[age] || 15.0;
-        rmd = Math.round(pT / divisor);
-      }
-      // Dynamic withdrawal ratio: derive pretax/Roth split from actual balances each year.
-      // As Roth grows from conversions the ratio naturally shifts toward tax-free draws.
-      const pretaxShare = totalPort > 0 ? pT / totalPort : 0;
-      const additionalNeeded = Math.max(0, portDraw - rmd);
-      const additionalPretax = Math.min(
-        Math.round(additionalNeeded * pretaxShare),
-        Math.max(0, pT - rmd)
-      );
-      const additionalRoth = additionalNeeded - additionalPretax;
-      // Pre-tax draws beyond the forced RMD are ordinary income (traditional IRA/401k withdrawals)
-      const pretaxSpend = additionalPretax;
-      // IRC §86: taxable SS depends on provisional income (other ordinary income + ½ SS)
-      const otherOrdInc = abn + rmd + pretaxSpend;
-      const ssT = Math.round(taxableSocialSecurity(ss, otherOrdInc, mfjAt(age)));
-      const incBC = ssT + otherOrdInc;
-      const txBC = Math.max(0, incBC - stdD);
-
-      let conv = 0;
-      let capReason = "";
-      if (
-        doConvert &&
-        rothMode !== "no_convert" &&
-        age >= retireAge &&
-        age < rmdAge &&
-        pT > 0
-      ) {
-        if (overrideMap[yr] !== undefined) {
-          conv = Math.round(Math.min(Math.max(0, overrideMap[yr]), pT));
-          capReason = overrideMap[yr] === 0 ? "manual $0" : "manual override";
-        } else {
-          let targetTop;
-          if (rothMode === "fill_10") { targetTop = b10t; capReason = "mode 10%"; }
-          else if (rothMode === "fill_12") { targetTop = b12t; capReason = "mode 12%"; }
-          else if (rothMode === "fill_22") { targetTop = b22t; capReason = "mode 22%"; }
-          else if (rothMode === "fill_24") { targetTop = b24t; capReason = "mode 24%"; }
-          else if (rothMode === "fill_32") { targetTop = b32t; capReason = "mode 32%"; }
-          else if (rothMode === "fill_35") { targetTop = b35t; capReason = "mode 35%"; }
-          else if (rothMode === "fill_37") { targetTop = b37t; capReason = "mode 37%"; }
-          else if (rothMode === "irmaa_safe") {
-            const irmaaTop = irmaaCeiling(yr, age) + stdD;
-            if (irmaaTop < b22t) { targetTop = irmaaTop; capReason = "IRMAA ceiling"; }
-            else { targetTop = b22t; capReason = "mode 22%"; }
-          } else { targetTop = b22t; capReason = "mode 22%"; }
-
-          // IRMAA lookback guard: ages 60-65 — cap at 22% for aggressive brackets
-          if (age >= 60 && age <= 65 && ["fill_24","fill_32","fill_35","fill_37"].includes(rothMode) && b22t < targetTop) {
-            targetTop = b22t; capReason = "IRMAA lookback (age 60–65)";
-          }
-          // FAFSA/CSS college-aid guards — year values alone are the trigger (no toggle required)
-          if (fafsaEndYear && yr <= fafsaEndYear && b12t < targetTop) {
-            targetTop = b12t; capReason = `FAFSA guard (≤${fafsaEndYear})`;
-          }
-          if (cssEndYear && yr <= cssEndYear && (!fafsaEndYear || yr > fafsaEndYear) && b22t < targetTop) {
-            targetTop = b22t; capReason = `CSS Profile guard (≤${cssEndYear})`;
-          }
-          // room is sized so post-conversion taxable income lands exactly on targetTop,
-          // even when pre-conversion income (incBC) was below stdD and txBC got floored at 0.
-          const room = Math.max(0, targetTop + stdD - incBC);
-          const preCap = Math.min(room, Math.max(0, pT));
-          conv = Math.round(preCap);
-          if (pT < room) capReason = "pretax exhausted";
-        }
-      }
-
-      // Conversion income raises provisional income, dragging more SS into taxation
-      const ssTConv = conv > 0
-        ? Math.round(taxableSocialSecurity(ss, otherOrdInc + conv, mfjAt(age)))
-        : ssT;
-      const totInc = ssTConv + otherOrdInc + conv,
-        txInc = Math.max(0, totInc - stdD);
-      const fedT = Math.round(progTax(txInc, fB));
-      const stT = isNoTaxState ? 0 : Math.round(progTax(Math.max(0, txInc), nB));
-      const totT = fedT + stT,
-        effR = totInc > 0 ? totT / totInc : 0;
-      // IRMAA MAGI = AGI + tax-exempt interest; the untaxed portion of SS is NOT added back
-      const magi = totInc;
-      const medicareHeads = personsAtLeastAge(age, spAgeAt(age), mfjAt(age), 65);
-      const irmaa = medicareHeads > 0 ? irmaaCost(magi, yr, infR, mfjAt(age), medicareHeads) : 0;
-
-      let margR = 0;
-      if (conv > 0) {
-        const txIncNo = Math.max(0, incBC - stdD);
-        const fedTNo = Math.round(progTax(txIncNo, fB));
-        const stTNo = isNoTaxState ? 0 : Math.round(progTax(txIncNo, nB));
-        const magiNo = incBC;
-        const irmaaNo = medicareHeads > 0 ? irmaaCost(magiNo, yr, infR, mfjAt(age), medicareHeads) : 0;
-        const dTax = (fedT + stT + irmaa) - (fedTNo + stTNo + irmaaNo);
-        margR = dTax / conv;
-      }
-
-      let roAdd = conv;
-      let taxFromTaxable = 0;
-      if (doConvert && conv > 0 && totT > 0) {
-        if (taxFunding === "from_conv") {
-          roAdd = Math.max(0, conv - totT);
-        } else if (taxFunding === "from_taxable") {
-          taxFromTaxable = Math.min(taxBal, totT);
-          if (taxFromTaxable < totT) {
-            roAdd = Math.max(0, conv - (totT - taxFromTaxable));
-          }
-        } else if (taxFunding === "outside_cash") {
-          taxFromTaxable = Math.min(taxBal, totT);
-        }
-      }
-      const pTStart = pT, roStart = ro;
-      taxBal = Math.max(0, taxBal - taxFromTaxable) * (1 + gr);
-      pT = Math.max(0, pT - rmd - conv - additionalPretax) * (1 + gr);
-      ro = Math.max(0, ro + roAdd - additionalRoth) * (1 + gr);
-      lastReturn = gr;
-      cTax += totT;
-      cConv += conv;
-      cIrmaa += irmaa;
-      cRmd += rmd;
-
-      let label = "";
-      if (conv > 0) {
-        if (age === ssAge - 1) label = "Golden Year ★";
-        else if (age === ssAge) label = "SS Starts";
-        else label = `Year ${age - retireAge}`;
-      }
-
-      const convByBr = { conv10: 0, conv12: 0, conv22: 0, conv24: 0, conv32: 0, conv35: 0, conv37: 0 };
-      if (conv > 0) {
-        fB.forEach((b) => {
-          const inBr = Math.max(0, Math.min(txInc, b.hi) - Math.max(txBC, b.lo));
-          const key = `conv${Math.round(b.rate * 100)}`;
-          if (key in convByBr) convByBr[key] = Math.round(inBr);
-        });
-      }
-      rows.push({
-        yr, age, ss, abn, rmd, pretaxSpend, conv, baseInc: incBC, totInc, txInc,
-        fedT, stT, totT, effR, margR, irmaa, magi,
-        pTStart: Math.round(pTStart), roStart: Math.round(roStart),
-        pT: Math.round(pT), ro: Math.round(ro), nw: Math.round(pT + ro),
-        label,
-        bracketUsed: conv > 0
-          ? txInc <= b12t ? "12%" : txInc <= b22t ? "22%" : txInc <= b24t ? "24%" : txInc <= b32t ? "32%" : txInc <= b35t ? "35%" : "37%"
-          : "-",
-        capReason,
-        ...convByBr,
-        sp: Math.round(sp), portDraw: Math.round(portDraw),
-      });
-    }
-    return { rows, cTax, cConv, cIrmaa, cRmd, fPT: Math.round(pT), fRo: Math.round(ro) };
-  }
-
-  const opt = runScenario(true),
-  cur = runScenario(false);
-  const convRows = opt.rows.filter((r) => r.conv > 0);
-  const taxD = opt.cTax - cur.cTax;
-  const estD = (cur.rows[cur.rows.length - 1]?.nw || 0) - (opt.rows[opt.rows.length - 1]?.nw || 0);
-  const totIncOpt = opt.rows.reduce((s, r) => s + r.totInc, 0);
-  const totIncCur = cur.rows.reduce((s, r) => s + r.totInc, 0);
-  const leOpt = totIncOpt > 0 ? opt.cTax / totIncOpt : 0;
-  const leCur = totIncCur > 0 ? cur.cTax / totIncCur : 0;
-  const rmdRed = cur.cRmd > 0 ? Math.round((1 - opt.cRmd / cur.cRmd) * 100) : 0;
-
-  return {
-    opt, cur, convRows, taxD, estD, leOpt, leCur, rmdRed,
-    isNoTaxState, retireYear, retireAge, ssAge, rmdAge, filingStatus: isMFJ ? "mfj" : "single",
-  };
-}
-
-function buildRothLadder(params = {}) {
-  const ex = buildRothExplorer(params);
-  // from_conv: taxes sourced from within the conversion amount → deduct from net
-  // outside_cash / from_taxable: taxes paid separately → full conversion reaches Roth
-  const isTaxFromConv = (params.taxFunding || "from_taxable") === "from_conv";
-  return ex.convRows.map((r) => ({
-    yr: r.yr,
-    age: r.age,
-    label: r.label,
-    otherInc: r.abn,
-    conv: r.conv,
-    fedTax: r.fedT,
-    stateTax: r.stT,
-    effFed: r.conv > 0 ? ((r.fedT / r.conv) * 100).toFixed(1) : "0.0",
-    effTotal: r.conv > 0 ? (((r.fedT + r.stT) / r.conv) * 100).toFixed(1) : "0.0",
-    netRoth: isTaxFromConv
-      ? Math.round(Math.max(0, r.conv - r.fedT - (params.twoHousehold ? 0 : r.stT)))
-      : r.conv,
-  }));
-}
-
+// NOTE: `progTax`, `idxB` and `irmaaCost` currently have NO importer. They were
+// the deleted explorer's tax primitives, and App.jsx carries its own byte-identical
+// copies (see the irmaaCost banner above). They are kept as exports because the
+// right resolution is to de-duplicate — point App.jsx at these — not to delete one
+// half of a known duplicate pair. If you are here to clean up: that is the task.
 export {
-  buildRothExplorer, buildRothLadder,
   progTax, idxB, irmaaCost, taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS, getStateBrackets, getRmdStartAge,
   FED_BRACKETS_2026_MFJ, FED_BRACKETS_2026_SINGLE,
   LTCG_BRACKETS_2026_MFJ, LTCG_BRACKETS_2026_SINGLE,

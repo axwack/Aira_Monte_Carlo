@@ -178,9 +178,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.73";
-export const BUILD_TAG = "[main] v1.2.73 - a future lump sum (inheritance, home sale, pension lump) now actually reaches the plan. User report: entering a $1M test inheritance changed nothing, and the same $1M appeared under Planned One-Off Expenses, looking like it cancelled itself out. Two real bugs. ENGINES: all three engines (runMC, buildWithdrawalWaterfall/accumulateToRetirement, simulateDeterministicWithStrategy) processed cashFlowEvents only inside their retirement loops, so an inflow dated during the ACCUMULATION years was silently dropped from every projection - that is why the numbers never moved. Accumulation-phase inflows are now deposited into their bucket (with taxable basis) in the year they arrive and compound to retirement; an event fires in exactly one phase, never both. UI: the Planned One-Off Expenses card rendered the WHOLE cashFlowEvents array, inflows included, so a $1M inflow displayed as a $1M expense row (display only - the engines never charged it, but no user could trust that). The card now shows outflows only, and edits/removals address rows by id, not index. NEW: a One-Off Income & Windfalls card on the Income step, so an inheritance no longer has to be disguised as a lump-sum pension. 826 -> 832 tests.";
-export const BUILD_TIME = "2026-08-01T00:00:00Z";
+const APP_VERSION = "1.2.75";
+export const BUILD_TAG = "[main] v1.2.75 - deleted the dead Roth conversion engine. buildRothExplorer() and buildRothLadder() in src/engine/buildRothExplorer.js were a second, disconnected ~350-line conversion model that NO UI path called: App.jsx imports only CONSTANTS from that file, and the live Roth Conversion tab is built on buildWithdrawalWaterfall via rothConversionPlan.js. The dead pair was kept breathing by ~100 tests in roth.test.js and actively misled readers - it was consulted to answer 'is this rule implemented?' and gave the WRONG answer, because the engine the app actually runs had already implemented it (verified empirically: a $1M inheritance moves the year-1 conversion 241,900 -> 247,178 when it lands in a taxable account, and to 0 when it arrives as ordinary income; NIIT fires at 452 in the base case and 15,354 in a high-income drawdown). Deleted both functions, the orphaned private guytonKlingerWithdrawal copy that only they called, roth.test.js, and 6 now-unused imports. KEPT (unchanged, still imported by 4 files): all federal/state/LTCG/NIIT/IRMAA/OBBBA constants, RMD divisor tables, taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS, getStateBrackets, getRmdStartAge. progTax/idxB/irmaaCost kept as exports with a banner - they now have no importer, but App.jsx carries byte-identical copies and the right fix is de-duplication, not deleting one half. File header rewritten to say what the module IS now. 832 -> 752 tests, 27 suites, all green; production build compiles. Previous: v1.2.74 - one-off cash flows are now DISCLOSED, not just simulated. v1.2.73 made an inheritance/home-sale/lump-pension actually reach all three engines, but nothing in Monte Carlo -> Simulation Inputs & Assumptions mentioned it: the panel disclosed spend, SS, rental, healthcare, mortgage and the market model, so a user who entered a $1M windfall still had no on-screen confirmation the run included it. New ONE-OFF CASH FLOWS section on that panel, rendered only when events exist: separate cards for Income & Windfalls and Planned One-Off Expenses (they are different mechanics - a windfall is deposited into a bucket and compounds, a cost is added to that year's spend), each event listed with year, age, amount, destination bucket, tax treatment, today's-dollars-vs-nominal basis and recurrence, plus a 'How AiRA models these' card. Sidebar 'Engine & assumptions' modal gains a one-line summary. Both read params.cashFlowEvents - the same object the engines receive - so the panel cannot claim an event that was not run. UI only, no engine change. Previous: v1.2.73 - a future lump sum (inheritance, home sale, pension lump) now actually reaches the plan. User report: entering a $1M test inheritance changed nothing, and the same $1M appeared under Planned One-Off Expenses, looking like it cancelled itself out. Two real bugs. ENGINES: all three engines (runMC, buildWithdrawalWaterfall/accumulateToRetirement, simulateDeterministicWithStrategy) processed cashFlowEvents only inside their retirement loops, so an inflow dated during the ACCUMULATION years was silently dropped from every projection - that is why the numbers never moved. Accumulation-phase inflows are now deposited into their bucket (with taxable basis) in the year they arrive and compound to retirement; an event fires in exactly one phase, never both. UI: the Planned One-Off Expenses card rendered the WHOLE cashFlowEvents array, inflows included, so a $1M inflow displayed as a $1M expense row (display only - the engines never charged it, but no user could trust that). The card now shows outflows only, and edits/removals address rows by id, not index. NEW: a One-Off Income & Windfalls card on the Income step, so an inheritance no longer has to be disguised as a lump-sum pension. 826 -> 832 tests.";
+export const BUILD_TIME = "2026-08-01T14:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -8509,6 +8509,35 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   const mortPayoffAge = mortSched
     ? params.currentAge + (mortSched.payoffYr - new Date().getFullYear())
     : 0;
+  // One-off cash flows (windfalls IN, planned lump costs OUT). These move the
+  // plan as much as any return assumption — a $1M inheritance landing at 68
+  // shifts every downstream percentile — but this panel disclosed only the
+  // recurring inputs, so nothing on screen told the user whether the run
+  // actually included the event they had just entered. Same list the engines
+  // read (params.cashFlowEvents), so what is shown is what was simulated.
+  const cfEvents   = params.cashFlowEvents || [];
+  const cfIsLive   = (e) => Number.isFinite(Number(e.year)) && (Number(e.amount) || 0) !== 0;
+  const cfInflows  = cfEvents.filter((e) => e.direction === "in"  && cfIsLive(e));
+  const cfOutflows = cfEvents.filter((e) => e.direction !== "in" && cfIsLive(e));
+  const cfAgeAt    = (yr) => params.currentAge + (Number(yr) - CURRENT_YEAR);
+  const cfWhen     = (ev, fallback) => {
+    const every = Number(ev.recurEveryYears) || 0;
+    return `${(ev.label || "").trim() || fallback} · ${ev.year} (age ${cfAgeAt(ev.year)})`
+      + (every > 0 ? ` · every ${every} yr` : "");
+  };
+  // `inflate !== false` is the engine's default (see computeCashFlowEvents) —
+  // report the treatment that will actually be applied, not the raw field.
+  const cfBasis    = (ev) => ev.inflate !== false ? `today's $ · +${params.inf ?? 2.5}%/yr` : "as entered (nominal)";
+  const cfInflowRows = cfInflows.flatMap((ev) => [
+    [cfWhen(ev, "Windfall"), "+" + fmtDollar(Number(ev.amount) || 0)],
+    [`↳ into ${BUCKET_LABELS_SHORT[ev.bucket || "taxable"]}`,
+      `${ev.taxable ? "taxed as income" : "not taxed"} · ${cfBasis(ev)}`],
+  ]);
+  const cfOutflowRows = cfOutflows.flatMap((ev) => [
+    [cfWhen(ev, "One-off cost"), "−" + fmtDollar(Number(ev.amount) || 0)],
+    [`↳ ${ev.deferrable ? "discretionary" : "committed"}`, cfBasis(ev)],
+  ]);
+
   const rateColor = (r) =>
     r >= 0.9 ? "#0d9488" : r >= 0.8 ? "#34d399" : r >= 0.7 ? "#fbbf24" : r >= 0.6 ? "#f97316" : "#ef4444";
   const riskLabel = (r) =>
@@ -8527,10 +8556,12 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   const InputCard = ({ title, rows }) => (
     <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 9, padding: 14 }}>
       <div style={{ fontSize: 9, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>{title}</div>
-      {rows.map(([label, val]) => (
-        <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
+      {/* Index in the key: rows are now generated per cash-flow event, and two
+          events can legitimately produce the same label ("↳ into taxable"). */}
+      {rows.map(([label, val], i) => (
+        <div key={`${label}|${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6, fontSize: 12 }}>
           <span style={{ color: "#64748b" }}>{label}</span>
-          <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace", fontWeight: 500 }}>{val}</span>
+          <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace", fontWeight: 500, textAlign: "right" }}>{val}</span>
         </div>
       ))}
     </div>
@@ -8636,6 +8667,40 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                 <InputCard title="Additional Costs" rows={[[`Healthcare (age ${params.hcShockAge ?? 72}+)`, `${params.hcProb ?? 3.5}% shock prob/yr`], ["Shock range", `${fmtDollar(params.hcMin ?? 70000)}–${fmtDollar(params.hcMax ?? 130000)}`], ["Mortgage annual", mortAnnual > 0 ? fmtDollar(mortAnnual) + "/yr" : "Paid off"], ["Mortgage payoff", mortPayoffAge > 0 ? "~" + mortPayoffAge : "—"]]} />
               </div>
             </div>
+            {/* One-off cash flows — rendered only when the user has entered at
+                least one, so the panel does not grow an empty section for the
+                common case. Inflows and outflows are separate cards because
+                they are separate mechanics: a windfall is DEPOSITED into a
+                bucket and compounds, a one-off cost is ADDED to that year's
+                spend. Showing them in one list is what let a $1M inheritance
+                read as a $1M expense. */}
+            {(cfInflows.length > 0 || cfOutflows.length > 0) && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#fbbf24", marginBottom: 10 }}>
+                  ONE-OFF CASH FLOWS ({cfInflows.length + cfOutflows.length} event{cfInflows.length + cfOutflows.length === 1 ? "" : "s"})
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                  {cfInflows.length > 0 && (
+                    <InputCard title={`Income & Windfalls (${cfInflows.length})`} rows={[
+                      ...cfInflowRows,
+                      ["Total as entered", "+" + fmtDollar(cfInflows.reduce((s, e) => s + (Number(e.amount) || 0), 0))],
+                    ]} />
+                  )}
+                  {cfOutflows.length > 0 && (
+                    <InputCard title={`Planned One-Off Expenses (${cfOutflows.length})`} rows={[
+                      ...cfOutflowRows,
+                      ["Total as entered", "−" + fmtDollar(cfOutflows.reduce((s, e) => s + (Number(e.amount) || 0), 0))],
+                    ]} />
+                  )}
+                  <InputCard title="How AiRA models these" rows={[
+                    ["Windfalls", "Deposited to the account you chose, then compound"],
+                    ["One-off costs", "Added on top of that year's spend"],
+                    ["Timing", "Fires in one year only, accumulation or retirement"],
+                    ["Applied to", `All ${MC_PATHS_LABEL} paths + the year-by-year plan`],
+                  ]} />
+                </div>
+              </div>
+            )}
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, color: "#34d399", marginBottom: 10 }}>MARKET & STATISTICAL MODEL</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
@@ -13923,6 +13988,25 @@ export default function AiRAForecaster() {
                   <div>
                     🏥 <span style={{ color: "#f87171" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
                   </div>
+                  {/* One-off events read from `params` — the object the engines
+                      actually receive — so this line can never claim an event
+                      the simulation did not run. Full per-event breakdown lives
+                      in Simulation Inputs & Assumptions on the MC tab. */}
+                  {(() => {
+                    const evs  = (params.cashFlowEvents || []).filter((e) => Number.isFinite(Number(e.year)) && (Number(e.amount) || 0) !== 0);
+                    if (evs.length === 0) return null;
+                    const sum  = (list) => list.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                    const ins  = evs.filter((e) => e.direction === "in");
+                    const outs = evs.filter((e) => e.direction !== "in");
+                    return (
+                      <div>
+                        💰 <span style={{ color: "#fbbf24" }}>One-off events:</span>{" "}
+                        {ins.length > 0 && `${ins.length} in +${fmtDollar(sum(ins))}`}
+                        {ins.length > 0 && outs.length > 0 && " · "}
+                        {outs.length > 0 && `${outs.length} out −${fmtDollar(sum(outs))}`}
+                      </div>
+                    );
+                  })()}
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <span style={{ color: "#14b8a6" }}>💹 Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(2)}% μ
                     <Hint
