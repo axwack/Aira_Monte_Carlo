@@ -8460,8 +8460,18 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   const [newCpValue, setNewCpValue] = useState("");
   const [newCpNote, setNewCpNote] = useState("");
 
-  const accPhase = `Age ${params.currentAge} → ${params.retireAge}`;
-  const retPhase = `Age ${params.retireAge} → ${params.endAge}`;
+  // Clamped the same way runMC/simulateDeterministicWithStrategy clamp their own
+  // start age (see effectiveRetireAge) — a user who enters a retireAge in the past
+  // relative to currentAge (already retired) actually gets simulated starting
+  // TODAY, not at the stale entered age. Without this, accPhase showed a backwards
+  // range ("Age 65 → 55") and retPhase named a phase start (55) the engine never
+  // actually uses (it starts at 65) — both were describing a simulation that
+  // wasn't the one being run.
+  const effRetireAge = effectiveRetireAge(params.retireAge, params.currentAge);
+  const accPhase = effRetireAge > params.currentAge
+    ? `Age ${params.currentAge} → ${effRetireAge}`
+    : "already retired — no accumulation phase";
+  const retPhase = `Age ${effRetireAge} → ${params.endAge}`;
   const mortSched = params.mortBalance > 0
     ? mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0)
     : null;
