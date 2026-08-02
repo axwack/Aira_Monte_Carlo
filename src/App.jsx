@@ -11537,16 +11537,16 @@ function ContribPanel({ values, onChange }) {
       <ACard title="💰 Annual Contributions" desc="Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.">
         <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 10, lineHeight: 1.4 }}>⚠ Employer Contribution and Brokerage/After-Tax Savings aren't capped by the tool — the IRS doesn't set a hard per-field limit on either, but real-world amounts are still bounded by your actual plan and income. 401(k), HSA, and Roth IRA below stay capped at their real legal limits.</div>
         <WFieldRow label="401(k) / 403(b) / 457(b) — pre-tax only" helper="Your PRE-TAX employee deferral. Roth 401(k)/403(b) money does NOT belong here — this field is taxed as ordinary income on withdrawal and drives your future RMDs. Put Roth deferrals in the Roth line below until a dedicated Roth 401(k) field exists (REQUIREMENTS §22.1).">
-          <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={80_000} step={500} suffix="/yr" />
+          <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={250_000} step={500} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="HSA Monthly Contribution" helper="Family limit $8,550 + $1,000 catch‑up (2026).">
-          <ANumInput value={hsaMonthly} onSet={(v) => onChange("hsaMonthly", v)} min={0} max={1_000} step={50} suffix="/mo" />
+          <ANumInput value={hsaMonthly} onSet={(v) => onChange("hsaMonthly", v)} min={0} max={2_000} step={50} suffix="/mo" />
         </WFieldRow>
         <WFieldRow label="Employer Contribution ($/yr)" helper="Fixed annual employer money in dollars — 401(k) match + profit sharing. Compounds in the Monte Carlo accumulation until your retirement age.">
           <ANumInput value={employerContrib} onSet={(v) => onChange("employerContrib", v)} min={0} max={999_000_000_000} step={500} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="Roth IRA Contribution" helper="Direct or backdoor Roth. Grows tax‑free and is drawn last, so it never triggers IRMAA or the SS torpedo.">
-          <ANumInput value={rothContrib} onSet={(v) => onChange("rothContrib", v)} min={0} max={30_000} step={500} suffix="/yr" />
+          <ANumInput value={rothContrib} onSet={(v) => onChange("rothContrib", v)} min={0} max={250_000} step={500} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="Brokerage / After‑Tax Savings" helper="Money you invest OUTSIDE a retirement account. Keep it here rather than adding it to your 401(k) — these dollars are withdrawn at long‑term capital-gains rates against their cost basis, and they don't raise your RMDs at 75.">
           <ANumInput value={taxableContrib} onSet={(v) => onChange("taxableContrib", v)} min={0} max={999_000_000_000} step={1_000} suffix="/yr" />
@@ -12334,7 +12334,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
 
       <ACard title="Social Security" accent="#7c3aed">
         <WFieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age. (Per Month)">
-          <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={5000} step={50} suffix="/mo" />
+          <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={10_000} step={50} suffix="/mo" />
         </WFieldRow>
         <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
           <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs"/>
@@ -12430,16 +12430,16 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
                 )}
               </div>
               <WFieldRow label="Spouse's benefit" helper="What SSA estimates your spouse will receive at the age they plan to claim. (Per Month)">
-                <ANumInput value={Math.round((sp.ssb || 0) / 12)} onSet={(v) => setSpouse({ ssb: Math.round(v * 12) })} min={0} max={5000} step={50} suffix="/mo" />
+                <ANumInput value={Math.round((sp.ssb || 0) / 12)} onSet={(v) => setSpouse({ ssb: Math.round(v * 12) })} min={0} max={10_000} step={50} suffix="/mo" />
               </WFieldRow>
               <WFieldRow label="Spouse's SS start age" helper="Their own age when they claim — can differ from yours, since each of you claims independently.">
                 <ANumInput value={sp.ssAge || 67} onSet={(v) => setSpouse({ ssAge: v })} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs" />
               </WFieldRow>
               <WFieldRow label="Your benefit at full retirement age" helper="From your SSA statement — the amount at FRA, not at the age you plan to claim. Used only for the spousal top-up. (Per Month)">
-                <ANumInput value={Math.round(primaryPia / 12)} onSet={(v) => onChange("ssPia", Math.round(v * 12))} min={0} max={5000} step={50} suffix="/mo" />
+                <ANumInput value={Math.round(primaryPia / 12)} onSet={(v) => onChange("ssPia", Math.round(v * 12))} min={0} max={10_000} step={50} suffix="/mo" />
               </WFieldRow>
               <WFieldRow label="Spouse's benefit at full retirement age" helper="Same, for your spouse. Enter it even if they never worked — a $0 here still earns the spousal top-up. (Per Month)">
-                <ANumInput value={Math.round(spousePia / 12)} onSet={(v) => setSpouse({ ssPia: Math.round(v * 12) })} min={0} max={5000} step={50} suffix="/mo" />
+                <ANumInput value={Math.round(spousePia / 12)} onSet={(v) => setSpouse({ ssPia: Math.round(v * 12) })} min={0} max={10_000} step={50} suffix="/mo" />
               </WFieldRow>
 
               {higherPia > 0 && (
@@ -12550,7 +12550,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
                       <ANumInput
                         value={Math.round(quoted / 12)}
                         onSet={(v) => setSpouse({ survivorBenefitAtClaim: Math.round(v * 12) })}
-                        min={0} max={6000} step={50} suffix="/mo"
+                        min={0} max={10_000} step={50} suffix="/mo"
                       />
                     </WFieldRow>
 
