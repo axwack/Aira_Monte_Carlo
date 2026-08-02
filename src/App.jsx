@@ -10248,7 +10248,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   );
 }
 
-function ProfileWizard({ values, onChange, onNavigateTab }) {
+function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt }) {
   const [step, setStep] = useState(0);
   const [saveStatus, setSaveStatus] = useState("");
 
@@ -10429,9 +10429,16 @@ function ProfileWizard({ values, onChange, onNavigateTab }) {
           }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4" }}>Profile Save</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#5eead4", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#34d399", display: "inline-block", boxShadow: "0 0 6px #34d399" }} />
+              Auto-save on
+            </div>
             <div style={{ fontSize: 10, color: "#64748b" }}>
-              {savedMeta ? `Last saved to this browser: ${savedMeta}` : "No saved profile in this browser yet"}
+              {autosavedAt
+                ? `Auto-saved ${autosavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })} — your work is kept in this browser`
+                : savedMeta
+                  ? `Last saved to this browser: ${savedMeta}`
+                  : "Changes save automatically as you edit"}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -13242,6 +13249,46 @@ export default function AiRAForecaster() {
     [assumptions.dob, assumptions.currentAge]
   );
 
+  // The complete profile exactly as persisted: `assumptions` merged with the
+  // slider states that live outside it (port, sp, retAge, …). Single source of
+  // truth for BOTH the manual Save button (ProfileWizard) and the autosave
+  // effect below — so a forgotten manual save and an autosave can never write
+  // different snapshots, and sliders that call setPort/setSp without touching
+  // assumptions still get captured.
+  const liveProfile = useMemo(() => ({
+    ...assumptions,
+    currentAge,
+    retireAge: retAge,
+    endAge,
+    port,
+    contrib,
+    sp,
+    ssAge: assumptions.ssAge,
+    ssb,
+    ab,
+    withdrawalStrategy: assumptions.withdrawalStrategy,
+  }), [assumptions, currentAge, retAge, endAge, port, contrib, sp, ssb, ab]);
+
+  // ── Silent autosave ────────────────────────────────────────────────────────
+  // Debounced persistence of the full profile so a user who forgets to hit Save
+  // never loses their work — it auto-restores on next load via
+  // loadProfileFromLocal(). Reuses the proven saveProfileToLocal() path (same
+  // key, same schema, same private-mode guard) that the manual Save uses.
+  //   • Skips the initial hydration render so mount doesn't redundantly re-save.
+  //   • Stays dormant on the visitor welcome screen, so an untouched blank
+  //     profile never creates a phantom "saved profile" that would suppress the
+  //     landing page on the next visit.
+  const autosaveReady = useRef(false);
+  const [lastAutosaveAt, setLastAutosaveAt] = useState(null);
+  useEffect(() => {
+    if (!autosaveReady.current) { autosaveReady.current = true; return; }
+    if (showWelcome) return;
+    const t = setTimeout(() => {
+      if (saveProfileToLocal(liveProfile)) setLastAutosaveAt(new Date());
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [liveProfile, showWelcome]);
+
   // Keep the stored field reconciled with dob. Without this, editing a birthday
   // updated the simulation (which reads the derived value) while every panel and
   // chart reading assumptions.currentAge kept showing the old age. Guarded by
@@ -14522,19 +14569,8 @@ export default function AiRAForecaster() {
                   <>
                   <ProfileWizard
                     onNavigateTab={navigateToTab}
-                    values={{
-                      ...assumptions,
-                      currentAge: currentAge,
-                      retireAge: retAge,
-                      endAge: endAge,
-                      port: port,
-                      contrib: contrib,
-                      sp: sp,
-                      ssAge: assumptions.ssAge,
-                      ssb: ssb,
-                      ab: ab,
-                      withdrawalStrategy: assumptions.withdrawalStrategy,
-                    }}
+                    autosavedAt={lastAutosaveAt}
+                    values={liveProfile}
                     onChange={(k, v) => {
                       updateAssumption(k, v);
                       if (k === "retireAge") setRetAge(v);
