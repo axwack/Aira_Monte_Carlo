@@ -8901,7 +8901,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
       {mc && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           <div style={{ background: `${rateColor(mc.rate)}12`, border: `1.5px solid ${rateColor(mc.rate)}44`, borderRadius: 10, padding: 18 }}>
-            <div className="section-label" style={{ marginBottom: 8 }}>SUCCESS RATE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
+            <div className="section-label" style={{ marginBottom: 8 }}>SUCCESS RATE <span role="img" aria-label="information" title={`Of your ${MC_PATHS_LABEL} Monte Carlo simulations, the share where the portfolio still has money at age ${params.endAge}. This is the conservative headline number — it assumes you live all the way to the plan age. The purple "…outlives you" figure below re-weights it by your odds of actually being alive at each failure age, so it's always a touch higher.`} style={{ color: "#60a5fa", cursor: "help" }}>ℹ️</span></div>
             <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(mc.rate), fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(mc.rate)}</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>of {MC_PATHS_LABEL} simulations last to age {params.endAge}</div>
             {mc.mwRate != null && (
@@ -8919,7 +8919,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             </div>
           </div>
           <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
-            <div className="section-label" style={{ marginBottom: 8 }}>MEDIAN FINAL BALANCE <span role="img" aria-label="information" style={{ color: "#60a5fa" }}>ℹ️</span></div>
+            <div className="section-label" style={{ marginBottom: 8 }}>MEDIAN FINAL BALANCE <span role="img" aria-label="information" title={`The middle outcome: the 50th-percentile portfolio value remaining at age ${params.endAge}. Half of all simulations finish above this and half below — the typical leftover, not a floor or a guarantee. The 10th–90th percentile spread beneath shows how wide the range of outcomes really is.`} style={{ color: "#60a5fa", cursor: "help" }}>ℹ️</span></div>
             <div style={{ fontSize: 42, fontWeight: 900, color: "#14b8a6", fontFamily: "'DM Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtDollar(mc.term.p50)}</div>
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>50th percentile at age {params.endAge}</div>
             <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 14 }}>Half of all simulations end above this. A higher balance cushions against sequence-of-returns risk.</div>
