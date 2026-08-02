@@ -2882,9 +2882,23 @@ const CSS = `
   }
 `;
 
+// ─── Monte Carlo fan-chart palette ───────────────────────────────────────────
+// Single source of truth for the percentile band colors so the chart lines/areas
+// and the tooltip stay in lock-step. Distinct hue ramp (upside → downside):
+//   90th indigo · 75th cyan · Median teal · 25th amber · 10th red.
+// The Tip must resolve by series NAME — Recharts hands Area series their fill
+// (a gradient url) as `p.color`, which would otherwise render as a broken swatch.
+const FAN_COLORS = {
+  "90th":   "#818cf8", // indigo
+  "75th":   "#22d3ee", // cyan
+  "Median": "#14b8a6", // teal (bold anchor line)
+  "25th":   "#fbbf24", // amber
+  "10th":   "#f87171", // red
+};
+
 const Tip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
-  
+
   // Filter to keep only the first occurrence of each name
   const seen = new Set();
   const uniquePayload = payload.filter(p => {
@@ -2898,12 +2912,16 @@ const Tip = ({ active, payload, label }) => {
       <div style={{ color: "#4d5c72", marginBottom: 3 }}>Age {label}</div>
       {uniquePayload
         .filter((p) => p.value > 0)
-        .map((p, i) => (
-          <div key={i} style={{ color: p.color, marginBottom: 1 }}>
-            <span style={{ color: "#94a3b8" }}>{p.name}: </span>
-            {p.name === "P(alive)" ? `${Math.round(p.value * 100)}%` : fmtDollar(p.value)}
-          </div>
-        ))}
+        .map((p, i) => {
+          const c = FAN_COLORS[p.name] || p.color;
+          return (
+            <div key={i} style={{ color: c, marginBottom: 1, display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: c, display: "inline-block", flexShrink: 0 }} />
+              <span style={{ color: "#94a3b8" }}>{p.name}: </span>
+              {p.name === "P(alive)" ? `${Math.round(p.value * 100)}%` : fmtDollar(p.value)}
+            </div>
+          );
+        })}
     </div>
   );
 };
@@ -3958,12 +3976,12 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
         >
           <defs>
             <linearGradient id="g90v5" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#5eead4" stopOpacity={0.15} />
-              <stop offset="100%" stopColor="#5eead4" stopOpacity={0.02} />
+              <stop offset="0%" stopColor="#818cf8" stopOpacity={0.15} />
+              <stop offset="100%" stopColor="#818cf8" stopOpacity={0.02} />
             </linearGradient>
             <linearGradient id="g75v5" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#0d9488" stopOpacity={0.25} />
-              <stop offset="100%" stopColor="#0d9488" stopOpacity={0.03} />
+              <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.22} />
+              <stop offset="100%" stopColor="#22d3ee" stopOpacity={0.03} />
             </linearGradient>
           </defs>
           <CartesianGrid
@@ -3991,11 +4009,11 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           <ReferenceLine yAxisId="port" x={rmdAge} stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "#34d399", fontSize: 10, position: "top" }} />
 
           {/* Fan areas and percentile lines */}
-          <Area yAxisId="port" type="monotone" dataKey="p90" stroke="#5eead4" strokeWidth={1} strokeDasharray="4 2" fill="url(#g90v5)" dot={false} name="90th" legendType="none" />
-          <Area yAxisId="port" type="monotone" dataKey="p75" stroke="#0d9488" strokeWidth={1} strokeDasharray="3 2" fill="url(#g75v5)" dot={false} name="75th" legendType="none" />
-          <Line yAxisId="port" type="monotone" dataKey="p50" stroke="#14b8a6" strokeWidth={2.5} dot={false} name="Median" />
-          <Line yAxisId="port" type="monotone" dataKey="p25" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="5 3" name="25th" />
-          <Line yAxisId="port" type="monotone" dataKey="p10" stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="3 3" name="10th" />
+          <Area yAxisId="port" type="monotone" dataKey="p90" stroke={FAN_COLORS["90th"]} strokeWidth={1} strokeDasharray="4 2" fill="url(#g90v5)" dot={false} name="90th" legendType="none" />
+          <Area yAxisId="port" type="monotone" dataKey="p75" stroke={FAN_COLORS["75th"]} strokeWidth={1} strokeDasharray="3 2" fill="url(#g75v5)" dot={false} name="75th" legendType="none" />
+          <Line yAxisId="port" type="monotone" dataKey="p50" stroke={FAN_COLORS["Median"]} strokeWidth={2.5} dot={false} name="Median" />
+          <Line yAxisId="port" type="monotone" dataKey="p25" stroke={FAN_COLORS["25th"]} strokeWidth={1.5} dot={false} strokeDasharray="5 3" name="25th" />
+          <Line yAxisId="port" type="monotone" dataKey="p10" stroke={FAN_COLORS["10th"]} strokeWidth={1.5} dot={false} strokeDasharray="3 3" name="10th" />
 
           {/* Hover highlight — when a row in the age-band table below is hovered,
               spotlight that age column and mark its percentile values on the fan. */}
@@ -4010,11 +4028,11 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
               <>
                 <ReferenceLine yAxisId="port" x={hoveredAge} stroke="rgba(56,189,248,0.5)" strokeWidth={2}
                   label={{ value: `Age ${hoveredAge}`, fill: "#38bdf8", fontSize: 10, position: "top" }} />
-                {dot(row.p90, "#5eead4")}
-                {dot(row.p75, "#0d9488")}
-                {dot(row.p50, "#14b8a6")}
-                {dot(row.p25, "#fbbf24")}
-                {dot(row.p10, "#f87171")}
+                {dot(row.p90, FAN_COLORS["90th"])}
+                {dot(row.p75, FAN_COLORS["75th"])}
+                {dot(row.p50, FAN_COLORS["Median"])}
+                {dot(row.p25, FAN_COLORS["25th"])}
+                {dot(row.p10, FAN_COLORS["10th"])}
               </>
             );
           })()}
@@ -4184,11 +4202,11 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
       <div className="leg">
         {[
           ...(showTargets && accumData.length > 0 ? [{ c: "#60a5fa", l: "Expected path" }] : []),
-          { c: "#5eead4", l: "90th %ile" },
-          { c: "#0d9488", l: "75th %ile" },
-          { c: "#14b8a6", l: "Median" },
-          { c: "#fbbf24", l: "25th %ile" },
-          { c: "#f87171", l: "10th %ile" },
+          { c: FAN_COLORS["90th"], l: "90th %ile" },
+          { c: FAN_COLORS["75th"], l: "75th %ile" },
+          { c: FAN_COLORS["Median"], l: "Median" },
+          { c: FAN_COLORS["25th"], l: "25th %ile" },
+          { c: FAN_COLORS["10th"], l: "10th %ile" },
           ...(showTargets ? [
             { c: "#f59e0b", l: `🎯 Reassess $${Math.round(portfolioGoal).toLocaleString()}` },
             { c: "#8b5cf6", l: `🚀 Trigger $${Math.round(earlyRetireTarget).toLocaleString()}` },
