@@ -179,9 +179,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.76";
-export const BUILD_TAG = "[main] v1.2.76 - per-person contributions, Phase A (REQUIREMENTS section 24.1). Each partner's contributions now stop on THEIR OWN retirement date. Before this every stream ran for retireAge - currentAge, one retirement date for two people, so a couple where one retires at 62 and the other works to 67 had five years of one salary's saving either invented or missing, compounded to retirement. Splitting the AMOUNTS was NOT the fix and changes no number (all three engines sum into buckets, so 24,500 + 18,000 in one field is identical to two fields) - the stop date is the entire numerical case. NEW spouse.retireAge / spouse.contrib / spouse.employerContrib / spouse.rothContrib, defaulting to null/0 so every saved profile computes byte-identically. Only job-bound streams split: brokerage savings stay household (no employment link, no cap) and the HSA stays household because its stop rule is Medicare enrolment, not retirement. NEW engine/contributions.js is the single home for who-is-still-contributing, called by all three accumulation loops (runMC, simulateDeterministicWithStrategy, accumulateToRetirement) because cross-engine drift between exactly those three is this codebase's most repeated defect. NEW ages.js contribStopOnPrimaryClock shifts the spouse's own age onto the primary's clock - the identical mistake against spouse.ssAge once started a younger spouse's Social Security years early, so a spouse ten years younger retiring at 60 now correctly stops when the primary is 70. Also fixed the Annual Contributions card, which printed the 401k line alone while calling itself the total, silently omitting employer money, HSA, Roth and brokerage; it now discloses every component plus the spouse stop age. Three more display sites and the FanChart accumulation line now use the household total instead of params.contrib. PHASE B NOT BUILT and disclosed in the UI: a spouse working PAST the primary is clamped at the primary date because the retirement loop has no concept of contributions - conservative, not optimistic, and an amber panel says so. 752 -> 774 tests, 28 suites. Previous: [main] v1.2.75 - deleted the dead Roth conversion engine. buildRothExplorer() and buildRothLadder() in src/engine/buildRothExplorer.js were a second, disconnected ~350-line conversion model that NO UI path called: App.jsx imports only CONSTANTS from that file, and the live Roth Conversion tab is built on buildWithdrawalWaterfall via rothConversionPlan.js. The dead pair was kept breathing by ~100 tests in roth.test.js and actively misled readers - it was consulted to answer 'is this rule implemented?' and gave the WRONG answer, because the engine the app actually runs had already implemented it (verified empirically: a $1M inheritance moves the year-1 conversion 241,900 -> 247,178 when it lands in a taxable account, and to 0 when it arrives as ordinary income; NIIT fires at 452 in the base case and 15,354 in a high-income drawdown). Deleted both functions, the orphaned private guytonKlingerWithdrawal copy that only they called, roth.test.js, and 6 now-unused imports. KEPT (unchanged, still imported by 4 files): all federal/state/LTCG/NIIT/IRMAA/OBBBA constants, RMD divisor tables, taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS, getStateBrackets, getRmdStartAge. progTax/idxB/irmaaCost kept as exports with a banner - they now have no importer, but App.jsx carries byte-identical copies and the right fix is de-duplication, not deleting one half. File header rewritten to say what the module IS now. 832 -> 752 tests, 27 suites, all green; production build compiles. Previous: v1.2.74 - one-off cash flows are now DISCLOSED, not just simulated. v1.2.73 made an inheritance/home-sale/lump-pension actually reach all three engines, but nothing in Monte Carlo -> Simulation Inputs & Assumptions mentioned it: the panel disclosed spend, SS, rental, healthcare, mortgage and the market model, so a user who entered a $1M windfall still had no on-screen confirmation the run included it. New ONE-OFF CASH FLOWS section on that panel, rendered only when events exist: separate cards for Income & Windfalls and Planned One-Off Expenses (they are different mechanics - a windfall is deposited into a bucket and compounds, a cost is added to that year's spend), each event listed with year, age, amount, destination bucket, tax treatment, today's-dollars-vs-nominal basis and recurrence, plus a 'How AiRA models these' card. Sidebar 'Engine & assumptions' modal gains a one-line summary. Both read params.cashFlowEvents - the same object the engines receive - so the panel cannot claim an event that was not run. UI only, no engine change. Previous: v1.2.73 - a future lump sum (inheritance, home sale, pension lump) now actually reaches the plan. User report: entering a $1M test inheritance changed nothing, and the same $1M appeared under Planned One-Off Expenses, looking like it cancelled itself out. Two real bugs. ENGINES: all three engines (runMC, buildWithdrawalWaterfall/accumulateToRetirement, simulateDeterministicWithStrategy) processed cashFlowEvents only inside their retirement loops, so an inflow dated during the ACCUMULATION years was silently dropped from every projection - that is why the numbers never moved. Accumulation-phase inflows are now deposited into their bucket (with taxable basis) in the year they arrive and compound to retirement; an event fires in exactly one phase, never both. UI: the Planned One-Off Expenses card rendered the WHOLE cashFlowEvents array, inflows included, so a $1M inflow displayed as a $1M expense row (display only - the engines never charged it, but no user could trust that). The card now shows outflows only, and edits/removals address rows by id, not index. NEW: a One-Off Income & Windfalls card on the Income step, so an inheritance no longer has to be disguised as a lump-sum pension. 826 -> 832 tests.";
-export const BUILD_TIME = "2026-08-03T18:00:00Z";
+const APP_VERSION = "1.2.77";
+export const BUILD_TAG = "[main] v1.2.77 - moved the one spouse switch to where the fact belongs. Vincent: \"in order to enter contributions for a spouse you have to click the check box on retirement plan. This is a strange place.\" Correct, and a miss in v1.2.76: spouse.enabled lived inside the Social Security card labelled 'Add my spouse's Social Security' because SS was the only thing it gated. v1.2.76 quietly promoted it to a household-identity fact gating per-person contributions too - a step EARLIER in the wizard - without moving or relabelling it, so entering a spouse's 401k meant jumping forward to a card about Social Security, ticking a box that never mentions savings, and coming back. The switch now sits in About You beside Federal Filing Status, relabelled 'Include a spouse or partner' and describing BOTH features it unlocks. The Social Security and Contributions cards get read-only pointers to it instead of a second checkbox - two toggles writing one flag is the pattern REQUIREMENTS section 31 removed in v1.2.66. Verified exactly one writer of spouse.enabled remains, in AboutYouPanel. UI/IA only, no engine change. Previous: [main] v1.2.76 - per-person contributions, Phase A (REQUIREMENTS section 24.1). Each partner's contributions now stop on THEIR OWN retirement date. Before this every stream ran for retireAge - currentAge, one retirement date for two people, so a couple where one retires at 62 and the other works to 67 had five years of one salary's saving either invented or missing, compounded to retirement. Splitting the AMOUNTS was NOT the fix and changes no number (all three engines sum into buckets, so 24,500 + 18,000 in one field is identical to two fields) - the stop date is the entire numerical case. NEW spouse.retireAge / spouse.contrib / spouse.employerContrib / spouse.rothContrib, defaulting to null/0 so every saved profile computes byte-identically. Only job-bound streams split: brokerage savings stay household (no employment link, no cap) and the HSA stays household because its stop rule is Medicare enrolment, not retirement. NEW engine/contributions.js is the single home for who-is-still-contributing, called by all three accumulation loops (runMC, simulateDeterministicWithStrategy, accumulateToRetirement) because cross-engine drift between exactly those three is this codebase's most repeated defect. NEW ages.js contribStopOnPrimaryClock shifts the spouse's own age onto the primary's clock - the identical mistake against spouse.ssAge once started a younger spouse's Social Security years early, so a spouse ten years younger retiring at 60 now correctly stops when the primary is 70. Also fixed the Annual Contributions card, which printed the 401k line alone while calling itself the total, silently omitting employer money, HSA, Roth and brokerage; it now discloses every component plus the spouse stop age. Three more display sites and the FanChart accumulation line now use the household total instead of params.contrib. PHASE B NOT BUILT and disclosed in the UI: a spouse working PAST the primary is clamped at the primary date because the retirement loop has no concept of contributions - conservative, not optimistic, and an amber panel says so. 752 -> 774 tests, 28 suites. Previous: [main] v1.2.75 - deleted the dead Roth conversion engine. buildRothExplorer() and buildRothLadder() in src/engine/buildRothExplorer.js were a second, disconnected ~350-line conversion model that NO UI path called: App.jsx imports only CONSTANTS from that file, and the live Roth Conversion tab is built on buildWithdrawalWaterfall via rothConversionPlan.js. The dead pair was kept breathing by ~100 tests in roth.test.js and actively misled readers - it was consulted to answer 'is this rule implemented?' and gave the WRONG answer, because the engine the app actually runs had already implemented it (verified empirically: a $1M inheritance moves the year-1 conversion 241,900 -> 247,178 when it lands in a taxable account, and to 0 when it arrives as ordinary income; NIIT fires at 452 in the base case and 15,354 in a high-income drawdown). Deleted both functions, the orphaned private guytonKlingerWithdrawal copy that only they called, roth.test.js, and 6 now-unused imports. KEPT (unchanged, still imported by 4 files): all federal/state/LTCG/NIIT/IRMAA/OBBBA constants, RMD divisor tables, taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS, getStateBrackets, getRmdStartAge. progTax/idxB/irmaaCost kept as exports with a banner - they now have no importer, but App.jsx carries byte-identical copies and the right fix is de-duplication, not deleting one half. File header rewritten to say what the module IS now. 832 -> 752 tests, 27 suites, all green; production build compiles. Previous: v1.2.74 - one-off cash flows are now DISCLOSED, not just simulated. v1.2.73 made an inheritance/home-sale/lump-pension actually reach all three engines, but nothing in Monte Carlo -> Simulation Inputs & Assumptions mentioned it: the panel disclosed spend, SS, rental, healthcare, mortgage and the market model, so a user who entered a $1M windfall still had no on-screen confirmation the run included it. New ONE-OFF CASH FLOWS section on that panel, rendered only when events exist: separate cards for Income & Windfalls and Planned One-Off Expenses (they are different mechanics - a windfall is deposited into a bucket and compounds, a cost is added to that year's spend), each event listed with year, age, amount, destination bucket, tax treatment, today's-dollars-vs-nominal basis and recurrence, plus a 'How AiRA models these' card. Sidebar 'Engine & assumptions' modal gains a one-line summary. Both read params.cashFlowEvents - the same object the engines receive - so the panel cannot claim an event that was not run. UI only, no engine change. Previous: v1.2.73 - a future lump sum (inheritance, home sale, pension lump) now actually reaches the plan. User report: entering a $1M test inheritance changed nothing, and the same $1M appeared under Planned One-Off Expenses, looking like it cancelled itself out. Two real bugs. ENGINES: all three engines (runMC, buildWithdrawalWaterfall/accumulateToRetirement, simulateDeterministicWithStrategy) processed cashFlowEvents only inside their retirement loops, so an inflow dated during the ACCUMULATION years was silently dropped from every projection - that is why the numbers never moved. Accumulation-phase inflows are now deposited into their bucket (with taxable basis) in the year they arrive and compound to retirement; an event fires in exactly one phase, never both. UI: the Planned One-Off Expenses card rendered the WHOLE cashFlowEvents array, inflows included, so a $1M inflow displayed as a $1M expense row (display only - the engines never charged it, but no user could trust that). The card now shows outflows only, and edits/removals address rows by id, not index. NEW: a One-Off Income & Windfalls card on the Income step, so an inheritance no longer has to be disguised as a lump-sum pension. 826 -> 832 tests.";
+export const BUILD_TIME = "2026-08-03T19:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -10388,7 +10388,7 @@ function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt }) {
   const PANELS = [
     <AboutYouPanel values={values} onChange={onChange} />,
     <SavingsPanel values={values} onChange={onChange} />,
-    <ContribPanel values={values} onChange={onChange} />,
+    <ContribPanel values={values} onChange={onChange} onNavigateStep={setStep} />,
     <ExpensesPanel values={values} onChange={onChange} />,
     <RetirementPanel values={values} onChange={onChange} onNavigateStep={setStep} onNavigateTab={onNavigateTab} />,
     <AssumptionsPanel values={values} onChange={onChange} />,
@@ -10942,6 +10942,31 @@ function AboutYouPanel({ values, onChange }) {
             <option value="mfj">Married Filing Jointly (MFJ)</option>
             <option value="single">Single (unmarried)</option>
           </select>
+        </ARow>
+        {/* ── The one spouse switch (§24.1 follow-up) ─────────────────────────
+            `spouse.enabled` lived inside the Social Security card, labelled "Add
+            my spouse's Social Security", because SS was the only thing it gated.
+            It now also gates per-person contributions — a step EARLIER in the
+            wizard — so a user had to jump forward to a card about Social
+            Security, tick a box that never mentions savings, and come back.
+
+            It belongs here: it is a statement about WHO THE HOUSEHOLD IS, next
+            to filing status, and ahead of both features that read it. The
+            Social Security and Contributions cards now point at this control
+            rather than duplicating it — one flag, one switch (§31, "two doors to
+            the same room"). */}
+        <ARow label="Include a spouse or partner" desc="Model two people instead of one. Turns on your spouse's own Social Security (their benefit, their claim age, survivor benefits) and lets their retirement contributions stop on their own retirement date. Off leaves your plan exactly as it is today.">
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "#cbd5e1" }}>
+            <input
+              type="checkbox"
+              checked={!!values.spouse?.enabled}
+              onChange={(e) =>
+                onChange("spouse", { ...(values.spouse || { ssb: 0, ssAge: 67, ssPia: 0 }), enabled: e.target.checked })
+              }
+              style={{ width: 15, height: 15, accentColor: "#14b8a6", cursor: "pointer" }}
+            />
+            {values.spouse?.enabled ? "Included" : "Not included"}
+          </label>
         </ARow>
       </ACard>
       <ACard title="Retirement Timeline" accent="#14b8a6" desc="When you stop working and how long the plan must last.">
@@ -11580,7 +11605,7 @@ function AssumptionsPanel({ values, onChange }) {
   );
 }
 
-function ContribPanel({ values, onChange }) {
+function ContribPanel({ values, onChange, onNavigateStep }) {
   const annual401k = values.contrib || 0;
   const hsaMonthly = values.hsaMonthly || 0;
   const employerContrib = values.employerContrib || 0;
@@ -11638,6 +11663,29 @@ function ContribPanel({ values, onChange }) {
         <WFieldRow label="Brokerage / After‑Tax Savings" helper="Money you invest OUTSIDE a retirement account. Keep it here rather than adding it to your 401(k) — these dollars are withdrawn at long‑term capital-gains rates against their cost basis, and they don't raise your RMDs at 75.">
           <ANumInput value={taxableContrib} onSet={(v) => onChange("taxableContrib", v)} min={0} max={999_000_000_000} step={1_000} suffix="/yr" />
         </WFieldRow>
+
+        {/* Pointer, not a toggle. The one spouse switch lives in About You
+            (§24.1 follow-up): it was previously buried in the Social Security
+            card, which meant discovering per-person contributions required
+            visiting a later step and a card about a different subject. */}
+        {!spouseOn && (
+          <div style={{ padding: "10px 12px", marginTop: 4, background: "rgba(167,139,250,0.08)", border: "1px solid rgba(167,139,250,0.28)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+            <span>Two of you saving? Enter your spouse's contributions separately so they stop on <strong style={{ color: "#c4b5fd" }}>their</strong> retirement date, not yours.</span>
+            {/* Index 0 is AboutYouPanel in ProfileWizard's PANELS array. */}
+            <button
+              type="button"
+              onClick={() => onNavigateStep && onNavigateStep(0)}
+              style={{
+                fontSize: 11, color: "#c4b5fd", background: "none", border: "none",
+                padding: 0, cursor: onNavigateStep ? "pointer" : "default",
+                textDecoration: onNavigateStep ? "underline" : "none",
+              }}
+              disabled={!onNavigateStep}
+            >
+              Add a spouse in About You →
+            </button>
+          </div>
+        )}
 
         {/* ── Spouse's job-bound contributions (§24.1) ────────────────────────
             Shown only when the spouse is enabled, so a single-person profile is
@@ -12504,22 +12552,27 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             "when does my spouse die" input yet, because the engine does not model
             that event — shipping the control first would create exactly the kind of
             dead setting src/ghostSettings.test.js exists to catch. */}
-        <WFieldRow
-          label="Add my spouse's Social Security"
-          helper="Model two benefits instead of one. Off leaves your plan exactly as it is today."
-        >
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "#cbd5e1" }}>
-            <input
-              type="checkbox"
-              checked={!!values.spouse?.enabled}
-              onChange={(e) =>
-                onChange("spouse", { ...(values.spouse || { ssb: 0, ssAge: 67, ssPia: 0 }), enabled: e.target.checked })
-              }
-              style={{ width: 15, height: 15, accentColor: "#14b8a6", cursor: "pointer" }}
-            />
-            {values.spouse?.enabled ? "Included" : "Not included"}
-          </label>
-        </WFieldRow>
+        {/* Read-only pointer, NOT a second checkbox. `spouse.enabled` is one
+            household fact with one switch, in About You — see the note there.
+            Duplicating the toggle here is the pattern §31 removed. */}
+        {!values.spouse?.enabled && (
+          <div style={{ padding: "10px 12px", marginBottom: 16, background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+            <span>Modelling one benefit. Add a spouse to include <strong style={{ color: "#c4b5fd" }}>their</strong> benefit, claim age and survivor benefits.</span>
+            {/* Index 0 is AboutYouPanel in ProfileWizard's PANELS array. */}
+            <button
+              type="button"
+              onClick={() => onNavigateStep && onNavigateStep(0)}
+              style={{
+                fontSize: 11, color: "#c4b5fd", background: "none", border: "none",
+                padding: 0, cursor: onNavigateStep ? "pointer" : "default",
+                textDecoration: onNavigateStep ? "underline" : "none",
+              }}
+              disabled={!onNavigateStep}
+            >
+              Add a spouse in About You →
+            </button>
+          </div>
+        )}
 
         {values.spouse?.enabled && (() => {
           const sp = values.spouse || {};
