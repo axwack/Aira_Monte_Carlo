@@ -41,6 +41,7 @@ import {
   JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, expectedHealthcareShock } from "./expenses.js";
+import { jobContributionsForYear } from "./contributions.js";
 import { spouseAgeAt, personsAtLeastAge, spouseDeathOnPrimaryClock, filesJointlyAt, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, spouseAgeOffset } from "./ages.js";
 import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_RATE, EARLY_PENALTY_AGE } from "./earlyWithdrawal.js";
 import { scheduleSpendForYear } from "./expenseImport.js";
@@ -177,8 +178,13 @@ export function accumulateToRetirement(params = {}) {
     // this engine reported a retirement portfolio with zero savings added —
     // understating balances for every user still working, and contradicting the
     // docstring's promise that it agrees with runMC's starting balances.
-    contrib = 0, employerContrib = 0, hsaContrib = 0,
-    taxableContrib = 0, rothContrib = 0,
+    //
+    // `contrib` / `employerContrib` / `rothContrib` are deliberately NOT
+    // destructured here: they are job-bound and now read through
+    // jobContributionsForYear(params, age), which also decides whether the
+    // spouse is still working (§24.1). Pulling them out again as locals would
+    // reintroduce exactly the "one loop forgot the rule" drift this avoids.
+    hsaContrib = 0, taxableContrib = 0,
     // One-off inflow events (inheritance, home sale, pension lump sum) that
     // land BEFORE retirement. Previously only the retirement loops processed
     // cashFlowEvents, so a lump sum arriving in an accumulation year was
@@ -223,9 +229,15 @@ export function accumulateToRetirement(params = {}) {
     // Same bucket routing as runMC's accumulation loop — grow first, then add
     // the year's contributions, so a contribution doesn't earn a return in the
     // year it was made.
-    pretax0  += contrib + employerContrib;
+    //
+    // Job-bound streams come from the shared §24.1 helper, which decides whether
+    // the spouse is still working this year. `params` (not the destructured
+    // locals) is passed through because the helper needs spouse{} and the
+    // primary's own streams together.
+    const jc = jobContributionsForYear(params, (currentAge ?? 0) + y);
+    pretax0  += jc.pretax;
     cash0    += hsaContrib;
-    roth0    += rothContrib;
+    roth0    += jc.roth;
     taxable0 += taxableContrib;
     // After-tax dollars in, so basis rises one-for-one (growth is unrealized).
     taxableBasis0 += taxableContrib;

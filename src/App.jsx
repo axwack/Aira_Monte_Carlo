@@ -72,13 +72,14 @@ import {
 import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { resolveGlidepathSwitchAge, glidepathEquityWeight, glidepathEqPct } from "./engine/glidepath.js";
+import { jobContributionsForYear, householdAnnualContribution } from "./engine/contributions.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, healthcareShockDraw, expectedHealthcareShock } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_AGE } from "./engine/earlyWithdrawal.js";
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
-import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie } from "./engine/ages.js";
+import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
 // One declaration of every figure's arithmetic, rendered here and enforced by
 // provenance.test.js. Never inline a formula string — it would drift from the test.
@@ -178,9 +179,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.75";
-export const BUILD_TAG = "[main] v1.2.75 - deleted the dead Roth conversion engine. buildRothExplorer() and buildRothLadder() in src/engine/buildRothExplorer.js were a second, disconnected ~350-line conversion model that NO UI path called: App.jsx imports only CONSTANTS from that file, and the live Roth Conversion tab is built on buildWithdrawalWaterfall via rothConversionPlan.js. The dead pair was kept breathing by ~100 tests in roth.test.js and actively misled readers - it was consulted to answer 'is this rule implemented?' and gave the WRONG answer, because the engine the app actually runs had already implemented it (verified empirically: a $1M inheritance moves the year-1 conversion 241,900 -> 247,178 when it lands in a taxable account, and to 0 when it arrives as ordinary income; NIIT fires at 452 in the base case and 15,354 in a high-income drawdown). Deleted both functions, the orphaned private guytonKlingerWithdrawal copy that only they called, roth.test.js, and 6 now-unused imports. KEPT (unchanged, still imported by 4 files): all federal/state/LTCG/NIIT/IRMAA/OBBBA constants, RMD divisor tables, taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS, getStateBrackets, getRmdStartAge. progTax/idxB/irmaaCost kept as exports with a banner - they now have no importer, but App.jsx carries byte-identical copies and the right fix is de-duplication, not deleting one half. File header rewritten to say what the module IS now. 832 -> 752 tests, 27 suites, all green; production build compiles. Previous: v1.2.74 - one-off cash flows are now DISCLOSED, not just simulated. v1.2.73 made an inheritance/home-sale/lump-pension actually reach all three engines, but nothing in Monte Carlo -> Simulation Inputs & Assumptions mentioned it: the panel disclosed spend, SS, rental, healthcare, mortgage and the market model, so a user who entered a $1M windfall still had no on-screen confirmation the run included it. New ONE-OFF CASH FLOWS section on that panel, rendered only when events exist: separate cards for Income & Windfalls and Planned One-Off Expenses (they are different mechanics - a windfall is deposited into a bucket and compounds, a cost is added to that year's spend), each event listed with year, age, amount, destination bucket, tax treatment, today's-dollars-vs-nominal basis and recurrence, plus a 'How AiRA models these' card. Sidebar 'Engine & assumptions' modal gains a one-line summary. Both read params.cashFlowEvents - the same object the engines receive - so the panel cannot claim an event that was not run. UI only, no engine change. Previous: v1.2.73 - a future lump sum (inheritance, home sale, pension lump) now actually reaches the plan. User report: entering a $1M test inheritance changed nothing, and the same $1M appeared under Planned One-Off Expenses, looking like it cancelled itself out. Two real bugs. ENGINES: all three engines (runMC, buildWithdrawalWaterfall/accumulateToRetirement, simulateDeterministicWithStrategy) processed cashFlowEvents only inside their retirement loops, so an inflow dated during the ACCUMULATION years was silently dropped from every projection - that is why the numbers never moved. Accumulation-phase inflows are now deposited into their bucket (with taxable basis) in the year they arrive and compound to retirement; an event fires in exactly one phase, never both. UI: the Planned One-Off Expenses card rendered the WHOLE cashFlowEvents array, inflows included, so a $1M inflow displayed as a $1M expense row (display only - the engines never charged it, but no user could trust that). The card now shows outflows only, and edits/removals address rows by id, not index. NEW: a One-Off Income & Windfalls card on the Income step, so an inheritance no longer has to be disguised as a lump-sum pension. 826 -> 832 tests.";
-export const BUILD_TIME = "2026-08-01T14:00:00Z";
+const APP_VERSION = "1.2.76";
+export const BUILD_TAG = "[main] v1.2.76 - per-person contributions, Phase A (REQUIREMENTS section 24.1). Each partner's contributions now stop on THEIR OWN retirement date. Before this every stream ran for retireAge - currentAge, one retirement date for two people, so a couple where one retires at 62 and the other works to 67 had five years of one salary's saving either invented or missing, compounded to retirement. Splitting the AMOUNTS was NOT the fix and changes no number (all three engines sum into buckets, so 24,500 + 18,000 in one field is identical to two fields) - the stop date is the entire numerical case. NEW spouse.retireAge / spouse.contrib / spouse.employerContrib / spouse.rothContrib, defaulting to null/0 so every saved profile computes byte-identically. Only job-bound streams split: brokerage savings stay household (no employment link, no cap) and the HSA stays household because its stop rule is Medicare enrolment, not retirement. NEW engine/contributions.js is the single home for who-is-still-contributing, called by all three accumulation loops (runMC, simulateDeterministicWithStrategy, accumulateToRetirement) because cross-engine drift between exactly those three is this codebase's most repeated defect. NEW ages.js contribStopOnPrimaryClock shifts the spouse's own age onto the primary's clock - the identical mistake against spouse.ssAge once started a younger spouse's Social Security years early, so a spouse ten years younger retiring at 60 now correctly stops when the primary is 70. Also fixed the Annual Contributions card, which printed the 401k line alone while calling itself the total, silently omitting employer money, HSA, Roth and brokerage; it now discloses every component plus the spouse stop age. Three more display sites and the FanChart accumulation line now use the household total instead of params.contrib. PHASE B NOT BUILT and disclosed in the UI: a spouse working PAST the primary is clamped at the primary date because the retirement loop has no concept of contributions - conservative, not optimistic, and an amber panel says so. 752 -> 774 tests, 28 suites. Previous: [main] v1.2.75 - deleted the dead Roth conversion engine. buildRothExplorer() and buildRothLadder() in src/engine/buildRothExplorer.js were a second, disconnected ~350-line conversion model that NO UI path called: App.jsx imports only CONSTANTS from that file, and the live Roth Conversion tab is built on buildWithdrawalWaterfall via rothConversionPlan.js. The dead pair was kept breathing by ~100 tests in roth.test.js and actively misled readers - it was consulted to answer 'is this rule implemented?' and gave the WRONG answer, because the engine the app actually runs had already implemented it (verified empirically: a $1M inheritance moves the year-1 conversion 241,900 -> 247,178 when it lands in a taxable account, and to 0 when it arrives as ordinary income; NIIT fires at 452 in the base case and 15,354 in a high-income drawdown). Deleted both functions, the orphaned private guytonKlingerWithdrawal copy that only they called, roth.test.js, and 6 now-unused imports. KEPT (unchanged, still imported by 4 files): all federal/state/LTCG/NIIT/IRMAA/OBBBA constants, RMD divisor tables, taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS, getStateBrackets, getRmdStartAge. progTax/idxB/irmaaCost kept as exports with a banner - they now have no importer, but App.jsx carries byte-identical copies and the right fix is de-duplication, not deleting one half. File header rewritten to say what the module IS now. 832 -> 752 tests, 27 suites, all green; production build compiles. Previous: v1.2.74 - one-off cash flows are now DISCLOSED, not just simulated. v1.2.73 made an inheritance/home-sale/lump-pension actually reach all three engines, but nothing in Monte Carlo -> Simulation Inputs & Assumptions mentioned it: the panel disclosed spend, SS, rental, healthcare, mortgage and the market model, so a user who entered a $1M windfall still had no on-screen confirmation the run included it. New ONE-OFF CASH FLOWS section on that panel, rendered only when events exist: separate cards for Income & Windfalls and Planned One-Off Expenses (they are different mechanics - a windfall is deposited into a bucket and compounds, a cost is added to that year's spend), each event listed with year, age, amount, destination bucket, tax treatment, today's-dollars-vs-nominal basis and recurrence, plus a 'How AiRA models these' card. Sidebar 'Engine & assumptions' modal gains a one-line summary. Both read params.cashFlowEvents - the same object the engines receive - so the panel cannot claim an event that was not run. UI only, no engine change. Previous: v1.2.73 - a future lump sum (inheritance, home sale, pension lump) now actually reaches the plan. User report: entering a $1M test inheritance changed nothing, and the same $1M appeared under Planned One-Off Expenses, looking like it cancelled itself out. Two real bugs. ENGINES: all three engines (runMC, buildWithdrawalWaterfall/accumulateToRetirement, simulateDeterministicWithStrategy) processed cashFlowEvents only inside their retirement loops, so an inflow dated during the ACCUMULATION years was silently dropped from every projection - that is why the numbers never moved. Accumulation-phase inflows are now deposited into their bucket (with taxable basis) in the year they arrive and compound to retirement; an event fires in exactly one phase, never both. UI: the Planned One-Off Expenses card rendered the WHOLE cashFlowEvents array, inflows included, so a $1M inflow displayed as a $1M expense row (display only - the engines never charged it, but no user could trust that). The card now shows outflows only, and edits/removals address rows by id, not index. NEW: a One-Off Income & Windfalls card on the Income step, so an inheritance no longer has to be disguised as a lump-sum pension. 826 -> 832 tests.";
+export const BUILD_TIME = "2026-08-03T18:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -575,6 +576,25 @@ export const BLANK_PROFILE = {
     // reduced. Supplying it bypasses our reduction schedule entirely (§21 "ask,
     // don't derive"). 0/blank ⇒ derive from the deceased's check or PIA.
     survivorBenefitAtClaim: 0,
+    // ── Per-person contributions (§24.1 Phase A) ─────────────────────────────
+    // The household used to have ONE set of contribution fields running for
+    // `retireAge - currentAge` — one retirement date for two people. Splitting
+    // the AMOUNTS changes nothing (all three engines sum into buckets, so
+    // 24,500 + 18,000 in one field is identical to two fields); splitting the
+    // STOP DATE is the entire point. One partner retiring at 62 while the other
+    // works to 67 previously lost — or invented — five years of one salary's
+    // savings, compounded to retirement.
+    //
+    // Only job-bound streams live here. Brokerage savings stay household-level
+    // (no employment link, no statutory cap) and the HSA stays household-level
+    // because its stop rule is Medicare enrolment, not retirement.
+    //
+    // null/0 defaults reproduce the pre-feature result exactly for every saved
+    // profile — the same regression-lock idiom as spouse.dob above.
+    retireAge: null,        // THEIR retirement age, on THEIR clock. null ⇒ same as primary
+    contrib: 0,             // their pre-tax 401(k)/403(b)/457(b) deferral
+    employerContrib: 0,     // their employer match / profit sharing
+    rothContrib: 0,         // their Roth IRA
   },
   ab: 0,
   useAb: true,
@@ -1238,9 +1258,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // of them were added to `pretax`, which mispriced every later withdrawal:
       // brokerage savings became ordinary income instead of LTCG-with-basis, and
       // inflated the RMD base at rmdStartAge.
-      pretax  += (p.contrib || 0) + (p.employerContrib || 0);
+      // Job-bound streams come from one shared helper (§24.1) so this loop,
+      // simulateDeterministicWithStrategy and accumulateToRetirement cannot
+      // disagree about whose contributions have stopped. A spouse who retires
+      // before the primary stops contributing on THEIR date, not the primary's.
+      const jc = jobContributionsForYear(p, p.currentAge + y);
+      pretax  += jc.pretax;
       cash    += (p.hsaContrib || 0);          // HSA balances live in the cash bucket
-      roth    += (p.rothContrib || 0);
+      roth    += jc.roth;
       taxable += (p.taxableContrib || 0);
       // Brokerage contributions are already-taxed dollars, so they add basis
       // one-for-one. Only market growth is unrealized gain.
@@ -1909,9 +1934,13 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // Aggregate portfolio here (no per-bucket split in this engine), but the
     // total must include every contribution stream runMC applies or the two
     // engines report different portfolio-at-retirement figures.
+    // Job-bound streams via the shared §24.1 helper — same per-person stop rule
+    // runMC applies, or the two engines report different portfolio-at-retirement
+    // figures the moment a spouse retires first.
+    const jcDet = jobContributionsForYear(p, p.currentAge + y);
     port = port * (1 + ret)
-      + (p.contrib || 0) + (p.employerContrib || 0) + (p.hsaContrib || 0)
-      + (p.taxableContrib || 0) + (p.rothContrib || 0);
+      + jcDet.pretax + jcDet.roth + (p.hsaContrib || 0)
+      + (p.taxableContrib || 0);
     // Pre-retirement one-off inflows (inheritance, lump-sum pension) are
     // deposited like contributions — same fix as runMC's accumulation loop;
     // this engine tracks one aggregate portfolio, so the inflow simply adds.
@@ -3819,7 +3848,7 @@ function computeSurvivalCurve(startAge, endAge, sex = "blended") {
   return curve;
 }
 
-function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, preRetireEq, sex, hoveredAge }) {
+function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, hhProfile, preRetireEq, sex, hoveredAge }) {
   const [showTargets, setShowTargets] = useState(true);
   const [showMortality, setShowMortality] = useState(false);
 
@@ -3833,10 +3862,15 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     const pts = [];
     for (let age = currentAge; age <= retireAge; age++) {
       pts.push({ age, accum: p });
-      p = Math.round(p * (1 + ret) + (contrib || 0));
+      // Household total for THIS age when the full profile is available: the
+      // 401(k) line alone understated every other stream, and a spouse who
+      // retires first has to drop out on their own date (§24.1). Falls back to
+      // the bare `contrib` prop so any other caller keeps working.
+      const add = hhProfile ? householdAnnualContribution(hhProfile, age) : (contrib || 0);
+      p = Math.round(p * (1 + ret) + add);
     }
     return pts;
-  }, [currentPort, currentAge, retireAge, contrib, preRetireEq]);
+  }, [currentPort, currentAge, retireAge, contrib, preRetireEq, hhProfile]);
 
   // Merge accumulation into chart data so XAxis spans both phases.
   // When toggle is OFF, revert to retirement-only range (rawData).
@@ -8661,7 +8695,32 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
               <div style={{ fontSize: 11, fontWeight: 600, color: "#0ea5e9", marginBottom: 10 }}>ACCUMULATION PHASE ({accPhase})</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <InputCard title="Starting Balances" rows={[...(params.accounts || []).filter(a => (a.balance || 0) > 0).map(a => [a.name || a.category, fmtDollar(a.balance || 0)]), ["Total liquid", fmtDollar(params.port)]]} />
-                <InputCard title="Annual Contributions" rows={[["Total savings", fmtDollar(params.contrib || 0) + "/yr"], ["Years contributing", Math.max(0, params.retireAge - params.currentAge) + " yrs"], ["Projected added", fmtDollar((params.contrib || 0) * Math.max(0, params.retireAge - params.currentAge))]]} />
+                {/* "Total savings" used to print `params.contrib` alone — the
+                    401(k) deferral — while calling itself the total, silently
+                    omitting employer money, HSA, Roth and brokerage. It now
+                    discloses every component, and the spouse's own streams and
+                    stop age when they have them (§24.1). */}
+                <InputCard title="Annual Contributions" rows={(() => {
+                  const yrs = Math.max(0, params.retireAge - params.currentAge);
+                  const spX = params.spouse || {};
+                  const spTotal = spX.enabled ? (spX.contrib || 0) + (spX.employerContrib || 0) + (spX.rothContrib || 0) : 0;
+                  const spStop = spX.enabled ? contribStopOnPrimaryClock(params) : Infinity;
+                  const hsaY = params.hsaContrib != null ? params.hsaContrib : (params.hsaMonthly || 0) * 12;
+                  const yourTotal = (params.contrib || 0) + (params.employerContrib || 0) + (params.rothContrib || 0);
+                  const household = yourTotal + hsaY + (params.taxableContrib || 0) + spTotal;
+                  return [
+                    ["Your 401(k) + employer + Roth", fmtDollar(yourTotal) + "/yr"],
+                    ...(spTotal > 0 ? [["Spouse 401(k) + employer + Roth", fmtDollar(spTotal) + "/yr"]] : []),
+                    ...(hsaY > 0 ? [["HSA", fmtDollar(hsaY) + "/yr"]] : []),
+                    ...(params.taxableContrib > 0 ? [["Brokerage", fmtDollar(params.taxableContrib) + "/yr"]] : []),
+                    ["Total savings", fmtDollar(household) + "/yr"],
+                    ["Years contributing", yrs + " yrs"],
+                    ...(spTotal > 0 && Number.isFinite(spStop)
+                      ? [["Spouse contributes until", `you are ${Math.round(Math.min(spStop, params.retireAge))}`]]
+                      : []),
+                    ["Projected added", fmtDollar(household * yrs)],
+                  ];
+                })()} />
                 <InputCard title="Plan Parameters" rows={[["Current age", "Age " + params.currentAge], ["Retire age", "Age " + params.retireAge], ["Years to retirement", Math.max(0, params.retireAge - params.currentAge) + " yrs"], ["Pre-retirement glide", `${params.preRetireEq ?? 91}% equity / ${100 - (params.preRetireEq ?? 91)}% bonds`], ["Post-retirement glide", `${params.postRetireEq ?? 70}% equity / ${100 - (params.postRetireEq ?? 70)}% bonds`]]} />
               </div>
             </div>
@@ -9241,7 +9300,10 @@ function NetWorthTab({ p, mc, inf }) {
         const yearsToAge = age - p.currentAge;
         let acc = currentPort;
         for (let y = 0; y < yearsToAge; y++) {
-          acc = acc * (1 + preReturnRate) + (p.contrib || 0);
+          // Household total per year, not the 401(k) line alone — and it drops
+          // the spouse's streams on their own retirement date (§24.1), so this
+          // projection tracks the engines instead of drifting from them.
+          acc = acc * (1 + preReturnRate) + householdAnnualContribution(p, p.currentAge + y);
         }
         port = Math.round(acc);
       } else {
@@ -10084,7 +10146,10 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
               Portfolio today: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(currentPort)}</span>
               &nbsp;·&nbsp;Planned retirement: <span style={{ color: "#e2e8f0" }}>age {retireAge}</span>
-              &nbsp;·&nbsp;Annual contrib: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>${(params.contrib || 0).toLocaleString()}</span>
+              {/* Household total (§24.1) — this drives a retirement-DATE answer,
+                  so quoting the 401(k) line alone understated the saving that
+                  gets the user there, and ignored a working spouse entirely. */}
+              &nbsp;·&nbsp;Annual contrib: <span style={{ color: "#e2e8f0", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(householdAnnualContribution(params))}</span>
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
@@ -10307,7 +10372,7 @@ function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt }) {
   const STEPS = [
     { label: "About You", icon: "👤", sub: `You are ${ageFromDob(values.dob) ?? values.currentAge} yrs old` },
     { label: "Current Savings", icon: "💰", sub: `Net worth of ${fmtDollar(values.port)} saved. Congratulations!` },
-    { label: "Contributions", icon: "📋", sub: `Total Contributions of ${fmtDollar(values.contrib)}/yr` },
+    { label: "Contributions", icon: "📋", sub: `Total Contributions of ${fmtDollar(householdAnnualContribution(values))}/yr` },
     {
       label: "Spending & Expenses", icon: "💸",
       sub: values.spImportMeta
@@ -11522,7 +11587,29 @@ function ContribPanel({ values, onChange }) {
   const rothContrib = values.rothContrib || 0;
   const taxableContrib = values.taxableContrib || 0;
   const hsaAnnual = hsaMonthly * 12;
-  const totalSavings = annual401k + hsaAnnual + employerContrib + rothContrib + taxableContrib;
+
+  // ── Per-person contributions (§24.1) ────────────────────────────────────
+  // Only the job-bound streams are per person. Brokerage savings are household
+  // money with no employment link, and the HSA stops at Medicare enrolment
+  // rather than at retirement — splitting either would model the wrong rule.
+  const sp = values.spouse || {};
+  const spouseOn = !!sp.enabled;
+  const setSpouse = (patch) => onChange("spouse", { ...sp, ...patch });
+  const sp401k    = sp.contrib || 0;
+  const spEmp     = sp.employerContrib || 0;
+  const spRoth    = sp.rothContrib || 0;
+  const spouseTotal = spouseOn ? sp401k + spEmp + spRoth : 0;
+  const totalSavings = annual401k + hsaAnnual + employerContrib + rothContrib + taxableContrib + spouseTotal;
+
+  // Phase A models contributions only up to the PRIMARY's retirement date,
+  // because the retirement loop has no concept of them. When the spouse's own
+  // date lands later, the plan silently uses the primary's — which is exactly
+  // what it did before this feature, but the user must be told rather than left
+  // to assume the later date was honoured.
+  const spouseStopOnPrimaryClock = spouseOn ? contribStopOnPrimaryClock(values) : Infinity;
+  const spouseWorksPastPrimary = Number.isFinite(spouseStopOnPrimaryClock)
+    && spouseStopOnPrimaryClock > (values.retireAge || 0)
+    && spouseTotal > 0;
 
   // Shared "profile section card" chrome — one consistent look so sections read
   // as a uniform, logically-ordered stack instead of scattered mismatched blocks.
@@ -11551,9 +11638,76 @@ function ContribPanel({ values, onChange }) {
         <WFieldRow label="Brokerage / After‑Tax Savings" helper="Money you invest OUTSIDE a retirement account. Keep it here rather than adding it to your 401(k) — these dollars are withdrawn at long‑term capital-gains rates against their cost basis, and they don't raise your RMDs at 75.">
           <ANumInput value={taxableContrib} onSet={(v) => onChange("taxableContrib", v)} min={0} max={999_000_000_000} step={1_000} suffix="/yr" />
         </WFieldRow>
+
+        {/* ── Spouse's job-bound contributions (§24.1) ────────────────────────
+            Shown only when the spouse is enabled, so a single-person profile is
+            visually unchanged. Splitting the AMOUNTS alone would change no
+            number — all three engines sum into buckets — so the field that
+            earns this section is "Their retirement age": it is the only input
+            here that moves a dollar. */}
+        {spouseOn && (
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
+              Your spouse
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 14, lineHeight: 1.5 }}>
+              Only the contributions tied to <em>their</em> job go here — they stop when your spouse stops
+              working, which may not be when you do. Brokerage savings and the HSA above stay
+              household-wide: brokerage money isn't tied to a job, and HSA contributions stop at
+              Medicare enrolment rather than at retirement.
+            </div>
+            {/* Plain input, NOT ANumInput: this field must stay nullable, and
+                ANumInput clamps a blank to `min` on blur — which would silently
+                write a retirement age the user never entered. Same pattern the
+                other nullable fields (fafsaEndYear/cssEndYear) already use. */}
+            <WFieldRow label="Their retirement age" helper="Their OWN age when they stop working — not yours. This is the field that changes your projection: it decides how many more years their contributions keep landing. Leave blank to use your retirement age.">
+              <input
+                type="number"
+                value={sp.retireAge ?? ""}
+                onChange={(e) => setSpouse({ retireAge: e.target.value === "" ? null : parseInt(e.target.value, 10) })}
+                placeholder="same as you"
+                min={AGE_LIMITS.retire.min} max={AGE_LIMITS.retire.max}
+                style={{ width: 120, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'DM Mono',monospace", textAlign: "right" }}
+                onFocus={selectAllOnFocus}
+              />
+            </WFieldRow>
+            <WFieldRow label="Their 401(k) / 403(b) / 457(b) — pre-tax only" helper="Their PRE-TAX employee deferral, entered separately from yours so it can stop on their date.">
+              <ANumInput value={sp401k} onSet={(v) => setSpouse({ contrib: v })} min={0} max={250_000} step={500} suffix="/yr" />
+            </WFieldRow>
+            <WFieldRow label="Their employer contribution ($/yr)" helper="Their match + profit sharing. Follows the same job, so it stops on the same date.">
+              <ANumInput value={spEmp} onSet={(v) => setSpouse({ employerContrib: v })} min={0} max={999_000_000_000} step={500} suffix="/yr" />
+            </WFieldRow>
+            <WFieldRow label="Their Roth IRA contribution" helper="Direct or backdoor. Separate from yours because the annual limit and the catch-up age are per person.">
+              <ANumInput value={spRoth} onSet={(v) => setSpouse({ rothContrib: v })} min={0} max={250_000} step={500} suffix="/yr" />
+            </WFieldRow>
+
+            {spouseWorksPastPrimary && (
+              <div style={{
+                marginTop: 4, padding: "10px 12px", borderRadius: 8,
+                background: "rgba(251,146,60,0.10)", border: "1px solid rgba(251,146,60,0.35)",
+                fontSize: 11, color: "#fdba74", lineHeight: 1.55,
+              }}>
+                <strong>Not yet modelled past your retirement.</strong> Your spouse keeps working until
+                you are {Math.round(spouseStopOnPrimaryClock)}, but AiRA currently stops all
+                contributions when <em>you</em> retire at {values.retireAge}. Their last{" "}
+                {Math.round(spouseStopOnPrimaryClock - (values.retireAge || 0))} year(s) of saving are
+                NOT in the projection — the plan is conservative here, not optimistic.
+                <div style={{ marginTop: 6, color: "#fed7aa" }}>
+                  In the meantime you can enter their ongoing pay under <strong>Other Income</strong>,
+                  which does model income after you retire — it just won't add to an account balance.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Total belongs WITH the contributions that make it up (logical flow). */}
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <span style={{ fontSize: 12, color: "#94a3b8" }}>💰 Total annual savings <span style={{ color: "#475569" }}>(incl. employer, HSA, Roth &amp; brokerage)</span></span>
+          <span style={{ fontSize: 12, color: "#94a3b8" }}>💰 Total annual savings <span style={{ color: "#475569" }}>
+            {spouseTotal > 0
+              ? `(you ${fmtDollar(annual401k + employerContrib + rothContrib)} + spouse ${fmtDollar(spouseTotal)} + HSA ${fmtDollar(hsaAnnual)} + brokerage ${fmtDollar(taxableContrib)})`
+              : "(incl. employer, HSA, Roth & brokerage)"}
+          </span></span>
           <span style={{ fontSize: 22, fontWeight: 800, color: "#14b8a6", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(totalSavings)}<span style={{ fontSize: 12, fontWeight: 400, color: "#64748b" }}>/yr</span></span>
         </div>
       </ACard>
@@ -13336,6 +13490,10 @@ export default function AiRAForecaster() {
         enabled: false, dob: "", ssb: 0, ssAge: 67, ssPia: 0,
         deathAge: null, firstToDie: "spouse",
         survivorClaimAge: null, survivorBenefitAtClaim: 0,
+        // §24.1 — kept in the fallback purely so this object stays shape-identical
+        // to BLANK_PROFILE.spouse, as the comment above requires. The engines
+        // already default these to 0 via jobContributionsForYear.
+        retireAge: null, contrib: 0, employerContrib: 0, rothContrib: 0,
       },
       port,
       contrib,
@@ -14484,6 +14642,7 @@ export default function AiRAForecaster() {
                         currentAge={currentAge}
                         currentPort={params.port}
                         contrib={params.contrib}
+                        hhProfile={params}
                         preRetireEq={params.preRetireEq ?? 91}
                         sex={assumptions.sex}
                         hoveredAge={hoveredAge}

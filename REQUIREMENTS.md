@@ -1907,6 +1907,109 @@ time-varying filing status (the same refactor unlocks per-person age logic) → 
 Medicare per person. Building the columns ahead of the age model produces a screen full of
 controls that compute nothing — the ghost-setting failure mode at feature scale.
 
+### §24.1 — Per-person CONTRIBUTIONS (Phase A) — scoped 2026-08-03
+
+Sharpens item 5 above. That item said "no pre-retirement wages are modelled", which is true
+of *income* but not of *contributions*: `contrib` / `employerContrib` / `rothContrib` /
+`taxableContrib` / `hsaMonthly` are all modelled, summed into buckets, and run for
+`accYrs = retireAge - currentAge` — **one retirement date for the whole household**.
+
+#### The single numerical error
+
+The aggregation is NOT wrong. `$24,500 + $18,000` in one field produces exactly the same
+projection as two fields, because all three engines sum into buckets. Nothing is lost by
+combining amounts, and a two-column UI that only splits amounts changes no number at all.
+
+What IS wrong is that both streams stop on the same day. One person retiring at 62 while
+the other works to 67 loses (or invents) five years of one salary's savings, compounded to
+retirement. That is the entire numerical case for this work.
+
+#### Why NOT two profiles
+
+Considered and rejected: telling a couple to run two single-person plans and add the
+results. Every threshold that matters is joint and not 2× the single value —
+
+| Rule | MFJ | Single | Two singles merged | Error |
+|---|---:|---:|---:|---|
+| SS torpedo (`buildWithdrawalWaterfall.js` ~1119) | 32,000 | 25,000 | 50,000 | 18,000 of provisional income escapes tax |
+| NIIT (`buildRothExplorer.js` ~199) | 250,000 | 200,000 | 400,000 | 150,000 of fake headroom |
+| IRMAA tier 1 (`App.jsx` ~1091) | 218,000 | 109,000 | 218,000 | additive only if income splits evenly — it never does |
+
+Two of the three landmines this app exists to catch would be silently disarmed, and every
+error runs in the flattering direction. Also unmergeable: progressive tax is not additive;
+bracket-fill would double-count the same bracket space (the §6.3 warning); success rates do
+not add, and separate sims wrongly forbid one spouse's surplus from rescuing the other's
+shortfall; and the widow's penalty (§22) vanishes entirely. One household, one model.
+
+#### Data model — extend `spouse{}`, do not add flat fields
+
+Follows the `enabled:false` / blank-means-same-as-primary idiom already used by §21/§24.
+
+```js
+spouse: {
+  retireAge: null,      // null ⇒ same as primary ⇒ today's behaviour
+  contrib: 0,           // their pre-tax deferral
+  employerContrib: 0,   // their match / profit sharing
+  rothContrib: 0,       // their Roth IRA
+}
+```
+
+| Field | Split? | Why |
+|---|---|---|
+| 401(k) deferral | Yes | Tied to one job, stops when that job stops |
+| Employer contribution | Yes | Follows the same job |
+| Roth IRA | Yes | Per-person cap and per-person catch-up age |
+| Brokerage / after-tax | **No** | Household money, no employment link, no cap |
+| HSA | **No — own rule** | Stops at *Medicare enrolment* (65), not retirement; limit is family-coverage |
+
+Defaults of `null`/`0` ⇒ every saved profile computes byte-identically. That is the
+acceptance bar for the migration.
+
+#### Engines
+
+`spouse.retireAge` is on the SPOUSE's clock; every loop walks the PRIMARY's age. This is the
+shape of the age-gap bug §24 item 1 already had to fix once. Add to `engine/ages.js`,
+beside `planEndAgeOnPrimaryClock` / `survivorAgeOnPrimaryClock`:
+
+    contribStopOnPrimaryClock(p)   // → primary-clock age at which spouse contributions end
+
+Three accumulation loops consume contributions and must change together (cross-engine drift
+is the recurring defect class here): `runMC` (`App.jsx` ~1231),
+`simulateDeterministicWithStrategy` (`App.jsx` ~1907), `accumulateToRetirement`
+(`buildWithdrawalWaterfall.js` ~217). Plus display sites that read `contrib` directly and
+would otherwise show the primary's number as the household total.
+
+#### Phase B — deliberately NOT in Phase A
+
+Spouse retires AFTER the primary. Contributions would land past the end of the accumulation
+loop, and the retirement loop has no concept of contributions or of the wages funding them.
+Phase A **clamps** that case at the primary's retirement date — no regression (it is exactly
+today's behaviour), but no fix either, and the UI must SAY so rather than imply otherwise.
+Partial workaround that exists today: model the spouse's ongoing wages via `otherIncomes`
+as income, though not as contributions to accounts.
+
+#### Caps — decision required before lowering any max
+
+Today's 401(k) field maxes at 80,000, ~2× one person's limit, because it holds a couple.
+Splitting invites dropping each field to the individual limit — but `ANumInput` clamps to
+`max` on blur, so a lowered cap silently rewrites a saved number. Migrate the aggregate into
+the primary and leave the cap generous for one release, OR replace clamping with a
+non-destructive warning. Never both in one release.
+
+#### Tests (gate)
+
+1. Regression — both stop at the same age ⇒ identical to today's aggregate.
+2. Migration — old profile with only `contrib` ⇒ byte-identical.
+3. Arithmetic — spouse stops 5 years early ⇒ exactly 5 × their streams less, compounded.
+4. Age gap — spouse 10 yrs younger, `spouse.retireAge` 60 ⇒ stops when primary is 70.
+5. Bucket routing — spouse 401(k) → pretax, spouse Roth → roth, no leakage.
+6. Cross-engine parity — all three engines agree on the balance at retirement.
+7. Ghost settings — registered in `ghostSettings.test.js`, proven to move an engine output.
+8. Clamp — spouse retiring after the primary is clamped, not dropped or double-counted.
+
+Test 7 proves the field REACHES the engine; only 3 and 4 prove the arithmetic is right.
+Both are required — a wiring test alone is what let the spousal-SS age-gap bug ship.
+
 ## 25. HANDOFF TO THE HIGH-BUDGET ACCOUNT — 2026-07-28
 
 Vincent is doing cheap items on the low-budget account and the heavy work elsewhere.

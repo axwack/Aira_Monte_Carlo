@@ -266,3 +266,32 @@ export function spouseAgeAt(p, primaryAge, asOf) {
   const at = primaryAge - spouseAgeOffset(p, asOf);
   return Number.isFinite(at) ? at : null;
 }
+
+/**
+ * The PRIMARY's age in the year the spouse's contributions stop (§24.1 Phase A).
+ *
+ * `spouse.retireAge` is the SPOUSE's own age — the only natural way to state it
+ * ("my wife retires at 60") — and the accumulation loops walk the PRIMARY's age,
+ * so it has to be shifted onto that clock. Getting this wrong is not cosmetic:
+ * the identical mistake against `spouse.ssAge` once started a younger spouse's
+ * Social Security years early (§24 item 1). A spouse ten years younger who
+ * retires at 60 stops contributing when the PRIMARY is 70, not 60.
+ *
+ * Returns Infinity — "never stops early" — when the spouse is disabled, has no
+ * contributions, or has no explicit retireAge. Infinity is deliberate: every
+ * caller clamps against the primary's own retirement date anyway, so Infinity
+ * reproduces the pre-feature behaviour (both streams run the full accumulation)
+ * without the caller needing a null branch.
+ *
+ * PHASE A LIMIT: a spouse retiring AFTER the primary is clamped by the caller at
+ * the primary's retirement date, because the retirement loop has no concept of
+ * contributions. That is exactly today's behaviour — no regression, no fix — and
+ * the UI must disclose it rather than imply the later date was modelled.
+ */
+export function contribStopOnPrimaryClock(p, asOf) {
+  const sp = p?.spouse || {};
+  if (!sp.enabled) return Infinity;
+  const stop = Number(sp.retireAge);
+  if (!Number.isFinite(stop) || stop <= 0) return Infinity;
+  return stop + spouseAgeOffset(p, asOf);
+}
