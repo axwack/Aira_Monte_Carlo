@@ -148,7 +148,7 @@ const NEEDS_A_TARGETED_FIXTURE = {
   // Proven live by the "spousal Social Security" block at the bottom of this file —
   // do NOT move these to INERT_BY_DESIGN, they are real inputs.
   ssPia:                   "only read when spouse.enabled; see the spousal SS block below",
-  spouse:                  "object; exercised directly by the spousal SS block below (incl. dob, deathAge, survivorClaimAge, survivorBenefitAtClaim)",
+  spouse:                  "object; exercised directly by the spousal SS block below (incl. dob, deathAge, survivorClaimAge, survivorBenefitAtClaim) and the per-person contributions block in contributions.test.js",
   // Defaults to null (→ switch at retireAge), so the generic sweep skips it as a
   // non-number. It is a REAL input — proven live in runMC, the stress path and the
   // deterministic schedule by the equity glidepath block below. REQUIREMENTS §26.
