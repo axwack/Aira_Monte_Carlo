@@ -62,15 +62,40 @@ export function useOwnerVerified() {
 }
 
 async function adminCall(secret, action, params = {}) {
-  const res = await fetch("/api/admin", {
-    method:  "POST",
-    headers: {
-      "Content-Type":  "application/json",
-      "Authorization": `Bearer ${secret}`,
-    },
-    body: JSON.stringify({ action, ...params }),
-  });
-  const data = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
+  // A rejected fetch (DNS, offline, TLS, blocked request) used to propagate out
+  // of here. The section handlers do `setLoading(true); await adminCall(...)`
+  // with no try/catch, so the throw skipped `setLoading(false)` and left the
+  // button stuck on "…" rendering nothing at all — a silent hang presented as
+  // "no response". Always resolve to a result object so the UI can show
+  // something, even when the request never left the browser.
+  let res;
+  try {
+    res = await fetch("/api/admin", {
+      method:  "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "Authorization": `Bearer ${secret}`,
+      },
+      body: JSON.stringify({ action, ...params }),
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      error: `Request never reached the server (${e.message || "network error"}). `
+           + `Check you are on the deployed site or wrangler pages dev, and that the deployment finished.`,
+    };
+  }
+  // A non-JSON body means we did not reach the Function at all. The overwhelming
+  // cause is running under `npm start`: react-scripts serves only src/, so
+  // /api/* returns the SPA's 404 HTML and this used to surface as a bare
+  // "HTTP 404" — indistinguishable from a wrong secret. That ambiguity cost real
+  // debugging time twice in one session, so it now says what happened.
+  const data = await res.json().catch(() => ({
+    ok: false,
+    error: res.status === 404
+      ? "HTTP 404 — /api/admin was not reached. `npm start` does not serve Cloudflare Functions; use `npx wrangler pages dev build` (port 8788) or the deployed site."
+      : `HTTP ${res.status} — response was not JSON, so the request did not reach the Function.`,
+  }));
   if (!res.ok && data.ok === undefined) return { ok: false, error: `HTTP ${res.status}` };
   return data;
 }
@@ -274,6 +299,79 @@ function GrantCreditsSection({ secret, disabled }) {
   );
 }
 
+// ── Section: Issue Restore Link ───────────────────────────────────────────────
+// The endpoint has supported `issue-restore-link` since restore tokens existed,
+// but nothing in this panel called it — so the one support task that actually
+// arrives from customers ("I lost my credits") could only be done by hand with
+// curl, which on Windows means fighting PowerShell quoting for a routine job.
+// Copy button included because the whole output is a URL you have to paste
+// somewhere else, and selecting it out of a JSON blob is where mistakes happen.
+
+function RestoreLinkSection({ secret, disabled }) {
+  const [email, setEmail]   = useState(() => loadAdminCfg().testEmail || "");
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleEmail = v => { setEmail(v); saveAdminCfg({ testEmail: v }); };
+
+  const run = async () => {
+    setLoading(true); setResult(null); setCopied(false);
+    // days/maxUses left at the endpoint's defaults (14 days, 3 uses): a
+    // support-issued link is a one-off remedy, unlike the customer's own
+    // recovery link minted at checkout, which is deliberately long-lived.
+    const r = await adminCall(secret, "issue-restore-link", { email });
+    setResult(r); setLoading(false);
+  };
+
+  const copy = () => {
+    if (!result?.url) return;
+    navigator.clipboard?.writeText(result.url)
+      .then(() => setCopied(true))
+      .catch(() => {});
+  };
+
+  return (
+    <div style={S.section}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#a78bfa", marginBottom: 8 }}>
+        Issue Restore Link (customer lost their credits)
+      </div>
+      <div style={S.row}>
+        <Field label="Email" value={email} onChange={handleEmail} placeholder="customer@example.com" />
+        <button onClick={run} disabled={disabled || loading || !email} style={S.btn("#0d9488")}>
+          {loading ? "…" : "Issue"}
+        </button>
+      </div>
+      {result?.ok && result.url && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10, color: "#64748b", marginBottom: 4 }}>
+            Send this to the customer. Anyone holding it gets these credits — send it directly,
+            never in a public channel. {result.maxUses} uses, expires {result.expiresAt?.slice(0, 10)}.
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              readOnly
+              value={result.url}
+              onFocus={e => e.target.select()}
+              style={{
+                flex: 1, background: "#0a1628", border: "1px solid #1e3a5f", color: "#5eead4",
+                borderRadius: 6, padding: "4px 8px", fontSize: 10, fontFamily: "monospace",
+              }}
+            />
+            <button onClick={copy} style={S.btn(copied ? "#0d9488" : "#475569")}>
+              {copied ? "✓ Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Errors and the ambiguous-email 409 (which returns `candidates`) still
+          need the raw view — that is the case where you must re-run with an
+          explicit customerId. */}
+      {result && !result.url && <ResultBox data={result} />}
+    </div>
+  );
+}
+
 // ── Section: Inspect ──────────────────────────────────────────────────────────
 
 function InspectSection({ secret, disabled }) {
@@ -394,6 +492,9 @@ export function AdminPanel() {
           <SimulatePurchaseSection secret={secret} disabled={!authed} />
           <GrantCreditsSection secret={secret} disabled={!authed} />
           <InspectSection      secret={secret} disabled={!authed} />
+          {/* Inspect first, then issue — confirm you have the right customer
+              before handing out a bearer credential to their credits. */}
+          <RestoreLinkSection  secret={secret} disabled={!authed} />
           <LocalStateSection />
         </div>
       )}
