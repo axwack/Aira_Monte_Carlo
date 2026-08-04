@@ -68,13 +68,41 @@ async function adminCall(secret, action, params = {}) {
   // button stuck on "…" rendering nothing at all — a silent hang presented as
   // "no response". Always resolve to a result object so the UI can show
   // something, even when the request never left the browser.
+  // Sanitize the pasted secret BEFORE it reaches fetch.
+  //
+  // Two paste hazards, both of which used to present as an unexplained failure:
+  //
+  //   1. A character outside ISO-8859-1 (a smart quote, an em dash, an ellipsis)
+  //      makes fetch REFUSE to build the request — "String contains non
+  //      ISO-8859-1 code point" — so nothing is sent and the panel appeared to
+  //      hang. Copying from formatted text (a doc, a chat window) is enough.
+  //   2. A non-breaking space (U+00A0) IS valid ISO-8859-1, so it sails through
+  //      that check and is sent — then fails the server's exact comparison and
+  //      returns a bare "Unauthorized", indistinguishable from a wrong password.
+  //
+  // Trim outer whitespace including NBSP and zero-width characters (never
+  // meaningful in a secret, always a paste artifact), then reject anything left
+  // that a header cannot carry — naming the cause instead of failing opaquely.
+  const clean = String(secret ?? "").replace(/^[\s ​-‍﻿]+|[\s ​-‍﻿]+$/g, "");
+  if (!clean) return { ok: false, error: "No secret entered." };
+  const bad = [...clean].find((ch) => ch.charCodeAt(0) > 0x7e || ch.charCodeAt(0) < 0x21);
+  if (bad) {
+    const code = "U+" + bad.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0");
+    return {
+      ok: false,
+      error: `Your secret contains a character that cannot be sent in an HTTP header (${code}). `
+           + `This almost always means it was copied from formatted text — a smart quote, dash, ellipsis or `
+           + `non-breaking space came with it. Paste it from a plain-text source, or type it by hand.`,
+    };
+  }
+
   let res;
   try {
     res = await fetch("/api/admin", {
       method:  "POST",
       headers: {
         "Content-Type":  "application/json",
-        "Authorization": `Bearer ${secret}`,
+        "Authorization": `Bearer ${clean}`,
       },
       body: JSON.stringify({ action, ...params }),
     });

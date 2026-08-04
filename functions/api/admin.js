@@ -112,7 +112,37 @@ export async function onRequestPost({ request, env, waitUntil }) {
   if (!presented || !constantTimeEqual(presented, env.ADMIN_SECRET)) {
     // Brief constant-ish randomized delay to mask any residual timing signal.
     await new Promise(r => setTimeout(r, 80 + Math.floor(Math.random() * 40)));
-    return json({ ok: false, error: "Unauthorized" }, 401);
+    // ── Shape-only diagnostics ───────────────────────────────────────────────
+    // "Unauthorized" alone cannot distinguish the cases that actually occur:
+    //   • the value you typed is wrong
+    //   • the deployment predates your secret upload (Pages binds at build time)
+    //   • the stored value is not what you think (a masked prompt captured a
+    //     password, or a paste artifact came with it)
+    //   • you set Production but this deployment reads Preview
+    // Debugging that blind is an unbounded loop — it cost most of an evening.
+    //
+    // Deliberately SHAPE ONLY: lengths and character-class, never the values and
+    // never a hash. A hash prefix would be offline-attackable if the stored
+    // secret were weak, which is exactly the case we are trying to detect. A
+    // length leak on a rate-limited endpoint (10/IP/min) is a fair trade for
+    // making a self-inflicted misconfiguration visible to its owner.
+    const shape = (v) => ({
+      length: v.length,
+      isLowerHex: /^[0-9a-f]+$/.test(v),
+      hasNonAscii: [...v].some(c => c.charCodeAt(0) > 0x7e || c.charCodeAt(0) < 0x21),
+    });
+    return json({
+      ok: false,
+      error: "Unauthorized",
+      // Compare these two rows. Same length + both isLowerHex true, yet still
+      // unauthorized ⇒ two different 64-char secrets (e.g. local vs production).
+      // Different lengths ⇒ the stored value is not the one you are pasting.
+      diagnostic: {
+        youSent: presented ? shape(presented) : { length: 0 },
+        serverExpects: shape(env.ADMIN_SECRET),
+        hint: "Shapes only, no values. If lengths differ, the stored secret is not the string you are pasting — set it again and redeploy (Pages binds secrets at build time). If both look identical, you have two different secrets of the same shape: production vs .dev.vars.",
+      },
+    }, 401);
   }
 
   // ── H4: Extract caller IP ─────────────────────────────────────────────────
