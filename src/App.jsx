@@ -179,9 +179,9 @@ const AGE_LIMITS = {
   ss:      { min: 62, max: 70 },
 };
 
-const APP_VERSION = "1.2.77";
-export const BUILD_TAG = "[main] v1.2.77 - moved the one spouse switch to where the fact belongs. Vincent: \"in order to enter contributions for a spouse you have to click the check box on retirement plan. This is a strange place.\" Correct, and a miss in v1.2.76: spouse.enabled lived inside the Social Security card labelled 'Add my spouse's Social Security' because SS was the only thing it gated. v1.2.76 quietly promoted it to a household-identity fact gating per-person contributions too - a step EARLIER in the wizard - without moving or relabelling it, so entering a spouse's 401k meant jumping forward to a card about Social Security, ticking a box that never mentions savings, and coming back. The switch now sits in About You beside Federal Filing Status, relabelled 'Include a spouse or partner' and describing BOTH features it unlocks. The Social Security and Contributions cards get read-only pointers to it instead of a second checkbox - two toggles writing one flag is the pattern REQUIREMENTS section 31 removed in v1.2.66. Verified exactly one writer of spouse.enabled remains, in AboutYouPanel. UI/IA only, no engine change. Previous: [main] v1.2.76 - per-person contributions, Phase A (REQUIREMENTS section 24.1). Each partner's contributions now stop on THEIR OWN retirement date. Before this every stream ran for retireAge - currentAge, one retirement date for two people, so a couple where one retires at 62 and the other works to 67 had five years of one salary's saving either invented or missing, compounded to retirement. Splitting the AMOUNTS was NOT the fix and changes no number (all three engines sum into buckets, so 24,500 + 18,000 in one field is identical to two fields) - the stop date is the entire numerical case. NEW spouse.retireAge / spouse.contrib / spouse.employerContrib / spouse.rothContrib, defaulting to null/0 so every saved profile computes byte-identically. Only job-bound streams split: brokerage savings stay household (no employment link, no cap) and the HSA stays household because its stop rule is Medicare enrolment, not retirement. NEW engine/contributions.js is the single home for who-is-still-contributing, called by all three accumulation loops (runMC, simulateDeterministicWithStrategy, accumulateToRetirement) because cross-engine drift between exactly those three is this codebase's most repeated defect. NEW ages.js contribStopOnPrimaryClock shifts the spouse's own age onto the primary's clock - the identical mistake against spouse.ssAge once started a younger spouse's Social Security years early, so a spouse ten years younger retiring at 60 now correctly stops when the primary is 70. Also fixed the Annual Contributions card, which printed the 401k line alone while calling itself the total, silently omitting employer money, HSA, Roth and brokerage; it now discloses every component plus the spouse stop age. Three more display sites and the FanChart accumulation line now use the household total instead of params.contrib. PHASE B NOT BUILT and disclosed in the UI: a spouse working PAST the primary is clamped at the primary date because the retirement loop has no concept of contributions - conservative, not optimistic, and an amber panel says so. 752 -> 774 tests, 28 suites. Previous: [main] v1.2.75 - deleted the dead Roth conversion engine. buildRothExplorer() and buildRothLadder() in src/engine/buildRothExplorer.js were a second, disconnected ~350-line conversion model that NO UI path called: App.jsx imports only CONSTANTS from that file, and the live Roth Conversion tab is built on buildWithdrawalWaterfall via rothConversionPlan.js. The dead pair was kept breathing by ~100 tests in roth.test.js and actively misled readers - it was consulted to answer 'is this rule implemented?' and gave the WRONG answer, because the engine the app actually runs had already implemented it (verified empirically: a $1M inheritance moves the year-1 conversion 241,900 -> 247,178 when it lands in a taxable account, and to 0 when it arrives as ordinary income; NIIT fires at 452 in the base case and 15,354 in a high-income drawdown). Deleted both functions, the orphaned private guytonKlingerWithdrawal copy that only they called, roth.test.js, and 6 now-unused imports. KEPT (unchanged, still imported by 4 files): all federal/state/LTCG/NIIT/IRMAA/OBBBA constants, RMD divisor tables, taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS, getStateBrackets, getRmdStartAge. progTax/idxB/irmaaCost kept as exports with a banner - they now have no importer, but App.jsx carries byte-identical copies and the right fix is de-duplication, not deleting one half. File header rewritten to say what the module IS now. 832 -> 752 tests, 27 suites, all green; production build compiles. Previous: v1.2.74 - one-off cash flows are now DISCLOSED, not just simulated. v1.2.73 made an inheritance/home-sale/lump-pension actually reach all three engines, but nothing in Monte Carlo -> Simulation Inputs & Assumptions mentioned it: the panel disclosed spend, SS, rental, healthcare, mortgage and the market model, so a user who entered a $1M windfall still had no on-screen confirmation the run included it. New ONE-OFF CASH FLOWS section on that panel, rendered only when events exist: separate cards for Income & Windfalls and Planned One-Off Expenses (they are different mechanics - a windfall is deposited into a bucket and compounds, a cost is added to that year's spend), each event listed with year, age, amount, destination bucket, tax treatment, today's-dollars-vs-nominal basis and recurrence, plus a 'How AiRA models these' card. Sidebar 'Engine & assumptions' modal gains a one-line summary. Both read params.cashFlowEvents - the same object the engines receive - so the panel cannot claim an event that was not run. UI only, no engine change. Previous: v1.2.73 - a future lump sum (inheritance, home sale, pension lump) now actually reaches the plan. User report: entering a $1M test inheritance changed nothing, and the same $1M appeared under Planned One-Off Expenses, looking like it cancelled itself out. Two real bugs. ENGINES: all three engines (runMC, buildWithdrawalWaterfall/accumulateToRetirement, simulateDeterministicWithStrategy) processed cashFlowEvents only inside their retirement loops, so an inflow dated during the ACCUMULATION years was silently dropped from every projection - that is why the numbers never moved. Accumulation-phase inflows are now deposited into their bucket (with taxable basis) in the year they arrive and compound to retirement; an event fires in exactly one phase, never both. UI: the Planned One-Off Expenses card rendered the WHOLE cashFlowEvents array, inflows included, so a $1M inflow displayed as a $1M expense row (display only - the engines never charged it, but no user could trust that). The card now shows outflows only, and edits/removals address rows by id, not index. NEW: a One-Off Income & Windfalls card on the Income step, so an inheritance no longer has to be disguised as a lump-sum pension. 826 -> 832 tests.";
-export const BUILD_TIME = "2026-08-03T19:30:00Z";
+const APP_VERSION = "1.2.78";
+export const BUILD_TAG = "[main] v1.2.78 - the Net Worth chart no longer draws $0 when it has no number. User report: a plan the engine scores at 99.2% success (median 4,050,653 at age 68 rising to 10,974,327 at 90) was drawn as a vertical cliff to zero at 68 and a flat $0 line through 90, with the card announcing 'Net worth at age 90: $0'. Reproduced the user's inputs against runMC: the engine is CORRECT and its median never reaches zero, so this was purely a display defect. Two bugs in two lines of the chart's data builder. (1) `pcts[i]?.p50 || 0` collapsed three unrelated states into one number - genuinely zero, no data for this age, and NaN. NaN is falsy, so a single invalid input rendered as a confident $0 for every year after it. (2) `Math.min(age - retireAge, pcts.length - 1)` CLAMPED past the end of the data, repeating the final row for every remaining age, so a run whose horizon is shorter than endAge grew a flat tail of fabricated years that the summary card then quoted as a forecast. Both replaced by a new pure exported helper mcMedianAtAge(pcts, age, retireAge) returning number OR NULL - never 0 as a stand-in. Rows are matched on the `age` each one carries rather than by position, so a STALE mc (computed at a different retireAge than the one being charted) can no longer silently mis-align; legacy rows without `age` still fall back to positional indexing but never clamp. Recharts breaks the line on null, so missing years now read as a gap instead of a dead portfolio, and an amber panel names the last age covered, tells the user to re-run the Monte Carlo, and points at malformed cash-flow/income entries as the usual cause of an invalid year. The 'Net worth at age X' card now names the age it actually HAS data for instead of always printing endAge, and the chart title does the same. Peak-liquid also fixed: it took Math.max over raw p50s (one NaN made the headline NaN) and derived the age as retireAge + findIndex, which returned -1 when the max was not found; both now read the row's own age and ignore non-finite values. NEW src/netWorthChart.test.js, 10 tests pinning: null not 0 for NaN, no clamping past the horizon, genuine zero still reported as zero, stale-retireAge immunity, legacy rows. 774 -> 784 tests, 29 suites. Previous: [main] v1.2.77 - moved the one spouse switch to where the fact belongs. Vincent: \"in order to enter contributions for a spouse you have to click the check box on retirement plan. This is a strange place.\" Correct, and a miss in v1.2.76: spouse.enabled lived inside the Social Security card labelled 'Add my spouse's Social Security' because SS was the only thing it gated. v1.2.76 quietly promoted it to a household-identity fact gating per-person contributions too - a step EARLIER in the wizard - without moving or relabelling it, so entering a spouse's 401k meant jumping forward to a card about Social Security, ticking a box that never mentions savings, and coming back. The switch now sits in About You beside Federal Filing Status, relabelled 'Include a spouse or partner' and describing BOTH features it unlocks. The Social Security and Contributions cards get read-only pointers to it instead of a second checkbox - two toggles writing one flag is the pattern REQUIREMENTS section 31 removed in v1.2.66. Verified exactly one writer of spouse.enabled remains, in AboutYouPanel. UI/IA only, no engine change. Previous: [main] v1.2.76 - per-person contributions, Phase A (REQUIREMENTS section 24.1). Each partner's contributions now stop on THEIR OWN retirement date. Before this every stream ran for retireAge - currentAge, one retirement date for two people, so a couple where one retires at 62 and the other works to 67 had five years of one salary's saving either invented or missing, compounded to retirement. Splitting the AMOUNTS was NOT the fix and changes no number (all three engines sum into buckets, so 24,500 + 18,000 in one field is identical to two fields) - the stop date is the entire numerical case. NEW spouse.retireAge / spouse.contrib / spouse.employerContrib / spouse.rothContrib, defaulting to null/0 so every saved profile computes byte-identically. Only job-bound streams split: brokerage savings stay household (no employment link, no cap) and the HSA stays household because its stop rule is Medicare enrolment, not retirement. NEW engine/contributions.js is the single home for who-is-still-contributing, called by all three accumulation loops (runMC, simulateDeterministicWithStrategy, accumulateToRetirement) because cross-engine drift between exactly those three is this codebase's most repeated defect. NEW ages.js contribStopOnPrimaryClock shifts the spouse's own age onto the primary's clock - the identical mistake against spouse.ssAge once started a younger spouse's Social Security years early, so a spouse ten years younger retiring at 60 now correctly stops when the primary is 70. Also fixed the Annual Contributions card, which printed the 401k line alone while calling itself the total, silently omitting employer money, HSA, Roth and brokerage; it now discloses every component plus the spouse stop age. Three more display sites and the FanChart accumulation line now use the household total instead of params.contrib. PHASE B NOT BUILT and disclosed in the UI: a spouse working PAST the primary is clamped at the primary date because the retirement loop has no concept of contributions - conservative, not optimistic, and an amber panel says so. 752 -> 774 tests, 28 suites. Previous: [main] v1.2.75 - deleted the dead Roth conversion engine. buildRothExplorer() and buildRothLadder() in src/engine/buildRothExplorer.js were a second, disconnected ~350-line conversion model that NO UI path called: App.jsx imports only CONSTANTS from that file, and the live Roth Conversion tab is built on buildWithdrawalWaterfall via rothConversionPlan.js. The dead pair was kept breathing by ~100 tests in roth.test.js and actively misled readers - it was consulted to answer 'is this rule implemented?' and gave the WRONG answer, because the engine the app actually runs had already implemented it (verified empirically: a $1M inheritance moves the year-1 conversion 241,900 -> 247,178 when it lands in a taxable account, and to 0 when it arrives as ordinary income; NIIT fires at 452 in the base case and 15,354 in a high-income drawdown). Deleted both functions, the orphaned private guytonKlingerWithdrawal copy that only they called, roth.test.js, and 6 now-unused imports. KEPT (unchanged, still imported by 4 files): all federal/state/LTCG/NIIT/IRMAA/OBBBA constants, RMD divisor tables, taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS, getStateBrackets, getRmdStartAge. progTax/idxB/irmaaCost kept as exports with a banner - they now have no importer, but App.jsx carries byte-identical copies and the right fix is de-duplication, not deleting one half. File header rewritten to say what the module IS now. 832 -> 752 tests, 27 suites, all green; production build compiles. Previous: v1.2.74 - one-off cash flows are now DISCLOSED, not just simulated. v1.2.73 made an inheritance/home-sale/lump-pension actually reach all three engines, but nothing in Monte Carlo -> Simulation Inputs & Assumptions mentioned it: the panel disclosed spend, SS, rental, healthcare, mortgage and the market model, so a user who entered a $1M windfall still had no on-screen confirmation the run included it. New ONE-OFF CASH FLOWS section on that panel, rendered only when events exist: separate cards for Income & Windfalls and Planned One-Off Expenses (they are different mechanics - a windfall is deposited into a bucket and compounds, a cost is added to that year's spend), each event listed with year, age, amount, destination bucket, tax treatment, today's-dollars-vs-nominal basis and recurrence, plus a 'How AiRA models these' card. Sidebar 'Engine & assumptions' modal gains a one-line summary. Both read params.cashFlowEvents - the same object the engines receive - so the panel cannot claim an event that was not run. UI only, no engine change. Previous: v1.2.73 - a future lump sum (inheritance, home sale, pension lump) now actually reaches the plan. User report: entering a $1M test inheritance changed nothing, and the same $1M appeared under Planned One-Off Expenses, looking like it cancelled itself out. Two real bugs. ENGINES: all three engines (runMC, buildWithdrawalWaterfall/accumulateToRetirement, simulateDeterministicWithStrategy) processed cashFlowEvents only inside their retirement loops, so an inflow dated during the ACCUMULATION years was silently dropped from every projection - that is why the numbers never moved. Accumulation-phase inflows are now deposited into their bucket (with taxable basis) in the year they arrive and compound to retirement; an event fires in exactly one phase, never both. UI: the Planned One-Off Expenses card rendered the WHOLE cashFlowEvents array, inflows included, so a $1M inflow displayed as a $1M expense row (display only - the engines never charged it, but no user could trust that). The card now shows outflows only, and edits/removals address rows by id, not index. NEW: a One-Off Income & Windfalls card on the Income step, so an inheritance no longer has to be disguised as a lump-sum pension. 826 -> 832 tests.";
+export const BUILD_TIME = "2026-08-03T21:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -9259,6 +9259,48 @@ function MortgageTab({ values, onChange }) {
   );
 }
 
+/**
+ * The Monte Carlo median portfolio for one age, or `null` when there is no
+ * figure for that age.
+ *
+ * `null`, never 0. The Net Worth chart used to do:
+ *
+ *   const pctIndex = Math.min(age - retireAge, pcts.length - 1);
+ *   port = pcts[pctIndex]?.p50 || 0;
+ *
+ * which produced a confident $0 in three unrelated situations — genuinely zero,
+ * no data for this age, and NaN (falsy, so `|| 0` swallowed it). A user reported
+ * a plan the engine scores at 99.2% success, median $4.05M at 68 and $10.9M at
+ * 90, rendered as $0 from 68 through 90. Nothing on screen distinguished that
+ * from a portfolio that had actually died.
+ *
+ * The clamp was the other half: `Math.min` repeated the final row for every age
+ * past the end of the data, so a run whose horizon was shorter than `endAge`
+ * grew a flat tail of fabricated years — which the "net worth at age" card then
+ * reported as a forecast.
+ *
+ * Rows are matched on the `age` they carry themselves, falling back to
+ * positional arithmetic only for older result objects that predate that field.
+ * Positional indexing silently mis-aligns whenever `mc` is stale — computed at a
+ * different retireAge than the one now being charted.
+ *
+ * @param {Array<{age?:number, p50:number}>} pcts  runMC's percentile rows
+ * @param {number} age                             the age wanted
+ * @param {number} retireAge                       fallback origin for legacy rows
+ * @returns {number|null}
+ */
+function mcMedianAtAge(pcts, age, retireAge) {
+  if (!Array.isArray(pcts) || pcts.length === 0) return null;
+  let row = pcts.find((d) => d && d.age === age);
+  if (!row && !Number.isFinite(pcts[0]?.age)) {
+    // Legacy rows without `age`: derive the index, but do NOT clamp — an index
+    // past the end means "not modelled", which is exactly what null says.
+    const i = age - retireAge;
+    row = i >= 0 && i < pcts.length ? pcts[i] : null;
+  }
+  return row && Number.isFinite(row.p50) ? row.p50 : null;
+}
+
 function NetWorthTab({ p, mc, inf }) {
   const [showRE, setShowRE] = useState(false);
   const props    = p.properties || [];
@@ -9305,11 +9347,31 @@ function NetWorthTab({ p, mc, inf }) {
           // projection tracks the engines instead of drifting from them.
           acc = acc * (1 + preReturnRate) + householdAnnualContribution(p, p.currentAge + y);
         }
-        port = Math.round(acc);
+        port = Number.isFinite(acc) ? Math.round(acc) : null;
       } else {
-        // Retirement phase: use MC median percentile
-        const pctIndex = Math.min(age - p.retireAge, mc.pcts.length - 1);
-        port = mc.pcts[pctIndex]?.p50 || 0;
+        // Retirement phase: the MC median for THIS age.
+        //
+        // Looked up BY AGE, not by array position. This used to be
+        //   pctIndex = Math.min(age - p.retireAge, pcts.length - 1)
+        //   port     = pcts[pctIndex]?.p50 || 0
+        // which had two failure modes, both of which drew a confident $0:
+        //
+        //   1. `Math.min` CLAMPED past the end of the data, so every age beyond
+        //      the Monte Carlo horizon repeated the final entry. A plan whose
+        //      horizon is shorter than `endAge` got a flat line of fabricated
+        //      years, and the "net worth at age" card below read that fabricated
+        //      value as though it were a forecast.
+        //   2. `|| 0` collapsed THREE different states into one number —
+        //      genuinely zero, no data, and NaN. NaN is falsy, so a single
+        //      broken input rendered as $0 from the poisoned year onward,
+        //      indistinguishable from a real answer. A user reported exactly
+        //      that: a plan the engine scores at 99.2% success, with a median
+        //      of $4.05M at 68 and $10.9M at 90, drawn as $0 from 68 to 90.
+        //
+        // Positional indexing also silently mis-aligned whenever `mc` was stale
+        // (computed at a different retireAge than the one being charted); the
+        // rows carry their own `age`, so use it.
+        port = mcMedianAtAge(mc.pcts, age, p.retireAge);
       }
 
       const mortEntry = mortSched.years.find((y) => y.yr === yr);
@@ -9317,27 +9379,42 @@ function NetWorthTab({ p, mc, inf }) {
       const yearsFromNow = yr - new Date().getFullYear();
       const reGrow = Math.pow(1 + (p.reGrowthRate ?? 3.0) / 100, yearsFromNow);
       const re = showRE ? Math.round(reTotal * reGrow) : 0;
+      // null (not 0) where there is no portfolio figure: Recharts breaks the
+      // line on null, which is the honest rendering of "not modelled". Net
+      // Worth has to break with it, or the chart would keep drawing
+      // `re - mortBal` as if it were a projection.
       return {
         age,
         "Liquid Portfolio": port,
         "Mortgage Debt": -mortBal,
         "Real Estate": re,
-        "Net Worth": port + re - mortBal,
+        "Net Worth": port == null ? null : port + re - mortBal,
       };
     });
   }, [p, mc, showRE, mortSched, reTotal]);
 
-  // Peak liquid portfolio (median) – from the full MC horizon (your plan age) – optional note
-  const peakPort = mc
-    ? Math.max(...mc.pcts.map((d) => d.p50))
-    : 0;
-  const peakAge = mc
-    ? p.retireAge + mc.pcts.findIndex((d) => d.p50 === peakPort)
-    : 0;
+  // Peak liquid portfolio (median). Both of these read the row's OWN age rather
+  // than deriving it from `retireAge + index`, and both ignore non-finite p50s —
+  // one NaN used to turn the headline figure into NaN via Math.max.
+  const finitePcts = useMemo(
+    () => (mc ? mc.pcts.filter((d) => Number.isFinite(d.p50)) : []),
+    [mc]
+  );
+  const peakRow = finitePcts.reduce(
+    (best, d) => (best == null || d.p50 > best.p50 ? d : best),
+    null
+  );
+  const peakPort = peakRow ? peakRow.p50 : 0;
+  const peakAge = peakRow ? (peakRow.age ?? p.retireAge + finitePcts.indexOf(peakRow)) : 0;
 
-  // Final net worth at the user's plan age (p.endAge)
-  const finalNW = nwData[nwData.length - 1]?.["Net Worth"] || 0;
+  // The last age the chart actually HAS a figure for, and the final value there.
+  // Reporting `p.endAge` when the data stops earlier is what let the summary card
+  // announce "$0 at age 90" for a plan that was never modelled to 90.
+  const lastRealRow = [...nwData].reverse().find((d) => d["Net Worth"] != null);
+  const finalNW = lastRealRow ? lastRealRow["Net Worth"] : 0;
+  const lastDataAge = lastRealRow ? lastRealRow.age : null;
   const planAge = p.endAge;
+  const dataStopsEarly = lastDataAge != null && lastDataAge < planAge;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -9349,12 +9426,20 @@ function NetWorthTab({ p, mc, inf }) {
           </div>
           <div className="ms">Age {peakAge}</div>
         </div>
+        {/* Names the age the number is actually FOR. It used to always say
+            `planAge` (the age you typed) even when the projection stopped
+            earlier, so a missing-data $0 was presented as "net worth at 90". */}
         <div className="met">
-          <div className="ml">Net worth at age {planAge}</div>
-          <div className="mv" style={{ color: "#0ea5e9", fontSize: 18 }}>
+          <div className="ml">Net worth at age {lastDataAge ?? planAge}</div>
+          <div className="mv" style={{ color: dataStopsEarly ? "#fbbf24" : "#0ea5e9", fontSize: 18 }}>
             {fmtDollar(finalNW)}
           </div>
-          <div className="ms">{showRE ? "Incl." : "Excl."} real estate</div>
+          <div className="ms">
+            {showRE ? "Incl." : "Excl."} real estate
+            {dataStopsEarly && (
+              <span style={{ color: "#fbbf24" }}> · projection stops here, not {planAge}</span>
+            )}
+          </div>
         </div>
         <div className="met">
           <div className="ml">Mortgage‑free</div>
@@ -9431,7 +9516,7 @@ function NetWorthTab({ p, mc, inf }) {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div className="ct" style={{ margin: 0 }}>
-              {showRE ? "Net Worth Projection" : "Portfolio Projection (ex. Real Estate)"} · 5‑year Intervals to Age {planAge} · Median MC Path
+              {showRE ? "Net Worth Projection" : "Portfolio Projection (ex. Real Estate)"} · 5‑year Intervals to Age {lastDataAge ?? planAge} · Median MC Path
             </div>
             <span
               style={{ cursor: "pointer", color: "#64748b", fontSize: 12 }}
@@ -9500,6 +9585,25 @@ function NetWorthTab({ p, mc, inf }) {
             />
           </LineChart>
         </ResponsiveContainer>
+
+        {/* A break in the line now means "no figure for these years" and says so.
+            Before, those years were drawn as $0 — a plan the engine scores at 99%
+            success could appear to end broke. Silence is better than a wrong
+            number, but a stated reason is better than silence. */}
+        {dataStopsEarly && (
+          <div style={{
+            marginTop: 8, padding: "10px 12px", borderRadius: 8,
+            background: "rgba(251,146,60,0.10)", border: "1px solid rgba(251,146,60,0.35)",
+            fontSize: 11, color: "#fdba74", lineHeight: 1.55,
+          }}>
+            <strong>The line stops at age {lastDataAge}.</strong> The last Monte Carlo run covers
+            ages {p.retireAge}–{lastDataAge}, not through {planAge}, so ages {lastDataAge + 1}–{planAge} are
+            left blank rather than guessed. If you changed your retirement or planning age since the
+            last run, press <strong>▶ Run Monte Carlo</strong> to refresh. If it keeps stopping short,
+            one of your inputs is producing an invalid number for those years — a one-off cash-flow
+            event or income entry with a blank or malformed amount is the usual cause.
+          </div>
+        )}
 
         {/* Legend */}
         <div className="leg" style={{ marginTop: 8, justifyContent: "center" }}>
@@ -15034,4 +15138,4 @@ export default function AiRAForecaster() {
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge };
