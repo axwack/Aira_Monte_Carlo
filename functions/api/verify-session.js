@@ -146,14 +146,54 @@ export async function onRequestPost({ request, env }) {
 
     const token = await mintCustomerJWT(customerId, env.JWT_SECRET);
 
+    // ── Self-service recovery link ───────────────────────────────────────────
+    // The JWT above is the ONLY proof of purchase, and it lives in one origin's
+    // localStorage. Clear site data, switch browsers, or buy a new laptop and
+    // paid-for credits are unreachable — with no login to fall back on, the only
+    // route back was an admin-issued restore link, i.e. messaging the operator.
+    // That does not scale past a handful of customers and is a poor experience
+    // for something someone paid real money for.
+    //
+    // So mint the recovery token at the one moment we KNOW the person is the
+    // legitimate buyer: they have just completed this Stripe session. Same table
+    // and same /api/restore consume path the admin flow already uses (and which
+    // restoreToken.test.js covers) — no new machinery, no new trust assumption.
+    //
+    // Longer and more permissive than an admin-issued link on purpose: this is
+    // the customer's own permanent spare key, not a one-off support remedy.
+    // 90 days is the ceiling /api/admin allows; 10 uses covers a realistic
+    // number of devices plus mistakes.
+    //
+    // Best-effort: a failure here must NEVER block the JWT the purchase depends
+    // on. Worst case the customer has no spare key and support issues one, which
+    // is exactly today's behaviour.
+    let restoreUrl = null;
+    let restoreExpiresAt = null;
+    try {
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      const rToken = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+      const ttl = 90 * 24 * 3600;
+      await env.DB.prepare(`
+        INSERT INTO restore_tokens (token, customer_id, note, expires_at, max_uses)
+        VALUES (?, ?, ?, unixepoch() + ?, ?)
+      `).bind(rToken, customerId, `self-serve @ checkout ${sessionId}`, ttl, 10).run();
+      restoreUrl = `${_origin}/?restore=${rToken}`;
+      restoreExpiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+    } catch (e) {
+      // Most likely cause: migration 006 not applied on this deployment.
+      console.error("[verify-session] restore token mint failed (non-fatal):", e.message);
+    }
+
     // Success is logged too. Without it you cannot distinguish "no failures" from
     // "nobody reached this endpoint at all" — precisely the ambiguity that let this
     // incident sit unnoticed while four customers were affected.
     console.log(JSON.stringify({
       tag: "[verify-session]", ok: true, reason: "minted",
       origin: _origin, ms: Date.now() - _t0, sessionId, customerId, credits,
+      restoreIssued: !!restoreUrl,
     }));
-    return json({ token, credits, customerId });
+    // The token itself is never logged — it is a bearer credential.
+    return json({ token, credits, customerId, restoreUrl, restoreExpiresAt });
 
   } catch (e) {
     console.error("[verify-session] unhandled exception:", e.message, e.stack);

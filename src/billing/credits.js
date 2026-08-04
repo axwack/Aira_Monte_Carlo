@@ -408,21 +408,57 @@ export async function verifyStripeSession(sessionId, nonce) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || "Session verification failed");
   }
-  const { token, credits: initialCredits } = await res.json();
+  const { token, credits: initialCredits, restoreUrl, restoreExpiresAt } = await res.json();
   setStoredJWT(token);
   try { localStorage.setItem(CACHED_BALANCE_KEY, String(initialCredits)); } catch {}
   _notifyListeners(initialCredits);
+  // Persist the recovery link so it survives the page and can be re-shown later.
+  // Deliberately stored: it is the spare key for the JWT beside it, and losing it
+  // silently would defeat the point. Same origin, same risk profile as the JWT.
+  if (restoreUrl) setStoredRecoveryLink(restoreUrl, restoreExpiresAt);
 
   // If credits are 0 the webhook hasn’t fired yet — poll /api/balance for up to 12s
   if (initialCredits === 0) {
     for (let i = 0; i < 6; i++) {
       await new Promise(r => setTimeout(r, 2000));
       const polled = await fetchCreditBalance();
-      if (polled > 0) return { credits: polled };
+      if (polled > 0) return { credits: polled, restoreUrl };
     }
   }
 
-  return { credits: initialCredits };
+  return { credits: initialCredits, restoreUrl };
+}
+
+// ─── Recovery link (self-service restore) ─────────────────────────────────────
+// Minted by /api/verify-session at checkout, so the buyer leaves with a spare key
+// instead of depending on an operator to issue one later. See the rationale in
+// functions/api/verify-session.js.
+const RECOVERY_KEY = "airaRecoveryLink.v1";
+
+export function setStoredRecoveryLink(url, expiresAt = null) {
+  try {
+    localStorage.setItem(RECOVERY_KEY, JSON.stringify({ url, expiresAt }));
+  } catch {}
+}
+
+/**
+ * The stored recovery link, or null. Self-expires: a link past `expiresAt` is
+ * worse than none, because a customer would try it and be told "invalid" with no
+ * explanation of why it stopped working.
+ */
+export function getStoredRecoveryLink() {
+  try {
+    const raw = localStorage.getItem(RECOVERY_KEY);
+    if (!raw) return null;
+    const rec = JSON.parse(raw);
+    if (!rec?.url) return null;
+    if (rec.expiresAt && Date.parse(rec.expiresAt) < Date.now()) return null;
+    return rec;
+  } catch { return null; }
+}
+
+export function clearStoredRecoveryLink() {
+  try { localStorage.removeItem(RECOVERY_KEY); } catch {}
 }
 
 // ─── Account restore (?restore=…) ──────────────────────────────────────────
@@ -517,7 +553,7 @@ export function useStripeReturn() {
     }
 
     verifyStripeSession(sessionId, nonce)
-      .then(({ credits }) => setStatus({ success: true, credits }))
+      .then(({ credits, restoreUrl }) => setStatus({ success: true, credits, restoreUrl }))
       .catch(e => setStatus({ success: false, error: e.message }));
   }, []);
 
