@@ -600,6 +600,85 @@ export function CreditBalanceBadge({ style, onBuyClick }) {
 
 // ─── UI — Credit Pack Modal ─────────────────────────────────────────────────────
 
+/**
+ * "Save your recovery link" — shown once after a successful purchase, and
+ * re-openable from the credit panel.
+ *
+ * The JWT this app runs on lives in ONE origin's localStorage and is the only
+ * proof of purchase; there is no login by design. Clear site data, switch
+ * browsers or buy a new laptop and paid-for credits become unreachable, with the
+ * only route back being an operator issuing a restore link by hand. This is the
+ * customer's own spare key, minted at the moment we know they are the legitimate
+ * buyer (see functions/api/verify-session.js).
+ *
+ * Not a toast: a 5-second banner is the wrong container for "keep this
+ * permanently". It must be dismissed deliberately.
+ */
+export function RecoveryLinkModal({ url, expiresAt, onClose }) {
+  const [copied, setCopied] = useState(false);
+  if (!url) return null;
+
+  const copy = () => {
+    navigator.clipboard?.writeText(url).then(() => setCopied(true)).catch(() => {});
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999,
+      padding: 16,
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.98)", border: "1px solid rgba(94,234,212,0.35)",
+        borderRadius: 14, padding: "24px 22px", maxWidth: 520, width: "100%",
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#5eead4", marginBottom: 8 }}>
+          🔑 Save your recovery link
+        </div>
+        <div style={{ fontSize: 12.5, color: "#94a3b8", lineHeight: 1.6, marginBottom: 14 }}>
+          AiRA has no accounts or passwords, so your credits are tied to <strong>this browser</strong>.
+          This link is how you get them back if you clear your browser data, switch browsers, or move
+          to a new computer. <strong style={{ color: "#e2e8f0" }}>Bookmark it or email it to yourself now</strong> —
+          we cannot show it to you again later if you lose access to this browser.
+        </div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          <input
+            readOnly
+            value={url}
+            onFocus={(e) => e.target.select()}
+            style={{
+              flex: 1, background: "#0a1628", border: "1px solid #1e3a5f", color: "#5eead4",
+              borderRadius: 6, padding: "6px 8px", fontSize: 11, fontFamily: "monospace",
+            }}
+          />
+          <button
+            onClick={copy}
+            style={{
+              background: copied ? "#0d9488" : "#334155", border: "none", borderRadius: 6,
+              color: "white", padding: "6px 14px", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            {copied ? "✓ Copied" : "Copy"}
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>
+          Anyone with this link can use your credits — keep it private.
+          {expiresAt && ` Valid until ${new Date(expiresAt).toLocaleDateString()}.`}
+        </div>
+        <button
+          onClick={onClose}
+          style={{
+            background: "#0d9488", border: "none", borderRadius: 8, color: "white",
+            padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}
+        >
+          I've saved it
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function CreditPackModal({ onClose }) {
   const [purchasing, setPurchasing] = useState(null);
   const [done, setDone]             = useState(null);
