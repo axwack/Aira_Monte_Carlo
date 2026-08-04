@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { hasEnoughCredits, deductCredits, ESTIMATED_CREDITS_PER_CALL, getStoredJWT, fetchCreditBalance, syncCreditBalance } from "../billing/credits.js";
+import { hasEnoughCredits, deductCredits, MIN_CREDITS_TO_RUN, getStoredJWT, fetchCreditBalance, syncCreditBalance } from "../billing/credits.js";
 
 // ─── Billing mode flag ────────────────────────────────────────────────────────
 // Flip to true when Path A (token-resale) goes live.

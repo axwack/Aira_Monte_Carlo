@@ -174,10 +174,33 @@ export function rawTokensToCredits(totalRawTokens) {
   return Math.ceil(totalRawTokens / RAW_TOKENS_PER_CREDIT);
 }
 
-export const ESTIMATED_CREDITS_PER_CALL = 5;
+/**
+ * The minimum balance the SERVER will accept before running an analysis.
+ *
+ * MUST equal MIN_CREDITS_GUARD in functions/api/analyze.js. That is not a style
+ * request: the server returns 402 below this number, so any smaller value here
+ * makes the client offer a button that cannot work. The two drifted 10x (client
+ * 5, server 50) and creditsGuardSync.test.js now fails the build if they ever
+ * part company again — a text-parse of analyze.js, so it cannot be fooled by a
+ * stale copy of this comment.
+ *
+ * This replaced ESTIMATED_CREDITS_PER_CALL, which was a different quantity
+ * wearing the same hat: a guess at what one call costs, not the floor the server
+ * enforces. Nothing called it, so the mismatch had no runtime effect yet — the
+ * client simply fired and let the 402 come back.
+ */
+export const MIN_CREDITS_TO_RUN = 50;
 
-export function hasEnoughCredits(estimatedCredits = ESTIMATED_CREDITS_PER_CALL) {
-  return _readCachedBalance() >= estimatedCredits;
+/**
+ * Where the UI should start warning. Deliberately a multiple of the floor rather
+ * than a round number: the point is "you are close to the number that stops
+ * working", which only has meaning relative to that number. The previous 500 was
+ * a bare literal 10x away from a floor it did not reference.
+ */
+export const LOW_BALANCE_WARN_AT = MIN_CREDITS_TO_RUN * 10;
+
+export function hasEnoughCredits(minCredits = MIN_CREDITS_TO_RUN) {
+  return _readCachedBalance() >= minCredits;
 }
 
 /** Client-side deduction — only meaningful in stub mode (BILLING_ENABLED = false). */
