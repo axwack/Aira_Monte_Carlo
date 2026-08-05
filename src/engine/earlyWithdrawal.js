@@ -35,6 +35,44 @@ export const RULE_OF_55_MIN_AGE = 55;
 export const SEPP_MIN_YEARS = 5;
 
 /**
+ * Does the SEPARATION DATE qualify for the Rule of 55?
+ *
+ * §72(t)(2)(A)(v) turns on separation from service "after attainment of age 55",
+ * which the IRS applies by CALENDAR YEAR: separation in or after the year the
+ * employee turns 55 qualifies. Someone who leaves in January while still 54 and
+ * turns 55 that October is covered.
+ *
+ * This existed only as `retireAge >= 55`, which is a stricter rule than the law.
+ * It denied the exception to every plan whose separation age rounds to 54 —
+ * charging a 10% penalty on years 54 to 59.5 that the taxpayer does not owe. On a
+ * mostly-pre-tax portfolio that is a large, entirely fictional cost. The constant
+ * above always described the correct rule; only the comparison was wrong.
+ *
+ * Uses the app's own year convention: separationYear = thisYear + (retireAge -
+ * currentAge), matching how every engine derives calendar years from ages.
+ *
+ * Falls back to `retireAge >= 55` when the birth year is unknown. That is the
+ * conservative direction — it can under-claim the exception but never invent it —
+ * and it reproduces the previous behaviour exactly for profiles without a DOB.
+ */
+export function ruleOf55SeparationQualifies({
+  dob, birthYear, currentAge, retireAge, asOfYear,
+} = {}) {
+  if (!Number.isFinite(retireAge)) return false;
+  let by = Number.isFinite(birthYear) ? birthYear : null;
+  if (by == null && typeof dob === "string" && dob.length >= 4) {
+    const parsed = parseInt(dob.slice(0, 4), 10);
+    if (Number.isFinite(parsed)) by = parsed;
+  }
+  if (by == null || !Number.isFinite(currentAge)) {
+    return retireAge >= RULE_OF_55_MIN_AGE;
+  }
+  const nowYear = Number.isFinite(asOfYear) ? asOfYear : new Date().getFullYear();
+  const separationYear = nowYear + (retireAge - currentAge);
+  return separationYear >= by + RULE_OF_55_MIN_AGE;
+}
+
+/**
  * Does this profile hold a former-employer plan that could qualify for the
  * Rule of 55? The account model has no 401k/IRA subtype — only a free-text
  * `name` — so detection is name-based by design. A user who files a rollover
@@ -112,6 +150,7 @@ export function earlyWithdrawalPenalty({
   ruleOf55 = false,
   ruleOf55Share = 0,
   retireAge = null,
+  separationQualifies = undefined,
   sepp72t = false,
   sepp72tStartAge = null,
 } = {}) {
@@ -134,8 +173,15 @@ export function earlyWithdrawalPenalty({
   // Rule of 55 reaches only the separated employer's plan, never an IRA, and only
   // if separation happened in or after the year the employee turned 55. Applied
   // pro-rata: the engines hold one aggregated pre-tax bucket.
-  const ruleOf55Applies =
-    ruleOf55 && Number.isFinite(retireAge) && retireAge >= RULE_OF_55_MIN_AGE && ruleOf55Share > 0;
+  // `separationQualifies` carries the calendar-year test (see
+  // ruleOf55SeparationQualifies). When a caller does not supply it we fall back to
+  // the old age comparison, which keeps every existing caller and fixture
+  // behaving exactly as before — but it is STRICTER than the law, so engines
+  // should pass it.
+  const separationOk = typeof separationQualifies === "boolean"
+    ? separationQualifies
+    : (Number.isFinite(retireAge) && retireAge >= RULE_OF_55_MIN_AGE);
+  const ruleOf55Applies = ruleOf55 && separationOk && ruleOf55Share > 0;
   const exemptShare = ruleOf55Applies ? Math.min(1, Math.max(0, ruleOf55Share)) : 0;
   const exemptAmount = pretaxDistribution * exemptShare;
   const taxableBase = pretaxDistribution - exemptAmount;
