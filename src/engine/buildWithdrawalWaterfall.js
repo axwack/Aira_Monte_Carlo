@@ -858,6 +858,24 @@ export function buildWithdrawalWaterfall(params = {}) {
       // a cash obligation the user actually pays this year.
       const baseNeed = Math.max(0, spSmiled - fixedIncome - otherIncTotal) + housingCost + carveoutCost + ev.total;
 
+      // ── Income SURPLUS (§34) ────────────────────────────────────────────
+      // `Math.max(0, …)` above discards every dollar of income beyond spending —
+      // but the TAX on that income was still charged to the portfolio. So money
+      // the household actually received evaporated, and the portfolio paid its
+      // bill. A household with $400k of rental income and $60k of spending
+      // discarded $340k/yr, drew ~$100k/yr from the 401(k) to pay tax on income
+      // it had received, and depleted: Monte Carlo scored it under 50%.
+      //
+      // Same family as the v1.2.73 inheritance bug — netting an inflow against
+      // one year of spending throws away the rest. The fix there was to DEPOSIT
+      // the surplus; same here.
+      //
+      // Applied in two steps below: the surplus funds this year's tax bill
+      // FIRST (you pay tax out of the income you received, not by selling
+      // assets), and anything still left is deposited into the taxable bucket as
+      // basis, because it is after-tax money that should compound.
+      const incomeSurplus = Math.max(0, (fixedIncome + otherIncTotal) - (spSmiled + housingCost + carveoutCost + ev.total));
+
       // Steps 3-5: portfolio draws. The draw ORDER differs by scenario:
       //   • smart — cash → taxable → pretax (bracket-capped) → Roth (tax-optimal)
       //   • naive — pretax (uncapped) → cash → taxable → Roth ("pretax first":
@@ -879,7 +897,8 @@ export function buildWithdrawalWaterfall(params = {}) {
       // underfunding of the draws the user acts on. The <$1 break below makes
       // extra passes free once converged (typically pass 5-7).
       for (let pass = 0; pass < 12; pass++) {
-        let need = Math.max(0, baseNeed + taxDue - rmd); // RMD proceeds fund first
+        // Surplus income funds the tax bill before any asset is sold (§34).
+        let need = Math.max(0, baseNeed + taxDue - rmd - incomeSurplus);
         fromCash = 0; fromTaxable = 0; fromPretax = 0; fromRoth = 0;
         pretaxCapReason = "uncapped";
 
@@ -1264,7 +1283,13 @@ export function buildWithdrawalWaterfall(params = {}) {
         ? convTaxFromTaxable * (taxableBasis / Math.max(taxable, 1))
         : 0;
       taxableBasis = Math.max(0, taxableBasis - convBasisConsumed);
-      taxable = (Math.max(0, taxable - fromTaxable - convTaxFromTaxable) + rmdExcess) * (1 + gr);
+      // §34 — whatever the surplus did NOT spend on this year's tax bill is
+      // deposited, exactly like a cashFlowEvents inflow (v1.2.73). It arrives as
+      // basis because it is already-taxed money; only later growth is gain.
+      // Without this the money simply ceased to exist.
+      const surplusToTaxable = Math.max(0, incomeSurplus - Math.max(0, taxDue - rmd));
+      taxableBasis += surplusToTaxable;
+      taxable = (Math.max(0, taxable - fromTaxable - convTaxFromTaxable) + rmdExcess + surplusToTaxable) * (1 + gr);
       pretax  = Math.max(0, pretax  - fromPretax - convAmt - convTaxFromPretax) * (1 + gr);
       roth    = Math.max(0, roth    - fromRoth + convToRoth) * (1 + gr);
 
