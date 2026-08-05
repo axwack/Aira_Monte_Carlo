@@ -2438,6 +2438,108 @@ unlocked, so an owner preview can never be mistaken for the customer view.
 
 ---
 
+## 33. ✅ Bracket cap starved funded households — FIXED 2026-08-05 (v1.2.84)
+
+**User-reported: 3.3% success on a plan whose true figure is ~100%.**
+
+Profile (real, exported v1.2.80): single filer, 52, retires at 54, plan to 90,
+spends $60k/yr. $1.75M in a 401(k), $20k Roth, $40k HSA — **no taxable, no cash**.
+$93,000/yr property income growing 3%/yr. `withdrawalBracketTarget: "22"`.
+
+### Mechanism
+
+By his early 60s the property income ALONE exceeds the single-filer 22% bracket
+top. The pre-tax draw step computes `room = ceiling - taxSoFar`, which became
+**zero**, so it drew nothing. With 97% of assets in pre-tax and the small
+Roth/HSA quickly spent, the funding need stayed permanently unfunded and every
+path was flagged `survived = false` — **while holding $3–4M**.
+
+The diagnostic that exposed it: `mc.pcts` showed **59% `alive` at age 66 against a
+$3.98M median balance**. Paths were dying rich. Any future report of an
+implausible success rate should check that curve first.
+
+**The defect in one line: a tax preference was enforced as a hard constraint.**
+Offered "pay 24% instead of 22%" or "fail the plan", the engine starved.
+
+### Fix
+
+An essential-spending override in **both** capping engines
+(`buildWithdrawalWaterfall` and `runMC`): after the bucket sequence, if the need
+is still unfunded and pre-tax money remains, draw it regardless of the
+bracket/IRMAA cap. `simulateDeterministicWithStrategy` needed no change — it has
+no bracket cap at all (0 references to `withdrawalBracketTarget`), which is why
+its schedule stayed healthy while the MC collapsed, and is itself a separate
+inconsistency worth closing later.
+
+The override is **reported, not silent**: `pretaxCapReason =
+"bracket_exceeded_to_fund_spending"` on the row, and `runMC` now returns
+`bracketOverrideRate` (share of paths that had to break the target at least once).
+A high value means the chosen target is unreachable for that household.
+
+The Roth emergency reserve is deliberately NOT overridden — a separate explicit
+user instruction, and widening the fix would change behaviour nobody reported.
+
+### Tests — `src/bracketCapSoft.test.js`
+
+The class-level invariant matters more than the case: **no path may be scored as
+failed while it still holds drawable assets.** Seven extreme shapes (rental far
+above spend at a 10% target, rental equal to spend, MFJ, IRMAA guard, SS torpedo
+guard, all-pre-tax portfolio) plus a no-cliff test across the income level that
+fills the bracket, and a "must not fire when there is room" test so the override
+cannot silently discard the optimisation the user asked for.
+
+## 34. ⚠️ Surplus income evaporates while its tax is still charged — OPEN, found 2026-08-05
+
+Found by the invariant test added with the §33 bracket-cap fix, **not** by a user.
+
+### The defect
+
+Every engine computes the funding need as:
+
+    need = Math.max(0, spend - ss - rental - otherIncome) + housingCost + ...
+
+The `Math.max(0, …)` throws away every dollar of income above spending. But the
+**tax on that income is still charged to the portfolio**. So income the household
+actually receives vanishes, and the portfolio pays the bill for it.
+
+Reproduced: the §33 profile with `propIncome` raised to $400,000 and spending at
+$60,000. The household discards $340k/yr, then draws roughly $100k/yr from the
+401(k) to pay tax on income it received, and depletes. Monte Carlo success comes
+back **under 50% for a household with 6.7× its spending in income.**
+
+Pinned as a failing-by-design test in `src/bracketCapSoft.test.js`
+("OPEN: huge income still fails because surplus evaporates while its tax does
+not"). Flip that assertion when this is fixed.
+
+### Why it matters at ordinary scale too
+
+It is not only an extreme-case bug. The reported §33 profile has $93k of income
+against $60k of spending, so it loses ~$33k/yr of surplus AND pays the tax on it
+from the portfolio. That is why it scores ~90% after the §33 fix rather than the
+~100% the cash flows actually support.
+
+### Same family as a bug already fixed once
+
+v1.2.73 fixed exactly this shape for `cashFlowEvents` inflows: netting an
+inheritance against one year's spending discarded everything beyond that year.
+The fix there was to DEPOSIT the inflow into a bucket so the surplus compounds.
+Rental, property and pension income still net-and-discard.
+
+### Agreed direction (not yet built)
+
+Surplus income should be **deposited into the taxable bucket** (with basis, since
+it is after-tax money once its tax is paid) rather than discarded — the same
+treatment `computeCashFlowEvents` inflows now get. Requires:
+
+1. Compute gross income and spending separately; stop collapsing them with `max(0, …)`.
+2. Route `surplus = income - spendNeed` into `taxable` + `taxableBasis`.
+3. Pay the income's tax from that surplus FIRST, before touching the portfolio.
+4. All three engines together (runMC, simulateDeterministicWithStrategy,
+   buildWithdrawalWaterfall) or they will disagree about survival — the drift
+   class this codebase keeps relearning.
+5. Tests: a household with income > spending must END RICHER, not poorer; and
+   the surplus must appear in the taxable balance rather than nowhere.
+
 ## 32. 📋 WHAT IS ACTUALLY OPEN — index as of 2026-07-31 (v1.2.70)
 
 Written because the status markers had drifted: §21 still said "PAUSED, do not

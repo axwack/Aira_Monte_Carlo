@@ -43,7 +43,7 @@ import {
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, expectedHealthcareShock } from "./expenses.js";
 import { jobContributionsForYear } from "./contributions.js";
 import { spouseAgeAt, personsAtLeastAge, spouseDeathOnPrimaryClock, filesJointlyAt, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, spouseAgeOffset } from "./ages.js";
-import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_RATE, EARLY_PENALTY_AGE } from "./earlyWithdrawal.js";
+import { earlyWithdrawalPenalty, detectEmployerPlan, ruleOf55SeparationQualifies, EARLY_PENALTY_RATE, EARLY_PENALTY_AGE } from "./earlyWithdrawal.js";
 import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
 import { resolveGlidepathSwitchAge } from "./glidepath.js";
@@ -384,6 +384,14 @@ export function buildWithdrawalWaterfall(params = {}) {
   // Already-retired users: see effectiveRetireAge. Every use below must be the
   // clamped value, or the projection replays years that have already happened.
   const retireAge = effectiveRetireAge(retireAgeRaw, currentAge);
+
+  // Calendar-year Rule-of-55 test, computed once. Separation in or after the year
+  // the employee turns 55 qualifies; `retireAge >= 55` was stricter than the
+  // statute and charged a penalty the taxpayer does not owe.
+  const ruleOf55Ok = ruleOf55SeparationQualifies({
+    dob: params.dob, birthYear: params.birthYear,
+    currentAge: params.currentAge, retireAge,
+  });
 
   if (currentAge == null || retireAgeRaw == null) {
     const empty = { rows: [], totalTax: 0, finalPretax: 0, finalRoth: 0, finalCash: 0, finalTaxable: 0 };
@@ -858,6 +866,9 @@ export function buildWithdrawalWaterfall(params = {}) {
       let fromCash = 0, fromTaxable = 0, fromPretax = 0, fromRoth = 0;
       let pretaxCapReason = "uncapped";
       let rothReserveHeld = 0;
+      // True when the emergency reserve had to be broken to stay funded — a real
+      // event the user must be able to see, not an internal detail.
+      let rothReserveBroken = false;
       let taxNoConv = null;
       let taxDue = 0;
       let earlyPenalty = { penalty: 0, exemptAmount: 0, reason: "" };
@@ -945,6 +956,61 @@ export function buildWithdrawalWaterfall(params = {}) {
         const drawSeq  = isSmart ? smartDrawOrder : NAIVE_DRAW_ORDER;
         for (const bucket of drawSeq) drawFns[bucket]();
 
+        // ── Essential-spending override (the bracket cap is SOFT) ───────────
+        // The bracket target chooses WHICH dollars to draw. It must never decide
+        // WHETHER the household eats. If every bucket has run and `need` is still
+        // unfunded while pre-tax money remains, the cap yields: paying a higher
+        // marginal rate is strictly better than an unfunded year, and a real
+        // retiree in that position simply takes the larger distribution.
+        //
+        // Without this, a household whose NON-PORTFOLIO income (rental, pension,
+        // annuity) fills the target bracket by itself had ZERO room, so a
+        // portfolio that is mostly pre-tax could not be drawn AT ALL — and the
+        // path was scored as FAILED while holding millions. Reported case:
+        // $1.75M in a 401(k), $20k Roth, $40k HSA, $93k rental growing 3%/yr,
+        // 22% target, single filer → 3.3% success where the true figure is ~100%.
+        // The `alive` curve gave it away: 59% alive at 66 with a $3.98M median.
+        //
+        // Deliberately NOT touching the Roth emergency reserve here. That is a
+        // separate, explicit user instruction with its own semantics; widening
+        // this fix to override it too would change behaviour nobody reported.
+        if (need > 0.01 && pretax > fromPretax) {
+          const extra = Math.min(need, pretax - fromPretax);
+          fromPretax += extra;
+          need -= extra;
+          // Surfaced, not silent: the user gave up a tax preference to stay
+          // funded, and that is exactly the tradeoff they should see.
+          pretaxCapReason = "bracket_exceeded_to_fund_spending";
+        }
+
+        // ── Roth emergency reserve is a reserve, not a vault ────────────────
+        // Same defect, found by the tester agent against this very fix: an
+        // explicit `rothEmergencyReserve` was a hard wall, so a household could
+        // be scored as FAILED with the reserve sitting untouched. Measured:
+        // reserve $0 → 100% success; reserve $1.9M against a $2.05M portfolio →
+        // 47%, with no other change.
+        //
+        // I had deliberately excluded the reserve from the override above, on the
+        // grounds that it is an explicit user instruction. That reasoning was
+        // wrong: a field named "emergency reserve" must be reachable in an
+        // emergency, and running out of money IS the emergency. Holding it back
+        // to the point of failing the plan protects the money from its purpose.
+        //
+        // Strictly LAST: every other bucket, including uncapped pre-tax, must be
+        // exhausted first, so a plan with any other option still leaves the
+        // reserve alone. That preserves the intent while removing the false
+        // failure.
+        if (need > 0.01 && isSmart && (rothEmergencyReserve || 0) > 0) {
+          const reserveLeft = Math.max(0, roth - fromRoth);
+          if (reserveLeft > 0) {
+            const extra = Math.min(need, reserveLeft);
+            fromRoth += extra;
+            need -= extra;
+            rothReserveHeld = Math.max(0, roth - fromRoth);
+            rothReserveBroken = true;
+          }
+        }
+
         // Realized LTCG on this pass's taxable draw — READ-ONLY off the current
         // (pre-draw) taxable balance/basis; the real `taxableBasis` is mutated
         // exactly once below, after the fixed point converges.
@@ -965,6 +1031,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         // conversion is not a distribution and is added after the conversion is
         // sized, below — never here.
         earlyPenalty = earlyWithdrawalPenalty({
+          separationQualifies: ruleOf55Ok,
           age, pretaxDistribution: fromPretax + rmd,
           ruleOf55, ruleOf55Share, retireAge,
           sepp72t, sepp72tStartAge: sepp72tStartAge ?? retireAge,
@@ -1173,6 +1240,7 @@ export function buildWithdrawalWaterfall(params = {}) {
       // trade, and the plan must price it rather than hide it.
       if (convTaxFromPretax > 0) {
         const convPen = earlyWithdrawalPenalty({
+          separationQualifies: ruleOf55Ok,
           age, pretaxDistribution: convTaxFromPretax,
           ruleOf55, ruleOf55Share, retireAge,
           sepp72t, sepp72tStartAge: sepp72tStartAge ?? retireAge,
@@ -1217,7 +1285,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         rmd, rmdActive,
         fromCash, fromTaxable, fromPretax, pretaxCapReason, convCapReason,
         convTaxFromTaxable, convTaxFromCash, convTaxFromPretax, convToRoth,
-        fromRoth, rothReserveHeld,
+        fromRoth, rothReserveHeld, rothReserveBroken,
         conversionAmount: Math.round(convAmt), conversionTax: convTax,
         fedTax: tax.fedTax, stateTax: tax.stateTax, irmaa: tax.irmaa,
         totalTax: tax.totalTax, irmaaFull: tax.irmaaFull,

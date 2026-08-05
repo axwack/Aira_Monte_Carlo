@@ -1,0 +1,214 @@
+/**
+ * The bracket target is a PREFERENCE, not a wall.
+ *
+ * THE BUG THIS PINS (reported 2026-08-05, real user profile)
+ * ---------------------------------------------------------
+ * Single filer, age 52, retiring at 54. $1.75M in a 401(k), $20k Roth, $40k HSA,
+ * no taxable and no cash. $93,000/yr of property income growing 3%/yr. Spending
+ * $60k. Bracket target 22%.
+ *
+ * Reported success rate: 3.3%. True figure: ~100%.
+ *
+ * Mechanism: by his early 60s the rental income ALONE exceeds the single-filer
+ * 22% bracket top, so `room = ceiling - taxSoFar` was zero and the pre-tax step
+ * would draw nothing. With 97% of the portfolio in pre-tax and Roth/HSA quickly
+ * spent, `need` stayed unfunded forever and every path was flagged failed —
+ * while holding $3-4M. The giveaway was the `alive` curve: 59% alive at age 66
+ * against a $3.98M median balance. Paths were dying rich.
+ *
+ * The defect in one line: a tax preference was enforced as a hard constraint.
+ * Faced with "pay 24% instead of 22%" or "fail the plan", the engine starved.
+ *
+ * The INVARIANT test at the bottom is the important one — it catches this whole
+ * CLASS rather than this one profile: a path must never be scored as failed
+ * while it still holds drawable assets.
+ */
+
+import { runMC, simulateDeterministicWithStrategy } from "./App";
+import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
+
+// The reported profile, reduced to the fields that drive the failure.
+const JOHN = {
+  currentAge: 52, retireAge: 54, endAge: 90,
+  port: 1_810_000, sp: 60_000, ssAge: 62, ssb: 25_200, ssCola: 2.4,
+  contrib: 13_000, hsaContrib: 4_404,
+  inf: 2.5, smile: true, tax: true, real: true,
+  filingStatus: "single", stateOfResidence: "OH",
+  gkFloor: 48_000, gkCeiling: 100_000,
+  propIncome: 93_000, ab: 0, useAb: true, abReliability: 80, abGrowth: 3,
+  taxableBasisPct: 70, cashRealReturn: 3,
+  withdrawalStrategy: "gk", withdrawalBracketTarget: "22",
+  irmaaGuard: false, ssTorpedoGuard: false, rothEmergencyReserve: 0,
+  orderingMode: "tax_reactive", withdrawalOrder: ["cash", "taxable", "pretax", "roth"],
+  preRetireEq: 91, postRetireEq: 70,
+  hcShockAge: 72, hcProb: 3.5, hcMin: 70_000, hcMax: 130_000,
+  dob: "1973-10-26", sex: "male", spouse: { enabled: false },
+  accounts: [
+    { id: "1", category: "pretax", balance: 1_750_000 },
+    { id: "2", category: "roth",   balance:    20_000 },
+    { id: "4", category: "hsa",    balance:    40_000 },
+  ],
+};
+
+describe("§ bracket cap must not starve a funded household", () => {
+  test("the reported profile no longer collapses (was 3.3%)", () => {
+    const mc = runMC(JOHN, 90, 500, 42, true);
+    // Was 0.033. The plan is genuinely sound: rental alone covers the spend.
+    expect(mc.rate).toBeGreaterThan(0.85);
+  });
+
+  test("success is now insensitive to the bracket target, as it must be", () => {
+    // A tax PREFERENCE may change the tax bill. It must not decide solvency.
+    const at22 = runMC({ ...JOHN, withdrawalBracketTarget: "22" }, 90, 500, 42, true).rate;
+    const off  = runMC({ ...JOHN, withdrawalBracketTarget: "off" }, 90, 500, 42, true).rate;
+    expect(Math.abs(at22 - off)).toBeLessThan(0.15);
+  });
+
+  test("no cliff across the rental amount that fills the bracket", () => {
+    // Before the fix: 70k -> 91.8%, 93k -> 3.3%. A 33% income rise cannot cost
+    // 88 points of success.
+    const r70 = runMC({ ...JOHN, propIncome: 70_000 }, 90, 500, 42, true).rate;
+    const r93 = runMC({ ...JOHN, propIncome: 93_000 }, 90, 500, 42, true).rate;
+    expect(r70 - r93).toBeLessThan(0.15);
+  });
+
+  test("the override is REPORTED, not silent", () => {
+    // The user gave up a tax preference to stay funded; that must be visible.
+    const mc = runMC(JOHN, 90, 300, 42, true);
+    expect(mc.bracketOverrideRate).toBeGreaterThan(0);
+  });
+
+  test("waterfall labels the year it exceeded the target", () => {
+    const rows = buildWithdrawalWaterfall(JOHN).smart.rows;
+    const overridden = rows.filter(r => r.pretaxCapReason === "bracket_exceeded_to_fund_spending");
+    // At least one year must both exceed the target AND say so.
+    expect(overridden.length).toBeGreaterThan(0);
+  });
+
+  test("a household with room to spare is NOT pushed past its target", () => {
+    // The override must fire only when needed — otherwise it silently discards
+    // the tax optimisation the user asked for.
+    const roomy = {
+      ...JOHN, propIncome: 0, sp: 40_000,
+      accounts: [
+        { id: "a", category: "pretax",  balance: 600_000 },
+        { id: "b", category: "taxable", balance: 900_000 },
+        { id: "c", category: "cash",    balance: 200_000 },
+      ],
+    };
+    // Not exactly 0: in a handful of stochastic tails (bad returns plus a
+    // healthcare shock) exceeding the target genuinely IS the right call. The
+    // requirement is that it stays rare, not that it never happens.
+    expect(runMC(roomy, 90, 300, 42, true).bracketOverrideRate).toBeLessThan(0.05);
+  });
+});
+
+// ─── The general invariant — catches the CLASS, not the case ─────────────────
+
+describe("§ INVARIANT: no path may fail while holding drawable assets", () => {
+  // Extreme shapes chosen to stress the interaction that broke: large
+  // non-portfolio income against a low bracket target, with the portfolio
+  // concentrated in pre-tax so the cap has maximum bite.
+  const EXTREMES = {
+    "rental far above spend, 10% target": { propIncome: 200_000, withdrawalBracketTarget: "10" },
+    "rental equal to spend, 12% target":  { propIncome: 60_000,  withdrawalBracketTarget: "12" },
+    "MFJ variant, rental fills bracket":  { propIncome: 150_000, filingStatus: "mfj", withdrawalBracketTarget: "12" },
+    "IRMAA guard on top of the cap":      { propIncome: 120_000, withdrawalBracketTarget: "12", irmaaGuard: true },
+    "SS torpedo guard on as well":        { propIncome: 120_000, withdrawalBracketTarget: "12", ssTorpedoGuard: true },
+    "all-pretax portfolio, no Roth/HSA":  {
+      propIncome: 150_000, withdrawalBracketTarget: "10",
+      accounts: [{ id: "1", category: "pretax", balance: 2_000_000 }],
+    },
+  };
+
+  Object.entries(EXTREMES).forEach(([label, override]) => {
+    test(`${label} — survives, because the money is reachable`, () => {
+      const mc = runMC({ ...JOHN, ...override }, 90, 300, 42, true);
+      // Every one of these households has more income than it spends plus a
+      // seven-figure portfolio. Anything below a high success rate means an
+      // artificial constraint is starving them again.
+      expect(mc.rate).toBeGreaterThan(0.8);
+    });
+  });
+
+  test("deterministic schedule never reports an unfunded year for these shapes", () => {
+    Object.values(EXTREMES).forEach((override) => {
+      const det = simulateDeterministicWithStrategy({ ...JOHN, ...override }, 2.5, "gk");
+      const broke = det.schedule.filter(r => (r.portfolioEnd ?? 0) <= 0);
+      expect(broke.length).toBe(0);   // EXTREMES no longer includes the 400k case
+    });
+  });
+
+  /**
+   * KNOWN OPEN DEFECT — surplus income is discarded but its tax is not.
+   *
+   * Found by the invariant above, not by a user. `need = max(0, spend - income)`
+   * throws away every dollar of income beyond spending, yet the TAX on that
+   * income is still charged to the portfolio. A household with $400k of rental
+   * income and $60k of spending discards $340k/yr and then draws ~$100k/yr from
+   * the 401(k) to pay tax on money it actually received — and depletes.
+   *
+   * Same family as the bug v1.2.73 fixed for cashFlowEvents inflows (netting
+   * against one year's spending discards the rest). Still live for rental,
+   * property and pension income.
+   *
+   * This test PINS the current wrong behaviour so the fix has a target and so
+   * nobody mistakes it for the bracket-cap bug. Flip the assertion when the
+   * surplus is carried to the taxable bucket instead of evaporating.
+   */
+  test("OPEN: huge income still fails because surplus evaporates while its tax does not", () => {
+    const huge = { ...JOHN, propIncome: 400_000, withdrawalBracketTarget: "10" };
+    const rate = runMC(huge, 90, 300, 42, true).rate;
+    // Documents the defect: a household with 6.7x its spending in income fails.
+    expect(rate).toBeLessThan(0.5);
+  });
+
+  test("the two engines agree on survival for the reported profile", () => {
+    // Cross-engine drift on the SAME rule is this codebase's recurring defect —
+    // the override had to land in both runMC and the waterfall.
+    const mc  = runMC(JOHN, 90, 300, 42, true);
+    const det = simulateDeterministicWithStrategy(JOHN, 2.5, "gk");
+    const lastRow = det.schedule[det.schedule.length - 1];
+    expect(mc.rate).toBeGreaterThan(0.85);
+    expect(lastRow.portfolioEnd).toBeGreaterThan(0);
+  });
+});
+
+// ─── The symptom the user found from the other side ──────────────────────────
+
+describe("§ Roth conversions must not decide SOLVENCY", () => {
+  /**
+   * Reported gradient, BEFORE the fix, varying `rothConversionTarget` only:
+   *
+   *   off      3.3%      fill_12  40.8%      fill_24  99.8%
+   *   fill_10  4.6%      fill_22  99.8%
+   *
+   * This is the same bracket-cap bug seen from the other side, and it is the
+   * clearest possible proof of the mechanism. Conversions MOVE money from
+   * pre-tax into Roth, and Roth draws are not subject to the bracket cap — so
+   * converting was an accidental workaround that relocated the portfolio into a
+   * bucket the cap could not block. More conversion, more reachable money, more
+   * "success". Solvency was never the constraint; ACCESS was.
+   *
+   * A Roth conversion is a lifetime-TAX decision. It must never be the
+   * difference between a plan working and a plan failing. If this test starts
+   * failing, some cap has become a hard wall again.
+   */
+  const MODES = ["off", "10", "12", "22", "24"];
+
+  test("success is roughly flat across every conversion setting", () => {
+    const rates = MODES.map((m) =>
+      runMC({ ...JOHN, rothConversionTarget: m }, 90, 400, 42, true).rate
+    );
+    const spread = Math.max(...rates) - Math.min(...rates);
+    // Was a 96.5-point spread (3.3% -> 99.8%). Conversions may still move the
+    // number a little — they genuinely change the tax bill — but not the outcome.
+    expect(spread).toBeLessThan(0.2);
+  });
+
+  test("conversions OFF is no longer catastrophic", () => {
+    // The exact configuration the user had saved: conversions off, 22% target.
+    const off = runMC({ ...JOHN, rothConversionTarget: "off" }, 90, 400, 42, true).rate;
+    expect(off).toBeGreaterThan(0.8);
+  });
+});

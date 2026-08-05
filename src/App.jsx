@@ -77,7 +77,7 @@ import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } 
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, healthcareShockDraw, expectedHealthcareShock } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
-import { earlyWithdrawalPenalty, detectEmployerPlan, EARLY_PENALTY_AGE } from "./engine/earlyWithdrawal.js";
+import { earlyWithdrawalPenalty, detectEmployerPlan, ruleOf55SeparationQualifies, EARLY_PENALTY_AGE } from "./engine/earlyWithdrawal.js";
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
@@ -195,9 +195,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.83";
-export const BUILD_TAG = "[main] v1.2.83 - feedback is now a plain mailto to tiredtoretire@gmail.com; EmailJS removed entirely. It broke twice in one week for one structural reason: three REACT_APP_EMAILJS_* keys inlined by CRA at BUILD time, with .env* gitignored, so the values existed on exactly one machine - a fresh clone and PRODUCTION both shipped undefined and the button failed, once telling the user to open a browser console. A mailto has no keys, no build-time config, no npm dependency (@emailjs/browser dropped) and no public key in the bundle for anyone to spam through, so it cannot break on a new machine. Tradeoff accepted and mitigated: mailto needs a mail client, so the address is also rendered as selectable text in the dialog and added to the About page links. The dialog no longer closes or clears on send - if no mail client opens, the text and address stay on screen. Also trimmed this BUILD_TAG: the chained 'Previous:' history had reached ~15KB shipped in every bundle. Use git log for history.";
-export const BUILD_TIME = "2026-08-05T02:00:00Z";
+const APP_VERSION = "1.2.84";
+export const BUILD_TAG = "[main] v1.2.84 - THREE guardrails were hard walls that could fail a solvent plan. User-reported: 3.3% Monte Carlo success on a plan whose true figure is ~100%. Profile: single filer, retires 54, spends 60k, 1.75M in a 401k + 20k Roth + 40k HSA (no taxable, no cash), 93k/yr property income growing 3%. (1) BRACKET CAP: by his early 60s the rental income alone exceeded the single-filer 22% bracket top, so the pretax draw step computed room = 0 and drew NOTHING. With 97% of assets in pretax, spending was permanently unfunded and every path was flagged failed WHILE HOLDING 3-4M. The giveaway was mc.pcts: 59% alive at age 66 against a 3.98M median. Paths were dying rich. The user independently found the same bug from the other side - varying Roth conversions only, off=3.3% / fill_10=4.6% / fill_12=40.8% / fill_22=99.8% - because converting RELOCATES money into Roth, which the cap does not restrict. Solvency was never the constraint; ACCESS was. Fixed with an essential-spending override in both capping engines: once every bucket has run and spending is still unfunded while pretax remains, the cap yields. Reported not silent (pretaxCapReason=bracket_exceeded_to_fund_spending, runMC returns bracketOverrideRate). (2) ROTH EMERGENCY RESERVE had the identical defect - found by the tester agent auditing this very fix. Reserve 0 = 100% success; reserve 1.9M on a 2.05M portfolio = 47%, reserve untouched. I had deliberately excluded it as an explicit user instruction; that was wrong - a field named emergency reserve must be reachable in an emergency, and running out of money IS the emergency. Now tapped STRICTLY last, after uncapped pretax. (3) RULE OF 55 was gated on retireAge >= 55, but IRC 72(t)(2)(A)(v) qualifies separation in or after the CALENDAR YEAR the employee turns 55 - someone leaving in January at 54 who turns 55 that October qualifies. The constant comment always described the correct rule; only the comparison was wrong. New shared ruleOf55SeparationQualifies() used by both engines. NEW src/bracketCapSoft.test.js (17 tests) - the class-level invariant matters more than the case: no path may be scored as failed while it still holds drawable assets. Seven extreme shapes plus a no-cliff test and the conversion-flatness test. ALSO FOUND, documented as REQUIREMENTS 34 and NOT yet fixed: surplus income above spending is discarded by need = max(0, spend - income) while the tax on it is still charged to the portfolio. And irmaaGuard is a no-op whenever withdrawalBracketTarget is off (both engines) - a ghost setting. 798 -> 815 tests, 32 suites.";
+export const BUILD_TIME = "2026-08-05T03:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1175,6 +1175,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // Share of pre-tax sitting in a former-employer plan — the only slice Rule of
   // 55 can reach. Constant for the run (detected off starting balances).
   const ruleOf55ShareMC = detectEmployerPlan(p.accounts).share;
+  // Calendar-year Rule-of-55 test, computed ONCE per run. Separation in or after
+  // the year the employee turns 55 qualifies — `retireAge >= 55` was stricter
+  // than the statute. See ruleOf55SeparationQualifies.
+  const ruleOf55OkMC = ruleOf55SeparationQualifies({
+    dob: p.dob, birthYear: p.birthYear, currentAge: p.currentAge, retireAge: retAgeMC,
+  });
   const glideSwitchAgeMC = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeMC });
   const accYrs = Math.max(0, retAgeMC - p.currentAge);
   // §30 — the horizon follows whoever is alive. When the primary dies first and a
@@ -1310,6 +1316,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     const path = [portAtRetire];
     let survived = true, exhaustAge = null;
+    // How many years this path had to exceed the bracket target to stay funded.
+    // Aggregated below so the UI can eventually SAY that a tax preference was
+    // yielded, instead of the user wondering why their marginal rate exceeds the
+    // target they chose.
+    let bracketOverrideYears = 0;
+    let rothReserveBrokenYears = 0;
     let sp = p.sp;
     let lastReturn = 0;
     let startingPort = portAtRetire; // for Kitces ratcheting
@@ -1680,6 +1692,42 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           roth:    () => { fromRoth    = Math.min(remaining, Math.max(0, roth - rothFloorMC));                  remaining -= fromRoth;    },
         };
         for (const bucket of drawOrderMC) drawMC[bucket]();
+
+        // ── Essential-spending override (the bracket cap is SOFT) ───────────
+        // Mirrors buildWithdrawalWaterfall's override exactly — see the long
+        // rationale there. Short version: `bracketRoomMC` decides WHICH dollars
+        // to draw, never WHETHER the household eats. A household whose rental /
+        // pension income fills the target bracket by itself had zero room, so a
+        // mostly-pre-tax portfolio could not be drawn at all, `shortfall` stayed
+        // positive, and the path below was marked `survived = false` while
+        // holding millions. That is how a ~100% plan reported 3.3%.
+        //
+        // This MUST live in both engines or they disagree about survival, which
+        // is the cross-engine drift this codebase keeps relearning.
+        if (remaining > 0.01) {
+          const pretaxAvail = Math.max(0, pretax - rmd) - fromPretax;
+          if (pretaxAvail > 0) {
+            const extra = Math.min(remaining, pretaxAvail);
+            fromPretax += extra;
+            remaining  -= extra;
+            bracketOverrideYears++;
+          }
+        }
+        // Roth emergency reserve, same principle — see the long note in
+        // buildWithdrawalWaterfall. A reserve that cannot be reached in an
+        // emergency is a vault, and holding it past the point of failure
+        // protects the money from its own purpose. Measured before this: a $1.9M
+        // reserve on a $2.05M portfolio took success from 100% to 47% while the
+        // reserve sat untouched. STRICTLY last, after uncapped pre-tax.
+        if (remaining > 0.01 && rothFloorMC > 0) {
+          const reserveLeft = Math.max(0, roth - fromRoth);
+          if (reserveLeft > 0) {
+            const extra = Math.min(remaining, reserveLeft);
+            fromRoth  += extra;
+            remaining -= extra;
+            rothReserveBrokenYears++;
+          }
+        }
         shortfall = remaining;
 
         // Realized LTCG on this pass's taxable draw — READ-ONLY off the current
@@ -1699,6 +1747,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         // cheaper than it is, while the waterfall (which does charge it) said
         // otherwise — the two engines must price the same dollars.
         earlyPenMC = earlyWithdrawalPenalty({
+          separationQualifies: ruleOf55OkMC,
           age, pretaxDistribution: fromPretax + rmd,
           ruleOf55: p.ruleOf55, ruleOf55Share: ruleOf55ShareMC, retireAge: retAgeMC,
           sepp72t: p.sepp72t, sepp72tStartAge: p.sepp72tStartAge ?? retAgeMC,
@@ -1841,7 +1890,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         exhaustAge = age;
       }
     }
-    results.push({ path, survived, exhaustAge, portAtRetire });
+    results.push({ path, survived, exhaustAge, portAtRetire, bracketOverrideYears, rothReserveBrokenYears });
   }
 
   // Aggregate results
@@ -1865,6 +1914,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     });
   }
   const nS = results.filter(r => r.survived).length;
+  // Share of paths that had to break the bracket target at least once to stay
+  // funded. A high value means the chosen target is unreachable for this
+  // household — usually because non-portfolio income already fills it.
+  const bracketOverrideRate = results.filter(r => r.bracketOverrideYears > 0).length / N;
+  const rothReserveBrokenRate = results.filter(r => r.rothReserveBrokenYears > 0).length / N;
   const rV = results.map(r => r.portAtRetire).sort((a, b) => a - b);
   const medR = rV[Math.floor(rV.length / 2)];
   const tV = results.map(r => r.path[r.path.length - 1]).sort((a, b) => a - b);
@@ -1882,6 +1936,8 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   const mwRate = 1 - failSurvivalSum / N;
   return {
     rate: nS / N,
+    bracketOverrideRate,
+    rothReserveBrokenRate,
     mwRate,
     pcts,
     medR,
