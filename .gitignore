@@ -42,6 +42,11 @@ public/desktop.ini
 # Secrets and deploy state — never commit
 .env
 .env.*
+# ...except the TEMPLATE, which carries variable NAMES and no values. Without it
+# a second machine or fresh clone has no record that these build vars exist at
+# all — which is how the feedback button silently broke ("The public key is
+# required"): the values lived only in one machine's untracked .env.
+!.env.example
 .dev.vars
 .wrangler
 .netlify
