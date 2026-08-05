@@ -2488,7 +2488,7 @@ guard, all-pre-tax portfolio) plus a no-cliff test across the income level that
 fills the bracket, and a "must not fire when there is room" test so the override
 cannot silently discard the optimisation the user asked for.
 
-## 34. ⚠️ Surplus income evaporates while its tax is still charged — OPEN, found 2026-08-05
+## 34. ✅ Surplus income evaporated while its tax was charged — FIXED 2026-08-05 (v1.2.85)
 
 Found by the invariant test added with the §33 bracket-cap fix, **not** by a user.
 
@@ -2525,7 +2525,7 @@ inheritance against one year's spending discarded everything beyond that year.
 The fix there was to DEPOSIT the inflow into a bucket so the surplus compounds.
 Rental, property and pension income still net-and-discard.
 
-### Agreed direction (not yet built)
+### Fix as shipped (v1.2.85)
 
 Surplus income should be **deposited into the taxable bucket** (with basis, since
 it is after-tax money once its tax is paid) rather than discarded — the same

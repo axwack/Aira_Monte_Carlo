@@ -74,12 +74,21 @@ describe("§ bracket cap must not starve a funded household", () => {
 
   test("the override is REPORTED, not silent", () => {
     // The user gave up a tax preference to stay funded; that must be visible.
-    const mc = runMC(JOHN, 90, 300, 42, true);
+    // Uses a household that genuinely has a shortfall — since the §34 surplus fix
+    // JOHN's own income covers his spending AND its tax, so nothing is unfunded.
+    const needy = { ...JOHN, propIncome: 40_000, sp: 90_000, withdrawalBracketTarget: "10" };
+    const mc = runMC(needy, 90, 300, 42, true);
     expect(mc.bracketOverrideRate).toBeGreaterThan(0);
   });
 
   test("waterfall labels the year it exceeded the target", () => {
-    const rows = buildWithdrawalWaterfall(JOHN).smart.rows;
+    // JOHN himself no longer needs the override: since the §34 surplus fix his
+    // income covers both spending and its own tax, so nothing is ever unfunded.
+    // That is the correct outcome, so this test needs a household that genuinely
+    // has a shortfall AND a blocked bracket: income just under spending, target
+    // pinned at 10% so there is essentially no room.
+    const needy = { ...JOHN, propIncome: 40_000, sp: 90_000, withdrawalBracketTarget: "10" };
+    const rows = buildWithdrawalWaterfall(needy).smart.rows;
     const overridden = rows.filter(r => r.pretaxCapReason === "bracket_exceeded_to_fund_spending");
     // At least one year must both exceed the target AND say so.
     expect(overridden.length).toBeGreaterThan(0);
@@ -140,27 +149,38 @@ describe("§ INVARIANT: no path may fail while holding drawable assets", () => {
   });
 
   /**
-   * KNOWN OPEN DEFECT — surplus income is discarded but its tax is not.
+   * §34 FIXED — surplus income is carried, not evaporated.
    *
-   * Found by the invariant above, not by a user. `need = max(0, spend - income)`
-   * throws away every dollar of income beyond spending, yet the TAX on that
-   * income is still charged to the portfolio. A household with $400k of rental
-   * income and $60k of spending discards $340k/yr and then draws ~$100k/yr from
-   * the 401(k) to pay tax on money it actually received — and depletes.
+   * Was: `need = max(0, spend - income)` threw away every dollar of income above
+   * spending, while the TAX on that income was still charged to the portfolio. A
+   * household with $400k of rental income and $60k of spending discarded $340k/yr,
+   * drew ~$100k/yr from the 401(k) to pay tax on money it had received, and
+   * depleted — Monte Carlo scored it under 50%.
    *
-   * Same family as the bug v1.2.73 fixed for cashFlowEvents inflows (netting
-   * against one year's spending discards the rest). Still live for rental,
-   * property and pension income.
-   *
-   * This test PINS the current wrong behaviour so the fix has a target and so
-   * nobody mistakes it for the bracket-cap bug. Flip the assertion when the
-   * surplus is carried to the taxable bucket instead of evaporating.
+   * Now the surplus funds the tax bill first and the remainder is deposited into
+   * the taxable bucket as basis (it is already-taxed money), exactly as v1.2.73
+   * did for cashFlowEvents inflows.
    */
-  test("OPEN: huge income still fails because surplus evaporates while its tax does not", () => {
+  test("§34: a household whose income exceeds its spending does NOT fail", () => {
     const huge = { ...JOHN, propIncome: 400_000, withdrawalBracketTarget: "10" };
-    const rate = runMC(huge, 90, 300, 42, true).rate;
-    // Documents the defect: a household with 6.7x its spending in income fails.
-    expect(rate).toBeLessThan(0.5);
+    expect(runMC(huge, 90, 300, 42, true).rate).toBeGreaterThan(0.95);
+  });
+
+  test("§34: more income makes you RICHER, never poorer", () => {
+    // The direction check that the old code inverted. Same profile, more income,
+    // must not end with a smaller portfolio.
+    const lo = simulateDeterministicWithStrategy({ ...JOHN, propIncome: 93_000 }, 2.5, "gk");
+    const hi = simulateDeterministicWithStrategy({ ...JOHN, propIncome: 200_000 }, 2.5, "gk");
+    const last = (d) => d.schedule[d.schedule.length - 1].portfolioEnd;
+    expect(last(hi)).toBeGreaterThan(last(lo));
+  });
+
+  test("§34: the surplus actually lands in the taxable bucket", () => {
+    // Not merely "doesn't fail" — the money must be somewhere. JOHN starts with
+    // NO taxable account at all, so any taxable balance is deposited surplus.
+    const rows = buildWithdrawalWaterfall({ ...JOHN, propIncome: 200_000 }).smart.rows;
+    const withTaxable = rows.filter(r => (r.taxableEnd ?? 0) > 0);
+    expect(withTaxable.length).toBeGreaterThan(0);
   });
 
   test("the two engines agree on survival for the reported profile", () => {

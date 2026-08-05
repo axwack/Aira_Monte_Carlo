@@ -195,9 +195,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.84";
-export const BUILD_TAG = "[main] v1.2.84 - THREE guardrails were hard walls that could fail a solvent plan. User-reported: 3.3% Monte Carlo success on a plan whose true figure is ~100%. Profile: single filer, retires 54, spends 60k, 1.75M in a 401k + 20k Roth + 40k HSA (no taxable, no cash), 93k/yr property income growing 3%. (1) BRACKET CAP: by his early 60s the rental income alone exceeded the single-filer 22% bracket top, so the pretax draw step computed room = 0 and drew NOTHING. With 97% of assets in pretax, spending was permanently unfunded and every path was flagged failed WHILE HOLDING 3-4M. The giveaway was mc.pcts: 59% alive at age 66 against a 3.98M median. Paths were dying rich. The user independently found the same bug from the other side - varying Roth conversions only, off=3.3% / fill_10=4.6% / fill_12=40.8% / fill_22=99.8% - because converting RELOCATES money into Roth, which the cap does not restrict. Solvency was never the constraint; ACCESS was. Fixed with an essential-spending override in both capping engines: once every bucket has run and spending is still unfunded while pretax remains, the cap yields. Reported not silent (pretaxCapReason=bracket_exceeded_to_fund_spending, runMC returns bracketOverrideRate). (2) ROTH EMERGENCY RESERVE had the identical defect - found by the tester agent auditing this very fix. Reserve 0 = 100% success; reserve 1.9M on a 2.05M portfolio = 47%, reserve untouched. I had deliberately excluded it as an explicit user instruction; that was wrong - a field named emergency reserve must be reachable in an emergency, and running out of money IS the emergency. Now tapped STRICTLY last, after uncapped pretax. (3) RULE OF 55 was gated on retireAge >= 55, but IRC 72(t)(2)(A)(v) qualifies separation in or after the CALENDAR YEAR the employee turns 55 - someone leaving in January at 54 who turns 55 that October qualifies. The constant comment always described the correct rule; only the comparison was wrong. New shared ruleOf55SeparationQualifies() used by both engines. NEW src/bracketCapSoft.test.js (17 tests) - the class-level invariant matters more than the case: no path may be scored as failed while it still holds drawable assets. Seven extreme shapes plus a no-cliff test and the conversion-flatness test. ALSO FOUND, documented as REQUIREMENTS 34 and NOT yet fixed: surplus income above spending is discarded by need = max(0, spend - income) while the tax on it is still charged to the portfolio. And irmaaGuard is a no-op whenever withdrawalBracketTarget is off (both engines) - a ghost setting. 798 -> 815 tests, 32 suites.";
-export const BUILD_TIME = "2026-08-05T03:30:00Z";
+const APP_VERSION = "1.2.85";
+export const BUILD_TAG = "[main] v1.2.85 - surplus income no longer evaporates (REQUIREMENTS 34). Every engine computed need = max(0, spend - income), which DISCARDED every dollar of income above spending while the TAX on that income was still charged to the portfolio. Money the household actually received ceased to exist, and assets were sold to pay its bill. Measured: 400k of rental income against 60k of spending discarded 340k/yr, drew ~100k/yr from the 401k to pay tax on income already received, and DEPLETED - Monte Carlo under 50% for a household with 6.7x its spending in income. Same family as the v1.2.73 inheritance bug (netting an inflow against one year of spending throws away the rest); the fix is the same shape: surplus funds this year's tax bill FIRST, because you pay tax out of the income you received rather than by selling assets, and any remainder is DEPOSITED into the taxable bucket as basis since it is already-taxed money that must compound. Applied in all three engines - runMC, simulateDeterministicWithStrategy (one aggregate portfolio, so the surplus simply stays invested) and buildWithdrawalWaterfall - because a rule in two of the three is the drift class this codebase keeps relearning. Effect on the reported profile: it no longer needs the v1.2.84 bracket override at all, since its income now covers both spending and its own tax. New direction tests that the old code inverted: more income must make you RICHER not poorer, and the surplus must actually LAND in the taxable balance rather than merely failing to break the plan. 815 -> 817 tests, 32 suites.";
+export const BUILD_TIME = "2026-08-05T04:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1599,6 +1599,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // an overlay on what the strategy decided, not a change to the strategy.
       const spSmiled = sp * spendingSmileFactor(age, retAgeMC, p.smile !== false);
       const need = Math.max(0, spSmiled - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost + eventCost + hcShock;
+      // §34 — income above spending was DISCARDED by the max(0, …) above while the
+      // tax on it was still charged to the portfolio, so received money vanished
+      // and assets were sold to pay its bill. Surplus now funds the tax first and
+      // the remainder is deposited (see the long note in buildWithdrawalWaterfall).
+      const incomeSurplus = Math.max(0,
+        (ss + effectiveAb + otherIncTotal) - (spSmiled + housingCost + carveoutCost + eventCost + hcShock));
 
       // RMD calculation
       let rmd = 0;
@@ -1683,7 +1689,8 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         // Withdraw from buckets in the user's chosen order (default tax_reactive =
         // cash → taxable → pretax capped → roth). The bracket/IRMAA cap stays on the
         // pretax step and the reserve floor on the roth step wherever each lands.
-        let remaining = Math.max(0, need + totalTax - rmd); // RMD proceeds fund first
+        // Surplus income funds the tax bill before any asset is sold (§34).
+        let remaining = Math.max(0, need + totalTax - rmd - incomeSurplus);
         fromCash = fromTaxable = fromPretax = fromRoth = 0;
         const drawMC = {
           cash:    () => { fromCash    = Math.min(remaining, cash);                                             remaining -= fromCash;    },
@@ -1775,9 +1782,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // Basis consumed by the draw = draw − realized gain (the non-gain, return-of-
       // basis portion); reinvested rmdExcess is fresh money → fresh basis dollar-for-dollar.
       const consumedBasisMC = fromTaxable - realizedGainMC;
-      taxableBasis = Math.max(0, taxableBasis - consumedBasisMC) + rmdExcess;
+      // §34 — surplus left after this year's tax is deposited as basis (already
+      // taxed money); only later growth is gain. Mirrors the waterfall exactly.
+      const surplusToTaxableMC = Math.max(0, incomeSurplus - Math.max(0, totalTax - rmd));
+      taxableBasis = Math.max(0, taxableBasis - consumedBasisMC) + rmdExcess + surplusToTaxableMC;
       cash    = Math.max(0, cash    - fromCash);
-      taxable = Math.max(0, taxable - fromTaxable) + rmdExcess;
+      taxable = Math.max(0, taxable - fromTaxable) + rmdExcess + surplusToTaxableMC;
       pretax  = Math.max(0, pretax  - fromPretax - rmd);
       roth    = Math.max(0, roth    - fromRoth);
 
@@ -2254,6 +2264,12 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     // hcRiskDet is NOT in this sum — see its declaration above. Every term here
     // is a cash obligation the user actually pays this year.
     const need = Math.max(0, spSmiledDet - ss - ab - otherIncTotal) + housingCost + carveoutCost + eventCostDet;
+    // §34 — this engine tracks ONE aggregate portfolio, so surplus income simply
+    // stays invested rather than evaporating. Same rule as the other two engines
+    // or they disagree about the balance, which is the drift class this codebase
+    // keeps relearning.
+    const incomeSurplusDet = Math.max(0,
+      (ss + ab + otherIncTotal) - (spSmiledDet + housingCost + carveoutCost + eventCostDet));
 
     // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab) —
     // this path automatically carries LTCG/cost-basis AND the IRMAA 2-year lookback
@@ -2267,7 +2283,10 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
     const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, filingStatusAt(p, age), p.stateOfResidence || "NJ", 0, null, spouseAgeAt(p, age));
     const totalTax = taxEnabled ? taxResult.totalTax : 0;
     const totalDraw = need + totalTax;
-    port = port * (1 + ret) - totalDraw;
+    // §34 — surplus income stays invested instead of evaporating. `totalDraw`
+    // already includes this year's tax, so a household whose income covers both
+    // its spending and its tax bill now ENDS RICHER, as it should.
+    port = port * (1 + ret) - totalDraw + incomeSurplusDet;
 
     schedule.push({
       age, yr,
