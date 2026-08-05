@@ -195,9 +195,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.85";
-export const BUILD_TAG = "[main] v1.2.85 - surplus income no longer evaporates (REQUIREMENTS 34). Every engine computed need = max(0, spend - income), which DISCARDED every dollar of income above spending while the TAX on that income was still charged to the portfolio. Money the household actually received ceased to exist, and assets were sold to pay its bill. Measured: 400k of rental income against 60k of spending discarded 340k/yr, drew ~100k/yr from the 401k to pay tax on income already received, and DEPLETED - Monte Carlo under 50% for a household with 6.7x its spending in income. Same family as the v1.2.73 inheritance bug (netting an inflow against one year of spending throws away the rest); the fix is the same shape: surplus funds this year's tax bill FIRST, because you pay tax out of the income you received rather than by selling assets, and any remainder is DEPOSITED into the taxable bucket as basis since it is already-taxed money that must compound. Applied in all three engines - runMC, simulateDeterministicWithStrategy (one aggregate portfolio, so the surplus simply stays invested) and buildWithdrawalWaterfall - because a rule in two of the three is the drift class this codebase keeps relearning. Effect on the reported profile: it no longer needs the v1.2.84 bracket override at all, since its income now covers both spending and its own tax. New direction tests that the old code inverted: more income must make you RICHER not poorer, and the surplus must actually LAND in the taxable balance rather than merely failing to break the plan. 815 -> 817 tests, 32 suites.";
-export const BUILD_TIME = "2026-08-05T04:30:00Z";
+const APP_VERSION = "1.2.86";
+export const BUILD_TAG = "[main] v1.2.86 - chart tooltips no longer label a calendar year as an age. Reported with a screenshot: hovering the Income/Expenses chart at 2044 showed 'Age 2044'. Cause: the shared Tip component is used by TEN charts that do not agree on their x-axis key - most use dataKey=age, the Income/Expenses chart uses dataKey=yr - and the heading was a hardcoded `Age {label}`, so the year-keyed charts printed a year behind the word Age. Fixed by reading the data ROW instead of the axis label: Recharts hands the whole row back on payload[].payload and these rows carry BOTH age and yr, so the heading now shows 'Age 71 - 2044' where both exist, 'Age 71' or '2044' where only one does, and falls back to the axis label disambiguated by magnitude (nobody is 1900 years old; no plan year is below 130). Logic extracted into a pure exported tipHeading() and tested as a function rather than by rendering - @testing-library/react is not installed and a string-formatting bug does not justify a new dependency. 8 tests covering every payload shape a caller can hand it. 823 -> 829 tests, 33 suites.";
+export const BUILD_TIME = "2026-08-05T05:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -3016,6 +3016,35 @@ const FAN_COLORS = {
   "10th":   "#f87171", // red
 };
 
+/**
+ * Heading for the shared chart tooltip.
+ *
+ * Pure and exported so it can be tested without a DOM: the bug it fixes is a
+ * string-formatting decision, not a rendering one.
+ *
+ * `Tip` is shared by TEN charts and they do not agree on their x-axis key — most
+ * use dataKey="age", two use dataKey="yr". The heading was a hardcoded
+ * `Age {label}`, so on the year-keyed charts it printed "Age 2044", labelling a
+ * calendar year as an age (reported with a screenshot, 2026-08-05).
+ *
+ * Reads the data ROW rather than the axis label: Recharts hands the whole row
+ * back on payload[].payload, and these rows carry both `age` and `yr`. Falls back
+ * to the label disambiguated by magnitude — nobody is 1900 years old, and no plan
+ * year is below 130.
+ */
+export function tipHeading(payload, label) {
+  const row = (Array.isArray(payload) && payload[0]?.payload) || {};
+  const lblNum = Number(label);
+  const age = Number.isFinite(row.age) ? row.age
+    : (Number.isFinite(lblNum) && lblNum > 0 && lblNum < 130 ? lblNum : null);
+  const yr = Number.isFinite(row.yr) ? row.yr
+    : (Number.isFinite(lblNum) && lblNum >= 1900 ? lblNum : null);
+  if (age != null && yr != null) return `Age ${age} · ${yr}`;
+  if (age != null) return `Age ${age}`;
+  if (yr != null) return `${yr}`;
+  return String(label ?? "");
+}
+
 const Tip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
 
@@ -3029,7 +3058,7 @@ const Tip = ({ active, payload, label }) => {
 
   return (
     <div className="tip-box">
-      <div style={{ color: "#4d5c72", marginBottom: 3 }}>Age {label}</div>
+      <div style={{ color: "#4d5c72", marginBottom: 3 }}>{tipHeading(uniquePayload, label)}</div>
       {uniquePayload
         .filter((p) => p.value > 0)
         .map((p, i) => {
