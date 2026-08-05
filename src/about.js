@@ -13,6 +13,7 @@ export const ABOUT_ME = {
     { icon: "▶️", label: "YouTube Channel",  url: "https://youtube.com/@vincentplansfreedom" },
     { icon: "🐦", label: "Instagram",       url: "https://www.instagram.com/tiredtoretire/" },
     { icon: "☕", label: "Buy me a coffee",    url: "https://buymeacoffee.com/vincentplansfreedom" },
+    { icon: "✉️", label: "Email me",           url: "mailto:tiredtoretire@gmail.com" },
   ],
 };
 
