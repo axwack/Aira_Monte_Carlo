@@ -73,6 +73,7 @@ import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, eff
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { resolveGlidepathSwitchAge, glidepathEquityWeight, glidepathEqPct } from "./engine/glidepath.js";
 import { jobContributionsForYear, householdAnnualContribution } from "./engine/contributions.js";
+import { explainScore } from "./engine/explainScore.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, healthcareShockDraw, expectedHealthcareShock } from "./engine/expenses.js";
 import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_YEAR_TEMPLATE, MULTI_YEAR_TEMPLATE } from "./engine/expenseImport.js";
@@ -195,9 +196,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.86";
-export const BUILD_TAG = "[main] v1.2.86 - chart tooltips no longer label a calendar year as an age. Reported with a screenshot: hovering the Income/Expenses chart at 2044 showed 'Age 2044'. Cause: the shared Tip component is used by TEN charts that do not agree on their x-axis key - most use dataKey=age, the Income/Expenses chart uses dataKey=yr - and the heading was a hardcoded `Age {label}`, so the year-keyed charts printed a year behind the word Age. Fixed by reading the data ROW instead of the axis label: Recharts hands the whole row back on payload[].payload and these rows carry BOTH age and yr, so the heading now shows 'Age 71 - 2044' where both exist, 'Age 71' or '2044' where only one does, and falls back to the axis label disambiguated by magnitude (nobody is 1900 years old; no plan year is below 130). Logic extracted into a pure exported tipHeading() and tested as a function rather than by rendering - @testing-library/react is not installed and a string-formatting bug does not justify a new dependency. 8 tests covering every payload shape a caller can hand it. 823 -> 829 tests, 33 suites.";
-export const BUILD_TIME = "2026-08-05T05:30:00Z";
+const APP_VERSION = "1.2.87";
+export const BUILD_TAG = "[main] v1.2.87 - the score now explains itself, the IRMAA guard works on its own, and the first-death box says who actually survives. (1) WHY YOUR SCORE IS X% card on the Monte Carlo tab. Every engine defect found on 2026-08-05 - bracket cap starving solvent plans, Roth reserve unreachable, Rule of 55 boundary, surplus income evaporating - was invisible on screen: the user saw a percentage and nothing else, so neither he nor we could sanity-check it, which is how four bugs survived. New pure engine/explainScore.js ranks the real drivers with a lever on each: withdrawal rate net of guaranteed income, share of spending covered by income you never have to sell for, median depletion age across FAILING paths only (new medianExhaustAge from runMC - 'it fails' is not actionable, 'it typically fails at 78' is), pre-59.5 penalty exposure, pre-tax concentration, and crucially any preference the engine had to YIELD (bracketOverrideRate, rothReserveBrokenRate). Risk first, then watch, then good. Design rule enforced by test: never rank conversions on tax saved, because filling to 32% cut lifetime tax 2.4M and ended 1.1M POORER than 22%. (2) IRMAA GUARD DECOUPLED: the whole guard block sat inside the bracket-target check in BOTH engines, so ticking 'protect me from IRMAA' did nothing whenever the target was off - byte-identical output, a ghost setting that silently withheld protection the user asked for. Either constraint now binds independently; safe only because the essential-spending override stops a cap starving a household. (3) FIRST-DEATH LABEL: with Who-passes-first set to My spouse, the box read 'Your spouse survives'. Exactly backwards - primarySurvives TRUE means the spouse dies and YOU survive. The arithmetic was right (the survivor benefit shown is the deceased spouse's, passing to the primary); only the sentence was inverted. Extracted as firstDeathHeadline() and tested, because no engine test reads English and an inverted label is this codebase's most repeated defect. 829 -> 857 tests, 36 suites.";
+export const BUILD_TIME = "2026-08-05T07:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1637,12 +1638,23 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // chosen a bracket target. "off" opts out to naive (pretax-first, uncapped).
       // The rooms don't depend on the draw size, so compute them once.
       let bracketRoomMC = Infinity;
-      if (p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off") {
+      // Either constraint binds INDEPENDENTLY. The IRMAA guard used to sit inside
+      // this bracket-target check, so it did nothing whenever the target was
+      // "off" — a ghost setting (verified byte-identical with the guard on and
+      // off). Decoupled here and in buildWithdrawalWaterfall together, or the two
+      // engines disagree, which is the drift class this codebase keeps relearning.
+      const bracketSetMC = !!(p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off");
+      const irmaaOnMC    = !!p.irmaaGuard && age >= 63;
+      if (bracketSetMC || irmaaOnMC) {
         const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
         const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC, spouseAgeAt(p, age));
         // 85% SS inclusion is a deliberate worst-case estimate so the cap never overshoots.
         const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable);
-        const ceilingMC = getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC);
+        // Infinity when only the IRMAA guard is on: the min() below then makes the
+        // IRMAA tier the sole binding ceiling.
+        const ceilingMC = bracketSetMC
+          ? getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC)
+          : Infinity;
         // The OBBBA senior bonus shelters ordinary income exactly as the standard
         // deduction does, so the bracket room must include it or sourcing will
         // under-fill the bracket that calcYearTax now actually grants. Its
@@ -1651,18 +1663,25 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         // (floor + the room before the bonus) → worst-case phase-out → smallest
         // bonus. Same conservative spirit as the 85% SS inclusion above: the cap
         // can under-fill the bracket but must never overshoot it.
-        const roomBeforeBonusMC = Math.max(0, ceilingMC - Math.max(0, ordinaryFloorMC - sdMC));
+        // The bonus estimate needs a finite ceiling; with no bracket target the
+        // IRMAA tier is the only thing that can bind, so use it as the proxy.
+        const ceilingForBonusMC = Number.isFinite(ceilingMC)
+          ? ceilingMC
+          : Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactorMC) - sdMC);
+        const roomBeforeBonusMC = Math.max(0, ceilingForBonusMC - Math.max(0, ordinaryFloorMC - sdMC));
         const seniorBonusMC = getSeniorBonusDeduction(
           age, filingStatus, ordinaryFloorMC + roomBeforeBonusMC, yr, spouseAgeAt(p, age)
         );
         const taxableSoFarMC = Math.max(0, ordinaryFloorMC - (sdMC + seniorBonusMC));
         // Bracket room lives in taxable-income space (ceiling is post-deduction).
-        bracketRoomMC = Math.max(0, ceilingMC - taxableSoFarMC);
+        bracketRoomMC = Number.isFinite(ceilingMC)
+          ? Math.max(0, ceilingMC - taxableSoFarMC)
+          : Infinity;
         // IRMAA room lives in MAGI space — do NOT subtract the std deduction. A pretax
         // draw raises taxable income and MAGI by the same dollar, so both rooms cap the
         // same incremental draw; take the tighter. (LTCG from the taxable draw is not
         // yet folded into the MAGI base here — tracked as a known modeling gap.)
-        if (p.irmaaGuard && age >= 63) {
+        if (irmaaOnMC) {
           const irmaaRoom = Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactorMC) - ordinaryFloorMC);
           bracketRoomMC = Math.min(bracketRoomMC, irmaaRoom);
         }
@@ -1928,6 +1947,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // funded. A high value means the chosen target is unreachable for this
   // household — usually because non-portfolio income already fills it.
   const bracketOverrideRate = results.filter(r => r.bracketOverrideYears > 0).length / N;
+  // Median age at which money ran out, ACROSS FAILING PATHS ONLY. The single most
+  // useful number for explaining a low score: "it fails" is not actionable,
+  // "it typically fails at 78" is. null when nothing failed.
+  const exhaustAges = results.filter(r => !r.survived && Number.isFinite(r.exhaustAge))
+    .map(r => r.exhaustAge).sort((a, b) => a - b);
+  const medianExhaustAge = exhaustAges.length
+    ? exhaustAges[Math.floor(exhaustAges.length / 2)]
+    : null;
   const rothReserveBrokenRate = results.filter(r => r.rothReserveBrokenYears > 0).length / N;
   const rV = results.map(r => r.portAtRetire).sort((a, b) => a - b);
   const medR = rV[Math.floor(rV.length / 2)];
@@ -1948,6 +1975,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     rate: nS / N,
     bracketOverrideRate,
     rothReserveBrokenRate,
+    medianExhaustAge,
     mwRate,
     pcts,
     medR,
@@ -3032,6 +3060,26 @@ const FAN_COLORS = {
  * to the label disambiguated by magnitude — nobody is 1900 years old, and no plan
  * year is below 130.
  */
+/**
+ * Headline for the first-death disclosure box.
+ *
+ * The true branch used to read "Your spouse survives" when `primarySurvives` is
+ * TRUE — i.e. when the spouse dies and YOU survive. Exactly backwards, and
+ * reported by a user who selected "My spouse" under "Who passes first" and was
+ * told his spouse survives. The arithmetic beneath it was right all along (the
+ * survivor benefit shown is the deceased spouse's, passing to the primary); only
+ * the sentence was inverted.
+ *
+ * Pure and exported so the wording is covered by a test. A label that contradicts
+ * the model is the most repeated defect in this codebase, and it is invisible to
+ * every engine test.
+ */
+export function firstDeathHeadline(primarySurvives, deathAtYourAge, survAgeAtDeath) {
+  return primarySurvives
+    ? `Modelled from your age ${deathAtYourAge} — your spouse dies first and you survive.`
+    : `Modelled from your age ${deathAtYourAge} — you die first and your spouse, then ${survAgeAtDeath}, survives.`;
+}
+
 export function tipHeading(payload, label) {
   const row = (Array.isArray(payload) && payload[0]?.payload) || {};
   const lblNum = Number(label);
@@ -8806,6 +8854,49 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         </div>
       </div>
 
+      {/* ── Why this score ─────────────────────────────────────────────────
+          Every engine defect found on 2026-08-05 was invisible on screen: the
+          user saw a percentage and nothing else, so neither he nor we could
+          sanity-check it. A number that cannot explain itself cannot be
+          questioned, which is how four bugs survived. */}
+      {mc && (() => {
+        const ex = explainScore(params, mc);
+        if (!ex.drivers.length) return null;
+        const tone = {
+          risk:  { bg: "rgba(239,68,68,0.07)",  bd: "rgba(239,68,68,0.3)",  fg: "#f87171", tag: "Biggest risk" },
+          watch: { bg: "rgba(251,146,60,0.07)", bd: "rgba(251,146,60,0.28)", fg: "#fdba74", tag: "Worth knowing" },
+          good:  { bg: "rgba(16,185,129,0.06)", bd: "rgba(16,185,129,0.25)", fg: "#34d399", tag: "Working for you" },
+        };
+        return (
+          <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>
+              WHY YOUR SCORE IS {fmtPct(mc.rate)}
+            </div>
+            <div style={{ fontSize: 12.5, color: "#94a3b8", lineHeight: 1.6, marginBottom: 14 }}>
+              {ex.headline} Ranked by how much each one moves the outcome.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {ex.drivers.map((d) => {
+                const t = tone[d.severity];
+                return (
+                  <div key={d.id} style={{ background: t.bg, border: `1px solid ${t.bd}`, borderRadius: 9, padding: "11px 13px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: "#e2e8f0" }}>{d.label}</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: t.fg, fontFamily: "'DM Mono',monospace" }}>{d.value}</span>
+                    </div>
+                    <div style={{ fontSize: 9, color: t.fg, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 }}>{t.tag}</div>
+                    <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.55, marginTop: 6 }}>{d.detail}</div>
+                    <div style={{ fontSize: 11.5, color: "#cbd5e1", lineHeight: 1.55, marginTop: 5 }}>
+                      <strong style={{ color: t.fg }}>What moves it: </strong>{d.lever}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Inputs collapsible */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
         <SectionHeader label="Simulation Inputs & Assumptions" open={showInputs} onToggle={() => setShowInputs(!showInputs)} />
@@ -13032,9 +13123,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
                       background: "rgba(251,146,60,0.09)", border: "1px solid rgba(251,146,60,0.3)", color: "#fdba74",
                     }}>
                       <strong>
-                        {primarySurvives
-                          ? `Modelled from your age ${deathAtYourAge}. Your spouse survives.`
-                          : `Modelled from your age ${deathAtYourAge} — you die first and your spouse, then ${survAgeAtDeath}, survives.`}
+                        {firstDeathHeadline(primarySurvives, deathAtYourAge, survAgeAtDeath)}
                       </strong>{" "}
                       {!primarySurvives && gap > 0 && (
                         <span>
