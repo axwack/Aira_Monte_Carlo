@@ -82,6 +82,7 @@ import { earlyWithdrawalPenalty, detectEmployerPlan, ruleOf55SeparationQualifies
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
+import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationNotice } from "./engine/withdrawalStrategies.js";
 // One declaration of every figure's arithmetic, rendered here and enforced by
 // provenance.test.js. Never inline a formula string — it would drift from the test.
 import { formulaFor } from "./provenance.js";
@@ -196,9 +197,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.87";
-export const BUILD_TAG = "[main] v1.2.87 - the score now explains itself, the IRMAA guard works on its own, and the first-death box says who actually survives. (1) WHY YOUR SCORE IS X% card on the Monte Carlo tab. Every engine defect found on 2026-08-05 - bracket cap starving solvent plans, Roth reserve unreachable, Rule of 55 boundary, surplus income evaporating - was invisible on screen: the user saw a percentage and nothing else, so neither he nor we could sanity-check it, which is how four bugs survived. New pure engine/explainScore.js ranks the real drivers with a lever on each: withdrawal rate net of guaranteed income, share of spending covered by income you never have to sell for, median depletion age across FAILING paths only (new medianExhaustAge from runMC - 'it fails' is not actionable, 'it typically fails at 78' is), pre-59.5 penalty exposure, pre-tax concentration, and crucially any preference the engine had to YIELD (bracketOverrideRate, rothReserveBrokenRate). Risk first, then watch, then good. Design rule enforced by test: never rank conversions on tax saved, because filling to 32% cut lifetime tax 2.4M and ended 1.1M POORER than 22%. (2) IRMAA GUARD DECOUPLED: the whole guard block sat inside the bracket-target check in BOTH engines, so ticking 'protect me from IRMAA' did nothing whenever the target was off - byte-identical output, a ghost setting that silently withheld protection the user asked for. Either constraint now binds independently; safe only because the essential-spending override stops a cap starving a household. (3) FIRST-DEATH LABEL: with Who-passes-first set to My spouse, the box read 'Your spouse survives'. Exactly backwards - primarySurvives TRUE means the spouse dies and YOU survive. The arithmetic was right (the survivor benefit shown is the deceased spouse's, passing to the primary); only the sentence was inverted. Extracted as firstDeathHeadline() and tested, because no engine test reads English and an inverted label is this codebase's most repeated defect. 829 -> 857 tests, 36 suites.";
-export const BUILD_TIME = "2026-08-05T07:00:00Z";
+const APP_VERSION = "1.2.88";
+export const BUILD_TAG = "[main] v1.2.88 - eleven withdrawal strategies became six, and the six that left do not take anyone's plan with them. CULL: vanguard, risk, kitces, cape, endowment and one_n are gone from the picker, both engines, strategyHowItWorks, the AI recommender and the params memo. Survivors: Smart Waterfall, Guyton-Klinger, Bengen, Fixed %, 95% Rule, VPW. VPW stays because it is the only spend-to-zero rule in the set and it is the exact target for 1/N. WHY THIS NEEDED A MIGRATION: both engines dispatch on the strategy string through an if/else chain with no final else, so a saved profile naming a deleted strategy matched NOTHING - sp was never assigned, spending never inflation-adjusted, and the spending smile deflated it ~1%/yr for the rest of the plan. Measured: lifetime spend 2,112,063 against GK 3,151,968, a 33% shortfall produced silently with no error on screen. New engine/withdrawalStrategies.js migrates every retired id at both ingest points (localStorage and JSON import), resolveStrategy() guards both engines and every label lookup, and both chains gained a terminal else. MEASURED, NOT INFERRED: cape is Fixed 4% arithmetically (0.015 + 0.5/20 = 0.04) but is filed 'close' not 'exact' because CAPE also clamped to the GK floor/ceiling and Fixed % does not - a 307 dollar year-1 gap that reading the formulas would have missed. one_n is VPW at 0% real to the dollar, so the migration sets vpwRealReturn: 0; vpwRealReturn and vpwEndAge were never forwarded by the params allowlist, so without that fix the migration would have been a ghost setting. The swap is disclosed on screen with what changed and why, never silently. PrintReport dropped its hand-synced label map for the shared one. 857 -> 893 tests, 37 suites.";
+export const BUILD_TIME = "2026-08-06T09:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -458,40 +459,22 @@ function getStateBrackets(state, isMFJ) {
 
 
 
-export const getStrategyLabel = (strategy) => {
-  const labels = {
-    smart: "Smart Waterfall",
-    gk: "Guyton‑Klinger",
-    fixed: "Fixed Percentage",
-    vanguard: "Vanguard Dynamic Spending",
-    risk: "Risk‑Based Guardrails",
-    kitces: "Kitces Ratcheting",
-    vpw: "VPW (Variable Percentage)",
-    cape: "CAPE‑Based",
-    endowment: "Endowment Model",
-    one_n: "1/N (Remaining Years)",
-    ninety_five_rule: "95% Rule",
-    bengen: "Bengen 4% Rule",
-  };
-  return labels[strategy] || strategy;
-};
+// One label map for the whole app, including the print report — see
+// engine/withdrawalStrategies.js. It covers the RETIRED ids too, so a migration
+// notice or an old checkpoint can still name what the user used to have. Only
+// LIVE_STRATEGIES is offered in the picker.
+export const getStrategyLabel = (strategy) => STRATEGY_LABELS[strategy] || strategy;
 
 export const getStrategyDescription = (strategy) => {
   const descriptions = {
     smart: "Smart Waterfall — tax-optimal bucket sequencing with a horizon-aware spending rule: Guyton-Klinger guardrails when more than 15 years remain (adaptive), Bengen 4% inflation-only when 15 or fewer years remain (steady). The split matches GK's own longevity-clause threshold so we hand off exactly where GK's safety brake would otherwise be disabled. Bucket sourcing: cash → taxable → pre-tax (bracket-capped) → Roth last.",
     gk: "Guyton‑Klinger guardrails — your spending adapts each year based on portfolio performance, so the simulation reflects how a real retiree would behave, not a robot spending a fixed amount no matter what.",
+    bengen: "Bengen 4% Rule (1994) — set your initial spend, then inflation-adjust it every year and ignore the portfolio. Does NOT react to market moves. The portfolio CAN run out, making this an honest model of late-stage risk for fixed-budget retirees.",
     fixed: "Fixed Percentage Withdrawal — you withdraw a constant percentage of your portfolio each year, adjusting automatically with market movements.",
-    vanguard: "Vanguard Dynamic Spending — spending adjusts within a ceiling and floor based on market performance and inflation.",
-    risk: "Risk‑Based Guardrails — spending adjusts based on the current withdrawal rate relative to a safe threshold.",
-    kitces: "Kitces Ratcheting — spending increases when the portfolio grows beyond a threshold, but never decreases in real terms.",
-    vpw: "Variable Percentage Withdrawal (VPW) — spending is recalculated each year based on remaining portfolio and life expectancy.",
-    cape: "CAPE‑Based Withdrawal — uses the Shiller CAPE ratio to determine sustainable withdrawal rates.",
-    endowment: "Endowment Model — smooths spending by blending inflation adjustments with a percentage of portfolio.",
-    one_n: "1/N Rule — divides remaining portfolio by years left to create a spending plan.",
     ninety_five_rule: "95% Rule — spending can only decrease to 95% of last year's amount, otherwise tracks inflation.",
-    bengen: "Bengen 4% Rule (1994) — set your initial spend, then inflation-adjust it every year and ignore the portfolio. Does NOT react to market moves. The portfolio CAN run out, making this an honest model of late-stage risk for fixed-budget retirees."
+    vpw: "Variable Percentage Withdrawal (VPW) — spending is recalculated each year based on remaining portfolio and life expectancy, so the plan spends down to roughly zero by your plan-to age.",
   };
-  return descriptions[strategy] || descriptions.gk;
+  return descriptions[resolveStrategy(strategy)] || descriptions.gk;
 };
 
 /* ════ PROFILES ════ */
@@ -1194,7 +1177,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   const results = [];
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
-  const withdrawalStrategy = p.withdrawalStrategy || "gk";
+  // resolveStrategy, not `|| "gk"`. A retired id (an old saved profile) or a
+  // typo would otherwise match no branch in the chain below and leave `sp`
+  // unassigned for the whole run — spending never inflation-adjusts and the
+  // smile deflates it ~1%/yr, silently, with no error. See
+  // engine/withdrawalStrategies.js.
+  const withdrawalStrategy = resolveStrategy(p.withdrawalStrategy);
 
   // User settings for cash return and RMD table
   const cashRealReturn = (p.cashRealReturn ?? 3.0) / 100;
@@ -1325,7 +1313,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     let rothReserveBrokenYears = 0;
     let sp = p.sp;
     let lastReturn = 0;
-    let startingPort = portAtRetire; // for Kitces ratcheting
 
     // Baseline initWR = NET PORTFOLIO NEED at retirement / portfolio — NO tax
     // (matches the ratio the GK call tracks each year: netNeed = gross spend
@@ -1470,46 +1457,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           const fixedRate = p.fixedWithdrawalRate ?? 0.04;
           sp = totalPort * fixedRate;
         }
-        else if (withdrawalStrategy === "vanguard") {
-          const initialRate = p.vanguardInitialRate ?? 0.04;
-          const cap = p.vanguardCap ?? 0.05;
-          const floorRate = p.vanguardFloor ?? -0.025;
-          const safeSp = isNaN(sp) ? p.sp : sp;   // guard
-          if (y === 1) {
-            const pctOfPort = totalPort * initialRate;
-            const inflationAdj = safeSp * (1 + inflY);
-            let candidate = (inflationAdj + pctOfPort) / 2;
-            let change = (candidate / safeSp) - 1;
-            let cappedChange = Math.max(floorRate, Math.min(cap, change));
-            sp = safeSp * (1 + cappedChange);
-          } else {
-            const pctOfPort = totalPort * initialRate;
-            const dynamic = safeSp * (1 + inflY) * (1 + (r - inflY) * 0.5);
-            let change = (dynamic / safeSp) - 1;
-            let cappedChange = Math.max(floorRate, Math.min(cap, change));
-            sp = safeSp * (1 + cappedChange);
-          }
-          sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
-        }
-        else if (withdrawalStrategy === "risk") {
-          const safeWR = p.safeWithdrawalRate ?? 0.04;
-          const currentWR = sp / totalPort;
-          if (currentWR > safeWR * 1.2) {
-            sp = sp * 0.9;
-          } else if (currentWR < safeWR * 0.8) {
-            sp = sp * 1.1;
-          }
-          sp = sp * (1 + inflY);
-          sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
-        }
-        else if (withdrawalStrategy === "kitces") {
-          if (totalPort >= startingPort * 1.5) {
-            sp = sp * 1.10;
-            startingPort = totalPort;
-          }
-          sp = sp * (1 + inflY);
-          sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
-        }
         else if (withdrawalStrategy === "vpw") {
           // VPW = portfolio amortized over remaining years at an assumed return.
           // Canonical PMT payout rate: r / (1 - (1+r)^(-n)), n = years of payments
@@ -1522,29 +1469,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           const n = Math.max(1, (p.vpwEndAge ?? endAge ?? 100) - age);
           const rateVPW = rVPW === 0 ? 1 / n : rVPW / (1 - Math.pow(1 + rVPW, -n));
           const newSp = totalPort * Math.min(0.10, rateVPW);
-          sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
-        }
-        else if (withdrawalStrategy === "cape") {
-          const cape = 20;
-          const rateCAPE = 0.015 + 0.5 * (1 / cape);
-          const newSp = totalPort * rateCAPE;
-          sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
-        }
-        else if (withdrawalStrategy === "endowment") {
-          const smoothing = 0.7;
-          const spendRate = 0.05;
-          if (y === 1) {
-            sp = totalPort * spendRate;
-          } else {
-            const inflationAdj = sp * (1 + inflY);
-            const pctOfPort = totalPort * spendRate;
-            sp = smoothing * inflationAdj + (1 - smoothing) * pctOfPort;
-          }
-          sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
-        }
-        else if (withdrawalStrategy === "one_n") {
-          const yearsLeft = Math.max(1, endAge - age);
-          const newSp = totalPort / yearsLeft;
           sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
         }
         else if (withdrawalStrategy === "ninety_five_rule") {
@@ -1578,6 +1502,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           } else {
             sp = sp * (1 + inflY);
           }
+        }
+        else {
+          // Unreachable while `withdrawalStrategy` comes from resolveStrategy,
+          // and deliberately here anyway: an unmatched id used to leave `sp`
+          // untouched, which reads as a 1%/yr spending cut rather than an error.
+          // Inflation-adjusting is the least-surprising fallback.
+          sp = sp * (1 + inflY);
         }
       }
       lastReturn = r;
@@ -1998,7 +1929,11 @@ function runStress(p, endAge, N = STRESS_PATHS, seed = 99) {
 
 /* ════ DETERMINISTIC WITHDRAWAL SCHEDULE (median returns) ════ */
 
-function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
+function simulateDeterministicWithStrategy(p, inf, strategyArg) {
+  // The strategy arrives as an ARGUMENT here (the Withdrawal tab passes its
+  // preview selection, not p.withdrawalStrategy), so it needs its own guard —
+  // migrating the saved profile is not enough to protect this entry point.
+  const withdrawalStrategy = resolveStrategy(strategyArg ?? p.withdrawalStrategy);
   // Smart Waterfall: source the schedule directly from buildWithdrawalWaterfall's
   // "smart" scenario — the single source of truth for bucket draws, Roth
   // conversions, mortgage/carveout costs, and source-aware tax. This is the
@@ -2089,12 +2024,6 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
   }, 0);
   const initNeed0 = Math.max(0, p.sp - ss0 - ab0 - otherInc0) + housing0 + carveout0;
   const initWR = portAtRetire > 0 ? initNeed0 / portAtRetire : 0.04;
-  // Kitces ratcheting high-water mark — hoisted OUTSIDE the yearly loop (mirrors
-  // runMC's `startingPort`, declared once before its retirement-years loop) so a
-  // ratchet-fire reassignment persists across years instead of resetting every
-  // iteration, which would otherwise make the +10% bump re-fire every year forever.
-  let startingPort = portAtRetire;
-
   // Source-aware tax: reuse the Smart Waterfall engine so the tax column here
   // matches what the Waterfall tab shows for the same age. The waterfall knows
   // each account type (cash / taxable / pretax / roth) and only treats pretax
@@ -2189,42 +2118,6 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         const fixedRate = p.fixedWithdrawalRate ?? 0.04;
         sp = port * fixedRate;
       }
-      else if (withdrawalStrategy === "vanguard") {
-        const initialRate = p.vanguardInitialRate ?? 0.04;
-        const cap = 0.05;
-        const floorRate = -0.025;
-        if (y === 1) {
-          const pctOfPort = port * initialRate;
-          const inflationAdj = sp * (1 + inflY);
-          let candidate = (inflationAdj + pctOfPort) / 2;
-          let change = (candidate / sp) - 1;
-          let cappedChange = Math.max(floorRate, Math.min(cap, change));
-          sp = sp * (1 + cappedChange);
-        } else {
-          const pctOfPort = port * initialRate;
-          const dynamic = sp * (1 + inflY) * (1 + (ret - inflY) * 0.5);
-          let change = (dynamic / sp) - 1;
-          let cappedChange = Math.max(floorRate, Math.min(cap, change));
-          sp = sp * (1 + cappedChange);
-        }
-        sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
-      }
-      else if (withdrawalStrategy === "risk") {
-        const safeWR = p.safeWithdrawalRate ?? 0.04;
-        const currentWR = sp / port;
-        if (currentWR > safeWR * 1.2) sp = sp * 0.9;
-        else if (currentWR < safeWR * 0.8) sp = sp * 1.1;
-        sp = sp * (1 + inflY);
-        sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
-      }
-      else if (withdrawalStrategy === "kitces") {
-        if (port >= startingPort * 1.5) {
-          sp = sp * 1.10;
-          startingPort = port;
-        }
-        sp = sp * (1 + inflY);
-        sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
-      }
       else if (withdrawalStrategy === "vpw") {
         // VPW PMT payout rate: r / (1 - (1+r)^(-n)). Must match runMC exactly.
         const rVPW = p.vpwRealReturn ?? 0.0376;
@@ -2232,27 +2125,6 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         const n = Math.max(1, (p.vpwEndAge ?? p.endAge ?? 100) - age);
         const rate = rVPW === 0 ? 1 / n : rVPW / (1 - Math.pow(1 + rVPW, -n));
         const newSp = port * Math.min(0.10, rate);
-        sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
-      }
-      else if (withdrawalStrategy === "cape") {
-        const a = 0.015, b = 0.5, cape = 20;
-        const rate = a + b * (1 / cape);
-        let newSp = port * rate;
-        sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
-      }
-      else if (withdrawalStrategy === "endowment") {
-        const smoothing = 0.7, spendRate = 0.05;
-        if (y === 1) sp = port * spendRate;
-        else {
-          const inflationAdj = sp * (1 + inflY);
-          const pctOfPort = port * spendRate;
-          sp = smoothing * inflationAdj + (1 - smoothing) * pctOfPort;
-        }
-        sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
-      }
-      else if (withdrawalStrategy === "one_n") {
-        const yearsLeft = Math.max(1, p.endAge - age);
-        let newSp = port / yearsLeft;
         sp = Math.max(adjFloor, Math.min(adjCeiling, newSp));
       }
       else if (withdrawalStrategy === "ninety_five_rule") {
@@ -2279,6 +2151,10 @@ function simulateDeterministicWithStrategy(p, inf, withdrawalStrategy) {
         } else {
           sp = sp * (1 + inflY);
         }
+      }
+      else {
+        // Unreachable via resolveStrategy; see the matching note in runMC.
+        sp = sp * (1 + inflY);
       }
     }
     lastReturn = ret;
@@ -3878,7 +3754,12 @@ function loadProfileFromLocal() {
     if (data && data.rothConversionTarget && /^\d+$/.test(data.rothConversionTarget)) {
       data.rothConversionTarget = "fill_" + data.rothConversionTarget;
     }
-    return data;
+    // Migration (v1.2.88): six distribution strategies were retired. A saved
+    // profile still naming one would match no branch in either engine, which
+    // reads as a silent ~1%/yr spending cut rather than an error — so remap
+    // here, at the single point every saved profile enters the app, and stamp
+    // `withdrawalStrategyMigratedFrom` so the UI can say it happened.
+    return migrateWithdrawalStrategy(data);
   } catch {
     return null;
   }
@@ -6719,9 +6600,40 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
   // table (when expanded) share it — no double compute, and the strip can show the
   // live "tax saved vs no plan" delta from the same summary.
   const waterfall = useMemo(() => buildWithdrawalWaterfall(p), [p]);
+  // Set when this profile was loaded off a strategy retired in v1.2.88.
+  const migrated = migrationNotice(p.withdrawalStrategyMigratedFrom);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Retired-strategy notice. A saved plan silently changing which spending
+          rule it runs is exactly the defect class this cull was meant to reduce,
+          so the swap is stated, the replacement is named, and we say plainly
+          whether the numbers moved. Dismissing clears the stamp for good. */}
+      {migrated && (
+        <div style={{
+          background: migrated.fidelity === "changed" ? "rgba(251,191,36,0.08)" : "rgba(13,148,136,0.08)",
+          border: `1px solid ${migrated.fidelity === "changed" ? "rgba(251,191,36,0.35)" : "rgba(13,148,136,0.35)"}`,
+          borderRadius: 8, padding: "12px 14px", fontSize: 12,
+          color: "#cbd5e1", lineHeight: 1.6,
+        }}>
+          <div style={{ fontWeight: 700, color: migrated.fidelity === "changed" ? "#fbbf24" : "#5eead4", marginBottom: 4 }}>
+            {migrated.fidelity === "changed" ? "⚠" : "✓"} Your saved strategy “{migrated.fromLabel}” was retired — this plan now uses{" "}
+            {migrated.toLabel}.
+          </div>
+          <div>{migrated.basis}</div>
+          <div style={{ marginTop: 6, color: migrated.fidelity === "changed" ? "#fbbf24" : "#94a3b8" }}>
+            {migrated.impact}
+          </div>
+          <button
+            className="mbtn"
+            style={{ marginTop: 9, fontSize: 11 }}
+            onClick={() => onAssumptionChange("withdrawalStrategyMigratedFrom", null)}
+          >
+            Got it — don't show this again
+          </button>
+        </div>
+      )}
+
       {/* Orientation card — explains the two-question framing */}
       <div style={{
         background: "rgba(13,148,136,0.06)",
@@ -6803,14 +6715,8 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
             <option value="gk">Guyton‑Klinger (Dynamic)</option>
             <option value="bengen">Bengen 4% Rule (fixed, inflation-adjusted)</option>
             <option value="fixed">Fixed % of Portfolio</option>
-            <option value="vanguard">Vanguard Dynamic Spending</option>
-            <option value="risk">Risk‑Based Guardrails</option>
-            <option value="kitces">Kitces Ratcheting</option>
-            <option value="vpw">VPW (Variable Percentage)</option>
-            <option value="cape">CAPE‑Based</option>
-            <option value="endowment">Endowment (Yale) Model</option>
-            <option value="one_n">1/N (Remaining Years)</option>
             <option value="ninety_five_rule">95% Rule (Cut Protection)</option>
+            <option value="vpw">VPW (Variable Percentage · spends to zero)</option>
           </select>
           <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>{getStrategyDescription(previewStrategy)}</div>
           {/* Commit action — only shown when the preview differs from the saved default.
@@ -6831,7 +6737,13 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
                     single, conditional, low-contrast button being the sole commit path
                     is why the preview/saved split read as a bug. */}
                 <button
-                  onClick={() => onAssumptionChange("withdrawalStrategy", previewStrategy)}
+                  onClick={() => {
+                    onAssumptionChange("withdrawalStrategy", previewStrategy);
+                    // Choosing a strategy deliberately answers the migration
+                    // notice — leaving it up would keep telling the user about
+                    // a swap they have now overridden.
+                    if (p.withdrawalStrategyMigratedFrom) onAssumptionChange("withdrawalStrategyMigratedFrom", null);
+                  }}
                   style={{
                     padding: "7px 16px", fontSize: 12, fontWeight: 800, borderRadius: 6,
                     border: "none", background: "#fbbf24", color: "#0d1b2a",
@@ -7417,12 +7329,9 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
     return <div className="chart-card">No data available. Run Monte Carlo first.</div>;
   }
 
-  const strategyLabel = {
-    smart: "Smart Waterfall", gk: "Guyton‑Klinger", fixed: "Fixed %",
-    vanguard: "Vanguard Dynamic", risk: "Risk‑Based", kitces: "Kitces Ratcheting",
-    vpw: "VPW", cape: "CAPE‑Based", endowment: "Endowment (Yale)",
-    one_n: "1/N", ninety_five_rule: "95% Rule", bengen: "Bengen 4% Rule",
-  }[withdrawalStrategy] || withdrawalStrategy;
+  // One label map for the whole app (getStrategyLabel). A second copy here is
+  // how the chart title once disagreed with the picker beside it.
+  const strategyLabel = getStrategyLabel(resolveStrategy(withdrawalStrategy));
 
   return (
     <>
@@ -8790,13 +8699,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   const strategyHowItWorks = {
   gk: "Guyton‑Klinger guardrails — Every year, if the current withdrawal rate exceeds 120% of the initial rate, spending cuts 10% (never below floor). If it falls below 80%, spending increases 10% (never above ceiling).",
   fixed: "Fixed Percentage — You withdraw a constant percentage of the current portfolio each year, automatically adjusting with market value.",
-  vanguard: "Vanguard Dynamic Spending — Spending is adjusted based on a ceiling and floor relative to the initial withdrawal rate, with inflation smoothing.",
-  risk: "Risk‑Based Guardrails — Spending is reduced if the withdrawal rate exceeds a safe threshold, and increased if it falls below.",
-  kitces: "Kitces Ratcheting — Spending increases when the portfolio grows 50% above its starting value, but never decreases in real terms.",
-  vpw: "Variable Percentage Withdrawal (VPW) — Spending is recalculated annually based on remaining portfolio and life expectancy.",
-  cape: "CAPE‑Based — Withdrawal rate is determined by the Shiller CAPE ratio to reflect market valuation.",
-  endowment: "Endowment Model — Spending blends a percentage of portfolio with prior year spending (smoothed).",
-  one_n: "1/N Rule — Each year, divide the remaining portfolio by the number of years left in the plan.",
+  vpw: "Variable Percentage Withdrawal (VPW) — Spending is recalculated annually as the portfolio amortized over your remaining years, so the plan is designed to spend down to roughly zero by your plan-to age.",
   ninety_five_rule: "95% Rule — Spending can drop to 95% of last year's amount during downturns, otherwise tracks inflation.",
   bengen: "Bengen 4% Rule — Withdraw a fixed percentage of the STARTING portfolio value in year one, then increase that dollar amount with inflation every year after. Spending never reacts to portfolio performance, for better or worse — an honest model of late-stage risk for fixed-budget retirees.",
   smart: "Smart Waterfall (hybrid) — Guyton‑Klinger guardrails while more than 15 years remain in the plan, then switches to the Bengen 4% Rule for the final 15 years — the split matches GK's own longevity-safety-brake threshold, so the switch happens exactly where GK's brake would otherwise be disabled."
@@ -9008,7 +8911,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each of {MC_PATHS_LABEL} paths independently draws a random S&P 500 year and a random bond year, blended by glide path weight. Contributions are added annually. The result is a unique portfolio value at retirement for each path.</div>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>2. Retirement spending</div>Each path draws fresh random returns year by year. {params.smile !== false ? "Spending follows the Blanchett smile curve." : "Spending stays flat in real terms (smile curve off)."} SS{params.ab > 0 ? " and Rental" : ""} income offset draws.{params.ab > 0 ? ` Rental fails ${Math.round(100 - (params.abReliability ?? 80))}% of years randomly.` : ""}{(params.hcProb ?? 3.5) > 0 ? ` Healthcare shocks hit ${params.hcProb ?? 3.5}% of years after age ${params.hcShockAge ?? 72}.` : ""}</div>
-            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>3. {getStrategyLabel(withdrawalStrategy)} {withdrawalStrategy === "gk" ? "guardrails" : "strategy"}</div>{strategyHowItWorks[withdrawalStrategy] || strategyHowItWorks.gk}</div>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>3. {getStrategyLabel(resolveStrategy(withdrawalStrategy))} {resolveStrategy(withdrawalStrategy) === "gk" ? "guardrails" : "strategy"}</div>{strategyHowItWorks[resolveStrategy(withdrawalStrategy)] || strategyHowItWorks.gk}</div>
             <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>4. Survival check</div>A path "succeeds" if the portfolio balance stays above $0 through the target age. The success rate is the percentage of paths that survive. The fan chart shows the 10th–90th percentile spread of all outcomes.</div>
           </div>
         )}
@@ -9677,13 +9580,13 @@ function NetWorthTab({ p, mc, inf }) {
             target, never out of it — see the fixed-point loop in runMC). */}
         {(() => {
           const port     = (p.accounts||[]).reduce((s,a)=>s+(a.balance||0),0) || p.port || 0;
-          const strategy = p.withdrawalStrategy || "gk";
+          const strategy = resolveStrategy(p.withdrawalStrategy);
           const rate     = p.fixedWithdrawalRate || 0.04; // always decimal in params (normalized in the params memo)
           // No literal fallback rate: the benchmark the rest of the app shows
           // is the user's own safeWithdrawalRate, so this card uses the same one.
           const benchRate = p.safeWithdrawalRate ?? 0.04;
           const pctOf     = (r) => (r * 100).toFixed(1).replace(/\.0$/, "");
-          const STRAT = { gk:"Guyton-Klinger guardrails", fixed:"Fixed %", vanguard:"Vanguard dynamic", vpw:"VPW", kitces:"Kitces ratchet", cape:"CAPE-based", endowment:"Endowment", risk:"Risk-based", one_n:"1/N rule", ninety_five_rule:"95% rule", bengen:"Bengen 4% rule", smart:"Smart Waterfall" };
+          const STRAT = { gk:"Guyton-Klinger guardrails", fixed:"Fixed %", vpw:"VPW", ninety_five_rule:"95% rule", bengen:"Bengen 4% rule", smart:"Smart Waterfall" };
 
           let monthly, label, note, hint;
           if (strategy === "fixed") {
@@ -12804,7 +12707,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
   const guardFromImport = guard.source === "import";
   const floor = guardFromImport ? guard.gkFloor : Math.round(baseSpend * (floorPct / 100));
   const ceiling = guardFromImport ? guard.gkCeiling : Math.round(baseSpend * (ceilingPct / 100));
-  const strategy = values.withdrawalStrategy || "gk";
+  const strategy = resolveStrategy(values.withdrawalStrategy);
 
   // Initial WR diagnostic — pass combined sp so the helper, the GK card, the metrics WR
   // badge, and the gk-bar strategy strap all show the same number.
@@ -13287,18 +13190,18 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             <div style={{ fontSize: 11, color: "#64748b", marginTop: 16, fontStyle: "italic", textAlign: "center" }}>Spending will fluctuate with portfolio value.</div>
           </>
         )}
-        {strategy === "vanguard" && (
+        {strategy === "vpw" && (
           <>
-            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>📈 Vanguard Dynamic Spending</div>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Adjusts spending based on a ceiling and floor relative to the initial withdrawal rate.</div>
+            <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>📉 Variable Percentage Withdrawal</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 16 }}>Each year, the portfolio is amortized over the years remaining to your plan-to age — so the plan is designed to spend down to roughly zero, not to leave an estate.</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569" }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>{((values.vanguardCap || 0.05) * 100).toFixed(1)}%</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569" }}>Assumed real return</div><div style={{ fontSize: 28, fontWeight: 700, color: "#fbbf24", fontFamily: "'DM Mono',monospace" }}>{(((values.vpwRealReturn ?? 0.0376)) * 100).toFixed(2)}%</div></div>
               <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569" }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>{((values.vanguardFloor || -0.025) * 100).toFixed(1)}%</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#475569" }}>Amortized to age</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'DM Mono',monospace" }}>{values.vpwEndAge ?? values.endAge ?? 100}</div></div>
             </div>
           </>
         )}
-        {!["gk", "fixed", "vanguard"].includes(strategy) && (
+        {!["gk", "fixed", "vpw"].includes(strategy) && (
           <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center" }}>{getStrategyLabel(strategy)} strategy active — see documentation for details.</div>
         )}
       </ACard>
@@ -13982,6 +13885,11 @@ export default function AiRAForecaster() {
       taxableBasisPct: assumptions.taxableBasisPct ?? 70,
       useJointRmdTable: assumptions.useJointRmdTable || false,
       withdrawalStrategy: assumptions.withdrawalStrategy,
+      // Set when a retired strategy was remapped on load. Forwarded so the
+      // Withdrawal tab can SAY the plan changed — a silent remap would be the
+      // same "app knew something the screen didn't" defect as the strategy
+      // deletion itself.
+      withdrawalStrategyMigratedFrom: assumptions.withdrawalStrategyMigratedFrom ?? null,
       // Sourcing guardrails — MUST be forwarded here or runMC + the Withdrawal Plan
       // tab never see them (they live in `assumptions`, but the engine reads `params`).
       // Defaults mirror BLANK_PROFILE.
@@ -13996,9 +13904,14 @@ export default function AiRAForecaster() {
       orderingMode: assumptions.orderingMode || "tax_reactive",
       withdrawalOrder: assumptions.withdrawalOrder || ["cash", "taxable", "pretax", "roth"],
       fixedWithdrawalRate: (() => { const r = assumptions.fixedWithdrawalRate || 4.0; return r < 1 ? r : r / 100; })(), // normalize: stored as % (4) or decimal (0.04) → always decimal
-      vanguardInitialRate: 0.04,
-      vanguardCap: 0.05,
-      vanguardFloor: -0.025,
+      // VPW's two inputs. This memo is an allowlist, not a spread — before
+      // v1.2.88 neither was forwarded, so `vpwRealReturn` could be set in the
+      // profile and the engine would still use its own 3.76% default. That
+      // matters now: the 1/N → VPW migration writes vpwRealReturn: 0, and
+      // without these two lines it would be a ghost setting.
+      // `?? null` (not `||`) so a deliberate 0 survives.
+      vpwRealReturn: assumptions.vpwRealReturn ?? null,
+      vpwEndAge: assumptions.vpwEndAge ?? null,
       safeWithdrawalRate: 0.04,
       checkpoints: assumptions.checkpoints || [],
       earlyRetireTarget: assumptions.earlyRetireTarget,
@@ -14236,7 +14149,11 @@ export default function AiRAForecaster() {
               className="mbtn"
               title="Import profile from JSON"
               onClick={() =>
-                importProfile((data) => {
+                importProfile((rawData) => {
+                  // Same retired-strategy migration the localStorage path gets.
+                  // An exported JSON is the other way a pre-v1.2.88 profile
+                  // enters the app, and it must not take a different route.
+                  const data = migrateWithdrawalStrategy(rawData);
                   if (data.retireAge !== undefined) setRetAge(data.retireAge);
                   if (data.endAge !== undefined) setEndAge(data.endAge);
                   if (data.port !== undefined) setPort(data.port);
@@ -14613,10 +14530,10 @@ export default function AiRAForecaster() {
                   <div>
                     📉  <span style={{ color: "#fbbf24" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
                     {(() => {
-                      const s = assumptions.withdrawalStrategy;
+                      const s = resolveStrategy(assumptions.withdrawalStrategy);
                       if (s === "gk") return `Floor: ${fmtDollar(params.gkFloor)} · Ceiling ${fmtDollar(params.gkCeiling)}`;
                       if (s === "fixed") return `Rate: ${((params.fixedWithdrawalRate || 0.04) * 100).toFixed(1)}%`;
-                      if (s === "vanguard") return `Cap: ${(params.vanguardCap || 0.05) * 100}% · Floor: ${(params.vanguardFloor || -0.025) * 100}%`;
+                      if (s === "vpw") return `Amortized to age ${params.vpwEndAge ?? params.endAge ?? 100} at ${((params.vpwRealReturn ?? 0.0376) * 100).toFixed(2)}% real`;
                       return "";
                     })()}
                   </div>
@@ -14833,7 +14750,7 @@ export default function AiRAForecaster() {
             {(() => {
               const heroColor = mc ? (mc.rate >= 0.85 ? "#0d9488" : mc.rate >= 0.7 ? "#f59e0b" : "#ef4444") : "#334155";
               const sep = <span style={{ color: "#475569" }}>·</span>;
-              const strat = assumptions.withdrawalStrategy;
+              const strat = resolveStrategy(assumptions.withdrawalStrategy);
               return (
                 <div className="met" style={{ borderLeft: `4px solid ${heroColor}` }}>
                   {/* Row 1 — the one number that matters, with the disclosure toggle aligned right. */}
@@ -14902,8 +14819,8 @@ export default function AiRAForecaster() {
                       <>Floor {fmtDollar(params.gkFloor)} · Ceiling {fmtDollar(params.gkCeiling)} · State tax {assumptions.twoHousehold ? "OFF (non-resident)" : "ON (resident)"}.</>
                     ) : strat === "fixed" ? (
                       <>Withdrawal rate {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
-                    ) : strat === "vanguard" ? (
-                      <>Cap {params.vanguardCap * 100}% · Floor {params.vanguardFloor * 100}%.</>
+                    ) : strat === "vpw" ? (
+                      <>Amortized to age {params.vpwEndAge ?? params.endAge ?? 100} at {((params.vpwRealReturn ?? 0.0376) * 100).toFixed(2)}% assumed real return.</>
                     ) : (
                       <>Dynamic spending based on portfolio performance.</>
                     )}{" "}

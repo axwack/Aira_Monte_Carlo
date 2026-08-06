@@ -24,6 +24,7 @@ import {
   getAnalogues,
 } from "./App";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
+import { LIVE_STRATEGIES } from "./engine/withdrawalStrategies.js";
 
 // ─── Shared MC baseline ───────────────────────────────────────────────────────
 const BASE = {
@@ -646,7 +647,7 @@ describe("runMC — Monte Carlo integration", () => {
   });
 
   test("withdrawal strategies all produce valid success rates", () => {
-    const strategies = ["gk", "fixed", "vanguard", "risk", "kitces", "vpw", "cape", "endowment", "one_n", "ninety_five_rule"];
+    const strategies = LIVE_STRATEGIES;
     for (const s of strategies) {
       const r = runMC({ ...BASE, withdrawalStrategy: s }, 90, 200, 42, true);
       expect(r.rate).toBeGreaterThanOrEqual(0);
@@ -1313,15 +1314,11 @@ describe("Withdrawal strategy accuracy — year-1 deterministic draws", () => {
     expect(Math.abs((gk.schedule[4]?.spending ?? 0) - (fixed.schedule[4]?.spending ?? 0))).toBeGreaterThan(100);
   });
 
-  test("1/N strategy: year-1 draw = portfolio / 25 years, within guardrails", () => {
-    const { schedule, portAtRetire } = simulateDeterministicWithStrategy(
-      { ...baseStrat, withdrawalStrategy: "one_n" }, 2.5, "one_n");
-    const expected = Math.min(115_000, Math.max(48_000, portAtRetire / (90 - 65)));
-    expect(schedule[0].spending).toBeCloseTo(expected, -2);
-  });
-
-  test("All 10 strategies produce valid deterministic schedules with positive draws", () => {
-    for (const s of ["gk","fixed","vanguard","risk","kitces","vpw","cape","endowment","one_n","ninety_five_rule"]) {
+  // Sweeps the live set from the registry rather than a literal list, so
+  // retiring or adding a strategy cannot leave this test silently narrower
+  // than the app. Retired ids are covered in withdrawalStrategyMigration.test.js.
+  test("Every live strategy produces a valid deterministic schedule with positive draws", () => {
+    for (const s of LIVE_STRATEGIES) {
       const { schedule } = simulateDeterministicWithStrategy({ ...baseStrat, withdrawalStrategy: s }, 2.5, s);
       expect(schedule.length).toBeGreaterThan(0);
       expect(schedule[0].spending).toBeGreaterThan(0);
@@ -1410,7 +1407,7 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
     port: PORT, sp: 80_000, ssAge: 70, ssb: 24_000,
     filingStatus: "mfj", stateOfResidence: "FL",
     gkFloor: GK_FLOOR, gkCeiling: GK_CEILING,
-    fixedWithdrawalRate: 0.04, vanguardInitialRate: 0.04,
+    fixedWithdrawalRate: 0.04,
     safeWithdrawalRate: 0.04,
     accounts: [
       { id: "s1", category: "pretax",  name: "401k", balance: 1_400_000 },
@@ -1451,90 +1448,6 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
     expect(schedule[1].spending).toBeLessThan(s4[1].spending);
   });
 
-  // ── Vanguard Dynamic ───────────────────────────────────────────────────────
-  // Year 1 formula: candidate = avg(sp×(1+inflY), port×rate); capped ±5%/−2.5%.
-  test("Vanguard: year-2 spending = average of inflation-adj and portfolio %, capped ±5%", () => {
-    const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "vanguard" }, "vanguard");
-    const sp0   = schedule[0].spending;  // 80,000
-    const port1 = schedule[0].portfolioEnd;
-    const rate  = 0.04; // vanguardInitialRate
-    const cap   = 0.05, floorRate = -0.025;
-    const portPct  = port1 * rate;
-    const inflAdj  = sp0 * (1 + inflY);
-    const candidate = (inflAdj + portPct) / 2;
-    const change = (candidate / sp0) - 1;
-    const cappedChange = Math.max(floorRate, Math.min(cap, change));
-    const raw = Math.round(sp0 * (1 + cappedChange));
-    const expected = Math.min(adjCeiling1, Math.max(adjFloor1, raw));
-    expect(schedule[1].spending).toBeCloseTo(expected, -2);
-  });
-
-  // ── Risk-Based ─────────────────────────────────────────────────────────────
-  // Year 1: WR = sp/port ≈ 80K/2.06M ≈ 3.88%, between 80% and 120% of 4% target
-  // → no adjustment. sp = sp_0 × (1 + inflY), clamped.
-  test("Risk-Based: year-2 spending = inflation-adjusted spend (WR within safe band)", () => {
-    const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "risk" }, "risk");
-    const sp0   = schedule[0].spending;
-    const port1 = schedule[0].portfolioEnd;
-    const safeWR = 0.04;
-    const currentWR = sp0 / port1;
-    // Confirm WR is within the no-adjustment band
-    expect(currentWR).toBeLessThan(safeWR * 1.2);
-    expect(currentWR).toBeGreaterThan(safeWR * 0.8);
-    const expected = Math.min(adjCeiling1, Math.max(adjFloor1, Math.round(sp0 * (1 + inflY))));
-    expect(schedule[1].spending).toBeCloseTo(expected, -2);
-  });
-
-  // ── Kitces Ratcheting ──────────────────────────────────────────────────────
-  // Year 1: portfolio ($2.06M) < 1.5 × portAtRetire ($3M) → no ratchet.
-  // sp = sp_0 × (1 + inflY), clamped.
-  test("Kitces: year-2 spending = inflation-adjusted spend (no ratchet — below 150% trigger)", () => {
-    const { schedule, portAtRetire } = sim({ ...baseStrat, withdrawalStrategy: "kitces" }, "kitces");
-    const sp0   = schedule[0].spending;
-    const port1 = schedule[0].portfolioEnd;
-    // Verify no ratchet triggered
-    expect(port1).toBeLessThan(portAtRetire * 1.5);
-    const expected = Math.min(adjCeiling1, Math.max(adjFloor1, Math.round(sp0 * (1 + inflY))));
-    expect(schedule[1].spending).toBeCloseTo(expected, -2);
-  });
-
-  // Regression test for the "ratchet re-fires every year forever" bug (A3):
-  // startingPort must be a high-water mark that persists across years, so once
-  // portfolio crosses 1.5× the CURRENT startingPort it should NOT ratchet again
-  // until portfolio grows another 50% past the NEW (updated) startingPort — not
-  // just stay above the original portAtRetire forever.
-  test("Kitces: ratchet fires once, then does not re-fire every subsequent year", () => {
-    const kitcesProfile = {
-      currentAge: 65, retireAge: 65, endAge: 90,
-      port: 2_000_000, sp: 20_000, ssAge: 90, ssb: 0,
-      filingStatus: "mfj", stateOfResidence: "FL",
-      gkFloor: 1_000, gkCeiling: 10_000_000,
-      preRetireEq: 91, postRetireEq: 91,
-      withdrawalStrategy: "kitces",
-      accounts: [
-        { id: "k1", category: "pretax", name: "401k", balance: 1_600_000 },
-        { id: "k2", category: "roth",   name: "Roth", balance:   400_000 },
-      ],
-    };
-    const { schedule } = sim(kitcesProfile, "kitces");
-
-    // Year-over-year spending ratios. A ratchet fire looks like ~1.10 × 1.025
-    // ≈ 1.1275; a plain inflation-only bump is ~1.025.
-    const ratios = [];
-    for (let i = 1; i < schedule.length; i++) {
-      ratios.push(schedule[i].spending / schedule[i - 1].spending);
-    }
-    const ratchetFireIdx = ratios.findIndex((r) => r > 1.05);
-    expect(ratchetFireIdx).toBeGreaterThan(-1); // sanity: at least one ratchet did fire
-
-    // The bug: with the broken (un-hoisted) startingPort, EVERY year after the
-    // first crossing re-fires the +10% bump, since the comparison never moves
-    // off the original portAtRetire. With the fix, the very next year after a
-    // ratchet fire must be a plain inflation adjustment only (portfolio hasn't
-    // had time to grow another 50% off the new, updated high-water mark).
-    expect(ratios[ratchetFireIdx + 1]).toBeLessThan(1.05);
-  });
-
   // ── Variable Percentage Withdrawal (VPW) ───────────────────────────────────
   // Year 1 (age 66): n = horizon − age, r = 3.76%.
   // Canonical PMT payout rate (fixed 2026-06-10): rate = r / (1 − (1+r)^(−n)),
@@ -1551,39 +1464,6 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
     const r = 0.0376;
     const rate = Math.min(0.10, r / (1 - Math.pow(1 + r, -n)));
     const expected = Math.min(adjCeiling1, Math.max(adjFloor1, Math.round(port1 * rate)));
-    expect(schedule[1].spending).toBeCloseTo(expected, -2);
-  });
-
-  // ── CAPE-Based ─────────────────────────────────────────────────────────────
-  // Hardcoded CAPE=20 → rate = 0.015 + 0.5×(1/20) = 0.04 (exactly 4%)
-  // spending = port × 0.04, clamped.
-  test("CAPE: year-2 spending = port × 4% (hardcoded CAPE=20 → rate=0.04), clamped", () => {
-    const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "cape" }, "cape");
-    const port1 = schedule[0].portfolioEnd;
-    const capeVal = 20, a = 0.015, b = 0.5;
-    const rate = a + b * (1 / capeVal); // 0.015 + 0.025 = 0.04
-    const expected = Math.min(adjCeiling1, Math.max(adjFloor1, Math.round(port1 * rate)));
-    expect(schedule[1].spending).toBeCloseTo(expected, -2);
-    // Sanity: rate is exactly 4% with CAPE=20
-    expect(rate).toBeCloseTo(0.04, 3);
-  });
-
-  // ── Endowment (Yale) ────────────────────────────────────────────────────────
-  // Year 1 (y=1 in code): spending = port × 5%, clamped.
-  test("Endowment: year-2 spending = port × 5% spend rate, clamped to GK band", () => {
-    const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "endowment" }, "endowment");
-    const port1 = schedule[0].portfolioEnd;
-    const expected = Math.min(adjCeiling1, Math.max(adjFloor1, Math.round(port1 * 0.05)));
-    expect(schedule[1].spending).toBeCloseTo(expected, -2);
-  });
-
-  // ── 1/N ─────────────────────────────────────────────────────────────────────
-  // Year 1 (age 66): yearsLeft = endAge − 66 = 24, spending = port / 24, clamped.
-  test("1/N: year-2 spending = portfolio / (endAge − 66) = port / 24, clamped", () => {
-    const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "one_n" }, "one_n");
-    const port1 = schedule[0].portfolioEnd;
-    const yearsLeft = 90 - 66;
-    const expected = Math.min(adjCeiling1, Math.max(adjFloor1, Math.round(port1 / yearsLeft)));
     expect(schedule[1].spending).toBeCloseTo(expected, -2);
   });
 
@@ -1605,27 +1485,13 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
   });
 
   // ── Cross-strategy ordering at year 2 ──────────────────────────────────────
-  // With a growing $2M portfolio and 2.5% inflation:
-  // Endowment (5%) > VPW (~5.1%) > CAPE=Endowment ≈ Fixed 4% < Endowment
-  // Key ordering: Endowment spend > GK/Kitces/Risk (all ≈ inflation-adjusted 80K)
-  test("Year-2: Endowment (5%) draws more than GK/Risk (inflation-adj 4%) on growing portfolio", () => {
-    const gk        = sim({ ...baseStrat, withdrawalStrategy: "gk"        }, "gk");
-    const endowment = sim({ ...baseStrat, withdrawalStrategy: "endowment" }, "endowment");
-    expect(endowment.schedule[1].spending).toBeGreaterThan(gk.schedule[1].spending);
-  });
-
+  // On a growing $2M portfolio at 2.5% inflation, VPW's payout rate at age 66
+  // (~5.1%) exceeds a flat 4%, so it draws more per dollar of portfolio.
   test("Year-2: VPW draws more than Fixed 4% on same portfolio (higher VPW rate at age 66)", () => {
     const fixed = sim({ ...baseStrat, withdrawalStrategy: "fixed" }, "fixed");
     const vpw   = sim({ ...baseStrat, withdrawalStrategy: "vpw"   }, "vpw");
     // VPW rate at 66 ≈ 5.1% > 4%, so VPW draws more per dollar of portfolio
     expect(vpw.schedule[1].spending).toBeGreaterThan(fixed.schedule[1].spending);
-  });
-
-  test("Year-2: CAPE (cape=20, 4%) and Fixed 4% produce nearly identical draws", () => {
-    const fixed = sim({ ...baseStrat, withdrawalStrategy: "fixed" }, "fixed");
-    const cape  = sim({ ...baseStrat, withdrawalStrategy: "cape"  }, "cape");
-    // Both draw exactly 4% of the portfolio — should be within $1
-    expect(Math.abs(cape.schedule[1].spending - fixed.schedule[1].spending)).toBeLessThan(1_000);
   });
 });
 
