@@ -197,9 +197,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.88";
-export const BUILD_TAG = "[main] v1.2.88 - eleven withdrawal strategies became six, and the six that left do not take anyone's plan with them. CULL: vanguard, risk, kitces, cape, endowment and one_n are gone from the picker, both engines, strategyHowItWorks, the AI recommender and the params memo. Survivors: Smart Waterfall, Guyton-Klinger, Bengen, Fixed %, 95% Rule, VPW. VPW stays because it is the only spend-to-zero rule in the set and it is the exact target for 1/N. WHY THIS NEEDED A MIGRATION: both engines dispatch on the strategy string through an if/else chain with no final else, so a saved profile naming a deleted strategy matched NOTHING - sp was never assigned, spending never inflation-adjusted, and the spending smile deflated it ~1%/yr for the rest of the plan. Measured: lifetime spend 2,112,063 against GK 3,151,968, a 33% shortfall produced silently with no error on screen. New engine/withdrawalStrategies.js migrates every retired id at both ingest points (localStorage and JSON import), resolveStrategy() guards both engines and every label lookup, and both chains gained a terminal else. MEASURED, NOT INFERRED: cape is Fixed 4% arithmetically (0.015 + 0.5/20 = 0.04) but is filed 'close' not 'exact' because CAPE also clamped to the GK floor/ceiling and Fixed % does not - a 307 dollar year-1 gap that reading the formulas would have missed. one_n is VPW at 0% real to the dollar, so the migration sets vpwRealReturn: 0; vpwRealReturn and vpwEndAge were never forwarded by the params allowlist, so without that fix the migration would have been a ghost setting. The swap is disclosed on screen with what changed and why, never silently. PrintReport dropped its hand-synced label map for the shared one. 857 -> 893 tests, 37 suites.";
-export const BUILD_TIME = "2026-08-06T09:00:00Z";
+const APP_VERSION = "1.2.89";
+export const BUILD_TAG = "[main] v1.2.89 - the tax column on the Year-by-Year table now belongs to the strategy above it (REQUIREMENTS 35). The table borrowed its tax from buildWithdrawalWaterfall - correct in principle, because the waterfall is account-aware and only counts pre-tax draws as ordinary income - but the waterfall taxed ITS OWN spend path, the GK/Bengen hybrid, whatever strategy the user picked. So the draw shown and the tax shown described different plans. Measured before: five strategies drawing between 2.28M and 3.45M over a lifetime all displayed exactly 210,686 of tax. After: 210,686 / 210,686 / 249,751 / 215,498 / 281,695 - gk and bengen genuinely coincide here, their spend paths are identical to age 82 and the later gap is funded from buckets that add no taxable income. FIX: two-pass. The year loop is wrapped in runPass(taxByAge); pass 1 discovers the strategy spend path, buildWithdrawalWaterfall is re-run against that path, pass 2 replays with the resulting per-age tax. BOTH DOCUMENTED TRAPS VERIFIED EMPIRICALLY RATHER THAN BY INSPECTION. Smile: real - the waterfall applies spendingSmileFactor AFTER its spSchedule override, so feeding back the post-smile spending field costs 20,913 at age 80; the engine feeds PRE-smile sp. Inflation: does not fire - scheduleSpendForYear only inflates BEYOND its last entry, so a schedule covering every plan year comes back verbatim, and full coverage is what the engine emits. Both pinned in tests, including the negative case that proves the helper is not inert. Single iteration by design: pass 2 tax changes the portfolio, which changes spend for portfolio-linked strategies. Residual measured at 0.5% of lifetime tax for VPW, the most portfolio-linked - documented, not claimed away. A user detailed budget short-circuits pass 2, since the waterfall already taxes that exact path. 893 -> 908 tests, 38 suites.";
+export const BUILD_TIME = "2026-08-06T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2043,12 +2043,37 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     }
   } catch { /* fall back to calcYearTax below */ }
 
-  let sp = p.sp;
-  let lastReturn = 0;
-  const schedule = [];
   // Same "Tax drag" master toggle as runMC — OFF zeroes all tax so the deterministic
   // table matches the MC/Stress pivots under a pre-tax view (CLAUDE.md uniformity).
   const taxEnabled = p.tax !== false;
+
+  // ── §35: the year loop runs TWICE ─────────────────────────────────────────
+  // The tax columns are borrowed from buildWithdrawalWaterfall, which is right
+  // — the waterfall is account-aware, so only pre-tax draws are ordinary
+  // income, whereas calcYearTax on an aggregate draw treats every dollar as
+  // ordinary and overstates tax badly. The bug was that the waterfall taxed ITS
+  // OWN spend path (the GK/Bengen hybrid) no matter which strategy was
+  // selected, so the draw on screen and the tax beside it described different
+  // plans. Measured before this fix: five strategies drawing between $2.28M and
+  // $3.45M over a lifetime all displayed the same $210,686 of tax.
+  //
+  // So: pass 1 discovers THIS strategy's spend path, the waterfall is re-run
+  // against that path, and pass 2 uses the resulting per-age tax.
+  //
+  // Everything the loop mutates (`port`, `sp`, `lastReturn`, `schedule`) is
+  // declared inside runPass, so a second call starts from the same state as the
+  // first. `portAtRetire` is the accumulation result and is read-only here.
+  const runPass = (taxByAge) => {
+  let port = portAtRetire;
+  let sp = p.sp;
+  let lastReturn = 0;
+  const schedule = [];
+  // Pre-smile spend per calendar year — the input to pass 2's waterfall.
+  // PRE-smile is load-bearing: buildWithdrawalWaterfall applies
+  // spendingSmileFactor AFTER its spSchedule override, so feeding back the
+  // post-smile `spending` field would apply the smile twice. Measured on a
+  // $1.5M/$80k profile: $20,913 too little at age 80.
+  const spByYear = [];
 
   for (let y = 0; y < retYrs; y++) {
     const age = retAgeDet + y;
@@ -2183,7 +2208,7 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     // (ltcgAmount defaults to 0) and no lookback history to thread through (magiLookback
     // defaults to null → same-year MAGI, the pre-lookback approximation) — both left
     // unchanged, out of scope here.
-    const wfTax = smartTaxByAge.get(age);
+    const wfTax = taxByAge.get(age);
     const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, filingStatusAt(p, age), p.stateOfResidence || "NJ", 0, null, spouseAgeAt(p, age));
     const totalTax = taxEnabled ? taxResult.totalTax : 0;
     const totalDraw = need + totalTax;
@@ -2191,6 +2216,13 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     // already includes this year's tax, so a household whose income covers both
     // its spending and its tax bill now ENDS RICHER, as it should.
     port = port * (1 + ret) - totalDraw + incomeSurplusDet;
+
+    // PRE-smile, and one entry for EVERY plan year. Full coverage is the other
+    // half of the trap: scheduleSpendForYear carries the last entry forward
+    // INFLATED, so a sparse schedule would inflate an already-nominal figure a
+    // second time. With an entry per year, `elapsed` is always 0 and each value
+    // comes back verbatim (verified in deterministicTaxPath.test.js).
+    spByYear.push({ year: yr, amount: Math.round(sp) });
 
     schedule.push({
       age, yr,
@@ -2211,7 +2243,51 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     });
     if (port <= 0) break;
   }
-  return { schedule, portAtRetire: Math.round(portAtRetire), initWR };
+  return { schedule, spByYear };
+  };
+
+  // Pass 1 — the strategy's own spend path, still carrying the waterfall's
+  // default-path tax. Its DRAWS are already correct; only its tax is borrowed
+  // from the wrong plan.
+  const pass1 = runPass(smartTaxByAge);
+
+  // When the user has supplied a detailed budget, that budget already overrides
+  // the distribution strategy in BOTH engines — the waterfall is taxing this
+  // exact spend path already, so a second pass would recompute the same numbers
+  // and risk clobbering the user's own schedule. Nothing to reconcile.
+  if (p.spSchedule && p.spSchedule.length) {
+    return { schedule: pass1.schedule, portAtRetire: Math.round(portAtRetire), initWR };
+  }
+
+  // Re-run the waterfall against THIS strategy's spending, then replay the year
+  // loop with the tax that produces.
+  //
+  // Single iteration, deliberately. Pass 2's tax differs slightly from pass 1's,
+  // which changes the portfolio, which changes next year's spend for the
+  // portfolio-linked strategies (fixed, vpw). That residual is second-order and
+  // far smaller than the defect being fixed, but it is a residual: the tax
+  // column is now computed against this strategy's spending, not proven to be
+  // its exact fixed point.
+  let pass2 = null;
+  try {
+    const wf2 = buildWithdrawalWaterfall({ ...p, spSchedule: pass1.spByYear });
+    const taxByAge2 = new Map();
+    for (const row of wf2?.smart?.rows ?? []) {
+      taxByAge2.set(row.age, {
+        fedTax: row.fedTax || 0,
+        stateTax: row.stateTax || 0,
+        irmaa: row.irmaa || 0,
+        totalTax: row.totalTax || 0,
+      });
+    }
+    // Only accept the second pass if it actually produced tax rows. An empty
+    // map would silently drop every row back to the calcYearTax fallback, which
+    // treats all draws as ordinary income — worse than the bug being fixed.
+    if (taxByAge2.size > 0) pass2 = runPass(taxByAge2);
+  } catch { /* keep pass 1 */ }
+
+  const finalSchedule = (pass2?.schedule?.length ? pass2 : pass1).schedule;
+  return { schedule: finalSchedule, portAtRetire: Math.round(portAtRetire), initWR };
 }
 
 /* ════ ROTH CONVERSION EXPLORER ════ */

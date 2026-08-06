@@ -2540,7 +2540,7 @@ treatment `computeCashFlowEvents` inflows now get. Requires:
 5. Tests: a household with income > spending must END RICHER, not poorer; and
    the surplus must appear in the taxable balance rather than nowhere.
 
-## 35. ⚠️ Deterministic tax columns belong to a different plan — OPEN, measured 2026-08-05
+## 35. ✅ Deterministic tax columns belong to a different plan — FIXED 2026-08-06 (v1.2.89)
 
 Flagged by the tester agent, then measured. The Year-by-Year table shows a draw
 computed by the chosen distribution strategy alongside a tax computed from a
@@ -2607,6 +2607,57 @@ Diagnosed and specced at the end of a very long session that had already produce
 two build breaks from hurried scripted edits. A restructure of a live financial
 engine, with two known double-application traps, is not something to start in that
 state. Everything else from the session is deployed and green.
+
+### Built 2026-08-06 (v1.2.89) — as specced, with both traps measured
+
+Two-pass, exactly as agreed. The year loop is wrapped in `runPass(taxByAge)`;
+pass 1 discovers the strategy's spend path, `buildWithdrawalWaterfall` is re-run
+with that path as `spSchedule`, pass 2 replays with the resulting per-age tax.
+
+**Re-measured on the same profile** (mfj, retire 60, $1.5M: 900k pretax / 400k
+taxable / 200k roth). The figures differ from the 2026-08-05 table because the
+strategy cull (v1.2.88) landed first and the earlier run predates it:
+
+| strategy | lifetime tax before | after |
+|---|---:|---:|
+| gk      | $210,686 | $210,686 |
+| bengen  | $210,686 | $210,686 |
+| fixed   | $210,686 | **$249,751** |
+| ninety_five_rule | $210,686 | **$215,498** |
+| vpw     | $210,686 | **$281,695** |
+
+**gk and bengen legitimately coincide on this profile** — checked, not assumed.
+Their spend paths are identical to the dollar through age 82, and the later
+divergence (~$11k/yr) is funded from buckets that add no taxable income while RMD
+and SS dominate ordinary income. Identical tax there is arithmetic, not a
+leftover bug. On a portfolio where the marginal draw hits pre-tax money they
+separate.
+
+### The two traps — verified empirically, as §35 demanded
+
+- **Smile double-apply: REAL.** Feeding the post-smile `spending` field back
+  produces $20,913 too little at age 80 (the factor squared). Feeding pre-smile
+  `sp` matches pass 1 to $0 at every age. The engine feeds pre-smile.
+- **Inflation double-apply: DOES NOT FIRE.** `scheduleSpendForYear` inflates only
+  *beyond* its last entry — covered years come back verbatim. Since the engine
+  emits one entry per plan year, no de-inflation is needed. The negative case
+  (a sparse schedule, which *does* inflate) is pinned too, so the first
+  assertion cannot rot into a tautology.
+
+Reading the code alone would have got the smile right and the inflation wrong.
+
+### Known residual — single iteration, documented not hidden
+
+Pass 2's tax differs slightly from pass 1's, which moves the portfolio, which
+moves next year's spend for the portfolio-linked strategies. Measured at **0.5%
+of lifetime tax for VPW** (the most portfolio-linked) and ~0.08% for `fixed`.
+The tax column is now computed against this strategy's spending; it is not
+proven to be its exact fixed point. Do not describe it as exact.
+
+A user-supplied `spSchedule` short-circuits pass 2 — the budget already overrides
+the strategy in both engines, so the waterfall is taxing that exact path already.
+
+Tests: `src/deterministicTaxPath.test.js` (15). Suite 893 → 908, 38 suites.
 
 ## 32. 📋 WHAT IS ACTUALLY OPEN — index as of 2026-07-31 (v1.2.70)
 
