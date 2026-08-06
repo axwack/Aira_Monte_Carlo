@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 ADDITIONAL TERMS (Dual Licensing):
 If the terms of the AGPL v3 are incompatible with your use of the software, 
 alternative commercial licensing terms are available. 
-Please contact [Your Email Address] for proprietary licensing options 
+Please contact us in the feedback section of the app for proprietary licensing options 
 including distribution rights and royalty arrangements.
 ---------------------------------------------------------------------
 
