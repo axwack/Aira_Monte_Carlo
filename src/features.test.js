@@ -6,20 +6,33 @@ import {
   getStrategyDescription,
   calcYearTax,
 } from './App';
+import { LIVE_STRATEGIES, RETIRED_STRATEGIES, resolveStrategy } from './engine/withdrawalStrategies.js';
+
+const RETIRED_IDS = Object.keys(RETIRED_STRATEGIES);
 
 describe('Withdrawal Strategy Dynamic Text', () => {
   test('getStrategyLabel returns correct label for known strategies', () => {
     expect(getStrategyLabel('gk')).toBe('Guyton‑Klinger');
     expect(getStrategyLabel('fixed')).toBe('Fixed Percentage');
-    expect(getStrategyLabel('vanguard')).toBe('Vanguard Dynamic Spending');
     expect(getStrategyLabel('vpw')).toBe('VPW (Variable Percentage)');
+    // Retired ids keep their labels — a migration notice and a saved report
+    // both have to be able to name what the user used to have.
+    expect(getStrategyLabel('vanguard')).toBe('Vanguard Dynamic Spending');
     expect(getStrategyLabel('unknown')).toBe('unknown');
   });
 
-  test('getStrategyDescription returns description for all strategies', () => {
-    const strategies = ['gk', 'fixed', 'vanguard', 'risk', 'kitces', 'vpw', 'cape', 'endowment', 'one_n', 'ninety_five_rule'];
-    strategies.forEach(s => {
+  test('getStrategyDescription returns a description for every live strategy', () => {
+    LIVE_STRATEGIES.forEach(s => {
       expect(typeof getStrategyDescription(s)).toBe('string');
+      expect(getStrategyDescription(s).length).toBeGreaterThan(10);
+    });
+  });
+
+  test('getStrategyDescription resolves a retired id instead of falling through', () => {
+    // Retired ids have no description of their own; they must describe the
+    // strategy the plan will ACTUALLY run, not silently default to GK's text.
+    RETIRED_IDS.forEach(s => {
+      expect(getStrategyDescription(s)).toBe(getStrategyDescription(resolveStrategy(s)));
       expect(getStrategyDescription(s).length).toBeGreaterThan(10);
     });
   });

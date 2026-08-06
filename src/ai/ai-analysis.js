@@ -363,7 +363,11 @@ export async function suggestWithdrawalOptimization(values, mcResults) {
   }
   const apiKey  = values.geminiApiKey?.trim();
   if (!apiKey) return { recommended: current, reason: "AI unavailable — add your Gemini API key in Profile.", projectedRateImprovement: "N/A" };
-  const strategies = ["gk","fixed","vanguard","risk","kitces","vpw","cape","endowment","one_n","ninety_five_rule"];
+  // Must stay the set the app can actually run (engine/withdrawalStrategies.js
+  // LIVE_STRATEGIES). A model told about a retired strategy would recommend one
+  // the picker no longer offers. "smart" is excluded on purpose: it is the
+  // tax-optimal sourcing hybrid, not a peer spending rule to be A/B'd here.
+  const strategies = ["gk","bengen","fixed","ninety_five_rule","vpw"];
   try {
     const res = await fnCall(apiKey, 256,
       `You are Aira. Pick the best withdrawal strategy. Available: ${strategies.join(", ")}.`,
