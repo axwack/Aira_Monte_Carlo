@@ -908,13 +908,25 @@ export function buildWithdrawalWaterfall(params = {}) {
         // Step 5 — Pretax (bracket-capped in smart mode, uncapped in naive)
         const drawPretax = () => {
           let pretaxAllowed = need;
-          if (isSmart && withdrawalBracketTarget && withdrawalBracketTarget !== "off") {
+          // Either constraint can bind INDEPENDENTLY. The IRMAA guard used to be
+          // nested inside this bracket-target check, so ticking "protect me from
+          // IRMAA" did nothing at all whenever the bracket target was "off" — a
+          // ghost setting, verified byte-identical with the guard on and off.
+          // Anyone who wanted IRMAA protection without bracket optimisation got
+          // none. Safe to decouple now that the essential-spending override below
+          // prevents either cap from starving a solvent household.
+          const bracketSet = !!(withdrawalBracketTarget && withdrawalBracketTarget !== "off");
+          const irmaaOn    = !!irmaaGuard && age >= 63;
+          if (isSmart && (bracketSet || irmaaOn)) {
             const sd      = stdDed(perPersonAgeAt(age), mfjAt(age), iF, spAgeAt(age));
             // 85% SS inclusion here is a deliberate worst-case estimate: the pretax draw
             // being sized below itself raises provisional income, so assuming max inclusion
             // keeps the bracket cap conservative (never overshoots the target ceiling).
             const ordFloor = Math.round(ss * 0.85) + rmd + annuity + otherIncTaxable;
-            let ceiling = bracketCeiling(withdrawalBracketTarget, mfjAt(age), iF);
+            // Infinity when only the IRMAA guard is active: the min() below then
+            // makes the IRMAA tier the sole binding ceiling.
+            let ceiling = bracketSet ? bracketCeiling(withdrawalBracketTarget, mfjAt(age), iF) : Infinity;
+            const irmaaTier1 = mfjAt(age) ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
             // The OBBBA senior bonus shelters ordinary income exactly as the
             // standard deduction does, so it belongs in this room calc too. Its
             // phase-out is MAGI-keyed and MAGI rises with the very draw being
@@ -922,14 +934,18 @@ export function buildWithdrawalWaterfall(params = {}) {
             // (floor + the room before the bonus) → worst-case phase-out →
             // smallest bonus. Same conservative direction as the 85% SS inclusion
             // above: this may under-fill the bracket but can never overshoot it.
-            const roomPreBonus = Math.max(0, ceiling - Math.max(0, ordFloor - sd));
+            // The bonus estimate needs a finite ceiling. With no bracket target the
+            // IRMAA tier is the only thing that can bind, so use it as the proxy.
+            const ceilingForBonus = Number.isFinite(ceiling)
+              ? ceiling
+              : Math.max(0, Math.round(irmaaTier1 * iF) - sd);
+            const roomPreBonus = Math.max(0, ceilingForBonus - Math.max(0, ordFloor - sd));
             const ded = sd + getSeniorBonusDeduction(
               perPersonAgeAt(age), mfjAt(age) ? "mfj" : "single", ordFloor + roomPreBonus, yr, spAgeAt(age)
             );
             const taxSoFar = Math.max(0, ordFloor - ded);
 
-            if (irmaaGuard && age >= 63) {
-              const irmaaTier1 = mfjAt(age) ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
+            if (irmaaOn) {
               // `ded` is subtracted here only to move the IRMAA MAGI threshold into
               // the same taxable-income space as `ceiling`/`taxSoFar`. It cancels
               // out of `room = ceiling - taxSoFar` algebraically, so this does NOT
@@ -943,12 +959,14 @@ export function buildWithdrawalWaterfall(params = {}) {
               }
             }
 
-            const room = Math.max(0, ceiling - taxSoFar);
-            pretaxAllowed = Math.min(need, room);
-            if (pretaxCapReason !== "irmaa_ceil") {
-              pretaxCapReason = pretaxAllowed < need
-                ? `bracket_${withdrawalBracketTarget}`
-                : "uncapped";
+            if (Number.isFinite(ceiling)) {
+              const room = Math.max(0, ceiling - taxSoFar);
+              pretaxAllowed = Math.min(need, room);
+              if (pretaxCapReason !== "irmaa_ceil") {
+                pretaxCapReason = pretaxAllowed < need
+                  ? `bracket_${withdrawalBracketTarget}`
+                  : "uncapped";
+              }
             }
           }
 
