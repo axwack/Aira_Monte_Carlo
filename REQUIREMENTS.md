@@ -2540,6 +2540,74 @@ treatment `computeCashFlowEvents` inflows now get. Requires:
 5. Tests: a household with income > spending must END RICHER, not poorer; and
    the surplus must appear in the taxable balance rather than nowhere.
 
+## 35. ⚠️ Deterministic tax columns belong to a different plan — OPEN, measured 2026-08-05
+
+Flagged by the tester agent, then measured. The Year-by-Year table shows a draw
+computed by the chosen distribution strategy alongside a tax computed from a
+DIFFERENT spending trajectory.
+
+### Mechanism
+
+`simulateDeterministicWithStrategy` (App.jsx ~2104) borrows its tax columns from
+`buildWithdrawalWaterfall(p).smart.rows`, keyed by age. The intent is sound and
+should be preserved: the waterfall is account-aware, so only pre-tax draws are
+ordinary income, whereas `calcYearTax` on an aggregate draw would treat every
+dollar as ordinary income and overstate tax badly.
+
+The flaw is that the waterfall computes that tax against ITS OWN spend path (the
+GK/Bengen hybrid). For any other distribution strategy the displayed draw and the
+displayed tax describe different plans.
+
+### Measured (mfj, retire 60, $1.5M: 900k pretax / 400k taxable / 200k roth)
+
+| strategy | lifetime draws shown | lifetime tax shown |
+|---|---:|---:|
+| gk      | $2,245,173 | $210,686 |
+| bengen  | $2,142,441 | $210,686 |
+| cape    | $2,152,769 | $210,686 |
+| one_n   | $2,942,508 | $210,686 |
+| vpw     | $2,964,202 | $210,686 |
+| **fixed** | **$6,137,802** | **$777** |
+
+Five strategies with materially different withdrawals display IDENTICAL lifetime
+tax, because they all read the same rows. `fixed` shows $777 of tax against $6.1M
+of withdrawals — arithmetically impossible and plainly visible to any user who
+looks.
+
+### Agreed fix (NOT built)
+
+Two-pass, keeping the waterfall as the tax authority:
+
+1. Wrap the existing year loop in `runPass(taxByAge)` — mutable state is only
+   `port`, `sp`, `lastReturn`, `startingPort`, `schedule`, so it wraps cleanly.
+2. Pass 1 with today's borrowed tax, purely to obtain the strategy's spend path.
+3. Re-run `buildWithdrawalWaterfall({ ...p, spSchedule })` with that path, so the
+   waterfall taxes THIS strategy's spending.
+4. Pass 2 with the resulting per-age tax.
+
+Single iteration: pass 2's slightly different tax changes the portfolio, which
+changes spend for portfolio-linked strategies (fixed/vpw/one_n). Second-order,
+and vastly better than today, but document it rather than imply exactness.
+
+### Two traps that will produce silently wrong numbers
+
+- **Smile double-apply.** `spSmiled = sp * smileFactor` (buildWithdrawalWaterfall
+  ~856) runs AFTER the `spSchedule` override (~807). Feed back the PRE-smile `sp`
+  from pass 1, never `schedule[].spending`, which is already smiled.
+- **Inflation double-apply.** Check `scheduleSpendForYear(spSchedule, yr, inf)`
+  before feeding it: pass-1 spend is already nominal (GK inflates it internally).
+  If that helper inflates too, the schedule must be de-inflated first.
+
+Both were found by reading before editing. Verify each empirically, not by
+inspection — this file has a long history of plausible-but-wrong readings.
+
+### Why it was not built on 2026-08-05
+
+Diagnosed and specced at the end of a very long session that had already produced
+two build breaks from hurried scripted edits. A restructure of a live financial
+engine, with two known double-application traps, is not something to start in that
+state. Everything else from the session is deployed and green.
+
 ## 32. 📋 WHAT IS ACTUALLY OPEN — index as of 2026-07-31 (v1.2.70)
 
 Written because the status markers had drifted: §21 still said "PAUSED, do not
