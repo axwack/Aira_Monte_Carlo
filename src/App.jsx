@@ -197,8 +197,8 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.90";
-export const BUILD_TAG = "[main] v1.2.90 - every top-level panel on the Monte Carlo tab is now a twisty, and every one starts shut. What is a Monte Carlo / Why your score is X / Portfolio checkpoints gained the collapse behaviour that Simulation inputs and How the simulation works already had, so the tab opens as five one-line headers above the result cards instead of a screen and a half of prose above them. MCTab SectionHeader now renders a rotating chevron, is keyboard-operable (role=button, tabIndex, aria-expanded, Enter/Space) and takes a `hint` - the one fact worth seeing while a panel is shut. Why-your-score carries the colour of its top-ranked driver plus a count of the drivers flagged as risk, so a red header reading `2 flagged as risk` is the prompt to open it; checkpoints show how many are saved. The three result cards (success rate, median final balance, model assumptions) stay open - collapsing the headline answer is not progressive disclosure, it is hiding. UI only, no engine change.";
+const APP_VERSION = "1.2.93";
+export const BUILD_TAG = "[main] v1.2.93 - the year-by-year table stated a one-off inflow only in a tooltip. The Income cell rendered a bare +money emoji next to a dash, so a year in which six figures arrived read as a year with no money in it, while the balance beside it jumped with nothing on the row accounting for it. User: the money is not being calculated here. It WAS - deposited into its bucket, and its tax charged - but title= is dead on touch and this project already rejected that as disclosure. Now renders the amount inline as money+AMOUNT, kept as a separate annotation rather than folded into the income figure because it is a deposit, not income offsetting the years spend: the funding identity in the header must keep reading true. Guarded by a test that strips every title= attribute before asserting the amount is still present, verified non-inert against the pre-fix source. 912 -> 913 tests, 38 suites.";
 export const BUILD_TIME = "2026-08-07T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -3992,7 +3992,20 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
       // retires first has to drop out on their own date (§24.1). Falls back to
       // the bare `contrib` prop so any other caller keeps working.
       const add = hhProfile ? householdAnnualContribution(hhProfile, age) : (contrib || 0);
-      p = Math.round(p * (1 + ret) + add);
+      // One-off INFLOWS landing in this pre-retirement year. All three engines
+      // deposit these during accumulation (runMC, simulateDeterministicWithStrategy,
+      // accumulateToRetirement) but this line did not, so a windfall entered for a
+      // year before retirement was invisible until the MC bands took over AT
+      // retirement — the money appeared to arrive on the retirement date no matter
+      // which year the user typed. Same year mapping the engines use: accumulation
+      // year y is calendar year CURRENT_YEAR + y.
+      //
+      // Inflows only, matching the engines: pre-retirement one-off COSTS are
+      // presumed paid from wages, which no engine models.
+      const evIn = computeCashFlowEvents(
+        hhProfile?.cashFlowEvents, CURRENT_YEAR + (age - currentAge), hhProfile?.inf ?? 2.5, CURRENT_YEAR,
+      ).inflow;
+      p = Math.round(p * (1 + ret) + add + evIn);
     }
     return pts;
   }, [currentPort, currentAge, retireAge, contrib, preRetireEq, hhProfile]);
@@ -4413,11 +4426,19 @@ function categorizeCarveouts(carveouts, yr, inf) {
  * r.annuityRental): "Social Security", "Pension/Other", "Annuity/Rental".
  * Aggregate of the three: "Income". Do not introduce a fourth spelling.
  */
+/* "One-Off Income" is `r.eventInflow` — an inheritance, home sale or lump-sum
+ * pension landing in a retirement year. It was missing from this list entirely,
+ * so the one surface a user goes to for "where does my money come from" was the
+ * only one that dropped it: the engine row carries it, and the Withdrawal Plan
+ * table already marks it (+💰). It is NOT double-counted against Savings
+ * Drawdown — the waterfall DEPOSITS an inflow into its bucket and computes the
+ * year's draw separately, so the two are independent money-in figures. */
 const INCOME_CATS = [
   ["Savings Drawdown", "#5eead4"],
   ["Social Security", "#7c3aedcc"],
   ["Annuity/Rental", "#295ff1cc"],
   ["Pension/Other", "#eab308cc"],
+  ["One-Off Income", "#ec4899cc"],
   ["Roth Conversion", "#f59e0b"],
 ];
 
@@ -4447,6 +4468,7 @@ function IncomeExpensesChart({ p, inf }) {
       "Annuity/Rental": r.annuityRental,
       "Pension/Other": r.otherIncome,
       "Savings Drawdown": r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth,
+      "One-Off Income": r.eventInflow || 0,
       "Roth Conversion": r.conversionAmount,
       "General/Living": r.spending,
       "Mortgage/Housing": r.housingCost,
@@ -4469,7 +4491,12 @@ function IncomeExpensesChart({ p, inf }) {
     <>
       <IncomeExpenseStack
         title="📊 Estimated Income, Drawdowns & Roth Conversions"
-        subtitle="Sourced from the Smart Waterfall plan — hover a year to see its breakdown on the right"
+        /* The horizon is stated because its absence reads as a dropped entry. A
+           user who enters a windfall for a pre-retirement year finds no trace of
+           it here and concludes the chart is broken — it is not, the chart simply
+           starts at retirement and that money is already inside the balances
+           these years begin from. Silence was the defect. */
+        subtitle={`Sourced from the Smart Waterfall plan — hover a year to see its breakdown on the right. Retirement years only (${data[0]?.yr} onward): money arriving before then is already inside the balances these years start from.`}
         data={data} categories={INCOME_CATS}
         hoverYr={hoverYr} hoverRow={hoverRow}
         onMove={onMove} onLeave={onLeave}
@@ -7213,9 +7240,22 @@ function WaterfallPlanView({ p, result }) {
                   {((r.fixedIncomeTotal || 0) + (r.otherIncome || 0)) > 0
                     ? fmtDollar((r.fixedIncomeTotal || 0) + (r.otherIncome || 0))
                     : "—"}
+                  {/* The AMOUNT renders on screen, not only in the tooltip. This
+                      was a bare "+💰" next to a "—", so a year in which six figures
+                      arrived read as a year with no money in it, and the balance on
+                      the right jumped with nothing on the row accounting for it.
+                      A user reported exactly that: "the money isn't being calculated
+                      here." It was — it is deposited into a bucket and its tax is
+                      charged — but nothing said so without a hover, and `title=` is
+                      dead on touch. Rendered as a separate annotation rather than
+                      folded into the income figure because it is NOT income offsetting
+                      this year's spend: it is a deposit, and the funding identity in
+                      the header must keep reading true. */}
                   {r.eventInflow > 0 && (
-                    <span style={{ color: "#34d399", fontSize: 10, marginLeft: 3 }}
-                          title={`${fmtDollar(r.eventInflow)} one-off money arriving, deposited into your accounts`}>+💰</span>
+                    <span style={{ color: "#34d399", fontSize: 10, marginLeft: 3, fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap" }}
+                          title={`${fmtDollar(r.eventInflow)} one-off money arriving${(r.eventLabels || []).length ? ` (${r.eventLabels.join(", ")})` : ""} — deposited into your accounts, not spent. It raises the balances on the right rather than reducing this year's draw.`}>
+                      💰+{fmtDollar(r.eventInflow)}
+                    </span>
                   )}
                 </td>
                 <td style={opTdStyle}>+</td>
@@ -9582,7 +9622,15 @@ function NetWorthTab({ p, mc, inf }) {
           // Household total per year, not the 401(k) line alone — and it drops
           // the spouse's streams on their own retirement date (§24.1), so this
           // projection tracks the engines instead of drifting from them.
-          acc = acc * (1 + preReturnRate) + householdAnnualContribution(p, p.currentAge + y);
+          // Grow, then add the year's contributions AND any one-off inflow that
+          // lands in it — the same order and the same year mapping the engines
+          // use (accumulation year y = CURRENT_YEAR + y). Without the inflow term
+          // this curve ignored windfalls until retirement, then handed over to the
+          // MC median which HAD counted them: the jump landed on the retirement
+          // year regardless of the year the user entered. Inflows only, matching
+          // the engines — pre-retirement one-off costs are presumed paid from wages.
+          acc = acc * (1 + preReturnRate) + householdAnnualContribution(p, p.currentAge + y)
+              + computeCashFlowEvents(p.cashFlowEvents, CURRENT_YEAR + y, p.inf ?? 2.5, CURRENT_YEAR).inflow;
         }
         port = Number.isFinite(acc) ? Math.round(acc) : null;
       } else {
