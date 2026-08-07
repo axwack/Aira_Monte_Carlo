@@ -142,6 +142,47 @@ describe('Profile Import/Export', () => {
     expect(merged.portfolioGoal).toBe(3_200_000);
     expect(merged.checkpoints).toEqual([]);
   });
+
+  /* Progress check-ins (LS_CHECKINS_KEY) are NOT part of `assumptions`, so the
+   * "spread everything so nothing is silently omitted" export missed them
+   * entirely: exporting a profile, moving machines and importing it dropped the
+   * whole journal without a word. The only export that carried them was a second
+   * button on the Progress tab.
+   *
+   * The two tests above did not catch it because they round-trip a hand-built
+   * literal through JSON.stringify rather than inspecting the payload the app
+   * actually writes — so they pass no matter what the export button omits. These
+   * read the real call site.
+   *
+   * Note `checkIns` (progress journal) is a different thing from `checkpoints`
+   * (portfolio value snapshots, which live in assumptions and always exported).
+   */
+  const fs   = require('fs');
+  const path = require('path');
+  const SRC  = fs.readFileSync(path.join(__dirname, 'App.jsx'), 'utf8');
+
+  test('the export payload carries the progress check-ins', () => {
+    // Anchored on the BUTTON, not on `exportProfile(` — that string also matches
+    // the function definition ~10k lines earlier, and the resulting slice sweeps
+    // up an unrelated `checkIns,` prop destructure, so the assertion would pass
+    // whatever the export omits. An inert guard is worse than none.
+    const i = SRC.indexOf('title="Export profile to JSON"');
+    expect(i).toBeGreaterThan(-1);
+    const j = SRC.indexOf('⬇ Export', i);
+    expect(j).toBeGreaterThan(i);
+    expect(SRC.slice(i, j)).toMatch(/^\s*checkIns,\s*$/m);
+  });
+
+  test('import restores them by MERGING, so it cannot delete local history', () => {
+    const i = SRC.indexOf('importProfile((rawData)');
+    expect(i).toBeGreaterThan(-1);
+    const handler = SRC.slice(i, i + 2000);
+    expect(handler).toContain('data.checkIns');
+    // Merge, not replace: a profile imported onto a machine with its own journal
+    // must not wipe entries that exist only there.
+    expect(handler).toContain('handleImportCheckIns');
+    expect(handler).not.toMatch(/setCheckIns\(\s*data\.checkIns\s*\)/);
+  });
 });
 
 describe('Bucket Tab Sliders', () => {

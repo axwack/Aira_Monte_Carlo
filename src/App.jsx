@@ -197,8 +197,8 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.93";
-export const BUILD_TAG = "[main] v1.2.93 - the year-by-year table stated a one-off inflow only in a tooltip. The Income cell rendered a bare +money emoji next to a dash, so a year in which six figures arrived read as a year with no money in it, while the balance beside it jumped with nothing on the row accounting for it. User: the money is not being calculated here. It WAS - deposited into its bucket, and its tax charged - but title= is dead on touch and this project already rejected that as disclosure. Now renders the amount inline as money+AMOUNT, kept as a separate annotation rather than folded into the income figure because it is a deposit, not income offsetting the years spend: the funding identity in the header must keep reading true. Guarded by a test that strips every title= attribute before asserting the amount is still present, verified non-inert against the pre-fix source. 912 -> 913 tests, 38 suites.";
+const APP_VERSION = "1.2.94";
+export const BUILD_TAG = "[main] v1.2.94 - progress check-ins were dropped by profile export/import. They live in their own localStorage key (LS_CHECKINS_KEY), NOT in assumptions, so the export payload whose own comment reads spread all assumptions fields so nothing is ever silently omitted omitted them: export a profile, move machines, import it, and the whole journal was gone without a word. The only export carrying them was a second button on the Progress tab. FIX: checkIns rides along in the export payload, and import restores it through handleImportCheckIns - MERGED, never replaced, the same rule the Progress tabs own import already used, so importing a profile onto a machine with its own journal cannot delete entries that exist only there. NOTE checkIns (progress journal) is a different field from checkpoints (portfolio value snapshots), which live in assumptions and always exported fine. The two existing Profile Import/Export tests missed this because they round-trip a hand-built literal through JSON.stringify instead of inspecting the payload the app writes - they pass no matter what the button omits. The new pair reads the real call site, anchored on the button rather than on exportProfile( which also matches the function definition 10k lines earlier and would have made the guard inert. Both verified failing against the pre-fix source. 913 -> 915 tests, 38 suites.";
 export const BUILD_TIME = "2026-08-07T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -14304,6 +14304,14 @@ export default function AiRAForecaster() {
                     fafsaEndYear: assumptions.fafsaEndYear || null,
                     cssEndYear: assumptions.cssEndYear || null,
                     geminiApiKey: assumptions.geminiApiKey || "",
+                    // Progress check-ins ride along with the profile. They are NOT
+                    // part of `assumptions` — they live in their own localStorage key
+                    // (LS_CHECKINS_KEY), so the "spread everything so nothing is
+                    // silently omitted" comment above was not true of them. A user who
+                    // exported their profile, moved machines and imported it lost the
+                    // entire journal with no warning, because the only export that
+                    // carried it was a second button on the Progress tab.
+                    checkIns,
                     savedAt: new Date().toISOString(),
                     exportedAt: new Date().toISOString(),
                     appVersion: APP_VERSION,
@@ -14325,6 +14333,11 @@ export default function AiRAForecaster() {
                   // An exported JSON is the other way a pre-v1.2.88 profile
                   // enters the app, and it must not take a different route.
                   const data = migrateWithdrawalStrategy(rawData);
+                  // MERGED, never replaced — same rule the Progress tab's own import
+                  // uses (handleImportCheckIns). Importing a profile onto a machine
+                  // that already has a journal must not delete history that only
+                  // exists there; mergeCheckIns dedupes by id and re-sorts by date.
+                  if (Array.isArray(data.checkIns)) handleImportCheckIns(data.checkIns);
                   if (data.retireAge !== undefined) setRetAge(data.retireAge);
                   if (data.endAge !== undefined) setEndAge(data.endAge);
                   if (data.port !== undefined) setPort(data.port);
