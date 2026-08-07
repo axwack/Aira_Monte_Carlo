@@ -359,3 +359,88 @@ describe("inflows BEFORE retirement are deposited during accumulation", () => {
     expect(with_.total).toBeCloseTo(base.total, 6);
   });
 });
+
+/**
+ * The three engines above all got this right — and the user still saw the bug,
+ * because the two CHARTS that draw the accumulation years run their own
+ * projection loops and neither called computeCashFlowEvents. They grew the
+ * portfolio on contributions alone to retireAge, then handed over to the Monte
+ * Carlo median, which HAD counted the windfall. So the money appeared as a step
+ * on the retirement year no matter which earlier year was entered: "if I choose a
+ * lump sum windfall for 2027 but retire in 2030, it is calculated to occur in
+ * 2030."
+ *
+ * Source-parsed rather than rendered because both loops are inline useMemos with
+ * no exported seam. That is the weaker kind of test — it proves the call is
+ * present, not that the arithmetic is right (see the engine tests above for
+ * that) — but the defect being guarded is precisely an OMITTED call, and the
+ * engine suite passing while the charts lied is what proved a comment would not
+ * hold this line.
+ */
+describe("the accumulation-phase CHART projections also apply one-off inflows", () => {
+  const fs   = require("fs");
+  const path = require("path");
+  const SRC  = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
+
+  /** Source between two anchors, so the assertion is scoped to one loop. */
+  const between = (startAnchor, endAnchor) => {
+    const i = SRC.indexOf(startAnchor);
+    expect(i).toBeGreaterThan(-1);            // anchor drifted → fix the anchor
+    const j = SRC.indexOf(endAnchor, i);
+    expect(j).toBeGreaterThan(i);
+    return SRC.slice(i, j);
+  };
+
+  test("FanChart's pre-retirement line deposits inflows in the year they arrive", () => {
+    const body = between("// Deterministic accumulation path", "return pts;");
+    expect(body).toContain("computeCashFlowEvents");
+    // Must use the engines' year mapping (accumulation year y = CURRENT_YEAR + y),
+    // not an age, or the deposit lands in the wrong calendar year.
+    expect(body).toContain("CURRENT_YEAR");
+  });
+
+  test("the Net Worth chart's accumulation branch deposits them too", () => {
+    const body = between("// Accumulation phase: grow from current portfolio", "port = Number.isFinite(acc)");
+    expect(body).toContain("computeCashFlowEvents");
+    expect(body).toContain("CURRENT_YEAR");
+  });
+
+  /* The Income chart is the surface a user goes to for "where does my money come
+   * from", and it was the only one that dropped a one-off inflow: the engine row
+   * carries `eventInflow` (buildWithdrawalWaterfall.js) and the Withdrawal Plan
+   * table already marks it (+💰), but INCOME_CATS had no band for it, so a
+   * retirement-year inheritance appeared nowhere in the stack or its side panel. */
+  test("the Income chart has a band for one-off inflows, wired to r.eventInflow", () => {
+    const cats = between("const INCOME_CATS = [", "];");
+    expect(cats).toContain("One-Off Income");
+    // The stack, its side-panel rows and its Total all derive from the same
+    // categories list, so the band only counts if the data map supplies the key.
+    expect(SRC).toContain('"One-Off Income": r.eventInflow');
+  });
+
+  /* The year-by-year table showed a bare "+💰" beside a "—", putting the only
+   * statement of the amount in a `title=` — dead on touch, and the standard this
+   * project already rejected. The row read as a year with no money in it while
+   * the balance beside it jumped. */
+  test("the year-by-year row states the inflow AMOUNT on screen, not only on hover", () => {
+    const cell = between("{r.eventInflow > 0 && (", "</td>");
+    expect(cell).toContain("fmtDollar(r.eventInflow)");
+    // Specifically OUTSIDE the title attribute: strip every title={...} and the
+    // amount must still be there, or we are back to hover-only disclosure.
+    const visible = cell.replace(/title=\{[\s\S]*?\}\>/g, ">");
+    expect(visible).toContain("fmtDollar(r.eventInflow)");
+  });
+
+  test("both take .inflow only — a pre-retirement COST must not hit these curves", () => {
+    // The engines treat pre-retirement outflows as paid from wages. If a chart
+    // started subtracting `.total`, it would contradict every engine.
+    for (const anchor of [
+      ["// Deterministic accumulation path", "return pts;"],
+      ["// Accumulation phase: grow from current portfolio", "port = Number.isFinite(acc)"],
+    ]) {
+      const body = between(anchor[0], anchor[1]);
+      expect(body).toMatch(/computeCashFlowEvents\([^;]*\)\s*\.inflow|\)\.inflow/s);
+      expect(body).not.toMatch(/\)\.total\b/);
+    }
+  });
+});
