@@ -197,9 +197,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.89";
-export const BUILD_TAG = "[main] v1.2.89 - the tax column on the Year-by-Year table now belongs to the strategy above it (REQUIREMENTS 35). The table borrowed its tax from buildWithdrawalWaterfall - correct in principle, because the waterfall is account-aware and only counts pre-tax draws as ordinary income - but the waterfall taxed ITS OWN spend path, the GK/Bengen hybrid, whatever strategy the user picked. So the draw shown and the tax shown described different plans. Measured before: five strategies drawing between 2.28M and 3.45M over a lifetime all displayed exactly 210,686 of tax. After: 210,686 / 210,686 / 249,751 / 215,498 / 281,695 - gk and bengen genuinely coincide here, their spend paths are identical to age 82 and the later gap is funded from buckets that add no taxable income. FIX: two-pass. The year loop is wrapped in runPass(taxByAge); pass 1 discovers the strategy spend path, buildWithdrawalWaterfall is re-run against that path, pass 2 replays with the resulting per-age tax. BOTH DOCUMENTED TRAPS VERIFIED EMPIRICALLY RATHER THAN BY INSPECTION. Smile: real - the waterfall applies spendingSmileFactor AFTER its spSchedule override, so feeding back the post-smile spending field costs 20,913 at age 80; the engine feeds PRE-smile sp. Inflation: does not fire - scheduleSpendForYear only inflates BEYOND its last entry, so a schedule covering every plan year comes back verbatim, and full coverage is what the engine emits. Both pinned in tests, including the negative case that proves the helper is not inert. Single iteration by design: pass 2 tax changes the portfolio, which changes spend for portfolio-linked strategies. Residual measured at 0.5% of lifetime tax for VPW, the most portfolio-linked - documented, not claimed away. A user detailed budget short-circuits pass 2, since the waterfall already taxes that exact path. 893 -> 908 tests, 38 suites.";
-export const BUILD_TIME = "2026-08-06T12:00:00Z";
+const APP_VERSION = "1.2.90";
+export const BUILD_TAG = "[main] v1.2.90 - every top-level panel on the Monte Carlo tab is now a twisty, and every one starts shut. What is a Monte Carlo / Why your score is X / Portfolio checkpoints gained the collapse behaviour that Simulation inputs and How the simulation works already had, so the tab opens as five one-line headers above the result cards instead of a screen and a half of prose above them. MCTab SectionHeader now renders a rotating chevron, is keyboard-operable (role=button, tabIndex, aria-expanded, Enter/Space) and takes a `hint` - the one fact worth seeing while a panel is shut. Why-your-score carries the colour of its top-ranked driver plus a count of the drivers flagged as risk, so a red header reading `2 flagged as risk` is the prompt to open it; checkpoints show how many are saved. The three result cards (success rate, median final balance, model assumptions) stay open - collapsing the headline answer is not progressive disclosure, it is hiding. UI only, no engine change.";
+export const BUILD_TIME = "2026-08-07T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -8686,8 +8686,16 @@ function ScenariosTab({
 }
 
 function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy }) {
+  // Every top-level panel on this tab is a twisty, and every one starts shut.
+  // The tab had grown to five full-height explainer panels stacked above the
+  // result cards, so the number the user actually came for sat a screen and a
+  // half below the fold. Collapsed-by-default puts the answer first and leaves
+  // the reasoning one click away.
+  const [showWhat, setShowWhat] = useState(false);
+  const [showWhy, setShowWhy] = useState(false);
   const [showInputs, setShowInputs] = useState(false);
   const [showHow, setShowHow] = useState(false);
+  const [showCheckpoints, setShowCheckpoints] = useState(false);
   const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [expandedCpId, setExpandedCpId] = useState(null);
@@ -8751,10 +8759,25 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
     : r >= 0.7 ? "Elevated risk — plan needs some work."
     : "High risk — most scenarios deplete savings before target age.";
 
-  const SectionHeader = ({ label, open, onToggle, color = "#5eead4" }) => (
-    <div onClick={onToggle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.07)", marginBottom: open ? 14 : 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>
-      <div style={{ fontSize: 10, color: "#475569" }}>{open ? "▲ Hide" : "▼ Show"}</div>
+  // `hint` is what stays visible while a panel is shut — the one fact that tells
+  // the user whether opening it is worth a click (how many score drivers, how
+  // many saved checkpoints). Without it, collapsing hides not just the detail
+  // but the fact that there is any.
+  const SectionHeader = ({ label, open, onToggle, color = "#5eead4", hint }) => (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-expanded={open}
+      onClick={onToggle}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
+      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, cursor: "pointer", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.07)", marginBottom: open ? 14 : 0 }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 9, color, display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform 120ms ease" }}>▶</span>
+        <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>
+        {hint && <span style={{ fontSize: 10, color: "#64748b" }}>{hint}</span>}
+      </div>
+      <div style={{ fontSize: 10, color: "#475569" }}>{open ? "Hide" : "Show"}</div>
     </div>
   );
 
@@ -8823,14 +8846,18 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Explanation card */}
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 18 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 10 }}>WHAT IS A MONTE CARLO SIMULATION?</div>
-        <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.7 }}>
-          A Monte Carlo simulation tests your retirement plan against <strong style={{ color: "#e2e8f0" }}>3,000 different market scenarios</strong> using randomized annual returns drawn from 99 years of actual S&P 500 history. Instead of assuming a single fixed growth rate, it models the real-world uncertainty of markets — some years boom, some years crash — and tells you how often your savings last through retirement. <strong style={{ color: "#5eead4" }}>A success rate above 85% is generally considered a solid plan.</strong>
-        </div>
-        <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-          AiRA also applies <strong style={{ color: "#fbbf24" }}>{getStrategyDescription(withdrawalStrategy)}</strong>
-        </div>
+      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
+        <SectionHeader label="What is a Monte Carlo simulation?" open={showWhat} onToggle={() => setShowWhat(!showWhat)} color="#94a3b8" />
+        {showWhat && (
+          <>
+            <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.7 }}>
+              A Monte Carlo simulation tests your retirement plan against <strong style={{ color: "#e2e8f0" }}>3,000 different market scenarios</strong> using randomized annual returns drawn from 99 years of actual S&P 500 history. Instead of assuming a single fixed growth rate, it models the real-world uncertainty of markets — some years boom, some years crash — and tells you how often your savings last through retirement. <strong style={{ color: "#5eead4" }}>A success rate above 85% is generally considered a solid plan.</strong>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
+              AiRA also applies <strong style={{ color: "#fbbf24" }}>{getStrategyDescription(withdrawalStrategy)}</strong>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── Why this score ─────────────────────────────────────────────────
@@ -8846,11 +8873,22 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           watch: { bg: "rgba(251,146,60,0.07)", bd: "rgba(251,146,60,0.28)", fg: "#fdba74", tag: "Worth knowing" },
           good:  { bg: "rgba(16,185,129,0.06)", bd: "rgba(16,185,129,0.25)", fg: "#34d399", tag: "Working for you" },
         };
+        // Shut, this panel still has to say whether there is anything alarming
+        // inside it — so the header takes the colour of the top-ranked driver
+        // and counts the ones flagged as risk. A red twisty reading "2 flagged
+        // as risk" is the click prompt; a teal one saying "3 drivers" is not.
+        const riskCount = ex.drivers.filter((d) => d.severity === "risk").length;
+        const headTone = tone[ex.drivers[0].severity] || tone.watch;
         return (
           <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>
-              WHY YOUR SCORE IS {fmtPct(mc.rate)}
-            </div>
+            <SectionHeader
+              label={`Why your score is ${fmtPct(mc.rate)}`}
+              open={showWhy}
+              onToggle={() => setShowWhy(!showWhy)}
+              color={headTone.fg}
+              hint={`${ex.drivers.length} driver${ex.drivers.length === 1 ? "" : "s"}${riskCount ? ` · ${riskCount} flagged as risk` : ""}`}
+            />
+            {showWhy && (<>
             <div style={{ fontSize: 12.5, color: "#94a3b8", lineHeight: 1.6, marginBottom: 14 }}>
               {ex.headline} Ranked by how much each one moves the outcome.
             </div>
@@ -8872,6 +8910,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                 );
               })}
             </div>
+            </>)}
           </div>
         );
       })()}
@@ -8995,7 +9034,14 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
 
       {/* Checkpoint panel */}
       <div className="chart-card" style={{ marginBottom: 12 }}>
-        <div className="ct">📌 Portfolio Checkpoints (Actual vs Forecast)</div>
+        <SectionHeader
+          label="📌 Portfolio checkpoints (actual vs forecast)"
+          open={showCheckpoints}
+          onToggle={() => setShowCheckpoints(!showCheckpoints)}
+          color="#5eead4"
+          hint={checkpoints?.length ? `${checkpoints.length} saved` : "none saved yet"}
+        />
+        {showCheckpoints && (<>
         <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
           Add real portfolio values at specific dates to compare against the simulation's projected median path. This helps you see if you're ahead or behind your retirement goals.
         </div>
@@ -9143,6 +9189,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             </table>
           </div>
         )}
+        </>)}
       </div>
 
       {/* Results panel */}
