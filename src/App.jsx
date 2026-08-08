@@ -197,8 +197,8 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.94";
-export const BUILD_TAG = "[main] v1.2.94 - progress check-ins were dropped by profile export/import. They live in their own localStorage key (LS_CHECKINS_KEY), NOT in assumptions, so the export payload whose own comment reads spread all assumptions fields so nothing is ever silently omitted omitted them: export a profile, move machines, import it, and the whole journal was gone without a word. The only export carrying them was a second button on the Progress tab. FIX: checkIns rides along in the export payload, and import restores it through handleImportCheckIns - MERGED, never replaced, the same rule the Progress tabs own import already used, so importing a profile onto a machine with its own journal cannot delete entries that exist only there. NOTE checkIns (progress journal) is a different field from checkpoints (portfolio value snapshots), which live in assumptions and always exported fine. The two existing Profile Import/Export tests missed this because they round-trip a hand-built literal through JSON.stringify instead of inspecting the payload the app writes - they pass no matter what the button omits. The new pair reads the real call site, anchored on the button rather than on exportProfile( which also matches the function definition 10k lines earlier and would have made the guard inert. Both verified failing against the pre-fix source. 913 -> 915 tests, 38 suites.";
+const APP_VERSION = "1.2.96";
+export const BUILD_TAG = "[main] v1.2.96 - ANumInput lost edits on blur. One shared control, 46 call sites, so every numeric field in the app was affected: reported as these numbers do not let me edit, when I copy or paste or when I delete the value and then try to change it. Diagnosed by driving the real component rather than by reading it - and the first probe was wrong, dispatching focus/blur, which React does not listen to (it delegates via focusin/focusout), so it silently exercised the UNFOCUSED path and proved nothing. Corrected, three defects fell out. ONE: handleBlur clamped the value PROP, not what the user typed. Whenever the parent is a render behind - which is what a re-render on every keystroke produces, and this app rebuilds params and marks the MC stale on each one - blur re-committed the stale number and the last digits of the edit vanished on click-away. Verified against the pre-fix module: blur committed NOTHING and reset the display to the stale value. Now clamps localValue, the thing the user actually typed. TWO: Math.max(min, ...) with an absent bound is NaN, and that went straight back out through onSet - one blur on a field whose caller omitted min or max destroyed the value, masked as 0 by callers writing value || 0. All 46 sites currently pass both, so this was latent, but it is one forgotten prop from zeroing a balance. lo/hi default to -Infinity/Infinity and a Number.isFinite guard refuses to commit NaN. THREE: the auto-select is deferred a frame, because it has to run after the display swaps from 6,126 to 6126 or the render wipes the selection - but a deferred select() landing after typing has begun selects what was just typed and the next keystroke replaces the whole field, which is how an edit collapses to a single digit. Guarded by a typedSinceFocus ref. Unchanged and deliberate: max clamps mid-type, min only on blur (en route to 50 you pass 5). New suite of 17 tests; the stale-prop one had to be tightened after the first version proved INERT - handleChange had already pushed the same number, so it now measures only what blur itself commits. 918 -> 935 tests, 39 suites.";
 export const BUILD_TIME = "2026-08-07T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -7973,18 +7973,18 @@ const PLAN_SHAPE_AXES = [
     how: "Success rate with the 2000–2012 sequence forced at retirement" },
 ];
 
-function exportCheckInsFile(checkIns) {
-  try {
-    const payload = { kind: "aira_checkins", version: 1, exportedAt: new Date().toISOString(), checkIns };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `AiRA_Progress_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch {}
-}
+/* `exportCheckInsFile` was deleted here. Check-ins now ride in the ONE profile
+ * export (see the ⬇ Export button's payload — `checkIns` is part of it), so a
+ * second button emitting a second file shape was a second thing to remember to
+ * click, and the file it produced was the one a user was most likely to be
+ * holding when they had lost everything else.
+ *
+ * IMPORT is deliberately kept, and stays tolerant of both shapes: the old
+ * `AiRA_Progress_*.json` ({kind:"aira_checkins", checkIns:[…]}) and a full
+ * profile export both expose `.checkIns`, and a bare array is accepted too.
+ * Removing an export is safe; removing the only way to read files users already
+ * have on disk is not.
+ */
 
 function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
   const fmtDate = (ts) => {
@@ -8019,8 +8019,9 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
           Save your first check-in to start tracking how your plan changes over time.
           The <strong style={{ color: "#5eead4" }}>✓ Check-in</strong> button in the top toolbar snapshots
           today's plan — success rate, portfolio, and spending — as a point on your timeline.
-          Unlike Export/Import, check-ins are never loaded back into the planner; they're a
-          running journal, shown here as a trend once you've saved a few.
+          They travel with your profile export, but importing one never overwrites your plan
+          inputs — a check-in is a running journal entry, shown here as a trend once you've
+          saved a few.
         </div>
         <label style={{ fontSize: 11, color: "#38bdf8", cursor: "pointer" }}>
           ⬆ Import progress from a previous export
@@ -8179,9 +8180,13 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <div className="ct" style={{ marginBottom: 0 }}>Check-in history</div>
           <div style={{ fontSize: 11, display: "flex", gap: 12, alignItems: "center" }}>
-            <button onClick={() => exportCheckInsFile(sorted)} style={{ background: "none", border: "none", padding: 0, color: "#38bdf8", cursor: "pointer", fontSize: 11 }}>
-              ⬇ Export progress
-            </button>
+            {/* Says where the export went rather than leaving a gap where a
+                button used to be — a user who has clicked "Export progress"
+                before needs to be told it is now part of the profile export,
+                not left to conclude the feature was removed. */}
+            <span style={{ color: "#64748b" }}>
+              ⬇ Included in <strong style={{ color: "#94a3b8" }}>Export</strong> (top toolbar)
+            </span>
             <span style={{ color: "#475569" }}>·</span>
             <label style={{ color: "#38bdf8", cursor: "pointer" }}>
               ⬆ Import progress
@@ -11479,6 +11484,17 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   // A fractional step (0.1, 0.5) means this field takes decimals — hint the
   // decimal keypad on mobile (type=text already allows "." on desktop).
   const allowDecimals = step != null && !Number.isInteger(step);
+  // Absent bounds are unbounded, NOT NaN. See handleBlur.
+  const lo = min ?? -Infinity;
+  const hi = max ?? Infinity;
+  const inputRef = useRef(null);
+  // Set by the first keystroke after focus. The auto-select is deferred to the
+  // next frame (it has to run AFTER the focus re-render swaps the display from
+  // "6,126" to "6126", or the render wipes the selection) — but a deferred
+  // select() that lands once typing has begun selects what was just typed, and
+  // the following keystroke replaces the whole field. That is how an edit ends
+  // up as a single digit. This flag makes the late select a no-op.
+  const typedSinceFocus = useRef(false);
 
   // Sync local value when prop changes (e.g., after import or external update)
   useEffect(() => {
@@ -11489,6 +11505,7 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
 
   const handleChange = (e) => {
     const raw = e.target.value;
+    typedSinceFocus.current = true;
     setLocalValue(raw);            // show exactly what was typed; don't fight the caret
     // Clearing the field means zero — preserved from the original `Number("")`
     // behaviour so wiping a value still sets it to 0 rather than silently
@@ -11508,14 +11525,29 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
 
   const handleBlur = () => {
     setIsFocused(false);
-    // Clamp to min/max only after the user finishes editing
-    if (value != null && !isNaN(value)) {
-      const clamped = Math.max(min, Math.min(max, value));
-      if (clamped !== value) {
-        onSet(clamped);
-      }
-      setLocalValue(clamped.toString());
-    }
+    // Clamp what the user actually TYPED, not the `value` prop.
+    //
+    // Two bugs lived in the old `Math.max(min, Math.min(max, value))`:
+    //
+    // 1. Absent bounds became NaN. `Math.max(undefined, 75)` is NaN, and that
+    //    went straight back out through onSet — one blur on a field whose caller
+    //    omitted `min` or `max` destroyed the value. Every current call site
+    //    passes both, so this was latent, but it is one forgotten prop away from
+    //    silently zeroing a balance. `lo`/`hi` remove the trap at the source.
+    //
+    // 2. It clamped the PROP. The prop is one render behind whenever the parent
+    //    has not yet applied the last keystroke, so blurring could clamp a stale
+    //    number and write it back — the final digits of an edit vanishing on
+    //    click-away. What the user typed is in `localValue`; that is the thing
+    //    to commit.
+    const typed  = localValue.trim() === "" ? 0 : parseNumericEntry(localValue);
+    const fallbk = value != null && !isNaN(value) ? value : null;
+    const base   = typed !== null ? typed : fallbk;
+    if (base === null) return;              // unparseable and no prop to fall back on
+    const clamped = Math.max(lo, Math.min(hi, base));
+    if (!Number.isFinite(clamped)) return;  // never commit NaN/±Infinity
+    if (clamped !== value) onSet(clamped);
+    setLocalValue(clamped.toString());
   };
 
   const displayValue = isFocused
@@ -11527,11 +11559,25 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <input
+        ref={inputRef}
         type="text"
         inputMode={allowDecimals ? "decimal" : "numeric"}
         value={displayValue}
         onChange={handleChange}
-        onFocus={(e) => { setIsFocused(true); selectAllOnFocus(e); }}
+        onFocus={() => {
+          setIsFocused(true);
+          typedSinceFocus.current = false;
+          // Deliberately not the shared `selectAllOnFocus`: this field needs the
+          // "has the user started typing?" guard, and the shared helper has no
+          // way to know. Still deferred a frame so it runs after the display
+          // swaps from formatted to raw.
+          requestAnimationFrame(() => {
+            const el = inputRef.current;
+            if (!el || typedSinceFocus.current) return;
+            if (typeof document !== "undefined" && document.activeElement !== el) return;
+            try { el.select(); } catch { /* detached */ }
+          });
+        }}
         onBlur={handleBlur}
         style={{
           width: "120px",
@@ -15504,4 +15550,4 @@ export default function AiRAForecaster() {
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, ANumInput, parseNumericEntry };

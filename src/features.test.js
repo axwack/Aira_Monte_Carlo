@@ -266,6 +266,44 @@ describe('Progress check-ins — storage + rendering', () => {
     expect(div.textContent).toContain('+6.0pp');
     expect(div.textContent).toContain('Check-in history');
   });
+
+  /* ONE export. Check-ins ride in the profile export (see the Profile
+   * Import/Export suite above), so the Progress tab's own "Export progress"
+   * button — which emitted a different file shape, AiRA_Progress_*.json — was a
+   * second thing to remember to click and a second format to keep in step.
+   *
+   * IMPORT stays, and stays tolerant: users still have the old files on disk.
+   * Removing an export is safe; removing the only reader for files already
+   * written is not. */
+  test('the Progress tab no longer offers a second, separate export', () => {
+    const checkIns = [
+      { id: 'ci_1', ts: '2026-01-05T12:00:00Z', successRate: 0.85, port: 700_000, sp: 70_000, retireAge: 62, endAge: 90, medianTerminal: 900_000 },
+    ];
+    const div = renderToDiv(React.createElement(ProgressTab, { checkIns, onDelete: () => {} }));
+    expect(div.textContent).not.toContain('Export progress');
+    // ...and says where it went, rather than leaving a hole where a button was.
+    expect(div.textContent).toContain('Included in');
+    expect(div.textContent).toContain('Import progress');
+  });
+
+  test('the import path is still offered in the empty state, for files already on disk', () => {
+    const div = renderToDiv(React.createElement(ProgressTab, { checkIns: [], onDelete: () => {} }));
+    expect(div.querySelector('input[type="file"]')).not.toBeNull();
+  });
+
+  test('no second check-in download survives anywhere in the source', () => {
+    const fs   = require('fs');
+    const path = require('path');
+    const SRC  = fs.readFileSync(path.join(__dirname, 'App.jsx'), 'utf8');
+    // Matched on EXECUTABLE syntax — a call, and the download assignment — rather
+    // than on the bare names, which the comment explaining the removal mentions.
+    // Stripping comments first was the obvious alternative and the wrong one: a
+    // regex comment-stripper run over 15k lines of JSX trips on `/*`-shaped
+    // sequences inside strings and regex literals, and a guard that mis-parses is
+    // a guard you cannot trust.
+    expect(SRC).not.toMatch(/exportCheckInsFile\s*\(/);
+    expect(SRC).not.toMatch(/download\s*=\s*[`'"]AiRA_Progress_/);
+  });
 });
 
 // ─── Plan shape + progress import/export (v1.2.4) ──────────────────────────────
