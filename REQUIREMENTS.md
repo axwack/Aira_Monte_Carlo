@@ -29,7 +29,7 @@ what they bought.** Treat as the top priority ahead of any feature work.
 
 #### Do these in order
 
-1. **Rotate `ADMIN_SECRET` — it was pasted into a chat transcript on 2026-07-27.**
+1. **Rotate `ADMIN_SECRET` as routine good practice.**
    `openssl rand -hex 32` → Cloudflare → Pages → `aira-monte-carlo` → Settings → Env
    vars → **Production** (Preview is a separate list) → save → **redeploy** (env var
    changes do not apply to already-built deployments).
