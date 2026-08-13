@@ -679,6 +679,146 @@ export function RecoveryLinkModal({ url, expiresAt, onClose }) {
   );
 }
 
+/**
+ * Pull the restore token out of whatever the user pasted.
+ *
+ * They will paste the whole URL far more often than a bare token — it is what
+ * the recovery modal hands them and what lands in their email — and a paste box
+ * that only accepts the token would reject the normal case. Also tolerates a
+ * leading "?"/"&", surrounding whitespace, and a link carrying other params.
+ *
+ * Returns null when there is nothing token-shaped, so the caller can say "that
+ * doesn't look like a restore link" without a round-trip to the server.
+ */
+export function extractRestoreToken(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  // Any URL-ish input: read the query param wherever it sits.
+  const m = raw.match(/[?&]restore=([^&#\s]+)/);
+  if (m) return decodeURIComponent(m[1]);
+  // A bare token. Reject anything with URL/whitespace punctuation so an
+  // accidental paste of the whole page isn't sent to the server as a token.
+  if (/^[A-Za-z0-9_-]{16,200}$/.test(raw)) return raw;
+  return null;
+}
+
+/**
+ * The other half of RecoveryLinkModal. That one SHOWS the link on the browser
+ * that already has access; this one ACCEPTS it on the browser that doesn't.
+ *
+ * Without it the no-credits state was a dead end: it correctly told the user
+ * their purchase was safe and to "use your restore link", while the only button
+ * on screen was Buy Credits — so the path of least resistance was paying twice.
+ * `redeemRestoreToken` existed but was reachable only by loading a ?restore= URL,
+ * which is useless if the link arrived in a password manager, a note, or by
+ * being read off another screen.
+ */
+export function RestoreAccessModal({ onClose, onRestored }) {
+  const [text, setText]   = useState("");
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone]   = useState(null);
+
+  const submit = async () => {
+    const token = extractRestoreToken(text);
+    if (!token) {
+      setError("That doesn't look like a restore link. Paste the whole link, including the part after ?restore=.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      // Server messages are already specific (not recognised / expired / used on
+      // too many devices) — surface them verbatim rather than flattening three
+      // different problems into one "restore failed".
+      const { credits } = await redeemRestoreToken(token);
+      setDone(credits);
+      onRestored?.(credits);
+    } catch (e) {
+      setError(e.message || "Restore failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const field = {
+    width: "100%", background: "#0a1628", border: "1px solid #1e3a5f", color: "#e2e8f0",
+    borderRadius: 6, padding: "8px 10px", fontSize: 12, fontFamily: "monospace",
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16,
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.98)", border: "1px solid rgba(94,234,212,0.35)",
+        borderRadius: 14, padding: "24px 22px", maxWidth: 560, width: "100%",
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#5eead4", marginBottom: 8 }}>
+          🔑 Restore your credits on this device
+        </div>
+
+        {done != null ? (
+          <>
+            <div style={{ fontSize: 13, color: "#34d399", lineHeight: 1.6, marginBottom: 16 }}>
+              Restored — <strong>{done.toLocaleString()} credits</strong> are now available in this
+              browser. You can keep using the same link on your other devices.
+            </div>
+            <button onClick={onClose} style={{
+              background: "#0d9488", border: "none", borderRadius: 8, color: "white",
+              padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>Done</button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 12.5, color: "#94a3b8", lineHeight: 1.6, marginBottom: 12 }}>
+              AiRA has no accounts or passwords — your credits live in our database against your
+              payment, and this browser's only claim on them is a key stored locally. That key does
+              not travel between browsers or computers, which is why this device shows none.
+            </div>
+            <div style={{
+              background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 8, padding: "10px 12px", marginBottom: 14,
+              fontSize: 12, color: "#cbd5e1", lineHeight: 1.7,
+            }}>
+              <strong style={{ color: "#e2e8f0" }}>To move credits to this device:</strong>
+              <div>1. Open AiRA on the computer where your credits already work.</div>
+              <div>2. Action Plan tab → click <strong>🔑 recovery link</strong> → Copy.</div>
+              <div>3. Paste it below. (Or just open that link in this browser.)</div>
+              <div style={{ color: "#64748b", marginTop: 4 }}>
+                No longer have that computer? Contact support with your payment email and we'll issue
+                a new link.
+              </div>
+            </div>
+            <input
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !busy) submit(); }}
+              placeholder="https://aira.tiredtoretire.com/?restore=…"
+              style={field}
+            />
+            {error && (
+              <div style={{ fontSize: 12, color: "#f87171", marginTop: 8, lineHeight: 1.5 }}>{error}</div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button onClick={submit} disabled={busy} style={{
+                background: busy ? "#334155" : "#0d9488", border: "none", borderRadius: 8, color: "white",
+                padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: busy ? "default" : "pointer",
+              }}>{busy ? "Restoring…" : "Restore credits"}</button>
+              <button onClick={onClose} style={{
+                background: "none", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8,
+                color: "#94a3b8", padding: "8px 18px", fontSize: 13, cursor: "pointer",
+              }}>Cancel</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function CreditPackModal({ onClose }) {
   const [purchasing, setPurchasing] = useState(null);
   const [done, setDone]             = useState(null);
