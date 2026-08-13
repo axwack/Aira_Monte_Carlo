@@ -13,8 +13,20 @@
 import { json, handleOptions, verifyJWT } from "../_shared/jwt.js";
 
 const GEMINI_BASE        = "https://generativelanguage.googleapis.com/v1beta/models";
-const MODEL_FAST         = "gemini-2.5-flash";
-const MODEL_STANDARD     = "gemini-2.5-flash";
+// ROLLING ALIASES, deliberately not pinned versions.
+//
+// This is the path PAYING customers take, and it is the one with no user-facing
+// escape hatch: the BYOK client can fall through to another model and tell the
+// user to pick a different one in Profile, but a proxy call has no dropdown to
+// point at. A pinned id here fails everyone at once, silently, on Google's
+// schedule — which is exactly what happened to "gemini-2.5-flash" ("no longer
+// available to new users"). Google repoints the "-latest" aliases at the current
+// model, so a retirement becomes an upgrade rather than an outage.
+//
+// Credits are metered from each response's real usageMetadata, so a model swap
+// changes quality/latency but never silently mis-bills.
+const MODEL_FAST         = "gemini-flash-lite-latest";
+const MODEL_STANDARD     = "gemini-flash-latest";
 const RAW_TOKENS_PER_CREDIT = 1_000;  // must match src/billing/credits.js
 // Refuse calls if balance is below this. Set above the expected max single-call
 // cost so a parallel-request overdraft can't open more than one call's worth of

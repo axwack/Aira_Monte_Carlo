@@ -87,7 +87,7 @@ import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationN
 // provenance.test.js. Never inline a formula string — it would drift from the test.
 import { formulaFor } from "./provenance.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
-import { CreditBalanceBadge, CreditPackModal, RecoveryLinkModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT, MIN_CREDITS_TO_RUN, LOW_BALANCE_WARN_AT, getStoredRecoveryLink } from "./billing/credits.js";
+import { CreditBalanceBadge, CreditPackModal, RecoveryLinkModal, RestoreAccessModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT, MIN_CREDITS_TO_RUN, LOW_BALANCE_WARN_AT, getStoredRecoveryLink } from "./billing/credits.js";
 import { AdminPanel, useOwnerVerified } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 
@@ -197,8 +197,8 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.97";
-export const BUILD_TAG = "[main] v1.2.97 - the conversion row now shows the ceiling it was sized to, in that rows own dollars. Reported by jsalley: single, retire 55, converting to fill 22 percent; at 58 the plan drew 101,246 pretax and converted 40,005, and he concluded it had blown past the bracket because 141,251 is more than 105,700. It had not. Two facts the screen never carried: 105,700 is a TAXABLE income threshold, so the deduction comes off the gross first; and it is the 2026 figure, while the engine indexes brackets forward at 2.5 percent a year as the IRS does, making the 2032 ceiling 122,580. Reproduced his scenario in the engine - same 141,251 gross - and his own reported federal tax of 20,835 reconciles exactly to taxable income of 122,580 taxed entirely within 22 percent. The plan was right to the dollar; the defect was that the only check a user could perform was one guaranteed to mislead. FIX: buildWithdrawalWaterfall emits bracketTopYr and stdDedYr per row, captured AFTER the IRMAA cap so the reported ceiling always agrees with convCapReason, and carrying dedConv rather than the bare standard deduction because dedConv is what room is measured against (it holds the OBBBA senior bonus) and sdConv alone would not reconcile. Both the Withdrawal Plan table and the Deterministic schedule table render it: a visible sub-line under the conversion amount reading 22 percent top 122,580 (or IRMAA cap when that bound instead), plus a full gross minus deductions equals taxable versus ceiling breakdown on hover. On screen, not tooltip-only - the entire failure was a user reaching for a number the UI never gave them, and title= is dead on touch. Tests pin the numbers and, more importantly, the invariant that makes them worth showing: taxable income never exceeds the ceiling printed beside it, and that ceiling moves year to year rather than sitting at a nominal constant. 935 -> 942 tests, 40 suites.";
+const APP_VERSION = "1.2.100";
+export const BUILD_TAG = "[main] v1.2.100 - Gemini model ids are no longer pinned, and the dropdown no longer offers models that cannot do the job. Root cause of the reported Gemini 404: Google retires ids PER AUDIENCE, so gemini-2.5-flash kept working for the project that shipped it and 404d for every new key (no longer available to new users) - invisible in the authors own testing while breaking every new user. FIX 1: defaults are now rolling aliases Google repoints - DEFAULT_GEMINI_MODEL is gemini-flash-latest, and functions/api/analyze.js MODEL_STANDARD/MODEL_FAST are gemini-flash-latest/gemini-flash-lite-latest. The server path mattered most: it is what paying customers hit and it has no escape hatch, since a proxy call has no dropdown to point the user at. Cost drift is the trade and it is safe here because usage is MEASURED from each responses usageMetadata, never assumed from the price table. FIX 2: the dropdown is built from a live ListModels call. FIX 3 - found by testing the previous commits filter against a REAL ListModels response rather than trusting it: generateContent is also supported by text-to-speech, image (Nano Banana), computer-use and custom-tools variants, so a suffix-shaped filter passed gemini-2.5-flash-preview-tts, gemini-3.1-flash-image, gemini-3-pro-image, gemini-3.1-pro-preview-customtools and gemini-2.5-computer-use-preview-10-2025 through as candidate ANALYSIS engines. MODEL_IS_TEXT_ANALYSIS now excludes by purpose, not by suffix shape. GEMINI_PRICING rows for the aliases and the 3.x line are explicitly UNVERIFIED - they carry the 2.5-family rates and drive only the BYOK cost badge; real credit metering reads token counts off the response, so an unverified rate cannot mis-bill. 25 new tests pinned against the real model list. 956 -> 981 tests, 42 suites.";
 export const BUILD_TIME = "2026-08-07T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -10340,6 +10340,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   // clicked past it then has no way back to the only thing that protects their
   // purchase — so it stays reachable from the panel that shows the balance.
   const [showRecovery, setShowRecovery] = useState(false);
+  const [showRestore, setShowRestore]   = useState(false);
   const [liveCards, setLiveCards]       = useState(null);
   const [loadingLive, setLoadingLive]   = useState(false);
   const [liveError, setLiveError]       = useState(null);
@@ -10530,9 +10531,25 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                   </div>
                   <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3, lineHeight: 1.35 }}>
                     Already bought credits? They're safe — this browser just isn't linked
-                    to your purchase. Use your restore link, or contact support and we'll
-                    send one.
+                    to your purchase.
                   </div>
+                  {/* The state told the user to "use your restore link" and then gave
+                      them nowhere to put one: the only button on this panel was Buy
+                      Credits, so the path of least resistance was paying twice for
+                      credits they already owned. redeemRestoreToken existed but was
+                      reachable only by loading a ?restore= URL — no use if the link is
+                      in a password manager, an email, or on another screen. */}
+                  <button
+                    onClick={() => setShowRestore(true)}
+                    style={{
+                      marginTop: 6, background: "rgba(13,148,136,0.18)",
+                      border: "1px solid rgba(94,234,212,0.45)", color: "#5eead4",
+                      borderRadius: 6, padding: "5px 12px", fontSize: 12,
+                      fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+                    }}
+                  >
+                    🔑 Restore my credits
+                  </button>
                 </div>
               ) : (
                 <div style={{ fontSize: 22, fontWeight: 700, color: creditBalance < LOW_BALANCE_WARN_AT ? "#f87171" : "#e2e8f0", lineHeight: 1 }}>
@@ -10608,6 +10625,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
           <RecoveryLinkModal url={rec.url} expiresAt={rec.expiresAt} onClose={() => setShowRecovery(false)} />
         ) : null;
       })()}
+      {showRestore && <RestoreAccessModal onClose={() => setShowRestore(false)} />}
 
       {aiError && (
         <div style={{
@@ -11800,6 +11818,29 @@ function ACard({ title, accent, desc, children, collapsible = false, defaultOpen
 }
 
 function AssumptionsPanel({ values, onChange }) {
+  // Live model list for the AI Model dropdown. Debounced because this reads a
+  // key the user is still typing — firing per keystroke would send a stream of
+  // half-keys to Google and rate-limit the one request that matters.
+  const [liveModels, setLiveModels] = useState([]);
+  const geminiKey = values.geminiApiKey || "";
+  useEffect(() => {
+    if (!geminiKey.trim()) { setLiveModels([]); return; }
+    let alive = true;
+    const t = setTimeout(() => {
+      import("./ai/ai-analysis.js")
+        .then(({ fetchAvailableModels }) => fetchAvailableModels(geminiKey))
+        .then((ids) => { if (alive) setLiveModels(ids); })
+        .catch(() => { if (alive) setLiveModels([]); });
+    }, 600);
+    return () => { alive = false; clearTimeout(t); };
+  }, [geminiKey]);
+  // Live list wins; the shipped constant is the fallback before a key exists.
+  // Labels come from the shipped list where we have one, so familiar models keep
+  // their "(recommended)" / cost notes instead of becoming bare ids.
+  const modelOptions = liveModels.length
+    ? liveModels.map((id) => ({ id, label: GEMINI_MODELS.find(m => m.id === id)?.label || id }))
+    : GEMINI_MODELS.map(({ id, label }) => ({ id, label }));
+
   const {
     dob,
     ssCola,
@@ -12122,18 +12163,35 @@ function AssumptionsPanel({ values, onChange }) {
           />
           <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#60a5fa", marginLeft: 8 }}>Get free key →</a>
         </ARow>
-        <ARow label="AI Model" desc="Select the Gemini model for AI features. If a model becomes unavailable (Google deprecates often), pick another from the dropdown.">
+        {/* The list is fetched from Google when a key is present, because a
+            hardcoded one is guaranteed to rot: ids are retired per-audience, so
+            "gemini-2.5-flash is no longer available to NEW users" keeps working
+            for the developer's own project and 404s for everyone else — invisible
+            in testing, and the user's first sign of it is a raw Gemini 404 at the
+            moment they click Analyse. The shipped list is only the fallback for
+            when there is no key yet or the probe fails. */}
+        <ARow label="AI Model" desc="Fetched live from Google using your key, so a model Google retires disappears from this list instead of failing mid-analysis.">
           <select
             value={values.geminiModel || DEFAULT_GEMINI_MODEL}
             onChange={(e) => onChange('geminiModel', e.target.value)}
             style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}
           >
-            {GEMINI_MODELS.map(m => (
+            {modelOptions.map(m => (
               <option key={m.id} value={m.id}>{m.label}</option>
             ))}
+            {/* A saved model that Google no longer lists must still render, or the
+                select would silently show a DIFFERENT model than the one stored. */}
+            {!modelOptions.some(m => m.id === (values.geminiModel || DEFAULT_GEMINI_MODEL)) && (
+              <option value={values.geminiModel || DEFAULT_GEMINI_MODEL}>
+                {values.geminiModel || DEFAULT_GEMINI_MODEL} (not offered by your key)
+              </option>
+            )}
           </select>
-          <span style={{ fontSize: 10, color: "#64748b", marginLeft: 8 }}>
-            {(GEMINI_MODELS.find(m => m.id === (values.geminiModel || DEFAULT_GEMINI_MODEL))?.note) || ""}
+          <span style={{ fontSize: 10, color: liveModels.length ? "#5eead4" : "#64748b", marginLeft: 8 }}>
+            {liveModels.length
+              ? `${liveModels.length} models available to your key`
+              : (GEMINI_MODELS.find(m => m.id === (values.geminiModel || DEFAULT_GEMINI_MODEL))?.note
+                 || "Enter your API key to load the live model list")}
           </span>
         </ARow>
       </ACard>

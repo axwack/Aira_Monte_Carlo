@@ -58,11 +58,24 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // $ per 1M tokens. Google AI Studio public pricing — update as Google revises.
 // Thinking ("thoughts") tokens are billed at the output rate.
+// UNVERIFIED for the rolling aliases and the 3.x line: these are the published
+// 2.5-family rates, carried across because an alias currently resolves to a model
+// in that family. They drive only the BYOK "session cost" badge — an estimate for
+// the user's own information. Real billing is unaffected: credits are metered on
+// token counts read from each response's usageMetadata, never from this table.
+// Check https://ai.google.dev/pricing before quoting these to anyone.
 export const GEMINI_PRICING = {
-  "gemini-2.5-flash":      { inputPerM: 0.30,  outputPerM: 2.50  },
-  "gemini-2.5-pro":        { inputPerM: 1.25,  outputPerM: 10.00 },
-  "gemini-2.0-flash-lite": { inputPerM: 0.075, outputPerM: 0.30  },
-  "gemini-2.0-flash-001":  { inputPerM: 0.10,  outputPerM: 0.40  },
+  "gemini-flash-latest":      { inputPerM: 0.30,  outputPerM: 2.50  },
+  "gemini-pro-latest":        { inputPerM: 1.25,  outputPerM: 10.00 },
+  "gemini-flash-lite-latest": { inputPerM: 0.10,  outputPerM: 0.40  },
+  "gemini-3.7-flash":         { inputPerM: 0.30,  outputPerM: 2.50  },
+  "gemini-3.6-flash":         { inputPerM: 0.30,  outputPerM: 2.50  },
+  "gemini-3.5-flash":         { inputPerM: 0.30,  outputPerM: 2.50  },
+  "gemini-3.5-flash-lite":    { inputPerM: 0.10,  outputPerM: 0.40  },
+  "gemini-3.1-flash-lite":    { inputPerM: 0.10,  outputPerM: 0.40  },
+  "gemini-2.5-flash":         { inputPerM: 0.30,  outputPerM: 2.50  },
+  "gemini-2.5-pro":           { inputPerM: 1.25,  outputPerM: 10.00 },
+  "gemini-2.5-flash-lite":    { inputPerM: 0.10,  outputPerM: 0.40  },
 };
 
 const USAGE_STORAGE_KEY = "airaAiUsage.v1";
@@ -142,18 +155,30 @@ export function useAiUsage() {
   return usage;
 }
 
-// Default model used when values.geminiModel is not set.
-// gemini-2.0-flash was deprecated for new users; 2.5-flash is the current stable default.
-// User can override per-profile via Profile → Assumptions → AI Model dropdown.
-export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+// Default model when values.geminiModel is not set.
+//
+// A ROLLING ALIAS on purpose. Pinning a dated id is what broke this: Google
+// retires ids per-audience, so "gemini-2.5-flash" kept working for the project
+// that shipped it and 404'd for every new key — "no longer available to new
+// users" — which is invisible in the author's own testing. `gemini-flash-latest`
+// is repointed by Google at the current Flash model, so a retirement becomes a
+// silent upgrade instead of a dead feature.
+//
+// The trade is that cost-per-call can move under us. That is acceptable here
+// because usage is MEASURED, not assumed: recordUsage() reads the real
+// usageMetadata off every response, so the billing figures come from what
+// actually happened rather than from the price table below.
+export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
 
-// Available models for the UI dropdown. Cheapest first.
-// Update this list when Google publishes new models or deprecates old ones.
+// Fallback list, used only until a key is present and fetchAvailableModels()
+// returns the live set. Kept short and stable-only; the live list is the source
+// of truth (see the AI Model row in AssumptionsPanel).
 export const GEMINI_MODELS = [
-  { id: "gemini-2.5-flash",       label: "Gemini 2.5 Flash (recommended)", note: "Newest stable, fast, supports thinking" },
-  { id: "gemini-2.5-pro",         label: "Gemini 2.5 Pro",                  note: "Highest quality, ~10× cost" },
-  { id: "gemini-2.0-flash-lite",  label: "Gemini 2.0 Flash-Lite",           note: "Cheapest, lower quality" },
-  { id: "gemini-2.0-flash-001",   label: "Gemini 2.0 Flash 001",            note: "Legacy stable" },
+  { id: "gemini-flash-latest",      label: "Gemini Flash (latest) — recommended", note: "Rolling alias — Google keeps this pointed at the current Flash model" },
+  { id: "gemini-pro-latest",        label: "Gemini Pro (latest)",                 note: "Highest quality, several × the cost" },
+  { id: "gemini-flash-lite-latest", label: "Gemini Flash-Lite (latest)",          note: "Cheapest, lower quality" },
+  { id: "gemini-3.7-flash",         label: "Gemini 3.7 Flash",                    note: "Pinned version — will eventually be retired" },
+  { id: "gemini-2.5-flash",         label: "Gemini 2.5 Flash (legacy)",           note: "Retired for new API keys — kept for existing projects only" },
 ];
 
 function resolveModel(values) {
@@ -162,21 +187,108 @@ function resolveModel(values) {
 
 // ─── Gemini helpers ───────────────────────────────────────────────────────────
 
+/**
+ * Ask Google which models this key can actually call.
+ *
+ * A hardcoded list is guaranteed to rot: Google retires model ids on their own
+ * schedule, and the failure is a 404 at the moment a user clicks Analyse —
+ * "This model models/gemini-2.5-flash is no longer available to new users".
+ * Worse, the retirement is per-audience, so the id keeps working for existing
+ * projects and breaks only for new keys, which makes it invisible in testing.
+ *
+ * Returns [] on any failure so callers fall back to the static list rather than
+ * rendering an empty dropdown.
+ */
+export async function fetchAvailableModels(apiKey) {
+  const key = (apiKey || "").trim();
+  if (!key) return [];
+  try {
+    const res = await fetch(`${GEMINI_BASE}?key=${key}&pageSize=200`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const ids = (data.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map(m => String(m.name || "").replace(/^models\//, ""))
+      .filter(id => MODEL_IS_TEXT_ANALYSIS(id));
+    // "…-latest" aliases first: Google repoints them at the current model, which
+    // is the whole reason this feature broke. Then stable versions, newest first.
+    return ids.sort((a, b) => {
+      const la = a.endsWith("-latest"), lb = b.endsWith("-latest");
+      if (la !== lb) return la ? -1 : 1;
+      return b.localeCompare(a, undefined, { numeric: true });
+    });
+  } catch { return []; }
+}
+
+/**
+ * Is this id a general text model we can send an analysis prompt to?
+ *
+ * Filtering on the name suffix alone was wrong, and testing it against a real
+ * ListModels response is what showed it: `generateContent` is also supported by
+ * text-to-speech, image ("Nano Banana"), computer-use and custom-tools variants,
+ * so `gemini-2.5-flash-preview-tts`, `gemini-3.1-flash-image` and
+ * `gemini-2.5-computer-use-preview-10-2025` all sailed through and would have
+ * been offered as analysis engines. Exclude by PURPOSE, not by suffix shape.
+ *
+ * Previews are excluded too: they churn on Google's schedule and a user picking
+ * one is choosing a moving target without knowing it. There are enough stable
+ * options that this costs nothing.
+ */
+const MODEL_SPECIALIZED = /(image|tts|audio|robotics|computer-use|embedding|customtools|nano-banana|deep-research|lyria|veo|imagen)/;
+export function MODEL_IS_TEXT_ANALYSIS(id) {
+  return typeof id === "string"
+    && id.startsWith("gemini-")
+    && !MODEL_SPECIALIZED.test(id)
+    && !/(preview|exp)/.test(id);
+}
+
+/** A 404/NOT_FOUND from Google means the id is gone, not that the call failed. */
+function isModelGoneError(status, err) {
+  const msg = String(err?.error?.message || "");
+  return status === 404 || /no longer available|not found|NOT_FOUND/i.test(msg);
+}
+
+// Remembers a model that answered 404 this session, so every subsequent call
+// skips it instead of paying the round-trip and failing again.
+const _deadModels = new Set();
+
 async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel = "unknown") {
   // callGemini is the BYOK path only — the billing/proxy path uses callViaProxy.
   // No credit guards here; credits are managed server-side for proxy calls.
-  const res = await fetch(`${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
+  //
+  // Candidate order: what was asked for, then the rest of the shipped list. A
+  // retired id used to surface as a raw Gemini 404 to the user, who has no way
+  // to know which of the four dropdown entries still exists. Falling through
+  // means one dead id degrades the model choice rather than the feature.
+  const candidates = [model, ...GEMINI_MODELS.map(m => m.id)]
+    .filter((id, i, a) => id && a.indexOf(id) === i && !_deadModels.has(id));
+  if (candidates.length === 0) candidates.push(model);   // all dead: try anyway, surface the real error
+
+  let lastErr = null;
+  for (const id of candidates) {
+    const res = await fetch(`${GEMINI_BASE}/${id}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      recordUsage(id, fnLabel, data.usageMetadata);
+      return data;
+    }
     const err = await res.json().catch(() => ({}));
+    if (isModelGoneError(res.status, err)) {
+      _deadModels.add(id);
+      lastErr = new Error(
+        `Gemini model "${id}" is no longer available. ` +
+        `Pick a different model in Profile → Assumptions → AI Model.`
+      );
+      continue;                       // try the next candidate
+    }
+    // A real error (bad key, quota, safety block) — do NOT burn the fallbacks.
     throw new Error(err.error?.message || `Gemini HTTP ${res.status}`);
   }
-  const data = await res.json();
-  recordUsage(model, fnLabel, data.usageMetadata);
-  return data;
+  throw lastErr || new Error("No available Gemini model — check your API key in Profile → Assumptions.");
 }
 
 function fnCall(apiKey, maxTokens, systemText, userText, fnDecl, model = DEFAULT_GEMINI_MODEL, fnLabel = "unknown") {
