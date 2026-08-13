@@ -169,7 +169,19 @@ if (typeof document !== "undefined") {
  */
 const AGE_LIMITS = {
   current: { min: 25, max: 85 },   // was 30–62 on the landing hero
-  retire:  { min: 45, max: 80 },   // was 50–68 (slider) vs 50–100 (wizard)
+  // 35, not 45. The floor was never protecting anyone: every engine here is
+  // age-parameterised, §72(t)/SEPP and the Rule-of-55 exemptions are modelled,
+  // and the Monte Carlo genuinely bootstraps the full horizon — so a 50-year
+  // retirement is simulated honestly. What the floor actually did was refuse to
+  // answer, and push FIRE users to fake their birth date instead. That is
+  // strictly worse: birth year drives RMD start, Medicare/IRMAA, SS claiming and
+  // the early-withdrawal penalty simultaneously, so a fictional DOB corrupts four
+  // correct calculations to work around one arbitrary bound.
+  //
+  // What a long horizon DOES break is disclosed, not hidden — see the
+  // long-horizon notice in MCTab (ACA/pre-65 healthcare is unmodelled, and the
+  // Blanchett smile is extrapolated well past the data it was fitted on).
+  retire:  { min: 35, max: 80 },   // was 45; earlier still: 50–68 (slider) vs 50–100 (wizard)
   end:     { min: 60, max: 105 },
   // Social Security claiming window is statutory, not a UI preference: 62 is the
   // earliest possible claim and 70 is the last age that earns delayed retirement
@@ -197,8 +209,8 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.100";
-export const BUILD_TAG = "[main] v1.2.100 - Gemini model ids are no longer pinned, and the dropdown no longer offers models that cannot do the job. Root cause of the reported Gemini 404: Google retires ids PER AUDIENCE, so gemini-2.5-flash kept working for the project that shipped it and 404d for every new key (no longer available to new users) - invisible in the authors own testing while breaking every new user. FIX 1: defaults are now rolling aliases Google repoints - DEFAULT_GEMINI_MODEL is gemini-flash-latest, and functions/api/analyze.js MODEL_STANDARD/MODEL_FAST are gemini-flash-latest/gemini-flash-lite-latest. The server path mattered most: it is what paying customers hit and it has no escape hatch, since a proxy call has no dropdown to point the user at. Cost drift is the trade and it is safe here because usage is MEASURED from each responses usageMetadata, never assumed from the price table. FIX 2: the dropdown is built from a live ListModels call. FIX 3 - found by testing the previous commits filter against a REAL ListModels response rather than trusting it: generateContent is also supported by text-to-speech, image (Nano Banana), computer-use and custom-tools variants, so a suffix-shaped filter passed gemini-2.5-flash-preview-tts, gemini-3.1-flash-image, gemini-3-pro-image, gemini-3.1-pro-preview-customtools and gemini-2.5-computer-use-preview-10-2025 through as candidate ANALYSIS engines. MODEL_IS_TEXT_ANALYSIS now excludes by purpose, not by suffix shape. GEMINI_PRICING rows for the aliases and the 3.x line are explicitly UNVERIFIED - they carry the 2.5-family rates and drive only the BYOK cost badge; real credit metering reads token counts off the response, so an unverified rate cannot mis-bill. 25 new tests pinned against the real model list. 956 -> 981 tests, 42 suites.";
+const APP_VERSION = "1.2.101";
+export const BUILD_TAG = "[main] v1.2.101 - minimum retirement age 45 -> 35, plus an honest statement of what is not modelled before 65. Requested by a user who could not ask the question the app exists to answer (could we retire at 34/35) and whose workaround was to fake his birth date. That workaround is the real argument: birth year drives RMD start, Medicare/IRMAA timing, SS claiming and the early-withdrawal penalty simultaneously, so the floor corrupted four correct calculations to enforce one arbitrary bound. The change itself is ONE constant - every engine is already age-parameterised, 72(t)/SEPP and Rule-of-55 exemptions are modelled, and the Monte Carlo genuinely bootstraps the full horizon, so a 50-year retirement is simulated honestly. Zero engine files touched, 981 tests unchanged. WHAT IS NOT MODELLED IS NOW SAID OUT LOUD, on the tab where the success rate is read. Trigger is retiring before 65, NOT a long horizon: the ACA gap is not created by this change, it already applied to every pre-65 retiree, which is most of this apps audience - someone retiring at 55 has ten unmodelled bridge years today. The sharp edge is that the conversion planner optimises against brackets and IRMAA, IRMAA does not begin until 63, and it knows nothing about ACA premium subsidies, so before 65 it can recommend a conversion costing more in lost subsidy than it saves in tax. Two further caveats appear only on 40+ year horizons: the Blanchett smile is measured on retirees in their 60s and applied from 35 assumes real spending drifts to 75% of todays (measured, not estimated), and 4%/Guyton-Klinger are 30-year rules. All three point the same way - they make the plan look better than it is. ACA modelling deliberately NOT built; it is REQUIREMENTS 16, P1, scoped, medium-large, and doing it later improves every pre-65 retiree at once. PROCESS NOTE: the version bump that shipped v1.2.100 wrote by LINE INDEX and the AGE_LIMITS comment above had shifted it, so it landed inside a JSDoc block - silently commented out, build green, production mislabelled. Bumps are pattern-matched now. 981 tests, 42 suites.";
 export const BUILD_TIME = "2026-08-07T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -8947,8 +8959,63 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   };
 
 
+  // A 40+ year retirement runs past the evidence behind two of this model's
+  // defaults. The simulation itself is honest — it bootstraps returns across the
+  // whole horizon — but a success rate is only as good as the spending path and
+  // the costs fed into it, and both weaken the earlier you retire. Said plainly
+  // and up front, because the failure mode is a confident number that is
+  // optimistic for reasons the user cannot see.
+  const planHorizon  = Math.max(0, (params.endAge || 0) - effRetireAge);
+  const longHorizon  = planHorizon >= 40;
+  const preMedicare  = Math.max(0, 65 - effRetireAge);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {(longHorizon || preMedicare > 0) && (
+        <div style={{ background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.32)", borderRadius: 10, padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24", marginBottom: 8 }}>
+            ⚠ {longHorizon ? `${planHorizon}-YEAR RETIREMENT — ` : ""}WHAT THIS MODEL DOES NOT COVER
+          </div>
+          <div style={{ fontSize: 12.5, color: "#cbd5e1", lineHeight: 1.65, marginBottom: 10 }}>
+            Retiring at {effRetireAge} is fully simulated — {MC_PATHS_LABEL} paths across all {planHorizon} years,
+            with the early-withdrawal penalty, the bridge to Social Security, and bracket-capped
+            drawdown all modelled. What follows is not modelled, and it makes the plan look{" "}
+            <strong style={{ color: "#e2e8f0" }}>better</strong> than it is:
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {preMedicare > 0 && (
+              <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                <strong style={{ color: "#fbbf24" }}>Health insurance before Medicare is not modelled.</strong>{" "}
+                You have {preMedicare} years to cover before 65. AiRA models catastrophic healthcare
+                shocks but not ACA marketplace premiums — you must include them in your annual
+                spending yourself. Related: the Roth conversion planner optimises against tax
+                brackets and IRMAA, and IRMAA does not begin until 63. It does not know about ACA
+                premium subsidies, which phase out on income — so before 65 a conversion it
+                recommends can cost more in lost subsidy than it saves in tax.
+              </div>
+            )}
+            {longHorizon && (
+            <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+              <strong style={{ color: "#fbbf24" }}>The spending curve is extrapolated.</strong>{" "}
+              The Blanchett smile measures retirees in their 60s and 70s; applied from age {effRetireAge} it
+              assumes your real spending drifts down to about{" "}
+              {Math.round(spendingSmileFactor(Math.min(80, params.endAge), effRetireAge) * 100)}% of today's by 80.
+              That is well past the data it was fitted on. Turn off <strong>Smile spending</strong> in
+              the sidebar for a flat-real plan — a stricter and, over {planHorizon} years, more defensible test.
+            </div>
+            )}
+            {longHorizon && (
+            <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+              <strong style={{ color: "#fbbf24" }}>4% is a 30-year rule.</strong>{" "}
+              Bengen and Guyton-Klinger were derived for ~30-year retirements. Over {planHorizon} years the
+              sustainable rate is materially lower — commonly cited near 3.0–3.5%. The success rate
+              above is computed honestly for the rate you chose; it is the <em>rule of thumb</em>, not
+              the simulation, that does not transfer.
+            </div>
+            )}
+          </div>
+        </div>
+      )}
       {/* Explanation card */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
         <SectionHeader label="What is a Monte Carlo simulation?" open={showWhat} onToggle={() => setShowWhat(!showWhat)} color="#94a3b8" />
