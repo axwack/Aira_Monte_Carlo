@@ -1094,6 +1094,18 @@ export function buildWithdrawalWaterfall(params = {}) {
       // conversionRoomAllCliffs() can extend the min(...) below with ACA / LTCG /
       // NIIT rooms and report which cliff actually bound, without a rewrite.
       let convCapReason = null;
+      // The two numbers a user needs to check the conversion themselves, in the
+      // SAME year's dollars the row is stated in. Reported because a user did
+      // exactly this arithmetic and reached the wrong conclusion: they compared
+      // the row's GROSS ordinary income against the 2026 nominal bracket top from
+      // an IRS table, and concluded the plan had blown through 22% into 24%. It
+      // had not — the deduction comes off first, and the ceiling is indexed
+      // forward — but nothing on screen carried either number, so the check they
+      // could actually perform was guaranteed to mislead.
+      //
+      // `bracketTopYr` is the EFFECTIVE ceiling after the IRMAA cap, not the raw
+      // bracket top, so it always agrees with convCapReason.
+      let bracketTopYr = null, stdDedYr = null;
       if (isSmart) {
         const pretaxAfterDraw = Math.max(0, pretax - fromPretax);
         const override = overrideMap.get(yr);
@@ -1146,6 +1158,12 @@ export function buildWithdrawalWaterfall(params = {}) {
               convCapReason = "irmaa_ceil";
             }
           }
+          // Captured AFTER the IRMAA cap above, so what is reported is the
+          // ceiling that actually bound. `dedConv` (not the bare standard
+          // deduction) is what `room` is measured against — it carries the OBBBA
+          // senior bonus — so reporting `sdConv` here would not reconcile.
+          bracketTopYr = Number.isFinite(ceilingConv) ? Math.round(ceilingConv) : null;
+          stdDedYr     = Math.round(dedConv);
           const room = Math.max(0, ceilingConv + dedConv - taxNoConv.totInc);
           if (room > 500) convAmt = Math.min(room, pretaxAfterDraw);
           else convCapReason = null;
@@ -1330,6 +1348,9 @@ export function buildWithdrawalWaterfall(params = {}) {
         convTaxFromTaxable, convTaxFromCash, convTaxFromPretax, convToRoth,
         fromRoth, rothReserveHeld, rothReserveBroken,
         conversionAmount: Math.round(convAmt), conversionTax: convTax,
+        // Year-of-the-row dollars, so `taxableIncome <= bracketTopYr` is a check
+        // the user can do on screen. null when no bracket target is in play.
+        bracketTopYr, stdDedYr,
         fedTax: tax.fedTax, stateTax: tax.stateTax, irmaa: tax.irmaa,
         totalTax: tax.totalTax, irmaaFull: tax.irmaaFull,
         // IRC §72(t) additional tax — its own line, never folded into fedTax, so

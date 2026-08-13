@@ -197,8 +197,8 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.96";
-export const BUILD_TAG = "[main] v1.2.96 - ANumInput lost edits on blur. One shared control, 46 call sites, so every numeric field in the app was affected: reported as these numbers do not let me edit, when I copy or paste or when I delete the value and then try to change it. Diagnosed by driving the real component rather than by reading it - and the first probe was wrong, dispatching focus/blur, which React does not listen to (it delegates via focusin/focusout), so it silently exercised the UNFOCUSED path and proved nothing. Corrected, three defects fell out. ONE: handleBlur clamped the value PROP, not what the user typed. Whenever the parent is a render behind - which is what a re-render on every keystroke produces, and this app rebuilds params and marks the MC stale on each one - blur re-committed the stale number and the last digits of the edit vanished on click-away. Verified against the pre-fix module: blur committed NOTHING and reset the display to the stale value. Now clamps localValue, the thing the user actually typed. TWO: Math.max(min, ...) with an absent bound is NaN, and that went straight back out through onSet - one blur on a field whose caller omitted min or max destroyed the value, masked as 0 by callers writing value || 0. All 46 sites currently pass both, so this was latent, but it is one forgotten prop from zeroing a balance. lo/hi default to -Infinity/Infinity and a Number.isFinite guard refuses to commit NaN. THREE: the auto-select is deferred a frame, because it has to run after the display swaps from 6,126 to 6126 or the render wipes the selection - but a deferred select() landing after typing has begun selects what was just typed and the next keystroke replaces the whole field, which is how an edit collapses to a single digit. Guarded by a typedSinceFocus ref. Unchanged and deliberate: max clamps mid-type, min only on blur (en route to 50 you pass 5). New suite of 17 tests; the stale-prop one had to be tightened after the first version proved INERT - handleChange had already pushed the same number, so it now measures only what blur itself commits. 918 -> 935 tests, 39 suites.";
+const APP_VERSION = "1.2.97";
+export const BUILD_TAG = "[main] v1.2.97 - the conversion row now shows the ceiling it was sized to, in that rows own dollars. Reported by jsalley: single, retire 55, converting to fill 22 percent; at 58 the plan drew 101,246 pretax and converted 40,005, and he concluded it had blown past the bracket because 141,251 is more than 105,700. It had not. Two facts the screen never carried: 105,700 is a TAXABLE income threshold, so the deduction comes off the gross first; and it is the 2026 figure, while the engine indexes brackets forward at 2.5 percent a year as the IRS does, making the 2032 ceiling 122,580. Reproduced his scenario in the engine - same 141,251 gross - and his own reported federal tax of 20,835 reconciles exactly to taxable income of 122,580 taxed entirely within 22 percent. The plan was right to the dollar; the defect was that the only check a user could perform was one guaranteed to mislead. FIX: buildWithdrawalWaterfall emits bracketTopYr and stdDedYr per row, captured AFTER the IRMAA cap so the reported ceiling always agrees with convCapReason, and carrying dedConv rather than the bare standard deduction because dedConv is what room is measured against (it holds the OBBBA senior bonus) and sdConv alone would not reconcile. Both the Withdrawal Plan table and the Deterministic schedule table render it: a visible sub-line under the conversion amount reading 22 percent top 122,580 (or IRMAA cap when that bound instead), plus a full gross minus deductions equals taxable versus ceiling breakdown on hover. On screen, not tooltip-only - the entire failure was a user reaching for a number the UI never gave them, and title= is dead on touch. Tests pin the numbers and, more importantly, the invariant that makes them worth showing: taxable income never exceeds the ceiling printed beside it, and that ceiling moves year to year rather than sitting at a nominal constant. 935 -> 942 tests, 40 suites.";
 export const BUILD_TIME = "2026-08-07T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -1950,6 +1950,12 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
       carveoutCost: r.carveoutCost,
       healthcareRisk: r.healthcareRisk,
       conversionAmount: r.conversionAmount,
+      // Carried so this table can disclose the same reconciliation the Withdrawal
+      // Plan table does. It shows the identical conversion figure, so it invites
+      // the identical (wrong) comparison against a nominal published bracket top.
+      bracketTopYr: r.bracketTopYr, stdDedYr: r.stdDedYr,
+      taxableIncome: r.taxableIncome, totInc: r.totInc,
+      marginalBracket: r.marginalBracket, convCapReason: r.convCapReason,
       fedTax: r.fedTax,
       stateTax: r.stateTax,
       irmaa: r.irmaa,
@@ -7322,12 +7328,46 @@ function WaterfallPlanView({ p, result }) {
                           t += `\n\n⚠ Part of the tax came from Pre-Tax — that draw is itself`
                             + ` ordinary income. Taxable or Cash is the cheaper source.`;
                         }
+                        // THE RECONCILIATION. A user compared this row's gross
+                        // ordinary income against the 2026 nominal bracket top and
+                        // concluded the plan had overshot into the next bracket. It
+                        // had not: the deduction comes off first, and the ceiling is
+                        // indexed forward to the row's own year. Both numbers were
+                        // computed by the engine and neither was ever shown, so the
+                        // only check the user could perform was one that had to fail.
+                        if (r.bracketTopYr != null) {
+                          const pct = Math.round((r.marginalBracket || 0) * 100);
+                          t += `\n\nWhy this is still inside the ${pct}% bracket, in ${r.yr} dollars:`
+                            + `\n  Ordinary income      ${fmtDollar(r.totInc)}`
+                            + `\n  − Deductions         ${fmtDollar(r.stdDedYr)}`
+                            + `\n  = Taxable income     ${fmtDollar(r.taxableIncome)}`
+                            + `\n  ${pct}% bracket top      ${fmtDollar(r.bracketTopYr)}`
+                            + `\n\nBracket tops are inflation-indexed, so the ${r.yr} ceiling is`
+                            + ` higher than today's published figure. Compare TAXABLE income`
+                            + ` (after deductions) against it — not the gross draw.`;
+                          if (r.convCapReason === "irmaa_ceil") {
+                            t += `\n\nThis year the IRMAA tier bound before the bracket did —`
+                              + ` the ceiling shown is the IRMAA cap, which is lower.`;
+                          }
+                        }
                         return t;
                       })()}>
                     {r.conversionAmount > 0 ? fmtDollar(r.conversionAmount) : "—"}
                     {r.conversionAmount > 0 && r.convToRoth > 0 && r.convToRoth < r.conversionAmount && (
                       <span style={{ color: "#fbbf24", fontSize: 9, marginLeft: 2 }}
                             title={`Only ${fmtDollar(r.convToRoth)} of the ${fmtDollar(r.conversionAmount)} reaches the Roth — tax withheld from the transfer`}>◑</span>
+                    )}
+                    {/* The ceiling the conversion was sized to, in THIS row's dollars.
+                        On screen, not just in the tooltip above: the whole failure was
+                        a user reaching for a number the UI never gave them, and a
+                        tooltip is dead on touch. This is the figure their own
+                        arithmetic needs. */}
+                    {r.conversionAmount > 0 && r.bracketTopYr != null && (
+                      <div style={{ fontSize: 9, color: "#64748b", fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap", marginTop: 1 }}>
+                        {r.convCapReason === "irmaa_ceil"
+                          ? `IRMAA cap ${fmtDollar(r.bracketTopYr)}`
+                          : `${Math.round((r.marginalBracket || 0) * 100)}% top ${fmtDollar(r.bracketTopYr)}`}
+                      </div>
                     )}
                   </td>
                 )}
@@ -7526,7 +7566,26 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
                     <td style={{ color: "#fb7185" }}>{fmtDollar(s.housingCost || 0)}</td>
                     <td style={{ color: "#fb7185" }}>{fmtDollar(s.carveoutCost || 0)}</td>
                     <td>{fmtDollar(s.portfolioDraw)}</td>
-                    <td style={{ color: "#5eead4" }}>{fmtDollar(s.conversionAmount || 0)}</td>
+                    <td style={{ color: "#5eead4" }}
+                        title={s.bracketTopYr != null && s.conversionAmount > 0
+                          ? `Sized to fill the bracket, in ${s.yr} dollars:\n`
+                            + `  Ordinary income   ${fmtDollar(s.totInc)}\n`
+                            + `  − Deductions      ${fmtDollar(s.stdDedYr)}\n`
+                            + `  = Taxable income  ${fmtDollar(s.taxableIncome)}\n`
+                            + `  Ceiling           ${fmtDollar(s.bracketTopYr)}\n\n`
+                            + `Bracket tops are inflation-indexed, so the ${s.yr} ceiling is higher `
+                            + `than today's published figure. Compare TAXABLE income against it, `
+                            + `not the gross draw.`
+                          : undefined}>
+                      {fmtDollar(s.conversionAmount || 0)}
+                      {s.conversionAmount > 0 && s.bracketTopYr != null && (
+                        <div style={{ fontSize: 9, color: "#64748b", whiteSpace: "nowrap" }}>
+                          {s.convCapReason === "irmaa_ceil"
+                            ? `IRMAA cap ${fmtDollar(s.bracketTopYr)}`
+                            : `${Math.round((s.marginalBracket || 0) * 100)}% top ${fmtDollar(s.bracketTopYr)}`}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ color: "#f87171" }}>{fmtDollar(s.fedTax)}</td>
                     <td style={{ color: "#fb923c" }}>{fmtDollar(s.stateTax)}</td>
                     <td style={{ color: "#a78bfa" }}>{fmtDollar(s.irmaa)}</td>
