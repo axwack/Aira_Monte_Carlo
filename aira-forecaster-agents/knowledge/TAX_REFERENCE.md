@@ -119,3 +119,83 @@ Consumed by `src/engine/survivorBenefit.js`. **Do not inline these anywhere else
 - Born July 1, 1949 – Dec 31, 1950: 72
 - Born 1951–1959: 73
 - Born 1960 or later: 75
+---
+
+## ACA Premium Tax Credit — Federal Poverty Level (§16)
+
+The PTC formula is:
+
+```
+applicableAmount = applicablePercentage(MAGI ÷ FPL) × MAGI
+PTC              = max(0, benchmarkPremium − applicableAmount)
+```
+
+`benchmarkPremium` is the second-lowest-cost Silver plan in the household's own
+**rating area**. It is NOT listed here and must never be hardcoded: it varies by
+state, by ~500 sub-state rating areas, by age and by tobacco use, and CMS
+republishes it annually. It is a **user-entered profile value**
+(`acaBenchmarkPremium`). This is deliberate and is what keeps the model from
+requiring a national premium database that would be stale within a year.
+
+Note which quantities actually need it: the **marginal** subsidy lost per extra
+dollar of MAGI, and the **location** of the cliff, both fall out of the FPL
+tables and the applicable-percentage schedule alone. Only the **dollar magnitude**
+of the subsidy needs the benchmark premium.
+
+### Federal Poverty Level — 2025 HHS guidelines (used for 2026 coverage year)
+
+Coverage year N uses the FPL guidelines published in year N−1. A 2026 plan year
+is measured against the **2025** table below.
+
+| Household size | 48 states + DC | Alaska | Hawaii |
+|---|---|---|---|
+| 1 | $15,650 | $19,550 | $17,990 |
+| each additional person | +$5,500 | +$6,870 | +$6,320 |
+
+Source: HHS annual poverty guidelines (federalregister.gov). **Re-verify each
+January** — these are republished annually and the engine indexes forward from
+the base year rather than guessing.
+
+### Applicable percentage schedule
+
+Two regimes, because the law changed and may change back. The engine models both
+behind `acaCliffReturns` so a plan is honest about the discontinuity rather than
+silently assuming one outcome.
+
+**Regime A — ARPA/IRA enhanced (2021–2025).** No upper income limit; the
+percentage is capped at 8.5% however high MAGI goes, so there is **no cliff**.
+
+| MAGI as % of FPL | Applicable % (lower → upper, linear within band) |
+|---|---|
+| under 150% | 0.0% → 0.0% |
+| 150% – 200% | 0.0% → 2.0% |
+| 200% – 250% | 2.0% → 4.0% |
+| 250% – 300% | 4.0% → 6.0% |
+| 300% – 400% | 6.0% → 8.5% |
+| over 400% | 8.5% (flat, no cliff) |
+
+**Regime B — statutory / pre-ARPA, returns absent Congressional extension.**
+Above 400% FPL the credit is **$0** — the subsidy cliff. Percentages are
+inflation-indexed annually by IRS revenue procedure; the values below are the
+pre-ARPA shape and **MUST be re-verified against the current Rev. Proc. before
+being relied on for advice.**
+
+| MAGI as % of FPL | Applicable % (lower → upper, linear within band) |
+|---|---|
+| under 133% | 2.10% |
+| 133% – 150% | 3.14% → 4.19% |
+| 150% – 200% | 4.19% → 6.60% |
+| 200% – 250% | 6.60% → 8.44% |
+| 250% – 300% | 8.44% → 9.96% |
+| 300% – 400% | 9.96% (flat) |
+| over 400% | **no credit — cliff** |
+
+### Verification status
+
+- FPL dollar figures: **2025 HHS guidelines.** Re-verify each January.
+- Regime A percentages: statutory under ARPA §9661 / IRA extension. Stable.
+- Regime B percentages: **UNVERIFIED against the current Rev. Proc.** Shape is
+  correct; the exact indexed values need confirming before this drives advice.
+- Default regime: `acaCliffReturns` defaults to **true** (statutory law as it
+  stands), which is the conservative direction — it warns about a cliff that may
+  not materialise rather than hiding one that does.
