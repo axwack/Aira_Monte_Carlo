@@ -1063,7 +1063,36 @@ platform migrated Netlify → Cloudflare Pages). Its still-open, non-duplicated 
 ## 16. ACA-Aware Roth Conversions (subsidy-preserving) — requested 2026-07-25
 
 **Requested by a user (Reddit) and flagged by Vincent as "the biggest deal for me."**
-**Priority: P1 (next major feature).** **Status: scoped, NOT started.**
+**Priority: P1 (next major feature).** **Status: PHASE 1 DONE (engine), NOT WIRED.**
+
+### ✅ Done 2026-08-13 — the model exists and is tested; nothing consumes it yet
+- `src/engine/aca.js` — pure, single source, additive. Exports `federalPovertyLevel`,
+  `applicablePercentage`, `computeAcaSubsidy`, `acaMagiCeiling`, `marginalSubsidyCost`.
+- Constants in `TAX_REFERENCE.md` → "ACA Premium Tax Credit" (FPL for contiguous/AK/HI,
+  both applicable-% regimes). Regime B percentages are marked **UNVERIFIED against the
+  current Rev. Proc.** — confirm before this drives advice.
+- `src/aca.test.js` — 23 hand-calculated tests. Suite: 1004 tests, 43 suites, green.
+- **THE PREMIUM QUESTION IS ANSWERED — do not re-litigate it.** No national premium
+  database is needed. The cliff location and the marginal cost of the next conversion
+  dollar fall out of FPL + the %-schedule alone; the benchmark premium only scales
+  magnitude and is ONE user-entered field (`acaBenchmarkPremium`), defaulted from an
+  age curve. This is why the feature is tractable.
+- Two deliberate design calls: `acaMagiCeiling` returns `Infinity` under the enhanced
+  regime (capping where the law has no cliff would under-convert for no reason —
+  price it via `marginalSubsidyCost` instead), and sub-100%-FPL returns
+  `below_medicaid_floor` rather than a silent zero.
+
+### ⬜ Remaining — pick up here
+1. **Profile inputs** (+ BLANK_PROFILE defaults + migration): `onAcaMarketplace`,
+   `householdSize`, `acaBenchmarkPremium`, `acaCliffReturns` (default **true** = current law).
+2. **Guard wiring** — fold `acaMagiCeiling` into the conversion `min(...)`. The IRMAA cap
+   at `buildWithdrawalWaterfall.js` ~1141 is the identical shape to copy; add
+   `convCapReason: "aca_ceil"` alongside the existing `"irmaa_ceil"`. Mirror in `runMC`.
+   ⚠ This is the step that touches the engine sizing real conversions — do NOT begin it
+   without enough budget to finish and test it.
+3. **Display** — subsidy $ lost per conversion $, cliff proximity, on the Conversion Plan tab.
+   The MC tab already warns pre-65 users this is unmodelled (v1.2.101); update that copy
+   when the guard goes live, or it will understate what the app now does.
 
 ### Problem
 In the pre-Medicare bridge years (retireAge → 64), many early retirees buy health
