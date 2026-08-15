@@ -88,7 +88,7 @@ describeReport("PrintReport", () => {
     );
     expect(html).toMatch(/Retirement Plan Report/);
     expect(html).toMatch(/Assumptions/);
-    expect(html).toMatch(/Success rate to plan age|Monte Carlo Verdict/);
+    expect(html).toMatch(/Success rate to plan age|Will the Money Last/);
   });
 
   test("formats a known dollar amount with commas", () => {
@@ -121,7 +121,7 @@ describeReport("PrintReport", () => {
         <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" />
       );
       expect(html).toMatch(/Print \/ Save as PDF/);
-      expect(html).not.toMatch(/Premium Report/);
+      expect(html).not.toMatch(/Printable Report/);
     });
 
     test("locked=false explicitly — Print button present, no unlock card", () => {
@@ -129,7 +129,7 @@ describeReport("PrintReport", () => {
         <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={false} />
       );
       expect(html).toMatch(/Print \/ Save as PDF/);
-      expect(html).not.toMatch(/Premium Report/);
+      expect(html).not.toMatch(/Printable Report/);
     });
 
     test("locked=true — Print button absent, unlock card present", () => {
@@ -137,7 +137,13 @@ describeReport("PrintReport", () => {
         <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={true} />
       );
       expect(html).not.toMatch(/Print \/ Save as PDF/);
-      expect(html).toMatch(/Premium Report/);
+      expect(html).toMatch(/Printable Report/);
+      // Sold as a product now: a dollar price leads, the credit route is the
+      // secondary offer. Charging credits for a document that burns zero tokens
+      // priced it in a currency that means AI usage.
+      expect(html).toMatch(/\$9\.00/);
+      expect(html).toMatch(/Buy the report/);
+      expect(html).toMatch(/no expiry/);
     });
 
     // The paywall used to render every section and merely add a `pr-blurred`
@@ -153,7 +159,7 @@ describeReport("PrintReport", () => {
     // sections to sell the unlock, so bare-text matching would hit the teaser's
     // own labels. Only a real rendered section emits the <h2>.
     const PAID_HEADINGS = [
-      /<h2>Monte Carlo Verdict/,
+      /<h2>Will the Money Last\?/,
       /<h2>Stress Test/,
       /<h2>Withdrawal Schedule/,
       /<h2>Lifetime Tax Summary/,

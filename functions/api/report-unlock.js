@@ -63,6 +63,22 @@ async function authenticate(request, env) {
  * null. A 'report_unlock' row younger than UNLOCK_WINDOW_MS means still open.
  */
 async function currentUnlockWindow(db, customerId) {
+  // A DIRECT PURCHASE NEVER EXPIRES.
+  //
+  // The 24h window is right for a credit spend — credits meter AI usage, and the
+  // report is a slice of that budget. It is wrong for someone who bought the
+  // report as a product: nobody expects a document they paid for to stop opening
+  // tomorrow. Checked first and separately so a purchase can never be aged out by
+  // the window logic below.
+  //
+  // Also deliberately independent of the credit balance: a report buyer may hold
+  // zero credits and must still be able to open what they bought.
+  const bought = await db.prepare(`
+    SELECT id FROM credit_transactions
+    WHERE customer_id = ? AND type = 'report_purchase' LIMIT 1
+  `).bind(customerId).first();
+  if (bought?.id) return { unlocked: true, unlockedUntil: null, permanent: true };
+
   const row = await db.prepare(`
     SELECT created_at FROM credit_transactions
     WHERE customer_id = ? AND type = 'report_unlock'

@@ -209,9 +209,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.101";
-export const BUILD_TAG = "[main] v1.2.101 - minimum retirement age 45 -> 35, plus an honest statement of what is not modelled before 65. Requested by a user who could not ask the question the app exists to answer (could we retire at 34/35) and whose workaround was to fake his birth date. That workaround is the real argument: birth year drives RMD start, Medicare/IRMAA timing, SS claiming and the early-withdrawal penalty simultaneously, so the floor corrupted four correct calculations to enforce one arbitrary bound. The change itself is ONE constant - every engine is already age-parameterised, 72(t)/SEPP and Rule-of-55 exemptions are modelled, and the Monte Carlo genuinely bootstraps the full horizon, so a 50-year retirement is simulated honestly. Zero engine files touched, 981 tests unchanged. WHAT IS NOT MODELLED IS NOW SAID OUT LOUD, on the tab where the success rate is read. Trigger is retiring before 65, NOT a long horizon: the ACA gap is not created by this change, it already applied to every pre-65 retiree, which is most of this apps audience - someone retiring at 55 has ten unmodelled bridge years today. The sharp edge is that the conversion planner optimises against brackets and IRMAA, IRMAA does not begin until 63, and it knows nothing about ACA premium subsidies, so before 65 it can recommend a conversion costing more in lost subsidy than it saves in tax. Two further caveats appear only on 40+ year horizons: the Blanchett smile is measured on retirees in their 60s and applied from 35 assumes real spending drifts to 75% of todays (measured, not estimated), and 4%/Guyton-Klinger are 30-year rules. All three point the same way - they make the plan look better than it is. ACA modelling deliberately NOT built; it is REQUIREMENTS 16, P1, scoped, medium-large, and doing it later improves every pre-65 retiree at once. PROCESS NOTE: the version bump that shipped v1.2.100 wrote by LINE INDEX and the AGE_LIMITS comment above had shifted it, so it landed inside a JSDoc block - silently commented out, build green, production mislabelled. Bumps are pattern-matched now. 981 tests, 42 suites.";
-export const BUILD_TIME = "2026-08-07T12:00:00Z";
+const APP_VERSION = "1.2.102";
+export const BUILD_TAG = "[main] v1.2.102 - the printable report is a product you can buy, not a slice of an AI credit pack. It burns ZERO tokens (the document is computed client-side from the engines), so pricing it in a currency that means AI usage was a category error - and it forced someone who only wanted a document to first understand credits, buy a pack, and spend 250 of them for 24 hours of access. Now 9 dollars buys it outright and PERMANENTLY: nobody expects a document they paid for to stop opening tomorrow. The 250-credit route stays as the secondary offer so existing balance holders are not stranded. BUILT GRANTING-SIDE FIRST, CHARGING-SIDE LAST (webhook + report-unlock, then checkout) so a half-finished state could only ever mean cannot-buy-yet, never paid-and-got-nothing. THE BUG THAT WOULD HAVE TAKEN A CUSTOMERS MONEY: credit_transactions.type carries a CHECK constraint and report_purchase was not in it. That INSERT happens in the Stripe webhook - AFTER the card is charged - so the first buyer would have paid, D1 would have rejected the row, the handler would have 500d, and Stripe would have retried and failed identically forever. Migration 008 adds the type and was applied to production BEFORE this code shipped; the 5 existing ledger rows were backed up, verified intact across the table rebuild, and the constraint was proven with a real insert that was then deleted. report_purchase rows carry amount 0 by design - the entitlement is the rows existence, and report-unlock checks its TYPE not a balance, so a buyer holding zero credits still opens what they bought. Also fixed: a permanent unlock has unlockedUntil=null, which isReportUnlocked read as EXPIRED - a paying customer would have seen the paywall flash on every load until the server corrected it. DIAGNOSTICS: /api/checkout now returns Stripes own message instead of a generic failure, which turned an opaque 502 into No-such-price in one step; probing all four pack ids then proved the key was fine and one price simply sat in a different Stripe account. Shoppers see a plain sentence; the reason goes to the console. PROCESS: this tag first shipped with double quotes inside it and broke App.jsx - the deploy guard caught it at the build step and production was never touched. 1004 tests, 43 suites.";
+export const BUILD_TIME = "2026-08-14T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -14024,8 +14024,18 @@ export default function AiRAForecaster() {
   }, [stripeReturn]);
   useEffect(() => {
     if (!stripeReturn) return;
+    // A report buyer is granted ZERO credits by design, so the credits wording
+    // told someone who had just paid $9 that they received "0 credits added to
+    // your account" — the most alarming possible sentence at that moment.
+    // Branch on what was actually bought.
+    const reportBuy = stripeReturn.packId === "report";
+    const okMsg = reportBuy
+      ? (stripeReturn.reportUnlocked
+          ? "✓ Report unlocked — it's yours permanently"
+          : "✓ Payment received — your report is being unlocked, this can take a few seconds")
+      : `✓ ${(stripeReturn.credits || 0).toLocaleString()} credits added to your account`;
     const t = stripeReturn.success
-      ? setToastTimed(setStripeToast, { msg: `✓ ${stripeReturn.credits.toLocaleString()} credits added to your account`, tone: "ok" }, 5000)
+      ? setToastTimed(setStripeToast, { msg: okMsg, tone: "ok" }, reportBuy && !stripeReturn.reportUnlocked ? 12000 : 5000)
       : setToastTimed(setStripeToast, { msg: `⚠ ${stripeReturn.error}`, tone: "err" }, 15000);
     return () => clearTimeout(t);
   }, [stripeReturn]);

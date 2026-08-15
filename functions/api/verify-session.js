@@ -193,7 +193,15 @@ export async function onRequestPost({ request, env }) {
       restoreIssued: !!restoreUrl,
     }));
     // The token itself is never logged — it is a bearer credential.
-    return json({ token, credits, customerId, restoreUrl, restoreExpiresAt });
+    // `packId` tells the client WHAT was bought. Without it the return page
+    // assumes every purchase is credits, so a report buyer — who is granted zero
+    // credits by design — was told "0 credits added to your account" seconds
+    // after paying, and the client sat polling /api/balance for a number that
+    // will never change.
+    return json({
+      token, credits, customerId, restoreUrl, restoreExpiresAt,
+      packId: session.metadata?.packId ?? null,
+    });
 
   } catch (e) {
     console.error("[verify-session] unhandled exception:", e.message, e.stack);

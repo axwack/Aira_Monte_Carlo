@@ -18,6 +18,11 @@ const PACK_PRICE_ENV = {
   starter: "STRIPE_PRICE_STARTER",
   value:   "STRIPE_PRICE_VALUE",
   pro:     "STRIPE_PRICE_PRO",
+  // The printable report, sold as a product. Not a credit pack: it grants a
+  // permanent unlock and zero credits (see webhook.js's `packId === "report"`
+  // branch, which must exist before this line can safely be used — a price the
+  // webhook cannot honour would take money and deliver nothing).
+  report:  "STRIPE_PRICE_REPORT",
 };
 
 // 30 minutes of wall-clock time to land on /api/verify-session before the
@@ -79,6 +84,23 @@ export async function onRequestPost({ request, env }) {
     return json({ url: session.url });
   } catch (e) {
     console.error("[checkout] Stripe session create failed:", e.message);
-    return json({ error: "Checkout session creation failed" }, 502);
+    // Surface Stripe's OWN message. "Checkout session creation failed" alone
+    // cannot distinguish the cases that actually occur, and every one of them is
+    // an operator misconfiguration the operator can only fix if they can see it:
+    //   • the price id belongs to TEST mode while the key is LIVE (or vice
+    //     versa) — Stripe says "No such price"; by far the most common
+    //   • the price is recurring but this session is mode=payment
+    //   • the price was archived/deactivated
+    // Same reasoning as /api/admin's shape diagnostics and /api/restore's
+    // distinct reasons: debugging this blind is an unbounded loop.
+    //
+    // Nothing secret is exposed. A Stripe price id is not a credential (it ships
+    // in client-side Stripe.js integrations by design) and the secret key never
+    // appears in these messages.
+    return json({
+      error: "Checkout session creation failed",
+      stripeError: e.message || String(e),
+      hint: "Most often the price id and the secret key are in different Stripe modes (test vs live).",
+    }, 502);
   }
 }
