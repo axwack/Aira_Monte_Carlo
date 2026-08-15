@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
   customer_id         TEXT    NOT NULL REFERENCES customers(stripe_customer_id),
   -- 'deduct' = AI/token spend (raw_tokens set); 'report_unlock' = the flat-fee
   -- printable report (also the source of truth for the active 24h window).
-  type                TEXT    NOT NULL CHECK(type IN ('purchase', 'deduct', 'free_grant', 'overdraft', 'refund', 'dispute_lock', 'dispute_release', 'report_unlock')),
+  type                TEXT    NOT NULL CHECK(type IN ('purchase', 'deduct', 'free_grant', 'overdraft', 'refund', 'dispute_lock', 'dispute_release', 'report_unlock', 'report_purchase')),
   amount              INTEGER NOT NULL,   -- positive = added, negative = deducted
   raw_tokens          INTEGER,            -- for 'deduct' rows: actual Gemini token count
   stripe_session_id   TEXT,              -- for 'purchase' rows: Stripe session id

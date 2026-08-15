@@ -111,6 +111,46 @@ async function handleCheckoutCompleted(event, env) {
     console.error("[webhook] No customer on session:", sessionId);
     return json({ received: true, note: "no customer" });
   }
+  // ── The printable report, sold as a product rather than as credits ──────────
+  // It burns ZERO tokens — the whole document is computed client-side from the
+  // engines — so pricing it in a currency that means "AI usage" was a category
+  // error. It also forced a buyer who only wants the report to first understand
+  // credits, buy a pack, and spend a slice of it.
+  //
+  // Handled BEFORE the credits path because `PACK_CREDITS` has no entry for it,
+  // so it would otherwise fall into the "unknown pack" rejection below and the
+  // customer would have paid for nothing.
+  if (packId === "report") {
+    try {
+      const existing = await env.DB.prepare(
+        "SELECT id FROM credit_transactions WHERE stripe_session_id = ? AND type = 'report_purchase'"
+      ).bind(sessionId).first();
+      if (existing) return json({ received: true, note: "report already granted" });
+
+      await env.DB.batch([
+        // The customer row must exist for the unlock lookup to find anything, but
+        // this grants NO credits — amount 0 keeps the ledger honest about what was
+        // actually bought, and report-unlock.js keys off the row's type, not a balance.
+        env.DB.prepare(`
+          INSERT INTO customers (stripe_customer_id, email, credits)
+          VALUES (?, ?, 0)
+          ON CONFLICT(stripe_customer_id) DO UPDATE SET
+            email      = COALESCE(excluded.email, email),
+            updated_at = unixepoch()
+        `).bind(customerId, email),
+        env.DB.prepare(`
+          INSERT INTO credit_transactions (customer_id, type, amount, stripe_session_id)
+          VALUES (?, 'report_purchase', 0, ?)
+        `).bind(customerId, sessionId),
+      ]);
+      console.log(`[webhook] Report purchased by ${customerId}`);
+    } catch (e) {
+      console.error("[webhook] report grant failed:", e.message);
+      return json({ error: "Database error" }, 500);
+    }
+    return json({ received: true });
+  }
+
   if (credits === 0) {
     console.error("[webhook] Unknown packId:", packId);
     return json({ received: true, note: "unknown pack" });

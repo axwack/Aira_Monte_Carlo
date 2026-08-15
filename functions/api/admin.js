@@ -246,6 +246,56 @@ export async function onRequestPost({ request, env, waitUntil }) {
       }
     }
 
+    // ── grant-report ──────────────────────────────────────────────────────
+    // Writes the report_purchase entitlement directly. Two jobs, both real:
+    //
+    //   1. SUPPORT. When a Stripe webhook fails — and it will eventually: a
+    //      deploy mid-payment, a D1 blip, a constraint we forgot to widen — the
+    //      customer has paid and has nothing. Without this the only remedy is a
+    //      refund and an apology. With it, the report is granted in one call and
+    //      the money stays.
+    //   2. VERIFICATION WITHOUT A CHARGE. Exercises every step downstream of
+    //      Stripe (the row, its CHECK constraint, /api/report-unlock's permanent
+    //      branch, the client's `permanent` cache flag) with no transaction to
+    //      refund. It deliberately does NOT prove the webhook branch itself —
+    //      only a real or Stripe-simulated event does that — so do not read a
+    //      success here as "checkout works end to end".
+    //
+    // Idempotent: a second call is a no-op rather than a duplicate entitlement.
+    if (action === "grant-report") {
+      const { email, customerId: explicitId } = body;
+      if (!email && !explicitId) return json({ ok: false, error: "Provide email or customerId" }, 400);
+      if (!env.DB)               return json({ ok: false, error: "D1 not bound" }, 500);
+
+      const customerId = explicitId || fakeCustomerId(email);
+      try {
+        const existing = await env.DB.prepare(
+          "SELECT id FROM credit_transactions WHERE customer_id = ? AND type = 'report_purchase' LIMIT 1"
+        ).bind(customerId).first();
+        if (existing?.id) {
+          return json({ ok: true, customerId, alreadyGranted: true, transactionId: existing.id });
+        }
+        await env.DB.batch([
+          // Grants ZERO credits — the entitlement is the transaction row, and
+          // report-unlock keys off its type, never a balance.
+          env.DB.prepare(`
+            INSERT INTO customers (stripe_customer_id, email, credits)
+            VALUES (?, ?, 0)
+            ON CONFLICT(stripe_customer_id) DO UPDATE SET
+              email      = COALESCE(excluded.email, email),
+              updated_at = unixepoch()
+          `).bind(customerId, email || null),
+          env.DB.prepare(`
+            INSERT INTO credit_transactions (customer_id, type, amount, stripe_session_id)
+            VALUES (?, 'report_purchase', 0, ?)
+          `).bind(customerId, "ADMIN_GRANT_" + fakeSessionId()),
+        ]);
+        return json({ ok: true, customerId, granted: true });
+      } catch (e) {
+        return json({ ok: false, error: "D1 error: " + e.message }, 500);
+      }
+    }
+
     // ── simulate-purchase ─────────────────────────────────────────────────
     // Creates a fake customer in D1, credits the chosen pack, and issues a JWT
     // so the full client-side billing flow can be exercised without a real payment.

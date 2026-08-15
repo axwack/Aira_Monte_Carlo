@@ -250,6 +250,56 @@ export async function purchaseCreditPack(packId) {
   window.location.href = url; // redirect to Stripe — page unloads here
 }
 
+// ─── Report, sold as a product ──────────────────────────────────────────────
+
+/** Price of the standalone report. Display only — Stripe holds the real price. */
+export const REPORT_PRICE_USD = 9.00;
+
+/**
+ * Buy the printable report outright.
+ *
+ * Separate from `purchaseCreditPack` on purpose. Credits meter AI token usage;
+ * this report burns ZERO tokens (it is computed client-side from the engines), so
+ * charging credits for it priced a deterministic document in a currency that
+ * means something else — and forced a buyer who only wants the report to first
+ * understand credits, buy a pack, and spend a slice of it.
+ *
+ * Grants a PERMANENT unlock (see report-unlock.js), not the 24-hour window a
+ * credit spend buys. Nobody expects a document they paid for to stop opening
+ * tomorrow.
+ *
+ * The 250-credit path (`unlockReport`) is deliberately kept for existing credit
+ * holders — removing it would break people mid-balance — but this is the one to
+ * lead with.
+ */
+export async function purchaseReport() {
+  if (!BILLING_ENABLED) {
+    console.warn("[BILLING STUB] Would redirect to Stripe for the report");
+    try { localStorage.setItem(REPORT_UNLOCK_KEY, JSON.stringify({ unlockedUntil: null, permanent: true })); } catch {}
+    return { success: true, stub: true };
+  }
+  const res = await fetch("/api/checkout", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ packId: "report" }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    // The customer sees a plain sentence; the OPERATOR gets Stripe's own reason
+    // in the console. Splitting them matters: a shopper must not be shown
+    // "No such price: price_1U4...", but without it anywhere the failure is
+    // indistinguishable from a network blip and takes ten guesses to fix.
+    if (err.stripeError) console.error("[checkout] Stripe rejected the report price:", err.stripeError, "—", err.hint || "");
+    throw new Error(
+      err.stripeError
+        ? "This purchase isn't available right now — we've been notified."
+        : (err.error || "Checkout failed")
+    );
+  }
+  const { url } = await res.json();
+  window.location.href = url;   // redirect to Stripe — page unloads here
+}
+
 // ─── Report unlock ──────────────────────────────────────────────────────────
 
 /**
@@ -308,7 +358,11 @@ export function isReportUnlocked() {
     if (typeof localStorage === "undefined") return false;
     const raw = localStorage.getItem(REPORT_UNLOCK_KEY);
     if (!raw) return false;
-    const { unlockedUntil } = JSON.parse(raw);
+    const { unlockedUntil, permanent } = JSON.parse(raw);
+    // A purchased report has no expiry, so `unlockedUntil` is null by design.
+    // Without this branch the null read as "expired" and a paying customer saw
+    // the paywall on first paint until the server round-trip corrected it.
+    if (permanent) return true;
     return !!unlockedUntil && new Date(unlockedUntil).getTime() > Date.now();
   } catch { return false; }
 }
@@ -353,10 +407,12 @@ export async function fetchReportUnlockStatus() {
     });
     if (res.status === 401) { clearStoredJWT(); return { unlocked: false, unlockedUntil: null }; }
     if (!res.ok) return null;                       // null = unknown, keep cache
-    const { unlocked, unlockedUntil } = await res.json();
+    // `permanent` marks a purchased report (no expiry). Carried into the cache
+    // so isReportUnlocked() does not read its null `unlockedUntil` as expired.
+    const { unlocked, unlockedUntil, permanent } = await res.json();
     try {
       if (typeof localStorage !== "undefined") {
-        if (unlocked) localStorage.setItem(REPORT_UNLOCK_KEY, JSON.stringify({ unlockedUntil }));
+        if (unlocked) localStorage.setItem(REPORT_UNLOCK_KEY, JSON.stringify({ unlockedUntil, permanent: !!permanent }));
         else          localStorage.removeItem(REPORT_UNLOCK_KEY);
       }
     } catch {}
@@ -408,7 +464,7 @@ export async function verifyStripeSession(sessionId, nonce) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || "Session verification failed");
   }
-  const { token, credits: initialCredits, restoreUrl, restoreExpiresAt } = await res.json();
+  const { token, credits: initialCredits, restoreUrl, restoreExpiresAt, packId } = await res.json();
   setStoredJWT(token);
   try { localStorage.setItem(CACHED_BALANCE_KEY, String(initialCredits)); } catch {}
   _notifyListeners(initialCredits);
@@ -416,6 +472,23 @@ export async function verifyStripeSession(sessionId, nonce) {
   // Deliberately stored: it is the spare key for the JWT beside it, and losing it
   // silently would defeat the point. Same origin, same risk profile as the JWT.
   if (restoreUrl) setStoredRecoveryLink(restoreUrl, restoreExpiresAt);
+
+  // A REPORT purchase grants zero credits by design — the entitlement is the
+  // ledger row, not a balance. So the credit poll below is the wrong signal for
+  // it: it would wait the full 12 seconds for a number that never moves, then
+  // report "0 credits". Poll for the ENTITLEMENT instead, which is the thing the
+  // webhook actually writes and the thing the buyer is waiting on.
+  if (packId === "report") {
+    for (let i = 0; i < 6; i++) {
+      const status = await fetchReportUnlockStatus();
+      if (status?.unlocked) return { packId, reportUnlocked: true, restoreUrl };
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    // Webhook still hasn't landed. Not an error the buyer can act on — the grant
+    // is idempotent and arrives on Stripe's retry — so say so honestly rather
+    // than showing a failure for a payment that succeeded.
+    return { packId, reportUnlocked: false, restoreUrl };
+  }
 
   // If credits are 0 the webhook hasn’t fired yet — poll /api/balance for up to 12s
   if (initialCredits === 0) {
@@ -553,7 +626,11 @@ export function useStripeReturn() {
     }
 
     verifyStripeSession(sessionId, nonce)
-      .then(({ credits, restoreUrl }) => setStatus({ success: true, credits, restoreUrl }))
+      // packId/reportUnlocked must survive to the caller — the return-page toast
+      // branches on them, and destructuring only `credits` here is what would
+      // send a report buyer down the credits wording.
+      .then(({ credits, restoreUrl, packId, reportUnlocked }) =>
+        setStatus({ success: true, credits, restoreUrl, packId, reportUnlocked }))
       .catch(e => setStatus({ success: false, error: e.message }));
   }, []);
 
