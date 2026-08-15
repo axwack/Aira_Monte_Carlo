@@ -14542,6 +14542,12 @@ export default function AiRAForecaster() {
                     // entire journal with no warning, because the only export that
                     // carried it was a second button on the Progress tab.
                     checkIns,
+                    // Bucket Strategy tab settings (b1Years/b2Years/drawMode) are also
+                    // NOT part of `assumptions` — BucketsTab owns them in its own
+                    // localStorage key (_BCFG_KEY) instead of lifted root state, same
+                    // gap the checkIns comment above already describes. Read fresh here
+                    // rather than threading bCfg through root state for one export call.
+                    bCfg: _loadBCfg(),
                     savedAt: new Date().toISOString(),
                     exportedAt: new Date().toISOString(),
                     appVersion: APP_VERSION,
@@ -14568,6 +14574,12 @@ export default function AiRAForecaster() {
                   // that already has a journal must not delete history that only
                   // exists there; mergeCheckIns dedupes by id and re-sorts by date.
                   if (Array.isArray(data.checkIns)) handleImportCheckIns(data.checkIns);
+                  // Merged into existing local config, never replaced wholesale — same
+                  // rule as checkIns above, so an older export missing a newer bCfg
+                  // field (e.g. drawMode) can't reset it back to default on import.
+                  if (data.bCfg && typeof data.bCfg === "object") {
+                    try { localStorage.setItem(_BCFG_KEY, JSON.stringify({ ..._loadBCfg(), ...data.bCfg })); } catch {}
+                  }
                   if (data.retireAge !== undefined) setRetAge(data.retireAge);
                   if (data.endAge !== undefined) setEndAge(data.endAge);
                   if (data.port !== undefined) setPort(data.port);
@@ -15695,7 +15707,6 @@ export default function AiRAForecaster() {
           mc={mc}
           stress={stress}
           rmdAge={rmdAge}
-          buildTag={BUILD_TAG}
           onClose={() => setShowReport(false)}
           // Paywall gate. `!reportCapable` always wins: the report stays locked
           // on any deployment whose server doesn't have GEMINI_API_KEY configured,
