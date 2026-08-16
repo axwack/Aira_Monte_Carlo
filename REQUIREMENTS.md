@@ -3195,3 +3195,83 @@ simply barely used (7 sites vs 109).
 5. Same root cause as §28: **the app knows something the screen does not say.** Do these
    together — the provenance registry answers "is this figure what its label claims?", this
    answers "can the user actually find out?"
+
+---
+
+## 36. Contribution semantics: annual recurring, no partial first year — WON'T BUILD 2026-08-12
+
+**Raised by a user** (401k section): *"Does the annual contribution amount represent the
+recurring amount I'll contribute each future year until retirement, or just the amount
+remaining in the current year? I want to make sure I'm not double-counting contributions
+already reflected in my current portfolio balance, since we've already made most of our
+2026 contributions and plan to front-load 2027 early — and are potentially exiting into
+early retirement sometime next year."*
+
+The question is correct, and the answer was not written down anywhere.
+
+### What the engines actually do
+
+`runMC` accumulation loop (mirrored in `simulateDeterministicWithStrategy` and
+`accumulateToRetirement`):
+
+```js
+for (let y = 0; y < accYrs; y++) {        // accYrs = retireAge − currentAge
+  ...growth applied first...
+  const jc = jobContributionsForYear(p, p.currentAge + y);
+  pretax  += jc.pretax;                   // FULL amount, every year
+  cash    += (p.hsaContrib || 0);
+  roth    += jc.roth;
+  taxable += (p.taxableContrib || 0);
+}
+```
+
+1. **Recurring, not remainder-of-year.** The figure is applied in full in every
+   accumulation year. It is not a "rest of this year" amount.
+2. **Retirement turns it off automatically.** `accYrs = retireAge − currentAge`, so the
+   loop simply ends. There is no separate switch, and nothing is contributed during
+   drawdown. A spouse with an earlier `retireAge` stops on THEIR date, via the shared
+   `jobContributionsForYear` / `contribStopOnPrimaryClock` helpers (§24.1) — which is why
+   all three engines cannot disagree about whose contributions have stopped.
+3. **No partial-year handling exists.** The engine has no concept of "I have already
+   contributed $20K of this year's $23K." Year one is applied at 100% on top of whatever
+   balance was entered, so a user whose balance already contains this year's
+   contributions double-counts year one.
+4. **Contributions land after growth**, at year end. A user who front-loads in January
+   therefore gets slightly LESS compounding in the model than in reality — an error in the
+   opposite direction to (3), partially offsetting it.
+
+### Decision: do not build a first-year override
+
+Vincent, 2026-08-12: for a user retiring next year, `accYrs` is 1 or 2, so the whole
+question is worth at most one year of contributions against an existing portfolio —
+immaterial next to balance, spending and withdrawal order. **The guidance is to hand-adjust
+the input**, not to add a feature.
+
+### Support answer (reusable)
+
+> The contribution field is a **full-year recurring** amount — the engine adds it every
+> year from your current age until your retirement age, then stops automatically at
+> retirement. There is no separate switch to turn it off.
+>
+> You are right that it can double-count. The model does not know you have already made
+> most of this year's contributions, and those dollars are already inside the balance you
+> entered. Since you are retiring next year, the cleanest fix is to **enter the amount you
+> still expect to contribute from today until you retire**, rather than a full annual
+> figure. With only a year or two of accumulation left, this input barely moves your
+> result — your balance, spending and withdrawal order drive it. Your **retirement age**
+> is the field that matters most here: it decides both how many contribution years run and
+> the entire drawdown horizon.
+
+### If it ever does become material — the real fix
+
+A `contribRemainingThisYear` override applied only at `y === 0`, defaulting to the full
+figure so no saved plan changes. Only worth building if mid-career users (10+ accumulation
+years) report the same confusion, where a 100%-overstated first year compounds for decades.
+
+### Also open (cheap, not yet done)
+
+The contribution field's helper text still does not say any of this. One line —
+*"Full-year amount, applied every year until retirement. If you have already made this
+year's contributions they are in your balance — enter a reduced figure."* — converts a
+silent modelling error into an informed choice, and is the actual reason this user had to
+ask. Same class as §28/§37: the app knows something the screen does not say.
