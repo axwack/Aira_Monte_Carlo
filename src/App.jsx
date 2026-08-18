@@ -14029,13 +14029,21 @@ export default function AiRAForecaster() {
     // your account" — the most alarming possible sentence at that moment.
     // Branch on what was actually bought.
     const reportBuy = stripeReturn.packId === "report";
+    // The poll above already waited ~12s for the entitlement. If it still is not
+    // there the webhook has not landed, and a cheerful "unlocking shortly" leaves
+    // someone who has just paid staring at a paywall with no idea what to do —
+    // the one failure mode worth designing for, because it is the only one that
+    // takes money and delivers nothing. Stripe retries, and the grant is
+    // idempotent, so it usually self-heals; say that, and give them a route out
+    // if it does not. Amber, not green: this is not a completed transaction yet.
+    const stalled = reportBuy && !stripeReturn.reportUnlocked;
     const okMsg = reportBuy
       ? (stripeReturn.reportUnlocked
           ? "✓ Report unlocked — it's yours permanently"
-          : "✓ Payment received — your report is being unlocked, this can take a few seconds")
+          : `Payment received — your report is taking longer than usual to unlock. Reload this page in a minute. If it is still locked, email ${FEEDBACK_EMAIL} with your Stripe receipt and we will open it straight away.`)
       : `✓ ${(stripeReturn.credits || 0).toLocaleString()} credits added to your account`;
     const t = stripeReturn.success
-      ? setToastTimed(setStripeToast, { msg: okMsg, tone: "ok" }, reportBuy && !stripeReturn.reportUnlocked ? 12000 : 5000)
+      ? setToastTimed(setStripeToast, { msg: okMsg, tone: stalled ? "warn" : "ok" }, stalled ? 20000 : 5000)
       : setToastTimed(setStripeToast, { msg: `⚠ ${stripeReturn.error}`, tone: "err" }, 15000);
     return () => clearTimeout(t);
   }, [stripeReturn]);
@@ -15562,13 +15570,22 @@ export default function AiRAForecaster() {
       {stripeToast && (
         <div style={{
           position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          // Amber is its own state, not a shade of success. A payment that went
+          // through but has not yet delivered is neither "done" nor "failed", and
+          // showing it green would tell someone staring at a paywall that
+          // everything worked.
           background: stripeToast.tone === "err"
             ? "rgba(220,38,38,0.97)"
-            : "rgba(16,185,129,0.95)",
+            : stripeToast.tone === "warn"
+              ? "rgba(217,119,6,0.97)"
+              : "rgba(16,185,129,0.95)",
           color: "white",
           borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 600,
           boxShadow: "0 4px 16px rgba(0,0,0,0.4)", zIndex: 99999,
-          pointerEvents: "none", maxWidth: "min(92vw, 560px)", textAlign: "center",
+          // Clickable when it carries an email address to act on; the success
+          // and error toasts stay click-through as before.
+          pointerEvents: stripeToast.tone === "warn" ? "auto" : "none",
+          maxWidth: "min(92vw, 560px)", textAlign: "center",
           lineHeight: 1.45,
         }}>
           {stripeToast.msg}
