@@ -8971,51 +8971,6 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {(longHorizon || preMedicare > 0) && (
-        <div style={{ background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.32)", borderRadius: 10, padding: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24", marginBottom: 8 }}>
-            ⚠ {longHorizon ? `${planHorizon}-YEAR RETIREMENT — ` : ""}WHAT THIS MODEL DOES NOT COVER
-          </div>
-          <div style={{ fontSize: 12.5, color: "#cbd5e1", lineHeight: 1.65, marginBottom: 10 }}>
-            Retiring at {effRetireAge} is fully simulated — {MC_PATHS_LABEL} paths across all {planHorizon} years,
-            with the early-withdrawal penalty, the bridge to Social Security, and bracket-capped
-            drawdown all modelled. What follows is not modelled, and it makes the plan look{" "}
-            <strong style={{ color: "#e2e8f0" }}>better</strong> than it is:
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {preMedicare > 0 && (
-              <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
-                <strong style={{ color: "#fbbf24" }}>Health insurance before Medicare is not modelled.</strong>{" "}
-                You have {preMedicare} years to cover before 65. AiRA models catastrophic healthcare
-                shocks but not ACA marketplace premiums — you must include them in your annual
-                spending yourself. Related: the Roth conversion planner optimises against tax
-                brackets and IRMAA, and IRMAA does not begin until 63. It does not know about ACA
-                premium subsidies, which phase out on income — so before 65 a conversion it
-                recommends can cost more in lost subsidy than it saves in tax.
-              </div>
-            )}
-            {longHorizon && (
-            <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
-              <strong style={{ color: "#fbbf24" }}>The spending curve is extrapolated.</strong>{" "}
-              The Blanchett smile measures retirees in their 60s and 70s; applied from age {effRetireAge} it
-              assumes your real spending drifts down to about{" "}
-              {Math.round(spendingSmileFactor(Math.min(80, params.endAge), effRetireAge) * 100)}% of today's by 80.
-              That is well past the data it was fitted on. Turn off <strong>Smile spending</strong> in
-              the sidebar for a flat-real plan — a stricter and, over {planHorizon} years, more defensible test.
-            </div>
-            )}
-            {longHorizon && (
-            <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
-              <strong style={{ color: "#fbbf24" }}>4% is a 30-year rule.</strong>{" "}
-              Bengen and Guyton-Klinger were derived for ~30-year retirements. Over {planHorizon} years the
-              sustainable rate is materially lower — commonly cited near 3.0–3.5%. The success rate
-              above is computed honestly for the rate you chose; it is the <em>rule of thumb</em>, not
-              the simulation, that does not transfer.
-            </div>
-            )}
-          </div>
-        </div>
-      )}
       {/* Explanation card */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
         <SectionHeader label="What is a Monte Carlo simulation?" open={showWhat} onToggle={() => setShowWhat(!showWhat)} color="#94a3b8" />
@@ -9186,6 +9141,51 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                 <InputCard title="Simulation Parameters" rows={[["Simulations", `${MC_PATHS_LABEL} paths`], ["Horizon", `Age ${params.endAge || 90} (your plan age)`], ["Withdrawal", getStrategyLabel(params.withdrawalStrategy || "smart")], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
               </div>
             </div>
+          {(longHorizon || preMedicare > 0) && (
+            <div style={{ background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.32)", borderRadius: 10, padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24", marginBottom: 8 }}>
+                ⚠ {longHorizon ? `${planHorizon}-YEAR RETIREMENT — ` : ""}WHAT THIS MODEL DOES NOT COVER
+              </div>
+              <div style={{ fontSize: 12.5, color: "#cbd5e1", lineHeight: 1.65, marginBottom: 10 }}>
+                Retiring at {effRetireAge} is fully simulated — {MC_PATHS_LABEL} paths across all {planHorizon} years,
+                with the early-withdrawal penalty, the bridge to Social Security, and bracket-capped
+                drawdown all modelled. What follows is not modelled, and it makes the plan look{" "}
+                <strong style={{ color: "#e2e8f0" }}>better</strong> than it is:
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {preMedicare > 0 && (
+                  <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                    <strong style={{ color: "#fbbf24" }}>Health insurance before Medicare is not modelled.</strong>{" "}
+                    You have {preMedicare} years to cover before 65. AiRA models catastrophic healthcare
+                    shocks but not ACA marketplace premiums — you must include them in your annual
+                    spending yourself. Related: the Roth conversion planner optimises against tax
+                    brackets and IRMAA, and IRMAA does not begin until 63. It does not know about ACA
+                    premium subsidies, which phase out on income — so before 65 a conversion it
+                    recommends can cost more in lost subsidy than it saves in tax.
+                  </div>
+                )}
+                {longHorizon && (
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                  <strong style={{ color: "#fbbf24" }}>The spending curve is extrapolated.</strong>{" "}
+                  The Blanchett smile measures retirees in their 60s and 70s; applied from age {effRetireAge} it
+                  assumes your real spending drifts down to about{" "}
+                  {Math.round(spendingSmileFactor(Math.min(80, params.endAge), effRetireAge) * 100)}% of today's by 80.
+                  That is well past the data it was fitted on. Turn off <strong>Smile spending</strong> in
+                  the sidebar for a flat-real plan — a stricter and, over {planHorizon} years, more defensible test.
+                </div>
+                )}
+                {longHorizon && (
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                  <strong style={{ color: "#fbbf24" }}>4% is a 30-year rule.</strong>{" "}
+                  Bengen and Guyton-Klinger were derived for ~30-year retirements. Over {planHorizon} years the
+                  sustainable rate is materially lower — commonly cited near 3.0–3.5%. The success rate
+                  above is computed honestly for the rate you chose; it is the <em>rule of thumb</em>, not
+                  the simulation, that does not transfer.
+                </div>
+                )}
+              </div>
+            </div>
+          )}
           </>
         )}
       </div>
@@ -14039,7 +14039,13 @@ export default function AiRAForecaster() {
     const stalled = reportBuy && !stripeReturn.reportUnlocked;
     const okMsg = reportBuy
       ? (stripeReturn.reportUnlocked
-          ? "✓ Report unlocked — it's yours permanently"
+          // Names the next step, because Stripe's redirect is a full page load:
+          // the entitlement and the saved profile both survive it, but `mc` does
+          // not, so the 📄 Report button lands DISABLED. A buyer seeing "unlocked"
+          // beside a greyed-out button concludes they paid for nothing — and the
+          // only existing hint is a title= on a disabled button, which most
+          // browsers never render.
+          ? "✓ Report unlocked — it's yours permanently. Press ▶ Run Monte Carlo, then 📄 Report."
           : `Payment received — your report is taking longer than usual to unlock. Reload this page in a minute. If it is still locked, email ${FEEDBACK_EMAIL} with your Stripe receipt and we will open it straight away.`)
       : `✓ ${(stripeReturn.credits || 0).toLocaleString()} credits added to your account`;
     const t = stripeReturn.success
