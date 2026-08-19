@@ -90,3 +90,6 @@ aira-forecaster-agents/knowledge/*
 *.local.ts
 TEST_REPORT.md
 tests/local/
+
+# --Graphify
+graphify-out/

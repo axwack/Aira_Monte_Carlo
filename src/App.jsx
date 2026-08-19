@@ -10952,7 +10952,7 @@ function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt }) {
   const STEPS = [
     { label: "About You", icon: "👤", sub: `You are ${ageFromDob(values.dob) ?? values.currentAge} yrs old` },
     { label: "Current Savings", icon: "💰", sub: `Net worth of ${fmtDollar(values.port)} saved. Congratulations!` },
-    { label: "Contributions", icon: "📋", sub: `Total Contributions of ${fmtDollar(householdAnnualContribution(values))}/yr` },
+    { label: "Money In", icon: "💵", sub: `Contributing ${fmtDollar(householdAnnualContribution(values))}/yr while working` },
     {
       label: "Spending & Expenses", icon: "💸",
       sub: values.spImportMeta
@@ -12421,7 +12421,344 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         </div>
       </ACard>
 
-      {/* ── Income card 2: PENSIONS ────────────────────────────────────────
+      {/* ── Income card 2: SOCIAL SECURITY (moved from Retirement Plan step) ──
+          §18 Phase B: SS is money coming IN, not a withdrawal setting. Moved
+          here so every income source lives in the same step. The primary +
+          spouse + widow's-penalty block moved as one unit; every field,
+          helper, and disclosure is unchanged from where it lived before. */}
+      <ACard title="Social Security" accent="#7c3aed">
+        <WFieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age. (Per Month)">
+          <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={10_000} step={50} suffix="/mo" />
+        </WFieldRow>
+        <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
+          <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs"/>
+        </WFieldRow>
+
+        {/* ── Spouse Social Security (§21 Phase 1) ────────────────────────────
+            Everything here is a number the user reads off ssa.gov. We deliberately
+            do NOT derive benefits from a PIA + claim-age schedule: SSA's own
+            estimate beats our reconstruction of it, and it cannot drift out of
+            date on us. See REQUIREMENTS §21 "agreed approach".
+
+            Only fields the engine actually reads are shown. There is no
+            "when does my spouse die" input yet, because the engine does not model
+            that event — shipping the control first would create exactly the kind of
+            dead setting src/ghostSettings.test.js exists to catch. */}
+        {/* Read-only pointer, NOT a second checkbox. `spouse.enabled` is one
+            household fact with one switch, in About You — see the note there.
+            Duplicating the toggle here is the pattern §31 removed. */}
+        {!values.spouse?.enabled && (
+          <div style={{ padding: "10px 12px", marginBottom: 16, background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+            <span>Modelling one benefit. Add a spouse to include <strong style={{ color: "#c4b5fd" }}>their</strong> benefit, claim age and survivor benefits.</span>
+            {/* Index 0 is AboutYouPanel in ProfileWizard's PANELS array. */}
+            <button
+              type="button"
+              onClick={() => onNavigateStep && onNavigateStep(0)}
+              style={{
+                fontSize: 11, color: "#c4b5fd", background: "none", border: "none",
+                padding: 0, cursor: onNavigateStep ? "pointer" : "default",
+                textDecoration: onNavigateStep ? "underline" : "none",
+              }}
+              disabled={!onNavigateStep}
+            >
+              Add a spouse in About You →
+            </button>
+          </div>
+        )}
+
+        {values.spouse?.enabled && (() => {
+          const sp = values.spouse || {};
+          const setSpouse = (patch) => onChange("spouse", { ...sp, ...patch });
+          // The spousal top-up is 50% of the HIGHER earner's PIA (the full-retirement-age
+          // amount) — not 50% of whatever they actually claim, and delayed credits never
+          // raise it. So we have to ask for the FRA amount separately; it is the one
+          // number that cannot be inferred from what someone is receiving.
+          const primaryPia = Number(values.ssPia) || 0;
+          const spousePia  = Number(sp.ssPia) || 0;
+          const higherPia  = Math.max(primaryPia, spousePia);
+          const topUp      = Math.max(0, higherPia * 0.5 - spousePia);
+          // Per-person clock (§24). The engines walk ONE age — the primary's — so
+          // the gap is what places the spouse's milestones on that timeline.
+          const gap        = spouseAgeOffset(values);
+          const spouseAge  = personAgeNow(sp);
+          const yourAge    = personAgeNow(values);
+          const spouseClaimAtYourAge = (sp.ssAge || 67) + gap;
+          return (
+            <>
+              {/* §24 #1 — THE enabler. Without it the spouse's claim age was
+                  compared against the PRIMARY's age, so a younger spouse started
+                  collecting early by exactly the age gap (see spousalSS.test.js).
+                  Asked for first, because every other spouse figure below is
+                  interpreted against it. */}
+              <WFieldRow
+                label="Spouse's date of birth"
+                helper="Their own age drives when their benefit starts, when they reach Medicare at 65, and their own RMD age. Leave blank to assume they are the same age as you."
+              >
+                <input
+                  type="date"
+                  value={sp.dob || ""}
+                  onChange={(e) => setSpouse({ dob: e.target.value })}
+                  style={{
+                    background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0",
+                    borderRadius: 6, padding: "5px 8px", fontSize: 12,
+                    fontFamily: "'DM Mono',monospace", width: 130,
+                  }}
+                />
+              </WFieldRow>
+              {/* Disclose the derivation where it is entered: a date field that
+                  silently shifts ten years of income needs to show its own effect. */}
+              <div style={{
+                margin: "-8px 0 16px", padding: "8px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
+                background: sp.dob ? "rgba(124,58,237,0.08)" : "rgba(148,163,184,0.07)",
+                border: `1px solid ${sp.dob ? "rgba(167,139,250,0.28)" : "rgba(148,163,184,0.2)"}`,
+                color: sp.dob ? "#c4b5fd" : "#94a3b8",
+              }}>
+                {sp.dob && spouseAge != null && yourAge != null ? (
+                  <>
+                    Your spouse is <strong>{spouseAge}</strong> and you are <strong>{yourAge}</strong> —
+                    {gap === 0 ? " the same age" : ` a ${Math.abs(gap)}-year gap (${gap > 0 ? "they are younger" : "they are older"})`}.
+                    {" "}Their benefit therefore starts when <strong>you</strong> are {spouseClaimAtYourAge},
+                    since the plan is drawn on your age.
+                  </>
+                ) : (
+                  <>
+                    No spouse birthdate entered, so the plan assumes you are the <strong>same age</strong>.
+                    If there is a real gap this matters: a younger spouse's benefit would otherwise be
+                    counted years before it actually starts.
+                  </>
+                )}
+              </div>
+              <WFieldRow label="Spouse's benefit" helper="What SSA estimates your spouse will receive at the age they plan to claim. (Per Month)">
+                <ANumInput value={Math.round((sp.ssb || 0) / 12)} onSet={(v) => setSpouse({ ssb: Math.round(v * 12) })} min={0} max={10_000} step={50} suffix="/mo" />
+              </WFieldRow>
+              <WFieldRow label="Spouse's SS start age" helper="Their own age when they claim — can differ from yours, since each of you claims independently.">
+                <ANumInput value={sp.ssAge || 67} onSet={(v) => setSpouse({ ssAge: v })} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs" />
+              </WFieldRow>
+              <WFieldRow label="Your benefit at full retirement age" helper="From your SSA statement — the amount at FRA, not at the age you plan to claim. Used only for the spousal top-up. (Per Month)">
+                <ANumInput value={Math.round(primaryPia / 12)} onSet={(v) => onChange("ssPia", Math.round(v * 12))} min={0} max={10_000} step={50} suffix="/mo" />
+              </WFieldRow>
+              <WFieldRow label="Spouse's benefit at full retirement age" helper="Same, for your spouse. Enter it even if they never worked — a $0 here still earns the spousal top-up. (Per Month)">
+                <ANumInput value={Math.round(spousePia / 12)} onSet={(v) => setSpouse({ ssPia: Math.round(v * 12) })} min={0} max={10_000} step={50} suffix="/mo" />
+              </WFieldRow>
+
+              {higherPia > 0 && (
+                <div style={{
+                  margin: "2px 0 14px", padding: "9px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
+                  background: topUp > 0 ? "rgba(20,184,166,0.09)" : "rgba(148,163,184,0.08)",
+                  border: `1px solid ${topUp > 0 ? "rgba(20,184,166,0.3)" : "rgba(148,163,184,0.22)"}`,
+                  color: topUp > 0 ? "#5eead4" : "#94a3b8",
+                }}>
+                  {topUp > 0 ? (
+                    <>
+                      <strong>Spousal top-up: {fmtDollar(Math.round(topUp / 12))}/mo</strong> — your spouse's own
+                      benefit is below half of the higher earner's full-retirement amount, so Social Security
+                      tops it up to that level. Already included in your plan.
+                    </>
+                  ) : (
+                    <>No spousal top-up: your spouse's own benefit already exceeds half of the higher
+                    earner's full-retirement amount, so they simply receive their own.</>
+                  )}
+                </div>
+              )}
+
+              {/* §22 — the widow's penalty, now modelled. Replaces the
+                  "Not modelled yet" note that sat here. One user-entered age, not
+                  a mortality draw, so the event lands in a known year and can be
+                  explained rather than merely averaged. */}
+              {/* §30 — WHO dies first. Not cosmetic: it decides whose age drives the
+                  plan horizon, Medicare, the age-65 add-on, the RMD clock and the
+                  survivor's own FRA. Asked before the age, because the age below is
+                  read as belonging to whoever is selected here. */}
+              <WFieldRow
+                label="Who passes first"
+                helper="The higher earner is often the older partner, so this is frequently the more realistic case — and it changes far more than the benefit: the plan then has to fund the survivor's whole life, not yours."
+              >
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[["spouse", "My spouse"], ["primary", "Me"]].map(([val, lbl]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setSpouse({ firstToDie: val })}
+                      style={{
+                        background: (sp.firstToDie || "spouse") === val ? "rgba(251,146,60,0.18)" : "transparent",
+                        border: `1px solid ${(sp.firstToDie || "spouse") === val ? "rgba(251,146,60,0.55)" : "#1e3a5f"}`,
+                        color: (sp.firstToDie || "spouse") === val ? "#fdba74" : "#94a3b8",
+                        borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600,
+                      }}
+                    >{lbl}</button>
+                  ))}
+                </div>
+              </WFieldRow>
+              <WFieldRow
+                label={(sp.firstToDie === "primary") ? "Model my death at my age" : "Model the first death at spouse's age"}
+                helper="Optional. Leave blank to skip. This is the hardest thing for a couple to plan for and the easiest to underestimate — the tax increase is usually larger than the benefit lost."
+              >
+                <ANumInput
+                  value={sp.deathAge ?? 0}
+                  onSet={(v) => setSpouse({ deathAge: v > 0 ? v : null })}
+                  min={0} max={AGE_LIMITS.end.max} step={1}
+                  suffix={sp.deathAge ? " yrs" : ""}
+                />
+              </WFieldRow>
+              {sp.deathAge > 0 ? (() => {
+                // §30 — everything here depends on WHO dies. `deathAge` is always the
+                // decedent's OWN age, so translate once and derive the rest from the
+                // survivor's perspective, exactly as the engine does.
+                const primarySurvives = (sp.firstToDie || "spouse") !== "primary";
+                const deathAtYourAge = primarySurvives ? sp.deathAge + gap : sp.deathAge;
+                const survivorDob = primarySurvives ? values.dob : sp.dob;
+                const survFraAge = survivorFra(
+                  survivorDob ? parseInt(String(survivorDob).slice(0, 4), 10) : null
+                );
+                // The survivor's own age in the death year.
+                const survAgeAtDeath = primarySurvives ? deathAtYourAge : sp.deathAge - gap;
+                const survClaim = resolveSurvivorClaimAge(sp.survivorClaimAge, survAgeAtDeath);
+                const decOwnClaimAge = primarySurvives ? (sp.ssAge || 67) : (values.ssAge || 67);
+                const deceasedHadClaimed = sp.deathAge >= decOwnClaimAge;
+                const basis = survivorBasis({
+                  deceasedCheck: primarySurvives ? (Number(sp.ssb) || 0) : (Number(values.ssb) || 0),
+                  deceasedPia:   primarySurvives ? (Number(sp.ssPia) || 0) : (Number(values.ssPia) || 0),
+                  deceasedHadClaimed,
+                });
+                const quoted = Number(sp.survivorBenefitAtClaim) || 0;
+                const factor = quoted > 0 ? 1 : survivorReductionFactor(survClaim, survFraAge);
+                const survAmt = quoted > 0 ? quoted : basis * factor;
+                const ownAmt = primarySurvives ? (Number(values.ssb) || 0) : (Number(sp.ssb) || 0);
+                const jointTotal = ownAmt + (Number(sp.ssb) || 0) + topUp;
+                return (
+                  <>
+                    {/* §30 — the survivor's own benefit and the survivor benefit are
+                        INDEPENDENT (deemed filing does not apply), so this needs its
+                        own claim age. It is the only real flexibility a survivor has
+                        and the app could not express it before. */}
+                    <WFieldRow
+                      label="Survivor claims the survivor benefit at age"
+                      helper={`Survivor benefits can start at 60 — earlier than the 62 floor on your own benefit — and they are a SEPARATE benefit, so this age is independent of your own claim age. Blank = claim as soon as eligible (${survClaim}).`}
+                    >
+                      <ANumInput
+                        value={sp.survivorClaimAge ?? 0}
+                        onSet={(v) => setSpouse({ survivorClaimAge: v > 0 ? v : null })}
+                        min={0} max={AGE_LIMITS.ss.max} step={1}
+                        suffix={sp.survivorClaimAge ? " yrs" : ""}
+                      />
+                    </WFieldRow>
+                    <WFieldRow
+                      label="Survivor benefit SSA quotes at that age"
+                      helper="Optional. If SSA has given you a figure, enter it and AiRA uses it as-is. Leave blank and AiRA derives it from the deceased's benefit, reduced for claiming before survivor full retirement age. (Per Month)"
+                    >
+                      <ANumInput
+                        value={Math.round(quoted / 12)}
+                        onSet={(v) => setSpouse({ survivorBenefitAtClaim: Math.round(v * 12) })}
+                        min={0} max={10_000} step={50} suffix="/mo"
+                      />
+                    </WFieldRow>
+
+                    <div style={{
+                      margin: "-8px 0 16px", padding: "10px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.6,
+                      background: "rgba(251,146,60,0.09)", border: "1px solid rgba(251,146,60,0.3)", color: "#fdba74",
+                    }}>
+                      <strong>
+                        {firstDeathHeadline(primarySurvives, deathAtYourAge, survAgeAtDeath)}
+                      </strong>{" "}
+                      {!primarySurvives && gap > 0 && (
+                        <span>
+                          The plan now runs {gap} year{gap === 1 ? "" : "s"} longer, because the money has to
+                          last until <em>your spouse</em> reaches your planning age — not until you would have.
+                          That is why the success rate drops.{" "}
+                        </span>
+                      )}
+                      Three things change, and the last is the one people miss:
+                      <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                        <li>
+                          The survivor benefit is{" "}
+                          <strong>{fmtDollar(Math.round(survAmt / 12))}/mo</strong>
+                          {quoted > 0 ? " (as you entered it, SSA-quoted)" : (
+                            <>
+                              {" "}— {Math.round(factor * 1000) / 10}% of the{" "}
+                              {deceasedHadClaimed ? "benefit they were receiving" : "full-retirement amount they were entitled to"}
+                              {factor < 1
+                                ? `, permanently reduced for claiming at ${survClaim}, before the survivor full retirement age of ${Math.round(survFraAge * 12) / 12 === survFraAge ? survFraAge : survFraAge.toFixed(2)}`
+                                : ", unreduced"}
+                            </>
+                          )}.
+                          {!deceasedHadClaimed && " They died before claiming, so it is based on their FRA amount — eligibility does not depend on them having filed."}
+                        </li>
+                        <li>
+                          Household Social Security falls from{" "}
+                          <strong>{fmtDollar(Math.round(jointTotal / 12))}/mo</strong> to the larger of the
+                          survivor benefit and the survivor's own{" "}
+                          <strong>{fmtDollar(Math.round(ownAmt / 12))}/mo</strong> — never both.
+                          {ownAmt > 0 && survAmt > ownAmt && (values.ssAge || 67) > survClaim
+                            ? " Because the two are independent, the survivor benefit can be drawn now while your own keeps growing, then switched when yours is larger."
+                            : ""}
+                        </li>
+                        <li>
+                          You file <strong>Single</strong> from the following year: narrower brackets, roughly
+                          half the standard deduction, halved IRMAA thresholds and half the senior bonus —
+                          on a portfolio and an RMD that barely changed.
+                        </li>
+                      </ul>
+                      <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(251,146,60,0.25)", color: "#fcd9b6" }}>
+                        <strong>See what it costs:</strong> the <em>Stress Test</em> tab shows a
+                        <strong> Widow&apos;s penalty</strong> card — your plan run twice, with and without this
+                        death, on the same market paths — so the change in success rate is attributable to
+                        the death alone.
+                      </div>
+                      <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(251,146,60,0.25)", color: "#fcd9b6" }}>
+                        Survivor claiming is one of the highest-stakes decisions in Social Security and it
+                        turns on both benefit amounts, two different full-retirement ages, health, and whether
+                        the survivor is still working. AiRA does not model the earnings test. Get both figures
+                        from SSA and have a fee-only advisor check the sequence before anyone files.
+                      </div>
+                    </div>
+                  </>
+                );
+              })() : (
+                <div style={{
+                  margin: "-8px 0 16px", padding: "9px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
+                  background: "rgba(148,163,184,0.07)", border: "1px solid rgba(148,163,184,0.2)", color: "#94a3b8",
+                }}>
+                  No first death modelled — the plan assumes you both live to the end of it and file jointly
+                  throughout. The <em>Spouse passes early</em> scenario on the Stress Test tab is a one-off
+                  version of the same question.
+                </div>
+              )}
+            </>
+          );
+        })()}
+      </ACard>
+
+      {/* ── Income card 3: RENTAL / AIRBNB (moved from Retirement Plan step) ──
+          §18 Phase B: blanket rental income is money coming IN, so it belongs in
+          the same step as SS and pensions. Per-property rental stays on the
+          Housing tab (that's a separate object with its own fields); this card
+          is the household-level fallback the engine uses when no property has
+          its own income set. */}
+      <ACard title="Rental Income" accent="#295ff1" collapsible defaultOpen={false}>
+        <WFieldRow
+          label="Rental Net Income (annual)"
+          helper={(values.properties || []).some((pr) => Number(pr.income) > 0)
+            ? "Ignored — a property below has its own income set, which takes precedence."
+            : "Net rental / Airbnb income. Drives the “Rental/Passive” bar in the Income & Expenses chart."}
+        >
+          <ANumInput value={values.ab || 0} onSet={(v) => onChange("ab", v)} min={0} max={MAX_MONEY_INPUT} step={1000} suffix="/yr" />
+        </WFieldRow>
+        <WFieldRow label="Rental Growth Rate" helper="Annual growth rate for rental income (default 3%).">
+          <ANumInput value={values.abGrowth || 3} onSet={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} suffix="%" />
+        </WFieldRow>
+        <WFieldRow label="Rental Reliability" helper="Probability rental income is received each year (default 80%).">
+          <ANumInput value={values.abReliability || 80} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
+        </WFieldRow>
+         <WFieldRow label="Rental Income Ends (year)" helper="Year when rental income is expected to end.">
+          <input type="number" value={values.abEndYear || ''} min={2026} max={2100} step={1} onChange={(e) => onChange("abEndYear", Number(e.target.value))} style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0",
+            borderRadius:6, padding:"6px 8px", fontSize:12, fontFamily:"'DM Mono',monospace",
+            width:80, textAlign:"right" }}
+                onFocus={selectAllOnFocus}
+              /> year
+        </WFieldRow>
+      </ACard>
+
+      {/* ── Income card 4: PENSIONS ────────────────────────────────────────
           Split from Other Income because a pension is a distinct object with a
           TYPE, and the three types behave completely differently in the engine:
           a monthly pension is a recurring stream that offsets spending, while a
@@ -13195,330 +13532,49 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
         </div>
       </ACard>
 
+      {/* §18 Phase B: Social Security moved to the 💵 Money In step, alongside
+          contributions and pensions. Everything about it (primary + spouse +
+          widow's penalty) lives there now — this card is a pointer, kept so
+          users who learned to find SS here are not left staring at a blank. */}
       <ACard title="Social Security" accent="#7c3aed">
-        <WFieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age. (Per Month)">
-          <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={10_000} step={50} suffix="/mo" />
-        </WFieldRow>
-        <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
-          <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs"/>
-        </WFieldRow>
-
-        {/* ── Spouse Social Security (§21 Phase 1) ────────────────────────────
-            Everything here is a number the user reads off ssa.gov. We deliberately
-            do NOT derive benefits from a PIA + claim-age schedule: SSA's own
-            estimate beats our reconstruction of it, and it cannot drift out of
-            date on us. See REQUIREMENTS §21 "agreed approach".
-
-            Only fields the engine actually reads are shown. There is no
-            "when does my spouse die" input yet, because the engine does not model
-            that event — shipping the control first would create exactly the kind of
-            dead setting src/ghostSettings.test.js exists to catch. */}
-        {/* Read-only pointer, NOT a second checkbox. `spouse.enabled` is one
-            household fact with one switch, in About You — see the note there.
-            Duplicating the toggle here is the pattern §31 removed. */}
-        {!values.spouse?.enabled && (
-          <div style={{ padding: "10px 12px", marginBottom: 16, background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-            <span>Modelling one benefit. Add a spouse to include <strong style={{ color: "#c4b5fd" }}>their</strong> benefit, claim age and survivor benefits.</span>
-            {/* Index 0 is AboutYouPanel in ProfileWizard's PANELS array. */}
-            <button
-              type="button"
-              onClick={() => onNavigateStep && onNavigateStep(0)}
-              style={{
-                fontSize: 11, color: "#c4b5fd", background: "none", border: "none",
-                padding: 0, cursor: onNavigateStep ? "pointer" : "default",
-                textDecoration: onNavigateStep ? "underline" : "none",
-              }}
-              disabled={!onNavigateStep}
-            >
-              Add a spouse in About You →
-            </button>
-          </div>
-        )}
-
-        {values.spouse?.enabled && (() => {
-          const sp = values.spouse || {};
-          const setSpouse = (patch) => onChange("spouse", { ...sp, ...patch });
-          // The spousal top-up is 50% of the HIGHER earner's PIA (the full-retirement-age
-          // amount) — not 50% of whatever they actually claim, and delayed credits never
-          // raise it. So we have to ask for the FRA amount separately; it is the one
-          // number that cannot be inferred from what someone is receiving.
-          const primaryPia = Number(values.ssPia) || 0;
-          const spousePia  = Number(sp.ssPia) || 0;
-          const higherPia  = Math.max(primaryPia, spousePia);
-          const topUp      = Math.max(0, higherPia * 0.5 - spousePia);
-          // Per-person clock (§24). The engines walk ONE age — the primary's — so
-          // the gap is what places the spouse's milestones on that timeline.
-          const gap        = spouseAgeOffset(values);
-          const spouseAge  = personAgeNow(sp);
-          const yourAge    = personAgeNow(values);
-          const spouseClaimAtYourAge = (sp.ssAge || 67) + gap;
-          return (
-            <>
-              {/* §24 #1 — THE enabler. Without it the spouse's claim age was
-                  compared against the PRIMARY's age, so a younger spouse started
-                  collecting early by exactly the age gap (see spousalSS.test.js).
-                  Asked for first, because every other spouse figure below is
-                  interpreted against it. */}
-              <WFieldRow
-                label="Spouse's date of birth"
-                helper="Their own age drives when their benefit starts, when they reach Medicare at 65, and their own RMD age. Leave blank to assume they are the same age as you."
-              >
-                <input
-                  type="date"
-                  value={sp.dob || ""}
-                  onChange={(e) => setSpouse({ dob: e.target.value })}
-                  style={{
-                    background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0",
-                    borderRadius: 6, padding: "5px 8px", fontSize: 12,
-                    fontFamily: "'DM Mono',monospace", width: 130,
-                  }}
-                />
-              </WFieldRow>
-              {/* Disclose the derivation where it is entered: a date field that
-                  silently shifts ten years of income needs to show its own effect. */}
-              <div style={{
-                margin: "-8px 0 16px", padding: "8px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
-                background: sp.dob ? "rgba(124,58,237,0.08)" : "rgba(148,163,184,0.07)",
-                border: `1px solid ${sp.dob ? "rgba(167,139,250,0.28)" : "rgba(148,163,184,0.2)"}`,
-                color: sp.dob ? "#c4b5fd" : "#94a3b8",
-              }}>
-                {sp.dob && spouseAge != null && yourAge != null ? (
-                  <>
-                    Your spouse is <strong>{spouseAge}</strong> and you are <strong>{yourAge}</strong> —
-                    {gap === 0 ? " the same age" : ` a ${Math.abs(gap)}-year gap (${gap > 0 ? "they are younger" : "they are older"})`}.
-                    {" "}Their benefit therefore starts when <strong>you</strong> are {spouseClaimAtYourAge},
-                    since the plan is drawn on your age.
-                  </>
-                ) : (
-                  <>
-                    No spouse birthdate entered, so the plan assumes you are the <strong>same age</strong>.
-                    If there is a real gap this matters: a younger spouse's benefit would otherwise be
-                    counted years before it actually starts.
-                  </>
-                )}
-              </div>
-              <WFieldRow label="Spouse's benefit" helper="What SSA estimates your spouse will receive at the age they plan to claim. (Per Month)">
-                <ANumInput value={Math.round((sp.ssb || 0) / 12)} onSet={(v) => setSpouse({ ssb: Math.round(v * 12) })} min={0} max={10_000} step={50} suffix="/mo" />
-              </WFieldRow>
-              <WFieldRow label="Spouse's SS start age" helper="Their own age when they claim — can differ from yours, since each of you claims independently.">
-                <ANumInput value={sp.ssAge || 67} onSet={(v) => setSpouse({ ssAge: v })} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs" />
-              </WFieldRow>
-              <WFieldRow label="Your benefit at full retirement age" helper="From your SSA statement — the amount at FRA, not at the age you plan to claim. Used only for the spousal top-up. (Per Month)">
-                <ANumInput value={Math.round(primaryPia / 12)} onSet={(v) => onChange("ssPia", Math.round(v * 12))} min={0} max={10_000} step={50} suffix="/mo" />
-              </WFieldRow>
-              <WFieldRow label="Spouse's benefit at full retirement age" helper="Same, for your spouse. Enter it even if they never worked — a $0 here still earns the spousal top-up. (Per Month)">
-                <ANumInput value={Math.round(spousePia / 12)} onSet={(v) => setSpouse({ ssPia: Math.round(v * 12) })} min={0} max={10_000} step={50} suffix="/mo" />
-              </WFieldRow>
-
-              {higherPia > 0 && (
-                <div style={{
-                  margin: "2px 0 14px", padding: "9px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
-                  background: topUp > 0 ? "rgba(20,184,166,0.09)" : "rgba(148,163,184,0.08)",
-                  border: `1px solid ${topUp > 0 ? "rgba(20,184,166,0.3)" : "rgba(148,163,184,0.22)"}`,
-                  color: topUp > 0 ? "#5eead4" : "#94a3b8",
-                }}>
-                  {topUp > 0 ? (
-                    <>
-                      <strong>Spousal top-up: {fmtDollar(Math.round(topUp / 12))}/mo</strong> — your spouse's own
-                      benefit is below half of the higher earner's full-retirement amount, so Social Security
-                      tops it up to that level. Already included in your plan.
-                    </>
-                  ) : (
-                    <>No spousal top-up: your spouse's own benefit already exceeds half of the higher
-                    earner's full-retirement amount, so they simply receive their own.</>
-                  )}
-                </div>
-              )}
-
-              {/* §22 — the widow's penalty, now modelled. Replaces the
-                  "Not modelled yet" note that sat here. One user-entered age, not
-                  a mortality draw, so the event lands in a known year and can be
-                  explained rather than merely averaged. */}
-              {/* §30 — WHO dies first. Not cosmetic: it decides whose age drives the
-                  plan horizon, Medicare, the age-65 add-on, the RMD clock and the
-                  survivor's own FRA. Asked before the age, because the age below is
-                  read as belonging to whoever is selected here. */}
-              <WFieldRow
-                label="Who passes first"
-                helper="The higher earner is often the older partner, so this is frequently the more realistic case — and it changes far more than the benefit: the plan then has to fund the survivor's whole life, not yours."
-              >
-                <div style={{ display: "flex", gap: 6 }}>
-                  {[["spouse", "My spouse"], ["primary", "Me"]].map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setSpouse({ firstToDie: val })}
-                      style={{
-                        background: (sp.firstToDie || "spouse") === val ? "rgba(251,146,60,0.18)" : "transparent",
-                        border: `1px solid ${(sp.firstToDie || "spouse") === val ? "rgba(251,146,60,0.55)" : "#1e3a5f"}`,
-                        color: (sp.firstToDie || "spouse") === val ? "#fdba74" : "#94a3b8",
-                        borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600,
-                      }}
-                    >{lbl}</button>
-                  ))}
-                </div>
-              </WFieldRow>
-              <WFieldRow
-                label={(sp.firstToDie === "primary") ? "Model my death at my age" : "Model the first death at spouse's age"}
-                helper="Optional. Leave blank to skip. This is the hardest thing for a couple to plan for and the easiest to underestimate — the tax increase is usually larger than the benefit lost."
-              >
-                <ANumInput
-                  value={sp.deathAge ?? 0}
-                  onSet={(v) => setSpouse({ deathAge: v > 0 ? v : null })}
-                  min={0} max={AGE_LIMITS.end.max} step={1}
-                  suffix={sp.deathAge ? " yrs" : ""}
-                />
-              </WFieldRow>
-              {sp.deathAge > 0 ? (() => {
-                // §30 — everything here depends on WHO dies. `deathAge` is always the
-                // decedent's OWN age, so translate once and derive the rest from the
-                // survivor's perspective, exactly as the engine does.
-                const primarySurvives = (sp.firstToDie || "spouse") !== "primary";
-                const deathAtYourAge = primarySurvives ? sp.deathAge + gap : sp.deathAge;
-                const survivorDob = primarySurvives ? values.dob : sp.dob;
-                const survFraAge = survivorFra(
-                  survivorDob ? parseInt(String(survivorDob).slice(0, 4), 10) : null
-                );
-                // The survivor's own age in the death year.
-                const survAgeAtDeath = primarySurvives ? deathAtYourAge : sp.deathAge - gap;
-                const survClaim = resolveSurvivorClaimAge(sp.survivorClaimAge, survAgeAtDeath);
-                const decOwnClaimAge = primarySurvives ? (sp.ssAge || 67) : (values.ssAge || 67);
-                const deceasedHadClaimed = sp.deathAge >= decOwnClaimAge;
-                const basis = survivorBasis({
-                  deceasedCheck: primarySurvives ? (Number(sp.ssb) || 0) : (Number(values.ssb) || 0),
-                  deceasedPia:   primarySurvives ? (Number(sp.ssPia) || 0) : (Number(values.ssPia) || 0),
-                  deceasedHadClaimed,
-                });
-                const quoted = Number(sp.survivorBenefitAtClaim) || 0;
-                const factor = quoted > 0 ? 1 : survivorReductionFactor(survClaim, survFraAge);
-                const survAmt = quoted > 0 ? quoted : basis * factor;
-                const ownAmt = primarySurvives ? (Number(values.ssb) || 0) : (Number(sp.ssb) || 0);
-                const jointTotal = ownAmt + (Number(sp.ssb) || 0) + topUp;
-                return (
-                  <>
-                    {/* §30 — the survivor's own benefit and the survivor benefit are
-                        INDEPENDENT (deemed filing does not apply), so this needs its
-                        own claim age. It is the only real flexibility a survivor has
-                        and the app could not express it before. */}
-                    <WFieldRow
-                      label="Survivor claims the survivor benefit at age"
-                      helper={`Survivor benefits can start at 60 — earlier than the 62 floor on your own benefit — and they are a SEPARATE benefit, so this age is independent of your own claim age. Blank = claim as soon as eligible (${survClaim}).`}
-                    >
-                      <ANumInput
-                        value={sp.survivorClaimAge ?? 0}
-                        onSet={(v) => setSpouse({ survivorClaimAge: v > 0 ? v : null })}
-                        min={0} max={AGE_LIMITS.ss.max} step={1}
-                        suffix={sp.survivorClaimAge ? " yrs" : ""}
-                      />
-                    </WFieldRow>
-                    <WFieldRow
-                      label="Survivor benefit SSA quotes at that age"
-                      helper="Optional. If SSA has given you a figure, enter it and AiRA uses it as-is. Leave blank and AiRA derives it from the deceased's benefit, reduced for claiming before survivor full retirement age. (Per Month)"
-                    >
-                      <ANumInput
-                        value={Math.round(quoted / 12)}
-                        onSet={(v) => setSpouse({ survivorBenefitAtClaim: Math.round(v * 12) })}
-                        min={0} max={10_000} step={50} suffix="/mo"
-                      />
-                    </WFieldRow>
-
-                    <div style={{
-                      margin: "-8px 0 16px", padding: "10px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.6,
-                      background: "rgba(251,146,60,0.09)", border: "1px solid rgba(251,146,60,0.3)", color: "#fdba74",
-                    }}>
-                      <strong>
-                        {firstDeathHeadline(primarySurvives, deathAtYourAge, survAgeAtDeath)}
-                      </strong>{" "}
-                      {!primarySurvives && gap > 0 && (
-                        <span>
-                          The plan now runs {gap} year{gap === 1 ? "" : "s"} longer, because the money has to
-                          last until <em>your spouse</em> reaches your planning age — not until you would have.
-                          That is why the success rate drops.{" "}
-                        </span>
-                      )}
-                      Three things change, and the last is the one people miss:
-                      <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-                        <li>
-                          The survivor benefit is{" "}
-                          <strong>{fmtDollar(Math.round(survAmt / 12))}/mo</strong>
-                          {quoted > 0 ? " (as you entered it, SSA-quoted)" : (
-                            <>
-                              {" "}— {Math.round(factor * 1000) / 10}% of the{" "}
-                              {deceasedHadClaimed ? "benefit they were receiving" : "full-retirement amount they were entitled to"}
-                              {factor < 1
-                                ? `, permanently reduced for claiming at ${survClaim}, before the survivor full retirement age of ${Math.round(survFraAge * 12) / 12 === survFraAge ? survFraAge : survFraAge.toFixed(2)}`
-                                : ", unreduced"}
-                            </>
-                          )}.
-                          {!deceasedHadClaimed && " They died before claiming, so it is based on their FRA amount — eligibility does not depend on them having filed."}
-                        </li>
-                        <li>
-                          Household Social Security falls from{" "}
-                          <strong>{fmtDollar(Math.round(jointTotal / 12))}/mo</strong> to the larger of the
-                          survivor benefit and the survivor's own{" "}
-                          <strong>{fmtDollar(Math.round(ownAmt / 12))}/mo</strong> — never both.
-                          {ownAmt > 0 && survAmt > ownAmt && (values.ssAge || 67) > survClaim
-                            ? " Because the two are independent, the survivor benefit can be drawn now while your own keeps growing, then switched when yours is larger."
-                            : ""}
-                        </li>
-                        <li>
-                          You file <strong>Single</strong> from the following year: narrower brackets, roughly
-                          half the standard deduction, halved IRMAA thresholds and half the senior bonus —
-                          on a portfolio and an RMD that barely changed.
-                        </li>
-                      </ul>
-                      <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(251,146,60,0.25)", color: "#fcd9b6" }}>
-                        <strong>See what it costs:</strong> the <em>Stress Test</em> tab shows a
-                        <strong> Widow&apos;s penalty</strong> card — your plan run twice, with and without this
-                        death, on the same market paths — so the change in success rate is attributable to
-                        the death alone.
-                      </div>
-                      <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(251,146,60,0.25)", color: "#fcd9b6" }}>
-                        Survivor claiming is one of the highest-stakes decisions in Social Security and it
-                        turns on both benefit amounts, two different full-retirement ages, health, and whether
-                        the survivor is still working. AiRA does not model the earnings test. Get both figures
-                        from SSA and have a fee-only advisor check the sequence before anyone files.
-                      </div>
-                    </div>
-                  </>
-                );
-              })() : (
-                <div style={{
-                  margin: "-8px 0 16px", padding: "9px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55,
-                  background: "rgba(148,163,184,0.07)", border: "1px solid rgba(148,163,184,0.2)", color: "#94a3b8",
-                }}>
-                  No first death modelled — the plan assumes you both live to the end of it and file jointly
-                  throughout. The <em>Spouse passes early</em> scenario on the Stress Test tab is a one-off
-                  version of the same question.
-                </div>
-              )}
-            </>
-          );
-        })()}
+        <div style={{ padding: "10px 12px", background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <span>Now in the <strong style={{ color: "#c4b5fd" }}>💵 Money In</strong> step — SS is income, not a withdrawal setting.</span>
+          {/* Index 2 is ContribPanel in ProfileWizard's PANELS array. */}
+          <button
+            type="button"
+            onClick={() => onNavigateStep && onNavigateStep(2)}
+            style={{
+              fontSize: 11, color: "#c4b5fd", background: "none", border: "none",
+              padding: 0, cursor: onNavigateStep ? "pointer" : "default",
+              textDecoration: onNavigateStep ? "underline" : "none",
+            }}
+            disabled={!onNavigateStep}
+          >
+            Edit in 💵 Money In →
+          </button>
+        </div>
       </ACard>
 
+      {/* §18 Phase B: rental / Airbnb moved to the 💵 Money In step alongside
+          SS and pensions. Pointer left in place so the field's old home still
+          says where to find it. */}
       <ACard title="Rental Income" accent="#295ff1" collapsible defaultOpen={false}>
-        <WFieldRow
-          label="Rental Net Income (annual)"
-          helper={(values.properties || []).some((pr) => Number(pr.income) > 0)
-            ? "Ignored — a property below has its own income set, which takes precedence."
-            : "Net rental / Airbnb income. Drives the “Rental/Passive” bar in the Income & Expenses chart."}
-        >
-          <ANumInput value={values.ab || 0} onSet={(v) => onChange("ab", v)} min={0} max={MAX_MONEY_INPUT} step={1000} suffix="/yr" />
-        </WFieldRow>
-        <WFieldRow label="Rental Growth Rate" helper="Annual growth rate for rental income (default 3%).">
-          <ANumInput value={values.abGrowth || 3} onSet={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} suffix="%" />
-        </WFieldRow>
-        <WFieldRow label="Rental Reliability" helper="Probability rental income is received each year (default 80%).">
-          <ANumInput value={values.abReliability || 80} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
-        </WFieldRow>
-         <WFieldRow label="Rental Income Ends (year)" helper="Year when rental income is expected to end.">
-          <input type="number" value={values.abEndYear || ''} min={2026} max={2100} step={1} onChange={(e) => onChange("abEndYear", Number(e.target.value))} style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0",
-            borderRadius:6, padding:"6px 8px", fontSize:12, fontFamily:"'DM Mono',monospace",
-            width:80, textAlign:"right" }}
-                onFocus={selectAllOnFocus}
-              /> year
-        </WFieldRow>
+        <div style={{ padding: "10px 12px", background: "rgba(41,95,241,0.08)", border: "1px solid rgba(41,95,241,0.28)", borderRadius: 8, fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <span>Now in the <strong style={{ color: "#c4b5fd" }}>💵 Money In</strong> step — it is income, same as SS and pensions.</span>
+          {/* Index 2 is ContribPanel in ProfileWizard's PANELS array. */}
+          <button
+            type="button"
+            onClick={() => onNavigateStep && onNavigateStep(2)}
+            style={{
+              fontSize: 11, color: "#c4b5fd", background: "none", border: "none",
+              padding: 0, cursor: onNavigateStep ? "pointer" : "default",
+              textDecoration: onNavigateStep ? "underline" : "none",
+            }}
+            disabled={!onNavigateStep}
+          >
+            Edit in 💵 Money In →
+          </button>
+        </div>
       </ACard>
 
       <ACard title="📐 Strategy Detail" accent="#a78bfa" desc="The parameters the strategy you picked above actually uses.">
