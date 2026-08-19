@@ -145,7 +145,7 @@ which hid the bug for months. So do not probe; transact.
 7. Clear `localStorage` → confirm the UI says "restore access" rather than `0` (after
    fix 1 lands), and that a restore link recovers the balance.
 
-### ⭐ NEXT UP (set 2026-07-27, by Vincent): dual Social Security + NIIT bracket fill
+### ⭐ NEXT UP (set 2026-07-27, by the owner): dual Social Security + NIIT bracket fill
 
 Two priorities named at the end of the session. Both were already scoped; this
 records the ordering and what today's work changed about the cost.
@@ -268,7 +268,7 @@ returned 400, which hid the bug for months). Before trusting the refresh:
 3. Re-open the app and confirm `/api/balance` returns a `token` and localStorage
    `airaJWT.v1` changes — that is the actual fix working.
 
-**Recovering a session that is ALREADY lost** (this is what Vincent hit — credits bought
+**Recovering a session that is ALREADY lost** (this is what the owner hit — credits bought
 and present in D1, but invisible in the browser): the sliding refresh cannot help,
 because it only renews a token that still exists. Use the admin panel: open the app with
 `?aira_admin=1`, then `inspect` to confirm the D1 balance, then `issue-restore-link`, then
@@ -664,7 +664,7 @@ elsewhere); include only core recurring lifestyle spend.
 | BUD-5 | LOW | **No render smoke test for the import UI**, and the feature has not been clicked through in a browser (tests + build pass only). Same gap class that let the RothLadder crash slip past the engine suite. | Add a shallow render test of `ExpenseImport` (+ the Withdrawal/Roth tabs) and manually verify an upload end-to-end. |
 | BUD-6 | LOW | `$`/comma formatting on the Roth-reserve and other plain number inputs (carried over P2 polish). | Route through `ANumInput` formatting. |
 
-## 10. Open — AI engine + token refund (2026-06-17, flagged by Vincent)
+## 10. Open — AI engine + token refund (2026-06-17, flagged by the owner)
 
 Captured for the backlog; not yet scoped into tasks.
 
@@ -726,7 +726,7 @@ State at end of evening; resume here next session.
 
 ## 12. User-Configurable Withdrawal Order ("Custom Order" wizard) — scoped 2026-06-29
 
-Requested by Vincent. **Comparable:** Boldin's custom withdrawal-order list. **Priority:** P1.
+Requested by the owner. **Comparable:** Boldin's custom withdrawal-order list. **Priority:** P1.
 **Status:** ✅ **SHIPPED v1.2.8 (2026-07-25).** Built via one shared `resolveDrawOrder`/`WITHDRAWAL_BUCKETS`/`NAIVE_DRAW_ORDER` exported from `buildWithdrawalWaterfall.js` and used by BOTH engines (no drift). Profile keys `orderingMode` ("tax_reactive"|"custom"|"pretax_first") + `withdrawalOrder` added to `BLANK_PROFILE` + `params`. UI: `AccountDrawOrder` radio + reorderable up/down list above the guardrails strip in the Sourcing section. **Naming resolved per design-authority BLOCKED verdict:** modes are "Tax-reactive/Custom/Pre-tax first" (NOT "Smart/Traditional" — that collided with the distribution strategy 3×); the waterfall View toggle renamed to "Your plan" / "No plan (pre-tax first, uncapped)"; Section-1 subtitle + Profile pointer templated from the live order. logic-validator: APPROVE-WITH-CHANGES (no logic bugs; naive-invariance + NAIVE_DRAW_ORDER constant added per its non-blocking flags). **6 new tests** (resolver sanitize, default==tax_reactive deep-equal incl. naive-invariance, taxable-first, Roth-reserve-honored-first, bracket-cap-binds-when-pretax-first, runMC honors order) — 445 total pass.
 **Engine insertion point (line ref corrected — was stale "290-345"):** `buildWithdrawalWaterfall.js` `runScenario` draw loop ≈ lines 525-582 (`drawCash`/`drawTaxable`/`drawPretax`/`drawRoth` closures + `drawFns` map + `for (const bucket of drawSeq)`); `runMC` mirror in `App.jsx` ≈ lines 1331-1343.
 
@@ -1062,7 +1062,7 @@ platform migrated Netlify → Cloudflare Pages). Its still-open, non-duplicated 
 
 ## 16. ACA-Aware Roth Conversions (subsidy-preserving) — requested 2026-07-25
 
-**Requested by a user (Reddit) and flagged by Vincent as "the biggest deal for me."**
+**Requested by a user (Reddit) and flagged by the owner as "the biggest deal for me."**
 **Priority: P1 (next major feature).** **Status: PHASE 1 DONE (engine), NOT WIRED.**
 
 ### ✅ Done 2026-08-13 — the model exists and is tested; nothing consumes it yet
@@ -1244,7 +1244,7 @@ JSX, zero engine risk** (every panel is a pure function of the flat `values`/`as
 - **Phase D:** move Housing/carveouts → Money Out, Roth-strategy → Strategy, tuning → Advanced (behind disclosure).
 
 #### Phase D — partially DONE 2026-07-26 (v1.2.16): AssumptionsPanel regrouped
-Vincent (2026-07-26): *"can you move any tax stuff to somewhere else… HOME/RE Growth should go into
+The owner (2026-07-26): *"can you move any tax stuff to somewhere else… HOME/RE Growth should go into
 Housing and Fixed Obligations. The AI line items should have its own section. Everything should be
 naturally grouped together."* Done **within** AssumptionsPanel (the step-level moves in Phase B/D are
 still open):
@@ -1325,7 +1325,7 @@ simpler mechanism instead:
    **Caveat for future you:** if the real report ever needs a code change, `git update-index
    --no-skip-worktree src/report/PrintReport.jsx` first, or the edit will sit invisibly on disk forever
    without you noticing git isn't tracking it.
-3. **Added a second, independent layer** (Vincent's idea, same session): a fail-closed capability gate
+3. **Added a second, independent layer** (the owner's idea, same session): a fail-closed capability gate
    so that even someone who copies the *billing/report-unlock plumbing* (which stayed public — see below)
    into their own app can't get a free unlock just by finding and flipping `BILLING_ENABLED` to `false`
    in their local copy (that flag is a source-level constant, not a real secret, and used to
@@ -1412,7 +1412,7 @@ history-rewrite decision above that's the user's call, not something to default 
 ## 21. Spousal & Survivor Social Security — requested 2026-07-27
 
 **Status: ✅ SHIPPED (v1.2.42 UI, v1.2.62 correctness, v1.2.64–65 survivor rules).** The
-2026-07-27 "PAUSED — do not continue without fresh direction" note is SUPERSEDED; Vincent
+2026-07-27 "PAUSED — do not continue without fresh direction" note is SUPERSEDED; the owner
 directed the work on 2026-07-30. Phase 1 and Phase 2 are both done, plus the per-person age
 model (§24 #1/#3) and the survivor claiming rules (§30). Note that the shipped v1.2.42
 version had a real age-gap bug — see §29.** Requested after comparing
@@ -1422,7 +1422,7 @@ the future" toggle and a COLA rate).
 
 ### ✅ CROSS-MACHINE STATUS (RED-DRAGON, 2026-07-28) — engine wiring VERIFIED
 
-Vincent pulled on RED-DRAGON and flagged a discrepancy between this section and the
+The owner pulled on RED-DRAGON and flagged a discrepancy between this section and the
 code. Resolved. Three machines share this repo (RED-DRAGON main, WHITE-GAMING, T14),
 and the spousal engine wiring was committed from another one in `8c1986b` **without
 tests and without the suite being re-run** — its own note said so.
@@ -1489,7 +1489,7 @@ person's own claim age, then summed. Side effect: this also fixes a pre-existing
 unrelated bug in `buildRothExplorer.js` where SS growth was hardcoded to 2.4% and ignored
 the user's actual `ssCola` input — that bug is now gone as a byproduct, not a separate fix.
 
-### Reinforced principle (Vincent, same session): favor manual entry over derived calculation
+### Reinforced principle (Owner, same session): favor manual entry over derived calculation
 
 Restating/generalizing the "ask the user, don't derive it" call already made below for SS
 specifically: the broader lesson from this session is that **too much in-app calculation
@@ -1504,7 +1504,7 @@ unless the derivation is simple, well-tested, and low-risk. This isn't a new rul
 as naming a pattern this project keeps re-discovering the hard way; apply it when scoping
 future features, not just Social Security.
 
-### ✅ AGREED APPROACH (Vincent, 2026-07-27): ask the user, don't derive it
+### ✅ AGREED APPROACH (Owner, 2026-07-27): ask the user, don't derive it
 
 **This is the decided shape for shipping §21. It supersedes the "model everything"
 framing below, which is kept for reference.** Rationale: dual Social Security is
@@ -1592,7 +1592,7 @@ we should copy it. Two things it glosses over that we must get right:
 2. **Delaying the higher earner's claim raises the SURVIVOR benefit, not the spousal one.**
    The survivor steps up to 100% of the deceased's benefit *including* DRCs. This is the
    real reason "the higher earner should delay" — and it is exactly the alert Boldin
-   surfaced to Vincent. Our Action Plan should be able to make the same recommendation, but
+   surfaced to the owner. Our Action Plan should be able to make the same recommendation, but
    it needs both benefits and both claim ages to compute it.
 
 ### Rules to model (each needs a `TAX_REFERENCE.md` entry — no literals in engine)
@@ -1681,7 +1681,7 @@ and `taxableSocialSecurity()` must receive the **combined** gross. Touch points:
 - **Phase 2:** survivor step-up + time-varying filing status (the widow's penalty as a
   *scheduled* event with a user-set first-death age, not just a stress toggle).
 - **Phase 3:** the "delay the higher earner to buy survivor insurance" Action Plan
-  recommendation — the Boldin alert Vincent saw. Needs Phases 1–2 to compute.
+  recommendation — the Boldin alert The owner saw. Needs Phases 1–2 to compute.
 - **Phase 4:** trust-fund reduction toggle, designed jointly with §16's ACA cliff toggle.
 - Earnings test / divorced-spouse: backlog unless a user asks.
 
@@ -1735,7 +1735,7 @@ option, the one that shrinks the conversion's value most. The dropdown, the
 behaviour that does not exist. Same class as the `smile` / healthcare-shock ghost
 models (§13.1 #9): configurable, persisted, described as active, read by nothing.
 
-**Vincent's instruction (2026-07-27), which is the right design:** conversion tax
+**The owner's instruction (2026-07-27), which is the right design:** conversion tax
 should draw from **taxable first, then cash, then deplete the others**. That removes
 the fiction rather than sizing it — there is no imaginary pot to bound, because every
 dollar comes from a bucket the simulation already tracks and can run out of.
@@ -1880,7 +1880,7 @@ and the senior bonus halves, against a barely-reduced RMD and an unchanged portf
 
 ## 24. Per-person (You / Spouse) modelling — raised 2026-07-28
 
-Vincent, comparing against Boldin: *"in Boldin each income has a YOU and a SPOUSE, like
+Owner, comparing against Boldin: *"in Boldin each income has a YOU and a SPOUSE, like
 Pension. Same with Work and income. The same is with Medicare and medical."* Screenshots
 show Medicare expenses and Long-Term Care split per person, each with its own lifetime
 cost and its own strategy.
@@ -2041,7 +2041,7 @@ Both are required — a wiring test alone is what let the spousal-SS age-gap bug
 
 ## 25. HANDOFF TO THE HIGH-BUDGET ACCOUNT — 2026-07-28
 
-Vincent is doing cheap items on the low-budget account and the heavy work elsewhere.
+The owner is doing cheap items on the low-budget account and the heavy work elsewhere.
 This is the split. **Shipped through v1.2.43** (639 tests pass, deployed).
 
 ### Done today (do not redo)
@@ -2084,7 +2084,7 @@ This is the split. **Shipped through v1.2.43** (639 tests pass, deployed).
 - Hero landing sliders: typed entry + `LANDING_SLIDER_LIMITS` (three have a $999B max with
   a $25K step). design-authority already approved the dual-bound approach.
 
-### Not code — Vincent only
+### Not code — the owner only
 - **`PrintReport.jsx` is the public placeholder on RED-DRAGON.** The real file is on
   another machine and is not in git by design (§20). Production currently serves the
   placeholder. Restore it, then `git update-index --skip-worktree src/report/PrintReport.jsx`.
@@ -2097,7 +2097,7 @@ This is the split. **Shipped through v1.2.43** (639 tests pass, deployed).
 ## 26. ✅ SHIPPED v1.2.45 — Equity glidepath: hardcoded 62 bug + user-set switch age
 
 **Status: DONE 2026-07-28.** 648 tests pass, production build compiles. Answer to
-*"I plan on 90/10 until 67 — can we do that?"* is now yes: Profile → Assumptions →
+A user-set glidepath switch age ("90/10 until 67") is now supported: Profile → Assumptions →
 "Switch to the post-retirement mix at age".
 
 **What shipped, vs what this section originally scoped:**
@@ -2134,7 +2134,7 @@ null` regression lock holds in all three engines.
 
 ### Original entry (kept for context)
 
-Vincent: *"I plan on 90/10 until 67 — can we do that?"* Answer today: no. And while
+Requested: a user-set glidepath switch age ("90/10 until 67") Answer today: no. And while
 checking, found a real bug in the same code.
 
 ### Part A — THE BUG (fix regardless of the feature)
@@ -2192,7 +2192,7 @@ Written now so that session starts warm. Nothing in this section has been coded.
 
 ### Origin
 
-Vincent supplied the complete saved HTML of `retirementscenario.com` — a competitor
+The owner supplied the complete saved HTML of `retirementscenario.com` — a competitor
 and colleague — and asked for something similar, branded for AiRA, explicitly *not* a
 copy. This section is the review plus the plan.
 
@@ -2311,7 +2311,7 @@ AiRA's own type pairing and accent before any CSS is written.
 5. Comparison table.
 6. Animation last, and only where it explains something.
 
-### Open questions for Vincent
+### Open questions for the owner
 
 - Domain: apex for marketing with the app on a subdomain, or a path?
 - Does the hero compute live from visitor input, or show a worked example?
@@ -2333,7 +2333,7 @@ it." **That is false.** `git ls-files` returns only `README.md`,
 `*.md` rule in `.gitignore` (line 69) catches this file. So it does **not** travel
 between machines, and the §0 handoff protocol silently depends on something that
 does not happen. Either `git add -f REQUIREMENTS.md` or accept that it is
-Drive-sync-only and correct the header. Flagged, not changed — Vincent's call.
+Drive-sync-only and correct the header. Flagged, not changed — the owner's call.
 
 ### 🔴 §21/§24 — a REAL BUG in the shipped spousal SS feature
 
@@ -2711,7 +2711,7 @@ Suite baseline: **821 tests, 28 suites, 0 fail.** Production build compiles.
 | Item | Why | Size |
 |---|---|---|
 | **Claim-age comparison** (new, from the 2026-07-31 discussion) | The app can now EVALUATE a Social Security claiming plan but cannot RECOMMEND one. There is a retirement-*date* solver and no claim-age solver, and no side-by-side view — the user changes an age and re-runs by hand, one combination at a time. For most couples the rule of thumb ("delay the higher earner") is right and this just confirms it; it earns its keep on the cases the rule gets wrong — big age gap, large pre-tax balance where SS timing collides with RMDs and conversions, short life expectancy on the higher earner. Same shape as §16/§17. | M |
-| **§16 ACA-aware conversions → §17 recommendation engine** | Vincent's long-standing P1. §16 (the ACA subsidy cliff model) is the prerequisite for §17. Pre-65 retirees converting into a subsidy clawback is a real and common own-goal. | L |
+| **§16 ACA-aware conversions → §17 recommendation engine** | the owner's long-standing P1. §16 (the ACA subsidy cliff model) is the prerequisite for §17. Pre-65 retirees converting into a subsidy clawback is a real and common own-goal. | L |
 
 ### Tier 3 — consistency and hygiene (mechanical, no decisions needed)
 
@@ -2742,7 +2742,7 @@ one sweep rather than presented for approval.
   same event); work income per person (lowest impact, nothing models wages today).
 - **§20** — extract the paid report as an OSS-excluded module. The `skip-worktree`
   protection is in place; the module split is not.
-- **In-app AI chat, requested 2026-07-31 (Vincent)** — a conversational help surface,
+- **In-app AI chat, requested 2026-07-31 (owner)** — a conversational help surface,
   not a canned About page: answers questions about how the app itself works ("how does
   Monte Carlo run 3,000 paths so fast?") in addition to questions about the user's own
   plan. No new hosting needed — extends the existing Gemini plumbing
@@ -2761,7 +2761,7 @@ Consolidated so they stop being re-discovered (details in §3 and §28):
   mortality draw was deliberately rejected to keep it a deterministic, explainable event.
 - Average-cost basis, not per-lot; no tax-loss harvesting.
 - The Analysis strategy dropdown is a PREVIEW by design. Do not convert it to
-  write-through — Vincent rejected that explicitly.
+  write-through — the owner rejected that explicitly.
 - Hero dollar figures are nominal; do not add a real/nominal suffix to a hero scalar.
 - The success rate varies market returns, inflation, rental reliability and healthcare
   shocks only. Spending, claim ages, retirement age and any modelled death are held at
@@ -2783,7 +2783,7 @@ switching strategy is now expressible via `spouse.survivorClaimAge` +
 `spouse.survivorBenefitAtClaim`.
 
 **Defect 2 also FIXED, v1.2.65.** New `spouse.firstToDie` ("spouse" default | "primary").
-Four things now follow whoever is ALIVE: the PLAN HORIZON (Vincent's call — the money must
+Four things now follow whoever is ALIVE: the PLAN HORIZON (the owner's call — the money must
 last until the SURVIVOR reaches `endAge`, so a 10-year-younger survivor extends the
 projection by 10 years and the success rate correctly DROPS; the old behaviour stopped at
 the dead partner's end age and flattered every such plan), Medicare + the age-65 add-on,
@@ -2804,7 +2804,7 @@ compounds for thirty years. Both are legitimate answers to different questions. 
 
 ### Original entry (the gap, kept for the reasoning)
 
-**Raised by Vincent 2026-07-30, immediately after §22 shipped.** He is right, and
+**Raised by the owner 2026-07-30, immediately after §22 shipped.** He is right, and
 this section exists so nobody reads §22 as "survivor benefits are done."
 
 ### What v1.2.63 actually models
@@ -2847,7 +2847,7 @@ half of the widow's penalty, which is what §22 was scoped to deliver.
    the worst possible place to be wrong. Fix independently of the strategy work.
 
 2. **Only the SPOUSE can die.** `spouse.deathAge` flips filing status and drops SS,
-   but the engines keep walking the PRIMARY's age to `endAge`. Vincent's scenario
+   but the engines keep walking the PRIMARY's age to `endAge`. the owner's scenario
    is the *higher earner* dying, with the spouse surviving. `max()` is symmetric so
    the SS amount happens to come out right, but everything else keyed to the
    primary — the age-65 deduction count, Medicare beneficiary count, the RMD clock,
@@ -2926,7 +2926,7 @@ on every path both ways and the difference, while real, is invisible in the succ
 
 ### Original entry (the gap, kept for the reasoning)
 
-**Found 2026-07-30 while explaining the intended workflow to Vincent. Scheduled to
+**Found 2026-07-30 while explaining the intended workflow to the owner. Scheduled to
 fix 2026-07-31.** Not a wrong number — a design defect that will become a wrong
 number the first time someone edits one door and not the other.
 
@@ -3002,7 +3002,7 @@ enforcement in `src/provenance.test.js` (undeclared card = red build), and the r
 into `specs/UI_DESIGN_SPEC.md`. §28.1 and §28.2 below are also closed — see §29 for what
 shipped. Original brief kept because it defines the defect class.
 
-**Do this in the SAME session as §22 / §24 (Social Security), 2026-07-31.** Vincent's
+**Do this in the SAME session as §22 / §24 (Social Security), 2026-07-31.** the owner's
 instruction: not optional polish, must not be dropped to make room for the SS feature.
 It is the higher-trust item of the two.
 
@@ -3010,7 +3010,7 @@ It is the higher-trust item of the two.
 
 ### Why this exists
 
-In one session Vincent found FOUR figures in the UI that were mislabelled or wired to the
+In one session the owner found FOUR figures in the UI that were mislabelled or wired to the
 wrong source. He found them by looking at his own screen and reporting them one at a time.
 Each fix addressed only the instance reported; the fourth was still there after three
 rounds of "fixed it."
@@ -3052,7 +3052,7 @@ exact expression, and whether it is **computed**, **echoed** (user input played 
 **point-in-time** (record which age/year). Fix every mismatch. Report the count honestly,
 including zero.
 
-**Deliverable 2 — the regression test.** A promise to be careful is worthless; Vincent has
+**Deliverable 2 — the regression test.** A promise to be careful is worthless; the owner has
 heard it. Model it on `src/ghostSettings.test.js`, the working precedent in this repo that
 stopped ghost settings by making "we forgot to wire it up" a BUILD FAILURE and forcing
 anyone claiming a field is inert to write down why. Same shape: a registry declaring every
@@ -3062,7 +3062,7 @@ The point is not the count — it is that the author must answer "computed or ec
 authoring time, which is exactly the question nobody asked when "safe spend" and "GK
 guardrails" were written.
 
-**Deliverable 3 — the rule, in `specs/UI_DESIGN_SPEC.md`.** Vincent's formulation; it
+**Deliverable 3 — the rule, in `specs/UI_DESIGN_SPEC.md`.** the owner's formulation; it
 catches all four instances:
 
 > **Any figure that has been transformed — divided, deflated, grossed up, or echoed from
@@ -3071,7 +3071,7 @@ catches all four instances:
 ### Backlog — considered and DEFERRED, with reasons (do not "improve" these blind)
 
 - **Strategy dropdown write-through ("Option A").** The Analysis strategy dropdown is a
-  PREVIEW: it redraws the schedule without saving. Vincent explicitly **rejected** making
+  PREVIEW: it redraws the schedule without saving. the owner explicitly **rejected** making
   it save on change, because that deletes the ability to compare strategies without
   committing the plan and forces a full Monte Carlo re-run on every change. v1.2.50 instead
   made the preview/saved split unmissable (Option B). If you revisit it, the intended
@@ -3100,7 +3100,7 @@ catches all four instances:
 
 - Do not fix only the instance you are shown. That is the failure mode that produced this.
 - Do not mark the 18 untraced cards clean without tracing them.
-- Do not ship the SS feature and defer this. Vincent named that explicitly.
+- Do not ship the SS feature and defer this. the owner named that explicitly.
 - **Not every report is a bug.** One of the four turned out to be correct behaviour with a
   weak affordance. Verify against the code before changing anything.
 
@@ -3154,7 +3154,7 @@ Roth draw is real, it is an engine bug and outranks everything else in §28.
 
 ### §28.2 — Hover-only disclosure is unreachable — FRIDAY, bundle with §28
 
-**Vincent, 2026-07-28:** *"how do people know to hover over things? I wouldn't know to do that."*
+**Owner, 2026-07-28:** *"how do people know to hover over things? I wouldn't know to do that."*
 
 He is right, and it undercuts several fixes shipped this week. Measured in `src/App.jsx`:
 
@@ -3242,7 +3242,7 @@ for (let y = 0; y < accYrs; y++) {        // accYrs = retireAge − currentAge
 
 ### Decision: do not build a first-year override
 
-Vincent, 2026-08-12: for a user retiring next year, `accYrs` is 1 or 2, so the whole
+Owner, 2026-08-12: for a user retiring next year, `accYrs` is 1 or 2, so the whole
 question is worth at most one year of contributions against an existing portfolio —
 immaterial next to balance, spending and withdrawal order. **The guidance is to hand-adjust
 the input**, not to add a feature.

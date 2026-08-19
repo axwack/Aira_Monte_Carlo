@@ -746,7 +746,7 @@ describe("§30 — computeHouseholdSS honours the survivor rules end to end", ()
 //   • RMDs were forced on the dead partner's birth year, up to a decade early.
 //   • the survivor benefit was priced off the dead partner's full retirement age.
 //
-// Vincent's decision (2026-07-30): the horizon follows whoever is alive.
+// Owner decision (2026-07-30): the horizon follows whoever is alive.
 describe("§30 firstToDie — the survivor's identity drives everything", () => {
   const {
     firstToDie, survivorIsPrimary, firstDeathOnPrimaryClock,

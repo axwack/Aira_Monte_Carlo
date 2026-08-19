@@ -3,7 +3,7 @@
  *
  * WHY THIS EXISTS (REQUIREMENTS §28)
  *
- * In one session Vincent found FOUR figures in the UI that were mislabelled or
+ * In one session the owner found FOUR figures in the UI that were mislabelled or
  * wired to the wrong source. He found them by looking at his own screen and
  * reporting them one at a time; the fourth was still there after three rounds of
  * "fixed it". THE ENGINE MATH WAS CORRECT EVERY TIME — every defect was in the
@@ -88,7 +88,7 @@ describe("§28 — metric-card provenance registry", () => {
   });
 
   test("EVERY figure states its arithmetic in words a user can check", () => {
-    // Vincent, 2026-07-31: "each label should have the exactly calculation clear to
+    // Owner, 2026-07-31: "each label should have the exactly calculation clear to
     // the user and if it is not important at least show it."
     //
     // This is the enforcement half. Three defects were found by users doing sums on
@@ -106,7 +106,7 @@ describe("§28 — metric-card provenance registry", () => {
   });
 
   test("EVERY card renders an explanation line on screen — none is bare", () => {
-    // The rendering half of Vincent's rule. A formula declared in the registry but
+    // The rendering half of the owner's rule. A formula declared in the registry but
     // never displayed helps nobody; five cards used to show a number with no
     // explanation at all. Structural check: every `ml` label must have an `ms`
     // sub-line within its own card block.

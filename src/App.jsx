@@ -10941,7 +10941,7 @@ function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt }) {
    * Assumptions used to be step 1 while ALSO holding five identity fields (name,
    * dob, state, employer start date, filing status). Those moved to About You, so
    * this panel is now purely engine configuration — returns, inflation, tax
-   * toggles, API key. Vincent's framing: it is the phone's Settings app, not part
+   * toggles, API key. Owner's framing: it is the phone's Settings app, not part
    * of telling us about yourself.
    *
    * `isSettings` marks it as a GLOBAL surface rather than a workflow step. The
@@ -11784,7 +11784,7 @@ function ADateInput({ value, onSet }) {
  * REPLACED an 11px uppercase accent-coloured title. `ContribPanel` had privately
  * reimplemented this card — byte-identical chrome under local `sectionCard` /
  * `sectionTitle` / `sectionDesc` objects — and its heading was the more legible of
- * the two. Vincent pointed at one of those cards ("Pensions") and said he liked it,
+ * the two. The owner pointed at one of those cards ("Pensions") and said he liked it,
  * so the canonical component adopted the better treatment rather than the
  * duplicate being flattened down to the weaker one. `accent` now draws a thin left
  * border, keeping the colour-coding without tinting the title.
@@ -11800,7 +11800,7 @@ function ADateInput({ value, onSet }) {
  *
  * Replaces `<input type="month">`, whose year is a bare spinner: there is no visible
  * range, you cannot see what is selectable, and reaching a start date 20 years back
- * means clicking an arrow 240 times. Reported by Vincent — "the year does not show a
+ * means clicking an arrow 240 times. Reported by the owner — "the year does not show a
  * range of years in the mortgage drop down".
  *
  * The year range is DERIVED, never a literal: `MORT_START_YEARS_BACK` covers an
@@ -14623,12 +14623,17 @@ export default function AiRAForecaster() {
                   if (data.withdrawalStrategy !== undefined) setWithdrawalStrategy(data.withdrawalStrategy);
 
                   // Migrate old account fields if needed
+                  // Legacy import migration. The KEYS below are the wire format of profiles
+                  // saved before the accounts array existed — renaming them would stop
+                  // those files importing. The display NAMES are deliberately generic:
+                  // labelling an account with its custodian tells anyone reading this
+                  // public repo where the author's money is held.
                   if (data.solo401k !== undefined && !data.accounts) {
                     data.accounts = [
-                      ...(data.solo401k ? [{ id: "m1", category: "pretax", name: "Solo 401k", balance: data.solo401k }] : []),
-                      ...(data.alpha401k ? [{ id: "m2", category: "pretax", name: "Alpha 401k", balance: data.alpha401k }] : []),
-                      ...(data.rothFid ? [{ id: "m3", category: "roth", name: "Roth Fidelity", balance: data.rothFid }] : []),
-                      ...(data.rothVgd ? [{ id: "m4", category: "roth", name: "Roth Vanguard", balance: data.rothVgd }] : []),
+                      ...(data.solo401k ? [{ id: "m1", category: "pretax", name: "Pre-Tax 401k", balance: data.solo401k }] : []),
+                      ...(data.alpha401k ? [{ id: "m2", category: "pretax", name: "Pre-Tax 401k (2)", balance: data.alpha401k }] : []),
+                      ...(data.rothFid ? [{ id: "m3", category: "roth", name: "Roth IRA", balance: data.rothFid }] : []),
+                      ...(data.rothVgd ? [{ id: "m4", category: "roth", name: "Roth IRA (2)", balance: data.rothVgd }] : []),
                       ...(data.hsaBal ? [{ id: "m5", category: "hsa", name: "HSA", balance: data.hsaBal }] : []),
                       ...(data.taxable ? [{ id: "m6", category: "taxable", name: "Taxable", balance: data.taxable }] : []),
                     ];
