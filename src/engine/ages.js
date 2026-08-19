@@ -212,7 +212,7 @@ export function survivorAgeOnPrimaryClock(p, primaryAge, asOf) {
  * until the SURVIVOR reaches that age — so the projection has to run past the age
  * the primary would have reached, by the age gap.
  *
- * Vincent's decision, 2026-07-30: the horizon follows whoever is alive. It lowers
+ * Owner decision, 2026-07-30: the horizon follows whoever is alive. It lowers
  * the success rate for anyone with a younger spouse, which is correct — their money
  * genuinely has to last longer, and the previous behaviour (stopping at the dead
  * partner's end age) flattered every such plan.

@@ -3,7 +3,7 @@
  *
  * WHY THIS IS A SOURCE MODULE AND NOT JUST A TEST FIXTURE
  *
- * Vincent, 2026-07-31: *"each label should have the exactly calculation clear to the
+ * Owner, 2026-07-31: *"each label should have the exactly calculation clear to the
  * user and if it is not important at least show it."*
  *
  * That is a strengthening of REQUIREMENTS §28 / UI_DESIGN_SPEC Rule 1. Rule 1 said a
