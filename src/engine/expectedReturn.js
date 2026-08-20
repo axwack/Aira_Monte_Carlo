@@ -14,43 +14,73 @@
  * produced identical Smart Waterfall / Roth Explorer trajectories while the
  * Monte Carlo diverged sharply between them.
  *
- * NOTE: App.jsx keeps its OWN copy of the raw SP500/BONDS arrays because those
- * feed `bootstrapDraw`/`portReturn` — the actual stochastic Monte Carlo draws,
- * which resample individual historical years rather than use their mean. That
- * is a different consumer than expectedReturn() (an expected-VALUE helper) and
- * is intentionally left untouched by this refactor to avoid any risk of
- * changing runMC's behavior. This file's SP500/BONDS arrays and clamping MUST
- * stay byte-for-byte identical to App.jsx's copy — if one is ever edited to
- * add a new year of data, edit both.
+ * DATA SOURCE (v1.2.104, 2026-08-20)
+ * ----------------------------------
+ * Damodaran, "Historical Returns on Stocks, Bonds and Bills: 1928-2024"
+ *   https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histretSP.html
+ * Coverage: 1928-2025 (98 years). Updated annually.
+ *   • SP500 = "S&P 500 (includes dividends)" — nominal total return, dividends
+ *     reinvested.
+ *   • BONDS = "US T. Bond (10-year)" — nominal total return (price + coupon)
+ *     on the 10-year Treasury.
+ *
+ * WHY THIS SOURCE
+ * ---------------
+ * Damodaran is the canonical free retail dataset for retirement-planning MC
+ * research (Bengen, Kitces, Pfau all reference it). The two series are
+ * year-aligned by calendar year, which is the prerequisite for paired bootstrap
+ * sampling in App.jsx's runMC (see portReturn — one shared random index draws
+ * SP500[i] and BONDS[i] together so real historical stock/bond correlations,
+ * including the flight-to-quality flip in crashes like 2008, are preserved).
+ *
+ * WHY NO WINSORIZATION
+ * --------------------
+ * The prior arrays clamped to [-30, 30] for stocks and [-15, 20] for bonds.
+ * That censored the exact tail years retirement MC exists to model — 1931
+ * (-43.84%), 1937 (-35.34%), 2008 (-36.55%) were all clipped, silently
+ * understating ruin probability. If a specific stress test needs damped
+ * returns, do it in that caller by scaling the array, not by mutating the
+ * canonical dataset.
+ *
+ * NOTE: this file is now the ONE source. App.jsx used to keep its own
+ * byte-identical copy of both arrays for portReturn/bootstrapDraw; that
+ * duplication has been removed (App.jsx imports these). If you add a year of
+ * data, edit ONLY this file.
  */
 
 const SP500 = [
-  37.88, -11.91, -28.48, -47.07, -15.15, 46.59, -5.94, 41.37, 27.92, -38.59,
-  25.21, -5.45, -15.29, -17.86, 12.43, 19.45, 13.8, 30.72, -11.87, 0, -0.65,
-  10.26, 21.78, 16.46, 11.78, -6.62, 45.02, 26.4, 2.62, -14.31, 38.06, 8.48,
-  -2.97, 23.13, -11.81, 18.89, 12.97, 9.06, -13.09, 20.09, 7.66, -11.36, 0.1,
-  10.79, 15.63, -17.37, -29.72, 31.55, 19.15, -11.5, 1.06, 12.31, 25.77, -9.73,
-  14.76, 17.27, 1.4, 26.33, 14.62, 2.03, 12.4, 27.25, -6.56, 26.31, 4.46, 7.06,
-  -1.54, 34.11, 20.26, 31.01, 26.67, 19.53, -10.14, -13.04, -23.37, 26.38, 8.99,
-  3, 13.62, 3.53, -38.49, 23.45, 12.78, 0, 13.41, 29.6, 11.39, -0.73, 9.54,
-  19.42, -6.24, 28.88, 16.26, 26.89, -19.44, 24.23, 23.31, 16.39, 1.53,
-].map((r) => Math.max(-30, Math.min(30, r)) / 100);
+  43.81, -8.3, -25.12, -43.84, -8.64, 49.98, -1.19, 46.74, 31.94, -35.34,
+  29.28, -1.1, -10.67, -12.77, 19.17, 25.06, 19.03, 35.82, -8.43, 5.2,
+  5.7, 18.3, 30.81, 23.68, 18.15, -1.21, 52.56, 32.6, 7.44, -10.46,
+  43.72, 12.06, 0.34, 26.64, -8.81, 22.61, 16.42, 12.4, -9.97, 23.8,
+  10.81, -8.24, 3.56, 14.22, 18.76, -14.31, -25.9, 37, 23.83, -6.98,
+  6.51, 18.52, 31.74, -4.7, 20.42, 22.34, 6.15, 31.24, 18.49, 5.81,
+  16.54, 31.48, -3.06, 30.23, 7.49, 9.97, 1.33, 37.2, 22.68, 33.1,
+  28.34, 20.89, -9.03, -11.85, -21.97, 28.36, 10.74, 4.83, 15.61, 5.48,
+  -36.55, 25.94, 14.82, 2.1, 15.89, 32.15, 13.52, 1.38, 11.77, 21.61,
+  -4.23, 31.21, 18.02, 28.47, -18.04, 26.06, 24.88, 17.78,
+].map((r) => r / 100);
 
 const BONDS = [
-  15.6, 3.0, 1.4, 1.9, 2.7, 6.2, 32.6, 8.4, 8.4, 22.1, 15.1, 15.3, 2.7, 14.5,
-  8.9, 16.0, 7.4, 9.8, -2.9, 18.5, 3.6, 9.7, 8.7, -0.8, 11.6, 8.4, 10.3, 4.1,
-  4.3, 2.4, 4.3, 7.0, 5.2, 5.9, 6.5, 7.8, 4.2, -2.0, 6.0, 0.5, 2.6, 3.5, 0.0,
-  8.7, -1.5, 7.5, -13.0, 5.5, 1.7, 7.1,
-].map((r) => Math.max(-15, Math.min(20, r)) / 100);
+  0.84, 4.2, 4.54, -2.56, 8.79, 1.86, 7.96, 4.47, 5.02, 1.38,
+  4.21, 4.41, 5.4, -2.02, 2.29, 2.49, 2.58, 3.8, 3.13, 0.92,
+  1.95, 4.66, 0.43, -0.3, 2.27, 4.14, 3.29, -1.34, -2.26, 6.8,
+  -2.1, -2.65, 11.64, 2.06, 5.69, 1.68, 3.73, 0.72, 2.91, -1.58,
+  3.27, -5.01, 16.75, 9.79, 2.82, 3.66, 1.99, 3.61, 15.98, 1.29,
+  -0.78, 0.67, -2.99, 8.2, 32.81, 3.2, 13.73, 25.71, 24.28, -4.96,
+  8.22, 17.69, 6.24, 15, 9.36, 14.21, -8.04, 23.48, 1.43, 9.94,
+  14.92, -8.25, 16.66, 5.57, 15.12, 0.38, 4.49, 2.87, 1.96, 10.21,
+  20.1, -11.12, 8.46, 16.04, 2.97, -9.1, 10.75, 1.28, 0.69, 2.8,
+  -0.02, 9.64, 11.33, -4.42, -17.83, 3.88, -1.64, 7.8,
+].map((r) => r / 100);
+
+export { SP500, BONDS };
 
 export const SP500_MEAN = SP500.reduce((s, v) => s + v, 0) / SP500.length;
 export const BONDS_MEAN = BONDS.reduce((s, v) => s + v, 0) / BONDS.length;
 
 /**
  * Blends the historical S&P 500 / bond mean annual returns by equity %.
- * Identical formula to App.jsx's own expectedReturn() — kept in sync by hand
- * since App.jsx also needs the raw SP500/BONDS arrays locally for its
- * bootstrapped Monte Carlo draws (see file header note above).
  * @param {number} eqPct — equity allocation, 0-100 (defaults to 91, App.jsx's preRetireEq default)
  * @returns {number} expected blended annual return, as a percentage (e.g. 7.6 for 7.6%)
  */

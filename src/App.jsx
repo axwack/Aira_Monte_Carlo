@@ -70,7 +70,7 @@ import {
   getSeniorBonusDeduction, OBBBA_SENIOR_LAST_YEAR,
 } from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR } from "./engine/buildWithdrawalWaterfall.js";
-import { expectedReturn } from "./engine/expectedReturn.js";
+import { expectedReturn, SP500, BONDS } from "./engine/expectedReturn.js";
 import { resolveGlidepathSwitchAge, glidepathEquityWeight, glidepathEqPct } from "./engine/glidepath.js";
 import { jobContributionsForYear, householdAnnualContribution, totalRetirementIncome } from "./engine/contributions.js";
 import { explainScore } from "./engine/explainScore.js";
@@ -209,9 +209,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.103";
-export const BUILD_TAG = "[main] v1.2.103 - §18 Profile IA Phase B finished. Money In consolidation was already done in code (SS, rental, pensions, other income, one-off windfalls all live in ContribPanel), but the six ACards read as flat peers rather than the While-Working vs In-Retirement split the spec called for; that grouping is now visible via two section-header dividers. New helper totalRetirementIncome(values) sums the recurring in-retirement streams (SS primary + spouse FRA, blanket rental, all otherIncomes). The Money In step subtitle used to say 'Contributing $0/yr while working' for a retired user with a $50K pension - exactly backwards - and now reads 'saving/yr · in retirement/yr'. Design-authority broke a tie between REQUIREMENTS §18's step order (Money In before Current Savings) and the July-31 array (Savings before Money In) in favor of Order B for four reasons: dob-first is the dependency root, assets before flows matches user mental model, progressive disclosure prefers the simpler snapshot first, and the live implementation is the single point of control. Order left unchanged.";
-export const BUILD_TIME = "2026-08-20T00:00:00Z";
+const APP_VERSION = "1.2.104";
+export const BUILD_TAG = "[main] v1.2.104 - Monte Carlo accuracy upgrade. THREE changes to the historical bootstrap. (1) SP500 and BONDS arrays replaced with Damodaran's canonical 1928-2025 series (98 year-aligned pairs), sourced from stern.nyu.edu/~adamodar/histretSP - the same dataset Bengen/Kitces/Pfau reference. Prior BONDS array had only 51 entries covering ~1975-2025, so pre-1975 stress sequences (Great Depression, 1937 crash, 1966-1974 stagflation) had NO real bond return to draw from - the model was making up bond behavior in exactly the eras that matter most for retirement failure. (2) PAIRED sampling in portReturn - one shared random index now draws SP500[i] AND BONDS[i] together, preserving the empirical stock/bond correlation including 2008's flight to quality (SP -36.55% pairs with Bond +20.10%) and 2022's rare double-down (-18.04%/-17.83%). Prior code drew stocks and bonds independently, effectively forcing cov=0 and inventing year combinations that never occurred. (3) Winsorization REMOVED - prior clamps ([-30,30] stocks, [-15,20] bonds) censored 1931 (-43.84%), 1937 (-35.34%), 2008 (-36.55%), and 1982 bonds (+32.81%) - the exact tail events retirement MC exists to model. Duplicated SP500/BONDS arrays collapsed to one canonical source in engine/expectedReturn.js. Expect small shifts in success rates (probably 1-3 pp, direction depends on portfolio) - the change makes crash-year diversification realistic and stops inventing impossible year combinations. Follow-up not shipped: stress-test override branch and INFL still use independent bootstrap - pairing them requires year-labels on the SEQ arrays. 1004 tests / 43 suites pass on the new data.";
+export const BUILD_TIME = "2026-08-20T18:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -240,24 +240,14 @@ export const GK_CEILING_FALLBACK = 115_000;
 // real IRS 2026 bracket figures and must stay pinned to 2026.
 const CURRENT_YEAR = new Date().getFullYear();
 
-const SP500 = [
-  37.88, -11.91, -28.48, -47.07, -15.15, 46.59, -5.94, 41.37, 27.92, -38.59,
-  25.21, -5.45, -15.29, -17.86, 12.43, 19.45, 13.8, 30.72, -11.87, 0, -0.65,
-  10.26, 21.78, 16.46, 11.78, -6.62, 45.02, 26.4, 2.62, -14.31, 38.06, 8.48,
-  -2.97, 23.13, -11.81, 18.89, 12.97, 9.06, -13.09, 20.09, 7.66, -11.36, 0.1,
-  10.79, 15.63, -17.37, -29.72, 31.55, 19.15, -11.5, 1.06, 12.31, 25.77, -9.73,
-  14.76, 17.27, 1.4, 26.33, 14.62, 2.03, 12.4, 27.25, -6.56, 26.31, 4.46, 7.06,
-  -1.54, 34.11, 20.26, 31.01, 26.67, 19.53, -10.14, -13.04, -23.37, 26.38, 8.99,
-  3, 13.62, 3.53, -38.49, 23.45, 12.78, 0, 13.41, 29.6, 11.39, -0.73, 9.54,
-  19.42, -6.24, 28.88, 16.26, 26.89, -19.44, 24.23, 23.31, 16.39, 1.53,
-].map((r) => Math.max(-30, Math.min(30, r)) / 100);
-
-const BONDS = [
-  15.6, 3.0, 1.4, 1.9, 2.7, 6.2, 32.6, 8.4, 8.4, 22.1, 15.1, 15.3, 2.7, 14.5,
-  8.9, 16.0, 7.4, 9.8, -2.9, 18.5, 3.6, 9.7, 8.7, -0.8, 11.6, 8.4, 10.3, 4.1,
-  4.3, 2.4, 4.3, 7.0, 5.2, 5.9, 6.5, 7.8, 4.2, -2.0, 6.0, 0.5, 2.6, 3.5, 0.0,
-  8.7, -1.5, 7.5, -13.0, 5.5, 1.7, 7.1,
-].map((r) => Math.max(-15, Math.min(20, r)) / 100);
+// SP500 / BONDS moved to engine/expectedReturn.js (v1.2.104) — single source
+// of truth for the historical bootstrap. Both arrays are now Damodaran's
+// year-aligned 1928-2025 series (98 pairs), so portReturn() can draw ONE
+// shared random index and preserve the empirical stock/bond correlation,
+// including flight-to-quality in crashes (2008 SP -36.55% pairs with Bond
+// +20.10%). The prior arrays had a length mismatch (99 vs 51) and were
+// duplicated across files — see engine/expectedReturn.js header.
+// SP500 and BONDS are imported at the top of this file alongside expectedReturn().
 
 const INFL = [
   3.4, 2.8, 1.6, 2.3, 2.7, 3.4, 3.2, 2.8, 3.8, -0.4, 1.6, 3.2, 2.1, 1.5, 1.6,
@@ -887,9 +877,17 @@ function portReturn(age, rand, preRetireEq, postRetireEq, switchAge) {
   // resolveGlidepathSwitchAge — see engine/glidepath.js for why this is
   // single-sourced (four call sites had drifted onto a hardcoded 62).
   const eqW = glidepathEquityWeight(age, preRetireEq, postRetireEq, switchAge);
-  return (
-    eqW * bootstrapDraw(SP500, rand) + (1 - eqW) * bootstrapDraw(BONDS, rand)
-  );
+  // PAIRED bootstrap sampling (v1.2.104). One shared random index draws the
+  // same calendar year's stock AND bond return, so the historical stock/bond
+  // correlation is preserved — including the flight-to-quality flip in crashes
+  // (2008: SP500[i]=-36.55%, BONDS[i]=+20.10%) and the rare double-down
+  // (2022: SP500[i]=-18.04%, BONDS[i]=-17.83%). The prior implementation drew
+  // stocks and bonds independently, effectively forcing cov(stocks, bonds) = 0
+  // and inventing year combinations that never occurred. Requires SP500 and
+  // BONDS to be equal-length and year-aligned; engine/expectedReturn.js
+  // guarantees both (Damodaran 1928-2025, 98 pairs).
+  const i = Math.floor(rand() * SP500.length);
+  return eqW * SP500[i] + (1 - eqW) * BONDS[i];
 }
 
 

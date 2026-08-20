@@ -906,6 +906,39 @@ export function buildWithdrawalWaterfall(params = {}) {
         const drawTaxable = () => { fromTaxable = Math.min(need, taxable); need -= fromTaxable; };
 
         // Step 5 — Pretax (bracket-capped in smart mode, uncapped in naive)
+        //
+        // ┌─────────────────────────────────────────────────────────────────┐
+        // │ PER-YEAR LOCAL OPTIMISATION — known limitations of both guards  │
+        // │                                                                 │
+        // │ The bracket cap and the IRMAA guard optimise ONE year at a time │
+        // │ against ORDINARY income only. Two blind spots surface at the    │
+        // │ lifetime scale:                                                 │
+        // │                                                                 │
+        // │  (1) RMD compounding. Every dollar the guard keeps IN pretax    │
+        // │      this year compounds and enlarges next decade's RMD, which  │
+        // │      is FORCED income neither guard can cap. Under Damodaran-   │
+        // │      calibrated expected returns (v1.2.104) that compounding is │
+        // │      fast enough that a tighter yearly cap can result in HIGHER │
+        // │      lifetime IRMAA — the guard yielded a smaller MAGI today    │
+        // │      but a larger RMD later, and the RMD alone breaches a tier. │
+        // │                                                                 │
+        // │  (2) LTCG blindness. IRMAA is charged on TRUE MAGI, which       │
+        // │      includes LTCG from taxable draws. The guard sizes pretax   │
+        // │      against tier-1 using SS+RMD+annuity+pretax only — LTCG is  │
+        // │      not in that room calc. A year can flag pretaxCapReason =   │
+        // │      "irmaa_ceil" and still incur an IRMAA charge because LTCG  │
+        // │      pushed real MAGI past a tier the guard did not see.        │
+        // │                                                                 │
+        // │ What IS provable: in years the IRMAA guard BINDS, it holds the  │
+        // │ pretax draw ≤ the same year without the guard. Whether that     │
+        // │ translates into less IRMAA depends on RMD trajectory and LTCG   │
+        // │ realisation, both outside the guard's field of view. See        │
+        // │ irmaaGuardIndependent.test.js "shrinks the pretax draw".        │
+        // │                                                                 │
+        // │ Fixing either blind spot requires a look-ahead / DP solver that │
+        // │ trades today's marginal cost against expected future RMD and    │
+        // │ LTCG. Out of scope for the per-year waterfall.                  │
+        // └─────────────────────────────────────────────────────────────────┘
         const drawPretax = () => {
           let pretaxAllowed = need;
           // Either constraint can bind INDEPENDENTLY. The IRMAA guard used to be
