@@ -72,7 +72,7 @@ import {
 import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn } from "./engine/expectedReturn.js";
 import { resolveGlidepathSwitchAge, glidepathEquityWeight, glidepathEqPct } from "./engine/glidepath.js";
-import { jobContributionsForYear, householdAnnualContribution } from "./engine/contributions.js";
+import { jobContributionsForYear, householdAnnualContribution, totalRetirementIncome } from "./engine/contributions.js";
 import { explainScore } from "./engine/explainScore.js";
 import { buildConversionPlan, buildConversionLadder, buildWaterfallComparison } from "./engine/rothConversionPlan.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, healthcareShockDraw, expectedHealthcareShock } from "./engine/expenses.js";
@@ -209,9 +209,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.102";
-export const BUILD_TAG = "[main] v1.2.102 - the printable report is a product you can buy, not a slice of an AI credit pack. It burns ZERO tokens (the document is computed client-side from the engines), so pricing it in a currency that means AI usage was a category error - and it forced someone who only wanted a document to first understand credits, buy a pack, and spend 250 of them for 24 hours of access. Now 9 dollars buys it outright and PERMANENTLY: nobody expects a document they paid for to stop opening tomorrow. The 250-credit route stays as the secondary offer so existing balance holders are not stranded. BUILT GRANTING-SIDE FIRST, CHARGING-SIDE LAST (webhook + report-unlock, then checkout) so a half-finished state could only ever mean cannot-buy-yet, never paid-and-got-nothing. THE BUG THAT WOULD HAVE TAKEN A CUSTOMERS MONEY: credit_transactions.type carries a CHECK constraint and report_purchase was not in it. That INSERT happens in the Stripe webhook - AFTER the card is charged - so the first buyer would have paid, D1 would have rejected the row, the handler would have 500d, and Stripe would have retried and failed identically forever. Migration 008 adds the type and was applied to production BEFORE this code shipped; the 5 existing ledger rows were backed up, verified intact across the table rebuild, and the constraint was proven with a real insert that was then deleted. report_purchase rows carry amount 0 by design - the entitlement is the rows existence, and report-unlock checks its TYPE not a balance, so a buyer holding zero credits still opens what they bought. Also fixed: a permanent unlock has unlockedUntil=null, which isReportUnlocked read as EXPIRED - a paying customer would have seen the paywall flash on every load until the server corrected it. DIAGNOSTICS: /api/checkout now returns Stripes own message instead of a generic failure, which turned an opaque 502 into No-such-price in one step; probing all four pack ids then proved the key was fine and one price simply sat in a different Stripe account. Shoppers see a plain sentence; the reason goes to the console. PROCESS: this tag first shipped with double quotes inside it and broke App.jsx - the deploy guard caught it at the build step and production was never touched. 1004 tests, 43 suites.";
-export const BUILD_TIME = "2026-08-14T12:00:00Z";
+const APP_VERSION = "1.2.103";
+export const BUILD_TAG = "[main] v1.2.103 - §18 Profile IA Phase B finished. Money In consolidation was already done in code (SS, rental, pensions, other income, one-off windfalls all live in ContribPanel), but the six ACards read as flat peers rather than the While-Working vs In-Retirement split the spec called for; that grouping is now visible via two section-header dividers. New helper totalRetirementIncome(values) sums the recurring in-retirement streams (SS primary + spouse FRA, blanket rental, all otherIncomes). The Money In step subtitle used to say 'Contributing $0/yr while working' for a retired user with a $50K pension - exactly backwards - and now reads 'saving/yr · in retirement/yr'. Design-authority broke a tie between REQUIREMENTS §18's step order (Money In before Current Savings) and the July-31 array (Savings before Money In) in favor of Order B for four reasons: dob-first is the dependency root, assets before flows matches user mental model, progressive disclosure prefers the simpler snapshot first, and the live implementation is the single point of control. Order left unchanged.";
+export const BUILD_TIME = "2026-08-20T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -10952,7 +10952,23 @@ function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt }) {
   const STEPS = [
     { label: "About You", icon: "👤", sub: `You are ${ageFromDob(values.dob) ?? values.currentAge} yrs old` },
     { label: "Current Savings", icon: "💰", sub: `Net worth of ${fmtDollar(values.port)} saved. Congratulations!` },
-    { label: "Money In", icon: "💵", sub: `Contributing ${fmtDollar(householdAnnualContribution(values))}/yr while working` },
+    {
+      label: "Money In", icon: "💵",
+      // Money In holds BOTH the working-years contributions and every recurring
+      // retirement stream (SS, rental, pensions, other income). §18 Phase B
+      // design-authority tie-break (2026-08-20): the old subtitle read only the
+      // contribution figure, so a retired user with a $50K pension saw
+      // "Contributing $0/yr while working" — a step-relevance signal that was
+      // exactly backwards. Show both halves; fall back to a static label only
+      // when the household has neither, so the string is never
+      // "$0/yr saving · $0/yr in retirement" for a brand-new profile.
+      sub: (() => {
+        const saving = householdAnnualContribution(values);
+        const retInc = totalRetirementIncome(values);
+        if (saving === 0 && retInc === 0) return "Income & contributions";
+        return `${fmtDollar(saving)}/yr saving · ${fmtDollar(retInc)}/yr in retirement`;
+      })(),
+    },
     {
       label: "Spending & Expenses", icon: "💸",
       sub: values.spImportMeta
@@ -12306,6 +12322,19 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
+      {/* §18 Phase B — section headers split Money In by WHEN each stream applies.
+          A retired user skips "While Working" immediately (progressive disclosure);
+          a still-working user knows the retirement half is a plan, not something
+          to fill in today. Cards inside each group are the pre-existing ACards —
+          this is a grouping label, not a nested chrome. */}
+      <div style={{
+        marginBottom: 2,
+        fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+        textTransform: "uppercase", color: "#475569",
+      }}>
+        While Working
+      </div>
+
       {/* ── Income card 1: Annual Contributions (inputs + savings total together) ── */}
       <ACard title="💰 Annual Contributions" desc="Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.">
         <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 10, lineHeight: 1.4 }}>⚠ Employer Contribution and Brokerage/After-Tax Savings aren't capped by the tool — the IRS doesn't set a hard per-field limit on either, but real-world amounts are still bounded by your actual plan and income. 401(k), HSA, and Roth IRA below stay capped at their real legal limits.</div>
@@ -12420,6 +12449,18 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           <span style={{ fontSize: 22, fontWeight: 800, color: "#14b8a6", fontFamily: "'DM Mono',monospace" }}>{fmtDollar(totalSavings)}<span style={{ fontSize: 12, fontWeight: 400, color: "#64748b" }}>/yr</span></span>
         </div>
       </ACard>
+
+      {/* §18 Phase B — second section header. Border-top separates the two
+          groups; the shipped 6-card flat list read as peer streams, which
+          buried the timing distinction. */}
+      <div style={{
+        marginTop: 4, marginBottom: 2, paddingTop: 12,
+        borderTop: "1px solid rgba(255,255,255,0.10)",
+        fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+        textTransform: "uppercase", color: "#475569",
+      }}>
+        In Retirement
+      </div>
 
       {/* ── Income card 2: SOCIAL SECURITY (moved from Retirement Plan step) ──
           §18 Phase B: SS is money coming IN, not a withdrawal setting. Moved
