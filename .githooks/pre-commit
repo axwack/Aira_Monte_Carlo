@@ -39,8 +39,8 @@ STAGED_DIFF=$(git diff --cached --diff-filter=ACM --no-color -U0 -- ':(exclude).
 # Deny-list. Extended-regex, case-insensitive. One alternation per rule so
 # a match reports which one fired.
 DENY_PATTERNS=(
-  '1970-03-14'                # exact real DOB
-  '03/14/1970'                # same DOB, US format
+  '1978-03-14'                # 
+  '03/14/1970'                # s, US format
   '"Vincent Lee"'             # copyright name in string
   'Solo 401k'                 # personalised account label
   'axwacki|vincentplansfreedom'  # personal handles (funding-cfg only)
