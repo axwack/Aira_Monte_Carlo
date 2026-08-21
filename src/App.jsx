@@ -210,9 +210,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.108";
-export const BUILD_TAG = "[main] v1.2.108 - §37 Phase C2 - Institutional Calm redesign lands. Design-authority verdict on 2026-08-21 approved a holistic visual direction; because Phase C1 tokenized 848 color literals, the whole redesign lands as token-VALUE edits in ONE :root block plus a 26-line sweep of hardcoded CSS class rules. PALETTE (dark): --bg-base #0a0c12 (neutral ink, less blue-cast than the prior #0a0f1e), --accent #5b8def (indigo trust anchor, was cyan #38bdf8), --accent-teal #4fd1ae (deepened off neon #5eead4), --accent-gold #f5a623 (desaturated), --negative #f87171 (softer - routine shortfalls should not scream alarm-red), warmer neutral text ramp. Light-mode palette matched: #f7f8fa base, #2f5fd6 accent (deepened for WCAG AA on white), warmer text ramp. NEW TOKENS added to :root: --card-bg-raised (2x fill opacity, for primary summary cards vs table row cards), --card-shadow (subtle real elevation on modals + primary surfaces), --bg-hdr (semi-transparent header background), --chart-band (percentile-band fill), full spacing scale extension (--space-xs 4px, --space-2xl 48px), typography scale (--fs-display/h1/h2/body/small/mono), radius tokens (--radius-card 14px was 11px, --radius-btn, --radius-pill). SWEEP: 26 hardcoded CSS class rules that Phase C1 could not reach (JSX-inline conversion, not class-rule conversion) - .app gradient, .hdr background+border, .logo, .logo-sub, .mbtn+.mbtn:hover+.mbtn.on, .hdiv, .landing gradient, .lp-eyebrow, .lp-answer, .lp-age, .lp-answer.short .lp-age, .lp-sub, .lp-panel, .lp-label, .lp-val, .lp-val-input:hover+focus, .lp-range styles including thumb, .lp-cta+hover, .lp-skip+hover. This is the not-optional part of the verdict: without it the header and landing hero stayed hardcoded and a token edit would have been invisible on the two most-seen surfaces. Also: 95 remaining 'DM Mono' font-family literals consolidated to 'JetBrains Mono' - the app now has ONE mono family across every numeric readout. No engine changes, no test changes, no financial math touched.";
-export const BUILD_TIME = "2026-08-21T18:00:00Z";
+const APP_VERSION = "1.2.109";
+export const BUILD_TAG = "[main] v1.2.109 - Header layout tidy: deleted the right-side day-counter block that duplicated the sidebar D-Day Countdown Panel; the same target-date figure now lives at the top of the sidebar panel (below its title, above the DD/HH/MM/SS grid) so a user sees the target once, in the panel that owns it. With the third header child gone, .hdr's justify-content:space-between naturally pushes the button group flush right instead of leaving it centered. No CSS class changes needed for the button shift. Follow-up (deferred): light-mode contrast fix on --text-muted / --text-faint / --card-border / --divider - shipped values overshot into unreadable territory (1.7:1 for text-faint on white). PRIOR v1.2.108 - §37 Phase C2 Institutional Calm redesign: Design-authority verdict on 2026-08-21 approved a holistic visual direction; because Phase C1 tokenized 848 color literals, the whole redesign lands as token-VALUE edits in ONE :root block plus a 26-line sweep of hardcoded CSS class rules. PALETTE (dark): --bg-base #0a0c12 (neutral ink, less blue-cast than the prior #0a0f1e), --accent #5b8def (indigo trust anchor, was cyan #38bdf8), --accent-teal #4fd1ae (deepened off neon #5eead4), --accent-gold #f5a623 (desaturated), --negative #f87171 (softer - routine shortfalls should not scream alarm-red), warmer neutral text ramp. Light-mode palette matched: #f7f8fa base, #2f5fd6 accent (deepened for WCAG AA on white), warmer text ramp. NEW TOKENS added to :root: --card-bg-raised (2x fill opacity, for primary summary cards vs table row cards), --card-shadow (subtle real elevation on modals + primary surfaces), --bg-hdr (semi-transparent header background), --chart-band (percentile-band fill), full spacing scale extension (--space-xs 4px, --space-2xl 48px), typography scale (--fs-display/h1/h2/body/small/mono), radius tokens (--radius-card 14px was 11px, --radius-btn, --radius-pill). SWEEP: 26 hardcoded CSS class rules that Phase C1 could not reach (JSX-inline conversion, not class-rule conversion) - .app gradient, .hdr background+border, .logo, .logo-sub, .mbtn+.mbtn:hover+.mbtn.on, .hdiv, .landing gradient, .lp-eyebrow, .lp-answer, .lp-age, .lp-answer.short .lp-age, .lp-sub, .lp-panel, .lp-label, .lp-val, .lp-val-input:hover+focus, .lp-range styles including thumb, .lp-cta+hover, .lp-skip+hover. This is the not-optional part of the verdict: without it the header and landing hero stayed hardcoded and a token edit would have been invisible on the two most-seen surfaces. Also: 95 remaining 'DM Mono' font-family literals consolidated to 'JetBrains Mono' - the app now has ONE mono family across every numeric readout. No engine changes, no test changes, no financial math touched.";
+export const BUILD_TIME = "2026-08-21T19:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -15155,24 +15155,29 @@ export default function AiRAForecaster() {
               ☕ Buy me a coffee
             </a>
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace" }}>
-              {days.toLocaleString()}
-            </div>
-            <div style={{ fontSize: 11, color: "var(--text-faint)" }}>
-              {`days · ${DDAY_dynamic.toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })}`}
-            </div>
-          </div>
+          {/* Header day-counter deleted v1.2.109 — the same figure lives inside
+              the D-Day Countdown Panel in the sidebar (bottom of this file),
+              so showing it twice was redundant. With this block gone, .hdr's
+              justify-content:space-between pushes the buttons flush right. */}
         </div>
 
         <div className="layout">
           <div className="sidebar">
             <div className="sb-card">
               <div className="sb-title">D-Day (Retirement) Countdown</div>
+              {/* Target-date label (v1.2.109) — the days figure is redundant
+                  with the ticking DD/HH/MM/SS grid immediately below, so this
+                  line names the target once (the date) and leaves the counting
+                  to the grid. */}
+              <div style={{
+                fontSize: 12, color: "var(--text-secondary)", marginTop: 4, marginBottom: 10,
+                display: "flex", justifyContent: "space-between", alignItems: "baseline",
+              }}>
+                <span>Retirement Date</span>
+                <span style={{ color: "var(--accent-teal)", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>
+                  {DDAY_dynamic.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+              </div>
               <div className="countdown-grid">
                 {[
                   { v: countdown.days, l: "DAYS" },
