@@ -40,7 +40,11 @@ describe('Withdrawal Strategy Dynamic Text', () => {
 
 describe('Portfolio Checkpoints', () => {
   test('checkpoint age calculation from dob and checkpoint date', () => {
-    const dob = '1970-01-01';
+    // Mid-year DOB avoids the `new Date('1970-01-01')` timezone edge case
+    // (which parses as UTC midnight → Dec 31 1969 local in a west-of-UTC
+    // timezone → age computed as 57 instead of 56). Also exercises the
+    // "birthday not yet passed" decrement branch.
+    const dob = '1970-06-15';
     const checkpointDate = '2026-04-20';
     const birth = new Date(dob);
     const check = new Date(checkpointDate);
@@ -48,7 +52,7 @@ describe('Portfolio Checkpoints', () => {
     const monthDay = `${check.getMonth()}-${check.getDate()}`;
     const birthMonthDay = `${birth.getMonth()}-${birth.getDate()}`;
     if (monthDay < birthMonthDay) age--;
-    expect(age).toBe(56);
+    expect(age).toBe(55);
   });
 
   test('checkpoint color logic (green/yellow/red/gray)', () => {

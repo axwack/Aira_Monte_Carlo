@@ -74,7 +74,30 @@ const BONDS = [
   -0.02, 9.64, 11.33, -4.42, -17.83, 3.88, -1.64, 7.8,
 ].map((r) => r / 100);
 
-export { SP500, BONDS };
+// INFL — annual CPI-U year-over-year %, 1928-2025 (98 entries, aligned to
+// SP500/BONDS by calendar year). Source: US Bureau of Labor Statistics CPI-U
+// "annual average" series as republished at usinflationcalculator.com, with
+// 2025 confirmed against BLS's current release. Extended backward from the
+// prior 51-entry array (~1975-2025) so that inflation can be drawn from the
+// same historical year as the stock/bond return (v1.2.105 paired MC draws).
+// The stagflation years now show up correctly paired — 1974's -25.9% S&P
+// alongside 11.0% CPI, 1979's 18.4% S&P alongside 11.3% CPI — instead of the
+// prior independent sampling that could pair 2008's crash with 2015's 0.1%
+// CPI. No winsorization: 1932 (-9.9%) and 1946 (14.4%) are real years.
+const INFL = [
+  -1.7, 0, -2.3, -9, -9.9, -5.1, 3.1, 2.2, 1.5, 3.6,
+  -2.1, -1.4, 0.7, 5, 10.9, 6.1, 1.7, 2.3, 8.3, 14.4,
+  8.1, -1.2, 1.3, 7.9, 1.9, 0.8, 0.7, -0.4, 1.5, 3.3,
+  2.8, 0.7, 1.7, 1, 1, 1.3, 1.3, 1.6, 2.9, 3.1,
+  4.2, 5.5, 5.7, 4.4, 3.2, 6.2, 11, 9.1, 5.8, 6.5,
+  7.6, 11.3, 13.5, 10.3, 6.2, 3.2, 4.3, 3.6, 1.9, 3.6,
+  4.1, 4.8, 5.4, 4.2, 3, 3, 2.6, 2.8, 3, 2.3,
+  1.6, 2.2, 3.4, 2.8, 1.6, 2.3, 2.7, 3.4, 3.2, 2.8,
+  3.8, -0.4, 1.6, 3.2, 2.1, 1.5, 1.6, 0.1, 1.3, 2.1,
+  2.4, 1.8, 1.2, 4.7, 8, 4.1, 2.9, 2.6,
+].map((r) => r / 100);
+
+export { SP500, BONDS, INFL };
 
 export const SP500_MEAN = SP500.reduce((s, v) => s + v, 0) / SP500.length;
 export const BONDS_MEAN = BONDS.reduce((s, v) => s + v, 0) / BONDS.length;

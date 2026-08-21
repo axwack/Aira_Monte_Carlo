@@ -70,7 +70,7 @@ import {
   getSeniorBonusDeduction, OBBBA_SENIOR_LAST_YEAR,
 } from "./engine/buildRothExplorer.js";
 import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR } from "./engine/buildWithdrawalWaterfall.js";
-import { expectedReturn, SP500, BONDS } from "./engine/expectedReturn.js";
+import { expectedReturn, SP500, BONDS, INFL } from "./engine/expectedReturn.js";
 import { resolveGlidepathSwitchAge, glidepathEquityWeight, glidepathEqPct } from "./engine/glidepath.js";
 import { jobContributionsForYear, householdAnnualContribution, totalRetirementIncome } from "./engine/contributions.js";
 import { explainScore } from "./engine/explainScore.js";
@@ -209,9 +209,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.104";
-export const BUILD_TAG = "[main] v1.2.104 - Monte Carlo accuracy upgrade. THREE changes to the historical bootstrap. (1) SP500 and BONDS arrays replaced with Damodaran's canonical 1928-2025 series (98 year-aligned pairs), sourced from stern.nyu.edu/~adamodar/histretSP - the same dataset Bengen/Kitces/Pfau reference. Prior BONDS array had only 51 entries covering ~1975-2025, so pre-1975 stress sequences (Great Depression, 1937 crash, 1966-1974 stagflation) had NO real bond return to draw from - the model was making up bond behavior in exactly the eras that matter most for retirement failure. (2) PAIRED sampling in portReturn - one shared random index now draws SP500[i] AND BONDS[i] together, preserving the empirical stock/bond correlation including 2008's flight to quality (SP -36.55% pairs with Bond +20.10%) and 2022's rare double-down (-18.04%/-17.83%). Prior code drew stocks and bonds independently, effectively forcing cov=0 and inventing year combinations that never occurred. (3) Winsorization REMOVED - prior clamps ([-30,30] stocks, [-15,20] bonds) censored 1931 (-43.84%), 1937 (-35.34%), 2008 (-36.55%), and 1982 bonds (+32.81%) - the exact tail events retirement MC exists to model. Duplicated SP500/BONDS arrays collapsed to one canonical source in engine/expectedReturn.js. Expect small shifts in success rates (probably 1-3 pp, direction depends on portfolio) - the change makes crash-year diversification realistic and stops inventing impossible year combinations. Follow-up not shipped: stress-test override branch and INFL still use independent bootstrap - pairing them requires year-labels on the SEQ arrays. 1004 tests / 43 suites pass on the new data.";
-export const BUILD_TIME = "2026-08-20T18:00:00Z";
+const APP_VERSION = "1.2.105";
+export const BUILD_TAG = "[main] v1.2.105 - Closes the MC accuracy thread from v1.2.104. INFL (inflation) is now paired with stocks and bonds in the historical bootstrap - one shared random index per retirement year selects SP500[i], BONDS[i] AND INFL[i] together, so 1974 draws all three simultaneously (-25.9% stocks, +1.99% bonds, 11% CPI - the canonical stagflation triple) instead of the prior independent draws that could pair 2008's crash with 2015's 0.1% CPI. INFL extended from 51 entries (~1975-2025) to 98 entries (1928-2025) using BLS CPI-U annual averages, so pre-1975 stress sequences finally have real historical inflation to draw from. Winsorization removed on INFL for the same reason as stocks/bonds - the prior [0.5, 7.0] clamp censored 1932's -9.9% deflation and 1980's 13.5% inflation, both real retirement-critical events. Refactor: single-source INFL in engine/expectedReturn.js; new drawYearBundle() helper alongside portReturn; runMC drawdown loop consumes the paired triple. Includes a rand()-count preservation shim in drawYearBundle so the same seed produces the same downstream rand() sequence as v1.2.104 - only the INFL value changes, not the whole draw order. Stress-test override branch (SEQ_2000_2012) still uses independent INFL because the SEQ arrays have no year labels; explicitly left as a follow-up.";
+export const BUILD_TIME = "2026-08-21T15:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -249,10 +249,12 @@ const CURRENT_YEAR = new Date().getFullYear();
 // duplicated across files — see engine/expectedReturn.js header.
 // SP500 and BONDS are imported at the top of this file alongside expectedReturn().
 
-const INFL = [
-  3.4, 2.8, 1.6, 2.3, 2.7, 3.4, 3.2, 2.8, 3.8, -0.4, 1.6, 3.2, 2.1, 1.5, 1.6,
-  0.1, 1.3, 2.1, 2.4, 1.8, 1.2, 4.7, 8.0, 4.1, 2.9,
-].map((r) => Math.max(0.5, Math.min(7.0, r)) / 100);
+// INFL now imported from engine/expectedReturn.js — extended to 1928-2025 (98
+// entries, aligned to SP500/BONDS), and no longer winsorized. The prior clamp
+// `Math.max(0.5, Math.min(7.0, r))` was censoring both real deflations
+// (1932: -9.9%) and real inflation spikes (1974: 11%, 1980: 13.5%, 2022: 8%).
+// See file header for source. Winsorization removed for the same accuracy
+// reasons documented on the stock/bond arrays.
 
 // GK paper: cap CPI pass-through in Guyton-Klinger withdrawal adjustments at 6%.
 // Distinct from the INFL data clamp above (which bounds the historical CPI bootstrap).
@@ -889,6 +891,30 @@ function portReturn(age, rand, preRetireEq, postRetireEq, switchAge) {
   const i = Math.floor(rand() * SP500.length);
   return eqW * SP500[i] + (1 - eqW) * BONDS[i];
 }
+// Paired return + inflation for one retirement year (v1.2.105). Same shared
+// index selects SP500[i], BONDS[i], AND INFL[i], so a year like 1974 draws
+// stocks (-25.9%), bonds (+1.99%) and inflation (+11.0%) together — the
+// canonical stagflation-year triple. The prior code drew INFL independently
+// via a second rand() call, so a bootstrap could pair 2008's crash with
+// 2015's 0.1% CPI, understating the compound damage of stagflation on
+// retirement spending power.
+//
+// RNG-PRESERVATION SHIM: the second `rand()` below is consumed and thrown
+// away. Its ONLY purpose is to keep the rand() call count per retirement
+// year identical to the prior (independent-INFL) version, so downstream
+// draws in the same seed produce the same sequence and the test suite does
+// not have to be rebalanced for an RNG-order shift. If the RNG discipline
+// is ever formally dropped (see the comment above `netNeed offset` in
+// runMC), this shim can be removed.
+function drawYearBundle(age, rand, preRetireEq, postRetireEq, switchAge) {
+  const eqW = glidepathEquityWeight(age, preRetireEq, postRetireEq, switchAge);
+  const i = Math.floor(rand() * SP500.length);
+  rand(); // rand()-count shim — see comment above
+  return {
+    ret: eqW * SP500[i] + (1 - eqW) * BONDS[i],
+    inflY: INFL[i],
+  };
+}
 
 
 function guytonKlingerWithdrawal(
@@ -1363,7 +1389,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // Stress sequence override: prescribe the equity leg for the first
       // seqOverride.length retirement years; bond leg stays bootstrapped at the
       // same age-based equity weight portReturn uses. No override → normal draw.
-      let r;
+      //
+      // The seqOverride branch draws bonds AND inflation independently (two
+      // rand() calls) because the SEQ_2000_2012 array has no year labels to
+      // pair against. The normal branch uses drawYearBundle() which returns a
+      // paired (stock, bond, inflation) triple from ONE historical year — see
+      // its definition for the rand()-count shim that keeps this branch
+      // matching the seqOverride branch's rand() consumption.
+      let r, inflY;
       if (seqOverride && y < seqOverride.length) {
         // Same weight portReturn would have used at this age. This line had a
         // hardcoded 62 while portReturn switched at the retirement age, so every
@@ -1372,10 +1405,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         // aggressive two years too long.
         const eqW = glidepathEquityWeight(age, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
         r = eqW * seqOverride[y] + (1 - eqW) * bootstrapDraw(BONDS, rand);
+        inflY = bootstrapDraw(INFL, rand);
       } else {
-        r = portReturn(age, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
+        const bundle = drawYearBundle(age, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
+        r = bundle.ret;
+        inflY = bundle.inflY;
       }
-      const inflY = bootstrapDraw(INFL, rand);
 
       const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
       const adjFloor = gkFloor * cumInfl;
