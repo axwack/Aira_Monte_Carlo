@@ -93,13 +93,14 @@ import PrintReport from "./report/PrintReport.jsx";
 
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,RadarChart,PolarGrid,PolarAngleAxis,PolarRadiusAxis,Radar,} from "recharts";
 
-if (typeof document !== "undefined") {
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href =
-    "https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap";
-  document.head.appendChild(link);
-}
+// §37 Phase A (v1.2.106) — DM Sans / DM Mono removed. The app now uses one
+// text family (Inter) and one mono family (JetBrains Mono), both imported
+// through the same @import in the CSS constant below. Prior state had two
+// text families and two mono families loaded from two @font-face requests
+// for the same typographic role (body text and numeric readout), which is a
+// single-point-of-control violation at the font layer. Landing hero classes
+// `.lp-age` and `.lp-val` were the only in-tree consumers of DM Mono; both
+// switch to JetBrains Mono in the CSS below.
 
 /** This application is  Aira - Freedom Financial Forecaster
  * Here is some reference information: 
@@ -209,9 +210,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.105";
-export const BUILD_TAG = "[main] v1.2.105 - Closes the MC accuracy thread from v1.2.104. INFL (inflation) is now paired with stocks and bonds in the historical bootstrap - one shared random index per retirement year selects SP500[i], BONDS[i] AND INFL[i] together, so 1974 draws all three simultaneously (-25.9% stocks, +1.99% bonds, 11% CPI - the canonical stagflation triple) instead of the prior independent draws that could pair 2008's crash with 2015's 0.1% CPI. INFL extended from 51 entries (~1975-2025) to 98 entries (1928-2025) using BLS CPI-U annual averages, so pre-1975 stress sequences finally have real historical inflation to draw from. Winsorization removed on INFL for the same reason as stocks/bonds - the prior [0.5, 7.0] clamp censored 1932's -9.9% deflation and 1980's 13.5% inflation, both real retirement-critical events. Refactor: single-source INFL in engine/expectedReturn.js; new drawYearBundle() helper alongside portReturn; runMC drawdown loop consumes the paired triple. Includes a rand()-count preservation shim in drawYearBundle so the same seed produces the same downstream rand() sequence as v1.2.104 - only the INFL value changes, not the whole draw order. Stress-test override branch (SEQ_2000_2012) still uses independent INFL because the SEQ arrays have no year labels; explicitly left as a follow-up.";
-export const BUILD_TIME = "2026-08-21T15:00:00Z";
+const APP_VERSION = "1.2.106";
+export const BUILD_TAG = "[main] v1.2.106 - §37 Visual Redesign, Phases A + B (infrastructure + toggle). Phase A: CSS token system extended (added semantic status backgrounds --bg-info/success/warning/danger, --row-highlight, --divider, --accent-ai; added spacing scale --space-sm/md/lg/xl). Added a [data-theme=light] override block that redefines every color token with light-mode values (deeper accents #0284c7/#0d9488/#7c3aed to meet WCAG AA contrast on white). Font consolidation: dropped DM Sans / DM Mono from the document.head.appendChild injection; landing hero classes .lp-age and .lp-val switched to JetBrains Mono. Body background/color now token-sourced. Phase B: sun/moon toggle in the header (icon-only, mbtn class); localStorage key aira_theme; matchMedia prefers-color-scheme default; applyTheme() sets data-theme on html root; state lives in AiRAForecaster and mount-time useEffect applies it. HARD CONSTRAINT (§37.6 #1) enforced: aira_theme lives in localStorage ONLY, never in profile.json, never in params, never consumed by any engine function - the theme is a display preference and does not touch the financial computation path. Also added CHART_PALETTE runtime accessor (getters that read CSS vars via getComputedStyle) - unused by Recharts until Phase D swaps the 111 hardcoded stroke/fill props over. Phases C (983 inline-color literal conversion), D (chart palette migration), and E (print report light-lock) are deferred to separate commits. At this point dark mode looks identical to v1.2.105; light mode is PARTIALLY correct - CSS-class-driven surfaces flip cleanly, but ~983 inline color literals across the tabs still hardcode the dark palette and will look wrong in light mode until Phase C converts them.";
+export const BUILD_TIME = "2026-08-21T16:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -239,6 +240,54 @@ export const GK_CEILING_FALLBACK = 115_000;
 // / IRMAA_2026 table names or their literal dollar data — those represent the
 // real IRS 2026 bracket figures and must stay pinned to 2026.
 const CURRENT_YEAR = new Date().getFullYear();
+
+// ── Theme system (§37 Phase A + B, v1.2.106) ────────────────────────────────
+// Runtime accessor for chart series colors. Recharts wants literal color
+// strings on props (`stroke="#38bdf8"`), so a chart that hardcodes those
+// literals ignores the CSS token system entirely. `CHART_PALETTE.accent`
+// reads the current value of `--accent` from the document root at call time,
+// so once Phase D swaps `stroke="#38bdf8"` → `stroke={CHART_PALETTE.accent}`
+// the chart follows the theme. Reading `getComputedStyle` on every render is
+// cheap (native, cached by the browser). Guarded for SSR / test.
+export const CHART_PALETTE = {
+  get accent()       { return readCssVar('--accent'); },
+  get teal()         { return readCssVar('--accent-teal'); },
+  get purple()       { return readCssVar('--accent-purple'); },
+  get ai()           { return readCssVar('--accent-ai'); },
+  get gold()         { return readCssVar('--accent-gold'); },
+  get positive()     { return readCssVar('--positive'); },
+  get negative()     { return readCssVar('--negative'); },
+  get textPrimary()  { return readCssVar('--text-primary'); },
+  get textSecondary(){ return readCssVar('--text-secondary'); },
+  get textMuted()    { return readCssVar('--text-muted'); },
+  get gridLine()     { return readCssVar('--divider'); },
+};
+function readCssVar(name) {
+  if (typeof document === 'undefined') return '';
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// Theme persistence. `aira_theme` is a DISPLAY preference — it lives in
+// localStorage ONLY, NEVER in `profile.json`, NEVER in `params`, NEVER
+// consumed by any engine function. Hard constraint per §37.6 #1 of the
+// design-authority verdict: the theme must not touch the financial
+// computation path in any way.
+export const THEME_STORAGE_KEY = 'aira_theme';
+export function resolveInitialTheme() {
+  if (typeof window === 'undefined') return 'dark';
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === 'dark' || stored === 'light') return stored;
+  } catch { /* localStorage blocked (private window / etc.) — fall through */ }
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
+  return 'dark';
+}
+export function applyTheme(theme) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+  try { window.localStorage.setItem(THEME_STORAGE_KEY, theme); } catch {}
+}
 
 // SP500 / BONDS moved to engine/expectedReturn.js (v1.2.104) — single source
 // of truth for the historical bootstrap. Both arrays are now Damodaran's
@@ -2823,7 +2872,14 @@ function SectorBadge({ age }) {
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
   /* ── Design tokens ── single source for the palette. Reference as var(--x)
-     in both CSS rules and inline styles (style={{ color: "var(--text-muted)" }}). */
+     in both CSS rules and inline styles (style={{ color: "var(--text-muted)" }}).
+     §37 Phase A (v1.2.106): added semantic-status tokens, spacing scale, an
+     --accent-ai alias (purple, promoted from an ambient chart color into a
+     named AI-branding role), and a --divider token. Also added the
+     [data-theme="light"] override block right below — the theme system flips
+     ONLY these token values, so once every inline color literal is converted
+     to var(--x) (Phase C), the whole app follows the theme. Spacing and
+     radius tokens are theme-invariant. */
   :root {
     --bg-base: #0a0f1e;
     --card-bg: rgba(255,255,255,0.03);
@@ -2835,16 +2891,59 @@ const CSS = `
     --accent: #38bdf8;
     --accent-teal: #5eead4;
     --accent-purple: #a78bfa;
+    --accent-ai: #a78bfa;
     --accent-gold: #fbbf24;
     --positive: #0d9488;
     --negative: #ef4444;
+    /* Semantic status backgrounds — currently used ad-hoc via inline rgba()
+       across ~30 sites; Phase C converts those callers to var(--x). */
+    --bg-info:     rgba(56,189,248,0.10);
+    --bg-success:  rgba(20,184,166,0.10);
+    --bg-warning:  rgba(251,146,60,0.10);
+    --bg-danger:   rgba(239,68,68,0.10);
+    --row-highlight: rgba(255,255,255,0.04);
+    --divider: rgba(255,255,255,0.08);
+    /* Spacing scale. Four values cover ~90% of the app's padding/gap sites.
+       Theme-invariant. */
+    --space-sm: 8px;
+    --space-md: 14px;
+    --space-lg: 20px;
+    --space-xl: 32px;
+  }
+  /* Light-mode overrides. Redefines every color token; leaves spacing alone.
+     Toggle by setting data-theme="light" on <html>. See applyStoredTheme()
+     below (in JS) for the mount-time selector. Accents shifted from the dark
+     palette because #5eead4 teal and #38bdf8 sky both fail WCAG AA on
+     white — the deeper #0d9488 / #0284c7 meet contrast. */
+  html[data-theme="light"] :root,
+  :root[data-theme="light"] {
+    --bg-base: #f8fafc;
+    --card-bg: rgba(0,0,0,0.03);
+    --card-border: rgba(0,0,0,0.09);
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --text-faint: #cbd5e1;
+    --accent: #0284c7;
+    --accent-teal: #0d9488;
+    --accent-purple: #7c3aed;
+    --accent-ai: #7c3aed;
+    --accent-gold: #d97706;
+    --positive: #0f766e;
+    --negative: #dc2626;
+    --bg-info:     rgba(2,132,199,0.08);
+    --bg-success:  rgba(13,148,136,0.08);
+    --bg-warning:  rgba(217,119,6,0.10);
+    --bg-danger:   rgba(220,38,38,0.08);
+    --row-highlight: rgba(0,0,0,0.03);
+    --divider: rgba(0,0,0,0.09);
   }
   * { box-sizing:border-box; }
   /* ── Reusable surfaces / labels ── prefer these over re-typing the card and
      uppercase-label inline style objects. */
   .card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:11px; padding:13px; }
   .section-label { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; }
-  body { margin:0; font-family:'Inter',sans-serif; background:#0a0f1e; color:#f1f5f9; font-size:13px; line-height:1.5; }
+  body { margin:0; font-family:'Inter',sans-serif; background:var(--bg-base); color:var(--text-primary); font-size:13px; line-height:1.5; }
   .app { min-height:100vh; background:linear-gradient(135deg,#0a0f1e 0%,#0d1529 50%,#0a0f1e 100%); }
   .hdr { background:rgba(10,15,30,0.98); border-bottom:1px solid rgba(99,179,237,0.15); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(16px); }
   .logo { font-size:25px; font-weight:800; letter-spacing:-0.03em; color:#f8fafc; }
@@ -2864,13 +2963,13 @@ const CSS = `
   .lp-brand { display:flex; align-items:center; justify-content:space-between; margin-bottom:clamp(30px,6vw,52px); }
   .lp-eyebrow { font-size:12px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; color:#38bdf8; margin-bottom:16px; }
   .lp-answer { font-size:clamp(29px,6vw,50px); font-weight:800; line-height:1.05; letter-spacing:-0.03em; color:#f1f5f9; margin:0; }
-  .lp-age { color:#5eead4; font-family:'DM Mono',monospace; }
+  .lp-age { color:#5eead4; font-family:'JetBrains Mono',monospace; }
   .lp-answer.short .lp-age { color:#fbbf24; }
   .lp-sub { margin-top:16px; font-size:16px; color:#cbd5e1; max-width:54ch; line-height:1.55; }
   .lp-panel { margin-top:28px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.09); border-radius:16px; padding:22px; }
   .lp-row { display:grid; grid-template-columns:1fr auto; align-items:baseline; }
   .lp-label { font-size:14px; color:#cbd5e1; font-weight:600; }
-  .lp-val { font-size:16px; font-weight:800; color:#f1f5f9; font-family:'DM Mono',monospace; }
+  .lp-val { font-size:16px; font-weight:800; color:#f1f5f9; font-family:'JetBrains Mono',monospace; }
   /* Typed hero readout. A fixed 14ch width + right alignment keeps the grid's
      right edge steady as the value grows — $250,000,000 must not shove the label. */
   .lp-val-input { width:14ch; text-align:right; background:transparent; border:1px solid transparent; border-radius:6px; padding:2px 6px; cursor:text; }
@@ -14076,6 +14175,13 @@ export default function AiRAForecaster() {
   // matching age column on the fan chart above (FanChart + MCBandTable are siblings).
   const [hoveredAge, setHoveredAge] = useState(null);
 
+  // §37 Phase B (v1.2.106) — theme state. Display preference only. NEVER
+  // forwarded into `params`, NEVER read by any engine. See applyTheme /
+  // resolveInitialTheme at module top. Initial value resolves on mount:
+  // localStorage first, then OS `prefers-color-scheme`, else "dark".
+  const [theme, setTheme] = useState(resolveInitialTheme);
+  useEffect(() => { applyTheme(theme); }, [theme]);
+
   // Progress check-ins: a journal of plan snapshots (see LS_CHECKINS_KEY).
   // Requires a completed MC run so the snapshot carries a real success rate.
   const [checkIns, setCheckIns] = useState(loadCheckIns);
@@ -14654,6 +14760,18 @@ export default function AiRAForecaster() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+            {/* §37 Phase B (v1.2.106) — theme toggle. Global preference,
+                lives in the header (not in Profile) per the design-authority
+                verdict. Icon-only to keep the header compact. */}
+            <button
+              className="mbtn"
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label="Toggle color theme"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              style={{ fontSize: 14, lineHeight: 1, padding: "5px 9px" }}
+            >
+              {theme === 'dark' ? '☀' : '☾'}
+            </button>
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
             <button
               className="mbtn"
