@@ -11,7 +11,7 @@
 # ---------------
 # `src/help/tax_treatment_by_account_type.html` leaked account structure,
 # domicile, and Airbnb income into public git history for 3 commits before
-# it was caught. Two test files also carried an exact DOB (`1970-01-01`).
+# it was caught. Two test files also carried an exact DOB (`1970-03-14`).
 # This hook blocks the same class of defect at commit time instead of after
 # it ships. Bypass with `git commit --no-verify` only in an emergency —
 # a bypass is invisible in the commit itself.
@@ -19,7 +19,13 @@
 # HOW TO EXTEND
 # -------------
 # Add a pattern to DENY_PATTERNS below. Keep patterns narrow enough that
-# they only match real leaks (`1970-01-01` yes, `1970` no).
+# they only match real leaks (`1970-03-14` yes, `1970` no).
+#
+# GOTCHA: filter-repo --replace-text will rewrite THIS FILE too. If you
+# ever purge a new pattern from history with --replace-text, exclude this
+# path so the DENY_PATTERNS list is not mutated into the exact pattern
+# it was blocking:
+#     git-filter-repo --replace-text <file> --path-glob '!.githooks/pre-commit'
 
 set -e
 
@@ -33,7 +39,7 @@ STAGED_DIFF=$(git diff --cached --diff-filter=ACM --no-color -U0 -- ':(exclude).
 # Deny-list. Extended-regex, case-insensitive. One alternation per rule so
 # a match reports which one fired.
 DENY_PATTERNS=(
-  '1970-01-01'                # exact real DOB
+  '1970-03-14'                # exact real DOB
   '03/14/1970'                # same DOB, US format
   '"Vincent Lee"'             # copyright name in string
   'Solo 401k'                 # personalised account label
