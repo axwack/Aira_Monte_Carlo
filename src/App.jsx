@@ -211,7 +211,7 @@ const AGE_LIMITS = {
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
 const APP_VERSION = "1.2.109";
-export const BUILD_TAG = "[main] v1.2.109 - Header layout tidy: deleted the right-side day-counter block that duplicated the sidebar D-Day Countdown Panel; the same target-date figure now lives at the top of the sidebar panel (below its title, above the DD/HH/MM/SS grid) so a user sees the target once, in the panel that owns it. With the third header child gone, .hdr's justify-content:space-between naturally pushes the button group flush right instead of leaving it centered. No CSS class changes needed for the button shift. Follow-up (deferred): light-mode contrast fix on --text-muted / --text-faint / --card-border / --divider - shipped values overshot into unreadable territory (1.7:1 for text-faint on white). PRIOR v1.2.108 - §37 Phase C2 Institutional Calm redesign: Design-authority verdict on 2026-08-21 approved a holistic visual direction; because Phase C1 tokenized 848 color literals, the whole redesign lands as token-VALUE edits in ONE :root block plus a 26-line sweep of hardcoded CSS class rules. PALETTE (dark): --bg-base #0a0c12 (neutral ink, less blue-cast than the prior #0a0f1e), --accent #5b8def (indigo trust anchor, was cyan #38bdf8), --accent-teal #4fd1ae (deepened off neon #5eead4), --accent-gold #f5a623 (desaturated), --negative #f87171 (softer - routine shortfalls should not scream alarm-red), warmer neutral text ramp. Light-mode palette matched: #f7f8fa base, #2f5fd6 accent (deepened for WCAG AA on white), warmer text ramp. NEW TOKENS added to :root: --card-bg-raised (2x fill opacity, for primary summary cards vs table row cards), --card-shadow (subtle real elevation on modals + primary surfaces), --bg-hdr (semi-transparent header background), --chart-band (percentile-band fill), full spacing scale extension (--space-xs 4px, --space-2xl 48px), typography scale (--fs-display/h1/h2/body/small/mono), radius tokens (--radius-card 14px was 11px, --radius-btn, --radius-pill). SWEEP: 26 hardcoded CSS class rules that Phase C1 could not reach (JSX-inline conversion, not class-rule conversion) - .app gradient, .hdr background+border, .logo, .logo-sub, .mbtn+.mbtn:hover+.mbtn.on, .hdiv, .landing gradient, .lp-eyebrow, .lp-answer, .lp-age, .lp-answer.short .lp-age, .lp-sub, .lp-panel, .lp-label, .lp-val, .lp-val-input:hover+focus, .lp-range styles including thumb, .lp-cta+hover, .lp-skip+hover. This is the not-optional part of the verdict: without it the header and landing hero stayed hardcoded and a token edit would have been invisible on the two most-seen surfaces. Also: 95 remaining 'DM Mono' font-family literals consolidated to 'JetBrains Mono' - the app now has ONE mono family across every numeric readout. No engine changes, no test changes, no financial math touched.";
+export const BUILD_TAG = "[main] v1.2.109 - Three things. (1) HEADER LAYOUT TIDY: deleted the right-side day-counter block that duplicated the sidebar D-Day Countdown Panel; a compact 'Retirement Date | Mar 14, 2033' line now sits at the top of the panel instead. With the third header child gone, .hdr's justify-content:space-between pushes the buttons flush right. (2) THEME TOGGLE HIDDEN and initial theme forced to 'dark' - light-mode palette still WIP after multiple review rounds ('too dull', 'cards blend into the page'); rather than ship a broken light mode the toggle button is hidden behind a `false &&` guard and useState('dark') replaces resolveInitialTheme. To re-enable: search for THEME_TOGGLE and remove the guard, swap the useState arg back. (3) LIGHT-MODE PALETTE REWORK (currently unreachable behind the disabled toggle, but the tokens are staged for tomorrow's pickup) after v1.2.108 shipped values that failed WCAG AA (--text-faint at 1.7:1 was 'basically invisible') AND then a first-pass fix (bump text-muted / text-faint / borders) still left the app 'too dull' per Vincent's screenshot review. Root cause: the light mode inverted dark mode's surface logic - dark mode adds white tint over a dark base to make cards LIGHTER than the page; light mode was adding ink tint over a nearly-white base to make cards DARKER than the page, and 5% ink on #f7f8fa is barely one tick off page. Now matched to the standard 'grouped iOS' pattern: soft grey PAGE #eef1f5 with WHITE cards rgba(255,255,255,0.90) so demarcation comes from tone step, not just a faint border. Border pushed darker to 0.22 (was 0.08 - 'outlines are non-existent'), divider 0.14, and text-muted / text-faint moved one step darker (#475569 / #64748b, contrast ratios ~7.5:1 / ~5:1 on white card) so every muted tier reads clearly. Cards now visually SIT ABOVE the page in both themes. Design-authority's specific hex values were directional, not authoritative - saved a memory note (feedback_design_authority_verify_contrast). PRIOR v1.2.108 - §37 Phase C2 Institutional Calm redesign: Design-authority verdict on 2026-08-21 approved a holistic visual direction; because Phase C1 tokenized 848 color literals, the whole redesign lands as token-VALUE edits in ONE :root block plus a 26-line sweep of hardcoded CSS class rules. PALETTE (dark): --bg-base #0a0c12 (neutral ink, less blue-cast than the prior #0a0f1e), --accent #5b8def (indigo trust anchor, was cyan #38bdf8), --accent-teal #4fd1ae (deepened off neon #5eead4), --accent-gold #f5a623 (desaturated), --negative #f87171 (softer - routine shortfalls should not scream alarm-red), warmer neutral text ramp. Light-mode palette matched: #f7f8fa base, #2f5fd6 accent (deepened for WCAG AA on white), warmer text ramp. NEW TOKENS added to :root: --card-bg-raised (2x fill opacity, for primary summary cards vs table row cards), --card-shadow (subtle real elevation on modals + primary surfaces), --bg-hdr (semi-transparent header background), --chart-band (percentile-band fill), full spacing scale extension (--space-xs 4px, --space-2xl 48px), typography scale (--fs-display/h1/h2/body/small/mono), radius tokens (--radius-card 14px was 11px, --radius-btn, --radius-pill). SWEEP: 26 hardcoded CSS class rules that Phase C1 could not reach (JSX-inline conversion, not class-rule conversion) - .app gradient, .hdr background+border, .logo, .logo-sub, .mbtn+.mbtn:hover+.mbtn.on, .hdiv, .landing gradient, .lp-eyebrow, .lp-answer, .lp-age, .lp-answer.short .lp-age, .lp-sub, .lp-panel, .lp-label, .lp-val, .lp-val-input:hover+focus, .lp-range styles including thumb, .lp-cta+hover, .lp-skip+hover. This is the not-optional part of the verdict: without it the header and landing hero stayed hardcoded and a token edit would have been invisible on the two most-seen surfaces. Also: 95 remaining 'DM Mono' font-family literals consolidated to 'JetBrains Mono' - the app now has ONE mono family across every numeric readout. No engine changes, no test changes, no financial math touched.";
 export const BUILD_TIME = "2026-08-21T19:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
@@ -2938,19 +2938,42 @@ const CSS = `
      white — the deeper #0d9488 / #0284c7 meet contrast. */
   html[data-theme="light"] :root,
   :root[data-theme="light"] {
-    /* Light mode — matched Institutional Calm palette. Accents deepened to
-       meet WCAG AA on white; text ramp warmer than the prior cool-slate. */
-    --bg-base: #f7f8fa;
-    --bg-hdr: rgba(247,248,250,0.94);
-    --card-bg: rgba(0,0,0,0.03);
-    --card-bg-raised: rgba(0,0,0,0.06);
-    --card-border: rgba(0,0,0,0.08);
-    --divider: rgba(0,0,0,0.07);
-    --card-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 6px 16px rgba(15,23,42,0.06);
+    /* Light mode — retuned again after "cards blend into the page" feedback.
+       The prior light palette inverted the dark-mode surface logic: dark mode
+       put cards LIGHTER than the base (add white tint), but light mode put
+       them DARKER than a near-white base (5% ink on #f7f8fa). Cards ended up
+       barely one tick off page. Now matched to the standard "grouped iOS"
+       pattern: soft grey PAGE with WHITE cards, so demarcation comes from
+       tone step, not just a faint border.
+         - Page base darkened #f7f8fa -> #eef1f5 (softer, less glaring, less
+           bright per user).
+         - Cards flipped to translucent white, matching how dark mode adds
+           white tint (dark mode adds white to a dark base; light mode adds
+           white to a grey base — same direction). Cards now visually SIT
+           ABOVE the page in both themes.
+         - Borders softened slightly (0.14 -> 0.09) because the white-on-grey
+           tone step is doing most of the demarcation work; a heavier border
+           would fight it. */
+    --bg-base: #eef1f5;
+    --bg-hdr: rgba(238,241,245,0.94);
+    --card-bg: rgba(255,255,255,0.90);
+    --card-bg-raised: #ffffff;
+    /* Borders and dividers pushed noticeably darker — user reported the
+       previous 0.09 outline as "too dull." Now 0.22 for card frames, 0.14
+       for inner dividers. Still tinted with the text-primary hue so it
+       matches the palette instead of looking like flat pen ink. */
+    --card-border: rgba(15,23,42,0.22);
+    --divider: rgba(15,23,42,0.14);
+    --card-shadow: 0 1px 2px rgba(15,23,42,0.06), 0 4px 12px rgba(15,23,42,0.08);
     --text-primary: #0f1420;
-    --text-secondary: #46505f;
-    --text-muted: #8a94a3;
-    --text-faint: #c7cdd6;
+    --text-secondary: #334155;
+    /* Muted / faint text also pushed darker — the prior #64748b / #94a3b8
+       pair sat right at the WCAG floor and read as "dull" against a page
+       this bright. Both moved one step darker (#475569 / #64748b) so the
+       ramp still reads as three distinct tiers of muting but every tier is
+       clearly legible on the white card fill. */
+    --text-muted: #475569;
+    --text-faint: #64748b;
     --accent: #2f5fd6;
     --accent-teal: #0d9488;
     --accent-purple: #7c3aed;
@@ -2958,12 +2981,12 @@ const CSS = `
     --accent-gold: #b45309;
     --positive: #0f766e;
     --negative: #dc2626;
-    --bg-info:     rgba(47,95,214,0.08);
-    --bg-success:  rgba(13,148,136,0.08);
-    --bg-warning:  rgba(180,83,9,0.10);
-    --bg-danger:   rgba(220,38,38,0.08);
-    --row-highlight: rgba(0,0,0,0.035);
-    --chart-band: rgba(100,116,139,0.12);
+    --bg-info:     rgba(47,95,214,0.10);
+    --bg-success:  rgba(13,148,136,0.10);
+    --bg-warning:  rgba(180,83,9,0.12);
+    --bg-danger:   rgba(220,38,38,0.10);
+    --row-highlight: rgba(15,23,42,0.04);
+    --chart-band: rgba(100,116,139,0.14);
   }
   * { box-sizing:border-box; }
   /* ── Reusable surfaces / labels ── prefer these over re-typing the card and
@@ -14204,9 +14227,15 @@ export default function AiRAForecaster() {
 
   // §37 Phase B (v1.2.106) — theme state. Display preference only. NEVER
   // forwarded into `params`, NEVER read by any engine. See applyTheme /
-  // resolveInitialTheme at module top. Initial value resolves on mount:
-  // localStorage first, then OS `prefers-color-scheme`, else "dark".
-  const [theme, setTheme] = useState(resolveInitialTheme);
+  // resolveInitialTheme at module top.
+  //
+  // TEMPORARILY FORCED TO 'dark' (v1.2.109) — light-mode palette contrast is
+  // still WIP after user review found "cards blend into the page" / "font
+  // and outline still too dull." Rather than ship a broken light mode, the
+  // toggle button is hidden below and initial state is hardcoded to dark.
+  // TO RE-ENABLE: swap the initializer back to `resolveInitialTheme` and
+  // uncomment the toggle button in the header (search for THEME_TOGGLE).
+  const [theme, setTheme] = useState('dark');
   useEffect(() => { applyTheme(theme); }, [theme]);
 
   // Progress check-ins: a journal of plan snapshots (see LS_CHECKINS_KEY).
@@ -14787,19 +14816,23 @@ export default function AiRAForecaster() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-            {/* §37 Phase B (v1.2.106) — theme toggle. Global preference,
-                lives in the header (not in Profile) per the design-authority
-                verdict. Icon-only to keep the header compact. */}
-            <button
-              className="mbtn"
-              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              aria-label="Toggle color theme"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              style={{ fontSize: 14, lineHeight: 1, padding: "5px 9px" }}
-            >
-              {theme === 'dark' ? '☀' : '☾'}
-            </button>
-            <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
+            {/* THEME_TOGGLE — hidden v1.2.109 pending light-mode contrast
+                completion. Re-enable by removing the `false &&` guard. See
+                the theme useState above for the paired forced-dark change. */}
+            {false && (
+              <>
+                <button
+                  className="mbtn"
+                  title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                  aria-label="Toggle color theme"
+                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                  style={{ fontSize: 14, lineHeight: 1, padding: "5px 9px" }}
+                >
+                  {theme === 'dark' ? '☀' : '☾'}
+                </button>
+                <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
+              </>
+            )}
             <button
               className="mbtn"
               disabled={!mc}
