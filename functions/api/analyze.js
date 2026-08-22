@@ -11,6 +11,22 @@
  */
 
 import { json, handleOptions, verifyJWT } from "../_shared/jwt.js";
+/**
+ * Shared persona for every Gemini call.
+ *
+ * This previously opened "You are Aira, a fiduciary retirement planning AI."
+ * Fiduciary is a legal term of art naming a duty of loyalty and care that this
+ * product does not assume and is not licensed to assume — asserting it in the
+ * system prompt of a PAID feature undercuts every disclaimer elsewhere in the
+ * app, and invites the model to phrase output as advice rather than analysis.
+ *
+ * Duplicated verbatim in src/ai/ai-analysis.js because the browser bundle and the
+ * Cloudflare Function cannot share a module. aiPersona.test.js asserts the two
+ * copies stay byte-identical and that neither reintroduces the word.
+ */
+
+const AIRA_PERSONA = "You are Aira, a retirement planning assistant. You explain a plan the user has already modelled themselves. This is educational information about their own figures — NOT personalised financial, investment, tax, or legal advice, and never a recommendation to buy, sell, or hold any security. Present findings as observations and trade-offs to raise with a licensed professional, not as instructions to act on. Be honest about uncertainty and about what the model cannot see.";
+
 
 const GEMINI_BASE        = "https://generativelanguage.googleapis.com/v1beta/models";
 // ROLLING ALIASES, deliberately not pinned versions.
@@ -142,7 +158,7 @@ async function handleActionPlan(apiKey, values, mcResults, cards, usageBucket) {
   const cardList = cards.map(c => `[${c.id}] ${c.priority.toUpperCase()} | ${c.category}: ${c.action}`).join("\n");
 
   const res = await geminiFnCall(apiKey, MODEL_FAST, 1024,
-    "You are Aira, a fiduciary retirement planning AI. Be specific, concise, and quantitative. Never give legal or tax advice.",
+    `${AIRA_PERSONA} Be specific, concise, and quantitative.`,
     `Profile:\n${ctx}\n\nExisting cards:\n${cardList}\n\nFor each card, add a specific 1-2 sentence aiNote with numbers from the profile. Then add up to 2 net-new cards the rules engine missed (e.g. IRMAA cliff, SS bridge gap, specific bracket math). Skip new cards if none apply.`,
     {
       name: "annotate_cards",
@@ -281,7 +297,7 @@ async function handleChat(apiKey, values, mcResults, question, history, usageBuc
     { role: "user", parts: [{ text: question }] },
   ];
   const res = await callGemini(apiKey, MODEL_STANDARD, {
-    systemInstruction: { parts: [{ text: `You are Aira, a fiduciary retirement planning AI. Answer questions about this plan. Be concise and honest about uncertainty. No legal advice.\n\nPLAN:\n${ctxNarrative(values, mcResults)}` }] },
+    systemInstruction: { parts: [{ text: `${AIRA_PERSONA} Answer questions about this plan. Be concise and honest about uncertainty. No legal advice.\n\nPLAN:\n${ctxNarrative(values, mcResults)}` }] },
     contents,
     generationConfig: { maxOutputTokens: 768 },
   }, usageBucket);
@@ -327,7 +343,7 @@ async function handleTimeSensitive(apiKey, values, mcResults, usageBucket) {
     `MC success: ${mcResults ? (mcResults.rate * 100).toFixed(1) : "N/A"}%`,
   ].join("\n");
 
-  const prompt = `You are Aira, a fiduciary retirement planning AI.\n\nUSER PROFILE:\n${profileCtx}\n\nUse Google Search to find CURRENT information on these topics. Only create a card when you find specific current numbers actionable for this user.\n\nSEARCH TOPICS:\n${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\nReturn ONLY a valid JSON array between <cards> and </cards> tags:\n[{ "priority": "red|yellow|green", "category": "string", "action": "string", "reason": "string", "deadline": "string", "aiNote": "current number/threshold found", "source": "website name" }]\n\nRules: real current numbers only, max 12 cards, skip topics with only general knowledge.\n\n<cards>\n</cards>`;
+  const prompt = `${AIRA_PERSONA}\n\nUSER PROFILE:\n${profileCtx}\n\nUse Google Search to find CURRENT information on these topics. Only create a card when you find specific current numbers actionable for this user.\n\nSEARCH TOPICS:\n${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\nReturn ONLY a valid JSON array between <cards> and </cards> tags:\n[{ "priority": "red|yellow|green", "category": "string", "action": "string", "reason": "string", "deadline": "string", "aiNote": "current number/threshold found", "source": "website name" }]\n\nRules: real current numbers only, max 12 cards, skip topics with only general knowledge.\n\n<cards>\n</cards>`;
 
   const res = await callGemini(apiKey, MODEL_STANDARD, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],

@@ -13,6 +13,22 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { hasEnoughCredits, deductCredits, MIN_CREDITS_TO_RUN, getStoredJWT, fetchCreditBalance, syncCreditBalance } from "../billing/credits.js";
+/**
+ * Shared persona for every Gemini call.
+ *
+ * This previously opened "You are Aira, a fiduciary retirement planning AI."
+ * Fiduciary is a legal term of art naming a duty of loyalty and care that this
+ * product does not assume and is not licensed to assume — asserting it in the
+ * system prompt of a PAID feature undercuts every disclaimer elsewhere in the
+ * app, and invites the model to phrase output as advice rather than analysis.
+ *
+ * Duplicated verbatim in functions/api/analyze.js because the browser bundle and the
+ * Cloudflare Function cannot share a module. aiPersona.test.js asserts the two
+ * copies stay byte-identical and that neither reintroduces the word.
+ */
+
+const AIRA_PERSONA = "You are Aira, a retirement planning assistant. You explain a plan the user has already modelled themselves. This is educational information about their own figures — NOT personalised financial, investment, tax, or legal advice, and never a recommendation to buy, sell, or hold any security. Present findings as observations and trade-offs to raise with a licensed professional, not as instructions to act on. Be honest about uncertainty and about what the model cannot see.";
+
 
 // ─── Billing mode flag ────────────────────────────────────────────────────────
 // Flip to true when Path A (token-resale) goes live.
@@ -521,13 +537,13 @@ export async function evaluateRothStrategy(values) {
     assessment: preTaxPct > 70
       ? "Pre-tax heavy — Roth conversions strongly recommended before RMD age."
       : "Balanced allocation — moderate Roth conversion may still reduce lifetime taxes.",
-    conversionAdvice: "Add your Gemini API key in Profile for personalized advice.",
+    conversionAdvice: "Add your Gemini API key in Profile for a personalised analysis of these figures.",
     suggestedAnnualAmount: 0,
   };
   if (!apiKey) return fallback;
   try {
     const res = await fnCall(apiKey, 512,
-      "You are Aira. Evaluate Roth conversion strategy. Consider IRMAA tiers, SECURE 2.0 RMD ages, bracket management. No tax advice.",
+      `${AIRA_PERSONA} Evaluate Roth conversion strategy. Consider IRMAA tiers, SECURE 2.0 RMD ages, bracket management.`,
       ctxRoth(values),
       {
         name: "roth_strategy",
@@ -575,7 +591,7 @@ export async function generateChatResponse(values, mcResults, question, history 
       { role: "user", parts: [{ text: question }] },
     ];
     const res = await callGemini(apiKey, {
-      systemInstruction: { parts: [{ text: `You are Aira, a fiduciary retirement planning AI. Answer questions about this plan. Be concise and honest about uncertainty. No legal advice.\n\nPLAN:\n${ctxNarrative(values, mcResults)}` }] },
+      systemInstruction: { parts: [{ text: `${AIRA_PERSONA} Answer questions about this plan. Be concise and honest about uncertainty. No legal advice.\n\nPLAN:\n${ctxNarrative(values, mcResults)}` }] },
       contents,
       generationConfig: { maxOutputTokens: 768 },
     }, resolveModel(values), "chat");
@@ -616,7 +632,7 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
   const cardList = cards.map(c => `[${c.id}] ${c.priority.toUpperCase()} | ${c.category}: ${c.action}`).join("\n");
 
   const res = await fnCall(apiKey, 1024,
-    "You are Aira, a fiduciary retirement planning AI. Be specific, concise, and quantitative. Never give legal or tax advice.",
+    `${AIRA_PERSONA} Be specific, concise, and quantitative.`,
     `Profile:\n${ctx}\n\nExisting cards:\n${cardList}\n\nFor each card, add a specific 1-2 sentence aiNote with numbers from the profile. Then add up to 2 net-new cards the rules engine missed (e.g. IRMAA cliff, SS bridge gap, specific bracket math). Skip new cards if none apply.`,
     {
       name: "annotate_cards",
@@ -749,7 +765,7 @@ export async function generateTimeSensitiveCards(values, mcResults) {
     `Pre-tax: $${Math.round((values.accounts||[]).filter(a=>a.category==="pretax").reduce((s,a)=>s+(a.balance||0),0)).toLocaleString()} | Roth: $${Math.round((values.accounts||[]).filter(a=>a.category==="roth").reduce((s,a)=>s+(a.balance||0),0)).toLocaleString()}`,
   ].join("\n");
 
-  const prompt = `You are Aira, a fiduciary retirement planning AI.\n\nUSER PROFILE:\n${profileCtx}\n\nUse Google Search to find CURRENT information on these topics. Only create a card when you find specific, current numbers or thresholds directly actionable for this user.\n\nSEARCH TOPICS:\n${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\nReturn ONLY a valid JSON array between <cards> and </cards> tags. Each object:\n{\n  "priority": "red|yellow|green",\n  "category": "short category name",\n  "action": "specific action sentence tailored to this user",\n  "reason": "why this matters given their numbers",\n  "deadline": "when to act",\n  "aiNote": "key current number or threshold found (dollar amount, percentage, date)",\n  "source": "website or publication name"\n}\n\nRules:\n- Only include cards with real current numbers you found via search\n- Skip topics where you only have general/training knowledge\n- Set priority by financial impact urgency for this user\n- Maximum 12 cards\n\n<cards>\n</cards>`;
+  const prompt = `${AIRA_PERSONA}\n\nUSER PROFILE:\n${profileCtx}\n\nUse Google Search to find CURRENT information on these topics. Only create a card when you find specific, current numbers or thresholds directly actionable for this user.\n\nSEARCH TOPICS:\n${topics.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\nReturn ONLY a valid JSON array between <cards> and </cards> tags. Each object:\n{\n  "priority": "red|yellow|green",\n  "category": "short category name",\n  "action": "specific action sentence tailored to this user",\n  "reason": "why this matters given their numbers",\n  "deadline": "when to act",\n  "aiNote": "key current number or threshold found (dollar amount, percentage, date)",\n  "source": "website or publication name"\n}\n\nRules:\n- Only include cards with real current numbers you found via search\n- Skip topics where you only have general/training knowledge\n- Set priority by financial impact urgency for this user\n- Maximum 12 cards\n\n<cards>\n</cards>`;
 
   const res = await callGemini(apiKey, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -945,7 +961,7 @@ export function AIAnalysisPanel({ values, mcResults }) {
         </div>
       )}
 
-      {health && (
+      {health && (<>
         <div style={{ marginBottom: 12 }}>
           <span style={{ fontSize: 28, fontWeight: 700, color: gradeColor[health.grade] || "#e2e8f0" }}>
             {health.grade}
@@ -962,7 +978,8 @@ export function AIAnalysisPanel({ values, mcResults }) {
             </ul>
           )}
         </div>
-      )}
+        <AiOutputNotice />
+      </>)}
 
       {narr && (
         <div style={{ fontSize: 12, color: "#94a3b8", whiteSpace: "pre-wrap", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10 }}>
@@ -1048,7 +1065,7 @@ function HealthAndNarrativeSection({ values, mcResults }) {
         </button>
       </div>
       {error && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>Error: {error}</div>}
-      {health && (
+      {health && (<>
         <div style={{ marginBottom: 12 }}>
           <span style={{ fontSize: 28, fontWeight: 700, color: gradeColor[health.grade] || "#e2e8f0" }}>{health.grade}</span>
           <span style={{ fontSize: 14, color: "#94a3b8", marginLeft: 8 }}>{health.score}/100</span>
@@ -1059,7 +1076,8 @@ function HealthAndNarrativeSection({ values, mcResults }) {
             </ul>
           )}
         </div>
-      )}
+        <AiOutputNotice />
+      </>)}
       {narr && (
         <div style={{ fontSize: 12, color: "#94a3b8", whiteSpace: "pre-wrap", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10 }}>
           {narr}
@@ -1068,6 +1086,32 @@ function HealthAndNarrativeSection({ values, mcResults }) {
     </div>
   );
 }
+
+/**
+ * Notice shown beneath AI-generated text.
+ *
+ * Generated prose is the most advice-shaped surface in the product: fluent,
+ * personalised to the user's own numbers, and arriving without the visible
+ * machinery that marks a chart or a table as model output. It also carries the
+ * usual risk of a language model stating something confidently and wrongly.
+ * Every rendered block says so inline, rather than relying on the page footer.
+ */
+function AiOutputNotice() {
+  return (
+    <div style={{
+      marginTop: 10, fontSize: 10.5, lineHeight: 1.55, color: "#94a3b8",
+      background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.22)",
+      borderRadius: 6, padding: "7px 10px",
+    }}>
+      <strong style={{ color: "#fbbf24" }}>AI-generated — not financial advice.</strong>{" "}
+      Produced by a language model from the figures you entered. It can be wrong or
+      incomplete, cannot see your full circumstances, and is not a recommendation to
+      buy, sell, hold, convert, or withdraw. Verify anything you plan to act on with a
+      licensed financial, tax, or legal professional.
+    </div>
+  );
+}
+
 
 function RothStrategySection({ values }) {
   const [out, setOut] = useState(null);
@@ -1088,15 +1132,16 @@ function RothStrategySection({ values }) {
         </button>
       </div>
       {error && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>Error: {error}</div>}
-      {out && (
+      {out && (<>
         <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6 }}>
           <div style={{ marginBottom: 6 }}><strong style={{ color: "#a78bfa" }}>Assessment:</strong> {out.assessment}</div>
-          <div style={{ marginBottom: 6 }}><strong style={{ color: "#a78bfa" }}>Advice:</strong> {out.conversionAdvice}</div>
+          <div style={{ marginBottom: 6 }}><strong style={{ color: "#a78bfa" }}>Considerations:</strong> {out.conversionAdvice}</div>
           {out.suggestedAnnualAmount > 0 && (
             <div><strong style={{ color: "#a78bfa" }}>Suggested annual conversion:</strong> ${out.suggestedAnnualAmount.toLocaleString()}</div>
           )}
         </div>
-      )}
+        <AiOutputNotice />
+      </>)}
     </div>
   );
 }
@@ -1129,7 +1174,7 @@ function WithdrawalStrategySection({ values, mcResults, onApplyWithdrawal }) {
         </button>
       </div>
       {error && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>Error: {error}</div>}
-      {out && (
+      {out && (<>
         <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6 }}>
           <div style={{ marginBottom: 6 }}>
             <strong style={{ color: "#a78bfa" }}>Current:</strong> {current}
@@ -1150,7 +1195,8 @@ function WithdrawalStrategySection({ values, mcResults, onApplyWithdrawal }) {
             </button>
           )}
         </div>
-      )}
+        <AiOutputNotice />
+      </>)}
     </div>
   );
 }
@@ -1174,11 +1220,12 @@ function RetirementDateSection({ values, mcResults }) {
         </button>
       </div>
       {error && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>Error: {error}</div>}
-      {out && (
+      {out && (<>
         <div style={{ fontSize: 12, color: "#94a3b8", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
           {out.narrative}
         </div>
-      )}
+        <AiOutputNotice />
+      </>)}
     </div>
   );
 }
