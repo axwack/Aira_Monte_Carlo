@@ -1,6 +1,6 @@
 /*
  *AiRA Freedom Financial
-Copyright (C) 2026 [Vincent Lee]
+Copyright (C) 2026 
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published
@@ -16006,7 +16006,7 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>1. Agreement to Terms</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                By accessing and using the AirA Financial application, you accept and agree to be bound by the terms and
+                By accessing and using the AiRA Financial Freedom application, you accept and agree to be bound by the terms and
                 provision of this agreement. If you do not agree to abide by the above, please do not use this service.
               </p>
             </section>
@@ -16014,10 +16014,10 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>2. Disclaimer of Warranties</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                The AirA Financial application is provided on an "AS IS" and "AS AVAILABLE" basis. AirA Financial makes no
+                The AiRA Financial Freedom application is provided on an "AS IS" and "AS AVAILABLE" basis. AiRA Financial Freedom nor its Developers, make any
                 representations or warranties of any kind, express or implied, as to the operation of the application or the
                 information, content, or materials included on the application. To the fullest extent permissible by applicable
-                law, AirA Financial disclaims all warranties, express or implied, including but not limited to implied warranties
+                law, AiRA  Financial Freedom and its Developers disclaim all warranties, express or implied, including but not limited to implied warranties
                 of merchantability, fitness for a particular purpose, and non-infringement.
               </p>
             </section>
@@ -16025,21 +16025,21 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>3. Limitation of Liability</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                In no event shall AirA Financial, its directors, employees, agents, or suppliers be liable for any damages
+                In no event shall the AiRA  Financial Freedom application, its directors, employees, agents, or suppliers be liable for any damages
                 (including, without limitation, lost profits, savings, or data; business interruption; or any other special,
                 indirect, incidental, or consequential damages) arising out of or in connection with the use, inability to use,
-                or results of the use of the application, even if AirA Financial has been advised of the possibility of such damages.
+                or results of the use of the application, even if AiRA Financial Freedom and its Developers have been advised of the possibility of such damages.
               </p>
             </section>
 
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#d97706", marginBottom: 6 }}>4. Not Financial Advice</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                The AirA Financial application provides calculations and projections for <strong>educational and informational
+                The AiRA Financial Freedom application provides calculations and projections for <strong>educational and informational
                 purposes only</strong>. The application does not provide professional investment, tax, or financial advice. All
                 calculations are estimates based on the information you provide and are subject to change. You should not rely
-                solely on the calculations provided by AirA Financial for making financial decisions. Always consult with
-                qualified professionals such as financial advisors, tax advisors, or mortgage professionals before making
+                solely on the calculations provided by the AiRA Financial Freedom application for making financial decisions. Always consult with
+                a qualified professionals such as a financial advisors, tax advisors, or mortgage professionals before making
                 important financial decisions.
               </p>
             </section>
@@ -16047,9 +16047,10 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>5. Accuracy of Information</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                While we strive to ensure the accuracy of calculations, AirA Financial makes no guarantee regarding the accuracy
+                While we strive to ensure the accuracy of calculations, the AiRA Financial Freedom application makes no guarantee regarding the accuracy
                 or completeness of the results. Market conditions, interest rates, inflation, and other factors may vary from
-                the assumptions used in the calculator. Historical performance does not guarantee future results.
+                the assumptions used in the calculator. Historical performance does not guarantee future results. All information displayed are dependent upon information that you provide and by using this 
+                application you agree to not hold accountable the application nor it's developers for any financial decisions made based on the results of the calculator.
               </p>
             </section>
 
@@ -16064,7 +16065,7 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>7. Modifications to Terms</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                AirA Financial reserves the right to modify these terms and conditions at any time. Your continued use of the
+                The AiRA Financial Freedom application reserves the right to modify these terms and conditions at any time. Your continued use of the
                 application following the posting of revised terms means that you accept and agree to the changes.
               </p>
             </section>
@@ -16080,7 +16081,7 @@ export default function AiRAForecaster() {
             <section style={{ marginBottom: 24 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e3a5f", marginBottom: 6 }}>9. Indemnification</h3>
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                You agree to indemnify and hold harmless AirA Financial from any and all claims, damages, losses, or expenses
+                You agree to indemnify and hold harmless the AiRA Financial Freedom application and its Developers from any and all claims, damages, losses, or expenses
                 arising out of your use of the application or violation of these Terms of Service.
               </p>
             </section>
