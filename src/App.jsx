@@ -210,9 +210,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.111";
-export const BUILD_TAG = "[main] v1.2.111 - MC TAB GROUP HEADINGS PROMOTED TO THEIR OWN TIER. Follow-up to v1.2.110 (see below): the two new group headings were built on the existing .section-label class, which is 11px/700/uppercase/0.1em - BYTE-IDENTICAL to the SectionHeader twisty headers sitting underneath them. A heading that renders exactly like the things it contains is not a heading, so the grouping read as five peers rather than two clusters. New GroupHeading component (defined next to SectionHeader inside MCTab) carries hierarchy on three axes at once, because letter-spacing alone at 11px just reads as another label: 13px/800 in --text-primary (vs 11px/700 accent-hue on twisties, 9px/600 --text-faint on InputCards), a 3px rounded accent RAIL down the left edge, and a trailing gradient hairline that fills the row. Each heading now also carries a plain-language subtitle in --text-muted (\"What is driving the number above, and how you are tracking against it\" / \"The method behind the simulation and every input it was given\") and renders as a real <h3> rather than a div, so the tab has a document outline. RAIL COLOUR RANKS THE TWO GROUPS: --accent-teal on YOUR RESULT, EXPLAINED (the cluster the user came for) and --text-muted on WHAT THIS IS BASED ON (supporting material) - hierarchy through colour intensity, per the Institutional Calm direction in REQUIREMENTS §37. Spacing uses the --space-lg / --space-xs tokens rather than magic numbers. The component measured -555 B against the two inline style objects it replaced; the bundle nets out flat at 376.07 kB because this tag string grew. PRIOR v1.2.110 - MONTE CARLO TAB REGROUPED (design-authority APPROVE-WITH-CHANGES, 2026-08-23, full write-up REQUIREMENTS §38). The tab had five collapsed twisties stacked ABOVE the results grid. Vincent asked for a 2-assumptions / 3-analysis split; the audit found 2 assumptions, 2 analysis and 1 ORPHAN (\"What is a Monte Carlo simulation?\" is generic glossary text, neither category) - that orphan is why the grouping felt unresolvable, and it was merged away rather than forced into a bucket. Unstated bug fixed at the same time: the results grid rendered LAST. An earlier fix had collapsed the twisties by default because they pushed the number below the fold - correct but incomplete, because collapsing defers detail without promoting the summary. FOUR CHANGES. (1) RESULTS GRID MOVED TO TOP. (2) TWO GROUP HEADINGS around the analysis pair and the assumptions pair. (3) MERGED the two method-education twisties into one \"How this simulation works\"; showWhat state deleted, five twisties down to four. (4) MODEL ASSUMPTIONS card shrunk to AT A GLANCE - it was an unlabeled SECOND source of record, restating paths / rental reliability / strategy label verbatim against the inputs panel (Single Point of Control violation); now three flags plus a \"Full assumptions\" button that opens and scroll-anchors the panel that owns the full list. Also per Rule 6: score-band literals extracted to MC_BAND_LOW_RISK / MC_BAND_MODERATE / MC_BAND_ELEVATED / MC_BAND_HIGH (rateColor and riskLabel each inlined the same four numbers), MC_SOLID_PLAN_RATE backs the \"above 85% is a solid plan\" sentence (deliberately NOT a band edge - 0.85 sits inside the MODERATE band), and hardcoded \"3,000\" now reads MC_PATHS_LABEL. Every displayed value byte-identical; only ownership moved. No engine changes, no financial math touched, disclaimers untouched per request.";
-export const BUILD_TIME = "2026-08-23T01:30:00Z";
+const APP_VERSION = "1.2.113";
+export const BUILD_TAG = "[main] v1.2.113 - TWO MC TAB BUGS, both reported by Vincent, both caused by a value having TWO bases with only one of them labelled. (1) REAL DOLLARS TOGGLE DID NOTHING ON THE SUMMARY CARDS. The fan chart and band table run their percentile rows through deflate() when Real $ is on, but MCTab never received the `real` or `inf` props at all - the MEDIAN FINAL BALANCE card read mc.term.* straight off runMC, which is always NOMINAL. So flipping the toggle changed the chart and left the number most people read first completely unmoved, and the card silently disagreed with the chart directly beneath it: same quantity, two different bases, neither labelled. This is also why the median looked \"crazy\" - it is a future-dollar balance decades out, sitting next to a chart showing today-dollar values. FIX: thread inf + real into MCTab; deflate the terminal percentiles on the CHART OWN BASIS (deflate() divides row i by (1+inf)^i counting from pcts[0].age === effRetireAge, so the terminal row is endAge - effRetireAge years out) so card and chart now agree exactly; and print the basis on the card (\"50th percentile at age N - today's dollars / future dollars\") so the number can never again be read against the wrong yardstick. The 10th/25th/75th/90th spread rows are deflated identically. (2) SUCCESS RATE CARD LOST ITS TINT AND BORDER - see v1.2.112 note: `${color}44` hex-alpha concatenation produces invalid CSS once the colour is a design token, so the browser drops the declaration entirely; fixed at all 17 sites via the new withAlpha() helper, which uses color-mix for tokens and returns the byte-identical string for hex literals. NOTE - a related pre-existing issue is NOT fixed here and is flagged for review: deflate() discounts from effRetireAge, not from today, so a pre-retiree who toggles Real $ sees \"today's dollars\" that are really retirement-age dollars (understating inflation by retireAge - currentAge years). Correcting that changes displayed values across the chart, the band table AND these cards, so it needs its own decision. No engine changes, no financial math touched. Full suite green 1,015 tests / 44 suites.";
+export const BUILD_TIME = "2026-08-23T04:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2644,6 +2644,20 @@ const MAX_MONEY_INPUT = 1_000_000_000;
 const MONEY_AXIS_WIDTH = 78;
 const fmtPct = (v) => `${(v * 100).toFixed(1)}%`;
 
+// Appending hex alpha to a colour (`${c}44`) works only when `c` is a hex
+// literal. The §37 token migration turned many colour sources into design
+// tokens, and "var(--positive)44" is not a colour — the browser drops the whole
+// declaration, so the tint and border silently vanish. Because several of these
+// sources are ternaries that return a token on one branch and a raw hex on
+// another (rateColor, wrColor), the SAME card renders bordered at one value and
+// borderless at another, which is how this survived: it looks like a theme quirk,
+// not a bug. color-mix handles tokens; hex inputs keep their exact prior string.
+export const withAlpha = (color, hexAlpha) => {
+  if (typeof color !== "string" || !color.includes("var(")) return `${color}${hexAlpha}`;
+  const pct = Math.round((parseInt(hexAlpha, 16) / 255) * 1000) / 10;
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+};
+
 /* ════ NUMERIC ENTRY ════
  * The one parser every typed number field uses. People paste what they see —
  * "$1,250,000" — and type shorthand — "1.25M", "750k". Raw `Number()` returns
@@ -2898,8 +2912,8 @@ function SectorBadge({ age }) {
         display: "inline-flex",
         alignItems: "center",
         gap: 5,
-        background: `${cur.color}18`,
-        border: `1px solid ${cur.color}44`,
+        background: `${withAlpha(cur.color, "18")}`,
+        border: `1px solid ${withAlpha(cur.color, "44")}`,
         borderRadius: 12,
         padding: "2px 10px",
         fontSize: 10,
@@ -3765,7 +3779,7 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger }) {
     >
       <div
         onClick={e => e.stopPropagation()}
-        style={{ background:"#0f1729", border:`1px solid ${accent}44`, borderRadius:12,
+        style={{ background:"#0f1729", border:`1px solid ${withAlpha(accent, "44")}`, borderRadius:12,
           padding:28, maxWidth:480, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.6)" }}
       >
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
@@ -3777,7 +3791,7 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger }) {
         <div style={{ fontSize:13, color:"var(--text-secondary)", lineHeight:1.7 }}>{children}</div>
         <button onClick={() => setOpen(false)}
           style={{ marginTop:20, width:"100%", background:accent+"22",
-            border:`1px solid ${accent}44`, borderRadius:8, padding:"8px 0",
+            border:`1px solid ${withAlpha(accent, "44")}`, borderRadius:8, padding:"8px 0",
             color:accent, fontSize:13, fontWeight:600, cursor:"pointer" }}>
           Got it
         </button>
@@ -3796,7 +3810,7 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger }) {
           onClick={() => setOpen(true)}
           style={{ display:"inline-flex", alignItems:"center", justifyContent:"center",
             width:16, height:16, borderRadius:"50%", background:"var(--card-border)",
-            border:`1px solid ${accent}44`, color:accent, fontSize:10, fontWeight:700,
+            border:`1px solid ${withAlpha(accent, "44")}`, color:accent, fontSize:10, fontWeight:700,
             cursor:"pointer", flexShrink:0 }}
           title="Click for more info"
         >?</span>
@@ -4357,7 +4371,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             : <span style={{ color: "#fb923c" }}>{diff} yr{diff !== 1 ? "s" : ""} after D‑Day</span>;
           return (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-              <div style={{ background: `${accentColor}22`, border: `1px solid ${accentColor}55`, borderRadius: 6, padding: "3px 10px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <div style={{ background: `${withAlpha(accentColor, "22")}`, border: `1px solid ${withAlpha(accentColor, "55")}`, borderRadius: 6, padding: "3px 10px", display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: accentColor, fontFamily: "'JetBrains Mono',monospace" }}>Age {cross.age} · {crossYear}</span>
                 <span style={{ fontSize: 10, color: "var(--text-muted)" }}>·</span>
                 <span style={{ fontSize: 11 }}>{timing}</span>
@@ -6910,7 +6924,7 @@ function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle }) 
       style={{
         width: "100%",
         background: "rgba(255,255,255,0.025)",
-        border: `1px solid ${color}44`,
+        border: `1px solid ${withAlpha(color, "44")}`,
         borderLeft: `4px solid ${color}`,
         borderRadius: 8,
         padding: "16px 18px",
@@ -7875,7 +7889,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
   const barClr = status === "below" ? "#f87171" : status === "full" ? "#34d399" : color;
   const runway = monthly > 0 && num === 1 ? (actual / monthly).toFixed(1) : null;
   return (
-    <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1, position: "relative" }}>
+    <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${withAlpha(color, "33")}`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1, position: "relative" }}>
       {(role || holdings) && (
         <div
           onMouseEnter={openTip}
@@ -7888,7 +7902,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
             <div
               onMouseEnter={openTip}
               onMouseLeave={closeTipSoon}
-              style={{ position: "absolute", top: "100%", right: 0, background: "rgba(15,23,42,0.98)", border: `1px solid ${color}66`, borderRadius: 6, padding: 10, fontSize: 11, color: "#cbd5e1", zIndex: 20, width: 240, lineHeight: 1.5, boxShadow: "0 6px 16px rgba(0,0,0,0.5)", cursor: "default" }}
+              style={{ position: "absolute", top: "100%", right: 0, background: "rgba(15,23,42,0.98)", border: `1px solid ${withAlpha(color, "66")}`, borderRadius: 6, padding: 10, fontSize: 11, color: "#cbd5e1", zIndex: 20, width: 240, lineHeight: 1.5, boxShadow: "0 6px 16px rgba(0,0,0,0.5)", cursor: "default" }}
             >
               {role && (
                 <>
@@ -8745,7 +8759,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
         const whoDies   = p.spouse?.firstToDie === "primary" ? "your" : "your spouse's";
         return (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 10, marginBottom: 12 }}>
-            <div className="met" style={{ background: `${col}0d`, border: `1px solid ${col}33` }}>
+            <div className="met" style={{ background: `${withAlpha(col, "0d")}`, border: `1px solid ${withAlpha(col, "33")}` }}>
               <div className="ml">Widow's penalty</div>
               <div className="mv" style={{ color: col }}>
                 {`${pp > 0 ? "+" : ""}${pp.toFixed(1)}pp`}
@@ -8780,7 +8794,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
           const isRunning = running === s.id;
           return (
             <div key={s.id} style={{
-              background: `${color}0d`, border: `1px solid ${color}33`,
+              background: `${withAlpha(color, "0d")}`, border: `1px solid ${withAlpha(color, "33")}`,
               borderRadius: 12, padding: "13px 15px",
             }}>
               <div style={{ display: "flex", gap: 12 }}>
@@ -9034,7 +9048,7 @@ function ScenariosTab({
   );
 }
 
-function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy }) {
+function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy, inf = 0, real = false }) {
   // Every top-level panel on this tab is a twisty, and every one starts shut.
   // The tab had grown to five full-height explainer panels stacked above the
   // result cards, so the number the user actually came for sat a screen and a
@@ -9073,6 +9087,19 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
     ? `Age ${params.currentAge} → ${effRetireAge}`
     : "already retired — no accumulation phase";
   const retPhase = `Age ${effRetireAge} → ${params.endAge}`;
+
+  // The fan chart and band table run their percentile rows through deflate()
+  // when Real $ is on; these summary cards read mc.term.* straight off runMC,
+  // which is nominal. So the toggle appeared to do nothing on the number most
+  // people read FIRST, and the card silently disagreed with the chart directly
+  // below it — same quantity, two different bases, neither labelled.
+  // Deflated on the chart's own basis: deflate() divides row i by (1+inf)^i
+  // where i counts from pcts[0].age === effRetireAge, so the terminal row is
+  // (endAge - effRetireAge) years out. Matching that keeps card and chart equal.
+  const termYears  = Math.max(0, (params.endAge || 0) - effRetireAge);
+  const termDivisor = real ? Math.pow(1 + (inf || 0) / 100, termYears) : 1;
+  const termAt = (k) => (mc?.term?.[k] ?? 0) / termDivisor;
+  const dollarBasis = real ? "today's dollars" : "future dollars";
   const mortSched = params.mortBalance > 0
     ? mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0)
     : null;
@@ -9254,7 +9281,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
       {!mc && <div style={{ textAlign: "center", padding: "20px", color: "var(--text-faint)", fontSize: 13 }}>{running ? `Running ${MC_PATHS_LABEL} paths...` : "Run Monte Carlo from the sidebar to see results here."}</div>}
       {mc && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-          <div style={{ background: `${rateColor(mc.rate)}12`, border: `1.5px solid ${rateColor(mc.rate)}44`, borderRadius: 10, padding: 18 }}>
+          <div style={{ background: `${withAlpha(rateColor(mc.rate), "12")}`, border: `1.5px solid ${withAlpha(rateColor(mc.rate), "44")}`, borderRadius: 10, padding: 18 }}>
             <div className="section-label" style={{ marginBottom: 8 }}>SUCCESS RATE <span role="img" aria-label="information" title={`Of your ${MC_PATHS_LABEL} Monte Carlo simulations, the share where the portfolio still has money at age ${params.endAge}. This is the conservative headline number — it assumes you live all the way to the plan age. The purple "…outlives you" figure below re-weights it by your odds of actually being alive at each failure age, so it's always a touch higher.`} style={{ color: "#60a5fa", cursor: "help" }}>ℹ️</span></div>
             <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(mc.rate), fontFamily: "'JetBrains Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(mc.rate)}</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>of {MC_PATHS_LABEL} simulations last to age {params.endAge}</div>
@@ -9274,11 +9301,11 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           </div>
           <div style={{ background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
             <div className="section-label" style={{ marginBottom: 8 }}>MEDIAN FINAL BALANCE <span role="img" aria-label="information" title={`The middle outcome: the 50th-percentile portfolio value remaining at age ${params.endAge}. Half of all simulations finish above this and half below — the typical leftover, not a floor or a guarantee. The 10th–90th percentile spread beneath shows how wide the range of outcomes really is.`} style={{ color: "#60a5fa", cursor: "help" }}>ℹ️</span></div>
-            <div style={{ fontSize: 42, fontWeight: 900, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtDollar(mc.term.p50)}</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>50th percentile at age {params.endAge}</div>
+            <div style={{ fontSize: 42, fontWeight: 900, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtDollar(termAt("p50"))}</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>50th percentile at age {params.endAge} · {dollarBasis}</div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 14 }}>Half of all simulations end above this. A higher balance cushions against sequence-of-returns risk.</div>
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10 }}>
-              {[{ l: "10th (near-worst)", v: mc.term.p10, c: "#f87171" }, { l: "25th (cautious)", v: mc.term.p25, c: "var(--accent-gold)" }, { l: "75th (good case)", v: mc.term.p75, c: "#34d399" }, { l: "90th (best 10%)", v: mc.term.p90, c: "var(--accent-teal)" }].map(({ l, v, c }) => (
+              {[{ l: "10th (near-worst)", v: termAt("p10"), c: "#f87171" }, { l: "25th (cautious)", v: termAt("p25"), c: "var(--accent-gold)" }, { l: "75th (good case)", v: termAt("p75"), c: "#34d399" }, { l: "90th (best 10%)", v: termAt("p90"), c: "var(--accent-teal)" }].map(({ l, v, c }) => (
                 <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 11 }}>
                   <span style={{ color: "var(--text-faint)" }}>{l}</span><span style={{ color: c, fontFamily: "'JetBrains Mono',monospace", fontWeight: 600 }}>{fmtDollar(v)}</span>
                 </div>
@@ -10595,7 +10622,7 @@ function CardDetailPanel({ card, onClose }) {
   return (
     <div style={{
       background:   "rgba(15,23,42,0.98)",
-      border:       `1px solid ${C.border}40`,
+      border:       `1px solid ${withAlpha(C.border, "40")}`,
       borderTop:    `3px solid ${C.border}`,
       borderRadius: 10,
       padding:      "20px",
@@ -11551,7 +11578,7 @@ function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
   const clampPct = (v) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
   const update = (i, patch) => onChangeSplits(splits.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   return (
-    <div style={{ marginLeft: 106, marginBottom: 8, padding: "8px 10px", background: "rgba(255,255,255,0.025)", border: `1px solid ${color}33`, borderRadius: 6 }}>
+    <div style={{ marginLeft: 106, marginBottom: 8, padding: "8px 10px", background: "rgba(255,255,255,0.025)", border: `1px solid ${withAlpha(color, "33")}`, borderRadius: 6 }}>
       <div style={{ fontSize: 10, color: "var(--text-secondary)", marginBottom: 6 }}>
         Split <strong style={{ color: "#e2e8f0" }}>{acct.name}</strong> across buckets · rolls up to {fmtDollar(bal)}
       </div>
@@ -11579,7 +11606,7 @@ function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
       ))}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
         <button onClick={() => onChangeSplits([...splits, { bucket: 2, pct: Math.max(0, remaining) }])}
-          style={{ background: "transparent", border: `1px dashed ${color}55`, borderRadius: 4, color, fontSize: 10, padding: "2px 8px", cursor: "pointer" }}>+ Add slice</button>
+          style={{ background: "transparent", border: `1px dashed ${withAlpha(color, "55")}`, borderRadius: 4, color, fontSize: 10, padding: "2px 8px", cursor: "pointer" }}>+ Add slice</button>
         <span style={{ fontSize: 10, fontWeight: 700, color: total === 100 ? "#34d399" : "var(--accent-gold)" }}>
           {total === 100 ? "100% assigned ✓" : `${total}% assigned · ${remaining > 0 ? remaining + "% left" : Math.abs(remaining) + "% over"}`}
         </span>
@@ -11729,7 +11756,7 @@ function SavingsPanel({ values, onChange }) {
             })}
             <button
               onClick={() => addAccount(cat.key)}
-              style={{ background: "transparent", border: `1px dashed ${cat.color}33`, borderRadius: 4, color: cat.color, fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.6, marginTop: 2 }}
+              style={{ background: "transparent", border: `1px dashed ${withAlpha(cat.color, "33")}`, borderRadius: 4, color: cat.color, fontSize: 11, padding: "2px 8px", cursor: "pointer", opacity: 0.6, marginTop: 2 }}
               onMouseEnter={e => e.currentTarget.style.opacity = 1}
               onMouseLeave={e => e.currentTarget.style.opacity = 0.6}
             >
@@ -13918,7 +13945,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
               marginBottom: 14,
               padding: "10px 12px",
               background: inSafeBand ? "rgba(52,211,153,0.08)" : "rgba(251,191,36,0.08)",
-              border: `1px solid ${wrColor}40`,
+              border: `1px solid ${withAlpha(wrColor, "40")}`,
               borderRadius: 8,
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
@@ -15816,6 +15843,8 @@ export default function AiRAForecaster() {
                       }
                       dob={assumptions.dob}
                       sex={assumptions.sex}
+                      inf={inf}
+                      real={real}
                       withdrawalStrategy={assumptions.withdrawalStrategy}
                       onSetBaselineFromCheckpoint={(value) => {
                         setPort(value);
