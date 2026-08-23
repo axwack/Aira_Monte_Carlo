@@ -210,9 +210,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.113";
-export const BUILD_TAG = "[main] v1.2.113 - TWO MC TAB BUGS, both reported by Vincent, both caused by a value having TWO bases with only one of them labelled. (1) REAL DOLLARS TOGGLE DID NOTHING ON THE SUMMARY CARDS. The fan chart and band table run their percentile rows through deflate() when Real $ is on, but MCTab never received the `real` or `inf` props at all - the MEDIAN FINAL BALANCE card read mc.term.* straight off runMC, which is always NOMINAL. So flipping the toggle changed the chart and left the number most people read first completely unmoved, and the card silently disagreed with the chart directly beneath it: same quantity, two different bases, neither labelled. This is also why the median looked \"crazy\" - it is a future-dollar balance decades out, sitting next to a chart showing today-dollar values. FIX: thread inf + real into MCTab; deflate the terminal percentiles on the CHART OWN BASIS (deflate() divides row i by (1+inf)^i counting from pcts[0].age === effRetireAge, so the terminal row is endAge - effRetireAge years out) so card and chart now agree exactly; and print the basis on the card (\"50th percentile at age N - today's dollars / future dollars\") so the number can never again be read against the wrong yardstick. The 10th/25th/75th/90th spread rows are deflated identically. (2) SUCCESS RATE CARD LOST ITS TINT AND BORDER - see v1.2.112 note: `${color}44` hex-alpha concatenation produces invalid CSS once the colour is a design token, so the browser drops the declaration entirely; fixed at all 17 sites via the new withAlpha() helper, which uses color-mix for tokens and returns the byte-identical string for hex literals. NOTE - a related pre-existing issue is NOT fixed here and is flagged for review: deflate() discounts from effRetireAge, not from today, so a pre-retiree who toggles Real $ sees \"today's dollars\" that are really retirement-age dollars (understating inflation by retireAge - currentAge years). Correcting that changes displayed values across the chart, the band table AND these cards, so it needs its own decision. No engine changes, no financial math touched. Full suite green 1,015 tests / 44 suites.";
-export const BUILD_TIME = "2026-08-23T04:00:00Z";
+const APP_VERSION = "1.2.114";
+export const BUILD_TAG = "[main] v1.2.114 - REAL DOLLARS: the numbers were right, the LABEL was wrong. v1.2.113 flagged deflate() discounting from retirement age rather than from today as a possible bug needing a product decision. Vincent made the call: start from the retirement date. People plan from the day they stop working; the years between now and retirement are a forecast of how big the pile gets, not a claim about what a dollar buys along the way. VERIFIED AGAINST THE ENGINE and the call is not just defensible, it is the only self-consistent option: in runMC the spend figure the user types is consumed AS-IS in retirement year one (`y === 0` uses p.sp unchanged) and is never inflated forward from today. So spending and balances already share one yardstick - the first retirement year. Deflating to today would have put the balances on a different basis than the spending they are measured against, which is the WRONG fix. NO MATH CHANGED. The single defect was the words \"today's dollars\", which promised a basis the arithmetic does not use, at three display sites (fan chart title, age-by-age band table header, and the median-final-balance card added in v1.2.113). All three now call one shared dollarBasisLabel(useReal, basisAge) helper that renders \"age-63 dollars\" (or \"retirement-year dollars\" when the age is unavailable), and the basis age is READ FROM pcts[0].age - the actual row deflate() divides by 1 - so the label is derived from the arithmetic and cannot drift away from it again. Self-correcting for an already-retired user, whose effRetireAge is clamped to currentAge, making age-N dollars genuinely today's dollars. PRIOR v1.2.113 - real-dollar toggle was not wired into MCTab at all (summary cards read nominal mc.term.* while the chart below them deflated), and the SUCCESS RATE card lost its tint/border because `${color}44` hex-alpha concatenation produces invalid CSS once the colour is a design token; fixed at all 17 sites via withAlpha(). Full write-up REQUIREMENTS §38.";
+export const BUILD_TIME = "2026-08-23T05:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2762,6 +2762,24 @@ function useCountdown(dday, startDate) {
   return cd;
 }
 
+// Real $ restates every figure in the purchasing power of the FIRST SIMULATED
+// RETIREMENT YEAR — not of today. deflate() discounts row i by (1+inf)^i and
+// row 0 IS retirement, so that is what the numbers have always meant.
+//
+// That is deliberate, and it matches the engine's own inputs: the spend figure
+// the user types is consumed as-is in retirement year one (runMC, `y === 0`) and
+// is never inflated forward from today. Balances and spending therefore share
+// one yardstick, and the pre-retirement years stay what they are — a forecast of
+// how big the pile gets, not a claim about what a dollar buys along the way.
+//
+// The only thing ever wrong here was the label "today's dollars", which promised
+// a basis the math does not use. Derived from pcts[0].age so the words can never
+// drift away from the arithmetic again.
+const dollarBasisLabel = (useReal, basisAge) =>
+  useReal
+    ? (Number.isFinite(basisAge) ? `age-${basisAge} dollars` : "retirement-year dollars")
+    : "future dollars";
+
 function deflate(data, inf, useReal) {
   if (!useReal) return data;
   return data.map((d, i) => ({
@@ -2792,7 +2810,7 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
     <div className="chart-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show || showExplainer ? 8 : 0, flexWrap: "wrap", gap: 6 }}>
         <div className="ct" style={{ marginBottom: 0 }}>
-          📊 Age-by-Age Projection Bands · {useReal ? "today's dollars" : "future dollars"}
+          📊 Age-by-Age Projection Bands · {dollarBasisLabel(useReal, pcts?.[0]?.age)}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button
@@ -4333,7 +4351,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     <div className="chart-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
         <div className="ct" style={{ margin: 0 }}>
-          {title} · {useReal ? "today's dollars" : "future dollars"}
+          {title} · {dollarBasisLabel(useReal, pcts?.[0]?.age)}
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <Toggle val={showMortality} onChange={setShowMortality} label="Mortality" accent="var(--negative)" />
@@ -9099,7 +9117,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   const termYears  = Math.max(0, (params.endAge || 0) - effRetireAge);
   const termDivisor = real ? Math.pow(1 + (inf || 0) / 100, termYears) : 1;
   const termAt = (k) => (mc?.term?.[k] ?? 0) / termDivisor;
-  const dollarBasis = real ? "today's dollars" : "future dollars";
+  const dollarBasis = dollarBasisLabel(real, mc?.pcts?.[0]?.age ?? effRetireAge);
   const mortSched = params.mortBalance > 0
     ? mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0)
     : null;
