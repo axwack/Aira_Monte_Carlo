@@ -66,7 +66,7 @@ export const ABOUT_PRODUCT = {
 };
 
 // ─────────────────────────────────────────────────────────────
-//  Feature explanations shown in the "How It Works" tab.
+//  Feature explanations shown in the ❓ Help modal (HelpButton in App.jsx).
 //
 //  group: one of "Getting Started" | "Withdrawal Strategies" |
 //          "Your Properties" | "Reading the Charts"
@@ -204,7 +204,28 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
     group: "Reading the Charts",
     icon:  "💵",
     title: "Today's dollars vs. future dollars",
-    body:  "The same pile of money can be written two ways, and the difference is inflation. FUTURE DOLLARS is the number that would actually print on a statement in that year — $3M at age 85 really is $3M on paper. TODAY'S DOLLARS re-expresses that money as what it would buy right now, which is the only way to judge whether it is enough, because you know what things cost today. A plan showing $3M at 85 might be worth about $1.4M in today's purchasing power at 2.5% inflation over 30 years. Neither number is wrong — they answer different questions. Use the 'Show in today's dollars' toggle above the charts to switch. Economists call these 'real' (today's) and 'nominal' (future); AiRA uses the plainer words, and every chart and table states which one it is showing so you never have to guess. One limit worth knowing: the charts begin at your retirement year, so 'today's dollars' means retirement-year purchasing power — inflation between now and the day you retire is not stripped out. If you are already retired, the two are the same.",
+    body:  `<p style="margin:0 0 14px">The same pile of money can be written two ways, and the difference is inflation. Neither number is wrong — they answer different questions.</p>
+
+<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+  <div style="background:rgba(96,165,250,0.07);border:1px solid rgba(96,165,250,0.2);border-radius:9px;padding:12px 14px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#60a5fa;margin-bottom:6px">📈 Future dollars</div>
+    <div style="font-size:12px;color:#e2e8f0;line-height:1.65">The number that would actually print on a statement in that year. <strong>$3M at age 85 really is $3M on paper.</strong> Economists call this "nominal."</div>
+  </div>
+  <div style="background:rgba(52,211,153,0.07);border:1px solid rgba(52,211,153,0.2);border-radius:9px;padding:12px 14px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#34d399;margin-bottom:6px">💵 Today's dollars</div>
+    <div style="font-size:12px;color:#e2e8f0;line-height:1.65">That same money re-expressed as what it would buy <strong>right now</strong> — the only way to judge whether it's enough, since you already know what things cost today. Economists call this "real."</div>
+  </div>
+</div>
+
+<div style="background:rgba(251,191,36,0.08);border-left:3px solid #fbbf24;border-radius:0 8px 8px 0;padding:10px 13px;margin-bottom:14px;font-size:11px;color:#e2e8f0;line-height:1.6">
+  <strong>Example:</strong> a plan showing $3M at 85 might be worth about $1.4M in today's purchasing power at 2.5% inflation over 30 years.
+</div>
+
+<p style="margin:0 0 12px;font-size:12px;color:var(--text-secondary);line-height:1.65"><strong style="color:#e2e8f0">Where to switch:</strong> the "Show in today's dollars" toggle above the charts. AiRA uses these plain terms instead of "real"/"nominal" — every chart and table states which one it's showing so you never have to guess.</p>
+
+<div style="background:rgba(148,163,184,0.08);border-left:3px solid #64748b;border-radius:0 8px 8px 0;padding:10px 13px;font-size:12px;color:var(--text-secondary);line-height:1.6">
+  <strong style="color:#94a3b8">One limit:</strong> the charts begin at your retirement year, so "today's dollars" means retirement-year purchasing power — inflation between now and the day you retire is not stripped out. If you're already retired, the two are the same.
+</div>`,
   },
   {
     id:    "reassess-trigger",

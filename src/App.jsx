@@ -2835,7 +2835,7 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
           for fragility: a high Still Funded % paired with a thin 10th percentile is one bad market
           sequence away from joining the failures, while a high 10th percentile means real margin.
           <br /><br />
-          Full explanation: ℹ️ About → Reading the Charts → "What does Still Funded % actually mean?"
+          Full explanation: ❓ Help → Reading the Charts → "What does Still Funded % actually mean?"
         </div>
       )}
       {show && (
@@ -3553,7 +3553,7 @@ function CollapsibleAboutCard({ entry, defaultOpen = false }) {
 function AboutButton() {
   const [open, setOpen] = React.useState(false);
   const [tab, setTab] = React.useState(0);
-  const TABS = ["👤 About Me", "📦 The App", "📖 How It Works"];
+  const TABS = ["👤 About Me", "📦 The App"];
 
   const tabBtn = (i) => ({
     flex:1, padding:"7px 4px", fontSize:11, fontWeight: tab===i ? 700 : 500,
@@ -3685,46 +3685,6 @@ function AboutButton() {
           </div>
         )}
 
-        {/* Tab 2 — How It Works */}
-        {tab === 2 && (
-          <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
-            {ABOUT_PRODUCT.intro && (
-              <p style={{ fontSize:13, color:"var(--text-secondary)", lineHeight:1.75,
-                margin:0, padding:"12px 14px", background:"rgba(96,165,250,0.06)",
-                border:"1px solid rgba(96,165,250,0.15)", borderRadius:9 }}>
-                {ABOUT_PRODUCT.intro}
-              </p>
-            )}
-            {(() => {
-              const groups = [...new Set(ABOUT_FEATURES.map(e => e.group).filter(Boolean))];
-              const ungrouped = ABOUT_FEATURES.filter(e => !e.group);
-              return (
-                <>
-                  {groups.map(g => (
-                    <div key={g}>
-                      <div style={{ fontSize:10, fontWeight:700, color:"var(--text-faint)", letterSpacing:"1px",
-                        textTransform:"uppercase", marginBottom:9 }}>{g}</div>
-                      <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
-                        {ABOUT_FEATURES.filter(e => e.group === g).map(e => (
-                          <CollapsibleAboutCard key={e.id} entry={e} />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {ungrouped.map(e => (
-                    <CollapsibleAboutCard key={e.id} entry={e} />
-                  ))}
-                </>
-              );
-            })()}
-            {ABOUT_FEATURES.length === 0 && (
-              <div style={{ fontSize:12, color:"var(--text-faint)", textAlign:"center", padding:24 }}>
-                No entries yet. Add items to ABOUT_FEATURES in src/about.js.
-              </div>
-            )}
-          </div>
-        )}
-
         <button onClick={() => setOpen(false)}
           style={{ marginTop:22, width:"100%", background:"rgba(96,165,250,0.08)",
             border:"1px solid rgba(96,165,250,0.25)", borderRadius:8, padding:"9px 0",
@@ -3740,6 +3700,122 @@ function AboutButton() {
     <>
       <button className="mbtn" onClick={() => { setTab(0); setOpen(true); }}>
         📖 About
+      </button>
+      {overlay}
+    </>
+  );
+}
+
+// Searchable knowledge base — pulled out of AboutButton's old "How It Works"
+// tab so it's reachable on its own (people look for help mid-task, not from
+// an about-the-author screen) and so a search box actually has somewhere
+// findable to live. Content stays in ABOUT_FEATURES (src/about.js); this is
+// purely presentation + filtering.
+function HelpButton() {
+  const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+
+  const overlay = open ? ReactDOM.createPortal(
+    <div
+      onClick={() => setOpen(false)}
+      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.70)", zIndex:99999,
+        display:"flex", alignItems:"flex-start", justifyContent:"center",
+        padding:"40px 16px 60px", overflowY:"auto" }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background:"#0f1729", border:"1px solid rgba(96,165,250,0.2)",
+          borderRadius:14, padding:"24px 28px 28px", maxWidth:600, width:"100%",
+          boxShadow:"0 24px 60px rgba(0,0,0,0.8)" }}
+      >
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
+          <div style={{ fontSize:18, fontWeight:800, color:"#e2e8f0", letterSpacing:"-0.3px" }}>
+            ❓ Help &amp; How It Works
+          </div>
+          <button onClick={() => setOpen(false)}
+            style={{ background:"transparent", border:"none", color:"var(--text-muted)",
+              cursor:"pointer", fontSize:22, lineHeight:1, padding:"0 2px" }}>✕</button>
+        </div>
+
+        <input
+          type="text"
+          autoFocus
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search help topics… e.g. IRMAA, Roth, buckets, spending smile"
+          style={{ width:"100%", boxSizing:"border-box", padding:"10px 14px", marginBottom:16,
+            background:"var(--row-highlight)", border:"1px solid rgba(255,255,255,0.12)",
+            borderRadius:9, color:"#e2e8f0", fontSize:13, fontFamily:"inherit" }}
+        />
+
+        {ABOUT_PRODUCT.intro && !query.trim() && (
+          <p style={{ fontSize:13, color:"var(--text-secondary)", lineHeight:1.75,
+            margin:"0 0 18px", padding:"12px 14px", background:"rgba(96,165,250,0.06)",
+            border:"1px solid rgba(96,165,250,0.15)", borderRadius:9 }}>
+            {ABOUT_PRODUCT.intro}
+          </p>
+        )}
+
+        {(() => {
+          const q = query.trim().toLowerCase();
+          const stripHtml = (html) => html.replace(/<[^>]+>/g, " ");
+          const filtered = !q ? ABOUT_FEATURES : ABOUT_FEATURES.filter(e =>
+            e.title.toLowerCase().includes(q) ||
+            (e.group || "").toLowerCase().includes(q) ||
+            stripHtml(e.body).toLowerCase().includes(q)
+          );
+          const groups = [...new Set(filtered.map(e => e.group).filter(Boolean))];
+          const ungrouped = filtered.filter(e => !e.group);
+
+          if (ABOUT_FEATURES.length === 0) {
+            return (
+              <div style={{ fontSize:12, color:"var(--text-faint)", textAlign:"center", padding:24 }}>
+                No entries yet. Add items to ABOUT_FEATURES in src/about.js.
+              </div>
+            );
+          }
+          if (filtered.length === 0) {
+            return (
+              <div style={{ fontSize:12, color:"var(--text-faint)", textAlign:"center", padding:24 }}>
+                No help topics match "{query.trim()}". Try a different word, or use 💬 Feedback to ask directly.
+              </div>
+            );
+          }
+          return (
+            <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
+              {groups.map(g => (
+                <div key={g}>
+                  <div style={{ fontSize:10, fontWeight:700, color:"var(--text-faint)", letterSpacing:"1px",
+                    textTransform:"uppercase", marginBottom:9 }}>{g}</div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
+                    {filtered.filter(e => e.group === g).map(e => (
+                      <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {ungrouped.map(e => (
+                <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} />
+              ))}
+            </div>
+          );
+        })()}
+
+        <button onClick={() => setOpen(false)}
+          style={{ marginTop:22, width:"100%", background:"rgba(96,165,250,0.08)",
+            border:"1px solid rgba(96,165,250,0.25)", borderRadius:8, padding:"9px 0",
+            color:"#60a5fa", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+          Close
+        </button>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <>
+      <button className="mbtn" onClick={() => { setQuery(""); setOpen(true); }} title="Look up how a feature or number works">
+        ❓ Help
       </button>
       {overlay}
     </>
@@ -15200,6 +15276,7 @@ export default function AiRAForecaster() {
               {checkInFlash ? "✓ Saved!" : "✓ Check-in"}
             </button>
             <AboutButton />
+            <HelpButton />
             <div style={{ position: "relative", display: "inline-flex" }}>
               <button
                 className="mbtn"
