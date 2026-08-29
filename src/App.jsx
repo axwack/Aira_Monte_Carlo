@@ -2775,10 +2775,8 @@ function useCountdown(dday, startDate) {
 // The only thing ever wrong here was the label "today's dollars", which promised
 // a basis the math does not use. Derived from pcts[0].age so the words can never
 // drift away from the arithmetic again.
-const dollarBasisLabel = (useReal, basisAge) =>
-  useReal
-    ? (Number.isFinite(basisAge) ? `age-${basisAge} dollars` : "retirement-year dollars")
-    : "future dollars";
+const dollarBasisLabel = (useReal) =>
+  useReal ? "Today's Dollars" : "Future Dollars";
 
 function deflate(data, inf, useReal) {
   if (!useReal) return data;
@@ -3109,32 +3107,26 @@ const CSS = `
   .lp-cta:hover { transform:translateY(-1px); box-shadow:0 14px 32px -8px rgba(91,141,239,0.7); }
   .lp-skip { display:block; margin-top:15px; background:none; border:none; color:var(--text-muted); font-size:13px; cursor:pointer; font-family:'Inter',sans-serif; text-decoration:underline; padding:0; }
   .lp-skip:hover { color:var(--text-secondary); }
-  .layout { display:grid; grid-template-columns:300px 1fr; height:calc(100vh - 56px); overflow:hidden; }
-  .sidebar { border-right:1px solid rgba(228, 24, 24, 0.06); padding:14px; overflow-y:auto; background:rgba(10,15,30,0.7); display:flex; flex-direction:column; gap:10px; min-height:0; }
-  .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-card); padding:13px; }
-  .sb-title { font-size:14px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.12em; margin-bottom:12px; }
-  .sl-row { display:grid; grid-template-columns:84px 1fr 92px; align-items:center; gap:8px; margin-bottom:13px; }
-  /* The value cell is now an editable input (typed entry can exceed the slider max).
-     Styled to read as text until focused, so the sidebar looks unchanged at rest. */
-  .sl-val-input { width:100%; background:transparent; border:1px solid transparent; border-radius:5px; padding:2px 4px; cursor:text; }
-  .sl-val-input:hover { border-color:rgba(255,255,255,0.18); background:rgba(255,255,255,0.04); }
-  .sl-val-input:focus { outline:none; border-color:#14b8a6; background:rgba(20,184,166,0.10); color:#f1f5f9; text-align:right; }
-  .sl-label { font-size:12px; color:#cbd5e1; font-weight:500; }
+  .layout { display:grid; grid-template-columns:340px 1fr; height:calc(100vh - 56px); overflow:hidden; }
+  .sidebar { border-right:1px solid rgba(255, 255, 255, 0.08); padding:14px 12px; overflow-y:auto; background:rgba(10,15,30,0.78); display:flex; flex-direction:column; gap:12px; min-height:0; }
+  .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-card); padding:13px 12px; }
+  .sb-title { font-size:11.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:10px; }
+  .sl-row { display:flex; flex-direction:column; gap:6px; margin-bottom:13px; }
+  .sl-nudge-btn { width:24px; height:24px; border-radius:5px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.06); color:#cbd5e1; cursor:pointer; font-size:14px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; padding:0; transition:all 0.15s; flex-shrink:0; line-height:1; user-select:none; }
+  .sl-nudge-btn:hover:not(:disabled) { background:rgba(255,255,255,0.18); color:#ffffff; border-color:rgba(255,255,255,0.28); transform:scale(1.06); }
+  .sl-nudge-btn:active:not(:disabled) { transform:scale(0.94); }
+  .sl-nudge-btn:disabled { opacity:0.22; cursor:not-allowed; }
+  /* The value cell is now an editable input (typed entry can exceed the slider max). */
+  .sl-val-input { width:auto; min-width:70px; max-width:120px; text-align:center; background:rgba(15,23,42,0.65); border:1px solid rgba(255,255,255,0.12); border-radius:5px; padding:2px 6px; cursor:text; }
+  .sl-val-input:hover { border-color:rgba(255,255,255,0.22); background:rgba(255,255,255,0.08); }
+  .sl-val-input:focus { outline:none; border-color:#14b8a6; background:rgba(20,184,166,0.12); color:#f1f5f9; box-shadow:0 0 0 2px rgba(20,184,166,0.25); }
+  .sl-label { font-size:12px; color:#cbd5e1; font-weight:600; }
   .sl-val { font-size:12px; font-weight:700; text-align:right; color:#f1f5f9; font-family:'JetBrains Mono',monospace; }
-  input[type=range] { display:none; }
-  .tog-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
-  .tog-label { font-size:12px; color:#cbd5e1; font-weight:500; }
+  .tog-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; flex-wrap:nowrap; }
+  .tog-label { font-size:12px; color:#cbd5e1; font-weight:500; display:inline-flex; align-items:center; gap:4px; flex:1; min-width:0; }
   .tog { width:34px; height:18px; border-radius:9px; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
   .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.4); }
-  /* Pinned to the bottom of the scrolling sidebar. It used to be an ordinary last
-     child of .sidebar (which is overflow-y:auto), so on a shorter viewport — a
-     MacBook in Chrome was the reported case — it sat below the fold and users
-     never saw it. Worse, it is the control that RUNS the simulation, and the
-     "Inputs changed — Re-run" state lives on this same button, so an invisible
-     button means the numbers on screen silently stay stale. sticky keeps it in
-     view while still scrolling naturally with the panel above it; the gradient is
-     opaque so sidebar content cannot show through underneath. */
-  .run-btn { position:sticky; bottom:0; z-index:5; width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); }
+  .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); flex-shrink:0; }
   .run-btn:hover { opacity:0.9; box-shadow:0 6px 20px rgba(14,165,233,0.35); }
   .run-btn:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
   .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; min-height:0; }
@@ -3965,32 +3957,35 @@ function ThInfo({ children, tip, style, accent = "#93c5fd", modalTitle }) {
   );
 }
 
-function Slider({ label, value, min, max, step, format, onChange }) {
+function Slider({ label, value, min, max, step, stepNudge, format, onChange, quickPills, accent, titleHint }) {
   const clamped = Math.max(min, Math.min(max, value));
-  const pct = ((clamped - min) / (max - min)) * 100;
+  const pct = max > min ? ((clamped - min) / (max - min)) * 100 : 0;
   const trackRef = useRef(null);
-  // Typed entry. The slider alone made values above `max` unreachable — contrib
-  // capped at $100K and US spend at $300K — so anyone with a larger plan simply
-  // could not enter their real number. Dragging is also hopeless for precision:
-  // landing on exactly $850,000 across a few hundred pixels is luck.
-  //
-  // So the field is the source of truth and the slider is a fast approximate
-  // control over the COMMON range. A typed value may exceed `max`; the thumb just
-  // pins at the end (pct uses `clamped`) rather than the value being rejected.
-  // `min` is still enforced — a negative spend is meaningless, not merely unusual.
-  //
-  // `draft` is non-null only while the field is focused: during editing we show
-  // exactly what was typed (so it doesn't fight the caret), and on commit we go
-  // back to the formatted display.
+
+  // Stepper nudge increments
+  const nudge = stepNudge || step;
+  const handleDec = useCallback((e) => {
+    e?.stopPropagation();
+    const next = Math.max(min, Number((value - nudge).toFixed(4)));
+    onChange(next);
+  }, [value, min, nudge, onChange]);
+
+  const handleInc = useCallback((e) => {
+    e?.stopPropagation();
+    const next = Math.min(max, Number((value + nudge).toFixed(4)));
+    onChange(next);
+  }, [value, max, nudge, onChange]);
+
   const [draft, setDraft] = useState(null);
   const commitDraft = useCallback(() => {
     setDraft((d) => {
       if (d === null) return null;
-      const n = parseMoneyInput(d, min);   // "$1,250,000", "1.25M", spaces
+      const n = parseMoneyInput(d, min); // "$1,250,000", "1.25M", spaces
       if (n !== null) onChange(n);
       return null;
     });
   }, [min, onChange]);
+
   const handleClick = useCallback(
     (e) => {
       if (!trackRef.current) return;
@@ -4000,7 +3995,8 @@ function Slider({ label, value, min, max, step, format, onChange }) {
         Math.min(1, (e.clientX - rect.left) / rect.width)
       );
       const stepped = Math.round((min + ratio * (max - min)) / step) * step;
-      onChange(Math.max(min, Math.min(max, stepped)));
+      const rounded = Number(Math.max(min, Math.min(max, stepped)).toFixed(4));
+      onChange(rounded);
     },
     [min, max, step, onChange]
   );
@@ -4017,7 +4013,8 @@ function Slider({ label, value, min, max, step, format, onChange }) {
           Math.min(1, (clientX - rect.left) / rect.width)
         );
         const stepped = Math.round((min + ratio * (max - min)) / step) * step;
-        onChange(Math.max(min, Math.min(max, stepped)));
+        const rounded = Number(Math.max(min, Math.min(max, stepped)).toFixed(4));
+        onChange(rounded);
       };
       const up = () => {
         window.removeEventListener("mousemove", move);
@@ -4032,9 +4029,123 @@ function Slider({ label, value, min, max, step, format, onChange }) {
     },
     [min, max, step, onChange]
   );
+
+  // If no label is passed (e.g. inside DualInput), render a compact full-width track directly.
+  if (!label) {
+    return (
+      <div className="sl-row-compact" style={{ width: "100%", padding: "3px 0 6px" }}>
+        <div
+          ref={trackRef}
+          onClick={handleClick}
+          style={{
+            position: "relative",
+            height: 20,
+            display: "flex",
+            alignItems: "center",
+            cursor: "pointer",
+            userSelect: "none",
+            width: "100%",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              height: 6,
+              borderRadius: 3,
+              background: "rgba(255,255,255,0.12)",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              width: `${pct}%`,
+              height: 6,
+              borderRadius: 3,
+              background: accent || "linear-gradient(90deg,#0d9488,#14b8a6)",
+            }}
+          />
+          <div
+            onMouseDown={handleDrag}
+            onTouchStart={handleDrag}
+            style={{
+              position: "absolute",
+              left: `calc(${pct}% - 9px)`,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: "var(--positive, #10b981)",
+              border: "2.5px solid #14b8a6",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.5)",
+              cursor: "grab",
+              zIndex: 2,
+              transition: "transform 0.1s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.2)")}
+            onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="sl-row">
-      <span className="sl-label">{label}</span>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span className="sl-label">{label}</span>
+          {titleHint && <span style={{ fontSize: 10, color: "var(--text-faint)" }}>({titleHint})</span>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <button
+            type="button"
+            className="sl-nudge-btn"
+            onClick={handleDec}
+            disabled={value <= min}
+            title={`Decrease (${stepNudge ? `-${stepNudge}` : `-${step}`})`}
+            aria-label={`Decrease ${label}`}
+          >
+            −
+          </button>
+          <input
+            className="sl-val sl-val-input"
+            type="text"
+            inputMode="decimal"
+            aria-label={label}
+            value={draft !== null ? draft : format(value)}
+            title="Click to type an exact value — you can enter more than the slider's range"
+            onFocus={(e) => {
+              setDraft(String(value));
+              requestAnimationFrame(() => e.target.select());
+            }}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitDraft}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                commitDraft();
+                e.currentTarget.blur();
+              } else if (e.key === "Escape") {
+                setDraft(null);
+                e.currentTarget.blur();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="sl-nudge-btn"
+            onClick={handleInc}
+            disabled={value >= max}
+            title={`Increase (${stepNudge ? `+${stepNudge}` : `+${step}`})`}
+            aria-label={`Increase ${label}`}
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      {/* Full-width interactive slider track */}
       <div
         ref={trackRef}
         onClick={handleClick}
@@ -4045,6 +4156,8 @@ function Slider({ label, value, min, max, step, format, onChange }) {
           alignItems: "center",
           cursor: "pointer",
           userSelect: "none",
+          width: "100%",
+          padding: "0 2px",
         }}
       >
         <div
@@ -4054,7 +4167,7 @@ function Slider({ label, value, min, max, step, format, onChange }) {
             right: 0,
             height: 6,
             borderRadius: 3,
-            background: "rgba(255,255,255,0.15)",
+            background: "rgba(255,255,255,0.12)",
           }}
         />
         <div
@@ -4064,7 +4177,8 @@ function Slider({ label, value, min, max, step, format, onChange }) {
             width: `${pct}%`,
             height: 6,
             borderRadius: 3,
-            background: "linear-gradient(90deg,#0d9488,#14b8a6)",
+            background: accent || "linear-gradient(90deg,#0d9488,#14b8a6)",
+            boxShadow: "0 0 10px rgba(20,184,166,0.3)",
           }}
         />
         <div
@@ -4076,36 +4190,55 @@ function Slider({ label, value, min, max, step, format, onChange }) {
             width: 18,
             height: 18,
             borderRadius: "50%",
-            background: "var(--positive)",
+            background: "#ffffff",
             border: "2.5px solid #14b8a6",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.5)",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.6)",
             cursor: "grab",
             zIndex: 2,
-            transition: "transform 0.1s",
+            transition: "transform 0.12s, box-shadow 0.12s",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.2)")}
-          onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "scale(1.25)";
+            e.currentTarget.style.boxShadow = "0 0 12px rgba(20,184,166,0.8)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "scale(1)";
+            e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.6)";
+          }}
         />
       </div>
-      <input
-        className="sl-val sl-val-input"
-        type="text"
-        inputMode="decimal"
-        aria-label={label}
-        value={draft !== null ? draft : format(value)}
-        title="Click to type an exact value — you can enter more than the slider's range"
-        onFocus={(e) => { setDraft(String(value)); requestAnimationFrame(() => e.target.select()); }}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commitDraft}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { commitDraft(); e.currentTarget.blur(); }
-          else if (e.key === "Escape") { setDraft(null); e.currentTarget.blur(); }
-        }}
-      />
+
+      {/* Quick selection pill chips (if provided) */}
+      {Array.isArray(quickPills) && quickPills.length > 0 && (
+        <div style={{ display: "flex", gap: 5, marginTop: 1, flexWrap: "wrap" }}>
+          {quickPills.map((pill) => {
+            const isActive = Math.abs(value - pill.val) < 0.001;
+            return (
+              <button
+                key={pill.lbl}
+                type="button"
+                onClick={() => onChange(pill.val)}
+                style={{
+                  background: isActive ? "rgba(20,184,166,0.22)" : "rgba(255,255,255,0.04)",
+                  border: isActive ? "1px solid #14b8a6" : "1px solid rgba(255,255,255,0.08)",
+                  color: isActive ? "#5eead4" : "#94a3b8",
+                  borderRadius: 4,
+                  padding: "2px 6px",
+                  fontSize: 10,
+                  fontWeight: isActive ? 700 : 500,
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                {pill.lbl}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
-
 /* ════ Helper UI Functions ════ */
 function DualInput({ label, value, min, max, step, format, onChange }) {
   return (
@@ -4427,7 +4560,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     <div className="chart-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
         <div className="ct" style={{ margin: 0 }}>
-          {title} · {dollarBasisLabel(useReal, pcts?.[0]?.age)}
+          {title}
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <Toggle val={showMortality} onChange={setShowMortality} label="Mortality" accent="var(--negative)" />
@@ -15579,15 +15712,103 @@ export default function AiRAForecaster() {
             </div>
 
             <div className="sb-card">
-              <div className="sb-title">Portfolio</div>
+              <div className="sb-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Retirement Core</span>
+                <span style={{ fontSize: 10, color: "var(--accent-teal)", fontWeight: 600, textTransform: "none" }}>Primary</span>
+              </div>
               <Slider
-                label="Annual contrib"
+                label="Retire age"
+                value={retAge}
+                min={AGE_LIMITS.retire.min}
+                max={AGE_LIMITS.retire.max}
+                step={1}
+                stepNudge={1}
+                format={(v) => "Age " + v}
+                onChange={setRetAge}
+              />
+              <Slider
+                label="Plan to age"
+                value={endAge}
+                min={AGE_LIMITS.end.min}
+                max={AGE_LIMITS.end.max}
+                step={1}
+                stepNudge={1}
+                format={(v) => "Age " + v}
+                onChange={setEndAge}
+              />
+              <Slider
+                label="US annual spend"
+                value={sp}
+                min={0}
+                max={300000}
+                step={1000}
+                stepNudge={5000}
+                format={(v) => fmtDollar(v) + "/yr"}
+                onChange={setSp}
+              />
+              {assumptions.twoHousehold && (
+                <Slider
+                  label="Out-of-country"
+                  value={assumptions.spOutOfCountry ?? 0}
+                  min={0}
+                  max={150000}
+                  step={1000}
+                  stepNudge={2500}
+                  format={(v) => fmtDollar(v) + "/yr"}
+                  onChange={(v) => updateAssumption("spOutOfCountry", v)}
+                />
+              )}
+              <Slider
+                label="Annual savings"
                 value={contrib}
                 min={0}
                 max={100000}
                 step={500}
+                stepNudge={1000}
                 format={(v) => fmtDollar(v) + "/yr"}
                 onChange={setContrib}
+              />
+              <Slider
+                key={`ssAge-${assumptions.ssAge}`}
+                label="SS claim age"
+                value={assumptions.ssAge}
+                min={AGE_LIMITS.ss.min}
+                max={AGE_LIMITS.ss.max}
+                step={1}
+                stepNudge={1}
+                quickPills={[
+                  { lbl: "62 (Early)", val: 62 },
+                  { lbl: "67 (FRA)", val: 67 },
+                  { lbl: "70 (Max)", val: 70 },
+                ]}
+                format={(v) => "Age " + v}
+                onChange={(v) => updateAssumption("ssAge", v)}
+              />
+            </div>
+            <div className="sb-card">
+              <div className="sb-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Macro &amp; Sensitivity</span>
+                <span style={{ fontSize: 10, color: "var(--accent-gold)", fontWeight: 600, textTransform: "none" }}>⚡ Sensitivity</span>
+              </div>
+              <Slider
+                label="Inflation (CPI)"
+                value={inf}
+                min={1.0}
+                max={8.0}
+                step={0.1}
+                stepNudge={0.5}
+                quickPills={[
+                  { lbl: "2.0% (Low)", val: 2.0 },
+                  { lbl: "2.5% (Fed Baseline)", val: 2.5 },
+                  { lbl: "3.5% (Elevated)", val: 3.5 },
+                  { lbl: "5.0% (Stagflation)", val: 5.0 },
+                ]}
+                format={(v) => Number(v).toFixed(1) + "%/yr"}
+                onChange={(v) => {
+                  const val = Number(Number(v).toFixed(2));
+                  setInf(val);
+                  updateAssumption("inf", val);
+                }}
               />
             </div>
 
@@ -15671,6 +15892,7 @@ export default function AiRAForecaster() {
                   + "percentage applied in each year, so you can tell curve effects from your own target."
                 }
               />
+
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span className="tog-label">🏛 Tax</span>
@@ -15681,6 +15903,7 @@ export default function AiRAForecaster() {
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON (default):</strong> Full tax model applied. The same calculation drives the Monte Carlo, the Stress Test, and the year-by-year table — no pivot reads differently.</p>
                     <p style={{ margin:0 }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF:</strong> Pure pre-tax view — <em>all</em> tax (federal, state, IRMAA, Roth-conversion cost) is zeroed everywhere. Useful for sanity-checking portfolio dynamics without tax noise, but it overstates how long your money lasts.</p>
                   </InfoModal>
+
                 </div>
                 <div
                   className="tog"
@@ -15964,7 +16187,7 @@ export default function AiRAForecaster() {
                         rmdAge={rmdAge}
                         inf={inf}
                         useReal={real}
-                        title={`Portfolio fan · age ${endAge} · ${MC_PATHS_LABEL} paths`}
+                        title={`Forecast Portfolio · Retirement Age ${endAge} · ${MC_PATHS_LABEL} Scenarios`}
                         checkpoints={assumptions.checkpoints}
                         earlyRetireTarget={assumptions.earlyRetireTarget}
                         dob={assumptions.dob}
