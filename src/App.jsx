@@ -211,7 +211,7 @@ const AGE_LIMITS = {
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
 const APP_VERSION = "1.2.115";
-export const BUILD_TAG = "[main] v1.2.115 - Changes to create new Sensitivity Sliders and output in realtiome. Changes made and confirmed with Gemini.
+export const BUILD_TAG = "[main] v1.2.115 - Changes to create new Sensitivity Sliders and output in realtiome. Changes made and confirmed with Gemini."
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
