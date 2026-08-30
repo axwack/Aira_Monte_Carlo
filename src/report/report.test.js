@@ -207,5 +207,29 @@ describeReport("PrintReport", () => {
       );
       expect(html).toMatch(/Close/);
     });
+
+    // REGRESSION (v1.2.115): print produced a completely blank page.
+    // PRINT_CSS hides the rest of the SPA with `body * { display: none }`, but
+    // `body *` also matches #root — the overlay's own ancestor — and
+    // `display:revert` on a descendant cannot resurrect a subtree whose
+    // ancestor is display:none. The stylesheet hid the report it was trying to
+    // reveal. Verified against real Chrome: without the restore below the
+    // printed PDF is 1 empty page; with it, the full report paginates.
+    //
+    // Asserted on the stylesheet text (not the DOM) deliberately — jsdom does
+    // not evaluate @media print, so the rendered markup cannot show this. The
+    // ordering assertion is the part that matters: the restore MUST come after
+    // the blanket hide or the cascade drops it again.
+    test("print CSS restores the overlay's ancestor chain after hiding the app", () => {
+      const html = renderToStaticMarkup(
+        <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={false} />
+      );
+      const hideAt    = html.indexOf("body * { display: none !important; }");
+      const rootAt    = html.indexOf("#root { display: revert !important; }");
+      const hasAt     = html.indexOf(":has(.aira-print-overlay) { display: revert !important; }");
+      expect(hideAt).toBeGreaterThan(-1);
+      expect(rootAt).toBeGreaterThan(hideAt);
+      expect(hasAt).toBeGreaterThan(hideAt);
+    });
   });
 });

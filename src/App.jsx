@@ -210,8 +210,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.115";
-export const BUILD_TAG = "[main] v1.2.115 - Changes to create new Sensitivity Sliders and output in realtiome. Changes made and confirmed with Gemini."
+const APP_VERSION = "1.2.116";
+export const BUILD_TAG = "[main] v1.2.116 - PRINT REPORT PRINTED A BLANK PAGE (user-reported, reproduced in production). The paywall was not the cause; the report renders fine on screen. The bug was the @media print block in src/report/PrintReport.jsx, which hides the rest of the SPA with body-star display:none and then re-shows the report with display:revert on .aira-print-overlay / .pr-report-wrap / .print-report. But body-star matches EVERY descendant of body, and that includes #root - the overlay is a SIBLING of .app inside #root, because App.jsx returns a fragment. display:none on an ancestor removes the whole subtree from layout, and display:revert on a descendant CANNOT bring it back, so the rule hid the very report it was written to reveal - every browser, every time. The in-code comment claimed it restored \"this overlay's own known ancestor chain\" but never listed a single ancestor. FIX: restore that chain explicitly, ABOVE the overlay rule - #root plus :has(.aira-print-overlay) so a future provider wrapper at any depth cannot re-break it, #root being the fallback where :has() is unsupported. VERIFIED IN REAL CHROME, not by reading: the same DOM chain printed headless is 1 empty page / 1,047 bytes before and 2 pages / 56,123 bytes after, with a 2,400px app body still correctly excluded. ALSO FIXED: BUILD_TIME was referenced in the startup console.log but its declaration was gone as of 11d900f, an undeclared identifier at module scope - restored below.";
+export const BUILD_TIME = "2026-08-30T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console

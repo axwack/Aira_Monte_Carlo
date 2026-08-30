@@ -2166,7 +2166,10 @@ describe("MCBandTable 'What do these numbers mean?' explainer", () => {
   test("explainer panel condenses Still Funded / 10th percentile pairing guidance and links back to the About page", () => {
     expect(SRC).toMatch(/Still Funded<\/strong> is the share of simulated retirement/);
     expect(SRC).toMatch(/10th percentile/);
-    expect(SRC).toMatch(/About → Reading the Charts → "What does Still Funded % actually mean\?"/);
+    // The tab this points at was renamed About -> "❓ Help"; the pointer prose in
+    // App.jsx followed, this assertion did not. Matching on "Help → ..." rather than the
+    // full label keeps the cross-reference asserted without re-breaking on the emoji.
+    expect(SRC).toMatch(/Help → Reading the Charts → "What does Still Funded % actually mean\?"/);
   });
 });
 
