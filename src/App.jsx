@@ -210,9 +210,8 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.114";
-export const BUILD_TAG = "[main] v1.2.114 - REAL DOLLARS: the numbers were right, the LABEL was wrong. v1.2.113 flagged deflate() discounting from retirement age rather than from today as a possible bug needing a product decision. Vincent made the call: start from the retirement date. People plan from the day they stop working; the years between now and retirement are a forecast of how big the pile gets, not a claim about what a dollar buys along the way. VERIFIED AGAINST THE ENGINE and the call is not just defensible, it is the only self-consistent option: in runMC the spend figure the user types is consumed AS-IS in retirement year one (`y === 0` uses p.sp unchanged) and is never inflated forward from today. So spending and balances already share one yardstick - the first retirement year. Deflating to today would have put the balances on a different basis than the spending they are measured against, which is the WRONG fix. NO MATH CHANGED. The single defect was the words \"today's dollars\", which promised a basis the arithmetic does not use, at three display sites (fan chart title, age-by-age band table header, and the median-final-balance card added in v1.2.113). All three now call one shared dollarBasisLabel(useReal, basisAge) helper that renders \"age-63 dollars\" (or \"retirement-year dollars\" when the age is unavailable), and the basis age is READ FROM pcts[0].age - the actual row deflate() divides by 1 - so the label is derived from the arithmetic and cannot drift away from it again. Self-correcting for an already-retired user, whose effRetireAge is clamped to currentAge, making age-N dollars genuinely today's dollars. PRIOR v1.2.113 - real-dollar toggle was not wired into MCTab at all (summary cards read nominal mc.term.* while the chart below them deflated), and the SUCCESS RATE card lost its tint/border because `${color}44` hex-alpha concatenation produces invalid CSS once the colour is a design token; fixed at all 17 sites via withAlpha(). Full write-up REQUIREMENTS §38.";
-export const BUILD_TIME = "2026-08-23T05:00:00Z";
+const APP_VERSION = "1.2.115";
+export const BUILD_TAG = "[main] v1.2.115 - Changes to create new Sensitivity Sliders and output in realtiome. Changes made and confirmed with Gemini.
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -3976,15 +3975,14 @@ function Slider({ label, value, min, max, step, stepNudge, format, onChange, qui
     onChange(next);
   }, [value, max, nudge, onChange]);
 
-  const [draft, setDraft] = useState(null);
+const [draft, setDraft] = useState(null);
   const commitDraft = useCallback(() => {
-    setDraft((d) => {
-      if (d === null) return null;
-      const n = parseMoneyInput(d, min); // "$1,250,000", "1.25M", spaces
+    if (draft !== null) {
+      const n = parseMoneyInput(draft, min); // "$1,250,000", "1.25M", spaces
       if (n !== null) onChange(n);
-      return null;
-    });
-  }, [min, onChange]);
+      setDraft(null);
+    }
+  }, [draft, min, onChange]);
 
   const handleClick = useCallback(
     (e) => {
@@ -12712,6 +12710,11 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
         {/* Moved here from Personal Profile: it's a return assumption, so it
             belongs with the other return/market assumptions. */}
+
+        <ARow label="Inflation (CPI)" desc="Annual inflation rate used for spending indexing, Monte Carlo real-dollar deflation, and Social Security COLA adjustments.">
+          <ANumInput value={values.inf ?? 2.5} onSet={(v) => onChange("inf", v)} min={0} max={15} step={0.1} suffix="%" />
+        </ARow>
+
         <ARow label="Cash return" desc="Annual return on cash/savings (HYSA, SGOV, money market). Drives the cash bucket in the Monte Carlo AND the Withdrawal Plan tab.">
           <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={8} step={0.1} suffix="%" />
         </ARow>
@@ -15018,15 +15021,37 @@ export default function AiRAForecaster() {
     [assumptions.mortBalance, assumptions.mortRate, assumptions.mortStart, assumptions.mortTerm, assumptions.mortExtra]
   );
 
-  const mortgagePayoffYear = mortgageSched.payoffYr;
+const mortgagePayoffYear = mortgageSched.payoffYr;
 
+  const runSimulation = useCallback(() => {
+    setRunning(true);
+    setStale(false);
+    setTimeout(() => {
+      // Single horizon: every simulation is graded to the profile's own plan age
+      // (params.endAge). No hardcoded reference ages. A shorter runway with the same
+      // funds correctly scores HIGHER, and the stress test shares the same horizon.
+      const planAge = params.endAge || 90;
+      const rEnd_ = runMC(params, planAge, MC_PATHS, 43, true);
+      const str = runStress(params, planAge, STRESS_PATHS, 99);
+      setMc(rEnd_);
+      setStress(str);
+      setRunning(false);
+    }, 40);
+  }, [params]);
+
+  // Auto-run simulation with debouncing when params change
   useEffect(() => {
     if (isFirst.current) {
       isFirst.current = false;
+      runSimulation();
       return;
     }
-    if (mc) setStale(true);
-  }, [params]);
+    setStale(true);
+    const timer = setTimeout(() => {
+      runSimulation();
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [params, runSimulation]);
 
   // Year-end deadline prompt. Reads the BROWSER clock (this app has no server), so
   // a PC with a wrong system date sees it at the wrong time — accepted, versus
@@ -15073,32 +15098,29 @@ export default function AiRAForecaster() {
     return isYearEndWindow() && !yearEndAcked(new Date().getFullYear());
   });
 
-  const swr = computeInitialWR(params).initWRpct.toFixed(1);
+ const swr = computeInitialWR(params).initWRpct.toFixed(1);
+ const analogue = mc ? getAnalogue(mc.rate) : null;
 
-  const runSimulation = useCallback(() => {
-    setRunning(true);
-    setStale(false);
-    setTimeout(() => {
-      // Single horizon: every simulation is graded to the profile's own plan age
-      // (params.endAge). No hardcoded reference ages. A shorter runway with the same
-      // funds correctly scores HIGHER, and the stress test shares the same horizon.
-      const planAge = params.endAge || 90;
-      const rEnd_ = runMC(params, planAge, MC_PATHS, 43, true);
-      const str = runStress(params, planAge, STRESS_PATHS, 99);
-      setMc(rEnd_);
-      setStress(str);
-      setRunning(false);
-    }, 40);
-  }, [params]);
+  // Auto-run simulation with debouncing when params change
+  useEffect(() => {
+    if (isFirst.current) {
+      isFirst.current = false;
+      runSimulation();
+      return;
+    }
+    setStale(true);
+    const timer = setTimeout(() => {
+      runSimulation();
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [params, runSimulation]);
 
-  const analogue = mc ? getAnalogue(mc.rate) : null;
 
   const TABS = [
     ["networth", "📊 Net Worth"],
     ["montecarlo", "🎲 Forecast"],
     ["scenarios", "📋 Analysis"],
     ["actionplan", "✅ Action Plan"],
-    // ["airaai", "🤖 Aira AI"],  // DO NOT RE-ADD — AiraAITab is being integrated INSIDE ActionPlanTab on a separate branch (per user: no tab sprawl).
     ["assumptions", "💵 Profile"],
   ];
 
@@ -15809,6 +15831,53 @@ export default function AiRAForecaster() {
                   setInf(val);
                   updateAssumption("inf", val);
                 }}
+              />
+              <Slider
+                label="Phase 1 Stocks (Pre-Retire)"
+                value={assumptions.preRetireEq ?? 91}
+                min={20}
+                max={100}
+                step={5}
+                stepNudge={5}
+                quickPills={[
+                  { lbl: "60/40", val: 60 },
+                  { lbl: "80/20", val: 80 },
+                  { lbl: "90/10", val: 90 },
+                  { lbl: "100%", val: 100 },
+                ]}
+                format={(v) => `${v}% stocks (${expectedReturn(v).toFixed(1)}% μ)`}
+                onChange={(v) => updateAssumption("preRetireEq", v)}
+              />
+              <Slider
+                label="Phase 2 Stocks (Post-Retire)"
+                value={assumptions.postRetireEq ?? 70}
+                min={20}
+                max={100}
+                step={5}
+                stepNudge={5}
+                quickPills={[
+                  { lbl: "40/60", val: 40 },
+                  { lbl: "60/40", val: 60 },
+                  { lbl: "70/30", val: 70 },
+                  { lbl: "80/20", val: 80 },
+                ]}
+                format={(v) => `${v}% stocks (${expectedReturn(v).toFixed(1)}% μ)`}
+                onChange={(v) => updateAssumption("postRetireEq", v)}
+              />
+              <Slider
+                label="Social Security COLA"
+                value={assumptions.ssCola ?? 2.4}
+                min={0.0}
+                max={6.0}
+                step={0.1}
+                stepNudge={0.5}
+                quickPills={[
+                  { lbl: "0% (Frozen)", val: 0.0 },
+                  { lbl: "2.4% (Historical)", val: 2.4 },
+                  { lbl: "3.5% (High)", val: 3.5 },
+                ]}
+                format={(v) => Number(v).toFixed(1) + "%/yr"}
+                onChange={(v) => updateAssumption("ssCola", Number(Number(v).toFixed(2)))}
               />
             </div>
 
