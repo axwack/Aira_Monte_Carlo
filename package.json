@@ -26,7 +26,9 @@
     "test": "react-scripts test --env=jsdom",
     "eject": "react-scripts eject",
     "deploy": "node scripts/deploy.mjs",
-    "deploy:unsafe": "npm run build && wrangler pages deploy ./build --project-name=aira-monte-carlo --branch=main"
+    "deploy:unsafe": "npm run build && wrangler pages deploy ./build --project-name=aira-monte-carlo --branch=main",
+    "audit:ui": "eslint src/ --ext .jsx,.js",
+    "audit:math": "react-scripts test --watchAll=false --env=jsdom --coverage"
   },
   "browserslist": [
     ">0.2%",
