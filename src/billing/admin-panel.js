@@ -167,6 +167,54 @@ const S = {
   },
 };
 
+// ── Timestamps ────────────────────────────────────────────────────────
+// Every timestamp in D1 is an INTEGER unixepoch (db/schema.sql). Dumped straight
+// into JSON that renders as a bare 10-digit number, which no one can read — a
+// dispute trace had to be run from the wrangler CLI with datetime() wrapped round
+// every column because the panel's own output was useless. Format at the point of
+// display, once, here.
+//
+// Local time, not UTC: this is an operator tool and the operator is comparing
+// these rows against a Stripe dashboard and a customer's email, both of which
+// speak local time. The zone is named next to the value so a screenshot pasted
+// into a dispute response is unambiguous about which clock it is on.
+const ADMIN_TZ = (() => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "local"; }
+  catch { return "local"; }
+})();
+
+function fmtEpoch(sec) {
+  const n = Number(sec);
+  if (sec == null || !Number.isFinite(n)) return "—";
+  const d = new Date(n * 1000);
+  if (Number.isNaN(d.getTime())) return "—";
+  try {
+    return d.toLocaleString(undefined, {
+      year: "numeric", month: "short", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+  } catch {
+    return d.toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  }
+}
+
+// The question an operator actually asks of a support timestamp is "how long
+// ago", not "what date" — shown alongside the absolute value, never instead of it.
+function fmtAgo(sec) {
+  const n = Number(sec);
+  if (sec == null || !Number.isFinite(n)) return "";
+  const secsAgo = Math.floor(Date.now() / 1000) - n;
+  if (secsAgo < 0)     return "in the future";
+  if (secsAgo < 60)    return "just now";
+  const mins = Math.floor(secsAgo / 60);
+  if (mins < 60)       return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)        return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 60)       return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function ResultBox({ data }) {
@@ -402,18 +450,107 @@ function RestoreLinkSection({ secret, disabled }) {
 
 // ── Section: Inspect ──────────────────────────────────────────────────────────
 
+function CustomerCard({ customer }) {
+  const disputed  = customer.status === "disputed";
+  const statusCol = disputed ? "#fca5a5" : customer.status === "active" ? "#6ee7b7" : "#fbbf24";
+  const rows = [
+    ["Customer",  customer.stripe_customer_id],
+    ["Email",     customer.email || "—"],
+    ["Credits",   Number(customer.credits ?? 0).toLocaleString()],
+    ["Status",    customer.status],
+    ["Created",   `${fmtEpoch(customer.created_at)}  ·  ${fmtAgo(customer.created_at)}`],
+    ["Last seen", `${fmtEpoch(customer.updated_at)}  ·  ${fmtAgo(customer.updated_at)}`],
+  ];
+  return (
+    <div style={{
+      marginTop: 8, padding: "8px 10px", borderRadius: 6, fontSize: 11,
+      background: "rgba(255,255,255,0.03)",
+      border: `1px solid ${disputed ? "rgba(248,113,113,0.35)" : "rgba(255,255,255,0.10)"}`,
+    }}>
+      {rows.map(([k, v]) => (
+        <div key={k} style={{ display: "flex", gap: 8, marginBottom: 2 }}>
+          <div style={{ width: 74, flexShrink: 0, color: "#64748b" }}>{k}</div>
+          <div style={{
+            flex: 1, wordBreak: "break-all",
+            color: k === "Status" ? statusCol : "#e2e8f0",
+            fontWeight: k === "Status" || k === "Credits" ? 700 : 400,
+          }}>{v}</div>
+        </div>
+      ))}
+      <div style={{ marginTop: 4, color: "#475569", fontSize: 10 }}>
+        Times shown in {ADMIN_TZ}.
+      </div>
+    </div>
+  );
+}
+
+function TxnTable({ txns }) {
+  if (!txns?.length) {
+    return <div style={{ marginTop: 8, fontSize: 11, color: "#64748b" }}>No transactions.</div>;
+  }
+  const cell = { padding: "3px 6px", borderBottom: "1px solid rgba(255,255,255,0.05)" };
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ ...S.label, marginBottom: 4 }}>
+        Ledger — newest first ({txns.length} shown, max 20)
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10.5 }}>
+        <thead>
+          <tr style={{ color: "#64748b", textAlign: "left" }}>
+            <th style={cell}>When</th>
+            <th style={cell}>Type</th>
+            <th style={{ ...cell, textAlign: "right" }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {txns.map(t => (
+            <tr key={t.id}>
+              <td style={{ ...cell, color: "#94a3b8", whiteSpace: "nowrap" }}>
+                {fmtEpoch(t.created_at)}
+                <div style={{ color: "#475569", fontSize: 9.5 }}>{fmtAgo(t.created_at)}</div>
+              </td>
+              <td style={{ ...cell, color: "#cbd5e1" }}>
+                {t.type}
+                {t.stripe_session_id && (
+                  <div style={{ color: "#475569", fontSize: 9, wordBreak: "break-all" }}>
+                    {t.stripe_session_id}
+                  </div>
+                )}
+              </td>
+              <td style={{
+                ...cell, textAlign: "right", fontWeight: 700, whiteSpace: "nowrap",
+                color: Number(t.amount) > 0 ? "#6ee7b7" : Number(t.amount) < 0 ? "#fca5a5" : "#64748b",
+              }}>
+                {Number(t.amount) > 0 ? "+" : ""}{Number(t.amount ?? 0).toLocaleString()}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function InspectSection({ secret, disabled }) {
-  const [email, setEmail]   = useState(() => loadAdminCfg().testEmail || "");
+  const [who, setWho]       = useState(() => loadAdminCfg().testEmail || "");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const handleEmail = v => { setEmail(v); saveAdminCfg({ testEmail: v }); };
+  const handleWho = v => { setWho(v); saveAdminCfg({ testEmail: v }); };
 
   const run = async () => {
     setLoading(true); setResult(null);
-    const r = await adminCall(secret, "inspect", { email });
+    // The endpoint has always accepted either key, but the panel only ever sent
+    // `email` — so a Stripe customer id, which is what a dispute notification
+    // actually hands you, could not be looked up here at all. Route on the
+    // `cus_` prefix Stripe guarantees.
+    const id = who.trim();
+    const r = await adminCall(secret, "inspect",
+      id.startsWith("cus_") ? { customerId: id } : { email: id });
     setResult(r); setLoading(false);
   };
+
+  const found = result?.ok && result.found && result.customer;
 
   return (
     <div style={S.section}>
@@ -421,12 +558,26 @@ function InspectSection({ secret, disabled }) {
         Inspect D1 Customer
       </div>
       <div style={S.row}>
-        <Field label="Email" value={email} onChange={handleEmail} placeholder="test@example.com" />
-        <button onClick={run} disabled={disabled || loading || !email} style={S.btn("#475569")}>
+        <Field
+          label="Email or customer ID"
+          value={who}
+          onChange={handleWho}
+          placeholder="test@example.com or cus_…"
+        />
+        <button onClick={run} disabled={disabled || loading || !who.trim()} style={S.btn("#475569")}>
           {loading ? "…" : "Inspect"}
         </button>
       </div>
-      <ResultBox data={result} />
+      {found && (
+        <>
+          <CustomerCard customer={result.customer} />
+          <TxnTable txns={result.transactions} />
+        </>
+      )}
+      {/* Not-found and error paths keep the raw view — that is where the
+          unformatted payload (candidates, D1 errors, the id that missed) is
+          the thing you need to read. */}
+      {result && !found && <ResultBox data={result} />}
     </div>
   );
 }
