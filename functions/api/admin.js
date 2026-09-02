@@ -65,6 +65,14 @@ function fakeSessionId() {
   return `cs_admin_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// D1 stores timestamps as unixepoch() seconds — unreadable in a raw JSON dump.
+// Adds a human `_display` field alongside each raw column rather than replacing
+// it, so anything else that parses these numbers is unaffected.
+function humanDate(epochSeconds) {
+  if (epochSeconds == null) return null;
+  return new Date(epochSeconds * 1000).toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
+}
+
 export function onRequestOptions() {
   return handleOptions();
 }
@@ -355,10 +363,15 @@ export async function onRequestPost({ request, env, waitUntil }) {
         ).bind(customerId).first();
         if (!customer) return json({ ok: true, found: false, customerId });
 
+        customer.created_at_display = humanDate(customer.created_at);
+        customer.updated_at_display = humanDate(customer.updated_at);
+
         const txns = await env.DB.prepare(
           "SELECT id, type, amount, stripe_session_id, created_at FROM credit_transactions WHERE customer_id = ? ORDER BY created_at DESC LIMIT 20"
         ).bind(customerId).all();
-        return json({ ok: true, found: true, customer, transactions: txns.results });
+        const transactions = txns.results.map(t => ({ ...t, created_at_display: humanDate(t.created_at) }));
+
+        return json({ ok: true, found: true, customer, transactions });
       } catch (e) {
         return json({ ok: false, error: "D1 error: " + e.message }, 500);
       }

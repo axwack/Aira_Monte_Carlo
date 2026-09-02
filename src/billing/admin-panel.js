@@ -403,15 +403,18 @@ function RestoreLinkSection({ secret, disabled }) {
 // ── Section: Inspect ──────────────────────────────────────────────────────────
 
 function InspectSection({ secret, disabled }) {
-  const [email, setEmail]   = useState(() => loadAdminCfg().testEmail || "");
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [email, setEmail]         = useState(() => loadAdminCfg().testEmail || "");
+  const [customerId, setCustomerId] = useState("");
+  const [result, setResult]       = useState(null);
+  const [loading, setLoading]     = useState(false);
 
   const handleEmail = v => { setEmail(v); saveAdminCfg({ testEmail: v }); };
 
+  // customerId takes priority when both are filled in — it's the exact match,
+  // email can be ambiguous (see issue-restore-link's 409 for shared emails).
   const run = async () => {
     setLoading(true); setResult(null);
-    const r = await adminCall(secret, "inspect", { email });
+    const r = await adminCall(secret, "inspect", customerId ? { customerId } : { email });
     setResult(r); setLoading(false);
   };
 
@@ -422,10 +425,16 @@ function InspectSection({ secret, disabled }) {
       </div>
       <div style={S.row}>
         <Field label="Email" value={email} onChange={handleEmail} placeholder="test@example.com" />
-        <button onClick={run} disabled={disabled || loading || !email} style={S.btn("#475569")}>
+        <Field label="or Customer ID" value={customerId} onChange={setCustomerId} placeholder="cus_…" />
+        <button onClick={run} disabled={disabled || loading || (!email && !customerId)} style={S.btn("#475569")}>
           {loading ? "…" : "Inspect"}
         </button>
       </div>
+      {result?.ok && result.found && (
+        <div style={{ fontSize: 10, color: "#64748b", marginTop: 4, marginBottom: 4 }}>
+          Created {result.customer.created_at_display} · Updated {result.customer.updated_at_display} · Status: {result.customer.status}
+        </div>
+      )}
       <ResultBox data={result} />
     </div>
   );
