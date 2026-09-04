@@ -524,6 +524,25 @@ describe("runMC — Monte Carlo integration", () => {
     expect(term.p75).toBeLessThanOrEqual(term.p90);
   });
 
+  test("terminal percentiles match pcts' final-year row even when paths exhaust early", () => {
+    // Regression: a path that runs out of money `break`s out of the retirement
+    // loop before that year's `path.push`, so its `path` array used to be
+    // shorter than a survivor's. `term` (the Forecast tab's headline number)
+    // read each path's LAST recorded entry — a stale mid-run balance for an
+    // exhausted path, not $0 at the terminal age — while `pcts` (the Net Worth
+    // tab chart) correctly zeroed it via `?? 0`. A high failure rate exercises
+    // enough exhausted paths that the two diverge sharply if this regresses.
+    const r = runMC({ ...BASE, port: 100_000, sp: 200_000, accounts: [
+      { id: "t1", category: "pretax", name: "401k", balance: 100_000 },
+    ]}, 90, 500, 42, true);
+    const lastRow = r.pcts[r.pcts.length - 1];
+    expect(r.term.p10).toBe(lastRow.p10);
+    expect(r.term.p25).toBe(lastRow.p25);
+    expect(r.term.p50).toBe(lastRow.p50);
+    expect(r.term.p75).toBe(lastRow.p75);
+    expect(r.term.p90).toBe(lastRow.p90);
+  });
+
   test("monotonicity: higher spending → lower success rate", () => {
     const conservative = runMC({ ...BASE, sp: 60_000  }, 90, 1000, 42, true);
     const aggressive   = runMC({ ...BASE, sp: 120_000 }, 90, 1000, 42, true);

@@ -1955,6 +1955,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         exhaustAge = age;
       }
     }
+    // The shortfall branch above `break`s out of this loop before its
+    // `path.push`, so an exhausted path's array is shorter than a survivor's —
+    // its LAST entry is a stale mid-run balance, not $0 at the terminal age.
+    // `pcts` (below) already treats a missing entry as `?? 0`; pad here so
+    // `term`'s per-path-last-value quantile (mc.term.p50, the Forecast tab
+    // headline) counts the same $0 for that path, matching `pcts`'s terminal
+    // row (the Net Worth tab chart) instead of diverging from it.
+    while (path.length <= retYrs) path.push(0);
     results.push({ path, survived, exhaustAge, portAtRetire, bracketOverrideYears, rothReserveBrokenYears });
   }
 
@@ -10254,8 +10262,15 @@ function mcMedianAtAge(pcts, age, retireAge) {
   return row && Number.isFinite(row.p50) ? row.p50 : null;
 }
 
-function NetWorthTab({ p, mc, inf }) {
+function NetWorthTab({ p, mc, inf, real }) {
   const [showRE, setShowRE] = useState(false);
+  // The Forecast tab's fan chart runs `mc.pcts` through this same `deflate()`
+  // when the Real $ toggle is on (see FanChart/MCBandTable) — this tab never
+  // received `real` at all, so it silently kept showing future dollars no
+  // matter the toggle. Same underlying median, two different dollar bases,
+  // neither labelled — a user comparing the two tabs' "median at age X" saw
+  // numbers ~2x apart and reasonably assumed one of them was wrong.
+  const dPcts = useMemo(() => (mc ? deflate(mc.pcts, inf, real) : []), [mc, inf, real]);
   const props    = p.properties || [];
   const reTotal   = props.reduce((s, pr) => s + (pr.value||0), 0);
   const reMortgs  = props.reduce((s, pr) => s + (pr.mortgage||0), 0);
@@ -10332,7 +10347,7 @@ function NetWorthTab({ p, mc, inf }) {
         // Positional indexing also silently mis-aligned whenever `mc` was stale
         // (computed at a different retireAge than the one being charted); the
         // rows carry their own `age`, so use it.
-        port = mcMedianAtAge(mc.pcts, age, p.retireAge);
+        port = mcMedianAtAge(dPcts, age, p.retireAge);
       }
 
       const mortEntry = mortSched.years.find((y) => y.yr === yr);
@@ -10352,14 +10367,16 @@ function NetWorthTab({ p, mc, inf }) {
         "Net Worth": port == null ? null : port + re - mortBal,
       };
     });
-  }, [p, mc, showRE, mortSched, reTotal]);
+  }, [p, mc, dPcts, showRE, mortSched, reTotal]);
 
   // Peak liquid portfolio (median). Both of these read the row's OWN age rather
   // than deriving it from `retireAge + index`, and both ignore non-finite p50s —
-  // one NaN used to turn the headline figure into NaN via Math.max.
+  // one NaN used to turn the headline figure into NaN via Math.max. Reads
+  // `dPcts` (same basis as the chart above), not raw `mc.pcts` — otherwise this
+  // card and "Net worth at age X" below it would show two different bases.
   const finitePcts = useMemo(
-    () => (mc ? mc.pcts.filter((d) => Number.isFinite(d.p50)) : []),
-    [mc]
+    () => dPcts.filter((d) => Number.isFinite(d.p50)),
+    [dPcts]
   );
   const peakRow = finitePcts.reduce(
     (best, d) => (best == null || d.p50 > best.p50 ? d : best),
@@ -10396,7 +10413,7 @@ function NetWorthTab({ p, mc, inf }) {
             {fmtDollar(finalNW)}
           </div>
           <div className="ms">
-            {showRE ? "Incl." : "Excl."} real estate
+            {showRE ? "Incl." : "Excl."} real estate · {dollarBasisLabel(real)}
             {dataStopsEarly && (
               <span style={{ color: "var(--accent-gold)" }}> · projection stops here, not {planAge}</span>
             )}
@@ -10477,7 +10494,7 @@ function NetWorthTab({ p, mc, inf }) {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div className="ct" style={{ margin: 0 }}>
-              {showRE ? "Net Worth Projection" : "Portfolio Projection (ex. Real Estate)"} · 5‑year Intervals to Age {lastDataAge ?? planAge} · Median MC Path
+              {showRE ? "Net Worth Projection" : "Portfolio Projection (ex. Real Estate)"} · 5‑year Intervals to Age {lastDataAge ?? planAge} · Median MC Path · {dollarBasisLabel(real)}
             </div>
             <span
               style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: 12 }}
@@ -16340,7 +16357,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     }}
                   />
                 )}
-                {activeTab === "networth" && <NetWorthTab p={params} mc={mc} inf={inf} />}
+                {activeTab === "networth" && <NetWorthTab p={params} mc={mc} inf={inf} real={real} />}
                 {activeTab === "actionplan" && (
                   <ActionPlanTab
                     params={params}
