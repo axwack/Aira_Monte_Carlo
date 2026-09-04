@@ -15883,58 +15883,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
 
             <div className="sb-card">
-              <div className="sb-title">Retirement</div>
-              <Slider
-                label="Retire age"
-                value={retAge}
-                min={AGE_LIMITS.retire.min}
-                max={AGE_LIMITS.retire.max}
-                step={1}
-                format={(v) => "Age " + v}
-                onChange={setRetAge}
-              />
-              <Slider
-                label="Plan to age"
-                value={endAge}
-                min={AGE_LIMITS.end.min}
-                max={AGE_LIMITS.end.max}
-                step={1}
-                format={(v) => "Age " + v}
-                onChange={setEndAge}
-              />
-              <Slider
-                label="US spend"
-                value={sp}
-                min={0}
-                max={300000}
-                step={1000}
-                format={(v) => fmtDollar(v) + "/yr"}
-                onChange={setSp}
-              />
-              {assumptions.twoHousehold && (
-                <Slider
-                  label="Out-of-country"
-                  value={assumptions.spOutOfCountry ?? 0}
-                  min={0}
-                  max={150000}
-                  step={1000}
-                  format={(v) => fmtDollar(v) + "/yr"}
-                  onChange={(v) => updateAssumption("spOutOfCountry", v)}
-                />
-              )}
-              <Slider
-                key={`ssAge-${assumptions.ssAge}`}
-                label="SS start age"
-                value={assumptions.ssAge}
-                min={AGE_LIMITS.ss.min}
-                max={AGE_LIMITS.ss.max}
-                step={1}
-                format={(v) => "Age " + v}
-                onChange={(v) => updateAssumption("ssAge", v)}
-              />
-            </div>
-
-            <div className="sb-card">
               <div className="sb-title">Options</div>
               {/* §28.1 OPEN 3 (Gary): "there are a LOT of tabs with sub tabs and
                   I'll be darned if I can find that one." The control was findable
