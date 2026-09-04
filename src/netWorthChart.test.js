@@ -21,7 +21,7 @@
  *     every remaining age — fabricated years the summary card then quoted.
  */
 
-import { mcMedianAtAge } from "./App";
+import { mcMedianAtAge, selectPortfolioAtAge, deflate } from "./App";
 
 // Shape runMC actually returns: each row carries its own `age`.
 const PCTS = [
@@ -95,5 +95,64 @@ describe("mcMedianAtAge — legacy rows with no age field", () => {
   test("but still refuses to clamp past the end", () => {
     expect(mcMedianAtAge(LEGACY, 57, 54)).toBeNull();
     expect(mcMedianAtAge(LEGACY, 90, 54)).toBeNull();
+  });
+});
+
+/**
+ * selectPortfolioAtAge — the ONE place any UI is supposed to read a
+ * simulated portfolio value from an mc run (see its doc comment in App.jsx
+ * and src/noRawMcAccess.test.js, which fails the build if a new call site
+ * bypasses it).
+ *
+ * THE BUG THIS PINS
+ * -----------------
+ * Reported 2026-09-04: the same run, same age, showed two different median
+ * values in two tabs (~1.9x apart) — the Net Worth tab never deflated
+ * `mc.pcts` when "Today's Dollars" was on, while the Forecast tab's fan chart
+ * did. A third call site (the Checkpoints table) read `mc.pcts` with `|| 0`,
+ * a separate bug (missing data silently becomes $0) that selecting through
+ * this function also closes off.
+ */
+describe("selectPortfolioAtAge — basis correctness", () => {
+  const mc = { pcts: PCTS }; // ages 54–56, p50 2.0M / 2.1M / 2.25M
+
+  test("real: false (default) returns the raw nominal figure", () => {
+    expect(selectPortfolioAtAge(mc, 55)).toBe(2_100_000);
+    expect(selectPortfolioAtAge(mc, 55, { real: false })).toBe(2_100_000);
+  });
+
+  test("real: true deflates by the SAME factor deflate() would apply directly", () => {
+    const inf = 2.5;
+    // Row 55 is index 1 in PCTS (row 0 = age 54 = retirement year), so it
+    // discounts by (1+inf/100)^1 — matching deflate()'s own row-position math.
+    const expected = deflate(PCTS, inf, true)[1].p50;
+    expect(selectPortfolioAtAge(mc, 55, { real: true, inf })).toBe(expected);
+    expect(selectPortfolioAtAge(mc, 55, { real: true, inf })).not.toBe(2_100_000);
+  });
+
+  test("real: true with inf: 0 is a no-op (0% inflation deflates to itself)", () => {
+    expect(selectPortfolioAtAge(mc, 55, { real: true, inf: 0 })).toBe(2_100_000);
+  });
+
+  test("missing data is null, never a silent $0 (the Checkpoints table's old `|| 0` bug)", () => {
+    expect(selectPortfolioAtAge(mc, 99)).toBeNull();
+    expect(selectPortfolioAtAge(mc, 99)).not.toBe(0);
+  });
+
+  test("no mc / no pcts returns null instead of throwing", () => {
+    expect(selectPortfolioAtAge(null, 55)).toBeNull();
+    expect(selectPortfolioAtAge(undefined, 55)).toBeNull();
+    expect(selectPortfolioAtAge({}, 55)).toBeNull();
+  });
+
+  test("pct lets a caller ask for a different percentile column", () => {
+    const row = { age: 54, p10: 900_000, p50: 2_000_000, p90: 4_000_000 };
+    expect(selectPortfolioAtAge({ pcts: [row] }, 54, { pct: "p10" })).toBe(900_000);
+    expect(selectPortfolioAtAge({ pcts: [row] }, 54, { pct: "p90" })).toBe(4_000_000);
+  });
+
+  test("legacy rows without `age` still fall back through retireAge, same as mcMedianAtAge", () => {
+    const legacyMc = { pcts: [{ p50: 2_000_000 }, { p50: 2_100_000 }, { p50: 2_250_000 }] };
+    expect(selectPortfolioAtAge(legacyMc, 56, { retireAge: 54 })).toBe(2_250_000);
   });
 });

@@ -9698,7 +9698,14 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                   // Shared helper — same string-compared month-day bug as the
                   // checkpoint dots in FanChart had.
                   const age = ageFromDob(dob, cp.date);
-                  const p50AtAge  = (age !== null && mc?.pcts) ? (mc.pcts.find(d => d.age === age)?.p50 || 0) : 0;
+                  // real: false, deliberately — `cp.value` is what the user's
+                  // portfolio actually held on a real calendar date (an actual
+                  // balance, not a forecast), so it is intrinsically a nominal
+                  // dollar figure. Deflating only the forecast side here would
+                  // compare it against a basis `cp.value` was never in.
+                  const p50AtAge  = age !== null
+                    ? (selectPortfolioAtAge(mc, age, { retireAge: effRetireAge, real: false }) ?? 0)
+                    : 0;
                   const delta     = p50AtAge > 0 ? cp.value - p50AtAge : null;
                   const status    = p50AtAge > 0 ? (delta > 0 ? "Ahead" : delta < 0 ? "Behind" : "On track") : "Pre‑retirement";
                   const deltaColor = delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "var(--text-secondary)";
@@ -10248,9 +10255,10 @@ function MortgageTab({ values, onChange }) {
  * @param {Array<{age?:number, p50:number}>} pcts  runMC's percentile rows
  * @param {number} age                             the age wanted
  * @param {number} retireAge                       fallback origin for legacy rows
+ * @param {"p10"|"p25"|"p50"|"p75"|"p90"} [pct]     which percentile column (default p50/median)
  * @returns {number|null}
  */
-function mcMedianAtAge(pcts, age, retireAge) {
+function mcMedianAtAge(pcts, age, retireAge, pct = "p50") {
   if (!Array.isArray(pcts) || pcts.length === 0) return null;
   let row = pcts.find((d) => d && d.age === age);
   if (!row && !Number.isFinite(pcts[0]?.age)) {
@@ -10259,17 +10267,51 @@ function mcMedianAtAge(pcts, age, retireAge) {
     const i = age - retireAge;
     row = i >= 0 && i < pcts.length ? pcts[i] : null;
   }
-  return row && Number.isFinite(row.p50) ? row.p50 : null;
+  return row && Number.isFinite(row[pct]) ? row[pct] : null;
+}
+
+/**
+ * THE single place any UI reads "the simulated portfolio value at age X" from
+ * an `mc` (runMC) result. Exists because three call sites each grew their own
+ * version of this lookup and quietly disagreed: `NetWorthTab` read `mc.pcts`
+ * without ever deflating it, `MCTab`'s hero card read `mc.term.p50` (a
+ * DIFFERENT aggregation — see the padding fix in runMC's retirement loop —
+ * that also never deflated), and the Checkpoints table read `mc.pcts` with
+ * `|| 0`, silently turning a genuinely-missing figure into a confident $0.
+ * Two users independently noticed a MEDIAN number that read ~2x too big or
+ * too small in one tab versus another, for the same age, same run.
+ *
+ * Route every new "show the forecasted portfolio value" UI through this
+ * instead of touching `mc.pcts` / `mc.term` directly — see
+ * `noRawMcAccess.test.js`, which fails the build if a new direct read shows
+ * up outside this file's short allow-list.
+ *
+ * @param {object} mc            runMC's result (or null/undefined — returns null)
+ * @param {number} age           the age wanted
+ * @param {object} [opts]
+ * @param {number}  opts.retireAge  fallback origin for legacy rows without `age`
+ * @param {boolean} [opts.real=false]  true = deflate to the retirement-year basis
+ *   ("Today's Dollars" — see deflate()'s own doc comment for why the anchor is
+ *   the retirement year, not today). Only meaningful with `opts.inf` set.
+ * @param {number}  [opts.inf=0]     inflation rate (%), used only when real=true
+ * @param {"p10"|"p25"|"p50"|"p75"|"p90"} [opts.pct="p50"]
+ * @returns {number|null}
+ */
+function selectPortfolioAtAge(mc, age, { retireAge, real = false, inf = 0, pct = "p50" } = {}) {
+  if (!mc?.pcts) return null;
+  const pcts = real ? deflate(mc.pcts, inf, true) : mc.pcts;
+  return mcMedianAtAge(pcts, age, retireAge, pct);
 }
 
 function NetWorthTab({ p, mc, inf, real }) {
   const [showRE, setShowRE] = useState(false);
-  // The Forecast tab's fan chart runs `mc.pcts` through this same `deflate()`
-  // when the Real $ toggle is on (see FanChart/MCBandTable) — this tab never
-  // received `real` at all, so it silently kept showing future dollars no
-  // matter the toggle. Same underlying median, two different dollar bases,
-  // neither labelled — a user comparing the two tabs' "median at age X" saw
-  // numbers ~2x apart and reasonably assumed one of them was wrong.
+  // The per-age chart line and "Net worth at age X" card go through
+  // selectPortfolioAtAge() below (the shared basis-aware lookup — see its
+  // doc comment). `dPcts` stays as a local, array-wide deflate() only because
+  // the peak-liquid scan below needs every row at once, which a single-age
+  // selector call can't give it; it uses the SAME `deflate()` primitive the
+  // selector uses internally, so the two can't drift out of basis with
+  // each other again.
   const dPcts = useMemo(() => (mc ? deflate(mc.pcts, inf, real) : []), [mc, inf, real]);
   const props    = p.properties || [];
   const reTotal   = props.reduce((s, pr) => s + (pr.value||0), 0);
@@ -10347,7 +10389,7 @@ function NetWorthTab({ p, mc, inf, real }) {
         // Positional indexing also silently mis-aligned whenever `mc` was stale
         // (computed at a different retireAge than the one being charted); the
         // rows carry their own `age`, so use it.
-        port = mcMedianAtAge(dPcts, age, p.retireAge);
+        port = selectPortfolioAtAge(mc, age, { retireAge: p.retireAge, real, inf });
       }
 
       const mortEntry = mortSched.years.find((y) => y.yr === yr);
@@ -16038,14 +16080,18 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         (runMC captures portAtRetire before the drawdown loop), so
                         showing it under "at age {endAge}" reported the wrong metric
                         entirely — the balance before a single withdrawal, labelled as
-                        the balance after a full retirement. `mc.term.p50` is the median
-                        of each path's LAST year, which is what this label claims.
-                        medR is still correct on the "Portfolio at Retirement" card.
-                        Figure is nominal (future dollars); the Real$/Nominal$ toggle
-                        does not reach this row yet, so it says so rather than implying
-                        today's purchasing power. */}
+                        the balance after a full retirement. medR is still correct on
+                        the "Portfolio at Retirement" card.
+                        Routed through selectPortfolioAtAge() at THIS label's own age
+                        (endAge) rather than reading mc.term.p50 straight off runMC —
+                        mc.term reflects the survivor-extended plan horizon when one
+                        is modelled (§30), which is not always endAge, so reading it
+                        directly could show a different age than the one printed right
+                        next to it. real:false is deliberate: this row states its own
+                        basis inline ("(future $)") rather than following the global
+                        toggle silently. */}
                     <span title="Median projected portfolio value left at your plan age, across all simulated paths. Shown in future (nominal) dollars — not adjusted to today's purchasing power.">
-                      <strong style={{ color: "var(--text-secondary)" }}>{mc ? fmtDollar(mc.term?.p50 ?? 0) : "—"}</strong> at age {endAge} <span style={{ fontSize: 12, opacity: 0.75 }}>(future $)</span>
+                      <strong style={{ color: "var(--text-secondary)" }}>{mc ? fmtDollar(selectPortfolioAtAge(mc, endAge, { retireAge: retAge, real: false }) ?? 0) : "—"}</strong> at age {endAge} <span style={{ fontSize: 12, opacity: 0.75 }}>(future $)</span>
                     </span>
                     {sep}
                     {/* This is params.sp — the spending target the USER typed — divided
@@ -16589,4 +16635,4 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, ANumInput, parseNumericEntry };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry };
