@@ -83,6 +83,7 @@ import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yea
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
 import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationNotice } from "./engine/withdrawalStrategies.js";
+import { dollarBasisLabel, deflate, mcMedianAtAge, selectPortfolioAtAge } from "./engine/mcSelectors.js";
 // One declaration of every figure's arithmetic, rendered here and enforced by
 // provenance.test.js. Never inline a formula string — it would drift from the test.
 import { formulaFor } from "./provenance.js";
@@ -2770,33 +2771,12 @@ function useCountdown(dday, startDate) {
   return cd;
 }
 
-// Real $ restates every figure in the purchasing power of the FIRST SIMULATED
-// RETIREMENT YEAR — not of today. deflate() discounts row i by (1+inf)^i and
-// row 0 IS retirement, so that is what the numbers have always meant.
-//
-// That is deliberate, and it matches the engine's own inputs: the spend figure
-// the user types is consumed as-is in retirement year one (runMC, `y === 0`) and
-// is never inflated forward from today. Balances and spending therefore share
-// one yardstick, and the pre-retirement years stay what they are — a forecast of
-// how big the pile gets, not a claim about what a dollar buys along the way.
-//
-// The only thing ever wrong here was the label "today's dollars", which promised
-// a basis the math does not use. Derived from pcts[0].age so the words can never
-// drift away from the arithmetic again.
-const dollarBasisLabel = (useReal) =>
-  useReal ? "Today's Dollars" : "Future Dollars";
-
-function deflate(data, inf, useReal) {
-  if (!useReal) return data;
-  return data.map((d, i) => ({
-    ...d,
-    p10: Math.round(d.p10 / Math.pow(1 + inf / 100, i)),
-    p25: Math.round(d.p25 / Math.pow(1 + inf / 100, i)),
-    p50: Math.round(d.p50 / Math.pow(1 + inf / 100, i)),
-    p75: Math.round(d.p75 / Math.pow(1 + inf / 100, i)),
-    p90: Math.round(d.p90 / Math.pow(1 + inf / 100, i)),
-  }));
-}
+// dollarBasisLabel/deflate/mcMedianAtAge/selectPortfolioAtAge moved to
+// engine/mcSelectors.js (imported at the top of this file) so the rules
+// engine, score explainer, and printable report can share them without a
+// circular import back into this file. The only thing ever wrong here was
+// the label "today's dollars", which promised a basis the math does not
+// use — see mcSelectors.js's own header for the full history.
 
 /* Per-age band table under the Monte Carlo fan chart — the same percentile
  * data the chart plots (deflated identically when Real $ is on), one row per
@@ -9192,6 +9172,7 @@ function ScenariosTab({
           {stress && (
             <>
           <FanChart
+            // eslint-disable-next-line no-restricted-properties -- FanChart deflates the whole array itself; see noRawMcAccess.test.js.
             pcts={stress.pcts}
             retireAge={retireAge}
             ssAge={ssAge}
@@ -9322,17 +9303,20 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
     : "already retired — no accumulation phase";
   const retPhase = `Age ${effRetireAge} → ${params.endAge}`;
 
-  // The fan chart and band table run their percentile rows through deflate()
-  // when Real $ is on; these summary cards read mc.term.* straight off runMC,
-  // which is nominal. So the toggle appeared to do nothing on the number most
-  // people read FIRST, and the card silently disagreed with the chart directly
-  // below it — same quantity, two different bases, neither labelled.
-  // Deflated on the chart's own basis: deflate() divides row i by (1+inf)^i
-  // where i counts from pcts[0].age === effRetireAge, so the terminal row is
-  // (endAge - effRetireAge) years out. Matching that keeps card and chart equal.
-  const termYears  = Math.max(0, (params.endAge || 0) - effRetireAge);
-  const termDivisor = real ? Math.pow(1 + (inf || 0) / 100, termYears) : 1;
-  const termAt = (k) => (mc?.term?.[k] ?? 0) / termDivisor;
+  // termAt(k) used to hand-roll its own deflation (`termDivisor = (1+inf)^
+  // termYears`) because mc.term has no array position for deflate()'s
+  // row-index math — a second, parallel implementation of the same "discount
+  // to the retirement-year basis" concept deflate() already owns. Verified
+  // numerically equivalent (termYears === the array index deflate() would use
+  // for this same row), but one future edit to deflate()'s convention away
+  // from silently diverging again — the exact failure class in CLAUDE.md
+  // rule 8. selectPortfolioAtAge() looks up the SAME terminal row through
+  // mc.pcts instead of mc.term, sharing deflate()'s actual math rather than
+  // re-deriving it, and — as a side effect — reads the row at THIS card's own
+  // age (params.endAge) rather than trusting mc.term's implicit horizon,
+  // which can differ from endAge when a survivor's clock extends the plan.
+  const termAt = (k) => selectPortfolioAtAge(mc, params.endAge, { retireAge: effRetireAge, real, inf, pct: k }) ?? 0;
+  // eslint-disable-next-line no-restricted-properties -- structural metadata (which age the data starts at), not a dollar value.
   const dollarBasis = dollarBasisLabel(real, mc?.pcts?.[0]?.age ?? effRetireAge);
   const mortSched = params.mortBalance > 0
     ? mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0)
@@ -10227,81 +10211,6 @@ function MortgageTab({ values, onChange }) {
   );
 }
 
-/**
- * The Monte Carlo median portfolio for one age, or `null` when there is no
- * figure for that age.
- *
- * `null`, never 0. The Net Worth chart used to do:
- *
- *   const pctIndex = Math.min(age - retireAge, pcts.length - 1);
- *   port = pcts[pctIndex]?.p50 || 0;
- *
- * which produced a confident $0 in three unrelated situations — genuinely zero,
- * no data for this age, and NaN (falsy, so `|| 0` swallowed it). A user reported
- * a plan the engine scores at 99.2% success, median $4.05M at 68 and $10.9M at
- * 90, rendered as $0 from 68 through 90. Nothing on screen distinguished that
- * from a portfolio that had actually died.
- *
- * The clamp was the other half: `Math.min` repeated the final row for every age
- * past the end of the data, so a run whose horizon was shorter than `endAge`
- * grew a flat tail of fabricated years — which the "net worth at age" card then
- * reported as a forecast.
- *
- * Rows are matched on the `age` they carry themselves, falling back to
- * positional arithmetic only for older result objects that predate that field.
- * Positional indexing silently mis-aligns whenever `mc` is stale — computed at a
- * different retireAge than the one now being charted.
- *
- * @param {Array<{age?:number, p50:number}>} pcts  runMC's percentile rows
- * @param {number} age                             the age wanted
- * @param {number} retireAge                       fallback origin for legacy rows
- * @param {"p10"|"p25"|"p50"|"p75"|"p90"} [pct]     which percentile column (default p50/median)
- * @returns {number|null}
- */
-function mcMedianAtAge(pcts, age, retireAge, pct = "p50") {
-  if (!Array.isArray(pcts) || pcts.length === 0) return null;
-  let row = pcts.find((d) => d && d.age === age);
-  if (!row && !Number.isFinite(pcts[0]?.age)) {
-    // Legacy rows without `age`: derive the index, but do NOT clamp — an index
-    // past the end means "not modelled", which is exactly what null says.
-    const i = age - retireAge;
-    row = i >= 0 && i < pcts.length ? pcts[i] : null;
-  }
-  return row && Number.isFinite(row[pct]) ? row[pct] : null;
-}
-
-/**
- * THE single place any UI reads "the simulated portfolio value at age X" from
- * an `mc` (runMC) result. Exists because three call sites each grew their own
- * version of this lookup and quietly disagreed: `NetWorthTab` read `mc.pcts`
- * without ever deflating it, `MCTab`'s hero card read `mc.term.p50` (a
- * DIFFERENT aggregation — see the padding fix in runMC's retirement loop —
- * that also never deflated), and the Checkpoints table read `mc.pcts` with
- * `|| 0`, silently turning a genuinely-missing figure into a confident $0.
- * Two users independently noticed a MEDIAN number that read ~2x too big or
- * too small in one tab versus another, for the same age, same run.
- *
- * Route every new "show the forecasted portfolio value" UI through this
- * instead of touching `mc.pcts` / `mc.term` directly — see
- * `noRawMcAccess.test.js`, which fails the build if a new direct read shows
- * up outside this file's short allow-list.
- *
- * @param {object} mc            runMC's result (or null/undefined — returns null)
- * @param {number} age           the age wanted
- * @param {object} [opts]
- * @param {number}  opts.retireAge  fallback origin for legacy rows without `age`
- * @param {boolean} [opts.real=false]  true = deflate to the retirement-year basis
- *   ("Today's Dollars" — see deflate()'s own doc comment for why the anchor is
- *   the retirement year, not today). Only meaningful with `opts.inf` set.
- * @param {number}  [opts.inf=0]     inflation rate (%), used only when real=true
- * @param {"p10"|"p25"|"p50"|"p75"|"p90"} [opts.pct="p50"]
- * @returns {number|null}
- */
-function selectPortfolioAtAge(mc, age, { retireAge, real = false, inf = 0, pct = "p50" } = {}) {
-  if (!mc?.pcts) return null;
-  const pcts = real ? deflate(mc.pcts, inf, true) : mc.pcts;
-  return mcMedianAtAge(pcts, age, retireAge, pct);
-}
 
 function NetWorthTab({ p, mc, inf, real }) {
   const [showRE, setShowRE] = useState(false);
@@ -10312,6 +10221,7 @@ function NetWorthTab({ p, mc, inf, real }) {
   // selector call can't give it; it uses the SAME `deflate()` primitive the
   // selector uses internally, so the two can't drift out of basis with
   // each other again.
+  // eslint-disable-next-line no-restricted-properties -- array-wide scan (peak across every age); no single-age selector call could give this.
   const dPcts = useMemo(() => (mc ? deflate(mc.pcts, inf, real) : []), [mc, inf, real]);
   const props    = p.properties || [];
   const reTotal   = props.reduce((s, pr) => s + (pr.value||0), 0);
@@ -14681,6 +14591,7 @@ export default function AiRAForecaster() {
       sp,
       retireAge: retAge,
       endAge,
+      // eslint-disable-next-line no-restricted-properties -- a permanent point-in-time snapshot written once on Check-in, not a live display re-derived on render.
       medianTerminal: mc.term?.p50 ?? null,
       appVersion: APP_VERSION,
     };
@@ -16262,6 +16173,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     />
                     {mc && (
                       <FanChart
+                        // eslint-disable-next-line no-restricted-properties -- FanChart deflates the whole array itself; see noRawMcAccess.test.js.
                         pcts={mc.pcts}
                         retireAge={retAge}
                         ssAge={assumptions.ssAge}
@@ -16288,6 +16200,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     )}
                     {mc && (
                       <MCBandTable
+                        // eslint-disable-next-line no-restricted-properties -- FanChart deflates the whole array itself; see noRawMcAccess.test.js.
                         pcts={mc.pcts}
                         inf={inf}
                         useReal={real}

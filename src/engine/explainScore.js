@@ -42,6 +42,7 @@ const money = (x) =>
  *   driver: { id, label, value, detail, lever, severity: "good"|"watch"|"risk" }
  */
 export function explainScore(p = {}, mc = null) {
+  // eslint-disable-next-line no-restricted-properties -- structural validity check (array-ness/length), not a dollar read.
   if (!mc || !Array.isArray(mc.pcts) || mc.pcts.length === 0) {
     return { rate: 0, verdict: "unknown", headline: "Run the Monte Carlo to see what drives your score.", drivers: [] };
   }
@@ -51,8 +52,16 @@ export function explainScore(p = {}, mc = null) {
   const endAge = p.endAge ?? 90;
   const spend = p.sp ?? 0;
 
-  // Portfolio at retirement — the median path's first year.
-  const portAtRetire = mc.pcts[0]?.p50 ?? 0;
+  // mc.medR, not mc.pcts[0]?.p50 — both claim to be "median portfolio at
+  // retirement" but runMC computes them with two DIFFERENT median-index
+  // formulas (medR: Math.floor(N/2); pcts' quantile: Math.floor(0.5*(N-1))),
+  // which pick adjacent-but-different order statistics for even N (500-3000
+  // here, always even). The gap is small for a smooth distribution, but it's
+  // the same "two readers, two answers" class as the bug this module exists
+  // to help catch — see CLAUDE.md rule 8. mc.medR is the value the
+  // "Portfolio at Retirement" card elsewhere in the app already treats as
+  // canonical, so this narrative now agrees with it by construction.
+  const portAtRetire = mc.medR ?? 0;
 
   // Income that arrives whether or not markets cooperate. `ssb` starts at ssAge,
   // so at retirement it may be zero — that gap is itself a driver below.

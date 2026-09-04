@@ -14,6 +14,13 @@ import { explainScore } from "./engine/explainScore.js";
 const mc = (over = {}) => ({
   rate: 0.95,
   pcts: [{ age: 65, p10: 800_000, p50: 1_000_000, p90: 1_400_000 }],
+  // Real runMC always sets both medR and pcts[0].p50 from the same
+  // portAtRetire distribution (two slightly different median-index formulas
+  // that normally land within a rounding error of each other — see
+  // explainScore.js's own comment on why it reads medR, not pcts[0].p50).
+  // Kept equal here so this fixture matches that invariant instead of
+  // silently testing a shape production never produces.
+  medR: 1_000_000,
   medianExhaustAge: null,
   bracketOverrideRate: 0,
   rothReserveBrokenRate: 0,

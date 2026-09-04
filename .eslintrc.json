@@ -1,3 +1,28 @@
 {
-  "parser": "@typescript-eslint/parser"
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module",
+    "ecmaFeatures": { "jsx": true }
+  },
+  "rules": {
+    "no-restricted-properties": [
+      "error",
+      {
+        "object": "mc",
+        "property": "pcts",
+        "message": "Don't read mc.pcts directly — a Monte Carlo dollar figure read outside selectPortfolioAtAge() is how three tabs ended up disagreeing on the same number (see CLAUDE.md rule 8, src/noRawMcAccess.test.js). Use selectPortfolioAtAge(mc, age, opts) instead. Genuine exception (array-wide scan, handing the raw array to FanChart, or reading structural metadata like [0]?.age rather than a dollar value)? Add // eslint-disable-next-line no-restricted-properties with a comment explaining why, and add the same line to noRawMcAccess.test.js's ALLOWED list."
+      },
+      {
+        "object": "stress",
+        "property": "pcts",
+        "message": "Same rule as mc.pcts — stress is a runMC result too. See the mc.pcts message."
+      },
+      {
+        "object": "mc",
+        "property": "term",
+        "message": "Don't read mc.term directly — it's a separate aggregate from mc.pcts that can silently disagree with it (see the runMC padding fix in CLAUDE.md / App.jsx). Use selectPortfolioAtAge(mc, age, opts) instead, which reads the same terminal figure through mc.pcts. Genuine exception (a permanent point-in-time snapshot, not a live display)? Add // eslint-disable-next-line no-restricted-properties with a comment explaining why."
+      }
+    ]
+  }
 }

@@ -21,6 +21,7 @@
 // These are the SAME symbols the simulation engines use — the point is that the
 // Action Plan cards and the engines can never disagree about RMD age or divisor.
 import { getRmdStartAge, RMD_DIV, JOINT_RMD_DIV } from "./buildRothExplorer.js";
+import { selectPortfolioAtAge } from "./mcSelectors.js";
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -163,10 +164,16 @@ export const RULES = [
       if (!mc) {
         return `$${Math.round(goal - params.port).toLocaleString()} gap to ${fmt(goal)} Reassess goal — run Monte Carlo to assess real risk`;
       }
-      const retRow = mc.pcts?.find(d => d.age === params.retireAge);
-      const p25 = retRow?.p25, p50 = retRow?.p50;
+      // selectPortfolioAtAge, not a raw mc.pcts.find() — a duplicated inline
+      // version of this same lookup lived here AND at the "portfolio-underfunded-75"
+      // rule below, each with its own `if (p25 && p50)` gate that treats a
+      // genuine $0 median the same as "no data" (0 is falsy). null (missing)
+      // vs 0 (really zero) now stay distinguishable, same as everywhere else
+      // this figure is read — see CLAUDE.md rule 8.
+      const p25 = selectPortfolioAtAge(mc, params.retireAge, { retireAge: params.retireAge, pct: "p25" });
+      const p50 = selectPortfolioAtAge(mc, params.retireAge, { retireAge: params.retireAge, pct: "p50" });
       let msg = `Only ${(mc.rate * 100).toFixed(1)}% of 3,000 paths reach age ${params.endAge || 90} — plan failure is likely`;
-      if (p25 && p50) {
+      if (p25 != null && p50 != null) {
         msg += `. At retirement (age ${params.retireAge}): median ${fmt(p50)}, worst-25% scenario only ${fmt(p25)}`;
       }
       return msg;
@@ -258,13 +265,16 @@ export const RULES = [
     reason: ({ params, assumptions, mc }) => {
       const fmt = v => `$${Math.round(v).toLocaleString()}`;
       const rate = (mc.rate * 100).toFixed(1);
-      const retRow = mc.pcts?.find(d => d.age === params.retireAge);
-      const p25 = retRow?.p25, p50 = retRow?.p50;
+      // See the same fix in "portfolio-critical-low" above — selectPortfolioAtAge,
+      // and null/missing distinguished from a genuine $0 rather than `&&`-testing
+      // a value that could legitimately be 0.
+      const p25 = selectPortfolioAtAge(mc, params.retireAge, { retireAge: params.retireAge, pct: "p25" });
+      const p50 = selectPortfolioAtAge(mc, params.retireAge, { retireAge: params.retireAge, pct: "p50" });
       const goal = assumptions?.portfolioGoal || 1_000_000;
       const pct = params.port > 0 && goal > 0 ? Math.round(params.port / goal * 100) : null;
 
       let msg = `MC success rate ${rate}% — below the 85% threshold. `;
-      if (p50 && p25) {
+      if (p50 != null && p25 != null) {
         msg += `At retirement (age ${params.retireAge}): median path ${fmt(p50)}, but the 25th-percentile scenario (worst 1-in-4 outcome) reaches only ${fmt(p25)}. `;
       }
       msg += `Boost contributions, delay retirement, or trim spending to close the gap.`;
