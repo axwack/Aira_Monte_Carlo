@@ -492,7 +492,7 @@ export function buildWithdrawalWaterfall(params = {}) {
   })();
   const rmdAgeAt = (a) => (isSurvivorAt(a) ? rmdStartOnPrimaryClock : rmdAge);
   const mfjAt = (a) => filesJointlyAt(params, a);
-  /** True once the primary is filing as a survivor (the year AFTER the death). */
+  /** True once the primary is filing as a survivor (the year after the death). */
   const isSurvivorAt = (a) => a > survivorFrom;
 
   const fedBaseAt  = (a) => (mfjAt(a) ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE);
@@ -596,7 +596,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     const ltcgTax = Math.round(progTax(txInc + gainTxInc, ltcgBr) - progTax(txInc, ltcgBr));
 
     // NIIT (IRC §1411): 3.8% of the lesser of net investment income (LTCG here)
-    // or the excess of MAGI over the statutory (NOT inflation-indexed) threshold.
+    // or the excess of MAGI over the statutory (not inflation-indexed) threshold.
     const niitThreshold = mfjAt(age) ? NIIT_THRESHOLD_MFJ : NIIT_THRESHOLD_SINGLE;
     const niit = ltcg > 0 ? Math.round(NIIT_RATE * Math.min(ltcg, Math.max(0, magi - niitThreshold))) : 0;
 
@@ -1113,14 +1113,14 @@ export function buildWithdrawalWaterfall(params = {}) {
         // was itself part of the step function the fixed point had to
         // converge through.
         taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable, gPass, magiLookback);
-        // IRC §72(t) 10% additional tax. Inside the fixed point because it is a
-        // real cash cost that the draws themselves must fund: a bigger pretax
-        // draw owes a bigger penalty, which widens the need, which grows the
-        // draw. Converges with the rest of the tax bill.
+        // IRC §72(t) 10% additional tax. Inside the fixed point because it's
+        // a real cash cost that the draws themselves have to fund: a bigger
+        // pretax draw owes a bigger penalty, which widens the need, which
+        // grows the draw. Converges with the rest of the tax bill.
         //
-        // Base is the pretax DISTRIBUTION (spending draw + RMD). A Roth
-        // conversion is not a distribution and is added after the conversion is
-        // sized, below — never here.
+        // Base is the pretax distribution (spending draw + RMD). A Roth
+        // conversion isn't a distribution and gets added after the conversion
+        // is sized, below — never here.
         earlyPenalty = earlyWithdrawalPenalty({
           separationQualifies: ruleOf55Ok,
           age, pretaxDistribution: fromPretax + rmd,
@@ -1238,29 +1238,30 @@ export function buildWithdrawalWaterfall(params = {}) {
       let tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain, magiLookback) : taxNoConv;
       let convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
 
-      // Affordability: pretax must cover both the conversion and its incremental tax.
+      // Affordability: pretax has to cover both the conversion and its incremental tax.
       // Shrink (rather than zero out) when the full fill can't be afforded — converging
       // toward the largest conversion the remaining pretax balance can self-fund.
       // Who actually pays the conversion tax.
       //   "from_conversion" — withhold it out of the amount transferred, so less
       //                       lands in the Roth. Nothing else is touched.
-      //   anything else     — pay it from REAL, TRACKED buckets: taxable first,
+      //   anything else     — pay it from real, tracked buckets: taxable first,
       //                       then cash, then pre-tax as the last resort.
       //
-      // Before this, `taxFunding` was read by NOTHING in this engine (it existed
-      // only in the dead buildRothExplorer path), so conversion tax always came out
-      // of pre-tax whatever the user chose — silently the most punitive option, and
-      // the "outside cash" choice implied an unlimited external pot the simulation
-      // never tracked or depleted. Both are gone: every dollar of conversion tax now
-      // leaves a balance the user actually entered, and the plan can run out of
-      // money paying it. If we don't know about money, we don't spend it.
-      // The Profile dropdown emits "from_conv" (App.jsx). "from_conversion" is accepted
-      // too so a stored profile written with either spelling behaves the same — a
-      // mismatch here fails SILENTLY: withholding never fires and the tax quietly
-      // comes from the buckets instead, which is exactly the class of bug this whole
-      // change is fixing.
+      // Before this, `taxFunding` was read by nothing in this engine (it only
+      // existed in the dead buildRothExplorer path), so conversion tax always
+      // came out of pre-tax no matter what the user chose — silently the most
+      // punitive option, and the "outside cash" choice implied an unlimited
+      // external pot the simulation never tracked or depleted. Both are gone
+      // now: every dollar of conversion tax leaves a balance the user
+      // actually entered, and the plan can run out of money paying it. If we
+      // don't know about money, we don't spend it.
+      // The Profile dropdown emits "from_conv" (App.jsx). "from_conversion" is
+      // accepted too so a stored profile written with either spelling
+      // behaves the same — a mismatch here fails silently: withholding never
+      // fires and the tax quietly comes from the buckets instead, which is
+      // exactly the class of bug this whole change is fixing.
       const withholdFromConversion = taxFunding === "from_conv" || taxFunding === "from_conversion";
-      // Funds available to pay tax WITHOUT touching pre-tax, after this year's
+      // Funds available to pay tax without touching pre-tax, after this year's
       // spending draws have already been taken.
       const taxableLeftForConv = Math.max(0, taxable - fromTaxable);
       const cashLeftForConv    = Math.max(0, cash    - fromCash);
@@ -1271,11 +1272,11 @@ export function buildWithdrawalWaterfall(params = {}) {
       if (convAmt > 0) {
         const convAmtBeforeShrink = convAmt;
         for (let i = 0; i < 5 && convAmt > 0; i++) {
-          // Affordability now depends on WHERE the tax comes from.
+          // Affordability now depends on where the tax comes from.
           //   withholding: the conversion pays for itself, so pre-tax only needs to
           //                cover the gross conversion.
           //   real buckets: taxable+cash absorb the tax first; only the excess falls
-          //                back to pre-tax, so that is all pre-tax must cover.
+          //                back to pre-tax, so that's all pre-tax has to cover.
           const taxOnPretax = withholdFromConversion
             ? 0
             : Math.max(0, convTax - outsideFundsForConv);
@@ -1288,7 +1289,7 @@ export function buildWithdrawalWaterfall(params = {}) {
           tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain, magiLookback) : taxNoConv;
           convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
         }
-        // If affordability shrank the fill, THAT is the binding constraint now —
+        // If affordability shrank the fill, that's the binding constraint now —
         // not the bracket/IRMAA ceiling that sized the original attempt. Report the
         // reason the user can actually act on.
         if (convAmt > 0 && convAmt < convAmtBeforeShrink) convCapReason = "affordability";
@@ -1300,7 +1301,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         }
       }
 
-      // ── Step 8: Landmine detection ──────────────────────────────────────
+      // Step 8: Landmine detection.
       // SS torpedo: other ordinary income has pushed provisional income past the
       // IRC §86 lower threshold ($32,000 MFJ / $25,000 single), dragging SS benefits
       // into taxation (up to $0.85 per extra $1 in the phase-in range).
@@ -1311,17 +1312,17 @@ export function buildWithdrawalWaterfall(params = {}) {
       const irmaaTriggered = tax.irmaa > 0;
       const rmdActive     = age >= rmdAgeAt(age) && (pretax + rmd + fromPretax) > 0;
 
-      // ── Update buckets ──────────────────────────────────────────────────
+      // Update buckets.
       // The cascade draws above already include the year's tax bill (taxDue).
       // Excess RMD (forced out beyond spending + taxes) is reinvested in taxable.
       const rmdExcess = Math.max(0, rmd - (baseNeed + taxDue));
       // Basis consumed by the draw = draw − realized gain (the non-gain, return-
-      // of-basis portion); reinvested rmdExcess is fresh money → fresh basis
-      // dollar-for-dollar. No growth on basis — only the balance grows below.
+      // of-basis portion); reinvested rmdExcess is fresh money, so it's fresh
+      // basis dollar-for-dollar. No growth on basis — only the balance grows below.
       const consumedBasis = fromTaxable - realizedGain;
       taxableBasis = Math.max(0, taxableBasis - consumedBasis) + rmdExcess;
-      // ── Pay the conversion tax from the chosen source ────────────────────
-      // Ordered draw: taxable → cash → pre-tax. Each step can only take what is
+      // Pay the conversion tax from the chosen source.
+      // Ordered draw: taxable → cash → pre-tax. Each step can only take what's
       // actually there, so the plan genuinely runs out rather than pretending.
       let convTaxFromTaxable = 0, convTaxFromCash = 0, convTaxFromPretax = 0;
       let convToRoth = convAmt;
@@ -1337,17 +1338,17 @@ export function buildWithdrawalWaterfall(params = {}) {
           owed -= convTaxFromTaxable;
           convTaxFromCash = Math.min(owed, Math.max(0, cash - fromCash));
           owed -= convTaxFromCash;
-          // Last resort. Reaching here means taxable+cash were exhausted, which the
-          // shrink loop above already tried to avoid by cutting the conversion.
+          // Last resort. Reaching here means taxable+cash were exhausted, which
+          // the shrink loop above already tried to avoid by cutting the conversion.
           convTaxFromPretax = Math.max(0, owed);
         }
       }
 
-      // Pre-tax dollars spent PAYING the conversion tax never reach the Roth, so
-      // they are an ordinary early distribution and carry §72(t) like any other.
-      // The conversion itself does not — it is taxable, not distributed. This is
-      // precisely why funding conversion tax from pre-tax under 59½ is a bad
-      // trade, and the plan must price it rather than hide it.
+      // Pre-tax dollars spent paying the conversion tax never reach the Roth,
+      // so they're an ordinary early distribution and carry §72(t) like any
+      // other. The conversion itself doesn't — it's taxable, not distributed.
+      // This is exactly why funding conversion tax from pre-tax under 59½ is
+      // a bad trade, and the plan needs to price it rather than hide it.
       if (convTaxFromPretax > 0) {
         const convPen = earlyWithdrawalPenalty({
           separationQualifies: ruleOf55Ok,
@@ -1363,21 +1364,22 @@ export function buildWithdrawalWaterfall(params = {}) {
       }
 
       cash    = Math.max(0, cash    - fromCash    - convTaxFromCash)    * (1 + cashGr);
-      // NOTE (documented simplification): a taxable draw taken to PAY the conversion
-      // tax would itself realize capital gains, creating a second-order tax on the
-      // tax. The year's realizedGain/basis figures above are already converged
-      // against the spending draw, so folding this in means another fixed point.
-      // Basis is consumed proportionally below, but that extra gain is not taxed
-      // this pass — it understates tax slightly in years with a large conversion
-      // funded from a low-basis taxable account. Tracked, not hidden.
+      // Known simplification: a taxable draw taken to pay the conversion tax
+      // would itself realize capital gains, creating a second-order tax on
+      // the tax. The year's realizedGain/basis figures above are already
+      // converged against the spending draw, so folding this in would mean
+      // another fixed point. Basis is consumed proportionally below, but
+      // that extra gain isn't taxed this pass — it understates tax slightly
+      // in years with a large conversion funded from a low-basis taxable
+      // account. Tracked, not hidden.
       const convBasisConsumed = taxable > 0
         ? convTaxFromTaxable * (taxableBasis / Math.max(taxable, 1))
         : 0;
       taxableBasis = Math.max(0, taxableBasis - convBasisConsumed);
-      // §34 — whatever the surplus did NOT spend on this year's tax bill is
-      // deposited, exactly like a cashFlowEvents inflow (v1.2.73). It arrives as
-      // basis because it is already-taxed money; only later growth is gain.
-      // Without this the money simply ceased to exist.
+      // Whatever the surplus didn't spend on this year's tax bill gets
+      // deposited, exactly like a cashFlowEvents inflow. It arrives as basis
+      // because it's already-taxed money; only later growth is gain. Without
+      // this the money would simply cease to exist.
       const surplusToTaxable = Math.max(0, incomeSurplus - Math.max(0, taxDue - rmd));
       taxableBasis += surplusToTaxable;
       taxable = (Math.max(0, taxable - fromTaxable - convTaxFromTaxable) + rmdExcess + surplusToTaxable) * (1 + gr);
@@ -1386,11 +1388,11 @@ export function buildWithdrawalWaterfall(params = {}) {
 
       lastRet = gr;
       // The §72(t) penalty is a real dollar leaving the plan, so lifetime tax
-      // must carry it — otherwise "smart vs no plan" comparisons would rate an
-      // early-retirement order as cheaper than it is.
+      // needs to carry it — otherwise "smart vs no plan" comparisons would
+      // rate an early-retirement order as cheaper than it actually is.
       cTax += tax.totalTax + earlyPenalty.penalty;
 
-      // IRMAA lookback history: this year's FINAL MAGI (post-conversion when
+      // IRMAA lookback history: this year's final MAGI (post-conversion when
       // one executed — `tax` is already the with-conversion result whenever
       // convAmt > 0) becomes the magiLookback input for the age+2 iteration.
       magiByAge.set(age, tax.magi);
@@ -1408,28 +1410,31 @@ export function buildWithdrawalWaterfall(params = {}) {
         bracketTopYr, stdDedYr,
         fedTax: tax.fedTax, stateTax: tax.stateTax, irmaa: tax.irmaa,
         totalTax: tax.totalTax, irmaaFull: tax.irmaaFull,
-        // IRC §72(t) additional tax — its own line, never folded into fedTax, so
-        // the user can see the cost of retiring before 59½ rather than wondering
-        // why their effective rate looks high.
+        // IRC §72(t) additional tax gets its own line, never folded into
+        // fedTax, so the user can see the cost of retiring before 59½ rather
+        // than wondering why their effective rate looks high.
         earlyPenalty: earlyPenalty.penalty,
         earlyPenaltyReason: earlyPenalty.reason,
         earlyPenaltyExempt: earlyPenalty.exemptAmount,
         effectiveRate: tax.effectiveRate, marginalBracket: tax.marginalBracket,
         taxableIncome: tax.taxableIncome, totInc: tax.totInc, magi: Math.round(tax.magi),
         realizedGain: Math.round(realizedGain), ltcgTax: tax.ltcgTax, niit: tax.niit, taxSS: tax.taxSS,
-        // Forced RMD beyond what spending + taxes consumed; reinvested into the
-        // taxable bucket above. EMITTED rather than left internal because the
-        // Pre-Tax tooltip was recomputing it as `rmd - (needFromPort + irmaaFull)`.
+        // Forced RMD beyond what spending + taxes consumed; reinvested into
+        // the taxable bucket above. Emitted here rather than left internal
+        // because the Pre-Tax tooltip was recomputing it as
+        // `rmd - (needFromPort + irmaaFull)`.
         //
-        // That duplicate agreed exactly in ordinary years — but NOT in Roth
-        // conversion years, and by up to $32k on a test profile. `taxDue` above
-        // converges on the NO-conversion tax (the conversion's own tax is funded
-        // separately, via convTaxFrom*), while the row's `irmaaFull` is the
-        // WITH-conversion figure. The tooltip therefore subtracted the conversion
-        // tax a second time and UNDERSTATED how much RMD was reinvested.
+        // That duplicate agreed exactly in ordinary years, but not in Roth
+        // conversion years, and by up to $32k on a test profile. `taxDue`
+        // above converges on the no-conversion tax (the conversion's own tax
+        // is funded separately, via convTaxFrom*), while the row's
+        // `irmaaFull` is the with-conversion figure. So the tooltip was
+        // subtracting the conversion tax a second time and understating how
+        // much RMD got reinvested.
         //
-        // This value is the one that actually moved money (`taxable += rmdExcess`
-        // above), so it is authoritative. One formula, one owner: the engine.
+        // This value is the one that actually moved money (`taxable +=
+        // rmdExcess` above), so it's the authoritative one. One formula, one
+        // owner: the engine.
         rmdSurplus: Math.round(rmdExcess),
         landmines: { ssTorpedo, irmaaTriggered, rmdActive },
         cashEnd:    Math.round(cash),
@@ -1438,26 +1443,29 @@ export function buildWithdrawalWaterfall(params = {}) {
         rothEnd:    Math.round(roth),
         totalPort:  Math.round(cash + taxable + pretax + roth),
         spending:   Math.round(spSmiled),
-        // The smile multiplier actually applied to THIS year's spend, published
-        // so the table can disclose it where the number is shown (§28.1 OPEN 3:
-        // a user suspected the smile was padding his spending and could neither
-        // find the control nor see its effect). Display must not recompute this
-        // from its own copy of the formula — that is how the two drift.
+        // The smile multiplier actually applied to this year's spend,
+        // published so the table can disclose it where the number is shown
+        // (a user suspected the smile was padding his spending and could
+        // neither find the control nor see its effect). Display shouldn't
+        // recompute this from its own copy of the formula — that's how the
+        // two drift apart.
         smileFactor: smileFactor,
         smileBase:  Math.round(sp),
         housingCost: Math.round(housingCost),
         carveoutCost: Math.round(carveoutCost),
         eventCost: Math.round(ev.total),
-        // Advisory, NOT charged to any draw above. Renamed from `healthcareCost`
-        // so no caller can mistake it for a funded obligation and fold it back
-        // into a funding identity (withdrawal.test.js did exactly that).
+        // Advisory, not charged to any draw above. Renamed from
+        // `healthcareCost` so no caller mistakes it for a funded obligation
+        // and folds it back into a funding identity (withdrawal.test.js did
+        // exactly that).
         healthcareRisk: Math.round(hcRisk),
         eventInflow: Math.round(ev.inflow),
         eventLabels: ev.hits.map(h => h.label),
         otherIncome: Math.round(otherIncTotal),
         needFromPort: Math.round(baseNeed),
-        // Gross portfolio outflow for spending + taxes. The cascade draws already
-        // fund the tax bill, so do NOT add tax on top; RMD is a real outflow too.
+        // Gross portfolio outflow for spending + taxes. The cascade draws
+        // already fund the tax bill, so don't add tax on top; RMD is a real
+        // outflow too.
         totalWithdrawal: Math.round(rmd + fromCash + fromTaxable + fromPretax + fromRoth),
       });
     }
