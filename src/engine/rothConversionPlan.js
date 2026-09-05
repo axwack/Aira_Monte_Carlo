@@ -16,9 +16,9 @@ import { resolveGlidepathSwitchAge } from "./glidepath.js";
 const MIN_REMAINING_BALANCE = 10_000;
 
 // Conversion Plan tab "mode" buttons → buildWithdrawalWaterfall's rothConversionTarget.
-// All bracket targets (10/12/22/24/32/35/37) now have explicit ceilings in both
-// buildWithdrawalWaterfall and App.jsx's getBracketCeiling ("37" = Infinity) — the
-// old fall-back-to-22% behavior (ENG-13) was fixed in v1.1.0.30.
+// All bracket targets (10/12/22/24/32/35/37) have explicit ceilings in both
+// buildWithdrawalWaterfall and App.jsx's getBracketCeiling ("37" = Infinity) —
+// used to silently fall back to 22%, fixed that a while back.
 const ROTH_MODE_TO_TARGET = {
   fill_10: "10", fill_12: "12", fill_22: "22", fill_24: "24",
   fill_32: "32", fill_35: "35", fill_37: "37",
@@ -194,8 +194,8 @@ export function checkRothWithdrawalPenalty({
  */
 /**
  * Maps a single buildWithdrawalWaterfall row onto the field names the
- * Conversion Plan tab's table/charts expect (shared by buildConversionLadder
- * and buildWaterfallComparison so both views describe the same model).
+ * Conversion Plan tab's table/charts expect. Shared by buildConversionLadder
+ * and buildWaterfallComparison so both views describe the same model.
  */
 function classifyRow(r, retireAge, ssAge, target, overrideMap) {
   let label = `Year ${r.age - retireAge}`;
@@ -232,11 +232,11 @@ export function buildConversionLadder(params = {}, rothMode = "fill_22") {
   const irmaaGuard = rothMode === "irmaa_safe" ? true : !!params.irmaaGuard;
   const { ssAge, retireAge } = params;
   // Row 0 of buildWithdrawalWaterfall's smart.rows is always age === retireAge,
-  // so this must derive the SAME growth rate that engine applied internally to
-  // grow that row — otherwise "backing out" the pre-conversion starting balance
-  // below would divide by the wrong rate. That engine's test is
-  // `age < glidepathSwitchAge`; this one hardcoded 62, so the two disagreed for
-  // anyone retiring before 62. An explicit params.gr override still wins.
+  // so this has to derive the same growth rate that engine used internally to
+  // grow that row — otherwise backing out the pre-conversion starting balance
+  // below divides by the wrong rate. That engine tests age < glidepathSwitchAge;
+  // this used to hardcode 62, so the two disagreed for anyone retiring before
+  // 62. An explicit params.gr override still wins.
   const preGr  = params.gr ?? (expectedReturn(params.preRetireEq ?? 91) / 100);
   const postGr = params.gr ?? (expectedReturn(params.postRetireEq ?? 70) / 100);
   const gr = retireAge < resolveGlidepathSwitchAge(params) ? preGr : postGr;
@@ -275,7 +275,7 @@ export function buildConversionLadder(params = {}, rothMode = "fill_22") {
  * the Conversion Plan tab's summary cards (Lifetime Tax Delta, RMD Reduction,
  * Lifetime Eff. Rate) and the Taxes/Table/Scenarios sub-views — all derived from
  * buildWithdrawalWaterfall so they describe the same model as the ladder table
- * built by buildConversionLadder (ENG-14).
+ * built by buildConversionLadder.
  *
  * Both scenarios use the same bracket-capped ("smart") withdrawal strategy; the
  * only difference is rothConversionTarget ("off" for `cur`, the selected mode's

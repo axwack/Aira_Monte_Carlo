@@ -2,23 +2,22 @@
  * Withdrawal distribution strategies — the live set, and what happened to the
  * ones we retired.
  *
- * ── Why this file exists ─────────────────────────────────────────────────────
- * The app shipped 12 distribution strategies. Six of them were either
- * arithmetically identical to a survivor, a near-duplicate of one, or carrying
- * a hardcoded assumption the UI never disclosed. They were removed in v1.2.88.
+ * The app shipped 12 distribution strategies. Six were either arithmetically
+ * identical to a survivor, a near-duplicate of one, or carried a hardcoded
+ * assumption the UI never disclosed. Removed them.
  *
- * Deleting a strategy is not a UI change. A saved profile still says
- * `withdrawalStrategy: "cape"`, and the engines dispatch on that string with an
- * if/else chain that has no final `else`. An unrecognised value therefore
- * matches NOTHING: `sp` is never assigned, so spending never inflation-adjusts
- * and the spending smile deflates it ~1%/yr for the rest of the plan. Measured
- * on a $1.5M / $80k profile: lifetime spend $2,112,063 against Guyton-Klinger's
- * $3,151,968 — a 33% shortfall, produced silently, with no error and no
- * on-screen difference. That is the failure mode this module prevents.
+ * Deleting a strategy isn't just a UI change though. A saved profile still
+ * says withdrawalStrategy: "cape", and the engines dispatch on that string
+ * with an if/else chain that has no final else. An unrecognized value matches
+ * nothing — sp never gets assigned, so spending never inflation-adjusts and
+ * the spending smile deflates it ~1%/yr for the rest of the plan. Measured on
+ * a $1.5M / $80k profile: lifetime spend $2,112,063 against Guyton-Klinger's
+ * $3,151,968, a 33% shortfall, produced silently with no error and no
+ * on-screen difference. That's the failure mode this module exists to prevent.
  *
- * So every retired value must (a) resolve to a live strategy before it reaches
- * an engine, and (b) say so on screen. Silent remapping would be the same
- * defect class in a nicer coat.
+ * So every retired value has to (a) resolve to a live strategy before it
+ * reaches an engine, and (b) say so on screen. Silent remapping would just be
+ * the same bug in a nicer coat.
  */
 
 /** Strategies the app offers today. Order is the order shown in the picker. */
@@ -37,23 +36,24 @@ export const DEFAULT_STRATEGY = "gk";
 /**
  * Retired strategies → what a saved profile becomes.
  *
- * `to`        the live strategy that replaces it
- * `set`       companion fields that make the replacement reproduce the old plan
- * `fidelity`  how much the user's projected spending actually moves:
- *               "exact"   — identical to the dollar
- *               "close"   — same spending rate, one secondary behaviour differs
- *               "changed" — a different rule; the numbers move
- * `basis`     why this target — shown to the user, so it must be true
+ * to        the live strategy that replaces it
+ * set       companion fields that make the replacement reproduce the old plan
+ * fidelity  how much the user's projected spending actually moves:
+ *             "exact"   - identical to the dollar
+ *             "close"   - same spending rate, one secondary behavior differs
+ *             "changed" - a different rule, the numbers move
+ * basis     why this target — shown to the user, so it has to be true
  *
- * Display names come from STRATEGY_LABELS below, not from a `label` here.
+ * Display names come from STRATEGY_LABELS below, not a `label` here.
  *
- * Every fidelity claim here was measured against the live engine, not inferred
- * from the formulas — see withdrawalStrategyMigration.test.js, which re-proves
- * them rather than trusting this comment. `cape` is "close" and not "exact"
- * for exactly that reason: the rate identity is real, but CAPE also clamped
- * its result to the GK floor/ceiling and Fixed % does not, which showed up as
- * a $307 year-1 difference on the measured profile. Reading the formulas alone
- * would have shipped "your spending is unchanged", which is not true.
+ * Every fidelity claim here was measured against the live engine, not
+ * inferred from the formulas — see withdrawalStrategyMigration.test.js, which
+ * re-proves them instead of trusting this comment. cape is "close" and not
+ * "exact" for exactly that reason: the rate identity is real, but CAPE also
+ * clamped its result to the GK floor/ceiling and Fixed % doesn't, which
+ * showed up as a $307 year-1 difference on the measured profile. Reading the
+ * formulas alone would've shipped "your spending is unchanged," which isn't
+ * true.
  */
 export const RETIRED_STRATEGIES = {
   cape: {
@@ -116,14 +116,14 @@ export const RETIRED_STRATEGIES = {
 /**
  * Display names, live and retired.
  *
- * This lives here — a leaf module with no imports — precisely so that
- * App.jsx and report/PrintReport.jsx can both read it. PrintReport used to
- * carry a hand-synced copy (it cannot import App.jsx, which imports it back),
- * and "kept in sync by hand" is how a printed report ends up naming a strategy
- * the app no longer runs.
+ * Lives here — a leaf module with no imports — so App.jsx and
+ * report/PrintReport.jsx can both read it. PrintReport used to carry a
+ * hand-synced copy (it can't import App.jsx, which imports it back), and
+ * "kept in sync by hand" is exactly how a printed report ends up naming a
+ * strategy the app no longer runs.
  *
- * Retired ids keep their labels so a migration notice, an old checkpoint, or a
- * printed report can still name what the user used to have.
+ * Retired ids keep their labels so a migration notice, an old checkpoint, or
+ * a printed report can still name what the user used to have.
  */
 export const STRATEGY_LABELS = {
   smart: "Smart Waterfall",
@@ -148,12 +148,12 @@ export function isLiveStrategy(s) {
 /**
  * Map any strategy id to one an engine can actually dispatch on.
  *
- * This is the guard of last resort: engines call it so that a params object
- * assembled anywhere — an old export, a URL, a test fixture, a preview
- * dropdown — can never reach the if/else chain as an unmatched string. It
- * deliberately handles values that are neither live nor retired (typos,
- * corruption) by returning the default rather than throwing, because failing a
- * whole projection over one bad enum is worse than running the default one.
+ * The guard of last resort: engines call this so a params object assembled
+ * anywhere — an old export, a URL, a test fixture, a preview dropdown — can
+ * never reach the if/else chain as an unmatched string. Handles values that
+ * are neither live nor retired (typos, corruption) by returning the default
+ * instead of throwing, because failing a whole projection over one bad enum
+ * is worse than running the default one.
  */
 export function resolveStrategy(s) {
   if (isLiveStrategy(s)) return s;
@@ -165,17 +165,17 @@ export function resolveStrategy(s) {
 /**
  * Migrate a saved profile off a retired strategy.
  *
- * Returns a NEW object; never mutates the input. When nothing was retired the
- * input is returned unchanged (same reference), so callers can cheaply test
- * whether a migration happened.
+ * Returns a new object, never mutates the input. When nothing was retired
+ * the input comes back unchanged (same reference), so callers can cheaply
+ * test whether a migration happened.
  *
- * Companion fields are written ONLY for the rate-preserving mappings, and only
- * there because the retired strategy ignored the user's stored value anyway:
- * `cape` never read `fixedWithdrawalRate` and `one_n` never read
- * `vpwRealReturn`, so overwriting them preserves the plan the user was
- * actually running rather than overriding a choice they made.
+ * Companion fields are written only for the rate-preserving mappings, and
+ * only because the retired strategy ignored the user's stored value anyway:
+ * cape never read fixedWithdrawalRate and one_n never read vpwRealReturn, so
+ * overwriting them preserves the plan the user was actually running instead
+ * of overriding a choice they made.
  *
- * The stamp is what makes the change visible. `withdrawalStrategyMigratedFrom`
+ * The stamp is what makes the change visible. withdrawalStrategyMigratedFrom
  * survives into the exported JSON and drives the on-screen notice.
  */
 export function migrateWithdrawalStrategy(profile) {

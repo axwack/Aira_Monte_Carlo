@@ -16,10 +16,9 @@
  * ctx = { params, mc, assumptions, currentYear, retireYear, daysToRetire }
  */
 
-// buildRothExplorer.js is a leaf module (imports only ./expectedReturn.js), so
-// importing from it here cannot create a cycle with App.jsx → rulesEngine.js.
-// These are the SAME symbols the simulation engines use — the point is that the
-// Action Plan cards and the engines can never disagree about RMD age or divisor.
+// buildRothExplorer.js only imports expectedReturn.js, so pulling from it here
+// can't create a cycle back through App.jsx. Same RMD symbols the sim engines
+// use, so the Action Plan cards can never quote a different RMD age or divisor.
 import { getRmdStartAge, RMD_DIV, JOINT_RMD_DIV } from "./buildRothExplorer.js";
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
@@ -42,20 +41,20 @@ function rothPct(params)   { return params.port > 0 ? rothTotal(params)   / para
 function swr(params)       { return params.port > 0 ? (params.sp / params.port) * 100 : 0; }
 
 /**
- * RMD start age for the Action Plan cards — SAME answer as every engine.
+ * RMD start age for the Action Plan cards — has to match every engine.
  *
- * Replaces a local getRMDAge(currentAge, currentYear) that derived birthYear as
- * `currentYear - currentAge` and bucketed into 72/73/75 itself. That had two
- * defects (REQUIREMENTS §13.2 #16): it lost `dob` precision near a birthday, and
- * it ignored `params.rmdStartAge` — the user's explicit override — so an Action
- * Plan card could name a different RMD age than the number every engine used.
+ * Used to have its own getRMDAge(currentAge, currentYear) here that derived
+ * birthYear as currentYear - currentAge and bucketed into 72/73/75 itself.
+ * Two bugs in that: it lost dob precision near a birthday, and it ignored
+ * params.rmdStartAge (the user's explicit override), so a card could show a
+ * different RMD age than the engines actually used.
  *
- * `getRmdStartAge` is imported from buildRothExplorer.js, which is a leaf module
- * (its only import is ./expectedReturn.js). App.jsx imports rulesEngine.js, so
- * rulesEngine must never import App.jsx back; going through the leaf keeps this
- * acyclic AND avoids adding a fourth copy of the SECURE 2.0 ladder.
+ * Pulling getRmdStartAge from buildRothExplorer.js instead of reimplementing
+ * it — that file only imports expectedReturn.js, so this stays acyclic (App.jsx
+ * imports rulesEngine.js, never the other way), and we don't end up with a
+ * fourth copy of the SECURE 2.0 ladder.
  *
- * Mirrors the engines' resolution order: an explicit override wins, otherwise the
+ * Same resolution order as the engines: explicit override wins, otherwise the
  * statutory age from dob/birthYear.
  */
 function resolveRmdAge(params) {
@@ -68,13 +67,12 @@ function resolveRmdAge(params) {
 }
 
 /**
- * Uniform Lifetime divisor at a given age, with the joint-table gate the engines
- * use. Replaces a hardcoded `24.0` (CLAUDE.md rule 6 violation) that corresponded
- * to no age in either IRS table.
+ * Uniform Lifetime divisor at a given age, same joint-table gate the engines use.
+ * Used to be a hardcoded 24.0 that didn't match any age in either IRS table.
  *
- * The joint table is only correct while there IS a much-younger spouse, so a
- * "single" filing status overrides a stale leftover toggle — same guard the
- * waterfall engine applies.
+ * The joint table only makes sense with a much-younger spouse, so "single"
+ * filing status overrides a stale leftover toggle — same guard the waterfall
+ * engine uses.
  */
 function rmdDivisorAt(params, age) {
   const useJoint = (params.useJointRmdTable ?? false) && params.filingStatus !== "single";
@@ -213,11 +211,11 @@ export const RULES = [
       return projectedRMD > 50_000;
     },
     action: "First RMD would land in a higher bracket",
-    // Deliberately uses TODAY's pre-tax balance, not a balance projected forward
-    // to rmdAge: every other quantity in this file reads raw current params, and
-    // adding growth here would make this a fourth place that reimplements
-    // portfolio compounding (the exact drift-bug class REQUIREMENTS §13.1/§13.2
-    // keeps logging). So the copy states the basis instead of implying a forecast.
+    // Uses today's pre-tax balance on purpose, not a balance grown forward to
+    // rmdAge — everything else in this file reads raw current params, and
+    // reimplementing portfolio compounding here is exactly the kind of copy
+    // that drifts from the real engines. Copy states the basis plainly instead
+    // of pretending it's a forecast.
     reason: ({ params }) => {
       const preTax = preTaxTotal(params);
       const rmdAge = resolveRmdAge(params);

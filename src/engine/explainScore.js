@@ -1,29 +1,21 @@
 /**
  * explainScore.js — why is the success rate what it is?
  *
- * WHY THIS EXISTS
- * ---------------
- * On 2026-08-05 a user reported 3.3% success on a plan whose true figure was
- * ~100%. Finding the cause took a day and required reading engine internals: the
- * bracket cap had zero room, so pre-tax draws were blocked and paths were scored
- * as failed while holding $3-4M. Three more defects of the same family surfaced in
- * the same investigation.
+ * A user hit 3.3% success on a plan that was actually ~100%. Took a day to
+ * track down: the bracket cap had zero room, so pre-tax draws got blocked and
+ * paths scored as failed while sitting on $3-4M. Found three more bugs in the
+ * same family right after, all invisible on screen — the app knew it had blown
+ * a bracket target or broken a reserve and just showed a percentage. Can't
+ * sanity-check a number with no explanation behind it, not the user and not us.
  *
- * Every one of them was invisible on screen. The app knew it had exceeded a
- * bracket target, broken a reserve, or blocked a withdrawal, and said none of it —
- * the user saw only a percentage. A number with no explanation cannot be sanity-
- * checked, by a user OR by us, which is exactly how those bugs survived.
+ * So this module names the drivers behind the score and gives each one a
+ * lever. Kept it pure on purpose — no React, no formatting beyond short display
+ * strings — so the reasoning can actually be tested.
  *
- * So this module turns the score into ranked, named drivers with a lever attached
- * to each. It is deliberately PURE and engine-independent: given a profile and a
- * Monte Carlo result it returns data, no React, no formatting decisions beyond
- * short display strings. That makes the reasoning testable, which the reasoning
- * behind a retirement number ought to be.
- *
- * DESIGN RULE: never rank a driver on tax saved alone. Measured on a real profile,
- * filling to the 32% bracket cut lifetime tax by $2.4M and ended $1.1M POORER than
- * filling to 22%, because tax paid early stops compounding. Ending wealth is the
- * yardstick; tax is an input to it.
+ * Rule: never rank a driver by tax saved alone. On a real profile, filling to
+ * the 32% bracket cut lifetime tax by $2.4M but ended $1.1M poorer than filling
+ * to 22%, because tax paid early stops compounding. Ending wealth is the
+ * yardstick — tax is just an input to it.
  */
 
 /** Withdrawal-rate bands. 4% is the Bengen rule of thumb, not a law. */
@@ -139,8 +131,8 @@ export function explainScore(p = {}, mc = null) {
   }
 
   // ── 6. Preferences the engine had to yield ────────────────────────────────
-  // These exist BECAUSE the app used to enforce them silently as hard limits and
-  // fail plans instead. If a preference is being overridden, say so.
+  // Used to enforce these silently as hard limits and just fail the plan.
+  // If a preference is getting overridden now, say so.
   if ((mc.bracketOverrideRate ?? 0) > 0.02) {
     drivers.push({
       id: "bracket_yielded",
@@ -162,8 +154,8 @@ export function explainScore(p = {}, mc = null) {
     });
   }
 
-  // Risk first, then watch, then good — a user scanning for a problem should hit
-  // it immediately rather than reading past the reassurance.
+  // Risk first, then watch, then good — someone scanning for a problem should
+  // hit it right away instead of reading past the reassurance.
   const order = { risk: 0, watch: 1, good: 2 };
   drivers.sort((a, b) => order[a.severity] - order[b.severity]);
 

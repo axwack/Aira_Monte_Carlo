@@ -1,28 +1,26 @@
 /**
  * earlyWithdrawal.js — IRC §72(t) 10% additional tax on early distributions.
  *
- * WHY THIS EXISTS
- * ---------------
  * Neither withdrawal engine charged the 10% penalty on a pre-tax distribution
- * before age 59½. The smart waterfall would happily draw from an IRA to fill the
- * 12%/22% bracket for a 56-year-old and bill income tax only, understating the
- * real cost of those dollars by a tenth. For anyone modeling retirement before
- * 59½ that is not a rounding error — it is a recommendation that is wrong.
+ * before age 59½. The smart waterfall would happily draw from an IRA to fill
+ * the 12%/22% bracket for a 56-year-old and bill income tax only, understating
+ * the real cost of those dollars by a tenth. For anyone modeling retirement
+ * before 59½ that's not a rounding error, it's a wrong recommendation.
  *
- * WHAT IS AND IS NOT A "DISTRIBUTION"
- * -----------------------------------
- * A Roth CONVERSION is not subject to the 10% penalty. It is taxable as ordinary
- * income but it is not an early distribution — the money never leaves the
- * retirement system. So `convAmt` is NOT part of the penalty base.
+ * What counts as a "distribution": a Roth conversion is not subject to the
+ * 10% penalty. It's taxable as ordinary income but it's not an early
+ * distribution — the money never leaves the retirement system. So convAmt is
+ * not part of the penalty base.
  *
- * But pre-tax dollars used to PAY the conversion tax never make it into the Roth,
- * which makes them an ordinary early distribution — penalty and all. That is
- * exactly why paying conversion tax out of pre-tax is such a poor choice under
- * 59½, and the engine must show it. `convTaxFromPretax` IS part of the base.
+ * But pre-tax dollars used to pay the conversion tax never make it into the
+ * Roth, which makes them an ordinary early distribution, penalty and all.
+ * That's exactly why paying conversion tax out of pre-tax is such a poor
+ * choice under 59½, and the engine needs to show it. convTaxFromPretax IS
+ * part of the base.
  *
- * (Separately, converted dollars WITHDRAWN within five years carry their own
- * penalty under the conversion 5-year rule, IRC §408A(d)(3)(F). That is modeled
- * in rothConversionPlan.js's checkRothWithdrawalPenalty, not here.)
+ * (Separately, converted dollars withdrawn within five years carry their own
+ * penalty under the conversion 5-year rule, IRC §408A(d)(3)(F). That's
+ * modeled in rothConversionPlan.js's checkRothWithdrawalPenalty, not here.)
  */
 
 /** IRC §72(t)(1) additional tax rate. */
@@ -35,25 +33,26 @@ export const RULE_OF_55_MIN_AGE = 55;
 export const SEPP_MIN_YEARS = 5;
 
 /**
- * Does the SEPARATION DATE qualify for the Rule of 55?
+ * Does the separation date qualify for the Rule of 55?
  *
- * §72(t)(2)(A)(v) turns on separation from service "after attainment of age 55",
- * which the IRS applies by CALENDAR YEAR: separation in or after the year the
- * employee turns 55 qualifies. Someone who leaves in January while still 54 and
- * turns 55 that October is covered.
+ * §72(t)(2)(A)(v) turns on separation from service "after attainment of age
+ * 55," which the IRS applies by calendar year: separation in or after the
+ * year the employee turns 55 qualifies. Someone who leaves in January while
+ * still 54 and turns 55 that October is covered.
  *
- * This existed only as `retireAge >= 55`, which is a stricter rule than the law.
- * It denied the exception to every plan whose separation age rounds to 54 —
- * charging a 10% penalty on years 54 to 59.5 that the taxpayer does not owe. On a
- * mostly-pre-tax portfolio that is a large, entirely fictional cost. The constant
- * above always described the correct rule; only the comparison was wrong.
+ * This used to just be retireAge >= 55, a stricter rule than the law. It
+ * denied the exception to every plan whose separation age rounds to 54,
+ * charging a 10% penalty on years 54 to 59.5 that the taxpayer didn't owe. On
+ * a mostly-pre-tax portfolio that's a large, entirely fictional cost. The
+ * constant above always described the right rule; only the comparison was
+ * wrong.
  *
- * Uses the app's own year convention: separationYear = thisYear + (retireAge -
- * currentAge), matching how every engine derives calendar years from ages.
+ * Uses the app's own year convention: separationYear = thisYear + (retireAge
+ * - currentAge), same as how every engine derives calendar years from ages.
  *
- * Falls back to `retireAge >= 55` when the birth year is unknown. That is the
- * conservative direction — it can under-claim the exception but never invent it —
- * and it reproduces the previous behaviour exactly for profiles without a DOB.
+ * Falls back to retireAge >= 55 when the birth year is unknown. That's the
+ * conservative direction — can under-claim the exception but never invent it
+ * — and it matches the old behavior exactly for profiles without a DOB.
  */
 export function ruleOf55SeparationQualifies({
   dob, birthYear, currentAge, retireAge, asOfYear,
@@ -74,10 +73,10 @@ export function ruleOf55SeparationQualifies({
 
 /**
  * Does this profile hold a former-employer plan that could qualify for the
- * Rule of 55? The account model has no 401k/IRA subtype — only a free-text
- * `name` — so detection is name-based by design. A user who files a rollover
- * IRA under the name "401k" will get the wrong answer, which is an accepted
- * tradeoff rather than a new required field on every account.
+ * Rule of 55? The account model has no 401k/IRA subtype, just a free-text
+ * name, so detection is name-based by design. A user who files a rollover
+ * IRA under the name "401k" gets the wrong answer — an accepted tradeoff
+ * rather than a new required field on every account.
  *
  * @param {Array} accounts
  * @returns {{ hasEmployerPlan: boolean, employerPlanBalance: number,
@@ -101,21 +100,21 @@ export function detectEmployerPlan(accounts = []) {
     hasEmployerPlan: employerPlanBalance > 0,
     employerPlanBalance,
     pretaxBalance,
-    // Fraction of pre-tax money sitting in an employer plan. The engines track a
-    // single aggregated `pretax` bucket, so a Rule-of-55 exemption can only be
-    // applied pro-rata — there is no per-account draw to attribute.
+    // Fraction of pre-tax money in an employer plan. The engines track one
+    // aggregated pretax bucket, so a Rule-of-55 exemption can only apply
+    // pro-rata — there's no per-account draw to attribute it to.
     share: pretaxBalance > 0 ? employerPlanBalance / pretaxBalance : 0,
     matches,
   };
 }
 
 /**
- * The age a SEPP started at `startAge` may first be stopped safely.
+ * The age a SEPP started at startAge may first be stopped safely.
  *
- * §72(t)(4) "recapture": payments must continue for the LONGER of five years or
- * until age 59½. Stopping earlier retroactively penalizes every prior payment,
- * with interest — which is why the series start age is a real planning input and
- * not a checkbox.
+ * §72(t)(4) "recapture": payments must continue for the longer of five years
+ * or until age 59½. Stopping earlier retroactively penalizes every prior
+ * payment, with interest — which is why the series start age is a real
+ * planning input and not just a checkbox.
  */
 export function seppMustRunUntil(startAge) {
   return Number.isFinite(startAge)
@@ -161,7 +160,7 @@ export function earlyWithdrawalPenalty({
     return { penalty: 0, exemptAmount: pretaxDistribution, reason: "age 59.5+" };
   }
 
-  // A running SEPP exempts the whole distribution — the series IS the exception.
+  // A running SEPP exempts the whole distribution — the series is the exception.
   if (sepp72t && seppActive(age, sepp72tStartAge)) {
     return {
       penalty: 0,
@@ -170,14 +169,14 @@ export function earlyWithdrawalPenalty({
     };
   }
 
-  // Rule of 55 reaches only the separated employer's plan, never an IRA, and only
-  // if separation happened in or after the year the employee turned 55. Applied
-  // pro-rata: the engines hold one aggregated pre-tax bucket.
-  // `separationQualifies` carries the calendar-year test (see
-  // ruleOf55SeparationQualifies). When a caller does not supply it we fall back to
-  // the old age comparison, which keeps every existing caller and fixture
-  // behaving exactly as before — but it is STRICTER than the law, so engines
-  // should pass it.
+  // Rule of 55 reaches only the separated employer's plan, never an IRA, and
+  // only if separation happened in or after the year the employee turned 55.
+  // Applied pro-rata since the engines hold one aggregated pre-tax bucket.
+  // separationQualifies carries the calendar-year test (see
+  // ruleOf55SeparationQualifies). When a caller doesn't supply it we fall
+  // back to the old age comparison, which keeps every existing caller and
+  // fixture behaving exactly as before — but that's stricter than the law,
+  // so engines should pass it.
   const separationOk = typeof separationQualifies === "boolean"
     ? separationQualifies
     : (Number.isFinite(retireAge) && retireAge >= RULE_OF_55_MIN_AGE);

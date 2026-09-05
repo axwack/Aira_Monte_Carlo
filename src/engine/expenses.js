@@ -126,13 +126,13 @@ export function computeOtherIncome(otherIncomes, calYear) {
 /**
  * One-off and periodic planned expenses ("cash flow events") for a calendar year.
  *
- * The gap this fills: the model had recurring spend (`sp`), recurring committed
- * obligations (`carveouts`, which run from today to an optional endYear), and
- * nothing for a cost that lands in ONE future year — a new roof, a wedding, a car
- * replaced every seven years. The only workaround was a multi-year CSV budget,
- * which REPLACES the withdrawal strategy outright and so silently switches off
- * the Guyton-Klinger guardrails. Events are additive instead: the strategy still
- * governs the recurring base, and these ride on top.
+ * The gap this fills: the model had recurring spend (sp), recurring committed
+ * obligations (carveouts, which run from today to an optional endYear), and
+ * nothing for a cost that lands in one future year — a new roof, a wedding, a
+ * car replaced every seven years. The only workaround was a multi-year CSV
+ * budget, which replaces the withdrawal strategy outright and silently
+ * switches off the Guyton-Klinger guardrails. Events are additive instead —
+ * the strategy still governs the recurring base, these just ride on top.
  *
  * Event shape:
  *   { id, label, year, amount, recurEveryYears, recurUntilYear, inflate, deferrable }
@@ -191,12 +191,12 @@ export function computeCashFlowEvents(events, calYear, infPct = 2.5, baseYear = 
     const amt = inflate ? amount * Math.pow(1 + (infPct || 0) / 100, yrs) : amount;
 
     if (e.direction === "in") {
-      // INFLOW: money arriving (lump-sum pension, cash-balance rollover,
-      // inheritance, home sale). It must be DEPOSITED into an account bucket,
-      // not netted against this year's spending — `need` is
-      // Math.max(0, sp - income), so anything beyond one year's need would be
-      // silently discarded. A $500k inheritance against an $80k gap used to
-      // lose $420k that way.
+      // Inflow: money arriving (lump-sum pension, cash-balance rollover,
+      // inheritance, home sale). Has to be deposited into an account bucket,
+      // not netted against this year's spending — need is
+      // Math.max(0, sp - income), so anything beyond one year's need would
+      // get silently discarded. A $500k inheritance against an $80k gap used
+      // to lose $420k that way.
       inflow += amt;
       const bucket = e.bucket || "taxable";
       byBucket[bucket] = (byBucket[bucket] || 0) + amt;
@@ -217,22 +217,22 @@ export function computeCashFlowEvents(events, calYear, infPct = 2.5, baseYear = 
 
 // ─── Blanchett spending smile ────────────────────────────────────────────────
 //
-// Real retirement spending does not hold flat at inflation. David Blanchett's
-// work ("Exploring the Retirement Consumption Puzzle", Journal of Financial
-// Planning, 2014) found it declines roughly 1%/yr in REAL terms through most of
-// retirement, with the decline easing and then reversing late in life as
-// healthcare and care costs take over. Plotted, that is a shallow U — the
+// Real retirement spending doesn't hold flat at inflation. David Blanchett's
+// research ("Exploring the Retirement Consumption Puzzle", Journal of
+// Financial Planning, 2014) found it declines roughly 1%/yr in real terms
+// through most of retirement, easing and then reversing late in life as
+// healthcare and care costs take over. Plotted, that's a shallow U — the
 // "smile": go-go years, slow-go years, no-go years.
 //
-// Modeled as an annual real rate of change rather than fixed age bands. Bands
-// (e.g. "115% until 74, then 85%") imply a 26% spending cliff on a single
-// birthday, which no household experiences and which makes the year-by-year
-// table look broken. A rate compounds smoothly and is what the underlying
-// research actually measures.
+// Modeled as an annual real rate of change rather than fixed age bands.
+// Bands ("115% until 74, then 85%") imply a 26% spending cliff on a single
+// birthday, which no household actually experiences and which makes the
+// year-by-year table look broken. A rate compounds smoothly and matches what
+// the research actually measures.
 //
-// The factor is relative to spending at RETIREMENT (factor = 1.0 in year one),
-// so a user entering "$80,000/yr" is stating what they intend to spend when
-// they stop working — the intuitive reading — rather than a lifetime average.
+// The factor is relative to spending at retirement (factor = 1.0 in year
+// one), so a user entering "$80,000/yr" is stating what they plan to spend
+// when they stop working — the intuitive reading — not a lifetime average.
 
 /** Real change in spending per year, by age band. Negative = declining. */
 const SMILE_RATE_GO_GO   = -0.010; // retirement → 80: the ~1%/yr Blanchett decline
@@ -271,15 +271,15 @@ export function spendingSmileFactor(age, retireAge, enabled = true) {
 
 // ─── Healthcare shocks ───────────────────────────────────────────────────────
 //
-// A late-retirement medical or long-term-care event: infrequent, expensive, and
-// the single most common reason an otherwise sound plan fails. Modeled as an
-// annual probability of a randomly-sized cost from `hcShockAge` onward.
+// A late-retirement medical or long-term-care event: infrequent, expensive,
+// and the single most common reason an otherwise sound plan fails. Modeled
+// as an annual probability of a randomly-sized cost from hcShockAge onward.
 //
-// Costs are entered in TODAY's dollars and inflated to the year they occur.
-// This matters more than it looks: a $100,000 shock at age 90 is a 2050s expense
-// on a 2020s number. Applying it un-inflated understates it by roughly half over
-// a 25-year horizon — and medical inflation has historically outpaced CPI, so
-// even inflating at general CPI is the conservative-but-honest floor.
+// Costs are entered in today's dollars and inflated to the year they occur.
+// Matters more than it looks — a $100,000 shock at age 90 is a 2050s expense
+// on a 2020s number. Leaving it un-inflated understates it by roughly half
+// over a 25-year horizon, and medical inflation has historically outpaced
+// CPI anyway, so even inflating at general CPI is the conservative floor.
 
 /**
  * Stochastic draw for one simulated year. Used by the Monte Carlo, where each

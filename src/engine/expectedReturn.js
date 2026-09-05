@@ -1,51 +1,39 @@
 /**
  * expectedReturn.js
  *
- * Single source of truth for the historical S&P 500 / bond return data and the
- * expectedReturn(eqPct) formula that blends them by equity %. Every "expected
- * value" (non-stochastic) view of portfolio growth in this app — App.jsx's
- * computeInitialWR, the deterministic schedule, the Fan Chart, AND the
- * withdrawal-waterfall/Roth-explorer/conversion-plan engines — must derive
- * growth from the SAME data and SAME formula, keyed off the user's actual
- * preRetireEq/postRetireEq equity-glide sliders. Before this module existed,
- * buildWithdrawalWaterfall.js / buildRothExplorer.js / rothConversionPlan.js
- * each hardcoded a flat 7% and never read the glide-path sliders at all, so
- * two profiles differing only in risk posture (e.g. postRetireEq 30 vs 70)
- * produced identical Smart Waterfall / Roth Explorer trajectories while the
- * Monte Carlo diverged sharply between them.
+ * One source of truth for the historical S&P 500 / bond data and the
+ * expectedReturn(eqPct) formula that blends them by equity %. Every non-stochastic
+ * "expected value" view of portfolio growth in this app — computeInitialWR, the
+ * deterministic schedule, the Fan Chart, and the withdrawal-waterfall/Roth-
+ * explorer/conversion-plan engines — needs to use the SAME data and formula,
+ * keyed off the user's actual preRetireEq/postRetireEq sliders. Before this
+ * file existed, buildWithdrawalWaterfall.js / buildRothExplorer.js /
+ * rothConversionPlan.js each hardcoded a flat 7% and ignored the glide-path
+ * sliders entirely, so two profiles that only differed in risk posture (say
+ * postRetireEq 30 vs 70) got identical Smart Waterfall / Roth Explorer
+ * trajectories even though the Monte Carlo diverged sharply between them.
  *
- * DATA SOURCE (v1.2.104, 2026-08-20)
- * ----------------------------------
- * Damodaran, "Historical Returns on Stocks, Bonds and Bills: 1928-2024"
+ * Data: Damodaran, "Historical Returns on Stocks, Bonds and Bills: 1928-2024"
  *   https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histretSP.html
- * Coverage: 1928-2025 (98 years). Updated annually.
- *   • SP500 = "S&P 500 (includes dividends)" — nominal total return, dividends
- *     reinvested.
- *   • BONDS = "US T. Bond (10-year)" — nominal total return (price + coupon)
- *     on the 10-year Treasury.
+ * 1928-2025 (98 years), updated annually.
+ *   - SP500 = "S&P 500 (includes dividends)", nominal total return, reinvested.
+ *   - BONDS = "US T. Bond (10-year)", nominal total return (price + coupon).
  *
- * WHY THIS SOURCE
- * ---------------
- * Damodaran is the canonical free retail dataset for retirement-planning MC
- * research (Bengen, Kitces, Pfau all reference it). The two series are
- * year-aligned by calendar year, which is the prerequisite for paired bootstrap
- * sampling in App.jsx's runMC (see portReturn — one shared random index draws
- * SP500[i] and BONDS[i] together so real historical stock/bond correlations,
- * including the flight-to-quality flip in crashes like 2008, are preserved).
+ * Using Damodaran because it's the standard free dataset for retirement-planning
+ * MC (Bengen, Kitces, Pfau all cite it), and the two series line up by calendar
+ * year — which paired bootstrap sampling in runMC needs (portReturn draws
+ * SP500[i] and BONDS[i] off one shared random index so real stock/bond
+ * correlation, like the flight-to-quality flip in 2008, survives).
  *
- * WHY NO WINSORIZATION
- * --------------------
- * The prior arrays clamped to [-30, 30] for stocks and [-15, 20] for bonds.
- * That censored the exact tail years retirement MC exists to model — 1931
- * (-43.84%), 1937 (-35.34%), 2008 (-36.55%) were all clipped, silently
- * understating ruin probability. If a specific stress test needs damped
- * returns, do it in that caller by scaling the array, not by mutating the
- * canonical dataset.
+ * No winsorization. The old arrays clamped to [-30, 30] for stocks and [-15, 20]
+ * for bonds, which clipped exactly the tail years retirement MC exists to model
+ * — 1931 (-43.84%), 1937 (-35.34%), 2008 (-36.55%) — quietly understating ruin
+ * probability. If a stress test needs damped returns, scale the array in that
+ * caller, don't touch the real dataset here.
  *
- * NOTE: this file is now the ONE source. App.jsx used to keep its own
- * byte-identical copy of both arrays for portReturn/bootstrapDraw; that
- * duplication has been removed (App.jsx imports these). If you add a year of
- * data, edit ONLY this file.
+ * This is the only copy now. App.jsx used to carry its own byte-identical copy
+ * of both arrays for portReturn/bootstrapDraw — that's gone, App.jsx imports
+ * these. Add a year of data here only.
  */
 
 const SP500 = [
@@ -75,15 +63,14 @@ const BONDS = [
 ].map((r) => r / 100);
 
 // INFL — annual CPI-U year-over-year %, 1928-2025 (98 entries, aligned to
-// SP500/BONDS by calendar year). Source: US Bureau of Labor Statistics CPI-U
-// "annual average" series as republished at usinflationcalculator.com, with
-// 2025 confirmed against BLS's current release. Extended backward from the
-// prior 51-entry array (~1975-2025) so that inflation can be drawn from the
-// same historical year as the stock/bond return (v1.2.105 paired MC draws).
-// The stagflation years now show up correctly paired — 1974's -25.9% S&P
-// alongside 11.0% CPI, 1979's 18.4% S&P alongside 11.3% CPI — instead of the
-// prior independent sampling that could pair 2008's crash with 2015's 0.1%
-// CPI. No winsorization: 1932 (-9.9%) and 1946 (14.4%) are real years.
+// SP500/BONDS by calendar year). Source: US BLS CPI-U "annual average" series
+// as republished at usinflationcalculator.com, 2025 checked against BLS's
+// current release. Extended backward from the old 51-entry array (~1975-2025)
+// so inflation gets drawn from the same historical year as the stock/bond
+// return. Now the stagflation years pair up correctly — 1974's -25.9% S&P
+// with 11.0% CPI, 1979's 18.4% S&P with 11.3% CPI — instead of drawing them
+// independently, which could pair 2008's crash with 2015's 0.1% CPI. No
+// winsorization: 1932 (-9.9%) and 1946 (14.4%) are real years.
 const INFL = [
   -1.7, 0, -2.3, -9, -9.9, -5.1, 3.1, 2.2, 1.5, 3.6,
   -2.1, -1.4, 0.7, 5, 10.9, 6.1, 1.7, 2.3, 8.3, 14.4,
