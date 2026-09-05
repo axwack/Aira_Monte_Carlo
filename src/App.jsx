@@ -93,14 +93,12 @@ import PrintReport from "./report/PrintReport.jsx";
 
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,RadarChart,PolarGrid,PolarAngleAxis,PolarRadiusAxis,Radar,} from "recharts";
 
-// §37 Phase A (v1.2.106) — DM Sans / DM Mono removed. The app now uses one
-// text family (Inter) and one mono family (JetBrains Mono), both imported
-// through the same @import in the CSS constant below. Prior state had two
-// text families and two mono families loaded from two @font-face requests
-// for the same typographic role (body text and numeric readout), which is a
-// single-point-of-control violation at the font layer. Landing hero classes
-// `.lp-age` and `.lp-val` were the only in-tree consumers of DM Mono; both
-// switch to JetBrains Mono in the CSS below.
+// Dropped DM Sans / DM Mono. Down to one text family (Inter) and one mono
+// family (JetBrains Mono), both pulled in through the same @import in the CSS
+// constant below. We used to load two text fonts and two mono fonts for the
+// same job (body text, numeric readout), which just meant two places to keep
+// in sync for no reason. The landing hero classes `.lp-age` and `.lp-val` were
+// the only things still using DM Mono; they're on JetBrains Mono now too.
 
 /** This application is  Aira - Freedom Financial Forecaster
  * Here is some reference information: 
@@ -118,95 +116,97 @@ import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGri
  * date". Returns null for a missing/unparseable input so callers choose their
  * own fallback.
  *
- * SINGLE SOURCE OF TRUTH — do not inline this again. There were FOUR separate
- * implementations. Two divided elapsed milliseconds by 365.25 days, which
- * disagrees with the calendar answer by a full year for anyone near their
- * birthday, so the engine and the Profile panel could report different ages for
- * the same person. The other two hand-rolled the birthday adjustment for
- * checkpoint dates, one of them comparing "month-day" as STRINGS
- * ("9-5" < "10-1" is true lexically but false as a date).
+ * Please don't re-inline this. At one point we had four separate copies of
+ * this logic. Two divided elapsed milliseconds by 365.25 days, which is off by
+ * a full year from the calendar answer if you're near your birthday, so the
+ * engine and the Profile panel could report different ages for the same
+ * person. The other two hand-rolled the birthday adjustment for checkpoint
+ * dates, and one of those compared "month-day" as plain strings ("9-5" <
+ * "10-1" is true as strings but wrong as dates).
  *
- * Worse, several views read the STORED `currentAge` field rather than deriving
- * from `dob`, so editing a birthday updated the simulation while the portfolio
- * fan chart and MC band table kept rendering the old age — including the band
- * table's calendar-year column, which was silently shifted by the difference.
+ * On top of that, some views read the stored `currentAge` field instead of
+ * deriving it from `dob`, so editing a birthday updated the simulation but
+ * left the portfolio fan chart and MC band table showing the old age —
+ * including the band table's calendar-year column, quietly shifted off by
+ * the difference.
  *
- * `dob` is the input of record. Always derive from it. Treat stored
- * `currentAge` purely as a fallback for imported profiles that have no dob.
+ * `dob` is the source of truth, always derive from it. Stored `currentAge` is
+ * only a fallback for imported profiles that don't have a dob.
  */
-/* Implementation moved to src/engine/ages.js — the engines need it too and they
- * cannot import from App.jsx (that would be a cycle). Re-exported at the bottom
- * of this file, so every existing caller and ageDerivation.test.js are
- * unaffected. Do NOT reintroduce a local copy: age was once computed four
- * different ways here and two of them were wrong. */
+/* Lives in src/engine/ages.js now — the engines need it too and can't import
+ * from App.jsx without creating a cycle. Re-exported at the bottom of this
+ * file so every existing caller and ageDerivation.test.js still work. Please
+ * don't add a local copy back — we had four different ways of computing age
+ * here before and two of them were wrong. */
 
 /**
- * Parse a date that represents a CALENDAR day (a birthday, a checkpoint date) —
- * not an instant in time.
+ * Parse a date that represents a calendar day (a birthday, a checkpoint date),
+ * not a specific instant in time.
  *
- * `new Date("1970-07-27")` is specified to parse as UTC midnight, but every
- * getFullYear/getMonth/getDate call reads it back in LOCAL time. West of UTC
- * that lands on the previous day: for a US user the birthday above becomes
- * July 26th, and a dob of "1970-01-01" becomes 1969-12-31 — shifting the derived
- * age by a full year for the whole year. Date-only strings are therefore split
- * and rebuilt with the local-time constructor. Values that already carry a time
- * (or are Date objects) are passed through untouched.
+ * `new Date("1970-07-27")` parses as UTC midnight, but getFullYear/getMonth/
+ * getDate all read it back in local time. West of UTC that lands on the
+ * previous day: for a US user that birthday becomes July 26th, and a dob of
+ * "1970-01-01" becomes 1969-12-31 — shifting the derived age by a year for
+ * the rest of that year. So date-only strings get split and rebuilt with the
+ * local-time constructor instead. Anything that already carries a time (or is
+ * already a Date object) passes through untouched.
  *
- * Implementation now lives in src/engine/ages.js — same reason as ageFromDob.
+ * Lives in src/engine/ages.js now, same reason as ageFromDob above.
  */
 
 /**
- * Age input bounds — ONE definition, used by every age control.
+ * Age input bounds, one definition, used by every age control.
  *
- * These were hardcoded separately in three places and disagreed: the sidebar
- * retire-age slider allowed 50–68 while the wizard's input for the SAME value
- * allowed 50–100, so typing 70 in the Profile and then touching the slider
- * silently snapped it back to 68 — meaning you could not model delaying
- * retirement to 70, the most common Social Security optimization. The landing
- * hero separately capped current age at 62, locking out anyone already retired.
+ * These used to be hardcoded in three separate places and didn't agree: the
+ * sidebar retire-age slider allowed 50-68 while the wizard's input for the
+ * same value allowed 50-100, so typing 70 in the Profile and then touching
+ * the slider would silently snap it back to 68 — meaning you couldn't model
+ * delaying retirement to 70, which is the most common Social Security
+ * optimization there is. The landing hero also capped current age at 62 on
+ * its own, locking out anyone already retired.
  *
- * Ranges cover real users at both ends: FIRE at 45, delayed SS at 70+, and
- * people who are already retired and want to know how it's going.
+ * These ranges cover real users at both ends: FIRE at 45, delayed SS at 70+,
+ * and people who are already retired and just want to know how it's going.
  */
 const AGE_LIMITS = {
   current: { min: 25, max: 85 },   // was 30–62 on the landing hero
-  // 35, not 45. The floor was never protecting anyone: every engine here is
-  // age-parameterised, §72(t)/SEPP and the Rule-of-55 exemptions are modelled,
-  // and the Monte Carlo genuinely bootstraps the full horizon — so a 50-year
-  // retirement is simulated honestly. What the floor actually did was refuse to
-  // answer, and push FIRE users to fake their birth date instead. That is
-  // strictly worse: birth year drives RMD start, Medicare/IRMAA, SS claiming and
-  // the early-withdrawal penalty simultaneously, so a fictional DOB corrupts four
-  // correct calculations to work around one arbitrary bound.
+  // Floor is 35, not 45. The old floor wasn't protecting anyone — every engine
+  // here is age-parameterized, §72(t)/SEPP and the Rule-of-55 exemptions are
+  // modeled, and the Monte Carlo genuinely bootstraps the full horizon, so a
+  // 50-year retirement gets simulated honestly. All the floor did was refuse
+  // to answer, which just pushed FIRE users to fake their birth date instead.
+  // That's worse: birth year drives RMD start, Medicare/IRMAA, SS claiming and
+  // the early-withdrawal penalty all at once, so a fake DOB breaks four
+  // correct calculations just to dodge one arbitrary bound.
   //
-  // What a long horizon DOES break is disclosed, not hidden — see the
-  // long-horizon notice in MCTab (ACA/pre-65 healthcare is unmodelled, and the
-  // Blanchett smile is extrapolated well past the data it was fitted on).
-  retire:  { min: 35, max: 80 },   // was 45; earlier still: 50–68 (slider) vs 50–100 (wizard)
+  // What a long horizon actually does break, we say so instead of hiding it —
+  // see the long-horizon notice in MCTab (ACA/pre-65 healthcare isn't modeled,
+  // and the Blanchett smile gets extrapolated well past the data it was fit on).
+  retire:  { min: 35, max: 80 },   // was 45; before that, 50–68 on the slider vs 50–100 on the wizard
   end:     { min: 60, max: 105 },
-  // Social Security claiming window is statutory, not a UI preference: 62 is the
-  // earliest possible claim and 70 is the last age that earns delayed retirement
-  // credits (8%/yr past FRA — waiting past 70 gains nothing). Listed here rather
-  // than inline so the sidebar slider and the wizard input cannot drift apart the
-  // way the retire-age controls did; a cap below 70 would hide the single
-  // highest-value decision this app exists to model.
+  // Social Security's claiming window is statutory, not a UI preference: 62 is
+  // the earliest you can claim and 70 is the last age that earns delayed
+  // retirement credits (8%/yr past FRA — waiting past 70 gains nothing). It's
+  // defined here rather than inline so the sidebar slider and the wizard input
+  // can't drift apart the way the retire-age controls did; capping this below
+  // 70 would hide the single highest-value decision this app exists to model.
   ss:      { min: 62, max: 70 },
 };
 
 /**
  * Where feedback goes.
  *
- * Replaced an EmailJS integration that broke twice in one week for the same
- * structural reason: its three REACT_APP_EMAILJS_* keys are inlined by CRA at
- * BUILD time, and `.env*` is gitignored, so the values existed on exactly one
- * machine. A fresh clone and production both shipped `undefined` and the button
- * failed — once telling the user to open a browser console.
+ * This replaced an EmailJS integration that broke twice in one week for the
+ * same reason: its three REACT_APP_EMAILJS_* keys get inlined by CRA at build
+ * time, and `.env*` is gitignored, so those values only ever existed on one
+ * machine. A fresh clone and production both shipped `undefined` and the
+ * button just failed — once telling the user to go open a browser console.
  *
- * A mailto has no keys, no build-time configuration, no npm dependency and no
- * public key sitting in the bundle for anyone to spam through. It cannot break
- * on a new machine because there is nothing to configure. The tradeoff is real
- * and accepted: mailto depends on the visitor having a mail client, so the
- * address is also shown as selectable text in the dialog for anyone on webmail.
+ * A mailto has no keys, no build-time config, no npm dependency, and no public
+ * key sitting in the bundle for someone to spam through. It can't break on a
+ * new machine because there's nothing to configure. The real tradeoff is that
+ * mailto needs the visitor to have a mail client set up, so the address is
+ * also shown as selectable text in the dialog for anyone on webmail.
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
@@ -219,23 +219,24 @@ if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   console.log(`[AiRA] build ${BUILD_TAG} · ${BUILD_TIME} · v${APP_VERSION}`);
 }
 
-/* ════ SIMULATION + GUARDRAIL CONSTANTS ════
- * Single source of truth. UI prose interpolates these — never retype the
- * digits. Changing a value here changes the engine AND every label at once. */
+// Simulation + guardrail constants, all in one place. UI text interpolates
+// these instead of retyping the numbers, so changing a value here changes the
+// engine and every label that mentions it at the same time.
 export const MC_PATHS = 3000;            // Monte Carlo stochastic paths
 export const STRESS_PATHS = 2000;        // 2000–2012 sequence-risk stress paths
 export const MC_PATHS_LABEL = MC_PATHS.toLocaleString();      // "3,000"
 export const STRESS_PATHS_LABEL = STRESS_PATHS.toLocaleString(); // "2,000"
-// Monte Carlo score bands. rateColor() and riskLabel() both switched on these
-// four numbers as inline literals, and the explainer sentence carried a fifth,
-// unrelated one — five copies of "what counts as a good score" in JSX strings
-// is how they drift apart. Values unchanged; only the ownership moved.
+// Monte Carlo score bands. rateColor() and riskLabel() used to each hardcode
+// these four numbers separately, and the explainer sentence had a fifth,
+// unrelated one baked in — that's how five copies of "what counts as a good
+// score" end up disagreeing. Same values as before, just one owner now.
 export const MC_BAND_LOW_RISK  = 0.90;
 export const MC_BAND_MODERATE  = 0.80;
 export const MC_BAND_ELEVATED  = 0.70;
 export const MC_BAND_HIGH      = 0.60;
-// Deliberately NOT a band edge: the "generally considered a solid plan"
-// rule-of-thumb from the planning literature, not this app's severity cutoff.
+// Not a band edge, on purpose — this is the "generally considered a solid
+// plan" rule of thumb from the planning literature, separate from our own
+// severity cutoffs above.
 export const MC_SOLID_PLAN_RATE = 0.85;
 // Guyton-Klinger guardrails, as % of core spend
 export const GK_FLOOR_DEFAULT_PCT = 65;
@@ -244,22 +245,22 @@ export const GK_CEILING_DEFAULT_PCT = 135;
 export const GK_FLOOR_FALLBACK = 48_000;
 export const GK_CEILING_FALLBACK = 115_000;
 // "Today" as a calendar year, for age→year conversion and inflation-factor
-// indexing (e.g. Math.pow(1+rate, yr - CURRENT_YEAR)). Matches the exact
-// pattern buildWithdrawalWaterfall.js's BASE_YEAR / buildRothExplorer.js's
-// ROTH_BASE_YEAR already use — computed dynamically so it never goes stale,
-// unlike a hardcoded literal year. Do NOT use this for the FED_BRACKETS_2026_*
-// / IRMAA_2026 table names or their literal dollar data — those represent the
-// real IRS 2026 bracket figures and must stay pinned to 2026.
+// indexing (e.g. Math.pow(1+rate, yr - CURRENT_YEAR)). Same pattern as
+// buildWithdrawalWaterfall.js's BASE_YEAR and buildRothExplorer.js's
+// ROTH_BASE_YEAR — computed dynamically so it never goes stale like a
+// hardcoded year would. Don't use this for the FED_BRACKETS_2026_* /
+// IRMAA_2026 table names or their dollar figures though — those are the real
+// IRS 2026 bracket numbers and need to stay pinned to 2026.
 const CURRENT_YEAR = new Date().getFullYear();
 
-// ── Theme system (§37 Phase A + B, v1.2.106) ────────────────────────────────
+// Theme system.
 // Runtime accessor for chart series colors. Recharts wants literal color
 // strings on props (`stroke="var(--accent)"`), so a chart that hardcodes those
-// literals ignores the CSS token system entirely. `CHART_PALETTE.accent`
-// reads the current value of `--accent` from the document root at call time,
-// so once Phase D swaps `stroke="var(--accent)"` → `stroke={CHART_PALETTE.accent}`
-// the chart follows the theme. Reading `getComputedStyle` on every render is
-// cheap (native, cached by the browser). Guarded for SSR / test.
+// literals ignores the CSS token system entirely. `CHART_PALETTE.accent` reads
+// the current value of `--accent` off the document root at call time, so once
+// a chart switches `stroke="var(--accent)"` to `stroke={CHART_PALETTE.accent}`
+// it follows the theme. Calling `getComputedStyle` on every render is cheap
+// (native, cached by the browser). Guarded for SSR / test.
 export const CHART_PALETTE = {
   get accent()       { return readCssVar('--accent'); },
   get teal()         { return readCssVar('--accent-teal'); },
@@ -278,11 +279,10 @@ function readCssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-// Theme persistence. `aira_theme` is a DISPLAY preference — it lives in
-// localStorage ONLY, NEVER in `profile.json`, NEVER in `params`, NEVER
-// consumed by any engine function. Hard constraint per §37.6 #1 of the
-// design-authority verdict: the theme must not touch the financial
-// computation path in any way.
+// Theme persistence. `aira_theme` is purely a display preference — it lives
+// in localStorage only, never in `profile.json` or `params`, and no engine
+// function ever reads it. The theme should never touch the financial
+// computation path, full stop.
 export const THEME_STORAGE_KEY = 'aira_theme';
 export function resolveInitialTheme() {
   if (typeof window === 'undefined') return 'dark';
@@ -300,21 +300,21 @@ export function applyTheme(theme) {
   try { window.localStorage.setItem(THEME_STORAGE_KEY, theme); } catch {}
 }
 
-// SP500 / BONDS moved to engine/expectedReturn.js (v1.2.104) — single source
-// of truth for the historical bootstrap. Both arrays are now Damodaran's
-// year-aligned 1928-2025 series (98 pairs), so portReturn() can draw ONE
-// shared random index and preserve the empirical stock/bond correlation,
-// including flight-to-quality in crashes (2008 SP -36.55% pairs with Bond
-// +20.10%). The prior arrays had a length mismatch (99 vs 51) and were
-// duplicated across files — see engine/expectedReturn.js header.
+// SP500 / BONDS live in engine/expectedReturn.js now, one source of truth for
+// the historical bootstrap. Both arrays are Damodaran's year-aligned
+// 1928-2025 series (98 pairs), so portReturn() can draw one shared random
+// index and keep the real stock/bond correlation intact, including
+// flight-to-quality in crashes (2008 SP -36.55% pairs with Bond +20.10%). The
+// old arrays had a length mismatch (99 vs 51) and were duplicated across
+// files — see engine/expectedReturn.js header for details.
 // SP500 and BONDS are imported at the top of this file alongside expectedReturn().
 
-// INFL now imported from engine/expectedReturn.js — extended to 1928-2025 (98
-// entries, aligned to SP500/BONDS), and no longer winsorized. The prior clamp
-// `Math.max(0.5, Math.min(7.0, r))` was censoring both real deflations
-// (1932: -9.9%) and real inflation spikes (1974: 11%, 1980: 13.5%, 2022: 8%).
-// See file header for source. Winsorization removed for the same accuracy
-// reasons documented on the stock/bond arrays.
+// INFL is imported from engine/expectedReturn.js too now — extended to
+// 1928-2025 (98 entries, aligned to SP500/BONDS), and no longer clamped. The
+// old `Math.max(0.5, Math.min(7.0, r))` clamp was cutting off real deflation
+// years (1932: -9.9%) along with real inflation spikes (1974: 11%, 1980:
+// 13.5%, 2022: 8%). See the file header there for the source. Dropped the
+// clamp for the same accuracy reasons as the stock/bond arrays above.
 
 // GK paper: cap CPI pass-through in Guyton-Klinger withdrawal adjustments at 6%.
 // Distinct from the INFL data clamp above (which bounds the historical CPI bootstrap).
@@ -325,24 +325,26 @@ const SEQ_2000_2012 = [
   0.151, 0.021, 0.16,
 ];
 
-// expectedReturn() (expected-VALUE helper, used by computeInitialWR/the
-// deterministic schedule/Fan Chart) now lives in ./engine/expectedReturn.js so
-// buildWithdrawalWaterfall.js/buildRothExplorer.js/rothConversionPlan.js can
-// import the exact same formula instead of hardcoding a flat 7%. SP500/BONDS
-// above are kept here (unchanged) because they still feed the STOCHASTIC
-// bootstrap draws in portReturn/bootstrapDraw below, a different consumer.
+// expectedReturn() (the expected-value helper used by computeInitialWR, the
+// deterministic schedule, and the Fan Chart) lives in ./engine/expectedReturn.js
+// now, so buildWithdrawalWaterfall.js, buildRothExplorer.js, and
+// rothConversionPlan.js can all share the same formula instead of each
+// hardcoding a flat 7%. SP500/BONDS stay here unchanged because they feed the
+// stochastic bootstrap draws in portReturn/bootstrapDraw below — a different
+// consumer than expectedReturn().
 
 /**
  * Initial withdrawal rate diagnostic.
- * Projects portfolio to retirement using REAL return (so result stays in today's dollars).
- * initDrawEst is the NET PORTFOLIO NEED at retirement — gross spend minus SS/
- * rental/other income, plus housing/carveouts — the same quantity the GK
+ * Projects the portfolio to retirement using real (inflation-adjusted) return,
+ * so the result stays in today's dollars.
+ * initDrawEst is the net portfolio need at retirement — gross spend minus SS/
+ * rental/other income, plus housing/carveouts. It's the same quantity the GK
  * engines (runMC/simulateDeterministicWithStrategy/buildWithdrawalWaterfall)
- * calibrate their own initWR against, so this sidebar diagnostic matches what
- * the engines actually use. Housing/carveout/otherIncome terms are evaluated
- * at the retirement calendar year but left un-inflated (today's-dollars mortgage
- * map value / raw carveout annual amounts), consistent with the rest of this
- * helper's today's-dollars framing.
+ * calibrate their own initWR against, so this sidebar number matches what the
+ * engines actually use. Housing/carveout/otherIncome terms are evaluated at
+ * the retirement calendar year but left un-inflated (today's-dollars mortgage
+ * map value / raw carveout annual amounts), to stay consistent with the rest
+ * of this helper's today's-dollars framing.
  * Returns { initWRpct, projectedPort, initDrawEst, baseSpend, ssAtRetire, rentalAtRetire,
  * annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } so callers can show the math.
  * Accepts either a profile shape (values from RetirementPanel) or the assembled params shape.
@@ -524,9 +526,9 @@ function getStateBrackets(state, isMFJ) {
 
 
 // One label map for the whole app, including the print report — see
-// engine/withdrawalStrategies.js. It covers the RETIRED ids too, so a migration
-// notice or an old checkpoint can still name what the user used to have. Only
-// LIVE_STRATEGIES is offered in the picker.
+// engine/withdrawalStrategies.js. It covers retired strategy ids too, so a
+// migration notice or an old checkpoint can still name what the user used to
+// have. Only LIVE_STRATEGIES shows up in the picker.
 export const getStrategyLabel = (strategy) => STRATEGY_LABELS[strategy] || strategy;
 
 export const getStrategyDescription = (strategy) => {
@@ -541,9 +543,9 @@ export const getStrategyDescription = (strategy) => {
   return descriptions[resolveStrategy(strategy)] || descriptions.gk;
 };
 
-/* ════ PROFILES ════ */
-/* Personal data lives in AiRA_Profile.json — never hardcoded here */
-/* Use Export button to save your data. Use Import to load it back. */
+// Profiles.
+// Personal data lives in AiRA_Profile.json, never hardcoded here.
+// Use Export to save your data, Import to load it back.
 
 // Default bucket assignment by account category (user can override per account)
 export function _defaultBucket(category) {
@@ -555,12 +557,12 @@ export function _defaultBucket(category) {
   return 2;
 }
 
-// A single account can distribute its balance across buckets (Quicken-style
-// split): `account.splits` = [{ bucket, pct }] with pct summing to 100. When
-// absent, the whole balance sits in the single `account.bucket`. These helpers
-// expand an account into per-bucket "pieces" so every consumer can treat a
-// split account as several bucket-tagged slices that still roll up to one
-// balance (the rollup is just the untouched `account.balance`).
+// A single account can split its balance across buckets (Quicken-style):
+// `account.splits` = [{ bucket, pct }] with pct summing to 100. When there's
+// no splits, the whole balance sits in `account.bucket`. These helpers expand
+// an account into per-bucket "pieces" so every consumer can treat a split
+// account as several bucket-tagged slices that still roll up to one balance
+// (the rollup is just the untouched `account.balance`).
 export function accountBucketPieces(a) {
   const bal = a.balance || 0;
   const splits = Array.isArray(a.splits) ? a.splits.filter(s => s && s.pct > 0) : null;
@@ -587,11 +589,12 @@ export const BLANK_PROFILE = {
   port: 1_000_000,
   contrib: 20,
   employerContrib: 0,           // annual employer contribution (fixed dollar amount, e.g. 401k match + profit sharing)
-  // Savings that are NOT tax-advantaged. Kept separate from `contrib` because the
-  // destination bucket changes the tax outcome decades later: taxable dollars are
-  // drawn at LTCG rates against a cost basis (waterfall Step 3), whereas pre-tax
-  // dollars are ordinary income AND enlarge the RMD base at rmdStartAge. Folding
-  // brokerage savings into the 401(k) field silently converts one into the other.
+  // Savings that aren't tax-advantaged. Kept separate from `contrib` because
+  // the destination bucket changes the tax outcome decades later: taxable
+  // dollars get drawn at LTCG rates against a cost basis (waterfall Step 3),
+  // while pre-tax dollars are ordinary income and also grow the RMD base at
+  // rmdStartAge. Folding brokerage savings into the 401(k) field would quietly
+  // turn one into the other.
   taxableContrib: 0,            // annual after-tax brokerage/savings contribution ($/yr)
   rothContrib: 0,               // annual Roth IRA contribution ($/yr, direct or backdoor)
   inf: 2.5,
@@ -601,61 +604,67 @@ export const BLANK_PROFILE = {
   portfolioGoal: 1_000_000,
   ssAge: 67,
   ssb: 24_000,
-  ssPia: 0,                    // own FRA/PIA annual amount — only needed if claiming before/after FRA; see §21
-  // Spousal Social Security (Phase 1, §21 REQUIREMENTS): additive, off by default so every
-  // existing single-person profile computes identically to before this feature existed.
+  ssPia: 0,                    // own FRA/PIA annual amount — only needed if claiming before/after FRA
+  // Spousal Social Security: additive, off by default so every existing
+  // single-person profile still computes exactly the same as before this
+  // feature existed.
   spouse: {
     enabled: false,
-    // Spouse's date of birth (§24). THE enabler for per-person modelling: every
-    // engine walks one `age`, which is the primary's, so without this the
-    // spouse's Social Security claim age was compared against the PRIMARY's age
-    // and a younger spouse started collecting years early. Blank ⇒ the spouse is
-    // assumed to be the same age as the primary, which is exactly the old
-    // behaviour, so no saved profile changes until this is filled in.
+    // Spouse's date of birth. This is what makes per-person modeling
+    // possible: every engine walks one `age`, the primary's, so without this
+    // the spouse's Social Security claim age got compared against the
+    // primary's age and a younger spouse ended up collecting years early.
+    // Blank means the spouse is assumed to be the same age as the primary,
+    // which is exactly the old behavior, so no saved profile changes until
+    // this gets filled in.
     dob: "",
-    ssb: 0,                    // spouse's own annual benefit at THEIR claim age
+    ssb: 0,                    // spouse's own annual benefit at their claim age
     ssAge: 67,                 // spouse's own claim age, independent of the primary's
     ssPia: 0,                  // spouse's own FRA/PIA annual amount, for the spousal top-up
-    // The spouse's OWN age at a modelled first death (§22 widow's penalty).
-    // null = not modelled, which leaves filing status constant exactly as before.
-    // Deliberately one user-entered age rather than a mortality draw: that keeps
-    // it a deterministic event in a known year instead of a variable threaded
-    // through 3,000 Monte Carlo paths.
+    // The spouse's own age at a modeled first death (the widow's-penalty
+    // scenario). null means it's not modeled, so filing status stays constant
+    // exactly like before. This is one user-entered age rather than a
+    // mortality draw on purpose — that keeps it a deterministic event in a
+    // known year instead of a variable threaded through 3,000 Monte Carlo paths.
     deathAge: null,
-    // WHOSE age `deathAge` is. "spouse" (default) = the spouse dies and the primary
-    // survives, which was the only case the model could express. "primary" = the
-    // higher earner dies first, often the more realistic scenario since they are
-    // frequently the older partner. This is not a label: the survivor's identity
-    // decides the plan horizon, the Medicare start, the age-65 add-on, the RMD clock
-    // and the survivor's own FRA. Default preserves every existing plan.
+    // Whose age `deathAge` is. "spouse" (default) means the spouse dies and
+    // the primary survives, the only case the model used to handle. "primary"
+    // means the higher earner dies first, which is often more realistic since
+    // they're frequently the older partner. This isn't just a label — the
+    // survivor's identity decides the plan horizon, Medicare start, the
+    // age-65 add-on, the RMD clock, and the survivor's own FRA. Default
+    // preserves every existing plan.
     firstToDie: "spouse",
-    // ── Survivor benefit (§30) ───────────────────────────────────────────────
-    // Deemed filing does NOT apply to survivor benefits, so the survivor's OWN
-    // retirement benefit and the survivor benefit are independent: either can be
-    // claimed first and switched later. That flexibility exists nowhere else in
-    // Social Security, and it is only expressible with a separate claim age.
-    // null ⇒ claim as soon as eligible (60, or the death year if later).
+    // Survivor benefit.
+    // Deemed filing doesn't apply to survivor benefits, so the survivor's own
+    // retirement benefit and the survivor benefit are independent — either
+    // can be claimed first and switched later. That flexibility doesn't exist
+    // anywhere else in Social Security, and it only works if we track a
+    // separate claim age. null means claim as soon as eligible (60, or the
+    // death year if later).
     survivorClaimAge: null,
-    // Optional: the survivor benefit as SSA QUOTES it at that claim age — already
-    // reduced. Supplying it bypasses our reduction schedule entirely (§21 "ask,
-    // don't derive"). 0/blank ⇒ derive from the deceased's check or PIA.
+    // Optional: the survivor benefit as SSA quotes it at that claim age,
+    // already reduced. Supplying it skips our reduction schedule entirely —
+    // if you have the real number, use it. 0/blank means derive it from the
+    // deceased's check or PIA instead.
     survivorBenefitAtClaim: 0,
-    // ── Per-person contributions (§24.1 Phase A) ─────────────────────────────
-    // The household used to have ONE set of contribution fields running for
-    // `retireAge - currentAge` — one retirement date for two people. Splitting
-    // the AMOUNTS changes nothing (all three engines sum into buckets, so
-    // 24,500 + 18,000 in one field is identical to two fields); splitting the
-    // STOP DATE is the entire point. One partner retiring at 62 while the other
-    // works to 67 previously lost — or invented — five years of one salary's
-    // savings, compounded to retirement.
+    // Per-person contributions.
+    // The household used to have one set of contribution fields running for
+    // `retireAge - currentAge` — one retirement date for two people.
+    // Splitting the amounts doesn't actually change anything (all three
+    // engines just sum into buckets, so 24,500 + 18,000 in one field is
+    // identical to two fields); splitting the stop date is the whole point.
+    // One partner retiring at 62 while the other works to 67 used to lose —
+    // or invent — five years of one salary's savings, compounded to retirement.
     //
-    // Only job-bound streams live here. Brokerage savings stay household-level
-    // (no employment link, no statutory cap) and the HSA stays household-level
-    // because its stop rule is Medicare enrolment, not retirement.
+    // Only job-bound streams live here. Brokerage savings stay
+    // household-level (no employment link, no statutory cap), and the HSA
+    // stays household-level too because its stop rule is Medicare
+    // enrollment, not retirement.
     //
-    // null/0 defaults reproduce the pre-feature result exactly for every saved
-    // profile — the same regression-lock idiom as spouse.dob above.
-    retireAge: null,        // THEIR retirement age, on THEIR clock. null ⇒ same as primary
+    // null/0 defaults reproduce the pre-feature result exactly for every
+    // saved profile, same regression-safe idiom as spouse.dob above.
+    retireAge: null,        // their retirement age, on their own clock. null = same as primary
     contrib: 0,             // their pre-tax 401(k)/403(b)/457(b) deferral
     employerContrib: 0,     // their employer match / profit sharing
     rothContrib: 0,         // their Roth IRA
@@ -736,10 +745,10 @@ export const BLANK_PROFILE = {
   irmaaGuard: false,              // cap pretax draws below IRMAA tier-1 ceiling (ages 63+)
   ssTorpedoGuard: false,          // show SS torpedo landmine warnings in Withdrawal Plan tab
   rothEmergencyReserve: 0,        // never draw Roth below this $ floor
-  // IRC 72(t) exceptions to the 10% early-distribution tax. Both default OFF:
-  // the penalty is the law, and an exception is something the user must affirm.
-  // Only asked when retireAge < 59.5 (see the Early Retirement card).
-  ruleOf55: false,                // separated from employer at 55+, plan NOT rolled over
+  // IRC 72(t) exceptions to the 10% early-distribution tax. Both default off:
+  // the penalty is the law, and an exception is something the user has to
+  // affirm. Only asked when retireAge < 59.5 (see the Early Retirement card).
+  ruleOf55: false,                // separated from employer at 55+, plan not rolled over
   sepp72t: false,                 // a 72(t) SEPP is running
   sepp72tStartAge: null,          // series start age; must run to max(start+5, 59.5)
   orderingMode: "tax_reactive",   // "tax_reactive"|"custom"|"pretax_first" — which bucket drains first (orthogonal to strategy + guardrails)
@@ -748,14 +757,14 @@ export const BLANK_PROFILE = {
   geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
 };
 
-/* Real-world probability analogies, grouped into success-rate bands (min = band
- * floor in %). Several entries per band feed the revolving display so users get
- * varied context for what their number actually means. Every `stat` is the
- * analogy's own real-world probability, stated approximately and defensibly:
- * users should be able to sanity-check the comparison, not just take the vibe.
- * (Two earlier entries were factually wrong and are replaced: "calling heads
- * three times in a row" is 12.5% — it's NOT flipping three heads that's 87.5% —
- * and the 4-year college graduation rate is ~46%, nowhere near 80%.) */
+/* Real-world probability analogies, grouped into success-rate bands (min =
+ * band floor in %). Several entries per band feed the revolving display so
+ * users get varied context for what their number actually means. Every `stat`
+ * is the analogy's own real-world probability, stated approximately but
+ * honestly — users should be able to sanity-check the comparison, not just
+ * take the vibe. (Fixed two that were wrong: "calling heads three times in a
+ * row" is 12.5%, not the 87.5% chance of NOT flipping three heads in a row —
+ * and the 4-year college graduation rate is about 46%, nowhere near 80%.) */
 const ANALOGUES = [
   {
     min: 95,
@@ -911,7 +920,7 @@ const ANALOGUES = [
 ];
 
 
-/* ════ MATH CORE ════ */
+// Math core
 function mulberry32(seed) {
   return () => {
     seed |= 0;
@@ -935,37 +944,36 @@ function bootstrapDraw(arr, rand) {
 }
 function portReturn(age, rand, preRetireEq, postRetireEq, switchAge) {
   // The glidepath switches at `glidepathSwitchAge`, defaulting to the user's
-  // RETIREMENT age. Callers pass the already-resolved age from
+  // retirement age. Callers pass the already-resolved age from
   // resolveGlidepathSwitchAge — see engine/glidepath.js for why this is
-  // single-sourced (four call sites had drifted onto a hardcoded 62).
+  // single-sourced (four call sites had drifted onto a hardcoded 62 before).
   const eqW = glidepathEquityWeight(age, preRetireEq, postRetireEq, switchAge);
-  // PAIRED bootstrap sampling (v1.2.104). One shared random index draws the
-  // same calendar year's stock AND bond return, so the historical stock/bond
-  // correlation is preserved — including the flight-to-quality flip in crashes
-  // (2008: SP500[i]=-36.55%, BONDS[i]=+20.10%) and the rare double-down
-  // (2022: SP500[i]=-18.04%, BONDS[i]=-17.83%). The prior implementation drew
-  // stocks and bonds independently, effectively forcing cov(stocks, bonds) = 0
-  // and inventing year combinations that never occurred. Requires SP500 and
-  // BONDS to be equal-length and year-aligned; engine/expectedReturn.js
-  // guarantees both (Damodaran 1928-2025, 98 pairs).
+  // Paired bootstrap sampling: one shared random index draws the same
+  // calendar year's stock and bond return together, so the historical
+  // stock/bond correlation is preserved — including the flight-to-quality
+  // flip in crashes (2008: SP500[i]=-36.55%, BONDS[i]=+20.10%) and the rare
+  // double-down (2022: SP500[i]=-18.04%, BONDS[i]=-17.83%). Drawing them
+  // independently, like the old code did, effectively forces
+  // cov(stocks, bonds) = 0 and invents year combinations that never
+  // happened. Needs SP500 and BONDS to be equal-length and year-aligned;
+  // engine/expectedReturn.js guarantees both (Damodaran 1928-2025, 98 pairs).
   const i = Math.floor(rand() * SP500.length);
   return eqW * SP500[i] + (1 - eqW) * BONDS[i];
 }
-// Paired return + inflation for one retirement year (v1.2.105). Same shared
-// index selects SP500[i], BONDS[i], AND INFL[i], so a year like 1974 draws
-// stocks (-25.9%), bonds (+1.99%) and inflation (+11.0%) together — the
-// canonical stagflation-year triple. The prior code drew INFL independently
-// via a second rand() call, so a bootstrap could pair 2008's crash with
-// 2015's 0.1% CPI, understating the compound damage of stagflation on
-// retirement spending power.
+// Paired return + inflation for one retirement year. Same shared index
+// selects SP500[i], BONDS[i], and INFL[i], so a year like 1974 draws stocks
+// (-25.9%), bonds (+1.99%) and inflation (+11.0%) together — the canonical
+// stagflation-year triple. The old code drew INFL independently via a second
+// rand() call, so a bootstrap could pair 2008's crash with 2015's 0.1% CPI,
+// which understates how bad stagflation actually is for retirement spending
+// power.
 //
-// RNG-PRESERVATION SHIM: the second `rand()` below is consumed and thrown
-// away. Its ONLY purpose is to keep the rand() call count per retirement
-// year identical to the prior (independent-INFL) version, so downstream
-// draws in the same seed produce the same sequence and the test suite does
-// not have to be rebalanced for an RNG-order shift. If the RNG discipline
-// is ever formally dropped (see the comment above `netNeed offset` in
-// runMC), this shim can be removed.
+// The second `rand()` call below is thrown away on purpose — it just keeps
+// the rand() call count per retirement year matching the old (independent-INFL)
+// version, so the same seed still produces the same draw sequence and the
+// test suite doesn't need rebalancing over an RNG-order shift. If we ever
+// drop that RNG-ordering discipline (see the comment above `netNeed offset`
+// in runMC), this can go.
 function drawYearBundle(age, rand, preRetireEq, postRetireEq, switchAge) {
   const eqW = glidepathEquityWeight(age, preRetireEq, postRetireEq, switchAge);
   const i = Math.floor(rand() * SP500.length);
@@ -989,7 +997,7 @@ function guytonKlingerWithdrawal(
     incomeOffset = 0,
     fixedCosts = 0
   ) {
-    // NaN guards – fall back to safe values if any parameter is invalid
+    // NaN guards — fall back to safe values if any parameter is invalid
     if (isNaN(portfolioValue) || portfolioValue <= 0) return floor || 0;
     if (isNaN(lastWithdrawal)) lastWithdrawal = floor || 0;
     if (isNaN(lastReturn)) lastReturn = 0;
@@ -1009,12 +1017,12 @@ function guytonKlingerWithdrawal(
     // otherwise currentWR <= 0.8*0 is always true and fires a meaningless
     // +10% raise every year regardless of portfolio health.
     if (initialWR > 0) {
-      // The tracked ratio must be the SAME quantity the baseline initialWR was
-      // calibrated against — NET portfolio need (gross withdrawal minus SS/
-      // annuity/otherIncome, plus housing/carveouts), not gross withdrawal `w`.
-      // Otherwise a retiree whose SS starts at retirement has currentWR far
-      // above initialWR every year, triggering a bogus capital-preservation
-      // cut regardless of portfolio health.
+      // This ratio has to track the same quantity initialWR was calibrated
+      // against — net portfolio need (gross withdrawal minus SS/annuity/
+      // otherIncome, plus housing/carveouts), not the gross withdrawal `w`.
+      // Otherwise a retiree whose SS starts at retirement gets a currentWR
+      // far above initialWR every year, which triggers a bogus
+      // capital-preservation cut no matter how healthy the portfolio is.
       const netNeed = Math.max(0, w - incomeOffset) + fixedCosts;
       const currentWR = portfolioValue !== 0 ? netNeed / portfolioValue : 0;
 
@@ -1056,17 +1064,17 @@ function calcYearTax(
   filingStatus = "mfj",
   stateOfResidence = "NJ",
   ltcgAmount = 0,
-  // IRMAA 2-year lookback: MAGI from two years ago (SSA charges year T's premium
-  // off the tax return filed two years prior). When the caller has that history
-  // it passes it here; the CURRENT year `yr` still selects the bracket table —
-  // only the MAGI used to walk the table changes. `null` (default) preserves the
-  // pre-lookback same-year-MAGI behavior for every caller that hasn't threaded
-  // history through yet (backward compatible).
+  // IRMAA 2-year lookback: MAGI from two years ago (SSA charges year T's
+  // premium off the tax return filed two years prior). When the caller has
+  // that history it gets passed here; the current year `yr` still selects the
+  // bracket table, only the MAGI used to walk the table changes. `null`
+  // (default) keeps the old same-year-MAGI behavior for any caller that
+  // hasn't wired the history through yet.
   magiLookback = null,
-  // Spouse's age in this same tax year, or null when unknown. Only the PER-PERSON
-  // amounts read it: the age-65 standard-deduction add-on and the OBBBA senior
-  // bonus. null reproduces the previous behaviour (one age standing for both
-  // filers), so every caller that has not threaded a spouse age is unchanged.
+  // Spouse's age in this same tax year, or null when unknown. Only the
+  // per-person amounts read it: the age-65 standard-deduction add-on and the
+  // OBBBA senior bonus. null reproduces the old behavior (one age standing in
+  // for both filers), so callers that haven't passed a spouse age are unaffected.
   spouseAge = null
 ) {
   // Replace any NaN arguments with 0
@@ -1084,37 +1092,38 @@ function calcYearTax(
     (RentalIncome || 0) +
     (rmdIncome || 0) +
     (conversionAmount || 0);
-  // IRC §86 provisional-income tiers: 0% / 50% / 85% of SS taxable by income level.
-  // Realized capital gains count in provisional income (they're part of MAGI),
-  // so they're added to the "other income" side of the SS-taxability test even
-  // though they are NOT part of ordinary `otherIncome`/`totalIncome` below.
+  // IRC §86 provisional-income tiers: 0% / 50% / 85% of SS taxable by income
+  // level. Realized capital gains count toward provisional income (they're
+  // part of MAGI), so they get added to the "other income" side of the
+  // SS-taxability test even though they aren't part of ordinary
+  // `otherIncome`/`totalIncome` below.
   const taxableSS = taxableSocialSecurity(ssIncome, otherIncome + ltcgAmount, isMFJ);
   const totalIncome = taxableSS + otherIncome; // ordinary income total (excludes LTCG)
   const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - CURRENT_YEAR));
 
-  // IRMAA MAGI = AGI + tax-exempt interest; untaxed SS is NOT added back.
+  // IRMAA MAGI = AGI + tax-exempt interest; untaxed SS doesn't get added back.
   // AGI includes the full realized gain (pre-deduction), unlike taxableIncome
-  // below. Computed HERE, ahead of every deduction, for two reasons: it genuinely
-  // does not depend on deductions, and the OBBBA senior bonus deduction's
-  // phase-out is keyed to MAGI, so MAGI has to exist first. Keeping it above the
-  // deduction lines is also the structural guard against anyone ever netting a
-  // deduction out of MAGI (CLAUDE.md rule 3 — IRMAA takes no deduction).
+  // below. It's computed here, ahead of every deduction, for two reasons: it
+  // genuinely doesn't depend on deductions, and the OBBBA senior bonus
+  // deduction's phase-out is keyed to MAGI, so MAGI needs to exist first.
+  // Keeping it above the deduction lines also makes it structurally
+  // impossible for a deduction to ever net out of MAGI — IRMAA doesn't take one.
   const magi = totalIncome + ltcgAmount;
 
-  // Standard deduction (incl. age-65+ add-on), inflation-adjusted forward.
-  // Single source: getStandardDeduction → TAX_REFERENCE.md (CLAUDE.md Rule 6).
+  // Standard deduction (including the age-65+ add-on), inflation-adjusted
+  // forward. Single source: getStandardDeduction, see TAX_REFERENCE.md.
   const stdDeduction = getStandardDeduction(age, filingStatus, inflationFactor, spouseAge);
-  // OBBBA senior bonus deduction (2025–2028 only, $0 from 2029) — a separate,
-  // additive, deliberately NON-inflation-indexed deduction stacked on top of the
-  // standard deduction and its age-65 add-on. Taxable income only; `magi` above
-  // is already fixed and is never reduced by it.
+  // OBBBA senior bonus deduction (2025-2028 only, $0 from 2029) — a separate,
+  // additive deduction, not inflation-indexed on purpose, stacked on top of
+  // the standard deduction and its age-65 add-on. It only reduces taxable
+  // income; `magi` above is already fixed and never gets reduced by it.
   const seniorBonus = getSeniorBonusDeduction(age, filingStatus, magi, yr, spouseAge);
   const totalDeduction = stdDeduction + seniorBonus;
   const taxableIncome = Math.max(0, totalIncome - totalDeduction);
-  // LTCG stacks ON TOP of ordinary income (IRS stacking rule): gains occupy the
-  // taxable-income band from `taxableIncome` up to `taxableIncome + gainTaxable`.
-  // If ordinary income didn't fully use the deductions, gains soak up
-  // whatever's left of them first.
+  // LTCG stacks on top of ordinary income (the IRS stacking rule): gains
+  // occupy the taxable-income band from `taxableIncome` up to
+  // `taxableIncome + gainTaxable`. If ordinary income didn't fully use up the
+  // deductions, gains soak up whatever's left of them first.
   const gainTaxable = Math.max(0, totalIncome + ltcgAmount - totalDeduction) - taxableIncome;
 
   // Select federal brackets by filing status
@@ -1129,31 +1138,31 @@ function calcYearTax(
   );
 
   // NIIT (IRC §1411): 3.8% of the lesser of net investment income (LTCG here)
-  // or the excess of MAGI over the statutory (non-inflation-indexed) threshold.
+  // or the excess of MAGI over the statutory (not inflation-indexed) threshold.
   const niitThreshold = isMFJ ? NIIT_THRESHOLD_MFJ : NIIT_THRESHOLD_SINGLE;
   const niit = ltcgAmount > 0
     ? Math.round(NIIT_RATE * Math.min(ltcgAmount, Math.max(0, magi - niitThreshold)))
     : 0;
 
-  // LTCG tax + NIIT fold into the federal total so downstream funding-identity
-  // math (totalTax = fedTax + stateTax + irmaa) keeps working unchanged; the
-  // components are also returned separately (ltcgTax, niit) for UI surfacing.
+  // LTCG tax + NIIT fold into the federal total so the funding-identity math
+  // downstream (totalTax = fedTax + stateTax + irmaa) keeps working unchanged;
+  // the components also come back separately (ltcgTax, niit) for the UI to show.
   const fedTax = fedTaxOrdinary + ltcgTax + niit;
   let stateTax = 0;
 
   if (!isTwoHousehold) {
     const stateBr = getStateBrackets(stateOfResidence, isMFJ);
-    // States generally tax capital gains as ordinary income (no LTCG preferential
-    // rate) — add the realized gain to the state taxable base.
+    // Most states tax capital gains as ordinary income (no LTCG preferential
+    // rate), so add the realized gain to the state taxable base.
     if (stateBr) stateTax = Math.round(progTax(taxableIncome + ltcgAmount, idxB(stateBr, inflationFactor)));
   }
-      // IRMAA charge uses the 2-year-old MAGI when the caller supplied one;
-      // otherwise falls back to this year's own MAGI (pre-lookback behavior).
+      // IRMAA charge uses the 2-year-old MAGI when the caller supplied one,
+      // otherwise falls back to this year's own MAGI (the pre-lookback behavior).
       const irmaaMagi = (typeof magiLookback === "number" && !isNaN(magiLookback)) ? magiLookback : magi;
-      // Medicare starts at EACH person's own 65 (§24). `medicareHeads` is 0
-      // before either qualifies, 1 during an age gap, 2 once both are on
-      // Medicare — so an age-gapped couple is no longer charged two surcharges
-      // from the older one's 65th birthday.
+      // Medicare starts at each person's own 65. `medicareHeads` is 0 before
+      // either qualifies, 1 during an age gap, 2 once both are on Medicare —
+      // so an age-gapped couple isn't charged two surcharges starting from
+      // the older one's 65th birthday.
       const medicareHeads = personsAtLeastAge(age, spouseAge, isMFJ, 65);
       const irmaa = medicareHeads > 0
         ? irmaaCost(irmaaMagi, yr, inflationRate, isMFJ, medicareHeads)
@@ -1169,12 +1178,12 @@ function calcYearTax(
   return {
     fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket, taxableIncome,
     ltcgTax, niit, realizedGain: Math.round(ltcgAmount),
-    // Deduction components, surfaced separately so the UI can explain the
+    // Deduction components, returned separately so the UI can explain the
     // 2028→2029 jump when the OBBBA senior bonus sunsets.
     stdDeduction, seniorBonus,
-    // This year's OWN MAGI (never the lookback substitution) — callers store
-    // this in a per-age history so it becomes the magiLookback input two years
-    // from now.
+    // This year's own MAGI (never the lookback substitution) — callers store
+    // this in a per-age history so it becomes the magiLookback input two
+    // years from now.
     magi,
   };
 }
@@ -1182,16 +1191,16 @@ function calcYearTax(
 /**
  * Standard deduction (MFJ/Single), with the age-65+ add-on, inflated forward.
  * Canonical source: TAX_REFERENCE.md → "Standard Deduction (MFJ 2026)".
- * Single source of truth — calcYearTax and the sourcing waterfall both call this
- * instead of re-declaring the literals (CLAUDE.md Rule 6).
+ * One source of truth — calcYearTax and the sourcing waterfall both call
+ * this instead of re-declaring the numbers themselves.
  */
 function getStandardDeduction(age, filingStatus, inflFactor, spouseAge = null) {
   const mfj = filingStatus !== "single";
   let sd = mfj ? 32_200 : 16_100;          // base, 2026
-  // The age-65 add-on is PER FILER ($1,650 each). It used to be granted for both
-  // spouses as soon as the primary reached 65, which overstated the deduction by
-  // $1,650/yr for the whole age gap. `spouseAge = null` keeps the old behaviour
-  // for profiles with no spouse birthdate. See engine/ages.js.
+  // The age-65 add-on is per filer ($1,650 each). It used to get granted to
+  // both spouses as soon as the primary turned 65, which overstated the
+  // deduction by $1,650/yr for the whole age gap. `spouseAge = null` keeps the
+  // old behavior for profiles with no spouse birthdate. See engine/ages.js.
   const seniors = personsAtLeastAge(age, spouseAge, mfj, 65);
   sd += seniors * 1_650;
   return Math.round(sd * inflFactor);
@@ -1223,51 +1232,54 @@ function getBracketCeiling(target, filingStatus, inflFactor) {
   return base === Infinity ? Infinity : Math.round(base * inflFactor);
 }
 
-// seqOverride: optional array of equity returns (decimals) prescribed for the first
-// N retirement years — used by the Stress Test to force the 2000–2012 sequence at
-// retirement. When supplied, year y's equity component is seqOverride[y] (blended with
-// a bootstrapped bond draw at the same age-based equity weight portReturn uses); past
-// the array length, returns fall back to the normal bootstrap. Everything else — tax
-// (calcYearTax, incl. the non-resident/state toggle), RMDs, bucket sourcing, strategy —
-// is IDENTICAL to a normal run, so the stress pivot can never diverge from the MC.
+// seqOverride: optional array of equity returns (decimals) prescribed for the
+// first N retirement years — used by the Stress Test to force the 2000-2012
+// sequence at retirement. When supplied, year y's equity component is
+// seqOverride[y] (blended with a bootstrapped bond draw at the same
+// age-based equity weight portReturn uses); past the array length, returns
+// fall back to the normal bootstrap. Everything else — tax (calcYearTax,
+// including the non-resident/state toggle), RMDs, bucket sourcing, strategy —
+// is identical to a normal run, so the stress pivot can never diverge from the MC.
 function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = null) {
   const rand = mulberry32(seed);
-  // "Tax drag" master toggle. OFF (p.tax === false) zeroes ALL tax — federal, state,
-  // IRMAA, and Roth-conversion cost — for a pure pre-tax view of portfolio dynamics.
-  // calcYearTax still runs (its taxableIncome / marginalBracket feed sourcing and
-  // conversion sizing), but no tax dollars are withdrawn. Because the Stress Test
-  // delegates to runMC, the toggle now governs MC and Stress identically. Only an
-  // explicit boolean false disables it — a numeric/true value (default) keeps tax on.
+  // "Tax drag" master toggle. Off (p.tax === false) zeroes all tax — federal,
+  // state, IRMAA, and Roth-conversion cost — for a pure pre-tax view of
+  // portfolio dynamics. calcYearTax still runs (its taxableIncome /
+  // marginalBracket feed sourcing and conversion sizing), just no tax dollars
+  // get withdrawn. Since the Stress Test delegates to runMC, this toggle
+  // governs MC and Stress the same way. Only an explicit boolean false turns
+  // it off — a numeric/true value (default) keeps tax on.
   const taxEnabled = p.tax !== false;
-  // Account draw order (which bucket drains first) — constant for the whole run.
-  // Default "tax_reactive" resolves to cash → taxable → pretax → roth, the
-  // historical hardcoded sequence. Shared resolver keeps this in lock-step with
+  // Account draw order (which bucket drains first) — constant for the whole
+  // run. Default "tax_reactive" resolves to cash → taxable → pretax → roth,
+  // the old hardcoded sequence. Shared resolver keeps this matching
   // buildWithdrawalWaterfall's smart scenario.
   const drawOrderMC = resolveDrawOrder(p.orderingMode, p.withdrawalOrder);
   // Already-retired users enter the age they actually retired at, which is in
-  // the past. Balances are always TODAY's, so starting the drawdown there would
-  // replay years that already happened. See effectiveRetireAge.
+  // the past. Balances are always today's, so starting the drawdown there
+  // would replay years that already happened. See effectiveRetireAge.
   const retAgeMC = effectiveRetireAge(p.retireAge, p.currentAge);
-  // Equity glidepath switch age — resolved ONCE here so the accumulation loop,
-  // the normal drawdown draw, and the stress-sequence branch below cannot
-  // disagree (the stress branch used to hardcode 62). Uses the EFFECTIVE
-  // retirement age as the fallback, matching every other age in this engine.
-  // Share of pre-tax sitting in a former-employer plan — the only slice Rule of
-  // 55 can reach. Constant for the run (detected off starting balances).
+  // Equity glidepath switch age — resolved once here so the accumulation
+  // loop, the normal drawdown draw, and the stress-sequence branch below
+  // can't disagree (the stress branch used to hardcode 62). Uses the
+  // effective retirement age as the fallback, matching every other age in
+  // this engine.
+  // Share of pre-tax sitting in a former-employer plan — the only slice Rule
+  // of 55 can reach. Constant for the run (detected off starting balances).
   const ruleOf55ShareMC = detectEmployerPlan(p.accounts).share;
-  // Calendar-year Rule-of-55 test, computed ONCE per run. Separation in or after
-  // the year the employee turns 55 qualifies — `retireAge >= 55` was stricter
-  // than the statute. See ruleOf55SeparationQualifies.
+  // Calendar-year Rule-of-55 test, computed once per run. Separation in or
+  // after the year the employee turns 55 qualifies — `retireAge >= 55` was
+  // stricter than the statute actually requires. See ruleOf55SeparationQualifies.
   const ruleOf55OkMC = ruleOf55SeparationQualifies({
     dob: p.dob, birthYear: p.birthYear, currentAge: p.currentAge, retireAge: retAgeMC,
   });
   const glideSwitchAgeMC = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeMC });
   const accYrs = Math.max(0, retAgeMC - p.currentAge);
-  // §30 — the horizon follows whoever is alive. When the primary dies first and a
-  // younger spouse survives, the money must last until the SURVIVOR reaches endAge,
-  // so the projection runs past the age the primary would have reached. Identical to
-  // endAge whenever no first death is modelled or the primary is the survivor, so no
-  // existing plan changes length.
+  // The horizon follows whoever is alive. When the primary dies first and a
+  // younger spouse survives, the money has to last until the survivor reaches
+  // endAge, so the projection runs past the age the primary would have
+  // reached. Same as endAge whenever no first death is modeled or the primary
+  // is the survivor, so no existing plan changes length.
   const planEndMC = planEndAgeOnPrimaryClock(p, endAge);
   const retYrs = planEndMC - retAgeMC;
   const results = [];
@@ -1276,17 +1288,17 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // resolveStrategy, not `|| "gk"`. A retired id (an old saved profile) or a
   // typo would otherwise match no branch in the chain below and leave `sp`
   // unassigned for the whole run — spending never inflation-adjusts and the
-  // smile deflates it ~1%/yr, silently, with no error. See
+  // smile quietly deflates it about 1%/yr with no error. See
   // engine/withdrawalStrategies.js.
   const withdrawalStrategy = resolveStrategy(p.withdrawalStrategy);
 
   // User settings for cash return and RMD table
   const cashRealReturn = (p.cashRealReturn ?? 3.0) / 100;
-  // Joint & Last Survivor is only legal while the much-younger spouse is ALIVE
-  // and is the sole beneficiary, so this has to be a per-year test once a first
-  // death is modelled (§22) — a hoisted constant would keep using the longer
-  // divisors, understating every post-death RMD. filesJointlyAt carries both
-  // conditions (filing status AND the death year).
+  // Joint & Last Survivor is only legal while the much-younger spouse is
+  // alive and the sole beneficiary, so this has to be a per-year test once a
+  // first death is modeled — a hoisted constant would keep using the longer
+  // divisors and understate every post-death RMD. filesJointlyAt carries both
+  // conditions (filing status and the death year).
   const useJointTableAt = (age) => (p.useJointRmdTable ?? false) && filesJointlyAt(p, age);
   const UNIFORM_TABLE = RMD_DIV;
 
@@ -1295,18 +1307,20 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     ? p.rmdStartAge
     : getRmdStartAge({ dob: p.dob, birthYear: p.birthYear, currentAge: p.currentAge });
 
-  // Expected inflation for tax-bracket/IRMAA indexing. Brackets must compound at the
-  // assumed long-run rate, not a single bootstrapped year's draw (see inflY below).
+  // Expected inflation for tax-bracket/IRMAA indexing. Brackets have to
+  // compound at the assumed long-run rate, not a single bootstrapped year's
+  // draw (see inflY below).
   const taxInfl = (p.inf ?? 2.5) / 100;
 
-  // Percent of TODAY's taxable-brokerage balance that is cost basis (user reads
-  // this off their brokerage statement). The rest is unrealized gain, realized
-  // proportionally (average-cost basis, not per-lot) as the account is drawn down.
+  // Percent of today's taxable-brokerage balance that is cost basis (the
+  // user reads this off their brokerage statement). The rest is unrealized
+  // gain, realized proportionally (average-cost basis, not per-lot) as the
+  // account gets drawn down.
   const taxableBasisPct = Math.max(0, Math.min(100, p.taxableBasisPct ?? 70));
 
-  // Pre-compute the actual annual mortgage cash cost per calendar year (incl.
-  // extra payments and the partial payoff year), constant across all paths —
-  // the mortgage is path-independent.
+  // Pre-compute the actual annual mortgage cash cost per calendar year
+  // (including extra payments and the partial payoff year), constant across
+  // all paths since the mortgage is path-independent.
   let mortByYear = new Map();
   if (p.mortBalance > 0) {
     const ms = mortgageSchedule(
@@ -1319,13 +1333,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     mortByYear = mortgageAnnualPayments(ms);
   }
 
-  // One-off INFLOWS (inheritance, home sale, pension lump sum) landing during
-  // the ACCUMULATION years, precomputed once — they are path-independent, like
-  // the mortgage. Previously only the retirement loop processed cashFlowEvents,
-  // so a lump sum arriving before retirement was silently dropped from every
-  // path — a user testing a $1M future inheritance saw the numbers not move.
-  // Accumulation year y is calendar year CURRENT_YEAR + y; the retirement loop
-  // starts at CURRENT_YEAR + accYrs, so an event fires in exactly one phase.
+  // One-off inflows (inheritance, home sale, pension lump sum) landing during
+  // the accumulation years, precomputed once since they're path-independent
+  // like the mortgage. Only the retirement loop used to process
+  // cashFlowEvents, so a lump sum arriving before retirement got silently
+  // dropped from every path — a user testing a $1M future inheritance would
+  // see the numbers not move at all. Accumulation year y is calendar year
+  // CURRENT_YEAR + y; the retirement loop starts at CURRENT_YEAR + accYrs, so
+  // an event fires in exactly one phase.
   const accInflowByYear = [];
   for (let y = 0; y < accYrs; y++) {
     accInflowByYear.push(computeCashFlowEvents(p.cashFlowEvents, CURRENT_YEAR + y, p.inf ?? 2.5, CURRENT_YEAR));
@@ -1339,16 +1354,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       if (acct.category === "pretax") pretax += bal;
       else if (acct.category === "roth") roth += bal;
       else if (acct.category === "taxable") taxable += bal;
-      // "hsa" and any unrecognized category fall through to cash. This used to
-      // be `else if (category === "cash")`, which silently DROPPED every
+      // "hsa" and any unrecognized category fall through to cash. This used
+      // to be `else if (category === "cash")`, which silently dropped every
       // hsa-category balance from the simulation — BLANK_PROFILE ships an HSA
       // account by default, so any user with an HSA had it vanish from their
-      // portfolio. accumulateToRetirement() already bucketed hsa into cash via
-      // a catch-all else, so the two engines disagreed. Now they match.
+      // portfolio. accumulateToRetirement() already bucketed hsa into cash
+      // via a catch-all else, so the two engines disagreed before. Now they match.
       else cash += bal;
     }
-    // Basis is a % of TODAY's taxable balance, fixed in dollars from here on —
-    // accumulation-phase growth (below) increases the balance but not the
+    // Basis is a % of today's taxable balance, fixed in dollars from here on
+    // — accumulation-phase growth (below) increases the balance but not the
     // basis (growth is unrealized gain), so the basis fraction shrinks by
     // retirement even though no draw has happened yet.
     let taxableBasis = taxable * (taxableBasisPct / 100);
@@ -1361,14 +1376,15 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
       cash     = Math.max(0, cash     * (1 + ret));
-      // Contributions land in the bucket they actually belong to. Previously ALL
-      // of them were added to `pretax`, which mispriced every later withdrawal:
-      // brokerage savings became ordinary income instead of LTCG-with-basis, and
-      // inflated the RMD base at rmdStartAge.
-      // Job-bound streams come from one shared helper (§24.1) so this loop,
-      // simulateDeterministicWithStrategy and accumulateToRetirement cannot
-      // disagree about whose contributions have stopped. A spouse who retires
-      // before the primary stops contributing on THEIR date, not the primary's.
+      // Contributions land in the bucket they actually belong to. They used
+      // to all get added to `pretax`, which mispriced every later withdrawal:
+      // brokerage savings became ordinary income instead of LTCG-with-basis,
+      // and it inflated the RMD base at rmdStartAge.
+      // Job-bound streams come from one shared helper so this loop,
+      // simulateDeterministicWithStrategy, and accumulateToRetirement can't
+      // disagree about whose contributions have stopped. A spouse who
+      // retires before the primary stops contributing on their own date, not
+      // the primary's.
       const jc = jobContributionsForYear(p, p.currentAge + y);
       pretax  += jc.pretax;
       cash    += (p.hsaContrib || 0);          // HSA balances live in the cash bucket
@@ -1377,10 +1393,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // Brokerage contributions are already-taxed dollars, so they add basis
       // one-for-one. Only market growth is unrealized gain.
       taxableBasis += (p.taxableContrib || 0);
-      // Pre-retirement one-off inflows are deposited into their bucket, like
+      // Pre-retirement one-off inflows get deposited into their bucket, like
       // contributions (no return in the arrival year). Outflow events stay
-      // retirement-only — pre-retirement spending is presumed paid from wages,
-      // which this engine does not model. See accInflowByYear above.
+      // retirement-only — pre-retirement spending is assumed to be paid from
+      // wages, which this engine doesn't model. See accInflowByYear above.
       const evAcc = accInflowByYear[y];
       if (evAcc && evAcc.inflow > 0) {
         pretax += evAcc.byBucket.pretax || 0;
@@ -1401,16 +1417,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     const path = [portAtRetire];
     let survived = true, exhaustAge = null;
-    // How many years this path had to exceed the bracket target to stay funded.
-    // Aggregated below so the UI can eventually SAY that a tax preference was
-    // yielded, instead of the user wondering why their marginal rate exceeds the
-    // target they chose.
+    // How many years this path had to exceed the bracket target to stay
+    // funded. Aggregated below so the UI can eventually tell the user a tax
+    // preference got overridden, instead of them wondering why their
+    // marginal rate exceeds the target they chose.
     let bracketOverrideYears = 0;
     let rothReserveBrokenYears = 0;
     let sp = p.sp;
     let lastReturn = 0;
 
-    // Baseline initWR = NET PORTFOLIO NEED at retirement / portfolio — NO tax
+    // Baseline initWR = net portfolio need at retirement / portfolio, no tax
     // (matches the ratio the GK call tracks each year: netNeed = gross spend
     // minus SS/rental/otherIncome, plus housing/carveouts — see the Step 1
     // block inside the retirement loop below). ab0 includes propIncome to
@@ -1435,34 +1451,35 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     const initNeed0 = Math.max(0, p.sp - ss0 - ab0 - otherInc0) + housing0 + carveout0;
     const initWR = portAtRetire > 0 ? initNeed0 / portAtRetire : 0.04;
 
-    // IRMAA 2-year lookback history for this path — rolled forward at the end
-    // of each retirement year below. Pre-retirement wage income isn't modeled
-    // (this engine only knows portfolio/SS/rental income), so the first two
-    // retirement years (y === 0, 1) have no usable 2-years-ago figure; those
-    // years fall back to same-year MAGI (the pre-lookback approximation) via
-    // the `y >= 2` gate below.
+    // IRMAA 2-year lookback history for this path — rolled forward at the
+    // end of each retirement year below. Pre-retirement wage income isn't
+    // modeled (this engine only knows portfolio/SS/rental income), so the
+    // first two retirement years (y === 0, 1) have no usable 2-years-ago
+    // figure; those years fall back to same-year MAGI (the pre-lookback
+    // approximation) via the `y >= 2` gate below.
     let magiOneYearAgo = null, magiTwoYearsAgo = null;
 
     for (let y = 0; y < retYrs; y++) {
       const age = retAgeMC + y;
       const calYear = CURRENT_YEAR + (age - p.currentAge);
       // Stress sequence override: prescribe the equity leg for the first
-      // seqOverride.length retirement years; bond leg stays bootstrapped at the
-      // same age-based equity weight portReturn uses. No override → normal draw.
+      // seqOverride.length retirement years; bond leg stays bootstrapped at
+      // the same age-based equity weight portReturn uses. No override means
+      // a normal draw.
       //
-      // The seqOverride branch draws bonds AND inflation independently (two
+      // The seqOverride branch draws bonds and inflation independently (two
       // rand() calls) because the SEQ_2000_2012 array has no year labels to
-      // pair against. The normal branch uses drawYearBundle() which returns a
-      // paired (stock, bond, inflation) triple from ONE historical year — see
-      // its definition for the rand()-count shim that keeps this branch
+      // pair against. The normal branch uses drawYearBundle(), which returns
+      // a paired (stock, bond, inflation) triple from one historical year —
+      // see its definition for the rand()-count shim that keeps this branch
       // matching the seqOverride branch's rand() consumption.
       let r, inflY;
       if (seqOverride && y < seqOverride.length) {
-        // Same weight portReturn would have used at this age. This line had a
-        // hardcoded 62 while portReturn switched at the retirement age, so every
-        // Stress Test scenario modelled a DIFFERENT investor than the headline
-        // run: a 67 retiree was de-risked five years early, a 60 retiree stayed
-        // aggressive two years too long.
+        // Same weight portReturn would have used at this age. This line used
+        // to hardcode 62 while portReturn switched at the retirement age, so
+        // every Stress Test scenario modeled a different investor than the
+        // headline run: a 67 retiree got de-risked five years early, a 60
+        // retiree stayed aggressive two years too long.
         const eqW = glidepathEquityWeight(age, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
         r = eqW * seqOverride[y] + (1 - eqW) * bootstrapDraw(BONDS, rand);
         inflY = bootstrapDraw(INFL, rand);
@@ -1477,18 +1494,19 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       const adjCeiling = gkCeiling * cumInfl;
 
       // Deterministic income/fixed-cost pieces needed both by this year's GK
-      // netNeed offset (below) and by `need` after the strategy block — moved
-      // ABOVE the strategy switch WITHOUT touching the rand() call order: none
-      // of these consume rand(), so r/inflY/abReliable's draw sequence is
-      // unaffected. abReliable itself stays in its original position (right
-      // after `lastReturn = r`) — only these deterministic values move earlier.
+      // netNeed offset (below) and by `need` after the strategy block —
+      // moved above the strategy switch without touching the rand() call
+      // order: none of these consume rand(), so r/inflY/abReliable's draw
+      // sequence is unaffected. abReliable itself stays in its original spot
+      // (right after `lastReturn = r`) — only these deterministic values
+      // moved earlier.
       const ss = computeHouseholdSS(p, age);
       const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
       const totalRental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * growthFactor);
-      // Deterministic expected rental (abEndYear cutoff applied, but NOT the
+      // Deterministic expected rental (abEndYear cutoff applied, but not the
       // abReliability coin-flip below) — used only to offset GK's netNeed.
       // The actual reliability draw still gates `effectiveAb`, the real
-      // income used in the real `need` afterward, exactly as before.
+      // income used in the real `need` afterward, exactly like before.
       const rentalForGK = (p.abEndYear && calYear > p.abEndYear) ? 0 : totalRental;
 
       // Housing cost (own = mortgage cash cost while active, rent = inflation-adjusted rent, none = 0)
@@ -1507,19 +1525,20 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
       const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, calYear);
 
-      // GK's netNeed income offset — same NET PORTFOLIO NEED quantity initWR
+      // GK's netNeed income offset — same net portfolio need quantity initWR
       // was calibrated against: SS + expected rental + other income offset
       // gross spend; housing + carveouts add to it.
-      // Planned one-off / periodic expenses (roof, car, wedding). Additive, so
-      // the distribution strategy still governs the recurring base — unlike a
-      // multi-year CSV, which replaces the spend rule and disables guardrails.
+      // Planned one-off / periodic expenses (roof, car, wedding). Additive,
+      // so the distribution strategy still governs the recurring base —
+      // unlike a multi-year CSV, which replaces the spend rule and disables
+      // guardrails.
       const ev = computeCashFlowEvents(p.cashFlowEvents, calYear, p.inf ?? 2.5, CURRENT_YEAR);
       const eventCost = ev.total;
 
-      // INFLOWS (lump-sum pension, cash-balance rollover, inheritance, home
-      // sale) are DEPOSITED into their bucket so they compound. They must not
-      // be netted against spending — `need` is Math.max(0, sp - income), which
-      // discards everything past one year's need.
+      // Inflows (lump-sum pension, cash-balance rollover, inheritance, home
+      // sale) get deposited into their bucket so they compound. They must not
+      // be netted against spending — `need` is Math.max(0, sp - income),
+      // which would discard everything past one year's need.
       if (ev.inflow > 0) {
         pretax  += ev.byBucket.pretax  || 0;
         roth    += ev.byBucket.roth    || 0;
@@ -1530,30 +1549,31 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         totalPort = pretax + roth + taxable + cash;
       }
 
-      // Healthcare shock — stochastic per path, inflated to this year. Treated
-      // as a committed cost: a medical bill is not discretionary spending the
-      // guardrails may trim.
+      // Healthcare shock — stochastic per path, inflated to this year.
+      // Treated as a committed cost: a medical bill isn't discretionary
+      // spending the guardrails can trim.
       const hcShock = healthcareShockDraw(age, rand, p, cumInfl);
 
       const gkIncomeOffset = ss + rentalForGK + otherIncTotal;
-      // Only COMMITTED events are shielded from the guardrails; a deferrable one
-      // (a big travel year) is discretionary and may be trimmed like base spend.
+      // Only committed events are shielded from the guardrails; a deferrable
+      // one (a big travel year) is discretionary and can be trimmed like base spend.
       const gkFixedCosts = housingCost + carveoutCost + ev.committed + hcShock;
 
-      // ========== WITHDRAWAL STRATEGY ==========
+      // ── Withdrawal strategy ──
       if (p.spSchedule && p.spSchedule.length) {
-        // A detailed year-by-year budget IS the spending plan: it overrides the
-        // distribution strategy's spend rule. Values are nominal for each listed
-        // year; beyond the last year the last value carries forward, inflated.
+        // A detailed year-by-year budget is the spending plan — it overrides
+        // the distribution strategy's spend rule. Values are nominal for each
+        // listed year; beyond the last year the last value carries forward, inflated.
         sp = scheduleSpendForYear(p.spSchedule, calYear, p.inf || 2.5);
       } else if (y === 0) {
         // First year: use target spend (p.sp)
       } else {
         if (withdrawalStrategy === "gk") {
-          // Years remaining uses the horizon being simulated (`endAge`), NOT p.endAge —
-          // so the GK longevity rule stays consistent with this run's survival test.
-          // Reference re-based on THIS year's income so a scheduled pension
-          // raise can't masquerade as portfolio outperformance. See gkReferenceWR.
+          // Years remaining uses the horizon being simulated (`endAge`), not
+          // p.endAge, so the GK longevity rule stays consistent with this
+          // run's survival test. Reference re-based on this year's income so
+          // a scheduled pension raise can't masquerade as portfolio
+          // outperformance. See gkReferenceWR.
           const refWR = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
           sp = guytonKlingerWithdrawal(totalPort, refWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age, gkIncomeOffset, gkFixedCosts);
         }
@@ -1563,14 +1583,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           sp = totalPort * fixedRate;
         }
         else if (withdrawalStrategy === "vpw") {
-          // VPW = portfolio amortized over remaining years at an assumed return.
-          // Canonical PMT payout rate: r / (1 - (1+r)^(-n)), n = years of payments
-          // left. r is a fixed assumption (VPW's defining feature), profile-overridable.
+          // VPW = portfolio amortized over remaining years at an assumed
+          // return. Canonical PMT payout rate: r / (1 - (1+r)^(-n)), n =
+          // years of payments left. r is a fixed assumption (that's VPW's
+          // defining feature), profile-overridable.
           const rVPW = p.vpwRealReturn ?? 0.0376;
-          // Deplete by the PLAN-TO age, not a separate hardcoded 100. vpwEndAge
-          // was its own field defaulting to 100, so setting "Plan to age 105"
-          // still amortized to 100 — the spend-to-zero answer was five years off
-          // and nothing in the UI said so. An explicit vpwEndAge still wins.
+          // Deplete by the plan-to age, not a separate hardcoded 100.
+          // vpwEndAge used to be its own field defaulting to 100, so setting
+          // "Plan to age 105" still amortized to 100 — the spend-to-zero
+          // answer was five years off with nothing in the UI saying so. An
+          // explicit vpwEndAge still wins if set.
           const n = Math.max(1, (p.vpwEndAge ?? endAge ?? 100) - age);
           const rateVPW = rVPW === 0 ? 1 / n : rVPW / (1 - Math.pow(1 + rVPW, -n));
           const newSp = totalPort * Math.min(0.10, rateVPW);
