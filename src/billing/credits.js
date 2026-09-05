@@ -139,11 +139,12 @@ export async function fetchCreditBalance() {
     }
     if (!res.ok) return null;
     const { credits, token } = await res.json();
-    // SLIDING SESSION: /api/balance returns a fresh `token` once the current one is
-    // past halfway through its life. Storing it here — on a call that already happens
-    // on essentially every app open — is what keeps a paying customer from silently
-    // losing access to credits they still own. `token` is absent when no refresh is
-    // due, so this must stay conditional; never clear the existing token on absence.
+    // Sliding session: /api/balance returns a fresh `token` once the current one
+    // is past halfway through its life. Storing it here — on a call that already
+    // happens on essentially every app open — is what keeps a paying customer
+    // from silently losing access to credits they still own. `token` is absent
+    // when no refresh is due, so keep this conditional and don't clear the
+    // existing token just because it's absent.
     if (token) setStoredJWT(token);
     try { localStorage.setItem(CACHED_BALANCE_KEY, String(credits)); } catch {}
     _notifyListeners(credits);
@@ -175,27 +176,28 @@ export function rawTokensToCredits(totalRawTokens) {
 }
 
 /**
- * The minimum balance the SERVER will accept before running an analysis.
+ * The minimum balance the server will accept before running an analysis.
  *
- * MUST equal MIN_CREDITS_GUARD in functions/api/analyze.js. That is not a style
- * request: the server returns 402 below this number, so any smaller value here
- * makes the client offer a button that cannot work. The two drifted 10x (client
- * 5, server 50) and creditsGuardSync.test.js now fails the build if they ever
- * part company again — a text-parse of analyze.js, so it cannot be fooled by a
- * stale copy of this comment.
+ * Has to equal MIN_CREDITS_GUARD in functions/api/analyze.js — not just a
+ * style thing, the server returns 402 below this number, so any smaller
+ * value here makes the client offer a button that can't work. The two
+ * drifted 10x once (client 5, server 50), so creditsGuardSync.test.js now
+ * fails the build if they ever part company again — it text-parses
+ * analyze.js directly, so a stale copy of this comment can't fool it.
  *
- * This replaced ESTIMATED_CREDITS_PER_CALL, which was a different quantity
- * wearing the same hat: a guess at what one call costs, not the floor the server
- * enforces. Nothing called it, so the mismatch had no runtime effect yet — the
- * client simply fired and let the 402 come back.
+ * This replaced ESTIMATED_CREDITS_PER_CALL, which was a different number
+ * wearing the same hat: a guess at what one call costs, not the floor the
+ * server enforces. Nothing called it, so the mismatch had no runtime effect
+ * yet — the client just fired and let the 402 come back.
  */
 export const MIN_CREDITS_TO_RUN = 50;
 
 /**
- * Where the UI should start warning. Deliberately a multiple of the floor rather
- * than a round number: the point is "you are close to the number that stops
- * working", which only has meaning relative to that number. The previous 500 was
- * a bare literal 10x away from a floor it did not reference.
+ * Where the UI should start warning. On purpose a multiple of the floor
+ * rather than a round number — the point is "you're close to the number
+ * that stops working", which only means anything relative to that number.
+ * The old value, 500, was just a bare literal 10x away from a floor it
+ * didn't reference.
  */
 export const LOW_BALANCE_WARN_AT = MIN_CREDITS_TO_RUN * 10;
 
@@ -258,19 +260,19 @@ export const REPORT_PRICE_USD = 9.00;
 /**
  * Buy the printable report outright.
  *
- * Separate from `purchaseCreditPack` on purpose. Credits meter AI token usage;
- * this report burns ZERO tokens (it is computed client-side from the engines), so
- * charging credits for it priced a deterministic document in a currency that
- * means something else — and forced a buyer who only wants the report to first
- * understand credits, buy a pack, and spend a slice of it.
+ * Kept separate from `purchaseCreditPack` on purpose. Credits meter AI token
+ * usage; this report burns zero tokens (it's computed client-side from the
+ * engines), so charging credits for it priced a deterministic document in a
+ * currency that means something else — and forced a buyer who only wants the
+ * report to first understand credits, buy a pack, and spend a slice of it.
  *
- * Grants a PERMANENT unlock (see report-unlock.js), not the 24-hour window a
+ * Grants a permanent unlock (see report-unlock.js), not the 24-hour window a
  * credit spend buys. Nobody expects a document they paid for to stop opening
  * tomorrow.
  *
- * The 250-credit path (`unlockReport`) is deliberately kept for existing credit
- * holders — removing it would break people mid-balance — but this is the one to
- * lead with.
+ * The 250-credit path (`unlockReport`) stays around for existing credit
+ * holders — removing it would break people mid-balance — but this is the
+ * one to lead with.
  */
 export async function purchaseReport() {
   if (!BILLING_ENABLED) {
@@ -285,10 +287,11 @@ export async function purchaseReport() {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    // The customer sees a plain sentence; the OPERATOR gets Stripe's own reason
-    // in the console. Splitting them matters: a shopper must not be shown
-    // "No such price: price_1U4...", but without it anywhere the failure is
-    // indistinguishable from a network blip and takes ten guesses to fix.
+    // The customer sees a plain sentence; the operator gets Stripe's own
+    // reason in the console. Splitting them matters — a shopper shouldn't
+    // see "No such price: price_1U4...", but without it anywhere the
+    // failure is indistinguishable from a network blip and takes ten
+    // guesses to fix.
     if (err.stripeError) console.error("[checkout] Stripe rejected the report price:", err.stripeError, "—", err.hint || "");
     throw new Error(
       err.stripeError
@@ -309,11 +312,11 @@ export async function purchaseReport() {
  * balance and persists the unlock window in localStorage so isReportUnlocked()
  * can gate the report client-side without another round-trip.
  *
- * NOTE (soft gate by design): this is a client-side convenience gate — the
- * report's data is entirely client-computed, so nothing here is DRM. The only
- * server-enforced thing is the credit deduction itself (and, in future, any
- * AI-generated narrative added to the report). See the gating comment in
- * App.jsx for the full rationale.
+ * Soft gate by design: this is a client-side convenience gate — the
+ * report's data is entirely client-computed, so nothing here is DRM. The
+ * only thing the server actually enforces is the credit deduction itself
+ * (and, in future, any AI-generated narrative added to the report). See the
+ * gating comment in App.jsx for the full rationale.
  */
 export async function unlockReport() {
   const jwt = getStoredJWT();
@@ -347,11 +350,11 @@ export async function unlockReport() {
 }
 
 /**
- * Locally-cached unlock window. This is an OPTIMISTIC hint for first paint only
- * — it is not authority. The server derives the real window from the ledger
- * (see currentUnlockWindow in functions/api/report-unlock.js); use
- * useReportUnlocked() so a hand-edited localStorage flag can't grant access and
- * a cleared one can't revoke it.
+ * Locally-cached unlock window. This is just an optimistic hint for first
+ * paint — it's not authoritative. The server derives the real window from
+ * the ledger (see currentUnlockWindow in functions/api/report-unlock.js), so
+ * use useReportUnlocked() instead, so a hand-edited localStorage flag can't
+ * grant access and a cleared one can't revoke it.
  */
 export function isReportUnlocked() {
   try {
@@ -373,9 +376,10 @@ export function isReportUnlocked() {
  * Fail-closed capability probe — see functions/api/report-capability.js for
  * why this exists (closes the "flip BILLING_ENABLED locally" free-report
  * loophole). Any failure (network error, missing endpoint, non-2xx) reports
- * `false`: unlike the balance/unlock helpers above, which fail OPEN to avoid
- * punishing a paying customer for a transient error, this is an anti-abuse
- * check with no customer on the other end to protect — default to locked.
+ * `false`. That's the opposite of the balance/unlock helpers above, which
+ * fail open to avoid punishing a paying customer for a transient error —
+ * this one is an anti-abuse check with no customer on the other end to
+ * protect, so it defaults to locked.
  */
 export async function fetchReportCapability() {
   try {
@@ -451,8 +455,8 @@ export function useReportUnlocked(bump = 0) {
  * Exchanges the (session_id, nonce) pair for a JWT, stores it, and returns
  * the credit balance.
  *
- * Audit fix H3: nonce is REQUIRED — without it the server returns 400.
- * Each nonce is single-use and expires 30 minutes after checkout.
+ * The nonce is required — without it the server returns 400. Each nonce is
+ * single-use and expires 30 minutes after checkout.
  */
 export async function verifyStripeSession(sessionId, nonce) {
   const res = await fetch("/api/verify-session", {
@@ -597,8 +601,8 @@ export function useRestoreReturn() {
  * the payment, atomically consumes the nonce, stores the JWT, and returns
  * { success, credits } or { success: false, error }.
  *
- * The nonce is required (audit fix H3): if missing, we surface a friendly
- * error so the user knows to retry from a fresh checkout link.
+ * The nonce is required: if it's missing, we show a friendly error so the
+ * user knows to retry from a fresh checkout link.
  */
 export function useStripeReturn() {
   const [status, setStatus] = useState(null);
@@ -681,15 +685,15 @@ export function CreditBalanceBadge({ style, onBuyClick }) {
  * "Save your recovery link" — shown once after a successful purchase, and
  * re-openable from the credit panel.
  *
- * The JWT this app runs on lives in ONE origin's localStorage and is the only
- * proof of purchase; there is no login by design. Clear site data, switch
- * browsers or buy a new laptop and paid-for credits become unreachable, with the
- * only route back being an operator issuing a restore link by hand. This is the
- * customer's own spare key, minted at the moment we know they are the legitimate
- * buyer (see functions/api/verify-session.js).
+ * The JWT this app runs on lives in one origin's localStorage and is the
+ * only proof of purchase — there's no login by design. Clear site data,
+ * switch browsers, or buy a new laptop and paid-for credits become
+ * unreachable, with the only route back being an operator issuing a restore
+ * link by hand. This is the customer's own spare key, minted at the moment
+ * we know they're the legitimate buyer (see functions/api/verify-session.js).
  *
  * Not a toast: a 5-second banner is the wrong container for "keep this
- * permanently". It must be dismissed deliberately.
+ * permanently" — it needs to be dismissed on purpose.
  */
 export function RecoveryLinkModal({ url, expiresAt, onClose }) {
   const [copied, setCopied] = useState(false);
@@ -780,15 +784,16 @@ export function extractRestoreToken(text) {
 }
 
 /**
- * The other half of RecoveryLinkModal. That one SHOWS the link on the browser
- * that already has access; this one ACCEPTS it on the browser that doesn't.
+ * The other half of RecoveryLinkModal. That one shows the link on the
+ * browser that already has access; this one accepts it on the browser that
+ * doesn't.
  *
- * Without it the no-credits state was a dead end: it correctly told the user
- * their purchase was safe and to "use your restore link", while the only button
- * on screen was Buy Credits — so the path of least resistance was paying twice.
- * `redeemRestoreToken` existed but was reachable only by loading a ?restore= URL,
- * which is useless if the link arrived in a password manager, a note, or by
- * being read off another screen.
+ * Without it, the no-credits state was a dead end: it correctly told the
+ * user their purchase was safe and to "use your restore link", while the
+ * only button on screen was Buy Credits — so the path of least resistance
+ * was paying twice. `redeemRestoreToken` existed but was only reachable by
+ * loading a ?restore= URL, which is useless if the link arrived in a
+ * password manager, a note, or got read off another screen.
  */
 export function RestoreAccessModal({ onClose, onRestored }) {
   const [text, setText]   = useState("");

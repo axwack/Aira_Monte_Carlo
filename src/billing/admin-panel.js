@@ -33,13 +33,13 @@ export function useAdminMode() {
   return new URLSearchParams(window.location.search).has("aira_admin");
 }
 
-/* ── Owner verification (drives the un-nagged report preview) ────────────────
- * `?aira_admin=1` alone must NOT unlock anything: the param name ships in the
+/* Owner verification (drives the un-nagged report preview).
+ * `?aira_admin=1` alone can't unlock anything — the param name ships in the
  * bundle, so a client-side-only check would hand every reader a free
- * 250-credit report. The flag below is set ONLY after /api/admin answers "ok"
- * to a `ping` carrying ADMIN_SECRET, which is a server-side env var and is not
- * in the bundle. It lives in memory (never persisted), so it is re-earned by
- * the auto-connect ping on every page load.
+ * 250-credit report. The flag below only gets set after /api/admin answers
+ * "ok" to a `ping` carrying ADMIN_SECRET, which is a server-side env var and
+ * isn't in the bundle. It lives in memory, never persisted, so it has to be
+ * re-earned by the auto-connect ping on every page load.
  */
 let ownerVerified = false;
 const ownerListeners = new Set();
@@ -50,7 +50,7 @@ function setOwnerVerified(v) {
   ownerListeners.forEach(fn => { try { fn(v); } catch {} });
 }
 
-/** True once the admin secret has been verified BY THE SERVER this session. */
+/** True once the admin secret has been verified by the server this session. */
 export function useOwnerVerified() {
   const [v, setV] = useState(ownerVerified);
   useEffect(() => {
@@ -62,27 +62,31 @@ export function useOwnerVerified() {
 }
 
 async function adminCall(secret, action, params = {}) {
-  // A rejected fetch (DNS, offline, TLS, blocked request) used to propagate out
-  // of here. The section handlers do `setLoading(true); await adminCall(...)`
-  // with no try/catch, so the throw skipped `setLoading(false)` and left the
-  // button stuck on "…" rendering nothing at all — a silent hang presented as
-  // "no response". Always resolve to a result object so the UI can show
-  // something, even when the request never left the browser.
-  // Sanitize the pasted secret BEFORE it reaches fetch.
+  // A rejected fetch (DNS, offline, TLS, blocked request) used to propagate
+  // out of here. The section handlers do `setLoading(true); await
+  // adminCall(...)` with no try/catch, so the throw skipped
+  // `setLoading(false)` and left the button stuck on "…" rendering nothing —
+  // a silent hang that looked like "no response". So this always resolves to
+  // a result object, so the UI can show something even when the request
+  // never left the browser.
   //
-  // Two paste hazards, both of which used to present as an unexplained failure:
+  // Sanitize the pasted secret before it reaches fetch. Two paste hazards
+  // here, both of which used to show up as an unexplained failure:
   //
-  //   1. A character outside ISO-8859-1 (a smart quote, an em dash, an ellipsis)
-  //      makes fetch REFUSE to build the request — "String contains non
-  //      ISO-8859-1 code point" — so nothing is sent and the panel appeared to
-  //      hang. Copying from formatted text (a doc, a chat window) is enough.
-  //   2. A non-breaking space (U+00A0) IS valid ISO-8859-1, so it sails through
-  //      that check and is sent — then fails the server's exact comparison and
-  //      returns a bare "Unauthorized", indistinguishable from a wrong password.
+  //   1. A character outside ISO-8859-1 (a smart quote, an em dash, an
+  //      ellipsis) makes fetch refuse to build the request — "String
+  //      contains non ISO-8859-1 code point" — so nothing is sent and the
+  //      panel just looks like it's hung. Copying from formatted text (a
+  //      doc, a chat window) is enough to cause this.
+  //   2. A non-breaking space (U+00A0) is valid ISO-8859-1 though, so it
+  //      sails through that check and gets sent — then fails the server's
+  //      exact comparison and returns a bare "Unauthorized", indistinguishable
+  //      from a wrong password.
   //
-  // Trim outer whitespace including NBSP and zero-width characters (never
-  // meaningful in a secret, always a paste artifact), then reject anything left
-  // that a header cannot carry — naming the cause instead of failing opaquely.
+  // So: trim outer whitespace including NBSP and zero-width characters
+  // (never meaningful in a secret, always a paste artifact), then reject
+  // anything left that a header can't carry — and say why, instead of just
+  // failing.
   const clean = String(secret ?? "").replace(/^[\s ​-‍﻿]+|[\s ​-‍﻿]+$/g, "");
   if (!clean) return { ok: false, error: "No secret entered." };
   const bad = [...clean].find((ch) => ch.charCodeAt(0) > 0x7e || ch.charCodeAt(0) < 0x21);

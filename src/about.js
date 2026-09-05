@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-//  AiRA About Content
-//  Edit this file to update the About modal — no JSX required.
-// ─────────────────────────────────────────────────────────────
+// AiRA About Content
+// Edit this file to update the About modal — no JSX required.
 
 export const ABOUT_ME = {
   name:    "TiredToRetire.com/AiRA",
@@ -17,16 +15,13 @@ export const ABOUT_ME = {
   ],
 };
 
-// ─────────────────────────────────────────────────────────────
-//  Special thanks — people who took the time to find something
-//  wrong and say so precisely.
+// Special thanks — people who took the time to find something wrong and say
+// so precisely.
 //
-//  Entries are display-only. Keep them to a real contribution:
-//  "gave feedback" is not one; finding a defect nobody else saw
-//  is. `handle` is whatever the person uses publicly — do not add
-//  real names, emails or anything they have not published
-//  themselves.
-// ─────────────────────────────────────────────────────────────
+// Display-only. Keep it to a real contribution — "gave feedback" doesn't
+// count, finding a defect nobody else saw does. `handle` is whatever the
+// person uses publicly; don't add real names, emails, or anything they
+// haven't published themselves.
 export const ABOUT_THANKS = {
   intro: "AiRA is better because people took the time to tell me what was wrong with it — precisely, with the numbers, and usually more than once. Named here with thanks.",
   people: [
@@ -65,16 +60,14 @@ export const ABOUT_PRODUCT = {
   ],
 };
 
-// ─────────────────────────────────────────────────────────────
-//  Feature explanations shown in the ❓ Help modal (HelpButton in App.jsx).
+// Feature explanations shown in the ❓ Help modal (HelpButton in App.jsx).
 //
-//  group: one of "Getting Started" | "Withdrawal Strategies" |
-//          "Your Properties" | "Reading the Charts"
-//         (or any new label you add — it auto-creates a section)
+// group: one of "Getting Started" | "Withdrawal Strategies" |
+// "Your Properties" | "Reading the Charts" (or any new label you add — it
+// auto-creates a section).
 //
-//  Add a new entry here to add a new card. Order within a group
-//  follows the array order below.
-// ─────────────────────────────────────────────────────────────
+// Add a new entry here to add a new card. Order within a group follows the
+// array order below.
 export const ABOUT_FEATURES = [
   // ── Getting Started ──────────────────────────────────────
   {

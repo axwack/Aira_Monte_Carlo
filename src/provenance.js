@@ -1,48 +1,47 @@
 /**
- * provenance.js — every summary figure, with the ARITHMETIC that produces it.
+ * provenance.js — every summary figure, with the arithmetic that produces it.
  *
- * WHY THIS IS A SOURCE MODULE AND NOT JUST A TEST FIXTURE
+ * Why this lives here instead of just a test fixture: I want every label to
+ * make the calculation behind it obvious to the user, or at least show it if
+ * it's not that important. It's not enough for a transformed figure to say
+ * it was transformed — it should show the actual sum. That came out of three
+ * bugs users caught by doing the arithmetic themselves that the test suite
+ * never would have: "safe spend" (which just echoed an input back), "Median
+ * accumulation" (a single projection dressed up as more), and the WR column
+ * (a spending rate wearing a withdrawal-rate label — thanks u/garylapointe).
+ * In every case, showing the formula would have made the mistake obvious on
+ * first look.
  *
- * Owner, 2026-07-31: *"each label should have the exactly calculation clear to the
- * user and if it is not important at least show it."*
+ * The registry used to live inside `provenance.test.js`. It moved here so
+ * there's one declaration that's both rendered by the app and checked by the
+ * test — otherwise the app needs its own copy of every formula, which is the
+ * kind of duplication that bit us before (see the four competing card styles
+ * it took to notice that one).
  *
- * That is a strengthening of REQUIREMENTS §28 / UI_DESIGN_SPEC Rule 1. Rule 1 said a
- * transformed figure must SAY it was transformed. This says: show the sum. The
- * motivation is three defects found by users doing arithmetic on screen that the
- * suite could not see — "safe spend" (an echoed input), "Median accumulation" (a
- * single projection), and the WR column (a spending rate wearing a withdrawal-rate
- * label, u/garylapointe). In every case a visible formula would have made the defect
- * obvious to the reader on first sight.
- *
- * The registry used to live inside `provenance.test.js`. It moved here so ONE
- * declaration is both rendered by the app and enforced by the test. Had it stayed in
- * the test, the app would have needed its own copy of every formula — the exact
- * duplication this codebase keeps paying for (see UI_DESIGN_SPEC Rule 5, and the four
- * competing card styles it took to notice that one).
- *
- * ── FIELDS ──────────────────────────────────────────────────────────────────
+ * Fields:
  *   id        stable key, used to look the entry up from a component
  *   label     what the card says on screen
  *   source    the exact code expression — for maintainers, not users
  *   kind      computed | echoed | point-in-time | count  (see below)
- *   formula   THE USER-FACING ARITHMETIC. Required. Plain words, not code:
+ *   formula   the user-facing arithmetic. Required. Plain words, not code:
  *             "Total Draw ÷ portfolio at the start of the year", never
  *             "r.totalWithdrawal / startPort".
- *   at        point-in-time only: WHICH age or moment the value is from
+ *   at        point-in-time only: which age or moment the value is from
  *
- * ── KINDS ───────────────────────────────────────────────────────────────────
- *   "computed"      the engine derived it. The label may claim a derivation.
- *   "echoed"        a user input played back (possibly ÷12). The label must NOT
- *                   imply the app calculated or certified it.
- *   "point-in-time" a balance/state at one age. The label must name which age.
- *   "count"         a tally. The label must say what is being counted.
+ * Kinds:
+ *   "computed"      the engine derived it — the label can claim a derivation.
+ *   "echoed"        a user input played back (possibly ÷12) — the label
+ *                   shouldn't imply the app calculated or verified it.
+ *   "point-in-time" a balance/state at one age — the label should name the age.
+ *   "count"         a tally — the label should say what's being counted.
  *
- * ── ADDING A CARD ───────────────────────────────────────────────────────────
+ * Adding a card:
  *   1. Write the card in App.jsx.
  *   2. Add an entry here — including `formula`.
  *   3. Render the formula (see `formulaFor`).
- * Skipping step 2 turns the build red: provenance.test.js asserts the card count in
- * App.jsx equals this registry's size, and that every entry carries a formula.
+ * Skip step 2 and the build goes red: provenance.test.js checks that the
+ * card count in App.jsx matches this registry's size, and that every entry
+ * has a formula.
  */
 
 export const METRIC_CARDS = [
@@ -75,7 +74,7 @@ export const METRIC_CARDS = [
     formula: "Amount converted − the tax paid from the conversion (0 if you fund tax elsewhere)" },
 
   // ── Conversion comparison (Without vs With) ──────────────────────────────
-  // `nw` is r.totalPort — ALL FOUR buckets, not the two the chart above stacks.
+  // `nw` is r.totalPort — all four buckets, not just the two the chart above stacks.
   { id: "cmp-savings-without", label: "Savings at Age {endAge} — Without", kind: "point-in-time", at: "endAge",
     source: "cur.rows[last].nw = totalPort",
     formula: "Cash + taxable + pre-tax + Roth at your planning age, with no conversions" },
@@ -139,7 +138,7 @@ export const METRIC_CARDS = [
     source: "stress.rate − mc.rate",
     formula: "Scenario success rate − your baseline success rate, in percentage points" },
 
-  // ── Widow's-penalty delta (§31) ───────────────────────────────────────────
+  // ── Widow's-penalty delta ─────────────────────────────────────────────────
   { id: "widow-penalty", label: "Widow's penalty", kind: "computed",
     source: "(est.base − est.noDeath) × 100, same seed/N",
     formula: "Success rate WITH the modelled death − success rate without it, on identical market paths and the same random seed" },
@@ -181,7 +180,7 @@ export const METRIC_CARDS = [
     formula: "Appreciated property value − remaining mortgage balance. NOT part of the liquid total." },
 
   // ── Spending-target card (three branches, one card) ──────────────────────
-  // The middle branch is the one that shipped mislabelled twice: it ECHOES p.sp / 12.
+  // The middle branch is the one that shipped mislabelled twice: it just echoes p.sp / 12.
   { id: "spend-target", label: "{label} — spending target (3 branches)", kind: "echoed", factory: true,
     source: "fixed: port×rate/12 (computed) · target set: p.sp/12 (ECHOED) · no target: port×benchRate/12 (computed)",
     formula: "Your annual spending target ÷ 12 when you have set one (played back, not computed); otherwise a % of the portfolio ÷ 12" },

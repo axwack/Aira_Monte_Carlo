@@ -16,31 +16,28 @@ import { hasEnoughCredits, deductCredits, MIN_CREDITS_TO_RUN, getStoredJWT, fetc
 /**
  * Shared persona for every Gemini call.
  *
- * This previously opened "You are Aira, a fiduciary retirement planning AI."
- * Fiduciary is a legal term of art naming a duty of loyalty and care that this
- * product does not assume and is not licensed to assume — asserting it in the
- * system prompt of a PAID feature undercuts every disclaimer elsewhere in the
- * app, and invites the model to phrase output as advice rather than analysis.
+ * Used to open with "You are Aira, a fiduciary retirement planning AI."
+ * Fiduciary is a legal term for a duty of loyalty and care this product
+ * doesn't have and isn't licensed to claim — putting it in the system prompt
+ * of a paid feature undercuts every disclaimer elsewhere in the app, and
+ * nudges the model to phrase output as advice instead of analysis.
  *
- * Duplicated verbatim in functions/api/analyze.js because the browser bundle and the
- * Cloudflare Function cannot share a module. aiPersona.test.js asserts the two
- * copies stay byte-identical and that neither reintroduces the word.
+ * Duplicated verbatim in functions/api/analyze.js because the browser bundle
+ * and the Cloudflare Function can't share a module. aiPersona.test.js checks
+ * the two copies stay byte-identical and that neither brings the word back.
  */
 
 const AIRA_PERSONA = "You are Aira, a retirement planning assistant. You explain a plan the user has already modelled themselves. This is educational information about their own figures — NOT personalised financial, investment, tax, or legal advice, and never a recommendation to buy, sell, or hold any security. Present findings as observations and trade-offs to raise with a licensed professional, not as instructions to act on. Be honest about uncertainty and about what the model cannot see.";
 
 
-// ─── Billing mode flag ────────────────────────────────────────────────────────
-// Flip to true when Path A (token-resale) goes live.
+// Billing mode flag. Flip to true when Path A (token-resale) goes live.
 // When false, all credit logic is bypassed — pure BYOK, no code path changes.
-// CURRENTLY OFF: HIGH-severity audit findings H2/H3/H4 still open.
-// Tracked in Requirements.md §7 pre-launch checklist.
 export const BILLING_ENABLED = true;
 
-// ─── Billing proxy ────────────────────────────────────────────────────────────
-// Routes all AI calls through /api/analyze when BILLING_ENABLED = true.
-// The Worker verifies the JWT, deducts credits from D1, and calls Gemini
-// with the server-side key — the user's BYOK key is not needed.
+// Billing proxy — routes all AI calls through /api/analyze when
+// BILLING_ENABLED = true. The Worker verifies the JWT, deducts credits from
+// D1, and calls Gemini with the server-side key, so the user's BYOK key
+// isn't needed.
 
 async function callViaProxy(type, data) {
   const jwt = getStoredJWT();
@@ -70,16 +67,17 @@ async function callViaProxy(type, data) {
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-// ─── Pricing & session usage tracking ────────────────────────────────────────
+// Pricing & session usage tracking
 
 // $ per 1M tokens. Google AI Studio public pricing — update as Google revises.
 // Thinking ("thoughts") tokens are billed at the output rate.
-// UNVERIFIED for the rolling aliases and the 3.x line: these are the published
-// 2.5-family rates, carried across because an alias currently resolves to a model
-// in that family. They drive only the BYOK "session cost" badge — an estimate for
-// the user's own information. Real billing is unaffected: credits are metered on
-// token counts read from each response's usageMetadata, never from this table.
-// Check https://ai.google.dev/pricing before quoting these to anyone.
+// Not verified for the rolling aliases and the 3.x line — these are the
+// published 2.5-family rates, carried over because an alias currently
+// resolves to a model in that family. They only drive the BYOK "session
+// cost" badge, an estimate for the user's own info. Real billing doesn't
+// depend on this table — credits are metered on token counts read from each
+// response's usageMetadata. Check https://ai.google.dev/pricing before
+// quoting these numbers to anyone.
 export const GEMINI_PRICING = {
   "gemini-flash-latest":      { inputPerM: 0.30,  outputPerM: 2.50  },
   "gemini-pro-latest":        { inputPerM: 1.25,  outputPerM: 10.00 },
@@ -173,17 +171,17 @@ export function useAiUsage() {
 
 // Default model when values.geminiModel is not set.
 //
-// A ROLLING ALIAS on purpose. Pinning a dated id is what broke this: Google
-// retires ids per-audience, so "gemini-2.5-flash" kept working for the project
-// that shipped it and 404'd for every new key — "no longer available to new
-// users" — which is invisible in the author's own testing. `gemini-flash-latest`
-// is repointed by Google at the current Flash model, so a retirement becomes a
-// silent upgrade instead of a dead feature.
+// This is a rolling alias on purpose. Pinning a dated id is what broke things
+// before: Google retires ids per-audience, so "gemini-2.5-flash" kept working
+// for the project that shipped it and 404'd for every new key — "no longer
+// available to new users" — invisible in the author's own testing.
+// `gemini-flash-latest` gets repointed by Google at the current Flash model,
+// so a retirement becomes a silent upgrade instead of a dead feature.
 //
-// The trade is that cost-per-call can move under us. That is acceptable here
-// because usage is MEASURED, not assumed: recordUsage() reads the real
+// The trade-off is that cost-per-call can move under us. That's fine here
+// because usage is measured, not assumed — recordUsage() reads the real
 // usageMetadata off every response, so the billing figures come from what
-// actually happened rather than from the price table below.
+// actually happened, not from the price table below.
 export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
 
 // Fallback list, used only until a key is present and fetchAvailableModels()
@@ -244,7 +242,7 @@ export async function fetchAvailableModels(apiKey) {
  * text-to-speech, image ("Nano Banana"), computer-use and custom-tools variants,
  * so `gemini-2.5-flash-preview-tts`, `gemini-3.1-flash-image` and
  * `gemini-2.5-computer-use-preview-10-2025` all sailed through and would have
- * been offered as analysis engines. Exclude by PURPOSE, not by suffix shape.
+ * been offered as analysis engines. Excluding by purpose, not by suffix shape.
  *
  * Previews are excluded too: they churn on Google's schedule and a user picking
  * one is choosing a moving target without knowing it. There are enough stable
@@ -301,7 +299,7 @@ async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel
       );
       continue;                       // try the next candidate
     }
-    // A real error (bad key, quota, safety block) — do NOT burn the fallbacks.
+    // A real error (bad key, quota, safety block) — don't burn the fallbacks on this.
     throw new Error(err.error?.message || `Gemini HTTP ${res.status}`);
   }
   throw lastErr || new Error("No available Gemini model — check your API key in Profile → Assumptions.");
@@ -491,10 +489,10 @@ export async function suggestWithdrawalOptimization(values, mcResults) {
   }
   const apiKey  = values.geminiApiKey?.trim();
   if (!apiKey) return { recommended: current, reason: "AI unavailable — add your Gemini API key in Profile.", projectedRateImprovement: "N/A" };
-  // Must stay the set the app can actually run (engine/withdrawalStrategies.js
-  // LIVE_STRATEGIES). A model told about a retired strategy would recommend one
-  // the picker no longer offers. "smart" is excluded on purpose: it is the
-  // tax-optimal sourcing hybrid, not a peer spending rule to be A/B'd here.
+  // Needs to stay the set the app can actually run (engine/withdrawalStrategies.js
+  // LIVE_STRATEGIES) — a model told about a retired strategy would recommend
+  // one the picker no longer offers. "smart" is left out on purpose: it's the
+  // tax-optimal sourcing hybrid, not a peer spending rule to compare here.
   const strategies = ["gk","bengen","fixed","ninety_five_rule","vpw"];
   try {
     const res = await fnCall(apiKey, 256,
@@ -1090,11 +1088,12 @@ function HealthAndNarrativeSection({ values, mcResults }) {
 /**
  * Notice shown beneath AI-generated text.
  *
- * Generated prose is the most advice-shaped surface in the product: fluent,
- * personalised to the user's own numbers, and arriving without the visible
- * machinery that marks a chart or a table as model output. It also carries the
- * usual risk of a language model stating something confidently and wrongly.
- * Every rendered block says so inline, rather than relying on the page footer.
+ * Generated prose is the most advice-shaped thing in the product — it's
+ * fluent, personalized to the user's own numbers, and doesn't have the
+ * visible machinery that marks a chart or table as model output. It also
+ * carries the usual risk of a language model saying something confidently
+ * and wrongly. So every rendered block says so inline instead of relying on
+ * a page footer.
  */
 function AiOutputNotice() {
   return (
