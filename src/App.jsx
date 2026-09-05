@@ -1631,10 +1631,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           }
         }
         else {
-          // Unreachable while `withdrawalStrategy` comes from resolveStrategy,
-          // and deliberately here anyway: an unmatched id used to leave `sp`
-          // untouched, which reads as a 1%/yr spending cut rather than an error.
-          // Inflation-adjusting is the least-surprising fallback.
+          // Shouldn't be reachable while `withdrawalStrategy` comes from
+          // resolveStrategy, but keeping it here anyway: an unmatched id used
+          // to leave `sp` untouched, which reads as a 1%/yr spending cut
+          // instead of an error. Inflation-adjusting is the least-surprising
+          // fallback.
           sp = sp * (1 + inflY);
         }
       }
@@ -1651,17 +1652,18 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 :
         (abReliable ? totalRental : 0);
 
-      // Blanchett spending smile — a REAL lifestyle curve applied to this
-      // year's spend. Deliberately not fed back into `sp`, which is the
-      // withdrawal strategy's running state: multiplying that would compound
-      // the smile year over year and corrupt GK's own inflation logic. This is
-      // an overlay on what the strategy decided, not a change to the strategy.
+      // Blanchett spending smile — a real lifestyle curve applied to this
+      // year's spend. Not fed back into `sp` on purpose, since that's the
+      // withdrawal strategy's running state: multiplying it would compound
+      // the smile year over year and corrupt GK's own inflation logic. This
+      // is an overlay on what the strategy decided, not a change to the strategy.
       const spSmiled = sp * spendingSmileFactor(age, retAgeMC, p.smile !== false);
       const need = Math.max(0, spSmiled - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost + eventCost + hcShock;
-      // §34 — income above spending was DISCARDED by the max(0, …) above while the
-      // tax on it was still charged to the portfolio, so received money vanished
-      // and assets were sold to pay its bill. Surplus now funds the tax first and
-      // the remainder is deposited (see the long note in buildWithdrawalWaterfall).
+      // Income above spending used to get discarded by the max(0, ...) above
+      // while the tax on it still got charged to the portfolio, so received
+      // money vanished and assets were sold to pay its bill. Now surplus
+      // funds the tax first and the remainder gets deposited (see the long
+      // note in buildWithdrawalWaterfall).
       const incomeSurplus = Math.max(0,
         (ss + effectiveAb + otherIncTotal) - (spSmiled + housingCost + carveoutCost + eventCost + hcShock));
 
@@ -1676,53 +1678,57 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         }
         rmd = Math.round(pretax / divisor);
       }
-      // ── Tax + withdrawal sizing (source-aware, fixed-point) ──────────────
-      // Ordinary income = RMD + discretionary pretax draw only; cash/taxable/Roth
-      // draws are not ordinary income (LTCG on taxable draws is a documented gap).
-      // Taxes depend on the pretax draw, which depends on the total draw size
-      // (need + taxes), which depends on taxes — iterate to convergence.
-      // RMD proceeds fund spending first; any excess is reinvested in taxable.
+      // Tax + withdrawal sizing (source-aware, fixed-point).
+      // Ordinary income = RMD + discretionary pretax draw only; cash/taxable/
+      // Roth draws aren't ordinary income (LTCG on taxable draws is a
+      // documented gap). Taxes depend on the pretax draw, which depends on
+      // the total draw size (need + taxes), which depends on taxes — iterate
+      // to convergence. RMD proceeds fund spending first; any excess gets
+      // reinvested in taxable.
       const yr = CURRENT_YEAR + (age - p.currentAge);
-      // §22 — TIME-VARYING filing status. This was `p.filingStatus || "mfj"`, a
-      // constant, so the survivor's tax bill could not be modelled: on a first
-      // death the brackets narrow, the standard deduction roughly halves, the
-      // IRMAA tiers halve and the senior bonus halves. Single rule, shared with
-      // buildWithdrawalWaterfall via engine/ages.js, or the two engines would
-      // describe different households.
+      // Filing status has to vary over time here. This used to be
+      // `p.filingStatus || "mfj"`, a constant, so the survivor's tax bill
+      // couldn't be modeled: on a first death the brackets narrow, the
+      // standard deduction roughly halves, the IRMAA tiers halve, and the
+      // senior bonus halves. One shared rule with buildWithdrawalWaterfall
+      // via engine/ages.js, otherwise the two engines describe different households.
       const filingStatus = filingStatusAt(p, age);
 
-      // Sourcing guardrails (bracket cap, IRMAA guard, Roth reserve) are ORTHOGONAL
-      // to the distribution strategy — they apply to any strategy once the user has
-      // chosen a bracket target. "off" opts out to naive (pretax-first, uncapped).
-      // The rooms don't depend on the draw size, so compute them once.
+      // Sourcing guardrails (bracket cap, IRMAA guard, Roth reserve) are
+      // independent of the distribution strategy — they apply to any
+      // strategy once the user has chosen a bracket target. "off" opts out
+      // to naive (pretax-first, uncapped). The rooms don't depend on the
+      // draw size, so compute them once.
       let bracketRoomMC = Infinity;
-      // Either constraint binds INDEPENDENTLY. The IRMAA guard used to sit inside
-      // this bracket-target check, so it did nothing whenever the target was
-      // "off" — a ghost setting (verified byte-identical with the guard on and
-      // off). Decoupled here and in buildWithdrawalWaterfall together, or the two
-      // engines disagree, which is the drift class this codebase keeps relearning.
+      // Either constraint binds independently. The IRMAA guard used to sit
+      // inside this bracket-target check, so it did nothing whenever the
+      // target was "off" — a dead setting (verified byte-identical with the
+      // guard on and off). Decoupled here and in buildWithdrawalWaterfall
+      // together, since letting the two engines disagree is exactly the kind
+      // of drift this codebase keeps running into.
       const bracketSetMC = !!(p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off");
       const irmaaOnMC    = !!p.irmaaGuard && age >= 63;
       if (bracketSetMC || irmaaOnMC) {
         const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
         const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC, spouseAgeAt(p, age));
-        // 85% SS inclusion is a deliberate worst-case estimate so the cap never overshoots.
+        // 85% SS inclusion is a worst-case estimate on purpose, so the cap never overshoots.
         const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable);
-        // Infinity when only the IRMAA guard is on: the min() below then makes the
-        // IRMAA tier the sole binding ceiling.
+        // Infinity when only the IRMAA guard is on — the min() below then
+        // makes the IRMAA tier the sole binding ceiling.
         const ceilingMC = bracketSetMC
           ? getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC)
           : Infinity;
-        // The OBBBA senior bonus shelters ordinary income exactly as the standard
-        // deduction does, so the bracket room must include it or sourcing will
-        // under-fill the bracket that calcYearTax now actually grants. Its
-        // phase-out is MAGI-keyed and MAGI rises with the very draw being sized,
-        // so estimate the bonus at the HIGH end of this year's plausible MAGI
-        // (floor + the room before the bonus) → worst-case phase-out → smallest
-        // bonus. Same conservative spirit as the 85% SS inclusion above: the cap
-        // can under-fill the bracket but must never overshoot it.
-        // The bonus estimate needs a finite ceiling; with no bracket target the
-        // IRMAA tier is the only thing that can bind, so use it as the proxy.
+        // The OBBBA senior bonus shelters ordinary income the same way the
+        // standard deduction does, so the bracket room needs to include it or
+        // sourcing will under-fill the bracket that calcYearTax actually
+        // grants. Its phase-out is MAGI-keyed and MAGI rises with the very
+        // draw being sized, so estimate the bonus at the high end of this
+        // year's plausible MAGI (floor + the room before the bonus) — that
+        // gives the worst-case phase-out and the smallest bonus. Same
+        // conservative spirit as the 85% SS inclusion above: the cap can
+        // under-fill the bracket but must never overshoot it. The bonus
+        // estimate needs a finite ceiling; with no bracket target the IRMAA
+        // tier is the only thing that can bind, so use it as the proxy.
         const ceilingForBonusMC = Number.isFinite(ceilingMC)
           ? ceilingMC
           : Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactorMC) - sdMC);
@@ -1735,10 +1741,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         bracketRoomMC = Number.isFinite(ceilingMC)
           ? Math.max(0, ceilingMC - taxableSoFarMC)
           : Infinity;
-        // IRMAA room lives in MAGI space — do NOT subtract the std deduction. A pretax
-        // draw raises taxable income and MAGI by the same dollar, so both rooms cap the
-        // same incremental draw; take the tighter. (LTCG from the taxable draw is not
-        // yet folded into the MAGI base here — tracked as a known modeling gap.)
+        // IRMAA room lives in MAGI space — don't subtract the standard
+        // deduction. A pretax draw raises taxable income and MAGI by the
+        // same dollar, so both rooms cap the same incremental draw; take
+        // whichever is tighter. (LTCG from the taxable draw isn't folded
+        // into the MAGI base here yet — a known modeling gap.)
         if (irmaaOnMC) {
           const irmaaRoom = Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactorMC) - ordinaryFloorMC);
           bracketRoomMC = Math.min(bracketRoomMC, irmaaRoom);
@@ -1746,27 +1753,29 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       }
 
       const rothFloorMC = p.rothEmergencyReserve || 0;
-      // IRMAA 2-year lookback for THIS year's charge: the MAGI from age-2,
-      // rolled forward at the bottom of the previous two iterations. The first
-      // two retirement years (y < 2) have no pre-retirement wage history to
-      // look back on (this engine doesn't model wages), so they fall back to
-      // null → calcYearTax uses same-year MAGI, matching the pre-lookback
-      // approximation for those two years only.
+      // IRMAA 2-year lookback for this year's charge: the MAGI from age-2,
+      // rolled forward at the bottom of the previous two iterations. The
+      // first two retirement years (y < 2) have no pre-retirement wage
+      // history to look back on (this engine doesn't model wages), so they
+      // fall back to null and calcYearTax uses same-year MAGI, matching the
+      // pre-lookback approximation for those two years only.
       const magiLookbackMC = (y >= 2 && typeof magiTwoYearsAgo === "number") ? magiTwoYearsAgo : null;
       let taxResult = null;
       let totalTax = 0;
       let fromCash = 0, fromTaxable = 0, fromPretax = 0, fromRoth = 0;
       let shortfall = 0;
       let earlyPenMC = { penalty: 0, exemptAmount: 0, reason: "" };
-      // 12 passes, not 4 — the tax↔draw fixed point converges geometrically at
-      // ~the marginal rate (≈0.3×/pass); 4 passes exited ~$100-350 short of the
-      // true tax bill every year. The <$1 break makes extra passes free once
-      // converged. Matches buildWithdrawalWaterfall's pass cap exactly.
+      // 12 passes, not 4 — the tax/draw fixed point converges geometrically
+      // at roughly the marginal rate (about 0.3x/pass); 4 passes came out
+      // $100-350 short of the true tax bill every year. The <$1 break makes
+      // extra passes free once it's converged. Matches
+      // buildWithdrawalWaterfall's pass cap exactly.
       for (let pass = 0; pass < 12; pass++) {
-        // Withdraw from buckets in the user's chosen order (default tax_reactive =
-        // cash → taxable → pretax capped → roth). The bracket/IRMAA cap stays on the
-        // pretax step and the reserve floor on the roth step wherever each lands.
-        // Surplus income funds the tax bill before any asset is sold (§34).
+        // Withdraw from buckets in the user's chosen order (default
+        // tax_reactive = cash → taxable → pretax capped → roth). The
+        // bracket/IRMAA cap stays on the pretax step and the reserve floor on
+        // the roth step wherever each lands. Surplus income funds the tax
+        // bill before any asset gets sold.
         let remaining = Math.max(0, need + totalTax - rmd - incomeSurplus);
         fromCash = fromTaxable = fromPretax = fromRoth = 0;
         const drawMC = {
@@ -1777,17 +1786,18 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         };
         for (const bucket of drawOrderMC) drawMC[bucket]();
 
-        // ── Essential-spending override (the bracket cap is SOFT) ───────────
-        // Mirrors buildWithdrawalWaterfall's override exactly — see the long
-        // rationale there. Short version: `bracketRoomMC` decides WHICH dollars
-        // to draw, never WHETHER the household eats. A household whose rental /
-        // pension income fills the target bracket by itself had zero room, so a
-        // mostly-pre-tax portfolio could not be drawn at all, `shortfall` stayed
-        // positive, and the path below was marked `survived = false` while
-        // holding millions. That is how a ~100% plan reported 3.3%.
+        // Essential-spending override — the bracket cap is soft. Mirrors
+        // buildWithdrawalWaterfall's override exactly, see the long
+        // rationale there. Short version: `bracketRoomMC` decides which
+        // dollars to draw, never whether the household eats. A household
+        // whose rental/pension income fills the target bracket by itself had
+        // zero room, so a mostly-pre-tax portfolio couldn't be drawn at all,
+        // `shortfall` stayed positive, and the path below got marked
+        // `survived = false` while holding millions. That's how a ~100% plan
+        // ended up reporting 3.3%.
         //
-        // This MUST live in both engines or they disagree about survival, which
-        // is the cross-engine drift this codebase keeps relearning.
+        // Has to live in both engines, or they disagree about survival —
+        // that's the cross-engine drift this codebase keeps running into.
         if (remaining > 0.01) {
           const pretaxAvail = Math.max(0, pretax - rmd) - fromPretax;
           if (pretaxAvail > 0) {
@@ -1798,11 +1808,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           }
         }
         // Roth emergency reserve, same principle — see the long note in
-        // buildWithdrawalWaterfall. A reserve that cannot be reached in an
-        // emergency is a vault, and holding it past the point of failure
-        // protects the money from its own purpose. Measured before this: a $1.9M
-        // reserve on a $2.05M portfolio took success from 100% to 47% while the
-        // reserve sat untouched. STRICTLY last, after uncapped pre-tax.
+        // buildWithdrawalWaterfall. A reserve you can't reach in an emergency
+        // is just a vault, and holding it past the point of failure protects
+        // the money from its own purpose. Measured before this fix: a $1.9M
+        // reserve on a $2.05M portfolio took success from 100% to 47% while
+        // the reserve sat untouched. Strictly last, after uncapped pre-tax.
         if (remaining > 0.01 && rothFloorMC > 0) {
           const reserveLeft = Math.max(0, roth - fromRoth);
           if (reserveLeft > 0) {
@@ -1814,22 +1824,23 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         }
         shortfall = remaining;
 
-        // Realized LTCG on this pass's taxable draw — READ-ONLY off the current
-        // (pre-draw) taxable balance/basis; the real `taxableBasis` is mutated
-        // exactly once below, after the fixed point converges, using the final
-        // fromTaxable (not accumulated pass-by-pass).
+        // Realized LTCG on this pass's taxable draw — read-only off the
+        // current (pre-draw) taxable balance/basis; the real `taxableBasis`
+        // gets mutated exactly once below, after the fixed point converges,
+        // using the final fromTaxable (not accumulated pass-by-pass).
         const gPass = realizedGainFromDraw(fromTaxable, taxable, taxableBasis);
         taxResult = calcYearTax(
           age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, 0,
           p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", gPass, magiLookbackMC,
           spouseAgeAt(p, age)
         );
-        // IRC §72(t) additional tax on pre-59½ distributions. Inside the fixed
-        // point for the same reason as the rest of the bill: a bigger pretax draw
-        // owes a bigger penalty, which widens the need, which grows the draw.
-        // Without this the MC's success rate rated an early-retirement plan as
-        // cheaper than it is, while the waterfall (which does charge it) said
-        // otherwise — the two engines must price the same dollars.
+        // IRC §72(t) additional tax on pre-59½ distributions. It's inside the
+        // fixed point for the same reason as the rest of the bill: a bigger
+        // pretax draw owes a bigger penalty, which widens the need, which
+        // grows the draw. Without this the MC's success rate rated an
+        // early-retirement plan as cheaper than it really is, while the
+        // waterfall (which does charge it) said otherwise — the two engines
+        // need to price the same dollars.
         earlyPenMC = earlyWithdrawalPenalty({
           separationQualifies: ruleOf55OkMC,
           age, pretaxDistribution: fromPretax + rmd,
@@ -1847,19 +1858,20 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         break;
       }
 
-      // Realized gain for the YEAR (final, converged fromTaxable) — the single
-      // authoritative value used both to mutate taxableBasis below and to feed
-      // the Roth-conversion delta-tax helper further down, so a pure conversion
-      // cost isn't polluted by a second, different gain estimate.
+      // Realized gain for the year (final, converged fromTaxable) — the one
+      // authoritative value used both to mutate taxableBasis below and to
+      // feed the Roth-conversion delta-tax helper further down, so a pure
+      // conversion cost doesn't get polluted by a second, different gain estimate.
       const realizedGainMC = realizedGainFromDraw(fromTaxable, taxable, taxableBasis);
 
-      // Update bucket balances. Excess RMD (forced out beyond what spending and
-      // taxes consumed) is reinvested in the taxable bucket, not vaporized.
+      // Update bucket balances. Excess RMD (forced out beyond what spending
+      // and taxes consumed) gets reinvested in the taxable bucket, not vaporized.
       const rmdExcess = Math.max(0, rmd - (need + totalTax));
-      // Basis consumed by the draw = draw − realized gain (the non-gain, return-of-
-      // basis portion); reinvested rmdExcess is fresh money → fresh basis dollar-for-dollar.
+      // Basis consumed by the draw = draw - realized gain (the non-gain,
+      // return-of-basis portion); reinvested rmdExcess is fresh money, so
+      // it's fresh basis dollar-for-dollar.
       const consumedBasisMC = fromTaxable - realizedGainMC;
-      // §34 — surplus left after this year's tax is deposited as basis (already
+      // Surplus left after this year's tax gets deposited as basis (already
       // taxed money); only later growth is gain. Mirrors the waterfall exactly.
       const surplusToTaxableMC = Math.max(0, incomeSurplus - Math.max(0, totalTax - rmd));
       taxableBasis = Math.max(0, taxableBasis - consumedBasisMC) + rmdExcess + surplusToTaxableMC;
@@ -1875,16 +1887,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       roth    = isNaN(roth)    ? 0 : roth;
 
       // IRMAA lookback history: this year's MAGI, used two years from now.
-      // Defaults to the no-conversion taxResult.magi; overwritten below with
+      // Defaults to the no-conversion taxResult.magi, overwritten below with
       // the post-conversion MAGI when a conversion actually executes (a
-      // conversion raises MAGI, so the age+2 IRMAA charge must see it — the
-      // conversion CANNOT affect its own year's charge under the lookback).
+      // conversion raises MAGI, so the age+2 IRMAA charge needs to see it —
+      // the conversion can't affect its own year's charge under the lookback).
       let finalMagiMC = taxResult.magi;
 
-      // Bracket-fill Roth conversion (after spending withdrawals, before growth).
-      // Bracket ceilings index at the assumed long-run inflation rate, not inflY:
-      // compounding a single bootstrapped year's draw over the whole horizon would
-      // swing the ceiling wildly with RNG noise.
+      // Bracket-fill Roth conversion (after spending withdrawals, before
+      // growth). Bracket ceilings index at the assumed long-run inflation
+      // rate, not inflY — compounding a single bootstrapped year's draw over
+      // the whole horizon would swing the ceiling wildly with RNG noise.
       if (p.rothConversionTarget && p.rothConversionTarget !== "off" && pretax > 1000) {
         const inflFactor = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
         const bracketCeiling = getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor);
@@ -1892,22 +1904,26 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         if (room > 500) {
           let convAmt = Math.min(room, pretax);
           let lastWithConv = null;
-          // True conversion cost = the DELTA in total tax vs. the no-conversion tax
-          // (correct progressive bracket stacking), not a flat marginal-rate estimate —
-          // a single bracket's rate understates cost whenever `room` spans intervening
-          // brackets. Mirrors buildWithdrawalWaterfall.js's Step 6.5/7 exactly: recompute
-          // full tax with the conversion stacked as ordinary income via calcYearTax's own
-          // `conversionAmount` parameter, then take the delta. NOTE: `totalTax` (and
-          // `withConv.totalTax`) exclude IRMAA (calcYearTax.totalTax = fedTax+stateTax),
-          // so this delta was already a pure fed+state conversion cost before the
-          // lookback landed and needs no change now that IRMAA is a fixed, lookback-
-          // driven constant for the year — a same-year conversion can't move it.
+          // True conversion cost is the delta in total tax versus the
+          // no-conversion tax (correct progressive bracket stacking), not a
+          // flat marginal-rate estimate — a single bracket's rate
+          // understates cost whenever `room` spans intervening brackets.
+          // Mirrors buildWithdrawalWaterfall.js's Step 6.5/7 exactly:
+          // recompute full tax with the conversion stacked as ordinary
+          // income via calcYearTax's own `conversionAmount` parameter, then
+          // take the delta. Note: `totalTax` (and `withConv.totalTax`)
+          // exclude IRMAA (calcYearTax.totalTax = fedTax+stateTax), so this
+          // delta was already a pure fed+state conversion cost before the
+          // lookback landed, and it needs no change now that IRMAA is a
+          // fixed, lookback-driven constant for the year — a same-year
+          // conversion can't move it.
           const convTaxFor = (amt) => {
             if (!taxEnabled || amt <= 0) return 0;
-            // Same realizedGainMC as the spending-draw tax call above — the delta
-            // must isolate the conversion's own cost, not a different LTCG estimate.
-            // Same magiLookbackMC too, so the (fixed) IRMAA component agrees with
-            // taxResult's — it's this year's charge, unaffected by convAmt.
+            // Same realizedGainMC as the spending-draw tax call above — the
+            // delta has to isolate the conversion's own cost, not a
+            // different LTCG estimate. Same magiLookbackMC too, so the
+            // (fixed) IRMAA component agrees with taxResult's — it's this
+            // year's charge, unaffected by convAmt.
             const withConv = calcYearTax(
               age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, amt,
               p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC, magiLookbackMC,
@@ -1918,13 +1934,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           };
           let convTax = convTaxFor(convAmt);
 
-          // Shrink (rather than all-or-nothing skip) when pretax can't self-fund the
-          // conversion plus its incremental tax — converge on the largest amount the
-          // remaining pretax balance can afford, mirroring the waterfall's own loop.
-          // Who pays the conversion tax — must match buildWithdrawalWaterfall exactly,
-          // or the Monte Carlo success rate describes a different plan than the
-          // Withdrawal/Conversion tabs. This block used to do `pretax -= convAmt +
-          // convTax` unconditionally, ignoring the setting entirely.
+          // Shrink (rather than all-or-nothing skip) when pretax can't
+          // self-fund the conversion plus its incremental tax — converge on
+          // the largest amount the remaining pretax balance can afford,
+          // mirroring the waterfall's own loop. Who pays the conversion tax
+          // has to match buildWithdrawalWaterfall exactly, or the Monte
+          // Carlo success rate describes a different plan than the
+          // Withdrawal/Conversion tabs. This block used to do `pretax -=
+          // convAmt + convTax` unconditionally, ignoring the setting entirely.
           const withholdConvMC = p.taxFunding === "from_conv" || p.taxFunding === "from_conversion";
           const outsideForConvMC = withholdConvMC ? 0 : Math.max(0, taxable) + Math.max(0, cash);
 
@@ -1943,7 +1960,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
               pretax -= convAmt;
               roth   += Math.max(0, convAmt - convTax);
             } else {
-              // Real buckets, same order the waterfall uses: taxable -> cash -> pretax.
+              // Real buckets, same order the waterfall uses: taxable → cash → pretax.
               let owed = convTax;
               const fromTaxConv  = Math.min(owed, Math.max(0, taxable)); owed -= fromTaxConv;
               const fromCashConv = Math.min(owed, Math.max(0, cash));    owed -= fromCashConv;
@@ -1978,12 +1995,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       }
     }
     // The shortfall branch above `break`s out of this loop before its
-    // `path.push`, so an exhausted path's array is shorter than a survivor's —
-    // its LAST entry is a stale mid-run balance, not $0 at the terminal age.
-    // `pcts` (below) already treats a missing entry as `?? 0`; pad here so
-    // `term`'s per-path-last-value quantile (mc.term.p50, the Forecast tab
-    // headline) counts the same $0 for that path, matching `pcts`'s terminal
-    // row (the Net Worth tab chart) instead of diverging from it.
+    // `path.push`, so an exhausted path's array is shorter than a survivor's
+    // — its last entry is a stale mid-run balance, not $0 at the terminal
+    // age. `pcts` (below) already treats a missing entry as `?? 0`; padding
+    // here makes `term`'s per-path-last-value quantile (mc.term.p50, the
+    // Forecast tab headline) count the same $0 for that path, matching
+    // `pcts`'s terminal row (the Net Worth tab chart) instead of diverging from it.
     while (path.length <= retYrs) path.push(0);
     results.push({ path, survived, exhaustAge, portAtRetire, bracketOverrideYears, rothReserveBrokenYears });
   }
@@ -1994,9 +2011,9 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // Use ?? 0 so exhausted paths count as $0, not undefined
     const vals = results.map(r => r.path[t] ?? 0).sort((a, b) => a - b);
     const q = pct => vals[Math.floor(pct * (vals.length - 1))];
-    // Clamped, matching the drawdown loop that produced `path` — otherwise the
-    // fan chart's age axis (and every calendar year derived from it) would start
-    // before today for an already-retired user.
+    // Clamped, matching the drawdown loop that produced `path` — otherwise
+    // the fan chart's age axis (and every calendar year derived from it)
+    // would start before today for an already-retired user.
     const ageT = retAgeMC + t;
     // Fraction of paths not yet exhausted at this age — feeds the per-age
     // band table under the fan chart. A path counts as funded at ageT if it
@@ -2009,13 +2026,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     });
   }
   const nS = results.filter(r => r.survived).length;
-  // Share of paths that had to break the bracket target at least once to stay
-  // funded. A high value means the chosen target is unreachable for this
-  // household — usually because non-portfolio income already fills it.
+  // Share of paths that had to break the bracket target at least once to
+  // stay funded. A high value means the chosen target is unreachable for
+  // this household, usually because non-portfolio income already fills it.
   const bracketOverrideRate = results.filter(r => r.bracketOverrideYears > 0).length / N;
-  // Median age at which money ran out, ACROSS FAILING PATHS ONLY. The single most
-  // useful number for explaining a low score: "it fails" is not actionable,
-  // "it typically fails at 78" is. null when nothing failed.
+  // Median age at which money ran out, across failing paths only. This is
+  // the single most useful number for explaining a low score — "it fails"
+  // isn't actionable, "it typically fails at 78" is. null when nothing failed.
   const exhaustAges = results.filter(r => !r.survived && Number.isFinite(r.exhaustAge))
     .map(r => r.exhaustAge).sort((a, b) => a - b);
   const medianExhaustAge = exhaustAges.length
@@ -2026,12 +2043,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   const medR = rV[Math.floor(rV.length / 2)];
   const tV = results.map(r => r.path[r.path.length - 1]).sort((a, b) => a - b);
   const qt = p => tV[Math.floor(p * (tV.length - 1))];
-  // Mortality-weighted success: a failed path only fails YOU if you're alive
+  // Mortality-weighted success: a failed path only fails you if you're alive
   // to experience it. Weight each failure by P(alive at its exhaust age),
   // from the same SSA table the fan chart's mortality overlay uses. The raw
   // `rate` is the conservative "live to the horizon" number; `mwRate` is the
   // actuarial "chance the money outlives you" number (Blanchett/Kitces-style).
-  // mwRate >= rate always, since each failure's weight is <= 1.
+  // mwRate is always >= rate, since each failure's weight is <= 1.
   const failSurvivalSum = results.reduce(
     (s, r) => s + (r.survived ? 0 : survivalToAge(p.currentAge, r.exhaustAge ?? endAge, p.sex)),
     0
@@ -2050,29 +2067,32 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   };
 }
 
-// Stress Test = the SAME engine as runMC, with the 2000–2012 equity sequence forced
-// at retirement (sequence-of-returns risk). Delegating to runMC — rather than carrying
-// a parallel implementation — guarantees one tax model, one sourcing waterfall, and one
-// RMD/strategy code path across the Monte Carlo, the deterministic schedule, and the
-// stress pivot. The non-resident/state-tax toggle, IRMAA, SS torpedo, and bracket caps
-// now propagate to the stress number automatically; no field can read differently here
-// than anywhere else. (Previously this used a flat taxDragRate heuristic that ignored
-// p.twoHousehold, so the toggle had no effect on the stress success rate.)
+// Stress Test is the same engine as runMC, with the 2000-2012 equity
+// sequence forced at retirement (sequence-of-returns risk). Delegating to
+// runMC instead of carrying a parallel implementation guarantees one tax
+// model, one sourcing waterfall, and one RMD/strategy code path across the
+// Monte Carlo, the deterministic schedule, and the stress pivot. The
+// non-resident/state-tax toggle, IRMAA, SS torpedo, and bracket caps all
+// propagate to the stress number automatically, so no field can read
+// differently here than anywhere else. (This used to run a flat taxDragRate
+// heuristic that ignored p.twoHousehold, so the toggle had no effect on the
+// stress success rate.)
 function runStress(p, endAge, N = STRESS_PATHS, seed = 99) {
   return runMC(p, endAge, N, seed, true, SEQ_2000_2012);
 }
 
-/* ════ DETERMINISTIC WITHDRAWAL SCHEDULE (median returns) ════ */
+// Deterministic withdrawal schedule (median returns)
 
 function simulateDeterministicWithStrategy(p, inf, strategyArg) {
-  // The strategy arrives as an ARGUMENT here (the Withdrawal tab passes its
-  // preview selection, not p.withdrawalStrategy), so it needs its own guard —
-  // migrating the saved profile is not enough to protect this entry point.
+  // The strategy arrives as an argument here (the Withdrawal tab passes its
+  // preview selection, not p.withdrawalStrategy), so it needs its own guard
+  // — migrating the saved profile alone doesn't protect this entry point.
   const withdrawalStrategy = resolveStrategy(strategyArg ?? p.withdrawalStrategy);
-  // Smart Waterfall: source the schedule directly from buildWithdrawalWaterfall's
-  // "smart" scenario — the single source of truth for bucket draws, Roth
-  // conversions, mortgage/carveout costs, and source-aware tax. This is the
-  // real-life year-by-year plan, not a re-derived approximation.
+  // Smart Waterfall: source the schedule directly from
+  // buildWithdrawalWaterfall's "smart" scenario, the one source of truth for
+  // bucket draws, Roth conversions, mortgage/carveout costs, and
+  // source-aware tax. This is the real-life year-by-year plan, not a
+  // re-derived approximation.
   if (withdrawalStrategy === "smart") {
     const wf = buildWithdrawalWaterfall(p);
     const { total: portAtRetire } = accumulateToRetirement(p);
@@ -2085,9 +2105,10 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
       carveoutCost: r.carveoutCost,
       healthcareRisk: r.healthcareRisk,
       conversionAmount: r.conversionAmount,
-      // Carried so this table can disclose the same reconciliation the Withdrawal
-      // Plan table does. It shows the identical conversion figure, so it invites
-      // the identical (wrong) comparison against a nominal published bracket top.
+      // Carried so this table can disclose the same reconciliation the
+      // Withdrawal Plan table does. It shows the identical conversion
+      // figure, so it invites the identical (wrong) comparison against a
+      // nominal published bracket top.
       bracketTopYr: r.bracketTopYr, stdDedYr: r.stdDedYr,
       taxableIncome: r.taxableIncome, totInc: r.totInc,
       marginalBracket: r.marginalBracket, convCapReason: r.convCapReason,
@@ -2109,7 +2130,7 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   // hardcode 62 in its retirement loop).
   const glideSwitchAgeDet = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeDet });
   const accYrs = Math.max(0, retAgeDet - p.currentAge);
-  // §30 — same horizon rule as runMC.
+  // Same horizon rule as runMC.
   const planEndDet = planEndAgeOnPrimaryClock(p, p.endAge);
   const retYrs = planEndDet - retAgeDet;
   let port = p.port;
@@ -2118,26 +2139,26 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   for (let y = 0; y < accYrs; y++) {
     const ret = expectedReturn(glidepathEqPct(p.currentAge + y, p.preRetireEq, p.postRetireEq, glideSwitchAgeDet)) / 100;
     // Aggregate portfolio here (no per-bucket split in this engine), but the
-    // total must include every contribution stream runMC applies or the two
-    // engines report different portfolio-at-retirement figures.
-    // Job-bound streams via the shared §24.1 helper — same per-person stop rule
-    // runMC applies, or the two engines report different portfolio-at-retirement
-    // figures the moment a spouse retires first.
+    // total needs to include every contribution stream runMC applies or the
+    // two engines report different portfolio-at-retirement figures.
+    // Job-bound streams via the shared per-person-contributions helper —
+    // same per-person stop rule runMC applies, or the two engines disagree
+    // the moment a spouse retires first.
     const jcDet = jobContributionsForYear(p, p.currentAge + y);
     port = port * (1 + ret)
       + jcDet.pretax + jcDet.roth + (p.hsaContrib || 0)
       + (p.taxableContrib || 0);
-    // Pre-retirement one-off inflows (inheritance, lump-sum pension) are
+    // Pre-retirement one-off inflows (inheritance, lump-sum pension) get
     // deposited like contributions — same fix as runMC's accumulation loop;
-    // this engine tracks one aggregate portfolio, so the inflow simply adds.
+    // this engine tracks one aggregate portfolio, so the inflow just adds.
     const evAccDet = computeCashFlowEvents(p.cashFlowEvents, CURRENT_YEAR + y, p.inf ?? 2.5, CURRENT_YEAR);
     if (evAccDet.inflow > 0) port += evAccDet.inflow;
   }
 
   const portAtRetire = port;
-  // Precompute the actual annual mortgage cash cost per calendar year (incl.
-  // extra payments and the partial payoff year, same model as
-  // buildWithdrawalWaterfall/runMC — Fix 1).
+  // Precompute the actual annual mortgage cash cost per calendar year
+  // (including extra payments and the partial payoff year), same model as
+  // buildWithdrawalWaterfall/runMC.
   let mortByYear = new Map();
   if (p.mortBalance > 0) {
     const ms = mortgageSchedule(p.mortBalance, p.mortRate || 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
@@ -2145,10 +2166,10 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   }
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
-  // Baseline initWR = NET PORTFOLIO NEED at retirement / portfolio — NO tax,
+  // Baseline initWR = net portfolio need at retirement / portfolio, no tax,
   // same quantity the yearly loop's GK netNeed offset computes (mirrors
-  // runMC/buildWithdrawalWaterfall's calibration). ab0 includes propIncome to
-  // match this engine's own `ab` term in the yearly loop below.
+  // runMC/buildWithdrawalWaterfall's calibration). ab0 includes propIncome
+  // to match this engine's own `ab` term in the yearly loop below.
   const ss0 = computeHouseholdSS(p, retAgeDet);
   const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const calYear0 = CURRENT_YEAR + (retAgeDet - p.currentAge);
@@ -2165,12 +2186,12 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   }, 0);
   const initNeed0 = Math.max(0, p.sp - ss0 - ab0 - otherInc0) + housing0 + carveout0;
   const initWR = portAtRetire > 0 ? initNeed0 / portAtRetire : 0.04;
-  // Source-aware tax: reuse the Smart Waterfall engine so the tax column here
-  // matches what the Waterfall tab shows for the same age. The waterfall knows
-  // each account type (cash / taxable / pretax / roth) and only treats pretax
-  // draws as ordinary income — without this override, calcYearTax would treat
-  // every portfolio draw as ordinary income, overstating fed tax dramatically
-  // for years that draw from taxable brokerage or Roth.
+  // Source-aware tax: reuse the Smart Waterfall engine so the tax column
+  // here matches what the Waterfall tab shows for the same age. The
+  // waterfall knows each account type (cash/taxable/pretax/roth) and only
+  // treats pretax draws as ordinary income — without this override,
+  // calcYearTax would treat every portfolio draw as ordinary income, badly
+  // overstating fed tax for years that draw from taxable brokerage or Roth.
   const smartTaxByAge = new Map();
   try {
     const wf = buildWithdrawalWaterfall(p);
@@ -2184,34 +2205,35 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     }
   } catch { /* fall back to calcYearTax below */ }
 
-  // Same "Tax drag" master toggle as runMC — OFF zeroes all tax so the deterministic
-  // table matches the MC/Stress pivots under a pre-tax view (CLAUDE.md uniformity).
+  // Same "Tax drag" master toggle as runMC — off zeroes all tax so the
+  // deterministic table matches the MC/Stress pivots under a pre-tax view.
   const taxEnabled = p.tax !== false;
 
-  // ── §35: the year loop runs TWICE ─────────────────────────────────────────
-  // The tax columns are borrowed from buildWithdrawalWaterfall, which is right
-  // — the waterfall is account-aware, so only pre-tax draws are ordinary
-  // income, whereas calcYearTax on an aggregate draw treats every dollar as
-  // ordinary and overstates tax badly. The bug was that the waterfall taxed ITS
-  // OWN spend path (the GK/Bengen hybrid) no matter which strategy was
-  // selected, so the draw on screen and the tax beside it described different
-  // plans. Measured before this fix: five strategies drawing between $2.28M and
-  // $3.45M over a lifetime all displayed the same $210,686 of tax.
+  // The year loop runs twice.
+  // The tax columns are borrowed from buildWithdrawalWaterfall, and that's
+  // correct — the waterfall is account-aware, so only pre-tax draws are
+  // ordinary income, whereas calcYearTax on an aggregate draw treats every
+  // dollar as ordinary and badly overstates tax. The bug was that the
+  // waterfall taxed its own spend path (the GK/Bengen hybrid) no matter
+  // which strategy was selected, so the draw on screen and the tax beside it
+  // described different plans. Measured before this fix: five strategies
+  // drawing between $2.28M and $3.45M over a lifetime all displayed the same
+  // $210,686 of tax.
   //
-  // So: pass 1 discovers THIS strategy's spend path, the waterfall is re-run
-  // against that path, and pass 2 uses the resulting per-age tax.
+  // So: pass 1 discovers this strategy's spend path, the waterfall gets
+  // re-run against that path, and pass 2 uses the resulting per-age tax.
   //
   // Everything the loop mutates (`port`, `sp`, `lastReturn`, `schedule`) is
-  // declared inside runPass, so a second call starts from the same state as the
-  // first. `portAtRetire` is the accumulation result and is read-only here.
+  // declared inside runPass, so a second call starts from the same state as
+  // the first. `portAtRetire` is the accumulation result and is read-only here.
   const runPass = (taxByAge) => {
   let port = portAtRetire;
   let sp = p.sp;
   let lastReturn = 0;
   const schedule = [];
   // Pre-smile spend per calendar year — the input to pass 2's waterfall.
-  // PRE-smile is load-bearing: buildWithdrawalWaterfall applies
-  // spendingSmileFactor AFTER its spSchedule override, so feeding back the
+  // Pre-smile matters here: buildWithdrawalWaterfall applies
+  // spendingSmileFactor after its spSchedule override, so feeding back the
   // post-smile `spending` field would apply the smile twice. Measured on a
   // $1.5M/$80k profile: $20,913 too little at age 80.
   const spByYear = [];
@@ -2236,8 +2258,8 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
 
-    // Housing cost: mortgage cash cost while active, or inflation-adjusted rent
-    // — same model as buildWithdrawalWaterfall's Step 1 (ENG-19).
+    // Housing cost: mortgage cash cost while active, or inflation-adjusted
+    // rent — same model as buildWithdrawalWaterfall's Step 1.
     let housingCost = 0;
     if ((p.housingType || "own") === "own") {
       housingCost = mortByYear.get(yr) || 0;
@@ -2248,21 +2270,22 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
       return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * cumInfl) : 0);
     }, 0);
 
-    // GK's netNeed income offset — same NET PORTFOLIO NEED quantity initWR
+    // GK's netNeed income offset — same net portfolio need quantity initWR
     // was calibrated against.
     const evDet = computeCashFlowEvents(p.cashFlowEvents, yr, p.inf ?? 2.5, CURRENT_YEAR);
     const eventCostDet = evDet.total;
-    // This engine tracks one aggregate portfolio, so an inflow simply adds to
+    // This engine tracks one aggregate portfolio, so an inflow just adds to
     // it; the per-bucket routing that matters for tax lives in runMC and
     // buildWithdrawalWaterfall.
     if (evDet.inflow > 0) port += evDet.inflow;
 
-    // ADVISORY ONLY — deliberately NOT charged to this year's draw. See the
-    // matching note in buildWithdrawalWaterfall: this is E[X] on a MEDIAN path,
-    // and this table is what a real person enacts. At the default 3.5%/yr the
-    // median shock is $0, so charging $3,500 produced a withdrawal figure that
-    // is wrong in every actual year. runMC still draws it stochastically, so
-    // the success rate beside this table continues to price the risk.
+    // Advisory only, not charged to this year's draw on purpose. See the
+    // matching note in buildWithdrawalWaterfall: this is E[X] on a median
+    // path, and this table is what a real person enacts. At the default
+    // 3.5%/yr the median shock is $0, so charging $3,500 produced a
+    // withdrawal figure that's wrong in every actual year. runMC still draws
+    // it stochastically, so the success rate beside this table still prices
+    // the risk correctly.
     const hcRiskDet = expectedHealthcareShock(age, p, cumInfl);
 
     const gkIncomeOffset = ss + ab + otherIncTotal;
@@ -2285,9 +2308,9 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
         sp = port * fixedRate;
       }
       else if (withdrawalStrategy === "vpw") {
-        // VPW PMT payout rate: r / (1 - (1+r)^(-n)). Must match runMC exactly.
+        // VPW PMT payout rate: r / (1 - (1+r)^(-n)). Has to match runMC exactly.
         const rVPW = p.vpwRealReturn ?? 0.0376;
-        // Follows Plan-to age — see the matching note in runMC.
+        // Follows the plan-to age — see the matching note in runMC.
         const n = Math.max(1, (p.vpwEndAge ?? p.endAge ?? 100) - age);
         const rate = rVPW === 0 ? 1 / n : rVPW / (1 - Math.pow(1 + rVPW, -n));
         const newSp = port * Math.min(0.10, rate);
@@ -2307,9 +2330,9 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
         sp = sp * (1 + inflY);
       }
       else if (withdrawalStrategy === "smart") {
-        // Smart Waterfall hybrid: GK when yearsRemaining > 15, Bengen when ≤ 15.
-        // The split matches GK's longevity-clause threshold so we exit GK
-        // exactly where its safety brake would otherwise be disabled.
+        // Smart Waterfall hybrid: GK when yearsRemaining > 15, Bengen when
+        // <= 15. The split matches GK's own longevity-clause threshold so we
+        // exit GK exactly where its safety brake would otherwise be disabled.
         const yrsRemaining = p.endAge - age;
         if (yrsRemaining > 15) {
           const refWRd2 = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
@@ -2325,44 +2348,45 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     }
     lastReturn = ret;
 
-    // Blanchett spending smile — a REAL lifestyle curve applied to this
-    // year's spend. Deliberately not fed back into `sp`, which is the
-    // withdrawal strategy's running state: multiplying that would compound
-    // the smile year over year and corrupt GK's own inflation logic. This is
-    // an overlay on what the strategy decided, not a change to the strategy.
+    // Blanchett spending smile — a real lifestyle curve applied to this
+    // year's spend. Not fed back into `sp` on purpose, since that's the
+    // withdrawal strategy's running state: multiplying it would compound the
+    // smile year over year and corrupt GK's own inflation logic. This is an
+    // overlay on what the strategy decided, not a change to the strategy.
     const spSmiledDet = sp * spendingSmileFactor(age, retAgeDet, p.smile !== false);
-    // hcRiskDet is NOT in this sum — see its declaration above. Every term here
-    // is a cash obligation the user actually pays this year.
+    // hcRiskDet isn't in this sum — see its declaration above. Every term
+    // here is a cash obligation the user actually pays this year.
     const need = Math.max(0, spSmiledDet - ss - ab - otherIncTotal) + housingCost + carveoutCost + eventCostDet;
-    // §34 — this engine tracks ONE aggregate portfolio, so surplus income simply
-    // stays invested rather than evaporating. Same rule as the other two engines
-    // or they disagree about the balance, which is the drift class this codebase
-    // keeps relearning.
+    // This engine tracks one aggregate portfolio, so surplus income just
+    // stays invested rather than evaporating. Same rule as the other two
+    // engines, or they'd disagree about the balance — the drift class this
+    // codebase keeps running into.
     const incomeSurplusDet = Math.max(0,
       (ss + ab + otherIncTotal) - (spSmiledDet + housingCost + carveoutCost + eventCostDet));
 
-    // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall tab) —
-    // this path automatically carries LTCG/cost-basis AND the IRMAA 2-year lookback
-    // since buildWithdrawalWaterfall now models both. Fall back to the legacy "treat
-    // everything as ordinary income" calc only when no waterfall row exists for this
-    // age (e.g. accounts not configured); that fallback has no taxable-bucket split
-    // (ltcgAmount defaults to 0) and no lookback history to thread through (magiLookback
-    // defaults to null → same-year MAGI, the pre-lookback approximation) — both left
-    // unchanged, out of scope here.
+    // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall
+    // tab) — this path automatically carries LTCG/cost-basis and the IRMAA
+    // 2-year lookback since buildWithdrawalWaterfall models both now. Fall
+    // back to the legacy "treat everything as ordinary income" calc only
+    // when no waterfall row exists for this age (e.g. accounts not
+    // configured); that fallback has no taxable-bucket split (ltcgAmount
+    // defaults to 0) and no lookback history to thread through (magiLookback
+    // defaults to null, so same-year MAGI, the pre-lookback approximation) —
+    // both unchanged and out of scope here.
     const wfTax = taxByAge.get(age);
     const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, filingStatusAt(p, age), p.stateOfResidence || "NJ", 0, null, spouseAgeAt(p, age));
     const totalTax = taxEnabled ? taxResult.totalTax : 0;
     const totalDraw = need + totalTax;
-    // §34 — surplus income stays invested instead of evaporating. `totalDraw`
-    // already includes this year's tax, so a household whose income covers both
-    // its spending and its tax bill now ENDS RICHER, as it should.
+    // Surplus income stays invested instead of evaporating. `totalDraw`
+    // already includes this year's tax, so a household whose income covers
+    // both its spending and its tax bill now ends richer, as it should.
     port = port * (1 + ret) - totalDraw + incomeSurplusDet;
 
-    // PRE-smile, and one entry for EVERY plan year. Full coverage is the other
-    // half of the trap: scheduleSpendForYear carries the last entry forward
-    // INFLATED, so a sparse schedule would inflate an already-nominal figure a
-    // second time. With an entry per year, `elapsed` is always 0 and each value
-    // comes back verbatim (verified in deterministicTaxPath.test.js).
+    // Pre-smile, and one entry for every plan year. Full coverage matters
+    // here too: scheduleSpendForYear carries the last entry forward
+    // inflated, so a sparse schedule would inflate an already-nominal figure
+    // a second time. With an entry per year, `elapsed` is always 0 and each
+    // value comes back verbatim (verified in deterministicTaxPath.test.js).
     spByYear.push({ year: yr, amount: Math.round(sp) });
 
     schedule.push({
@@ -2388,27 +2412,28 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   };
 
   // Pass 1 — the strategy's own spend path, still carrying the waterfall's
-  // default-path tax. Its DRAWS are already correct; only its tax is borrowed
-  // from the wrong plan.
+  // default-path tax. Its draws are already correct; only its tax is
+  // borrowed from the wrong plan.
   const pass1 = runPass(smartTaxByAge);
 
-  // When the user has supplied a detailed budget, that budget already overrides
-  // the distribution strategy in BOTH engines — the waterfall is taxing this
-  // exact spend path already, so a second pass would recompute the same numbers
-  // and risk clobbering the user's own schedule. Nothing to reconcile.
+  // When the user has supplied a detailed budget, that budget already
+  // overrides the distribution strategy in both engines — the waterfall is
+  // already taxing this exact spend path, so a second pass would just
+  // recompute the same numbers and risk clobbering the user's own schedule.
+  // Nothing to reconcile.
   if (p.spSchedule && p.spSchedule.length) {
     return { schedule: pass1.schedule, portAtRetire: Math.round(portAtRetire), initWR };
   }
 
-  // Re-run the waterfall against THIS strategy's spending, then replay the year
-  // loop with the tax that produces.
+  // Re-run the waterfall against this strategy's spending, then replay the
+  // year loop with the tax that produces.
   //
-  // Single iteration, deliberately. Pass 2's tax differs slightly from pass 1's,
-  // which changes the portfolio, which changes next year's spend for the
-  // portfolio-linked strategies (fixed, vpw). That residual is second-order and
-  // far smaller than the defect being fixed, but it is a residual: the tax
-  // column is now computed against this strategy's spending, not proven to be
-  // its exact fixed point.
+  // Single iteration, on purpose. Pass 2's tax differs slightly from pass
+  // 1's, which changes the portfolio, which changes next year's spend for
+  // the portfolio-linked strategies (fixed, vpw). That residual is
+  // second-order and much smaller than the defect being fixed, but it's
+  // still a residual: the tax column is now computed against this
+  // strategy's spending, not proven to be its exact fixed point.
   let pass2 = null;
   try {
     const wf2 = buildWithdrawalWaterfall({ ...p, spSchedule: pass1.spByYear });
@@ -2422,8 +2447,8 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
       });
     }
     // Only accept the second pass if it actually produced tax rows. An empty
-    // map would silently drop every row back to the calcYearTax fallback, which
-    // treats all draws as ordinary income — worse than the bug being fixed.
+    // map would silently drop every row back to the calcYearTax fallback,
+    // which treats all draws as ordinary income — worse than the bug being fixed.
     if (taxByAge2.size > 0) pass2 = runPass(taxByAge2);
   } catch { /* keep pass 1 */ }
 
@@ -2431,7 +2456,7 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   return { schedule: finalSchedule, portAtRetire: Math.round(portAtRetire), initWR };
 }
 
-/* ════ ROTH CONVERSION EXPLORER ════ */
+// Roth conversion explorer
 // 2026 MFJ federal brackets (inflation-adjusted from 2025)
 const FED_BRACKETS_2026_MFJ = [
   { lo: 0,       hi: 24800,  rate: 0.10 },
@@ -2516,16 +2541,16 @@ function idxB(br, f) {
 }
 /**
  * @param {number|null} beneficiaries  How many people in the household are
- *   actually ON Medicare this year (i.e. 65+). IRMAA thresholds are per TAX
- *   RETURN — they stay keyed to filing status — but the surcharge is per
- *   BENEFICIARY, so a couple where only one has reached 65 pays one surcharge
- *   against the MFJ threshold. Previously MFJ always charged two, which
- *   overstated Medicare cost for the whole age gap. `null` keeps the old
- *   assumption (2 for MFJ, 1 for single) for callers with no spouse age.
+ *   actually on Medicare this year (65+). IRMAA thresholds are per tax
+ *   return — they stay keyed to filing status — but the surcharge is per
+ *   beneficiary, so a couple where only one has reached 65 pays one
+ *   surcharge against the MFJ threshold. This used to always charge two for
+ *   MFJ, overstating Medicare cost for the whole age gap. `null` keeps the
+ *   old assumption (2 for MFJ, 1 for single) for callers with no spouse age.
  */
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
   const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - CURRENT_YEAR);
-  // IRMAA_2026[i].f is the TWO-person MFJ surcharge, so half of it is one person's.
+  // IRMAA_2026[i].f is the two-person MFJ surcharge, so half of it is one person's.
   const n = beneficiaries != null ? Math.max(0, beneficiaries) : (isMFJ ? 2 : 1);
   if (n === 0) return 0;
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
@@ -2562,19 +2587,20 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   return 72;
 }
 
-/* ════ DISCLAIMERS ════ */
+// Disclaimers
 /**
  * Section-level "this is a projection, not advice" notice.
  *
- * The footer disclaimer covers the app, but a user who lands on a results tab,
- * reads a success rate or a year-by-year withdrawal table, and acts on it may
- * never scroll to the footer at all. The two surfaces that most resemble advice
- * — a probability of success, and a schedule saying how much to take from which
- * account — carry it inline, next to the number rather than a page away.
+ * The footer disclaimer covers the app, but a user who lands on a results
+ * tab, reads a success rate or a year-by-year withdrawal table, and acts on
+ * it might never scroll to the footer at all. The two surfaces that most
+ * resemble advice — a probability of success, and a schedule saying how much
+ * to take from which account — carry it inline, next to the number instead
+ * of a page away.
  *
- * One component, not a retyped string, so the wording cannot drift between
- * sections. Deliberately always visible: a disclaimer behind a hover tooltip is
- * unreachable on touch, which is the same defect documented for help text.
+ * One component, not a retyped string, so the wording can't drift between
+ * sections. Always visible on purpose: a disclaimer behind a hover tooltip
+ * is unreachable on touch, same problem as the help text elsewhere.
  */
 function SectionDisclaimer({ children }) {
   return (
@@ -2595,19 +2621,20 @@ function SectionDisclaimer({ children }) {
   );
 }
 
-/* ════ ICONS ════ */
+// Icons
 /**
- * Info icon, drawn as SVG rather than the Unicode "ⓘ" (U+24D8) it replaces.
+ * Info icon, drawn as SVG instead of the Unicode "ⓘ" (U+24D8) it replaces.
  *
- * The glyph looked wrong for reasons no amount of CSS could fix: its shape comes
- * from whatever font happens to resolve it, so the circle's weight, diameter and
- * baseline offset all changed between platforms and between the app's two
- * typefaces. At the 10–11px it was used at, the ring rendered hairline-thin and
- * sat a pixel or two above the text it annotated. A vector draws identically
- * everywhere, stays crisp at any size, and lines up on the text baseline.
+ * The glyph looked wrong for reasons no amount of CSS could fix: its shape
+ * comes from whatever font happens to resolve it, so the circle's weight,
+ * diameter, and baseline offset all changed between platforms and between
+ * the app's two typefaces. At the 10-11px size it was used at, the ring
+ * rendered hairline-thin and sat a pixel or two above the text it
+ * annotated. A vector draws identically everywhere, stays crisp at any
+ * size, and lines up on the text baseline.
  *
- * Inherits color through `currentColor`, so callers keep styling it with plain
- * `color` — including hover transitions — exactly as they did the glyph.
+ * Inherits color through `currentColor`, so callers keep styling it with
+ * plain `color` — including hover transitions — exactly as they did the glyph.
  */
 function InfoIcon({ size = 14, title, style }) {
   return (
