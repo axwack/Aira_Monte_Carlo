@@ -6984,7 +6984,7 @@ const BUCKET_LABELS_SHORT = { cash: "cash", taxable: "taxable", pretax: "pre-tax
 
 // "Account draw order" — which bucket drains first. Orthogonal to the distribution
 // strategy (how much to spend) and to the guardrails (how deep to draw pre-tax/Roth).
-function AccountDrawOrder({ p, onAssumptionChange }) {
+function AccountDrawOrder({ p, onAssumptionChange, waterfall }) {
   const set = onAssumptionChange ?? (() => {});
   const mode = p.orderingMode || "tax_reactive";
   const effective = resolveDrawOrder(mode, p.withdrawalOrder);          // shown for non-custom modes
@@ -6997,6 +6997,30 @@ function AccountDrawOrder({ p, onAssumptionChange }) {
     [next[i], next[j]] = [next[j], next[i]];
     set("withdrawalOrder", next);
   };
+
+  // 3-Bucket Strategy Impact — a NEUTRAL before/after, not a "you saved"
+  // claim. Verified behavior: near-parity with the default order (a 2-year
+  // cash cushion on a slice of a portfolio barely moves a 28-year lifetime
+  // number), sometimes slightly better, sometimes slightly worse depending
+  // on the profile and market sequence — so this shows the actual signed
+  // delta, never asserts the strategy is superior. Reuses the ALREADY
+  // computed `waterfall` (this profile, as-is) for the three_bucket side;
+  // only the tax_reactive baseline run is new — avoids a third recompute of
+  // the same thing WaterfallPlanView already shows below.
+  const baselineWaterfall = useMemo(
+    () => (mode === "three_bucket" ? buildWithdrawalWaterfall({ ...p, orderingMode: "tax_reactive" }) : null),
+    [mode, p]
+  );
+  const bucketImpact = useMemo(() => {
+    if (!baselineWaterfall || !waterfall) return null;
+    const endingValue = (r) => (r.finalPretax || 0) + (r.finalRoth || 0) + (r.finalCash || 0) + (r.finalTaxable || 0);
+    const withBuckets = waterfall.smart;
+    const withoutBuckets = baselineWaterfall.smart;
+    return {
+      endingValueDelta: endingValue(withBuckets) - endingValue(withoutBuckets),
+      taxDelta: (withBuckets.totalTax || 0) - (withoutBuckets.totalTax || 0),
+    };
+  }, [baselineWaterfall, waterfall]);
 
   const MODES = [
     ["tax_reactive", "Tax-reactive", true],
@@ -7055,6 +7079,30 @@ function AccountDrawOrder({ p, onAssumptionChange }) {
           the 🧺 Buckets tab to review or change those tags.
         </div>
       )}
+      {mode === "three_bucket" && bucketImpact && (() => {
+        // Roughly-flat band: below this, color as neutral rather than
+        // green/red — a $200 difference on a 28-year plan is noise, not signal.
+        const FLAT_BAND = 1_000;
+        const deltaColor = (v) => (Math.abs(v) < FLAT_BAND ? "var(--text-secondary)" : v > 0 ? "#34d399" : "#f87171");
+        const signed = (v) => `${v >= 0 ? "+" : "−"}${fmtDollar(Math.abs(v))}`;
+        return (
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: 16, marginTop: 6,
+            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 6, padding: "8px 10px",
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              3-Bucket Strategy Impact <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>vs your default order</span>
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: deltaColor(bucketImpact.endingValueDelta) }}>
+              {signed(bucketImpact.endingValueDelta)} ending portfolio
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: deltaColor(-bucketImpact.taxDelta) }}>
+              {signed(bucketImpact.taxDelta)} lifetime tax
+            </span>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -7418,7 +7466,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
             strip — ordering is the outer sequence; the guardrails are inner caps. */}
         {openSourcing && (
           <div style={{ paddingLeft: 4 }}>
-            <AccountDrawOrder p={p} onAssumptionChange={onAssumptionChange} />
+            <AccountDrawOrder p={p} onAssumptionChange={onAssumptionChange} waterfall={waterfall} />
             <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} summary={waterfall.summary} />
             <WaterfallPlanView p={p} result={waterfall} />
           </div>
