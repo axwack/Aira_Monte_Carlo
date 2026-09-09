@@ -208,10 +208,15 @@ export function bucketDollarTotals(catBalances, fracsByCategory) {
  * @param {number} r1 — Bucket 1's return before the sweep (e.g. cashRealReturn decimal).
  * @param {number} r2 — Bucket 2's return before the sweep (e.g. blendEquityBond(...) decimal).
  * @param {number} yieldPct — flat annual yield, 0-100 (e.g. 3 = 3%), NOT a decimal.
+ * @param {number} [bucket1Target] — Bucket 1's target size in dollars
+ *   (spendBasis * b1Years). When provided and bucket1Dollars has already
+ *   reached it, the sweep is a full no-op — Bucket 2 stops losing return to
+ *   a Bucket 1 that no longer needs topping up. Omit for the old unconditional
+ *   behavior (kept for callers/tests that don't have a target computed).
  * @returns {{ r1: number, r2: number, yieldAmount: number }} adjusted rates
  *   and the dollar amount swept, for callers that want to display it.
  */
-export function bucket2YieldSweep(bucket1Dollars, bucket2Dollars, r1, r2, yieldPct) {
+export function bucket2YieldSweep(bucket1Dollars, bucket2Dollars, r1, r2, yieldPct, bucket1Target) {
   // If Bucket 1 is empty (no accounts tagged B1, or fully drawn down — e.g.
   // spent down in the first year or two of retirement, which is the whole
   // point of a cash moat), there's nowhere for the yield to land. The WHOLE
@@ -225,11 +230,38 @@ export function bucket2YieldSweep(bucket1Dollars, bucket2Dollars, r1, r2, yieldP
   if (!(bucket1Dollars > 0)) {
     return { r1, r2, yieldAmount: 0 };
   }
+  // Second real regression, found the same way (a real profile's ending
+  // portfolio going down, not up): even with the fix above, the sweep ran
+  // unconditionally every year Bucket 1 held ANY balance — it never checked
+  // whether Bucket 1 had already reached a sensible size. A large Bucket 2
+  // (e.g. a 401k) kept losing 3%/yr of its own growth to a Bucket 1 that
+  // already held more than its years-of-spending target, for as long as
+  // Bucket 2 had a balance at all. Stop entirely once Bucket 1 is at/above
+  // target — this is a cap, not a taper, matching "top up a container,
+  // don't drain the source forever."
+  if (bucket1Target != null && bucket1Dollars >= bucket1Target) {
+    return { r1, r2, yieldAmount: 0 };
+  }
   const yieldFrac = Math.max(0, yieldPct ?? 0) / 100;
-  const yieldAmount = Math.max(0, bucket2Dollars || 0) * yieldFrac;
+  let yieldAmount = Math.max(0, bucket2Dollars || 0) * yieldFrac;
+  // Third real regression, same discovery method (an actual profile's
+  // numbers, not the math on paper): even below target, the sweep pulled a
+  // FLAT 3% of Bucket 2's entire balance regardless of how small the actual
+  // shortfall was — a $10k gap to target still pulled ~$36k off a $1.2M
+  // Bucket 2. Cap the swept amount at the real shortfall (target minus
+  // current), so this behaves like topping up a container to a level, not
+  // draining a fixed fraction of the source every year it's below that level.
+  if (bucket1Target != null) {
+    const shortfall = Math.max(0, bucket1Target - bucket1Dollars);
+    yieldAmount = Math.min(yieldAmount, shortfall);
+  }
+  // r2 is only debited by the FRACTION of bucket2Dollars actually swept —
+  // if the shortfall capped yieldAmount below the flat 3%, Bucket 2 keeps
+  // the rest of its return instead of losing the full yieldFrac regardless.
+  const r2Debit = (bucket2Dollars || 0) > 0 ? yieldAmount / bucket2Dollars : 0;
   return {
     r1: r1 + (yieldAmount / bucket1Dollars),
-    r2: r2 - yieldFrac,
+    r2: r2 - r2Debit,
     yieldAmount,
   };
 }

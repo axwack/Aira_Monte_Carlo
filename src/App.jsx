@@ -729,6 +729,12 @@ export const BLANK_PROFILE = {
   // (this engine doesn't model individual securities), not a per-holding
   // dividend rate.
   bucket2YieldPct: 3.0,
+  // Bucket 1's target size, in years of spending — caps the yield sweep
+  // above: once Bucket 1 reaches this size, Bucket 2 stops losing return to
+  // it. Same concept BucketsTab already shows as its own (currently
+  // localStorage-only) b1Years config; this profile-level default (3, same
+  // number) is what the return engines read until that gets unified.
+  b1Years: 3,
   geminiApiKey: "",
   geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
 };
@@ -1970,7 +1976,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       const bucketR3MC = blendEquityBond(stockReturnMC, bondReturnMC, p.postRetireEq);
       if (bucketFracsMC && (p.bucket2YieldPct || 0) > 0) {
         const bucketTotalsMC = bucketDollarTotals({ cash, pretax, roth, taxable }, bucketFracsMC);
-        const sweptMC = bucket2YieldSweep(bucketTotalsMC[1], bucketTotalsMC[2], bucketR1MC, bucketR2MC, p.bucket2YieldPct);
+        // Cap the sweep at Bucket 1's target size (years-of-spending) — see
+        // matching comment in buildWithdrawalWaterfall.js. Without this, a
+        // large Bucket-2 balance (e.g. a 401k) loses real growth every year
+        // forever, even long after Bucket 1 already holds more than it needs.
+        const bucket1TargetMC = spSmiled * (p.b1Years ?? 3);
+        const sweptMC = bucket2YieldSweep(bucketTotalsMC[1], bucketTotalsMC[2], bucketR1MC, bucketR2MC, p.bucket2YieldPct, bucket1TargetMC);
         bucketR1MC = sweptMC.r1;
         bucketR2MC = sweptMC.r2;
       }
@@ -15085,6 +15096,7 @@ export default function AiRAForecaster() {
       orderingMode: assumptions.orderingMode || "tax_reactive",
       withdrawalOrder: assumptions.withdrawalOrder || ["cash", "taxable", "pretax", "roth"],
       bucket2YieldPct: assumptions.bucket2YieldPct ?? 3.0,
+      b1Years: assumptions.b1Years ?? 3,
       fixedWithdrawalRate: (() => { const r = assumptions.fixedWithdrawalRate || 4.0; return r < 1 ? r : r / 100; })(), // normalize: stored as % (4) or decimal (0.04) → always decimal
       // VPW's two inputs. This memo is an allowlist, not a spread — before
       // v1.2.88 neither was forwarded, so `vpwRealReturn` could be set in the

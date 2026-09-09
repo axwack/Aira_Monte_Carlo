@@ -226,6 +226,58 @@ describe("bucket2YieldSweep — the income-replenishment mechanic", () => {
     expect(r.r1).toBeCloseTo(0.03, 10);
     expect(r.r2).toBeCloseTo(0.05, 10);
   });
+
+  describe("bucket1Target cap — the fix for a real regression", () => {
+    // Found by comparing a real profile before/after: an uncapped sweep
+    // permanently drained a large Bucket 2 balance (e.g. a 401k) every year,
+    // long after Bucket 1 already held more than its target years-of-spending.
+    test("below target: sweep still applies in full", () => {
+      const r = bucket2YieldSweep(50_000, 500_000, 0.03, 0.05, 3, /* target */ 120_000);
+      expect(r.yieldAmount).toBeCloseTo(15_000, 6); // 3% of 500k, unchanged
+      expect(r.r2).toBeCloseTo(0.02, 10);
+    });
+    test("at or above target: sweep is a full no-op, Bucket 2 keeps its return", () => {
+      const r = bucket2YieldSweep(120_000, 500_000, 0.03, 0.05, 3, /* target */ 120_000);
+      expect(r.yieldAmount).toBe(0);
+      expect(r.r1).toBeCloseTo(0.03, 10);
+      expect(r.r2).toBeCloseTo(0.05, 10); // NOT debited — this is the fix
+    });
+    test("well above target: still a no-op, not partial", () => {
+      const r = bucket2YieldSweep(300_000, 500_000, 0.03, 0.05, 3, /* target */ 120_000);
+      expect(r.yieldAmount).toBe(0);
+      expect(r.r2).toBeCloseTo(0.05, 10);
+    });
+    test("no target provided (undefined/null): old unconditional behavior, for backward compatibility", () => {
+      const r = bucket2YieldSweep(300_000, 500_000, 0.03, 0.05, 3);
+      expect(r.yieldAmount).toBeCloseTo(15_000, 6);
+      expect(r.r2).toBeCloseTo(0.02, 10);
+    });
+  });
+
+  describe("shortfall capping — don't sweep more than Bucket 1 actually needs", () => {
+    // Real regression: a small shortfall still pulled the FLAT 3% off a
+    // large Bucket 2, e.g. a $10k gap pulling $36k off a $1.2M Bucket 2.
+    test("small shortfall relative to the flat 3%: sweep is capped at the shortfall, not 3%", () => {
+      // Bucket1=110k, target=120k -> shortfall=10k. Flat 3% of 500k = 15k,
+      // which would OVERSHOOT the target by 5k — must cap at 10k instead.
+      const r = bucket2YieldSweep(110_000, 500_000, 0.03, 0.05, 3, 120_000);
+      expect(r.yieldAmount).toBeCloseTo(10_000, 6);
+      // r2 debited only by the fraction actually swept (10k/500k = 2%), not the full 3%.
+      expect(r.r2).toBeCloseTo(0.05 - 0.02, 10);
+      // r1 boost reflects the capped (smaller) amount.
+      expect(r.r1).toBeCloseTo(0.03 + 10_000 / 110_000, 10);
+    });
+    test("large shortfall (flat 3% is smaller than the gap): behaves like the uncapped case", () => {
+      // Bucket1=50k, target=500k -> shortfall=450k, way more than 3% of 500k (15k).
+      const r = bucket2YieldSweep(50_000, 500_000, 0.03, 0.05, 3, 500_000);
+      expect(r.yieldAmount).toBeCloseTo(15_000, 6); // the flat 3%, unconstrained by the large gap
+      expect(r.r2).toBeCloseTo(0.02, 10);
+    });
+    test("shortfall of exactly zero (at target): full no-op, same as the >= target branch", () => {
+      const r = bucket2YieldSweep(120_000, 500_000, 0.03, 0.05, 3, 120_000);
+      expect(r.yieldAmount).toBe(0);
+    });
+  });
 });
 
 describe("bear-market refill freeze", () => {

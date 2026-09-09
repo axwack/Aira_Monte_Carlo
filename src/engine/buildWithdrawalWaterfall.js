@@ -357,6 +357,12 @@ export function buildWithdrawalWaterfall(params = {}) {
     orderingMode    = "tax_reactive",
     withdrawalOrder = ["cash", "taxable", "pretax", "roth"],
     bucket2YieldPct = 3.0,
+    // Same b1Years concept BucketsTab already shows (default 3 there too) —
+    // caps how large Bucket 1 is allowed to grow from the yield sweep before
+    // it stops. Not yet promoted into BLANK_PROFILE's UI (BucketsTab still
+    // keeps its own copy in localStorage) — this default matches it so the
+    // two don't silently disagree until that promotion happens.
+    b1Years = 3,
     preRetireEq = 91,
     postRetireEq = 70,
     cashRealReturn,
@@ -1383,7 +1389,15 @@ export function buildWithdrawalWaterfall(params = {}) {
       const bucketR3 = postGr;
       if (useBuckets && (bucket2YieldPct || 0) > 0) {
         const totals = bucketDollarTotals({ cash, pretax, roth, taxable }, bucketFracs);
-        const swept = bucket2YieldSweep(totals[1], totals[2], bucketR1, bucketR2, bucket2YieldPct);
+        // Cap the sweep at Bucket 1's target size (years-of-spending, same
+        // b1Years concept BucketsTab already displays) — without this, the
+        // sweep unconditionally drained a fixed % of Bucket 2 every year
+        // forever, even once Bucket 1 already held far more than it needed.
+        // Verified against a real profile: this was the actual cause of a
+        // large 401(k) balance losing real growth for no benefit, since its
+        // much-smaller Bucket 1 target was reached almost immediately.
+        const bucket1Target = sp * b1Years;
+        const swept = bucket2YieldSweep(totals[1], totals[2], bucketR1, bucketR2, bucket2YieldPct, bucket1Target);
         bucketR1 = swept.r1;
         bucketR2 = swept.r2;
       }
