@@ -1,21 +1,21 @@
 /**
- * buildRothExplorer.js — SHARED TAX REFERENCE MODULE
+ * buildRothExplorer.js — shared tax reference module
  *
- * The filename is historical. `buildRothExplorer()` and `buildRothLadder()` were
- * deleted here: they were a second, disconnected ~350-line conversion model that
- * NO UI path ever called. App.jsx imported only constants from this file, and the
- * live Roth Conversion tab is built on buildWithdrawalWaterfall via
- * rothConversionPlan.js. The dead pair survived on ~100 tests in roth.test.js
- * (deleted with them) and actively misled readers — it was still being consulted
- * to answer "is this rule implemented?", and it gave the wrong answer, because
- * the engine the app actually runs had already implemented it.
+ * The filename is historical. `buildRothExplorer()` and `buildRothLadder()` used
+ * to live here and got deleted: a second, disconnected ~350-line conversion
+ * model that no UI path ever called. App.jsx only ever imported constants from
+ * this file, and the live Roth Conversion tab runs on buildWithdrawalWaterfall
+ * via rothConversionPlan.js. The dead pair had ~100 tests in roth.test.js
+ * (deleted with them) and were actively misleading — someone would check here
+ * to answer "is this rule implemented?" and get the wrong answer, because the
+ * engine the app actually runs had already implemented it.
  *
- * What lives here now: federal / state / LTCG / NIIT / IRMAA / OBBBA constants,
- * the RMD divisor tables, and the shared Social Security helpers
- * (taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS). Importers:
- * App.jsx, buildWithdrawalWaterfall.js, rothConversionPlan.js, rulesEngine.js.
+ * What's left: federal / state / LTCG / NIIT / IRMAA / OBBBA constants, the RMD
+ * divisor tables, and the shared Social Security helpers (taxableSocialSecurity,
+ * computeHouseholdSS, survivorHouseholdSS). Imported by App.jsx,
+ * buildWithdrawalWaterfall.js, rothConversionPlan.js, and rulesEngine.js.
  *
- * Add engine logic somewhere else. This file is a reference table, not a model.
+ * New engine logic goes somewhere else — this file is a reference table, not a model.
  */
 import { spouseAgeOffset, personsAtLeastAge, survivorIsPrimary, firstDeathOnPrimaryClock } from "./ages.js";
 import { survivorFra, survivorBasis, resolveSurvivorClaimAge, survivorYearBenefit } from "./survivorBenefit.js";
@@ -193,24 +193,24 @@ const LTCG_BRACKETS_2026_SINGLE = [
 
 // Net Investment Income Tax (IRC §1411) — 3.8% surtax on the lesser of net
 // investment income (LTCG here) or the excess of MAGI over the threshold.
-// Thresholds are STATUTORY and Congress has never indexed them for inflation
-// (unlike the ordinary brackets/IRMAA/standard deduction above) — do not
-// apply idxB()/inflFactor to these two numbers.
+// Thresholds are statutory and Congress has never indexed them for inflation
+// (unlike the ordinary brackets/IRMAA/standard deduction above) — don't apply
+// idxB()/inflFactor to these two numbers.
 const NIIT_THRESHOLD_MFJ = 250_000;
 const NIIT_THRESHOLD_SINGLE = 200_000;
 const NIIT_RATE = 0.038;
 
-// ── OBBBA senior bonus deduction ──────────────────────────────────────────────
-// Canonical source: TAX_REFERENCE.md → "OBBBA Senior Bonus Deduction".
-// A THIRD, independent below-the-line deduction (2025–2028 only), separate from
-// the standard deduction and its age-65 add-on. Deliberately NOT folded into
-// getStandardDeduction(): OBBBA is available to itemizers as well as
-// non-itemizers, so merging it would make an itemizer model impossible later.
+// OBBBA senior bonus deduction. See TAX_REFERENCE.md → "OBBBA Senior Bonus
+// Deduction" for the source. It's a third, independent below-the-line
+// deduction (2025–2028 only), on top of the standard deduction and its age-65
+// add-on. It's not folded into getStandardDeduction() on purpose: OBBBA
+// applies to itemizers too, not just standard-deduction filers, and merging
+// it in would make modeling itemizers later impossible.
 //
-// Like NIIT's thresholds these are STATUTORY and flat — the statute does not
-// index the $6,000 or the phase-out thresholds during 2025–2028, so
-// getSeniorBonusDeduction() takes NO inflFactor parameter, by design. Do not
-// "helpfully" add one.
+// Like NIIT's thresholds, these are statutory and flat — the law doesn't
+// index the $6,000 or the phase-out thresholds for 2025–2028, so
+// getSeniorBonusDeduction() takes no inflFactor parameter. That's on purpose,
+// don't add one.
 const OBBBA_SENIOR_PER_PERSON = 6_000;
 const OBBBA_SENIOR_PHASEOUT_START_MFJ = 150_000;
 const OBBBA_SENIOR_PHASEOUT_START_SINGLE = 75_000;
@@ -222,13 +222,13 @@ const OBBBA_SENIOR_LAST_YEAR = 2028;       // $0 from 2029 — hard cliff, not a
 /**
  * OBBBA senior bonus deduction for one tax year.
  *
- * IMPORTANT — this reduces TAXABLE INCOME ONLY. It must never be subtracted from
- * AGI / MAGI / totalIncome / totInc. IRMAA is computed on MAGI with no deduction
- * subtracted (CLAUDE.md rule 3), so netting this against MAGI would silently
- * move users under IRMAA tiers they actually breach.
+ * This only reduces taxable income — never subtract it from AGI / MAGI /
+ * totalIncome / totInc. IRMAA is computed on MAGI with no deduction taken
+ * out, so netting this against MAGI would quietly move people under IRMAA
+ * tiers they actually breach.
  *
- * `magi` is the year's own MAGI (ordinary income + realized gains), which in both
- * engines is computed independently of any deduction — so there is no circular
+ * `magi` is the year's own MAGI (ordinary income + realized gains), and both
+ * engines compute it independently of any deduction, so there's no circular
  * dependency between this phase-out and the deduction it produces.
  *
  * @param {number} age        modeled age in the tax year
@@ -240,26 +240,26 @@ const OBBBA_SENIOR_LAST_YEAR = 2028;       // $0 from 2029 — hard cliff, not a
 function getSeniorBonusDeduction(age, filingStatus, magi, yr, spouseAge = null) {
   if (yr < OBBBA_SENIOR_FIRST_YEAR || yr > OBBBA_SENIOR_LAST_YEAR) return 0;
   const mfj = filingStatus !== "single";
-  // PER PERSON, counted per person. This used to be `mfj ? 2 : 1` gated on the
-  // primary's age alone, which both (a) gave a couple $12,000 the year the older
-  // one turned 65 while the younger was still 55, and (b) gave them $0 in the
-  // reverse case, where the OLDER spouse qualifies but the primary does not.
-  // personsAtLeastAge is shared with getStandardDeduction so the two deductions
-  // can never disagree about household composition.
+  // Counted per person, not per household. This used to be `mfj ? 2 : 1`
+  // gated on the primary's age alone, which gave a couple $12,000 the year
+  // the older one turned 65 while the younger was still 55, and gave them $0
+  // in the reverse case, where the older spouse qualifies but the primary
+  // doesn't. personsAtLeastAge is shared with getStandardDeduction so the two
+  // deductions can't disagree about household composition.
   const persons = personsAtLeastAge(age, spouseAge, mfj, OBBBA_SENIOR_MIN_AGE);
   if (persons === 0) return 0;
   const threshold = mfj ? OBBBA_SENIOR_PHASEOUT_START_MFJ : OBBBA_SENIOR_PHASEOUT_START_SINGLE;
   const excess = Math.max(0, (magi || 0) - threshold);
-  // The phase-out bites EACH person's own $6,000 at 6% of the household's excess
-  // MAGI, so one person is fully phased out at threshold + $100,000 — $175K
-  // single / $250K MFJ. Scaling the reduction by `persons` reproduces that.
+  // The phase-out hits each person's own $6,000 at 6% of the household's
+  // excess MAGI, so one person is fully phased out at threshold + $100,000 —
+  // $175K single / $250K MFJ. Scaling the reduction by `persons` reproduces that.
   const gross = OBBBA_SENIOR_PER_PERSON * persons;
   const reduction = OBBBA_SENIOR_PHASEOUT_RATE * excess * persons;
   return Math.round(Math.max(0, gross - reduction));
 }
 
 // IRS Pub 590-B Table III (Uniform Lifetime) divisors, 2022+ table.
-// Default table for owners whose sole-beneficiary spouse is NOT >10 years younger.
+// Default table for owners whose sole-beneficiary spouse is not >10 years younger.
 const RMD_DIV = {
   72: 27.4,
   73: 26.5,
@@ -323,17 +323,17 @@ function idxB(br, f) {
 }
 
 /**
- * `beneficiaries` = how many people in the household are actually ON Medicare
- * (65+) this year. Thresholds are per TAX RETURN so they follow filing status;
- * the surcharge is per BENEFICIARY, so an age-gapped couple pays ONE surcharge
- * against the MFJ threshold until the younger reaches 65 (§24). Must stay
- * byte-identical to App.jsx's irmaaCost — the two are a known duplication.
+ * `beneficiaries` = how many people in the household are actually on Medicare
+ * (65+) this year. Thresholds are per tax return so they follow filing
+ * status; the surcharge is per beneficiary, so an age-gapped couple pays one
+ * surcharge against the MFJ threshold until the younger reaches 65. Has to
+ * stay byte-identical to App.jsx's irmaaCost — the two are a known duplicate.
  */
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
   // Anchored to ROTH_BASE_YEAR (today), not a hardcoded 2026, so this stays
-  // consistent with the rest of this file as real calendar time passes.
+  // consistent with the rest of the file as real time passes.
   const f = Math.pow(1 + infR, yr - ROTH_BASE_YEAR);
-  // IRMAA_2026[i].f is the TWO-person MFJ surcharge; half of it is one person's.
+  // IRMAA_2026[i].f is the two-person MFJ surcharge; half of it is one person's.
   const n = beneficiaries != null ? Math.max(0, beneficiaries) : (isMFJ ? 2 : 1);
   if (n === 0) return 0;
   for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
@@ -348,7 +348,7 @@ function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
 
 /**
  * Taxable portion of Social Security per IRC §86 provisional-income tiers.
- * Thresholds are statutory and NOT inflation-indexed (unchanged since 1984/1994).
+ * Thresholds are statutory and not inflation-indexed (unchanged since 1984/1994).
  * @param {number} ssGross    — gross SS benefits for the year
  * @param {number} otherIncome — other ordinary income counted in provisional income
  *                               (pretax draws, RMDs, conversions, rental, etc.)
@@ -372,38 +372,41 @@ function taxableSocialSecurity(ssGross, otherIncome, isMFJ = true) {
 
 /**
  * Combined household gross Social Security for a given age, COLA growth
- * included — Phase 1 of §21 (REQUIREMENTS.md). Growth must live INSIDE this
- * helper rather than in each caller: with two people able to claim at
- * different ages, there is no single "age - claimAge" exponent a caller could
- * apply to an already-combined number, so each component grows from its own
- * start age and the pieces are summed after.
+ * included. Growth has to happen inside this helper rather than in each
+ * caller: with two people able to claim at different ages, there's no single
+ * "age - claimAge" exponent a caller could apply to an already-combined
+ * number, so each component grows from its own start age and the pieces get
+ * summed after.
  *
  * `p.spouse.enabled === false` (the default) returns exactly the primary's own
- * grown benefit — byte-for-byte identical to every call site's pre-existing
+ * grown benefit — byte-for-byte identical to every call site's old
  * single-person behavior, so existing profiles are unaffected.
  *
- * Spousal top-up: 50% of the HIGHER EARNER's PIA (FRA amount) minus the lower
- * earner's own PIA, floored at 0. Payable only once BOTH have filed (deemed
+ * Spousal top-up: 50% of the higher earner's PIA (FRA amount) minus the lower
+ * earner's own PIA, floored at 0. Payable only once both have filed (deemed
  * filing means filing for your own benefit and any spousal top-up happen
- * together — see §21 rule 6), growing with COLA from that point. Delayed
- * retirement credits never flow into it — it is capped at the FRA amount
- * regardless of either person's actual claim age. `ssPia` falls back to `ssb`
- * when not entered (claiming at exactly FRA, where the two amounts are equal).
+ * together), growing with COLA from that point. Delayed retirement credits
+ * never flow into it — it's capped at the FRA amount regardless of either
+ * person's actual claim age. `ssPia` falls back to `ssb` when not entered
+ * (claiming at exactly FRA, where the two amounts are equal).
  */
 /**
- * Household Social Security AFTER the first death, with the survivor's own benefit
- * and the survivor benefit treated as the INDEPENDENT benefits they legally are.
+ * Household Social Security after the first death, with the survivor's own
+ * benefit and the survivor benefit treated as the independent benefits they
+ * legally are.
  *
- * Exported (via the barrel at the bottom of this file) because the UI needs the
- * `own` / `survivor` / `source` breakdown, not just the total: a number that jumps
- * because the household switched from one benefit to the other has to be able to say
- * so. Returning only the total is how "the components don't add up" reports happen.
+ * Exported (via the barrel at the bottom of this file) because the UI needs
+ * the `own` / `survivor` / `source` breakdown, not just the total — a number
+ * that jumps because the household switched from one benefit to the other
+ * needs to be able to say so. Returning only the total is how "the
+ * components don't add up" bug reports happen.
  *
- * EVERYTHING HERE IS ON THE SURVIVOR'S OWN CLOCK. `spouse.deathAge` is the
- * DECEDENT's own age and `spouse.firstToDie` says whose age that is; the engines walk
- * the PRIMARY's age, so the two have to be translated exactly once, at the top. An
- * earlier version mixed the clocks — it floored a survivor claim age at 60 against
- * the primary's age — which silently shifted the survivor's claim by the age gap.
+ * Everything here runs on the survivor's own clock. `spouse.deathAge` is the
+ * decedent's own age, and `spouse.firstToDie` says whose age that is; the
+ * engines walk the primary's age, so the two get translated exactly once, at
+ * the top. An earlier version mixed the clocks — it floored a survivor claim
+ * age at 60 against the primary's age, which silently shifted the survivor's
+ * claim by the age gap.
  */
 function survivorHouseholdSS(p, age, ctx) {
   const { offset, cola, ssAge, deathAge } = ctx;
@@ -413,7 +416,7 @@ function survivorHouseholdSS(p, age, ctx) {
   // and whose birthday every milestone after the death belongs to.
   const primarySurvives = survivorIsPrimary(p);
 
-  // ── Translate onto the SURVIVOR's own clock, once ────────────────────────────
+  // Translate onto the survivor's own clock, once.
   const survivorAge      = primarySurvives ? age : age - offset;
   const ownClaimAge      = primarySurvives ? ssAge : (Number(sp.ssAge) || 67);
   const ownBenefit       = primarySurvives ? (Number(p.ssb) || 0) : (Number(sp.ssb) || 0);
@@ -423,11 +426,11 @@ function survivorHouseholdSS(p, age, ctx) {
   // The survivor's own age in the year of the death.
   const survivorAgeAtDeath = primarySurvives ? deathAge + offset : deathAge - offset;
 
-  // Did the deceased ever start their benefit? Both sides of this comparison are the
-  // DECEDENT's own ages, so no translation is needed — and this single question is
-  // what the pre-§30 code got wrong: it paid $0 until the deceased's claim age, when
-  // the survivor benefit actually derives from their PIA and is claimable from 60
-  // whether or not they ever filed.
+  // Did the deceased ever start their benefit? Both sides of this comparison
+  // are the decedent's own ages, so no translation is needed — and this is
+  // the question the old code got wrong: it paid $0 until the deceased's
+  // claim age, when the survivor benefit actually derives from their PIA and
+  // is claimable from 60 whether or not they ever filed.
   const deceasedHadClaimed = deathAge >= decOwnClaimAge;
 
   // Basis = 100% of what the deceased was receiving or was entitled to.
@@ -441,23 +444,24 @@ function survivorHouseholdSS(p, age, ctx) {
   // death, and honouring a later chosen age (the delay strategy).
   const survivorClaimAge = resolveSurvivorClaimAge(sp.survivorClaimAge, survivorAgeAtDeath);
 
-  // Grow the basis by COLA from where it was quoted to the survivor's claim, so the
-  // reduction is applied to a same-year amount. Both ages below are the DECEDENT's,
-  // converted to elapsed years, which is clock-independent.
+  // Grow the basis by COLA from where it was quoted to the survivor's claim,
+  // so the reduction applies to a same-year amount. Both ages below are the
+  // decedent's, converted to elapsed years, which is clock-independent.
   const refAgeOnSurvivorClock = deceasedHadClaimed
     ? (primarySurvives ? decOwnClaimAge + offset : decOwnClaimAge - offset)
     : survivorAgeAtDeath;
   const growYears  = Math.max(0, survivorClaimAge - refAgeOnSurvivorClock);
   const basisAtClaim = basisToday * Math.pow(cola, growYears);
 
-  // An explicit SSA-quoted survivor amount is used AS QUOTED: SSA's figure already
-  // contains the early-claim reduction, so applying ours on top would double-count
-  // it. That is §21's "ask, don't derive" path.
+  // An explicit SSA-quoted survivor amount is used as quoted: SSA's figure
+  // already bakes in the early-claim reduction, so applying ours on top
+  // would double-count it. That's the "ask, don't derive" path.
   const quoted = Number(sp.survivorBenefitAtClaim) || 0;
   const useQuoted = quoted > 0;
 
-  // The SURVIVOR's birth year — whichever of the two is still alive. Using the
-  // primary's unconditionally would price the benefit off a dead person's FRA.
+  // The survivor's birth year — whichever of the two is still alive. Using
+  // the primary's unconditionally would price the benefit off a dead
+  // person's FRA.
   const survivorBirthYear = (() => {
     const who = primarySurvives ? p : sp;
     if (typeof who.dob === "string" && who.dob.length >= 4) {
@@ -492,48 +496,50 @@ function computeHouseholdSS(p, age) {
   const own = age >= ssAge ? (p.ssb || 0) * Math.pow(cola, age - ssAge) : 0;
   if (!p.spouse?.enabled) return Math.round(own);
 
-  // `age` is the PRIMARY's age — it is the only clock the engines walk. Every
-  // spouse milestone must therefore be expressed on that clock, shifted by the
-  // age gap. Without this, `age >= spouse.ssAge` asked "has the PRIMARY reached
-  // the SPOUSE's claim age", which starts a younger spouse's benefit early by
-  // exactly the gap: a spouse 10 years younger claiming at 67 was paid from the
-  // primary's 67 (spouse aged 57) — ten years of benefits, plus the spousal
-  // top-up, that the household will not actually receive. It inflated the
-  // success rate for every couple with an age gap.
+  // `age` is the primary's age — it's the only clock the engines walk. Every
+  // spouse milestone has to be expressed on that clock, shifted by the age
+  // gap. Without this, `age >= spouse.ssAge` was asking "has the primary
+  // reached the spouse's claim age", which starts a younger spouse's benefit
+  // early by exactly the gap: a spouse 10 years younger claiming at 67 got
+  // paid starting at the primary's 67 (spouse actually 57) — ten years of
+  // benefits, plus the spousal top-up, the household never actually gets. It
+  // inflated the success rate for every couple with an age gap.
   //
-  // offset > 0 ⇒ the spouse is younger ⇒ their milestones land LATER on the
-  // primary's clock. Unknown spouse age ⇒ offset 0 ⇒ identical to the old
-  // behaviour (regression lock in spousalSS.test.js).
+  // offset > 0 means the spouse is younger, so their milestones land later on
+  // the primary's clock. Unknown spouse age means offset 0, identical to the
+  // old behavior (regression lock in spousalSS.test.js).
   const offset = spouseAgeOffset(p);
   const spouseSsAge = p.spouse.ssAge || 67;
   const spouseClaimOnPrimaryClock = spouseSsAge + offset;
 
-  /* ── Survivor benefit (§22) ────────────────────────────────────────────────
-   * On the first death the household keeps the LARGER of the two checks and
-   * loses the smaller — plus the spousal top-up, which a survivor benefit
-   * replaces. This is what retires the hardcoded `× 0.67` haircut in the stress
-   * scenario: 0.67 is only right for a one-earner couple (lose the 0.5 spousal,
-   * keep the 1.0), whereas two similar earners keep ~50%. With both benefits on
-   * file it is exact arithmetic and no literal is needed.
+  /* Survivor benefit. On the first death the household keeps the larger of
+   * the two checks and loses the smaller, plus the spousal top-up, which a
+   * survivor benefit replaces. This is what retired the hardcoded `x 0.67`
+   * haircut in the stress scenario: 0.67 is only right for a one-earner
+   * couple (lose the 0.5 spousal, keep the 1.0) — two similar earners keep
+   * about 50%. With both benefits on file it's exact arithmetic and no
+   * literal is needed.
    *
-   * The survivor benefit is 100% of the deceased's check INCLUDING any delayed
-   * retirement credits, which is why this compares the grown checks rather than
-   * the PIAs (delaying the higher earner raises the SURVIVOR benefit — the one
-   * place DRCs do flow through, unlike the spousal top-up above).
+   * The survivor benefit is 100% of the deceased's check including any
+   * delayed retirement credits, which is why this compares the grown checks
+   * rather than the PIAs (delaying the higher earner raises the survivor
+   * benefit — the one place DRCs do flow through, unlike the spousal top-up
+   * above).
    *
-   * Modelled from the death year itself, at this engine's one-year granularity.
-   * Benefits stop the month of death, so a partial year is unavoidable either
-   * way; stepping down in the death year understates income slightly rather than
-   * overstating it, which is the right direction for a plan's safety margin.
-   * (Filing status is separate and correctly stays MFJ for that year — see
-   * mfjAt in buildWithdrawalWaterfall.js.)
+   * Modeled from the death year itself, at this engine's one-year
+   * granularity. Benefits stop the month of death, so a partial year is
+   * unavoidable either way; stepping down in the death year understates
+   * income slightly rather than overstating it, which is the right direction
+   * for a plan's safety margin. (Filing status is separate and correctly
+   * stays MFJ for that year — see mfjAt in buildWithdrawalWaterfall.js.)
    */
   const deathAge = Number(p.spouse.deathAge) > 0 ? Number(p.spouse.deathAge) : null;
-  // The death year ON THE PRIMARY'S CLOCK. `deathAge + offset` was only correct when
-  // the SPOUSE was the one who dies; when the primary dies, `deathAge` is already
-  // their own age and needs no shift. Getting this gate wrong meant the survivor
-  // branch simply never ran for a "primary dies first" plan — it silently kept
-  // paying both benefits for `offset` more years.
+  // The death year on the primary's clock. `deathAge + offset` was only
+  // correct when the spouse was the one who dies; when the primary dies,
+  // `deathAge` is already their own age and needs no shift. Getting this gate
+  // wrong meant the survivor branch never ran at all for a "primary dies
+  // first" plan — it silently kept paying both benefits for `offset` more
+  // years.
   if (deathAge != null && age >= firstDeathOnPrimaryClock(p)) {
     return Math.round(survivorHouseholdSS(p, age, {
       offset, cola, ssAge, spouseClaimOnPrimaryClock, deathAge,
@@ -546,15 +552,16 @@ function computeHouseholdSS(p, age) {
   const primaryPia = p.ssPia || p.ssb || 0;
   const spousePia = p.spouse.ssPia || p.spouse.ssb || 0;
   const primaryIsHigher = primaryPia >= spousePia;
-  // A spousal benefit requires BOTH that the claimant has filed and that the
-  // higher earner has filed, so it starts at the later of the two — on one clock.
+  // A spousal benefit requires both that the claimant has filed and that the
+  // higher earner has filed, so it starts at the later of the two — on one
+  // clock.
   const bothFiledAge = Math.max(ssAge, spouseClaimOnPrimaryClock);
 
   let topUp = 0;
   if (age >= bothFiledAge) {
     const raw = primaryIsHigher
-      ? Math.max(0, 0.5 * primaryPia - spousePia)  // tops up the SPOUSE's check
-      : Math.max(0, 0.5 * spousePia - primaryPia); // tops up the PRIMARY's check
+      ? Math.max(0, 0.5 * primaryPia - spousePia)  // tops up the spouse's check
+      : Math.max(0, 0.5 * spousePia - primaryPia); // tops up the primary's check
     topUp = raw * Math.pow(cola, age - bothFiledAge);
   }
 
@@ -578,11 +585,12 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   return 72;
 }
 
-// NOTE: `progTax`, `idxB` and `irmaaCost` currently have NO importer. They were
-// the deleted explorer's tax primitives, and App.jsx carries its own byte-identical
-// copies (see the irmaaCost banner above). They are kept as exports because the
-// right resolution is to de-duplicate — point App.jsx at these — not to delete one
-// half of a known duplicate pair. If you are here to clean up: that is the task.
+// `progTax`, `idxB` and `irmaaCost` currently have no importer. They were the
+// deleted explorer's tax primitives, and App.jsx carries its own
+// byte-identical copies (see the irmaaCost comment above). They're kept as
+// exports because the right fix is to de-duplicate — point App.jsx at these —
+// not delete one half of a known duplicate pair. If you're here to clean up,
+// that's the task.
 export {
   progTax, idxB, irmaaCost, taxableSocialSecurity, computeHouseholdSS, survivorHouseholdSS, getStateBrackets, getRmdStartAge,
   FED_BRACKETS_2026_MFJ, FED_BRACKETS_2026_SINGLE,
