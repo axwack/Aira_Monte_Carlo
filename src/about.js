@@ -498,7 +498,7 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
   {
     id:    "bucket-overview",
     group: "3-Bucket Strategy",
-    icon:  "🪣",
+    icon:  "🧺",
     title: "What Are the 3 Buckets?",
     body:  `The 3-bucket strategy organizes your retirement assets by <em>when</em> you need them, not just what they are. Each bucket has a specific job and a rule about when it can be touched.<br/><br/>
 <strong style="color:#0ea5e9;">Bucket 1 — Cash (0–3 years)</strong><br/>
@@ -526,7 +526,7 @@ The engine room. Stocks, ETFs, growth funds, international equity — assets tha
 • You hold bonds <em>inside</em> your Roth → reassign that Roth account to B2<br/>
 • You have a Solo 401(k) you want to keep as long-term growth → reassign to B3<br/>
 • You have a money market inside a taxable account → reassign to B1<br/><br/>
-Once your accounts are assigned, the <strong>🪣 Buckets tab</strong> automatically shows your live balances, progress toward floor/target for each bucket, and a monthly directive telling you exactly what to do.`,
+Once your accounts are assigned, the <strong>🧺 Buckets tab</strong> automatically shows your live balances, progress toward floor/target for each bucket, and a monthly directive telling you exactly what to do.`,
   },
   {
     id:    "bucket-directive",

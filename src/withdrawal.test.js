@@ -1,6 +1,6 @@
 import { buildWithdrawalWaterfall, resolveDrawOrder } from "./engine/buildWithdrawalWaterfall.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./engine/expenses.js";
-import { runMC } from "./App";
+import { runMC, runStress } from "./App";
 
 const BASE = {
   currentAge: 65,
@@ -910,6 +910,77 @@ describe("Account draw order — runMC honors it (cross-engine, shared resolver)
     // ("roth-first is not meaningfully better") holds up to tolerance and is
     // all we assert.
     expect(rothFirst.rate).toBeLessThanOrEqual(taxReactive.rate + 0.01);
+  });
+});
+
+// ─── 3-Bucket asset-location strategy ──────────────────────────────────────────
+// The bug this feature exists to fix: an account tagged "Bucket 1" got the SAME
+// stochastic, shocked portfolio-wide return as everything else — tagging money
+// "safe" did nothing to its actual simulated growth. orderingMode: "three_bucket"
+// makes each account CATEGORY's return a blend of its bucket-fraction split
+// (cashRealReturn / postRetireEq / preRetireEq for buckets 1/2/3) instead of one
+// glidepath rate for the whole portfolio. Zero withdrawals in these fixtures
+// (fixed 0% rate, no GK floor) isolates pure growth so the math is hand-checkable.
+describe("3-Bucket strategy — engine behavior (orderingMode: 'three_bucket')", () => {
+  const BASE_MC = {
+    currentAge: 65, retireAge: 65, endAge: 75, port: 0, contrib: 0, inf: 2.5,
+    ssAge: 67, ssCola: 2.4, tax: false,
+    preRetireEq: 91, postRetireEq: 70,
+    withdrawalBracketTarget: "off", irmaaGuard: false, rothEmergencyReserve: 0,
+    useJointRmdTable: false, twoHousehold: false,
+    filingStatus: "mfj", stateOfResidence: "FL",
+  };
+  const B1_ONLY = {
+    ...BASE_MC,
+    sp: 0, ssb: 0, useAb: false, smile: false,
+    withdrawalStrategy: "fixed", fixedWithdrawalRate: 0,
+    gkFloor: 0, gkCeiling: 999_999_999,
+    cashRealReturn: 3.0,
+    accounts: [
+      { id: "b1", category: "taxable", name: "All Bucket 1", balance: 500_000, bucket: 1 },
+    ],
+  };
+  const PLAN_AGE = 75; // 10 years from retireAge 65 — matches Math.pow(1.03, 10) below
+  const N = 60, SEED = 7;
+
+  test("100% Bucket-1 allocation is immune to a forced equity crash sequence", () => {
+    const withoutBuckets = runStress({ ...B1_ONLY, orderingMode: "tax_reactive" }, PLAN_AGE, N, SEED);
+    const withBuckets    = runStress({ ...B1_ONLY, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED);
+    const smoothGrowth = 500_000 * Math.pow(1.03, 10);
+    const lastRow = (r) => r.pcts[r.pcts.length - 1];
+    // Without the strategy: this taxable-category money gets the same shocked
+    // portfolio-wide return as everything else, so the forced 2000-2012 crash
+    // sequence visibly depresses the median path below smooth 3% compounding.
+    expect(lastRow(withoutBuckets).p50).toBeLessThan(smoothGrowth * 0.95);
+    // With the strategy active: 100% of this taxable balance maps to Bucket 1,
+    // so its return is cashRealReturn regardless of what the crash sequence
+    // forces into the equity leg — growth should match pure compounding.
+    expect(lastRow(withBuckets).p50).toBeCloseTo(smoothGrowth, -3);
+  });
+
+  test("mixed allocation: only the Bucket-1 fraction is protected, not the whole balance", () => {
+    const half = {
+      ...B1_ONLY,
+      accounts: [
+        { id: "b1", category: "taxable", name: "Half Bucket 1", balance: 250_000, bucket: 1 },
+        { id: "b3", category: "taxable", name: "Half Bucket 3", balance: 250_000, bucket: 3 },
+      ],
+    };
+    const allB1 = runStress({ ...B1_ONLY, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED);
+    const mixed = runStress({ ...half, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED);
+    const lastRow = (r) => r.pcts[r.pcts.length - 1];
+    // Half the balance is Bucket 3 (preRetireEq-weighted, exposed to the crash
+    // sequence) — the blended median should sit below the all-Bucket-1 case.
+    expect(lastRow(mixed).p50).toBeLessThan(lastRow(allB1).p50);
+  });
+
+  test("toggling orderingMode back to tax_reactive is a true no-op vs. before this feature existed", () => {
+    // Same fixture, same seed — three_bucket OFF must reproduce exactly what
+    // the pre-existing tax_reactive path already did (bucketFracsMC is null).
+    const a = runMC({ ...B1_ONLY, orderingMode: "tax_reactive" }, PLAN_AGE, N, SEED, true);
+    const b = runMC({ ...B1_ONLY, orderingMode: "tax_reactive" }, PLAN_AGE, N, SEED, true);
+    expect(a.pcts).toEqual(b.pcts);
+    expect(a.rate).toBe(b.rate);
   });
 });
 

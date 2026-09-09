@@ -143,6 +143,7 @@ const NEEDS_A_TARGETED_FIXTURE = {
   rothEmergencyReserve:    "this fixture never draws Roth, so the floor never binds",
   useAb:                   "gates rental; ab is already non-zero here",
   useJointRmdTable:        "needs a fixture that reaches RMD age with the joint gate open",
+  bucket2YieldPct:         "only read when orderingMode === 'three_bucket'; covered by withdrawal.test.js and bucketStrategy.test.js",
   // Added by the spousal-SS engine wiring (§21, 2026-07-27, from another machine).
   // Only read when spouse.enabled is true, which BLANK_PROFILE defaults to false.
   // Proven live by the "spousal Social Security" block at the bottom of this file —

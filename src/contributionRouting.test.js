@@ -95,19 +95,23 @@ describe("accumulateToRetirement — contribution routing", () => {
     expect(r.taxableBasis0).toBeCloseTo(30_000 + 10_000, 2);
   });
 
-  test("HSA contributions go to the cash bucket, where HSA balances live", () => {
+  test("HSA contributions grow at the equity glidepath rate, then fold into cash0", () => {
+    // HSA previously shared cashRealReturn with the "cash" category, silently
+    // understating HSA growth for every user through accumulation. It now
+    // grows at `gr` like pretax/roth/taxable, and is folded into cash0 only
+    // at the return boundary — so cash0 here reflects gr (0.05), not the
+    // cashRealReturn (0) pinned in `base`.
     const r = accumulateToRetirement({
       ...base, accounts: [acct("hsa", 0)], hsaContrib: 4_000,
     });
-    // cashRealReturn 0 → 10 flat contributions.
-    expect(r.cash0).toBeCloseTo(40_000, 2);
+    expect(r.cash0).toBeCloseTo(growThenContribute(0, 4_000, 0.05, 10), 2);
     expect(r.pretax0).toBe(0);
   });
 
-  test("bug 2: an hsa-category balance is counted, not dropped", () => {
+  test("bug 2: an hsa-category balance is counted, not dropped, and grows at gr not cashRealReturn", () => {
     const r = accumulateToRetirement({ ...base, accounts: [acct("hsa", 25_000)] });
-    expect(r.cash0).toBeCloseTo(25_000, 2);   // cashRealReturn 0 → unchanged
-    expect(r.total).toBeCloseTo(25_000, 2);
+    expect(r.cash0).toBeCloseTo(25_000 * Math.pow(1.05, 10), 2);
+    expect(r.total).toBeCloseTo(25_000 * Math.pow(1.05, 10), 2);
   });
 
   test("an unrecognized category still lands somewhere rather than vanishing", () => {
@@ -123,6 +127,19 @@ describe("accumulateToRetirement — contribution routing", () => {
     });
     expect(r.pretax0).toBe(100_000);
     expect(r.taxable0).toBe(0);
+  });
+
+  test("HSA-only balance outgrows pure cashGr compounding under the real equity glidepath", () => {
+    // Same scenario, but through the actual preRetireEq/postRetireEq path
+    // (no `gr` override) — the regression this guards against is HSA quietly
+    // sharing the safe cash rate instead of the equity glidepath.
+    const r = accumulateToRetirement({
+      currentAge: 50, retireAge: 60,
+      preRetireEq: 91, postRetireEq: 70, cashRealReturn: 3.0,
+      accounts: [acct("hsa", 25_000)],
+    });
+    const pureCashGrowth = 25_000 * Math.pow(1.03, 10);
+    expect(r.cash0).toBeGreaterThan(pureCashGrowth);
   });
 
   test("total equals the sum of its buckets with every stream active", () => {

@@ -47,6 +47,7 @@ import { earlyWithdrawalPenalty, detectEmployerPlan, ruleOf55SeparationQualifies
 import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
 import { resolveGlidepathSwitchAge } from "./glidepath.js";
+import { bucketFractionsByCategory, fractionsForCategory, blendBucketReturns, bucketDollarTotals, bucket2YieldSweep } from "./bucketStrategy.js";
 
 const BASE_YEAR = new Date().getFullYear();
 
@@ -205,13 +206,17 @@ export function accumulateToRetirement(params = {}) {
   // field changed the Monte Carlo but never this engine.
   const cashGr = (cashRealReturn ?? 3.0) / 100;
 
-  let pretax0 = 0, roth0 = 0, taxable0 = 0, cash0 = 0;
+  let pretax0 = 0, roth0 = 0, taxable0 = 0, cash0 = 0, hsa0 = 0;
   for (const a of accounts) {
     const bal = a.balance || 0;
     if      (a.category === "pretax")  pretax0  += bal;
     else if (a.category === "roth")    roth0    += bal;
     else if (a.category === "taxable") taxable0 += bal;
-    else                               cash0    += bal; // cash + hsa
+    // HSA grows at the equity glidepath rate below, same as pretax/roth/taxable
+    // — it was previously lumped into cash0 and grown at the safe cashGr rate,
+    // silently understating every user's HSA balance through accumulation.
+    else if (a.category === "hsa")     hsa0     += bal;
+    else                               cash0    += bal; // cash (and any unrecognized category)
   }
 
   // Basis is a % of TODAY's taxable balance (before the accumulation growth
@@ -225,6 +230,7 @@ export function accumulateToRetirement(params = {}) {
     pretax0  *= (1 + gr);
     roth0    *= (1 + gr);
     taxable0 *= (1 + gr);
+    hsa0     *= (1 + gr);
     cash0    *= (1 + cashGr);
     // Same bucket routing as runMC's accumulation loop — grow first, then add
     // the year's contributions, so a contribution doesn't earn a return in the
@@ -236,7 +242,7 @@ export function accumulateToRetirement(params = {}) {
     // primary's own streams together.
     const jc = jobContributionsForYear(params, (currentAge ?? 0) + y);
     pretax0  += jc.pretax;
-    cash0    += hsaContrib;
+    hsa0     += hsaContrib;
     roth0    += jc.roth;
     taxable0 += taxableContrib;
     // After-tax dollars in, so basis rises one-for-one (growth is unrealized).
@@ -260,7 +266,12 @@ export function accumulateToRetirement(params = {}) {
     }
   }
 
-  return { pretax0, roth0, taxable0, cash0, total: pretax0 + roth0 + taxable0 + cash0, taxableBasis0 };
+  // HSA is folded into cash0 only here, at the boundary — every downstream
+  // consumer (draw order, tax logic, the deterministic table) still sees a
+  // single cash0 number and needs no changes; only the growth rate HSA earned
+  // on the way here changed.
+  const cash0Total = cash0 + hsa0;
+  return { pretax0, roth0, taxable0, cash0: cash0Total, total: pretax0 + roth0 + taxable0 + cash0Total, taxableBasis0 };
 }
 
 // The four drawable buckets, canonical order. Shared so runMC and this engine
@@ -293,7 +304,13 @@ export function resolveDrawOrder(orderingMode, withdrawalOrder) {
     return out;
   }
   if (orderingMode === "pretax_first") return ["pretax", "cash", "taxable", "roth"];
-  return ["cash", "taxable", "pretax", "roth"]; // tax_reactive (default)
+  // "three_bucket" changes what return each CATEGORY earns (see
+  // bucketFractionsByCategory in bucketStrategy.js) but not the category draw
+  // SEQUENCE itself — the tax-bracket/IRMAA/RMD sourcing logic those steps
+  // carry stays exactly as tax_reactive. Time-horizon-tier draw sequencing
+  // (spend Bucket 1 first regardless of category, gated refill from Bucket 3)
+  // is a separate, larger increment, not yet wired into this resolver.
+  return ["cash", "taxable", "pretax", "roth"]; // tax_reactive (default) and three_bucket
 }
 
 /**
@@ -339,6 +356,7 @@ export function buildWithdrawalWaterfall(params = {}) {
     // "tax_reactive" reproduces the historical cash→taxable→pretax→Roth sequence.
     orderingMode    = "tax_reactive",
     withdrawalOrder = ["cash", "taxable", "pretax", "roth"],
+    bucket2YieldPct = 3.0,
     preRetireEq = 91,
     postRetireEq = 70,
     cashRealReturn,
@@ -630,6 +648,15 @@ export function buildWithdrawalWaterfall(params = {}) {
   // The user's chosen account draw order (used by the "smart" = your-plan scenario).
   // The "naive" comparison scenario always drains pre-tax first, uncapped.
   const smartDrawOrder = resolveDrawOrder(orderingMode, withdrawalOrder);
+
+  // 3-Bucket asset-location strategy (additive layer, orthogonal to the
+  // waterfall's draw sequencing/tax logic above — see engine/bucketStrategy.js
+  // header comment). Computed ONCE from today's accounts and held constant for
+  // the whole projection — a documented simplification, not a per-year
+  // re-simulation of account-level balances. Only the "smart"/your-plan
+  // scenario uses it; "naive" models an unsophisticated retiree by design and
+  // stays on the flat portfolio-wide glidepath regardless of this setting.
+  const bucketFracs = orderingMode === "three_bucket" ? bucketFractionsByCategory(accounts) : null;
 
   // ── Scenario runner ────────────────────────────────────────────────────────
   function runScenario(isSmart) {
@@ -1340,7 +1367,33 @@ export function buildWithdrawalWaterfall(params = {}) {
         };
       }
 
-      cash    = Math.max(0, cash    - fromCash    - convTaxFromCash)    * (1 + cashGr);
+      // 3-Bucket strategy: apply each category's bucket-blended rate instead
+      // of the flat cashGr/gr this scenario would otherwise use. Only the
+      // "smart" scenario opts in (see bucketFracs comment above).
+      const useBuckets = isSmart && bucketFracs;
+      // Bucket 1/2/3 rates for THIS year, with the Bucket 2 -> Bucket 1 income
+      // sweep applied before blending — mirrors runMC's identical logic. Uses
+      // current (pre-growth, post-draw-this-year) balances, computed fresh
+      // each year since balances shift as the plan draws down.
+      let bucketR1 = cashGr, bucketR2 = postGr;
+      // Bucket 3 uses postGr too, not preGr — see the matching comment in
+      // App.jsx (runMC): a Roth/HSA account defaulted into Bucket 3 must not
+      // silently become more aggressive than the user's chosen post-retirement
+      // mix just from turning this mode on.
+      const bucketR3 = postGr;
+      if (useBuckets && (bucket2YieldPct || 0) > 0) {
+        const totals = bucketDollarTotals({ cash, pretax, roth, taxable }, bucketFracs);
+        const swept = bucket2YieldSweep(totals[1], totals[2], bucketR1, bucketR2, bucket2YieldPct);
+        bucketR1 = swept.r1;
+        bucketR2 = swept.r2;
+      }
+      const bucketGrFor = (category) => blendBucketReturns(fractionsForCategory(bucketFracs, category), bucketR1, bucketR2, bucketR3);
+      const cashGrThisYr    = useBuckets ? bucketGrFor("cash")    : cashGr;
+      const taxableGrThisYr = useBuckets ? bucketGrFor("taxable") : gr;
+      const pretaxGrThisYr  = useBuckets ? bucketGrFor("pretax")  : gr;
+      const rothGrThisYr    = useBuckets ? bucketGrFor("roth")    : gr;
+
+      cash    = Math.max(0, cash    - fromCash    - convTaxFromCash)    * (1 + cashGrThisYr);
       // NOTE (documented simplification): a taxable draw taken to PAY the conversion
       // tax would itself realize capital gains, creating a second-order tax on the
       // tax. The year's realizedGain/basis figures above are already converged
@@ -1358,10 +1411,14 @@ export function buildWithdrawalWaterfall(params = {}) {
       // Without this the money simply ceased to exist.
       const surplusToTaxable = Math.max(0, incomeSurplus - Math.max(0, taxDue - rmd));
       taxableBasis += surplusToTaxable;
-      taxable = (Math.max(0, taxable - fromTaxable - convTaxFromTaxable) + rmdExcess + surplusToTaxable) * (1 + gr);
-      pretax  = Math.max(0, pretax  - fromPretax - convAmt - convTaxFromPretax) * (1 + gr);
-      roth    = Math.max(0, roth    - fromRoth + convToRoth) * (1 + gr);
+      taxable = (Math.max(0, taxable - fromTaxable - convTaxFromTaxable) + rmdExcess + surplusToTaxable) * (1 + taxableGrThisYr);
+      pretax  = Math.max(0, pretax  - fromPretax - convAmt - convTaxFromPretax) * (1 + pretaxGrThisYr);
+      roth    = Math.max(0, roth    - fromRoth + convToRoth) * (1 + rothGrThisYr);
 
+      // gkWithdraw only reads lastRet's SIGN (did the portfolio gain or lose
+      // last year, for the guardrail's inflation-raise gate) — the portfolio
+      // glidepath rate `gr` stays directionally representative even under the
+      // 3-Bucket strategy, so it's not worth a dollar-weighted blend here.
       lastRet = gr;
       // The §72(t) penalty is a real dollar leaving the plan, so lifetime tax
       // must carry it — otherwise "smart vs no plan" comparisons would rate an
