@@ -3169,7 +3169,13 @@ const CSS = `
   .main > * { flex-shrink:0; }
   .flag-w { border-left:3px solid #f59e0b; background:rgba(245,158,11,0.1); padding:7px 12px; font-size:12px; color:#fde68a; border-radius:0 8px 8px 0; margin-bottom:4px; font-weight:500; }
   .flag-i { border-left:3px solid #38bdf8; background:rgba(56,189,248,0.08); color:#bae6fd; border-radius:0 8px 8px 0; padding:7px 12px; font-size:12px; margin-bottom:4px; font-weight:500; }
-  .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
+  /* auto-fit (not a fixed 4-column count) so a row with fewer cards than
+     the column count STRETCHES to fill the width instead of leaving empty
+     gaps — a fixed repeat(4,1fr) left a lone 5th card stranded on its own
+     row with 3 blank slots next to it, and any future card count hits the
+     same problem again at a different number. minmax(160px,1fr) keeps cards
+     from getting too narrow to read before wrapping. */
+  .metrics { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:9px; }
   .met { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:10px; padding:13px 15px; }
   .ml { font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.09em; margin-bottom:7px; font-weight:600; }
   .mv { font-size:22px; font-weight:800; font-family:'JetBrains Mono',monospace; line-height:1; }
@@ -7570,8 +7576,10 @@ function WaterfallPlanView({ p, result }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+      {/* Summary cards — auto-fit so an odd card count (this grid gained 2
+          conditional 3-Bucket cards) fills each row edge-to-edge instead of
+          a fixed repeat(3,1fr) leaving a stranded partial row. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
         <div className="met">
           <div className="ml">Smart Lifetime Tax</div>
           <div className="mv" style={{ color: "#34d399", fontSize: 16 }}>{fmtDollar(summary.lifetimeTaxSmart)}</div>
@@ -7612,24 +7620,37 @@ function WaterfallPlanView({ p, result }) {
         </div>
         {p.orderingMode === "three_bucket" && (() => {
           // NEUTRAL before/after, not a "you saved" claim — this feature's
-          // verified behavior is near-parity with the default order, not a
+          // verified behavior is near-parity with Tax-reactive, not a
           // guaranteed win. One extra deterministic run (fast, no debounce
-          // needed) against the tax_reactive baseline; `smart` (this card's
-          // "with buckets" side) reuses the SAME `result` this whole view
+          // needed) against that baseline; `smart` (the "with buckets" side
+          // of both cards below) reuses the SAME `result` this whole view
           // already has, so it's not a third, possibly-drifting copy of it.
           const baseline = buildWithdrawalWaterfall({ ...p, orderingMode: "tax_reactive" });
           const endingValue = (r) => (r.finalPretax||0)+(r.finalRoth||0)+(r.finalCash||0)+(r.finalTaxable||0);
-          const delta = endingValue(smart) - endingValue(baseline.smart);
+          const portfolioDelta = endingValue(smart) - endingValue(baseline.smart);
+          const taxDelta = (smart.totalTax || 0) - (baseline.smart.totalTax || 0);
           const FLAT_BAND = 1_000; // below this, color neutral — noise, not signal, on a decades-long plan
-          const color = Math.abs(delta) < FLAT_BAND ? "var(--text-secondary)" : delta > 0 ? "#34d399" : "#f87171";
+          const colorFor = (v, lowerIsBetter) => {
+            const signed = lowerIsBetter ? -v : v;
+            return Math.abs(v) < FLAT_BAND ? "var(--text-secondary)" : signed > 0 ? "#34d399" : "#f87171";
+          };
           return (
-            <div className="met">
-              <div className="ml">3-Bucket Impact</div>
-              <div className="mv" style={{ color, fontSize: 16 }}>
-                {delta >= 0 ? "+" : "−"}{fmtDollar(Math.abs(delta))}
+            <>
+              <div className="met">
+                <div className="ml">3-Bucket Impact</div>
+                <div className="mv" style={{ color: colorFor(portfolioDelta, false), fontSize: 16 }}>
+                  {portfolioDelta >= 0 ? "+" : "−"}{fmtDollar(Math.abs(portfolioDelta))}
+                </div>
+                <div className="ms">ending portfolio vs Tax-reactive</div>
               </div>
-              <div className="ms">ending portfolio vs your default order</div>
-            </div>
+              <div className="met">
+                <div className="ml">3-Bucket Tax Impact</div>
+                <div className="mv" style={{ color: colorFor(taxDelta, true), fontSize: 16 }}>
+                  {taxDelta >= 0 ? "+" : "−"}{fmtDollar(Math.abs(taxDelta))}
+                </div>
+                <div className="ms">lifetime tax vs Tax-reactive{taxDelta < 0 ? " (less tax)" : taxDelta > 0 ? " (more tax)" : ""}</div>
+              </div>
+            </>
           );
         })()}
       </div>
