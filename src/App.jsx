@@ -12093,6 +12093,13 @@ function SavingsPanel({ values, onChange }) {
   const GOAL = values.earlyRetireTarget || 1_000_000;
   const accounts = values.accounts || BLANK_PROFILE.accounts;
   const [splitEditId, setSplitEditId] = useState(null);
+  // Cost basis / yield are global (one blended assumption across the WHOLE
+  // taxable category, not per-account) — design-authority (2026-09-10):
+  // moved here from a disconnected Tax Settings card on a different Profile
+  // sub-page, since this is the only place "taxable" is otherwise discussed.
+  // Collapsed by default — set-and-forget values, not something to force on
+  // every visit.
+  const [showTaxAssumptions, setShowTaxAssumptions] = useState(false);
 
   const CATEGORIES = [
     { key: "pretax",  label: "Pre-Tax",        color: "#0ea5e9", defaultName: "401(k)" },
@@ -12241,6 +12248,43 @@ function SavingsPanel({ values, onChange }) {
             >
               + Add
             </button>
+            {cat.key === "taxable" && catAccounts.length > 0 && (
+              <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <button
+                  onClick={() => setShowTaxAssumptions(v => !v)}
+                  style={{ background: "transparent", border: "none", color: cat.color, fontSize: 11, fontWeight: 600, cursor: "pointer", padding: 0 }}
+                >
+                  {showTaxAssumptions ? "▾" : "▸"} ⚙ Tax assumptions
+                </button>
+                {showTaxAssumptions && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 6 }}>
+                      Applies to your combined Taxable balance ({fmtDollar(catSum("taxable"))}) — not any single account above.
+                    </div>
+                    <ARow label="Taxable cost basis" desc="Percent of your taxable brokerage balance that is cost basis (from your brokerage statement). The rest is unrealized gain — selling realizes it as LTCG income, taxed at 0/15/20% federal (plus state, plus NIIT above the MAGI threshold) and counted toward Social Security's provisional income and Medicare IRMAA.">
+                      <ANumInput value={values.taxableBasisPct ?? 70} onSet={(v) => onChange("taxableBasisPct", v)} min={0} max={100} step={5} suffix="%" />
+                    </ARow>
+                    {/* Real securities pay interest/dividends every year, taxed whether or
+                        not you reinvest them — the rest of a taxable account's growth stays
+                        deferred (untaxed until sold, above). Different holdings split this
+                        very differently (a muni bond fund pays none of this; a taxable bond
+                        fund pays mostly this); rather than model every security, this is
+                        one blended annual rate applied to your whole taxable balance.
+                        Off (0%) by default — turning it on will raise your projected tax
+                        and lower projected ending balances slightly, even without changing
+                        any other input. */}
+                    <ARow label="Taxable annual yield" desc="Percent of your taxable brokerage balance assumed to be interest/dividend yield, taxed every year even if reinvested — the rest of its growth stays deferred until you sell, same as above. 0% (off) leaves your plan unchanged; a diversified stock+bond account is often 1.5–3%.">
+                      <ANumInput value={values.taxableYieldPct ?? 0} onSet={(v) => onChange("taxableYieldPct", v)} min={0} max={10} step={0.5} suffix="%" />
+                    </ARow>
+                    {(values.taxableYieldPct ?? 0) > 0 && (
+                      <ARow label="— % of that yield taxed as ordinary income" desc="The rest of the yield above is taxed at qualified-dividend/LTCG rates instead. Interest (bonds, cash) is ordinary; qualified stock dividends get the lower rate — this is one blended split across your whole taxable balance, not per security.">
+                        <ANumInput value={values.taxableYieldOrdinaryPct ?? 50} onSet={(v) => onChange("taxableYieldOrdinaryPct", v)} min={0} max={100} step={5} suffix="%" />
+                      </ARow>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
@@ -12749,32 +12793,14 @@ function AssumptionsPanel({ values, onChange }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
       {/* Tax settings.
-          The two tax knobs that used to be buried in Personal Profile.
-          Both are genuinely tax mechanics, and the joint-RMD toggle keys
-          off filing status, so it belongs beside the cost-basis field
-          rather than next to someone's name. */}
+          Cost basis / yield moved to the taxable account group in
+          SavingsPanel (design-authority, 2026-09-10) — those are global
+          assumptions about the taxable category, but they're meaningless
+          without the account context that only lives there, and this page
+          was a disconnected second location for the same state. Only the
+          joint-RMD toggle stays: it keys off filing status, not accounts. */}
       <ACard title="Tax Settings" accent="var(--accent)"
         desc="How AiRA taxes your withdrawals. Defaults are fine for most people.">
-        <ARow label="Taxable cost basis" desc="Percent of your taxable brokerage balance that is cost basis (from your brokerage statement). The rest is unrealized gain — selling realizes it as LTCG income, taxed at 0/15/20% federal (plus state, plus NIIT above the MAGI threshold) and counted toward Social Security's provisional income and Medicare IRMAA.">
-          <ANumInput value={values.taxableBasisPct ?? 70} onSet={(v) => onChange("taxableBasisPct", v)} min={0} max={100} step={5} suffix="%" />
-        </ARow>
-        {/* Real securities pay interest/dividends every year, taxed whether or
-            not you reinvest them — the rest of a taxable account's growth stays
-            deferred (untaxed until sold, above). Different holdings split this
-            very differently (a muni bond fund pays none of this; a taxable bond
-            fund pays mostly this); rather than model every security, this is
-            one blended annual rate applied to your whole taxable balance.
-            Off (0%) by default — turning it on will raise your projected tax
-            and lower projected ending balances slightly, even without changing
-            any other input. */}
-        <ARow label="Taxable annual yield" desc="Percent of your taxable brokerage balance assumed to be interest/dividend yield, taxed every year even if reinvested — the rest of its growth stays deferred until you sell, same as above. 0% (off) leaves your plan unchanged; a diversified stock+bond account is often 1.5–3%.">
-          <ANumInput value={values.taxableYieldPct ?? 0} onSet={(v) => onChange("taxableYieldPct", v)} min={0} max={10} step={0.5} suffix="%" />
-        </ARow>
-        {(values.taxableYieldPct ?? 0) > 0 && (
-          <ARow label="— % of that yield taxed as ordinary income" desc="The rest of the yield above is taxed at qualified-dividend/LTCG rates instead. Interest (bonds, cash) is ordinary; qualified stock dividends get the lower rate — this is one blended split across your whole taxable balance, not per security.">
-            <ANumInput value={values.taxableYieldOrdinaryPct ?? 50} onSet={(v) => onChange("taxableYieldOrdinaryPct", v)} min={0} max={100} step={5} suffix="%" />
-          </ARow>
-        )}
         {(values.filingStatus || "mfj") !== "single" && (
           <Toggle
             val={values.useJointRmdTable}
