@@ -86,6 +86,7 @@ import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationN
 import { _defaultBucket, accountBucketPieces, expandAccountBuckets } from "./engine/buckets.js";
 import { bucketFractionsByCategory, fractionsForCategory, blendEquityBond, blendBucketReturns, bucketDollarTotals, bucket2YieldSweep } from "./engine/bucketStrategy.js";
 import { dollarBasisLabel, deflate, mcMedianAtAge, selectPortfolioAtAge } from "./engine/mcSelectors.js";
+import { taxableYieldSplit } from "./engine/taxableYield.js";
 // One declaration of every figure's arithmetic, rendered here and enforced by
 // provenance.test.js. Never inline a formula string — it would drift from the test.
 import { formulaFor } from "./provenance.js";
@@ -213,9 +214,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.121";
-export const BUILD_TAG = "[main] v1.2.121 - Merged origin/main (7 comment-rewrite commits) into the 3-Bucket Strategy work. PrintReport.jsx merge was blocked by the documented skip-worktree/stub trap (git sees a clean tree because the real report file is deliberately hidden from status/diff via --skip-worktree, but merge still has to touch the tracked stub and refuses to clobber the much-larger on-disk file) - resolved safely: backed up the real file (checksum-verified), cleared skip-worktree, reset the working copy to the tracked stub so the merge ran clean, restored the real file from backup, re-applied skip-worktree. Two real code conflicts (App.jsx, buildWithdrawalWaterfall.js): both were origin's older pre-refactor code colliding with this session's mcSelectors.js/buckets.js consolidation and bucket-strategy growth logic - resolved in favor of the newer, already-in-use versions after confirming the target files actually contain the consolidated functions. Also fixed two unrelated pre-existing issues found by the post-merge test run: the Progress tab's 'Since first check-in' delta card was formatted as a percent instead of percentage points (mismatched the Widow's-penalty card's own pp convention, and origin's copy already had it right); and the provenance registry was missing the two 3-Bucket Impact/Tax Impact cards added earlier this session. 1072/1072 tests green.";
-export const BUILD_TIME = "2026-09-09T20:45:00Z";
+const APP_VERSION = "1.2.122";
+export const BUILD_TAG = "[main] v1.2.122 - Taxable-account yield tax drag. Taxable-category growth was previously ALL deferred to LTCG-at-withdrawal, which is wrong for the interest/dividend portion of a real account - that's taxed annually whether or not it's reinvested. Full per-security modeling was rejected (needs the deferred CSV/asset-allocation module); per-account custom growth rates were also rejected (breaks the stochastic engine's historical SP500/BONDS bootstrap and its stock/bond correlation pairing). Landed as two new GLOBAL profile fields instead, applied to any taxable-category balance in any mode (not gated to three_bucket): taxableYieldPct (annual yield as % of balance, default 0 = off) and taxableYieldOrdinaryPct (ordinary vs qualified-dividend/LTCG split, default 50). New pure fn taxableYieldSplit() (engine/taxableYield.js) computed once per year off the entering balance; ordinaryYield threads into otherIncTaxable, qualifiedYield into the ltcg tax-calc argument (both engines' fixed-point draw loop already funds the resulting extra tax via increased need, same mechanism as RMD/conversion tax); yieldAmount credits taxableBasis afterward WITHOUT touching the growth line, so total balance growth is bit-for-bit unchanged - only the already-taxed-vs-still-deferred split shifts, so the same dollars can never be taxed twice. Wired into both buildWithdrawalWaterfall.js and runMC independently (simulateDeterministicWithStrategy's non-smart path excluded - confirmed no per-category state to hook into; its smart path inherits this for free via delegation to buildWithdrawalWaterfall). Default 0 is a true no-op, proven by regression-lock tests in both engines - existing profiles are unaffected until a user opts in via the new Tax Settings card fields. 16 new tests (pure-function unit tests, hand-calculated engine tests incl. a worked basis-credit example, ghost-settings wiring for both engines) - 1088/1088 green.";
+export const BUILD_TIME = "2026-09-10T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -679,6 +680,8 @@ export const BLANK_PROFILE = {
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 3.0,          // default return for cash/HYSA (percent)
   taxableBasisPct: 70,          // % of TODAY's taxable-brokerage balance that is cost basis (rest = unrealized LTCG)
+  taxableYieldPct: 0,           // annual yield (%) taxed every year regardless of withdrawal — default off, 0 reproduces pre-feature behavior exactly
+  taxableYieldOrdinaryPct: 50,  // % of that yield taxed as ordinary income (interest); rest at qualified-dividend/LTCG rates
   // Expense model
   housingType: "own",           // "own" | "rent" | "none"
   annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
@@ -1566,6 +1569,19 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         totalPort = pretax + roth + taxable + cash;
       }
 
+      // Annual yield tax drag (see engine/taxableYield.js) — computed once
+      // against the entering balance (untouched by anything below until the
+      // growth line). Real interest/dividends are taxed the year they're
+      // paid whether or not they're reinvested. ordinaryYieldMC stacks into
+      // this year's tax calc the same way effectiveAb/otherIncTaxable does;
+      // qualifiedYieldMC stacks onto realized capital gains at each
+      // calcYearTax call below. Credited to taxableBasis after the draws/tax
+      // resolve (with rmdExcess/surplusToTaxableMC), not by touching the
+      // growth line — it's already-taxed money that must never be taxed
+      // again on a later withdrawal.
+      const { yieldAmount: taxableYieldAmtMC, ordinaryYield: ordinaryYieldMC, qualifiedYield: qualifiedYieldMC } =
+        taxableYieldSplit(taxable, p.taxableYieldPct, p.taxableYieldOrdinaryPct);
+
       // Healthcare shock — stochastic per path, inflated to this year.
       // Treated as a committed cost: a medical bill isn't discretionary
       // spending the guardrails can trim.
@@ -1729,7 +1745,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
         const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC, spouseAgeAt(p, age));
         // 85% SS inclusion is a worst-case estimate on purpose, so the cap never overshoots.
-        const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable);
+        const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable) + ordinaryYieldMC;
         // Infinity when only the IRMAA guard is on — the min() below then
         // makes the IRMAA tier the sole binding ceiling.
         const ceilingMC = bracketSetMC
@@ -1847,8 +1863,8 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         // using the final fromTaxable (not accumulated pass-by-pass).
         const gPass = realizedGainFromDraw(fromTaxable, taxable, taxableBasis);
         taxResult = calcYearTax(
-          age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, 0,
-          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", gPass, magiLookbackMC,
+          age, yr, fromPretax, ss, effectiveAb + otherIncTaxable + ordinaryYieldMC, rmd, 0,
+          p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", gPass + qualifiedYieldMC, magiLookbackMC,
           spouseAgeAt(p, age)
         );
         // IRC §72(t) additional tax on pre-59½ distributions. It's inside the
@@ -1891,7 +1907,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // Surplus left after this year's tax gets deposited as basis (already
       // taxed money); only later growth is gain. Mirrors the waterfall exactly.
       const surplusToTaxableMC = Math.max(0, incomeSurplus - Math.max(0, totalTax - rmd));
-      taxableBasis = Math.max(0, taxableBasis - consumedBasisMC) + rmdExcess + surplusToTaxableMC;
+      // The yield's tax was already funded above (it widened totalTax, which
+      // widened this year's draws) — crediting it to basis here (not to the
+      // balance, which grows unchanged below) is what stops it from being
+      // taxed a second time as unrealized gain on a later withdrawal.
+      taxableBasis = Math.max(0, taxableBasis - consumedBasisMC) + rmdExcess + surplusToTaxableMC + taxableYieldAmtMC;
       cash    = Math.max(0, cash    - fromCash);
       taxable = Math.max(0, taxable - fromTaxable) + rmdExcess + surplusToTaxableMC;
       pretax  = Math.max(0, pretax  - fromPretax - rmd);
@@ -1942,8 +1962,8 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
             // (fixed) IRMAA component agrees with taxResult's — it's this
             // year's charge, unaffected by convAmt.
             const withConv = calcYearTax(
-              age, yr, fromPretax, ss, effectiveAb + otherIncTaxable, rmd, amt,
-              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC, magiLookbackMC,
+              age, yr, fromPretax, ss, effectiveAb + otherIncTaxable + ordinaryYieldMC, rmd, amt,
+              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC + qualifiedYieldMC, magiLookbackMC,
               spouseAgeAt(p, age)
             );
             lastWithConv = withConv;
@@ -12738,6 +12758,23 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Taxable cost basis" desc="Percent of your taxable brokerage balance that is cost basis (from your brokerage statement). The rest is unrealized gain — selling realizes it as LTCG income, taxed at 0/15/20% federal (plus state, plus NIIT above the MAGI threshold) and counted toward Social Security's provisional income and Medicare IRMAA.">
           <ANumInput value={values.taxableBasisPct ?? 70} onSet={(v) => onChange("taxableBasisPct", v)} min={0} max={100} step={5} suffix="%" />
         </ARow>
+        {/* Real securities pay interest/dividends every year, taxed whether or
+            not you reinvest them — the rest of a taxable account's growth stays
+            deferred (untaxed until sold, above). Different holdings split this
+            very differently (a muni bond fund pays none of this; a taxable bond
+            fund pays mostly this); rather than model every security, this is
+            one blended annual rate applied to your whole taxable balance.
+            Off (0%) by default — turning it on will raise your projected tax
+            and lower projected ending balances slightly, even without changing
+            any other input. */}
+        <ARow label="Taxable annual yield" desc="Percent of your taxable brokerage balance assumed to be interest/dividend yield, taxed every year even if reinvested — the rest of its growth stays deferred until you sell, same as above. 0% (off) leaves your plan unchanged; a diversified stock+bond account is often 1.5–3%.">
+          <ANumInput value={values.taxableYieldPct ?? 0} onSet={(v) => onChange("taxableYieldPct", v)} min={0} max={10} step={0.5} suffix="%" />
+        </ARow>
+        {(values.taxableYieldPct ?? 0) > 0 && (
+          <ARow label="— % of that yield taxed as ordinary income" desc="The rest of the yield above is taxed at qualified-dividend/LTCG rates instead. Interest (bonds, cash) is ordinary; qualified stock dividends get the lower rate — this is one blended split across your whole taxable balance, not per security.">
+            <ANumInput value={values.taxableYieldOrdinaryPct ?? 50} onSet={(v) => onChange("taxableYieldOrdinaryPct", v)} min={0} max={100} step={5} suffix="%" />
+          </ARow>
+        )}
         {(values.filingStatus || "mfj") !== "single" && (
           <Toggle
             val={values.useJointRmdTable}
@@ -15236,6 +15273,8 @@ export default function AiRAForecaster() {
       // sex setting the fan chart's SSA survival overlay uses.
       sex: assumptions.sex || "blended",
       taxableBasisPct: assumptions.taxableBasisPct ?? 70,
+      taxableYieldPct: assumptions.taxableYieldPct ?? 0,
+      taxableYieldOrdinaryPct: assumptions.taxableYieldOrdinaryPct ?? 50,
       useJointRmdTable: assumptions.useJointRmdTable || false,
       withdrawalStrategy: assumptions.withdrawalStrategy,
       // Set when a retired strategy was remapped on load. Forwarded so the

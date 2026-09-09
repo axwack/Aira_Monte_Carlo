@@ -25,6 +25,7 @@ import {
 } from "./App";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 import { LIVE_STRATEGIES } from "./engine/withdrawalStrategies.js";
+import { taxableYieldSplit } from "./engine/taxableYield.js";
 
 // ─── Shared MC baseline ───────────────────────────────────────────────────────
 const BASE = {
@@ -2327,5 +2328,49 @@ describe("OBBBA senior bonus deduction", () => {
     const r = calcYearTax(70, 2026, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
     expect(r.stdDeduction).toBe(17_750);
     expect(r.taxableIncome).toBe(50_000 - r.stdDeduction - r.seniorBonus);
+  });
+});
+
+describe("taxableYieldSplit — pure function", () => {
+  test("worked example: $500k @ 2% yield, 50/50 ordinary/qualified split", () => {
+    const r = taxableYieldSplit(500_000, 2, 50);
+    expect(r.yieldAmount).toBe(10_000);
+    expect(r.ordinaryYield).toBe(5_000);
+    expect(r.qualifiedYield).toBe(5_000);
+  });
+
+  test("yieldAmount always equals ordinaryYield + qualifiedYield", () => {
+    const r = taxableYieldSplit(837_412, 2.7, 63);
+    expect(r.ordinaryYield + r.qualifiedYield).toBeCloseTo(r.yieldAmount, 6);
+  });
+
+  test("yieldPct = 0 is a true no-op (the shipped default)", () => {
+    const r = taxableYieldSplit(500_000, 0, 50);
+    expect(r).toEqual({ yieldAmount: 0, ordinaryYield: 0, qualifiedYield: 0 });
+  });
+
+  test("zero or negative balance is a no-op regardless of yieldPct", () => {
+    expect(taxableYieldSplit(0, 2, 50)).toEqual({ yieldAmount: 0, ordinaryYield: 0, qualifiedYield: 0 });
+    expect(taxableYieldSplit(-1000, 2, 50)).toEqual({ yieldAmount: 0, ordinaryYield: 0, qualifiedYield: 0 });
+  });
+
+  test("ordinaryPct clamps to [0, 100] rather than producing a negative or >100% split", () => {
+    const over = taxableYieldSplit(100_000, 3, 150);
+    expect(over.ordinaryYield).toBe(over.yieldAmount);
+    expect(over.qualifiedYield).toBe(0);
+
+    const under = taxableYieldSplit(100_000, 3, -20);
+    expect(under.ordinaryYield).toBe(0);
+    expect(under.qualifiedYield).toBe(under.yieldAmount);
+  });
+
+  test("100% ordinary and 0% ordinary are the two pure-split edge cases", () => {
+    const allOrdinary = taxableYieldSplit(200_000, 4, 100);
+    expect(allOrdinary.ordinaryYield).toBe(8_000);
+    expect(allOrdinary.qualifiedYield).toBe(0);
+
+    const allQualified = taxableYieldSplit(200_000, 4, 0);
+    expect(allQualified.ordinaryYield).toBe(0);
+    expect(allQualified.qualifiedYield).toBe(8_000);
   });
 });

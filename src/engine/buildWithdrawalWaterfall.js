@@ -48,6 +48,7 @@ import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
 import { resolveGlidepathSwitchAge } from "./glidepath.js";
 import { bucketFractionsByCategory, fractionsForCategory, blendBucketReturns, bucketDollarTotals, bucket2YieldSweep } from "./bucketStrategy.js";
+import { taxableYieldSplit } from "./taxableYield.js";
 
 const BASE_YEAR = new Date().getFullYear();
 
@@ -372,6 +373,14 @@ export function buildWithdrawalWaterfall(params = {}) {
     cashRealReturn,
     gr: grParam,
     taxableBasisPct = 70,
+    // Annual yield tax drag (default off — 0 reproduces today's behavior
+    // exactly, since yieldAmount is 0 regardless of the split). See
+    // taxableYield.js header for why this exists: growth was previously
+    // ALL deferred to LTCG-at-withdrawal, which is wrong for the interest/
+    // dividend portion of a real taxable account — that's taxed annually
+    // whether or not it's reinvested.
+    taxableYieldPct = 0,
+    taxableYieldOrdinaryPct = 50,
     // Annual contribution streams, forwarded to accumulateToRetirement so this
     // engine's starting balances match runMC's for a user still working.
     contrib = 0,
@@ -843,6 +852,21 @@ export function buildWithdrawalWaterfall(params = {}) {
         otherIncTaxable += ev.inflowTaxable;
       }
 
+      // Annual yield tax drag (see taxableYield.js) — computed once against
+      // the entering balance (already includes this year's inflow above,
+      // untouched by anything below until the growth line). Real interest/
+      // dividends are taxed the year they're paid whether or not they're
+      // reinvested, so ordinaryYield stacks into this year's tax calc the
+      // same way a taxable cash-flow inflow does, and qualifiedYield stacks
+      // onto realized capital gains at each yearTax() call below.
+      // qualifiedYield gets credited to taxableBasis after the draws/tax
+      // resolve (with rmdExcess/surplusToTaxable below) — not here, and not
+      // by touching the growth line — since it's already-taxed money that
+      // must never be taxed again on a later withdrawal.
+      const { yieldAmount: taxableYieldAmt, ordinaryYield: taxableOrdYield, qualifiedYield: taxableQualYield } =
+        taxableYieldSplit(taxable, taxableYieldPct, taxableYieldOrdinaryPct);
+      otherIncTaxable += taxableOrdYield;
+
       const carveoutCost = carveouts.reduce((sum, c) => {
         return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * iF) : 0);
       }, 0);
@@ -1145,7 +1169,7 @@ export function buildWithdrawalWaterfall(params = {}) {
         // pass's draws) — an improvement over the old same-year charge, which
         // was itself part of the step function the fixed point had to
         // converge through.
-        taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable, gPass, magiLookback);
+        taxNoConv = yearTax(age, yr, fromPretax, ss, annuity, rmd, iF, otherIncTaxable, gPass + taxableQualYield, magiLookback);
         // IRC §72(t) 10% additional tax. Inside the fixed point because it's
         // a real cash cost that the draws themselves have to fund: a bigger
         // pretax draw owes a bigger penalty, which widens the need, which
@@ -1268,7 +1292,7 @@ export function buildWithdrawalWaterfall(params = {}) {
       // lookback (convTax below already uses totalTax = fed+state only,
       // excluding irmaa, so this was already a pure conversion cost and needed
       // no change here).
-      let tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain, magiLookback) : taxNoConv;
+      let tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain + taxableQualYield, magiLookback) : taxNoConv;
       let convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
 
       // Affordability: pretax has to cover both the conversion and its incremental tax.
@@ -1319,7 +1343,7 @@ export function buildWithdrawalWaterfall(params = {}) {
           const shortfall = needFromPretax - (pretax - fromPretax);
           if (shortfall <= 0) break;
           convAmt = Math.max(0, convAmt - shortfall);
-          tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain, magiLookback) : taxNoConv;
+          tax     = convAmt > 0 ? yearTax(age, yr, fromPretax + convAmt, ss, annuity, rmd, iF, otherIncTaxable, realizedGain + taxableQualYield, magiLookback) : taxNoConv;
           convTax = convAmt > 0 ? Math.max(0, tax.totalTax - taxNoConv.totalTax) : 0;
         }
         // If affordability shrank the fill, that's the binding constraint now —
@@ -1448,6 +1472,11 @@ export function buildWithdrawalWaterfall(params = {}) {
       // this the money would simply cease to exist.
       const surplusToTaxable = Math.max(0, incomeSurplus - Math.max(0, taxDue - rmd));
       taxableBasis += surplusToTaxable;
+      // The yield's tax was already funded above (it widened taxDue, which
+      // widened this year's draws) — crediting it to basis here (not to the
+      // balance, which grows unchanged below) is what stops it from being
+      // taxed a second time as unrealized gain on a later withdrawal.
+      taxableBasis += taxableYieldAmt;
       taxable = (Math.max(0, taxable - fromTaxable - convTaxFromTaxable) + rmdExcess + surplusToTaxable) * (1 + taxableGrThisYr);
       pretax  = Math.max(0, pretax  - fromPretax - convAmt - convTaxFromPretax) * (1 + pretaxGrThisYr);
       roth    = Math.max(0, roth    - fromRoth + convToRoth) * (1 + rothGrThisYr);

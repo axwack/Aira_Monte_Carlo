@@ -757,6 +757,62 @@ describe("buildWithdrawalWaterfall — capital-gains / cost-basis model", () => 
   });
 });
 
+describe("buildWithdrawalWaterfall — taxable yield tax drag (taxableYieldPct)", () => {
+  test("taxableYieldPct: 0 is a true no-op — identical rows whether the fields are set or omitted (regression lock)", () => {
+    const withFieldsAtZero = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableYieldPct: 0, taxableYieldOrdinaryPct: 50 });
+    const omitted = buildWithdrawalWaterfall(TAX_HEAVY);
+    expect(withFieldsAtZero.smart.rows).toEqual(omitted.smart.rows);
+    expect(withFieldsAtZero.naive.rows).toEqual(omitted.naive.rows);
+  });
+
+  test("a nonzero yield increases lifetime tax versus the same profile at 0% yield", () => {
+    const off = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableYieldPct: 0 });
+    const on  = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableYieldPct: 3, taxableYieldOrdinaryPct: 50 });
+    expect(on.smart.totalTax).toBeGreaterThan(off.smart.totalTax);
+  });
+
+  test("yield-driven ordinary income can push Social Security from untaxed to taxed — same mechanism as realized gains, without any draw", () => {
+    const yieldProfile = {
+      currentAge: 65, retireAge: 65, endAge: 66,
+      sp: 20_000, ssAge: 65, ssb: 30_000, ssCola: 2.4, ab: 0, inf: 2.5,
+      filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
+      gkFloor: 15_000, gkCeiling: 40_000, withdrawalBracketTarget: "22",
+      irmaaGuard: false, ssTorpedoGuard: false, rothEmergencyReserve: 0, gr: 0,
+      accounts: [{ id: "y1", category: "taxable", balance: 1_000_000 }],
+    };
+    // spend ($20K) is fully covered by SS ($30K) with no growth, so no draw is
+    // needed — isolates the yield's marginal tax effect from any draw-driven gain.
+    const noYield = buildWithdrawalWaterfall({ ...yieldProfile, taxableYieldPct: 0 });
+    expect(noYield.smart.rows[0].fromTaxable).toBe(0);
+    expect(noYield.smart.rows[0].taxSS).toBe(0); // provisional = 0.5*30K = 15K < 32K MFJ lower threshold
+
+    // $1M * 4% yield = $40K, all ordinary -> provisional = 15K + 40K = 55K,
+    // past the $44K MFJ upper threshold -> some SS becomes taxable.
+    const withYield = buildWithdrawalWaterfall({ ...yieldProfile, taxableYieldPct: 4, taxableYieldOrdinaryPct: 100 });
+    expect(withYield.smart.rows[0].fromTaxable).toBe(0); // still no draw — proves the tax is funded without touching the taxable balance
+    expect(withYield.smart.rows[0].taxSS).toBeGreaterThan(0);
+  });
+
+  test("yield credits taxableBasis — a later draw's realized-gain fraction is smaller than without the yield", () => {
+    // No SS/pretax — every dollar of spending comes from taxable, isolating
+    // the basis-credit effect from any other income source.
+    const creditProfile = {
+      currentAge: 65, retireAge: 65, endAge: 70,
+      sp: 50_000, ssAge: 90, ssb: 0, ssCola: 0, ab: 0, inf: 0,
+      filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
+      gkFloor: 20_000, gkCeiling: 200_000, withdrawalBracketTarget: "22",
+      irmaaGuard: false, ssTorpedoGuard: false, rothEmergencyReserve: 0, gr: 0.06,
+      accounts: [{ id: "c1", category: "taxable", balance: 1_000_000 }],
+    };
+    const noYield   = buildWithdrawalWaterfall({ ...creditProfile, taxableBasisPct: 50, taxableYieldPct: 0 });
+    const withYield = buildWithdrawalWaterfall({ ...creditProfile, taxableBasisPct: 50, taxableYieldPct: 4, taxableYieldOrdinaryPct: 50 });
+    const lastYearNoYield   = noYield.smart.rows[noYield.smart.rows.length - 1];
+    const lastYearWithYield = withYield.smart.rows[withYield.smart.rows.length - 1];
+    expect(lastYearWithYield.realizedGain / lastYearWithYield.fromTaxable)
+      .toBeLessThan(lastYearNoYield.realizedGain / lastYearNoYield.fromTaxable);
+  });
+});
+
 describe("runMC — taxable cost-basis (taxableBasisPct) wiring", () => {
   test("basisPct flows through to a lower cost basis realizing more gain (indirect check via lower success rate)", () => {
     const taxableHeavy = {
@@ -774,6 +830,37 @@ describe("runMC — taxable cost-basis (taxableBasisPct) wiring", () => {
     const lowBasis  = runMC({ ...taxableHeavy, taxableBasisPct: 40  }, 90, 500, 42, true);
     const highBasis = runMC({ ...taxableHeavy, taxableBasisPct: 100 }, 90, 500, 42, true);
     expect(lowBasis.rate).toBeLessThanOrEqual(highBasis.rate);
+  });
+});
+
+describe("runMC — taxable yield tax drag (taxableYieldPct) wiring", () => {
+  const yieldHeavy = {
+    currentAge: 65, retireAge: 65, endAge: 90, port: 0, contrib: 0, inf: 2.5,
+    sp: 100_000, ssAge: 90, ssb: 0, ssCola: 2.4, ab: 0, useAb: false,
+    tax: 22, smile: false, preRetireEq: 91, postRetireEq: 70,
+    gkFloor: 40_000, gkCeiling: 150_000, withdrawalStrategy: "gk",
+    cashRealReturn: 1.0, useJointRmdTable: false, twoHousehold: false,
+    filingStatus: "mfj", stateOfResidence: "FL", taxableBasisPct: 50,
+    accounts: [
+      { id: "yh1", category: "taxable", name: "Taxable", balance: 1_800_000 },
+      { id: "yh2", category: "cash",    name: "Cash",    balance:    50_000 },
+    ],
+  };
+
+  test("taxableYieldPct: 0 reproduces the same success rate as omitting it entirely (regression lock)", () => {
+    const withFieldAtZero = runMC({ ...yieldHeavy, taxableYieldPct: 0, taxableYieldOrdinaryPct: 50 }, 90, 500, 42, true);
+    const omitted = runMC(yieldHeavy, 90, 500, 42, true);
+    expect(withFieldAtZero.rate).toBe(omitted.rate);
+  });
+
+  test("a nonzero yield reaches runMC's tax calc — same seed, median terminal portfolio is lower than at 0% yield", () => {
+    // Median terminal value (term.p50) is a more direct, less noisy signal
+    // than the pass/fail `rate` for a small tax-drag effect: more tax paid
+    // every year means less ends up in the portfolio, deterministically,
+    // whereas `rate` is a coarse threshold a wide GK floor/ceiling can absorb.
+    const noYield   = runMC({ ...yieldHeavy, taxableYieldPct: 0 }, 90, 500, 42, true);
+    const withYield = runMC({ ...yieldHeavy, taxableYieldPct: 4, taxableYieldOrdinaryPct: 60 }, 90, 500, 42, true);
+    expect(withYield.term.p50).toBeLessThan(noYield.term.p50);
   });
 });
 

@@ -58,6 +58,11 @@ const BASE = {
   rothEmergencyReserve: 0,
   cashRealReturn: 3.0,
   taxableBasisPct: 70,
+  // Nonzero here (not the shipped default of 0) so the generic sweep below
+  // exercises a real effect: at 0, perturbing taxableYieldOrdinaryPct would
+  // be a false-pass, since yieldAmount stays 0 regardless of the split.
+  taxableYieldPct: 2.0,
+  taxableYieldOrdinaryPct: 50,
   preRetireEq: 91,
   postRetireEq: 70,
   accounts: [
@@ -602,5 +607,28 @@ describe("healthcare shock params reach runMC", () => {
     const calm  = buildWithdrawalWaterfall({ ...HC, hcProb: 0 });
     const rough = buildWithdrawalWaterfall({ ...HC, hcProb: 40, hcMin: 300_000, hcMax: 500_000 });
     expect(rough.smart.rows.at(-1).totalPort).toBe(calm.smart.rows.at(-1).totalPort);
+  });
+});
+
+describe("taxable yield tax drag (taxableYieldPct) reaches runMC", () => {
+  // A bigger taxable slice than BASE's $400K, so the yield's effect on the
+  // median terminal value is large enough to be unambiguous.
+  const YT = {
+    ...BASE,
+    accounts: [
+      { id: "yt1", category: "taxable", name: "Taxable", balance: 1_500_000 },
+      { id: "yt2", category: "cash",    name: "Cash",    balance:   100_000 },
+    ],
+  };
+  const median = (over) => runMC({ ...YT, ...over }, 92, 500, 42, true).term.p50;
+
+  test("taxableYieldPct moves runMC's median terminal value", () => {
+    expect(median({ taxableYieldPct: 4, taxableYieldOrdinaryPct: 60 }))
+      .toBeLessThan(median({ taxableYieldPct: 0 }));
+  });
+
+  test("taxableYieldPct: 0 reproduces the same result as the default (regression lock)", () => {
+    const { taxableYieldPct, taxableYieldOrdinaryPct, ...ytWithoutYield } = YT;
+    expect(median({ taxableYieldPct: 0 })).toBe(runMC(ytWithoutYield, 92, 500, 42, true).term.p50);
   });
 });
