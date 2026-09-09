@@ -102,6 +102,14 @@ const INERT_BY_DESIGN = {
   // Landmine DETECTION flags. They colour rows and raise warnings; they do not
   // change any draw or balance, so the numeric fingerprint cannot see them.
   ssTorpedoGuard:       "flags the landmine; does not alter draws",
+  // Promoted alongside b1Years (same commit, same BucketsTab display) so the
+  // two "years of spending" steppers share one profile-backed source of
+  // truth instead of one living in the profile and the other in
+  // localStorage for no reason. Only b1Years actually caps anything today
+  // (the yield sweep) — b2Years is genuinely inert until a Bucket-2-side
+  // consumer exists. Not a gap to close with a fixture; it has nothing to
+  // reach yet.
+  b2Years:              "promoted for BucketsTab display consistency; not yet read by any engine",
 };
 
 /**

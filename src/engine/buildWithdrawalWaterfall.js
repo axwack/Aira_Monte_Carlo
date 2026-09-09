@@ -357,12 +357,12 @@ export function buildWithdrawalWaterfall(params = {}) {
     orderingMode    = "tax_reactive",
     withdrawalOrder = ["cash", "taxable", "pretax", "roth"],
     bucket2YieldPct = 3.0,
-    // Same b1Years concept BucketsTab already shows (default 3 there too) —
+    // Same b1Years concept BucketsTab already shows —
     // caps how large Bucket 1 is allowed to grow from the yield sweep before
     // it stops. Not yet promoted into BLANK_PROFILE's UI (BucketsTab still
     // keeps its own copy in localStorage) — this default matches it so the
     // two don't silently disagree until that promotion happens.
-    b1Years = 3,
+    b1Years = 2,
     preRetireEq = 91,
     postRetireEq = 70,
     cashRealReturn,

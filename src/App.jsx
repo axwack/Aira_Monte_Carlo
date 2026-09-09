@@ -732,9 +732,14 @@ export const BLANK_PROFILE = {
   // Bucket 1's target size, in years of spending — caps the yield sweep
   // above: once Bucket 1 reaches this size, Bucket 2 stops losing return to
   // it. Same concept BucketsTab already shows as its own (currently
-  // localStorage-only) b1Years config; this profile-level default (3, same
-  // number) is what the return engines read until that gets unified.
-  b1Years: 3,
+  // localStorage-only) b1Years config; this profile-level default is what
+  // the return engines read until that gets unified.
+  b1Years: 2,
+  // b2Years: not yet read by any engine (only b1Years caps the yield
+  // sweep) — promoted alongside b1Years so BucketsTab's two "years of
+  // spending" steppers share one source of truth instead of one living in
+  // the profile and the other in localStorage for no principled reason.
+  b2Years: 5,
   geminiApiKey: "",
   geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
 };
@@ -1980,7 +1985,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         // matching comment in buildWithdrawalWaterfall.js. Without this, a
         // large Bucket-2 balance (e.g. a 401k) loses real growth every year
         // forever, even long after Bucket 1 already holds more than it needs.
-        const bucket1TargetMC = spSmiled * (p.b1Years ?? 3);
+        const bucket1TargetMC = spSmiled * (p.b1Years ?? 2);
         const sweptMC = bucket2YieldSweep(bucketTotalsMC[1], bucketTotalsMC[2], bucketR1MC, bucketR2MC, p.bucket2YieldPct, bucket1TargetMC);
         bucketR1MC = sweptMC.r1;
         bucketR2MC = sweptMC.r2;
@@ -6995,7 +7000,7 @@ const BUCKET_LABELS_SHORT = { cash: "cash", taxable: "taxable", pretax: "pre-tax
 
 // "Account draw order" — which bucket drains first. Orthogonal to the distribution
 // strategy (how much to spend) and to the guardrails (how deep to draw pre-tax/Roth).
-function AccountDrawOrder({ p, onAssumptionChange, waterfall }) {
+function AccountDrawOrder({ p, onAssumptionChange }) {
   const set = onAssumptionChange ?? (() => {});
   const mode = p.orderingMode || "tax_reactive";
   const effective = resolveDrawOrder(mode, p.withdrawalOrder);          // shown for non-custom modes
@@ -7009,29 +7014,10 @@ function AccountDrawOrder({ p, onAssumptionChange, waterfall }) {
     set("withdrawalOrder", next);
   };
 
-  // 3-Bucket Strategy Impact — a NEUTRAL before/after, not a "you saved"
-  // claim. Verified behavior: near-parity with the default order (a 2-year
-  // cash cushion on a slice of a portfolio barely moves a 28-year lifetime
-  // number), sometimes slightly better, sometimes slightly worse depending
-  // on the profile and market sequence — so this shows the actual signed
-  // delta, never asserts the strategy is superior. Reuses the ALREADY
-  // computed `waterfall` (this profile, as-is) for the three_bucket side;
-  // only the tax_reactive baseline run is new — avoids a third recompute of
-  // the same thing WaterfallPlanView already shows below.
-  const baselineWaterfall = useMemo(
-    () => (mode === "three_bucket" ? buildWithdrawalWaterfall({ ...p, orderingMode: "tax_reactive" }) : null),
-    [mode, p]
-  );
-  const bucketImpact = useMemo(() => {
-    if (!baselineWaterfall || !waterfall) return null;
-    const endingValue = (r) => (r.finalPretax || 0) + (r.finalRoth || 0) + (r.finalCash || 0) + (r.finalTaxable || 0);
-    const withBuckets = waterfall.smart;
-    const withoutBuckets = baselineWaterfall.smart;
-    return {
-      endingValueDelta: endingValue(withBuckets) - endingValue(withoutBuckets),
-      taxDelta: (withBuckets.totalTax || 0) - (withoutBuckets.totalTax || 0),
-    };
-  }, [baselineWaterfall, waterfall]);
+  // 3-Bucket Strategy Impact now lives as a card in WaterfallPlanView's
+  // summary grid (right after Portfolio Depletion), not a banner here —
+  // it reuses the SAME `result`/`waterfall` that view already has, so this
+  // component doesn't need to compute or know about it at all.
 
   const MODES = [
     ["tax_reactive", "Tax-reactive", true],
@@ -7090,30 +7076,6 @@ function AccountDrawOrder({ p, onAssumptionChange, waterfall }) {
           the 🧺 Buckets tab to review or change those tags.
         </div>
       )}
-      {mode === "three_bucket" && bucketImpact && (() => {
-        // Roughly-flat band: below this, color as neutral rather than
-        // green/red — a $200 difference on a 28-year plan is noise, not signal.
-        const FLAT_BAND = 1_000;
-        const deltaColor = (v) => (Math.abs(v) < FLAT_BAND ? "var(--text-secondary)" : v > 0 ? "#34d399" : "#f87171");
-        const signed = (v) => `${v >= 0 ? "+" : "−"}${fmtDollar(Math.abs(v))}`;
-        return (
-          <div style={{
-            display: "flex", flexWrap: "wrap", gap: 16, marginTop: 6,
-            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 6, padding: "8px 10px",
-          }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              3-Bucket Strategy Impact <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>vs your default order</span>
-            </span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: deltaColor(bucketImpact.endingValueDelta) }}>
-              {signed(bucketImpact.endingValueDelta)} ending portfolio
-            </span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: deltaColor(-bucketImpact.taxDelta) }}>
-              {signed(bucketImpact.taxDelta)} lifetime tax
-            </span>
-          </div>
-        );
-      })()}
     </div>
   );
 }
@@ -7477,7 +7439,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
             strip — ordering is the outer sequence; the guardrails are inner caps. */}
         {openSourcing && (
           <div style={{ paddingLeft: 4 }}>
-            <AccountDrawOrder p={p} onAssumptionChange={onAssumptionChange} waterfall={waterfall} />
+            <AccountDrawOrder p={p} onAssumptionChange={onAssumptionChange} />
             <SourcingGuardrails p={p} onAssumptionChange={onAssumptionChange} summary={waterfall.summary} />
             <WaterfallPlanView p={p} result={waterfall} />
           </div>
@@ -7648,6 +7610,28 @@ function WaterfallPlanView({ p, result }) {
           </div>
           <div className="ms">{depletionRow ? `(${depletionRow.yr})` : `lasts to age ${p.endAge || 90}`}</div>
         </div>
+        {p.orderingMode === "three_bucket" && (() => {
+          // NEUTRAL before/after, not a "you saved" claim — this feature's
+          // verified behavior is near-parity with the default order, not a
+          // guaranteed win. One extra deterministic run (fast, no debounce
+          // needed) against the tax_reactive baseline; `smart` (this card's
+          // "with buckets" side) reuses the SAME `result` this whole view
+          // already has, so it's not a third, possibly-drifting copy of it.
+          const baseline = buildWithdrawalWaterfall({ ...p, orderingMode: "tax_reactive" });
+          const endingValue = (r) => (r.finalPretax||0)+(r.finalRoth||0)+(r.finalCash||0)+(r.finalTaxable||0);
+          const delta = endingValue(smart) - endingValue(baseline.smart);
+          const FLAT_BAND = 1_000; // below this, color neutral — noise, not signal, on a decades-long plan
+          const color = Math.abs(delta) < FLAT_BAND ? "var(--text-secondary)" : delta > 0 ? "#34d399" : "#f87171";
+          return (
+            <div className="met">
+              <div className="ml">3-Bucket Impact</div>
+              <div className="mv" style={{ color, fontSize: 16 }}>
+                {delta >= 0 ? "+" : "−"}{fmtDollar(Math.abs(delta))}
+              </div>
+              <div className="ms">ending portfolio vs your default order</div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Toggle */}
@@ -8294,15 +8278,22 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
   );
 }
 
-function BucketsTab({ params = {} }) {
+function BucketsTab({ params = {}, onAssumptionChange }) {
   const [bCfg, setBCfg] = useState(_loadBCfg);
   const saveBCfg = (patch) => {
     const next = { ..._loadBCfg(), ...patch };
     try { localStorage.setItem(_BCFG_KEY, JSON.stringify(next)); } catch {}
     setBCfg(next);
   };
-  const b1Years  = bCfg.b1Years ?? 3;       // user-adjustable, default 3yr
-  const b2Years  = bCfg.b2Years ?? 5;       // user-adjustable, default 5yr
+  // b1Years/b2Years moved OUT of localStorage-only bCfg and into the profile
+  // (params.b1Years/.b2Years) — this display and the yield-sweep cap in
+  // bucketStrategy.js were reading two disconnected copies of "years of
+  // spending Bucket 1 should hold": this stepper wrote to localStorage only,
+  // so adjusting it changed nothing in the actual simulation. Now there's
+  // one number. drawMode stays localStorage-only (display-only, no engine
+  // reads it).
+  const b1Years  = params.b1Years ?? 2;     // user-adjustable, default 2yr
+  const b2Years  = params.b2Years ?? 5;     // user-adjustable, default 5yr
   const drawMode = bCfg.drawMode ?? "net";  // 'net' (default) or 'gross'
 
   // ── Core params ───────────────────────────────────────────────────────────
@@ -8521,17 +8512,22 @@ function BucketsTab({ params = {} }) {
       <div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px", flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Buffer targets:</span>
         {[
-          { label: "B1 years", key: "b1Years", val: b1Years, min: 1, max: 7, hint: "3–5 recommended" },
+          { label: "B1 years", key: "b1Years", val: b1Years, min: 1, max: 7, hint: "2–3 recommended" },
           { label: "B2 years", key: "b2Years", val: b2Years, min: 3, max: 12, hint: "5–10 recommended" },
-        ].map(({ label, key, val, min, max, hint }) => (
+        ].map(({ label, key, val, min, max, hint }) => {
+          // b1Years/b2Years write to the PROFILE (onAssumptionChange) — this
+          // is the field the engine actually reads for the yield-sweep cap.
+          const setYears = (n) => (onAssumptionChange ? onAssumptionChange(key, n) : saveBCfg({ [key]: n }));
+          return (
           <div key={key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{label}:</span>
-            <button onClick={() => saveBCfg({ [key]: Math.max(min, val - 1) })} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-secondary)", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>−</button>
+            <button onClick={() => setYears(Math.max(min, val - 1))} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-secondary)", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>−</button>
             <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", minWidth: 14, textAlign: "center" }}>{val}</span>
-            <button onClick={() => saveBCfg({ [key]: Math.min(max, val + 1) })} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-secondary)", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>+</button>
+            <button onClick={() => setYears(Math.min(max, val + 1))} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-secondary)", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>+</button>
             <span style={{ fontSize: 9, color: "#334155" }}>{hint}</span>
           </div>
-        ))}
+          );
+        })}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
           <span
             style={{ fontSize: 11, color: "var(--text-muted)", cursor: "help" }}
@@ -9381,7 +9377,7 @@ function ScenariosTab({
       )}
 
       {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} onAssumptionChange={onAssumptionChange} />}
-      {scenarioSubTab === "buckets"    && <BucketsTab params={baseParams} />}
+      {scenarioSubTab === "buckets"    && <BucketsTab params={baseParams} onAssumptionChange={onAssumptionChange} />}
       {scenarioSubTab === "income"     && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <IncomeExpensesChart p={baseParams} inf={inf} />
@@ -15096,7 +15092,8 @@ export default function AiRAForecaster() {
       orderingMode: assumptions.orderingMode || "tax_reactive",
       withdrawalOrder: assumptions.withdrawalOrder || ["cash", "taxable", "pretax", "roth"],
       bucket2YieldPct: assumptions.bucket2YieldPct ?? 3.0,
-      b1Years: assumptions.b1Years ?? 3,
+      b1Years: assumptions.b1Years ?? 2,
+      b2Years: assumptions.b2Years ?? 5,
       fixedWithdrawalRate: (() => { const r = assumptions.fixedWithdrawalRate || 4.0; return r < 1 ? r : r / 100; })(), // normalize: stored as % (4) or decimal (0.04) → always decimal
       // VPW's two inputs. This memo is an allowlist, not a spread — before
       // v1.2.88 neither was forwarded, so `vpwRealReturn` could be set in the
