@@ -7137,7 +7137,7 @@ function LandmineTip({ emoji, label, detail, color }) {
 // drives MC).
 // Plain-language names for the four drawable buckets (shared by the order control
 // and the templated Section-1 subtitle).
-const BUCKET_LABELS = { cash: "Cash / SGOV", taxable: "Taxable brokerage", pretax: "Pre-tax (IRA/401k)", roth: "Roth" };
+const BUCKET_LABELS = { cash: "Cash ", taxable: "Taxable brokerage", pretax: "Pre-tax (IRA/401k)", roth: "Roth" };
 const BUCKET_LABELS_SHORT = { cash: "cash", taxable: "taxable", pretax: "pre-tax", roth: "Roth" };
 
 // "Account draw order" — which bucket drains first. Orthogonal to the distribution
