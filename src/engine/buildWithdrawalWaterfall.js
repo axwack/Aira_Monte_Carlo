@@ -640,7 +640,13 @@ export function buildWithdrawalWaterfall(params = {}) {
     // States generally tax capital gains as ordinary income (no LTCG preferential
     // rate) — add the realized gain to the state taxable base.
     const stBr   = stateBrAt(age);
-    const stT    = stBr ? Math.round(progTax(txInc + ltcg, idxB(stBr, iF))) : 0;
+    // NJ fully exempts Social Security from state tax (CLAUDE.md rule 4) —
+    // txInc already has taxSS folded into it via totInc, so back it out of
+    // the state base specifically. Real per-state SS treatment varies; this
+    // app only models NJ's exemption explicitly (the documented domicile),
+    // so no other state gets this subtraction.
+    const stateTaxSS = stateOfResidence === "NJ" ? taxSS : 0;
+    const stT    = stBr ? Math.round(progTax(Math.max(0, txInc - stateTaxSS) + ltcg, idxB(stBr, iF))) : 0;
     // IRMAA 2-year lookback: the charge uses the 2-years-ago MAGI when
     // supplied, else this year's own MAGI (the pre-lookback fallback).
     // Because magiLookback is fixed before the tax↔draw fixed point runs (it
@@ -1046,11 +1052,22 @@ export function buildWithdrawalWaterfall(params = {}) {
             const ceilingForBonus = Number.isFinite(ceiling)
               ? ceiling
               : Math.max(0, Math.round(irmaaTier1 * iF) - sd);
-            const roomPreBonus = Math.max(0, ceilingForBonus - Math.max(0, ordFloor - sd));
+            // NOT Math.max(0, ordFloor - sd)/Math.max(0, ordFloor - ded) — a
+            // deduction unused by other-ordinary-income (the "Golden Window":
+            // early retirement, no SS/RMD/rental yet, ordFloor can be $0)
+            // still has to carry into the room this draw gets, or the
+            // bracket-fill target under-fills by up to the whole standard
+            // deduction (~$32-35K MFJ). Only the OUTER room clamp (room =
+            // Math.max(0, ceiling - taxSoFar), below) needs a floor at 0 —
+            // taxableIncome itself is what can never go negative, not this
+            // intermediate. Regression found by a from-scratch engine audit;
+            // Step 6.5's conversion-room formula (a few lines down this same
+            // file) already gets this right — this now matches it.
+            const roomPreBonus = Math.max(0, ceilingForBonus - (ordFloor - sd));
             const ded = sd + getSeniorBonusDeduction(
               perPersonAgeAt(age), mfjAt(age) ? "mfj" : "single", ordFloor + roomPreBonus, yr, spAgeAt(age)
             );
-            const taxSoFar = Math.max(0, ordFloor - ded);
+            const taxSoFar = ordFloor - ded;
 
             if (irmaaOn) {
               // `ded` is subtracted here only to move the IRMAA MAGI threshold
@@ -1264,7 +1281,13 @@ export function buildWithdrawalWaterfall(params = {}) {
           //     guardrail; don't "fix" it into an off-by-2-years bug.
           if (irmaaGuard && age >= 63) {
             const irmaaTier1 = mfjAt(age) ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
-            const irmaaCapConv = Math.round(irmaaTier1 * iF) - realizedGain - dedConv;
+            // Subtracts BOTH LTCG sources that feed MAGI but not taxNoConv.totInc:
+            // realizedGain (from a taxable draw) and taxableQualYield (the
+            // taxable-yield-drag feature's qualified-dividend/LTCG-rate slice,
+            // added Sep 2026). Omitting the latter let a conversion sized here
+            // push true MAGI past the IRMAA tier even with the guard on, once
+            // taxableYieldPct > 0 — dormant at that field's default of 0.
+            const irmaaCapConv = Math.round(irmaaTier1 * iF) - realizedGain - taxableQualYield - dedConv;
             if (irmaaCapConv < ceilingConv) {
               ceilingConv = irmaaCapConv;
               convCapReason = "irmaa_ceil";
@@ -1478,7 +1501,17 @@ export function buildWithdrawalWaterfall(params = {}) {
       // taxed a second time as unrealized gain on a later withdrawal.
       taxableBasis += taxableYieldAmt;
       taxable = (Math.max(0, taxable - fromTaxable - convTaxFromTaxable) + rmdExcess + surplusToTaxable) * (1 + taxableGrThisYr);
-      pretax  = Math.max(0, pretax  - fromPretax - convAmt - convTaxFromPretax) * (1 + pretaxGrThisYr);
+      // In withholding mode, convTaxFromPretax IS convTax carved OUT of
+      // convAmt (the comment a few lines up says so: "the full gross leaves
+      // pre-tax... No other bucket moves") — it is not a second, additional
+      // withdrawal, so subtracting both double-counts it. In from_taxable/
+      // from_cash mode, convTaxFromPretax (the last-resort fallback when
+      // taxable+cash are dry) IS a genuinely separate draw on top of the
+      // conversion and must still be subtracted. Regression found by a
+      // from-scratch engine audit — runMC's equivalent (App.jsx, withholding
+      // branch) already only subtracts convAmt; this now matches it.
+      const convPretaxOutflow = withholdFromConversion ? convAmt : convAmt + convTaxFromPretax;
+      pretax  = Math.max(0, pretax  - fromPretax - convPretaxOutflow) * (1 + pretaxGrThisYr);
       roth    = Math.max(0, roth    - fromRoth + convToRoth) * (1 + rothGrThisYr);
 
       // gkWithdraw only reads lastRet's SIGN (did the portfolio gain or lose

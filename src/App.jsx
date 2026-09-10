@@ -214,9 +214,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.123";
-export const BUILD_TAG = "[main] v1.2.123 - Withdrawal Plan table presentation fixes. A user compared the Year-by-Year table's Total Draw against Spending and found rows that didn't reconcile - traced (logic-validator) to the engine's totalWithdrawal field silently excluding convTaxFromTaxable/Cash/Pretax (the Roth conversion's own tax-funding draws, which DO reduce real balances but were never added into the displayed total). Fixed at the source (buildWithdrawalWaterfall.js's totalWithdrawal, the single writer four other readers already depend on) plus visible +conv $X badges on Cash/Taxable/Pre-Tax so the identity balances using only what's on the row, no tooltip-hunting in a different column. Also added a Total Draw - Spending delta annotation per user request. Separately fixed B1 End: it was approximating Bucket 1's balance by picking ONE category and showing that category's WHOLE balance (silently dropping a second category if Bucket 1 spanned more than one, and overstating Bucket 1 whenever its category also held Bucket 2/3 money) - now uses bucketDollarTotals, the same fraction-weighted math the 3-Bucket engine itself uses, and distinguishes null (no account tagged B1) from a genuine $0 (depleted) rather than showing '-' for both. Found and disclosed (not yet fixed - it's the largest deferred item in this codebase's withdrawal engines, per three prior sessions' notes) that the Withdrawal Plan tab's second table (Deterministic Schedule, any non-'smart' strategy) runs a structurally different engine than the Sourcing section above it - one blended growth rate, no Roth-conversion concept (always shows $0 conversion) - while borrowing the Sourcing section's tax figures (which DO include conversion tax), so the two tables' numbers can genuinely disagree. Added an explicit disclosure banner rather than let the mismatch read as a bug. Also fixed a landmine-icon contradiction (anyLandmine excluded the early-withdrawal-penalty flag, so a row could show both the penalty icon and the 'no landmines' checkmark at once). 1089/1089 green.";
-export const BUILD_TIME = "2026-09-10T15:00:00Z";
+const APP_VERSION = "1.2.124";
+export const BUILD_TAG = "[main] v1.2.124 - Full engine correctness audit (3 parallel from-scratch logic-validator passes: tax/RMD/landmines, withdrawal-order/conversions, Portfolio-End cross-engine divergence). Real users will act on these numbers, so this was systematic, not reactive. Seven confirmed bugs fixed, each with hand-calculated regression tests: (1) IRMAA table was off by a whole tier for its ENTIRE range, not just missing the top - every floor was paired with the PRECEDING tier's surcharge (e.g. $218K carried $0 instead of $2,160), corrected in both byte-identical copies. (2) NJ never actually exempted Social Security from state tax in either engine, despite CLAUDE.md documenting that exemption - state tax was overstated for every NJ profile with taxable SS, the app's primary documented domicile. (3) The Step-4 bracket-room formula clamped (otherIncome - stdDeduction) at 0 before computing room, so in a Golden-Window year (early retirement, no SS/RMD yet) the unused ~$32-35K standard deduction never widened the room - understated available 12%-bracket room by the same amount, both engines. (4) buildWithdrawalWaterfall.js double-subtracted the withheld tax from pretax in Roth-conversion withholding mode (runMC already did this correctly - a real cross-engine divergence). (5) LTCG 0% bracket top was $98,700, should be $98,900. (6) The Roth-conversion IRMAA cap didn't account for the new taxable-yield feature's qualified-yield portion (dormant unless combined with the IRMAA guard). (7) Portfolio End diverged between the Withdrawal Plan tab's two tables even before any conversion: simulateDeterministicWithStrategy credited a full year of growth to money already withdrawn (grew-then-subtracted instead of subtracted-then-grew) and silently dropped IRMAA + the early-withdrawal penalty from what it actually drew, both fixed. Confirmed correct by the same audit: RMD start age/divisors, federal brackets/standard deduction/OBBBA senior bonus, SS torpedo thresholds, early-withdrawal-penalty/Rule-of-55 logic, draw ordering, RMD forcing, cost-basis tracking, conversion affordability, Roth reserve protection. Also fixed a landmine-icon contradiction and re-seeded two Monte-Carlo comparison tests that had landed on sampling noise at their old seed once the IRMAA fix widened tax pressure. Disclosed, not fixed (flagged for a dedicated follow-up): no insolvency indicator on the deterministic table row when a plan actually fails; the SS-torpedo landmine icon's provisional-income formula is incomplete in three places; the Deterministic Schedule table's structurally different engine (prior build) still can't fully agree with the Sourcing table for non-default draw orderings. 1094/1094 tests green.";
+export const BUILD_TIME = "2026-09-10T16:30:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1158,9 +1158,15 @@ function calcYearTax(
 
   if (!isTwoHousehold) {
     const stateBr = getStateBrackets(stateOfResidence, isMFJ);
+    // NJ fully exempts Social Security from state tax (CLAUDE.md rule 4) —
+    // taxableSS is already folded into totalIncome/taxableIncome above, so
+    // back it out of the state base specifically. Only NJ's exemption is
+    // modeled explicitly (the app's documented domicile); other states keep
+    // their existing (SS-inclusive) behavior.
+    const stateTaxSS = stateOfResidence === "NJ" ? taxableSS : 0;
     // Most states tax capital gains as ordinary income (no LTCG preferential
     // rate), so add the realized gain to the state taxable base.
-    if (stateBr) stateTax = Math.round(progTax(taxableIncome + ltcgAmount, idxB(stateBr, inflationFactor)));
+    if (stateBr) stateTax = Math.round(progTax(Math.max(0, taxableIncome - stateTaxSS) + ltcgAmount, idxB(stateBr, inflationFactor)));
   }
       // IRMAA charge uses the 2-year-old MAGI when the caller supplied one,
       // otherwise falls back to this year's own MAGI (the pre-lookback behavior).
@@ -1765,11 +1771,20 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const ceilingForBonusMC = Number.isFinite(ceilingMC)
           ? ceilingMC
           : Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactorMC) - sdMC);
-        const roomBeforeBonusMC = Math.max(0, ceilingForBonusMC - Math.max(0, ordinaryFloorMC - sdMC));
+        // NOT Math.max(0, ordinaryFloorMC - sdMC)/Math.max(0, ... ) — a
+        // deduction unused by other-ordinary-income (Golden Window years:
+        // early retirement, no SS/RMD/rental yet, ordinaryFloorMC can be $0)
+        // still has to carry into this draw's room, or the bracket-fill
+        // target under-fills by up to the whole standard deduction
+        // (~$32-35K MFJ). Only the OUTER clamp (bracketRoomMC = Math.max(0,
+        // ceilingMC - taxableSoFarMC), below) needs a floor at 0. Matches
+        // the corresponding fix in buildWithdrawalWaterfall.js — same bug,
+        // same root cause, found by a from-scratch engine audit.
+        const roomBeforeBonusMC = Math.max(0, ceilingForBonusMC - (ordinaryFloorMC - sdMC));
         const seniorBonusMC = getSeniorBonusDeduction(
           age, filingStatus, ordinaryFloorMC + roomBeforeBonusMC, yr, spouseAgeAt(p, age)
         );
-        const taxableSoFarMC = Math.max(0, ordinaryFloorMC - (sdMC + seniorBonusMC));
+        const taxableSoFarMC = ordinaryFloorMC - (sdMC + seniorBonusMC);
         // Bracket room lives in taxable-income space (ceiling is post-deduction).
         bracketRoomMC = Number.isFinite(ceilingMC)
           ? Math.max(0, ceilingMC - taxableSoFarMC)
@@ -2270,6 +2285,13 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
         stateTax: row.stateTax || 0,
         irmaa: row.irmaa || 0,
         totalTax: row.totalTax || 0,
+        // Real cash costs the waterfall itself draws real money to cover
+        // (irmaaFull = fedTax+stateTax+irmaa; earlyPenalty is the separate
+        // IRC 72(t) 10% additional tax) — omitted here before, so this
+        // table's totalDraw only ever counted fed+state, understating the
+        // draw (and overstating Portfolio End) in any year either applies.
+        irmaaFull: row.irmaaFull || 0,
+        earlyPenalty: row.earlyPenalty || 0,
       });
     }
   } catch { /* fall back to calcYearTax below */ }
@@ -2444,12 +2466,29 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     // both unchanged and out of scope here.
     const wfTax = taxByAge.get(age);
     const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, filingStatusAt(p, age), p.stateOfResidence || "NJ", 0, null, spouseAgeAt(p, age));
+    // Kept for display (matches the waterfall's own fed+state-only totalTax,
+    // shown alongside the separate irmaa column) — NOT what funds the draw.
     const totalTax = taxEnabled ? taxResult.totalTax : 0;
-    const totalDraw = need + totalTax;
-    // Surplus income stays invested instead of evaporating. `totalDraw`
-    // already includes this year's tax, so a household whose income covers
-    // both its spending and its tax bill now ends richer, as it should.
-    port = port * (1 + ret) - totalDraw + incomeSurplusDet;
+    // What actually has to be drawn: fed+state+IRMAA+early-withdrawal-penalty,
+    // all real cash costs. When wfTax came from the waterfall, totalTax
+    // deliberately excludes irmaa (irmaaFull carries fed+state+irmaa
+    // instead) and never carried earlyPenalty at all — both omitted here
+    // silently understated every year's draw (and overstated Portfolio End)
+    // whenever either applied. The calcYearTax fallback's totalTax already
+    // includes irmaa in its own definition; it never computes an early
+    // penalty at all (a separate, pre-existing, out-of-scope gap for that
+    // fallback path only — it has no per-category state to compute one from).
+    const fundedTax = taxEnabled
+      ? (wfTax ? (wfTax.irmaaFull + wfTax.earlyPenalty) : taxResult.totalTax)
+      : 0;
+    const totalDraw = need + fundedTax;
+    // Draw-then-grow, matching buildWithdrawalWaterfall's own per-bucket
+    // pattern (draw and surplus applied first, growth multiplies what's
+    // left) — growing the FULL balance and only then subtracting the draw
+    // credited a full year's growth to money that was actually withdrawn
+    // and spent, silently overstating Portfolio End every year, whether or
+    // not any tax applied.
+    port = Math.max(0, port - totalDraw + incomeSurplusDet) * (1 + ret);
 
     // Pre-smile, and one entry for every plan year. Full coverage matters
     // here too: scheduleSpendForYear carries the last entry forward
@@ -2513,6 +2552,8 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
         stateTax: row.stateTax || 0,
         irmaa: row.irmaa || 0,
         totalTax: row.totalTax || 0,
+        irmaaFull: row.irmaaFull || 0,
+        earlyPenalty: row.earlyPenalty || 0,
       });
     }
     // Only accept the second pass if it actually produced tax rows. An empty
@@ -2546,12 +2587,15 @@ const FED_BRACKETS_2026_SINGLE = [
   { lo: 256225, hi: 640600, rate: 0.35 },
   { lo: 640600, hi: Infinity, rate: 0.37 },
 ];
+// Kept byte-identical to buildRothExplorer.js's IRMAA_2026 — see that file's
+// comment for the whole-table off-by-one this corrected (each floor was
+// paired with the PRECEDING tier's surcharge, not its own).
 const IRMAA_2026 = [
-  { m: 218000, f: 0 },
-  { m: 274000, f: 2160 },
-  { m: 342000, f: 5470 },
-  { m: 410000, f: 8300 },
-  { m: 750000, f: 11130 },
+  { m: 218000, f: 2160 },
+  { m: 274000, f: 5470 },
+  { m: 342000, f: 8300 },
+  { m: 410000, f: 11130 },
+  { m: 750000, f: 12700 },
 ];
 // IRS Pub 590-B Table III (Uniform Lifetime) divisors, 2022+ table.
 // Default table for owners whose sole-beneficiary spouse is NOT >10 years younger.
