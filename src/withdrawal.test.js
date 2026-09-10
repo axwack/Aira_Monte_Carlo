@@ -1024,32 +1024,49 @@ describe("3-Bucket strategy — engine behavior (orderingMode: 'three_bucket')",
     gkFloor: 0, gkCeiling: 999_999_999,
     cashRealReturn: 3.0,
     accounts: [
-      { id: "b1", category: "taxable", name: "All Bucket 1", balance: 500_000, bucket: 1 },
+      // category: cash, not taxable — Bucket 1 is cash-only (clampBucket,
+      // engine/buckets.js); a non-cash account tagged 1 would now clamp to
+      // 2 and defeat the point of this test.
+      { id: "b1", category: "cash", name: "All Bucket 1", balance: 500_000, bucket: 1 },
     ],
   };
   const PLAN_AGE = 75; // 10 years from retireAge 65 — matches Math.pow(1.03, 10) below
   const N = 60, SEED = 7;
 
-  test("100% Bucket-1 allocation is immune to a forced equity crash sequence", () => {
+  test("a cash Bucket-1 account is immune to a forced equity crash sequence, in both modes", () => {
+    // Cash-category money has always used cashGr regardless of any bucket
+    // tag or orderingMode — that's pre-existing category-level behavior,
+    // not something this feature adds. So both modes should be protected.
     const withoutBuckets = runStress({ ...B1_ONLY, orderingMode: "tax_reactive" }, PLAN_AGE, N, SEED);
     const withBuckets    = runStress({ ...B1_ONLY, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED);
     const smoothGrowth = 500_000 * Math.pow(1.03, 10);
     const lastRow = (r) => r.pcts[r.pcts.length - 1];
-    // Without the strategy: this taxable-category money gets the same shocked
-    // portfolio-wide return as everything else, so the forced 2000-2012 crash
-    // sequence visibly depresses the median path below smooth 3% compounding.
-    expect(lastRow(withoutBuckets).p50).toBeLessThan(smoothGrowth * 0.95);
-    // With the strategy active: 100% of this taxable balance maps to Bucket 1,
-    // so its return is cashRealReturn regardless of what the crash sequence
-    // forces into the equity leg — growth should match pure compounding.
+    expect(lastRow(withoutBuckets).p50).toBeCloseTo(smoothGrowth, -3);
     expect(lastRow(withBuckets).p50).toBeCloseTo(smoothGrowth, -3);
+  });
+
+  test("a NON-cash account cannot buy Bucket-1 protection by tagging itself Bucket 1 (regression)", () => {
+    // This is the actual bug the whole 3-Bucket feature was built to fix —
+    // and now that Bucket 1 is constrained to cash-only (clampBucket), it's
+    // impossible to even attempt it: a taxable account tagged bucket:1 is
+    // silently treated as bucket 2 end to end, so it gets the crash-exposed
+    // equity blend, not the safe rate — exactly as if it were never tagged
+    // Bucket 1 at all. Proves the clamp is enforced through the full MC path,
+    // not just the bucket-fraction helper in isolation.
+    const fakeB1 = { ...B1_ONLY, accounts: [
+      { id: "b1", category: "taxable", name: "Mistagged Bucket 1", balance: 500_000, bucket: 1 },
+    ] };
+    const withBuckets = runStress({ ...fakeB1, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED);
+    const smoothGrowth = 500_000 * Math.pow(1.03, 10);
+    const lastRow = (r) => r.pcts[r.pcts.length - 1];
+    expect(lastRow(withBuckets).p50).toBeLessThan(smoothGrowth * 0.95);
   });
 
   test("mixed allocation: only the Bucket-1 fraction is protected, not the whole balance", () => {
     const half = {
       ...B1_ONLY,
       accounts: [
-        { id: "b1", category: "taxable", name: "Half Bucket 1", balance: 250_000, bucket: 1 },
+        { id: "b1", category: "cash",    name: "Half Bucket 1", balance: 250_000, bucket: 1 },
         { id: "b3", category: "taxable", name: "Half Bucket 3", balance: 250_000, bucket: 3 },
       ],
     };

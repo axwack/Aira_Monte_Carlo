@@ -26,6 +26,22 @@ export function _defaultBucket(category) {
   return 2;
 }
 
+// Bucket 1 promises to be the cash cushion: spent first, reachable without
+// triggering tax or an early-withdrawal penalty. Only a cash-category
+// account can actually deliver that — a pretax or Roth dollar tagged
+// Bucket 1 would either force ordinary income/a 10% penalty to honor the
+// "spent first" promise, or (today) get quietly drawn in normal tax-
+// efficient order anyway, making the tag a false promise either way. So
+// Bucket 1 is a hard constraint, not a free-form tag: any non-cash account
+// tagged (or split into) Bucket 1 is treated as Bucket 2 everywhere in the
+// app, since 2 already means "income bridge, not the safe reserve." The
+// [B1] chip in Profile -> Savings is correspondingly disabled for non-cash
+// accounts (App.jsx SavingsPanel) so this can't be mis-set going forward;
+// this clamp is the backstop for data already saved before that existed.
+export function clampBucket(bucket, category) {
+  return bucket === 1 && category !== "cash" ? 2 : bucket;
+}
+
 // A single account can distribute its balance across buckets (Quicken-style
 // split): `account.splits` = [{ bucket, pct }] with pct summing to 100. When
 // absent, the whole balance sits in the single `account.bucket`. These helpers
@@ -37,9 +53,9 @@ export function accountBucketPieces(a) {
   const splits = Array.isArray(a.splits) ? a.splits.filter(s => s && s.pct > 0) : null;
   if (splits && splits.length) {
     const totalPct = splits.reduce((s, x) => s + x.pct, 0) || 1;
-    return splits.map(s => ({ ...a, balance: bal * (s.pct / totalPct), bucket: s.bucket, _splitPct: s.pct }));
+    return splits.map(s => ({ ...a, balance: bal * (s.pct / totalPct), bucket: clampBucket(s.bucket, a.category), _splitPct: s.pct }));
   }
-  return [{ ...a, bucket: a.bucket ?? _defaultBucket(a.category) }];
+  return [{ ...a, bucket: clampBucket(a.bucket ?? _defaultBucket(a.category), a.category) }];
 }
 
 export function expandAccountBuckets(accounts) {

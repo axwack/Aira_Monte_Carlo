@@ -83,7 +83,7 @@ import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yea
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
 import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationNotice } from "./engine/withdrawalStrategies.js";
-import { _defaultBucket, accountBucketPieces, expandAccountBuckets } from "./engine/buckets.js";
+import { _defaultBucket, accountBucketPieces, expandAccountBuckets, clampBucket } from "./engine/buckets.js";
 import { bucketFractionsByCategory, fractionsForCategory, blendEquityBond, blendBucketReturns, bucketDollarTotals, bucket2YieldSweep } from "./engine/bucketStrategy.js";
 import { dollarBasisLabel, deflate, mcMedianAtAge, selectPortfolioAtAge } from "./engine/mcSelectors.js";
 import { taxableYieldSplit } from "./engine/taxableYield.js";
@@ -214,9 +214,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.124";
-export const BUILD_TAG = "[main] v1.2.124 - Full engine correctness audit (3 parallel from-scratch logic-validator passes: tax/RMD/landmines, withdrawal-order/conversions, Portfolio-End cross-engine divergence). Real users will act on these numbers, so this was systematic, not reactive. Seven confirmed bugs fixed, each with hand-calculated regression tests: (1) IRMAA table was off by a whole tier for its ENTIRE range, not just missing the top - every floor was paired with the PRECEDING tier's surcharge (e.g. $218K carried $0 instead of $2,160), corrected in both byte-identical copies. (2) NJ never actually exempted Social Security from state tax in either engine, despite CLAUDE.md documenting that exemption - state tax was overstated for every NJ profile with taxable SS, the app's primary documented domicile. (3) The Step-4 bracket-room formula clamped (otherIncome - stdDeduction) at 0 before computing room, so in a Golden-Window year (early retirement, no SS/RMD yet) the unused ~$32-35K standard deduction never widened the room - understated available 12%-bracket room by the same amount, both engines. (4) buildWithdrawalWaterfall.js double-subtracted the withheld tax from pretax in Roth-conversion withholding mode (runMC already did this correctly - a real cross-engine divergence). (5) LTCG 0% bracket top was $98,700, should be $98,900. (6) The Roth-conversion IRMAA cap didn't account for the new taxable-yield feature's qualified-yield portion (dormant unless combined with the IRMAA guard). (7) Portfolio End diverged between the Withdrawal Plan tab's two tables even before any conversion: simulateDeterministicWithStrategy credited a full year of growth to money already withdrawn (grew-then-subtracted instead of subtracted-then-grew) and silently dropped IRMAA + the early-withdrawal penalty from what it actually drew, both fixed. Confirmed correct by the same audit: RMD start age/divisors, federal brackets/standard deduction/OBBBA senior bonus, SS torpedo thresholds, early-withdrawal-penalty/Rule-of-55 logic, draw ordering, RMD forcing, cost-basis tracking, conversion affordability, Roth reserve protection. Also fixed a landmine-icon contradiction and re-seeded two Monte-Carlo comparison tests that had landed on sampling noise at their old seed once the IRMAA fix widened tax pressure. Disclosed, not fixed (flagged for a dedicated follow-up): no insolvency indicator on the deterministic table row when a plan actually fails; the SS-torpedo landmine icon's provisional-income formula is incomplete in three places; the Deterministic Schedule table's structurally different engine (prior build) still can't fully agree with the Sourcing table for non-default draw orderings. 1094/1094 tests green.";
-export const BUILD_TIME = "2026-09-10T16:30:00Z";
+const APP_VERSION = "1.2.125";
+export const BUILD_TAG = "[main] v1.2.125 - Bucket 1 is now cash-only (design-authority + logic-validator consulted on real bucket-priority draw sequencing first). Bucket 1 promises to be the cash cushion, spendable without tax or an early-withdrawal penalty - only a cash-category account can back that promise. A pretax or Roth account tagged Bucket 1 either forces unnecessary ordinary income/penalty to honor 'spend first', or (today) gets drawn in normal tax-efficient order anyway, making the tag a false promise either way. Constraint added at the single source of truth (engine/buckets.js's accountBucketPieces, via a new clampBucket - any non-cash account or split tagged bucket 1 is treated as bucket 2 everywhere) plus the [B1] chip disabled at both UI entry points (SavingsPanel's per-account chips, AccountSplitEditor's per-slice chips) so it can't be mis-tagged going forward. This also resolves the earlier 'why is B1 End positive' confusion: once Bucket 1 can only be cash, cash was already drawn first in the existing tax-efficient order (cash before taxable/pretax/roth) - so 'spend Bucket 1 first' is true for free, no new sequencing engine needed. Real bucket-priority sequencing that overrides tax-efficient order (the bigger, deferred ask) was explicitly evaluated and NOT recommended: it doesn't match how real advisors build cash cushions and isn't needed once this constraint is in place. Updated 3 tests that had exploited the old free-form tagging (a taxable/Roth account claiming Bucket 1) to match the new constraint, and added explicit regression tests for the clamp in both engine/buckets.js and bucketStrategy.js consumers. 1098/1098 tests green.";
+export const BUILD_TIME = "2026-09-10T19:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -555,7 +555,7 @@ export const getStrategyDescription = (strategy) => {
 // ./engine/buckets.js (imported above) so buildWithdrawalWaterfall.js and
 // bucketStrategy.js can share the same account→bucket partition instead of
 // each growing their own copy.
-export { _defaultBucket, accountBucketPieces, expandAccountBuckets };
+export { _defaultBucket, accountBucketPieces, expandAccountBuckets, clampBucket };
 
 export const BLANK_PROFILE = {
   label: "My Plan",
@@ -7597,7 +7597,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         />
         {openStrategy && (
           <div style={{ paddingLeft: 4 }}>
-            <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={previewStrategy} />
+            <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={previewStrategy} smartRows={waterfall.smart.rows} />
           </div>
         )}
       </div>
@@ -8271,7 +8271,7 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
   );
 }
 
-function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
+function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows }) {
   const [showTable, setShowTable] = useState(true);
   const data = useMemo(
     () => simulateDeterministicWithStrategy(p, inf, withdrawalStrategy),
@@ -8427,7 +8427,41 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
                     <td style={{ color: "#fb923c" }}>{fmtDollar(s.stateTax)}</td>
                     <td style={{ color: "var(--accent-purple)" }}>{fmtDollar(s.irmaa)}</td>
                     <td style={{ color: "#8fcfa8",fontSize: 16, fontWeight: 'bold' }}>{fmtDollar(s.totalWithdrawal)}</td>
-                    <td style={{ color: "var(--accent-teal)", fontWeight: 600 }}>{fmtDollar(s.portfolioEnd)}</td>
+                    <td style={{ color: "var(--accent-teal)", fontWeight: 600 }}>
+                      {fmtDollar(s.portfolioEnd)}
+                      {(() => {
+                        if (!notSmart || !smartRows) return null;
+                        const smartRow = smartRows.find(r => r.age === s.age);
+                        if (!smartRow) return null;
+                        const delta = s.portfolioEnd - smartRow.totalPort;
+                        if (Math.abs(delta) < 500) return null; // noise-floor: not worth a click
+                        return (
+                          <InfoModal
+                            title="Why Portfolio End differs this year"
+                            accent="#fbbf24"
+                            trigger={
+                              <div style={{ fontSize: 9, color: "var(--text-muted)", fontWeight: 400, whiteSpace: "nowrap" }}>
+                                {delta >= 0 ? "+" : "−"}{fmtDollar(Math.abs(delta))} vs Sourcing
+                              </div>
+                            }
+                          >
+                            <p>This schedule: <strong>{fmtDollar(s.portfolioEnd)}</strong><br />
+                              Sourcing section (age {s.age}): <strong>{fmtDollar(smartRow.totalPort)}</strong><br />
+                              Difference: <strong>{delta >= 0 ? "+" : "−"}{fmtDollar(Math.abs(delta))}</strong></p>
+                            <p>Spending, Fed Tax, and State Tax already match between the two schedules
+                              this year — this gap is purely how each one grows the money that's left.</p>
+                            <p>This schedule applies <strong>one blended return</strong> to your whole
+                              portfolio. The Sourcing section applies a <strong>different return per
+                              account</strong> — cash grows conservatively, other accounts follow your
+                              equity/bond mix{p.orderingMode === "three_bucket"
+                                ? ", and with 3-Bucket Strategy active, Bucket 1 is deliberately parked in a low-return, crash-resistant sleeve that widens this gap further"
+                                : ""}.</p>
+                            <p>The Sourcing section's number reflects your real accounts; treat this
+                              schedule's Portfolio End as an approximation.</p>
+                          </InfoModal>
+                        );
+                      })()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -12185,14 +12219,25 @@ function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
       </div>
       {splits.map((s, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-          {[1, 2, 3].map(b => (
-            <button key={b} onClick={() => update(i, { bucket: b })} title={`Bucket ${b}`} style={{
-              background: s.bucket === b ? color + "33" : "transparent",
-              border: `1px solid ${s.bucket === b ? color : "rgba(255,255,255,0.1)"}`,
-              color: s.bucket === b ? color : "#334155",
-              borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 700, cursor: "pointer", lineHeight: 1.4,
-            }}>B{b}</button>
-          ))}
+          {[1, 2, 3].map(b => {
+            // Same cash-only constraint as the main [B1]/[B2]/[B3] chips —
+            // a split slice of a non-cash account can't promise "spendable
+            // without tax/penalty" any more than the whole account could.
+            const disabled = b === 1 && acct.category !== "cash";
+            return (
+              <button key={b} onClick={() => !disabled && update(i, { bucket: b })}
+                disabled={disabled}
+                title={disabled ? "Bucket 1 (cash cushion) can only be assigned to Cash accounts" : `Bucket ${b}`}
+                style={{
+                  background: s.bucket === b ? color + "33" : "transparent",
+                  border: `1px solid ${s.bucket === b ? color : "rgba(255,255,255,0.1)"}`,
+                  color: disabled ? "#1e293b" : s.bucket === b ? color : "#334155",
+                  borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 700,
+                  cursor: disabled ? "not-allowed" : "pointer", lineHeight: 1.4,
+                  opacity: disabled ? 0.5 : 1,
+                }}>B{b}</button>
+            );
+          })}
           <input
             type="number" min={0} max={100} value={s.pct}
             onChange={e => update(i, { pct: clampPct(e.target.value) })}
@@ -12329,14 +12374,26 @@ function SavingsPanel({ values, onChange }) {
                     </span>
                   ) : (
                     [1,2,3].map(b => {
-                      const active = (acct.bucket ?? _defaultBucket(acct.category)) === b;
+                      const active = clampBucket(acct.bucket ?? _defaultBucket(acct.category), acct.category) === b;
+                      // Bucket 1 is the cash cushion — spendable without a tax
+                      // or penalty hit, which only a cash-category account can
+                      // promise. Disabled (not just visually inert) on every
+                      // other category so this can't be mis-tagged going
+                      // forward; clampBucket (engine/buckets.js) is the
+                      // backstop for data saved before this existed.
+                      const disabled = b === 1 && cat.key !== "cash";
                       return (
-                        <button key={b} onClick={() => setBucket(acct.id, b)} title={`Assign to Bucket ${b}`} style={{
-                          background: active ? cat.color + "33" : "transparent",
-                          border: `1px solid ${active ? cat.color : "rgba(255,255,255,0.1)"}`,
-                          color: active ? cat.color : "#334155",
-                          borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 700, cursor: "pointer", lineHeight: 1.4,
-                        }}>B{b}</button>
+                        <button key={b} onClick={() => !disabled && setBucket(acct.id, b)}
+                          disabled={disabled}
+                          title={disabled ? "Bucket 1 (cash cushion) can only be assigned to Cash accounts — it has to be spendable without triggering tax or an early-withdrawal penalty" : `Assign to Bucket ${b}`}
+                          style={{
+                            background: active ? cat.color + "33" : "transparent",
+                            border: `1px solid ${active ? cat.color : "rgba(255,255,255,0.1)"}`,
+                            color: disabled ? "#1e293b" : active ? cat.color : "#334155",
+                            borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 700,
+                            cursor: disabled ? "not-allowed" : "pointer", lineHeight: 1.4,
+                            opacity: disabled ? 0.5 : 1,
+                          }}>B{b}</button>
                       );
                     })
                   )}
@@ -16323,7 +16380,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   { lbl: "90/10", val: 90 },
                   { lbl: "100%", val: 100 },
                 ]}
-                format={(v) => `${v}% stocks (${expectedReturn(v).toFixed(1)}% μ)`}
+                format={(v) => `${v}% stocks`}
+                titleHint={`${expectedReturn(assumptions.preRetireEq ?? 91).toFixed(1)}% expected return`}
                 onChange={(v) => updateAssumption("preRetireEq", v)}
               />
               <Slider
@@ -16339,7 +16397,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   { lbl: "70/30", val: 70 },
                   { lbl: "80/20", val: 80 },
                 ]}
-                format={(v) => `${v}% stocks (${expectedReturn(v).toFixed(1)}% μ)`}
+                format={(v) => `${v}% stocks`}
+                titleHint={`${expectedReturn(assumptions.postRetireEq ?? 70).toFixed(1)}% expected return`}
                 onChange={(v) => updateAssumption("postRetireEq", v)}
               />
               <Slider

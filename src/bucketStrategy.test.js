@@ -26,9 +26,17 @@ const acct = (category, balance, bucket, id = category + Math.random()) =>
   ({ id, category, balance, ...(bucket != null ? { bucket } : {}) });
 
 describe("bucketFractionsByCategory", () => {
-  test("single account, explicit bucket → 100% in that bucket", () => {
+  test("single cash account, explicit bucket 1 → 100% in that bucket", () => {
+    const f = bucketFractionsByCategory([acct("cash", 50_000, 1)]);
+    expect(f.cash).toEqual({ 1: 1, 2: 0, 3: 0 });
+  });
+
+  test("bucket 1 is cash-only: a non-cash account tagged 1 clamps to 2 (regression)", () => {
+    // Bucket 1 promises "spendable without tax/penalty" — only a cash
+    // account can back that. A taxable account tagged 1 is treated as 2
+    // everywhere (engine/buckets.js clampBucket), not honored as-is.
     const f = bucketFractionsByCategory([acct("taxable", 50_000, 1)]);
-    expect(f.taxable).toEqual({ 1: 1, 2: 0, 3: 0 });
+    expect(f.taxable).toEqual({ 1: 0, 2: 1, 3: 0 });
   });
 
   test("no bucket tag → falls back to _defaultBucket(category) (taxable → 2)", () => {
@@ -48,9 +56,18 @@ describe("bucketFractionsByCategory", () => {
 
   test("split account (Quicken-style) partitions correctly", () => {
     const f = bucketFractionsByCategory([
+      { id: "c1", category: "cash", balance: 100_000, splits: [{ bucket: 1, pct: 20 }, { bucket: 3, pct: 80 }] },
+    ]);
+    expect(f.cash[1]).toBeCloseTo(0.2, 6);
+    expect(f.cash[3]).toBeCloseTo(0.8, 6);
+  });
+
+  test("split account on a non-cash category: the bucket-1 slice clamps to 2 (regression)", () => {
+    const f = bucketFractionsByCategory([
       { id: "r1", category: "roth", balance: 100_000, splits: [{ bucket: 1, pct: 20 }, { bucket: 3, pct: 80 }] },
     ]);
-    expect(f.roth[1]).toBeCloseTo(0.2, 6);
+    expect(f.roth[1]).toBe(0);
+    expect(f.roth[2]).toBeCloseTo(0.2, 6); // the would-be-B1 20% joins B2 instead
     expect(f.roth[3]).toBeCloseTo(0.8, 6);
   });
 

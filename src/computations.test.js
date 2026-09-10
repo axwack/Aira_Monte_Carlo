@@ -1822,7 +1822,9 @@ describe("account bucket splits", () => {
   });
 
   test("split distributes balance by pct and rolls up to the original total", () => {
-    const a = { id: "1", category: "pretax", balance: 100_000,
+    // category: cash, not pretax — bucket 1 is cash-only (clampBucket);
+    // this test is about the split/rollup math, not the clamp itself.
+    const a = { id: "1", category: "cash", balance: 100_000,
       splits: [{ bucket: 1, pct: 30 }, { bucket: 3, pct: 70 }] };
     const pieces = accountBucketPieces(a);
     expect(pieces).toHaveLength(2);
@@ -1833,7 +1835,7 @@ describe("account bucket splits", () => {
   });
 
   test("pct that doesn't total 100 is normalized (still rolls up to balance)", () => {
-    const a = { id: "1", category: "pretax", balance: 100_000,
+    const a = { id: "1", category: "cash", balance: 100_000,
       splits: [{ bucket: 1, pct: 1 }, { bucket: 2, pct: 3 }] }; // 1:3 ratio
     const pieces = accountBucketPieces(a);
     expect(pieces.find(p => p.bucket === 1).balance).toBeCloseTo(25_000, 6);
@@ -1843,8 +1845,8 @@ describe("account bucket splits", () => {
 
   test("expandAccountBuckets flattens a mixed account list, preserving total balance", () => {
     const accts = [
-      { id: "1", category: "pretax", balance: 100_000, splits: [{ bucket: 1, pct: 40 }, { bucket: 3, pct: 60 }] },
-      { id: "2", category: "roth",   balance: 50_000,  bucket: 3 },
+      { id: "1", category: "cash", balance: 100_000, splits: [{ bucket: 1, pct: 40 }, { bucket: 3, pct: 60 }] },
+      { id: "2", category: "roth", balance: 50_000,  bucket: 3 },
     ];
     const pieces = expandAccountBuckets(accts);
     expect(pieces).toHaveLength(3); // 2 from the split + 1 single
@@ -1852,6 +1854,23 @@ describe("account bucket splits", () => {
     expect(total).toBeCloseTo(150_000, 6);
     const b1 = pieces.filter(p => p.bucket === 1).reduce((s, p) => s + p.balance, 0);
     expect(b1).toBeCloseTo(40_000, 6);
+  });
+
+  test("bucket 1 is cash-only: a non-cash account tagged 1 clamps to 2 (regression)", () => {
+    // Bucket 1 has to be spendable without triggering tax or an early-
+    // withdrawal penalty — only cash can promise that. A pretax account
+    // tagged 1 (directly, or via a split) is treated as 2 everywhere.
+    const whole = accountBucketPieces({ id: "1", category: "pretax", balance: 100_000, bucket: 1 });
+    expect(whole[0].bucket).toBe(2);
+
+    const split = accountBucketPieces({ id: "2", category: "pretax", balance: 100_000,
+      splits: [{ bucket: 1, pct: 40 }, { bucket: 3, pct: 60 }] });
+    expect(split.find(p => p._splitPct === 40).bucket).toBe(2);
+    expect(split.find(p => p._splitPct === 60).bucket).toBe(3);
+
+    // A cash account is unaffected — the clamp only fires on non-cash.
+    const cashOk = accountBucketPieces({ id: "3", category: "cash", balance: 50_000, bucket: 1 });
+    expect(cashOk[0].bucket).toBe(1);
   });
 });
 

@@ -107,6 +107,13 @@ export const ABOUT_FEATURES = [
     title: "Guyton-Klinger Guardrails",
     body:  "Your spending adapts based on portfolio performance. If the withdrawal rate climbs above 120% of the initial rate, spending cuts 10% (never below the floor). If it falls below 80%, spending rises 10% (never above the ceiling). Floor = 65% and ceiling = 135% of your target spending. Protects against sequence-of-returns risk while letting you spend more in good markets.",
   },
+  {
+    id:    "sourcing-vs-schedule-gap",
+    group: "Withdrawal Strategies",
+    icon:  "⚖️",
+    title: "Why do the Sourcing and Schedule tables show different Portfolio End?",
+    body:  "The Withdrawal Plan tab has two tables. \"Where does each year's spending come from?\" (Sourcing) tracks your real accounts individually — cash, taxable, pre-tax, Roth — and models real Roth conversions. \"How does my chosen strategy pace spending?\" (Schedule) is a simpler view for any strategy other than Smart Waterfall: it tracks your whole portfolio as one number, with one blended growth rate, and doesn't model conversions at all (its Roth Conv. column always reads $0). Spending and tax figures are shared between the two, so those always agree. Portfolio End can still differ — one blended rate for everything vs. a different rate per account (with 3-Bucket Strategy active, Bucket 1's low-return cash sleeve widens the gap further). Click the small delta under Portfolio End on the Schedule table for the exact numbers behind that year's gap. Treat the Sourcing table as your real plan; the Schedule table as an approximate illustration of the pacing.",
+  },
 
   // ── Risk & Returns ────────────────────────────────────────
   {
