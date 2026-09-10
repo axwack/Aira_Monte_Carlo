@@ -4251,8 +4251,7 @@ const [draft, setDraft] = useState(null);
     <div className="sl-row">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <span className="sl-label">{label}</span>
-          {titleHint && <span style={{ fontSize: 10, color: "var(--text-faint)" }}>({titleHint})</span>}
+          <span className="sl-label" title={titleHint || undefined} style={titleHint ? { cursor: "help", textDecoration: "underline dotted", textUnderlineOffset: 2 } : undefined}>{label}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button
