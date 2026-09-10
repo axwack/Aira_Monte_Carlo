@@ -15082,6 +15082,14 @@ export default function AiRAForecaster() {
   const [activeTab, setTab] = useState(() =>
     loadProfileFromLocal() ? "networth" : "assumptions"
   );
+  // Sidebar accordion — independently collapsible, not a true single-open
+  // accordion, since these are live input controls a user may be actively
+  // adjusting in more than one section at once. Default open (unchanged
+  // from before this existed); collapsing is purely a per-user decluttering
+  // choice, not a state that changes what's simulated.
+  const [sbCoreOpen, setSbCoreOpen] = useState(true);
+  const [sbMacroOpen, setSbMacroOpen] = useState(true);
+  const [sbOptionsOpen, setSbOptionsOpen] = useState(true);
   // Cross-tab "Edit this on the X tab" pointers (e.g. RetirementPanel's
   // Withdrawal Strategy card) need to land on a specific sub-tab inside
   // ScenariosTab, not just the top-level tab. ScenariosTab's own sub-tab
@@ -16275,10 +16283,12 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
 
             <div className="sb-card">
-              <div className="sb-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Retirement Core</span>
+              <div className="sb-title" onClick={() => setSbCoreOpen(v => !v)}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+                <span>{sbCoreOpen ? "▾" : "▸"} Retirement Core</span>
                 <span style={{ fontSize: 10, color: "var(--accent-teal)", fontWeight: 600, textTransform: "none" }}>Primary</span>
               </div>
+              {sbCoreOpen && (<>
               <Slider
                 label="Retire age"
                 value={retAge}
@@ -16347,12 +16357,15 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 format={(v) => "Age " + v}
                 onChange={(v) => updateAssumption("ssAge", v)}
               />
+              </>)}
             </div>
             <div className="sb-card">
-              <div className="sb-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Macro &amp; Sensitivity</span>
+              <div className="sb-title" onClick={() => setSbMacroOpen(v => !v)}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+                <span>{sbMacroOpen ? "▾" : "▸"} Macro &amp; Sensitivity</span>
                 <span style={{ fontSize: 10, color: "var(--accent-gold)", fontWeight: 600, textTransform: "none" }}>⚡ Sensitivity</span>
               </div>
+              {sbMacroOpen && (<>
               <Slider
                 label="Inflation (CPI)"
                 value={inf}
@@ -16424,10 +16437,14 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 format={(v) => Number(v).toFixed(1) + "%/yr"}
                 onChange={(v) => updateAssumption("ssCola", Number(Number(v).toFixed(2)))}
               />
+              </>)}
             </div>
 
             <div className="sb-card">
-              <div className="sb-title">Options</div>
+              <div className="sb-title" onClick={() => setSbOptionsOpen(v => !v)} style={{ cursor: "pointer" }}>
+                {sbOptionsOpen ? "▾" : "▸"} Options
+              </div>
+              {sbOptionsOpen && (<>
               {/* A user put it well: "there are a lot of tabs with sub
                   tabs and I'll be darned if I can find that one." The
                   control was findable only if you already knew the word
@@ -16499,6 +16516,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   <div className="tok" style={{ left: assumptions.twoHousehold ? 18 : 2 }} />
                 </div>
               </div>
+              </>)}
             </div>
 
             <button
