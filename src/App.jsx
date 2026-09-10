@@ -4114,7 +4114,7 @@ function ThInfo({ children, tip, style, accent = "#93c5fd", modalTitle }) {
   );
 }
 
-function Slider({ label, value, min, max, step, stepNudge, format, onChange, quickPills, accent, titleHint }) {
+function Slider({ label, value, min, max, step, stepNudge, format, onChange, quickPills, accent, titleHint, valueWidth }) {
   const clamped = Math.max(min, Math.min(max, value));
   const pct = max > min ? ((clamped - min) / (max - min)) * 100 : 0;
   const trackRef = useRef(null);
@@ -4271,6 +4271,13 @@ const [draft, setDraft] = useState(null);
             inputMode="decimal"
             aria-label={label}
             value={draft !== null ? draft : format(value)}
+            // width:auto on a text input doesn't shrink to its own value
+            // (unlike block elements) — it just sits at the CSS max-width
+            // regardless of content, so short values like "80%" got the
+            // same box as "$1,250,000/yr". valueWidth lets a caller with
+            // short, bounded content (a plain percentage, an age) opt into
+            // a tighter box; every other Slider is untouched (prop omitted).
+            style={valueWidth ? { minWidth: valueWidth, maxWidth: valueWidth } : undefined}
             title="Click to type an exact value — you can enter more than the slider's range"
             onFocus={(e) => {
               setDraft(String(value));
@@ -16380,7 +16387,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   { lbl: "90/10", val: 90 },
                   { lbl: "100%", val: 100 },
                 ]}
-                format={(v) => `${v}% stocks`}
+                format={(v) => `${v}%`}
+                valueWidth={44}
                 titleHint={`${expectedReturn(assumptions.preRetireEq ?? 91).toFixed(1)}% expected return`}
                 onChange={(v) => updateAssumption("preRetireEq", v)}
               />
@@ -16397,7 +16405,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   { lbl: "70/30", val: 70 },
                   { lbl: "80/20", val: 80 },
                 ]}
-                format={(v) => `${v}% stocks`}
+                format={(v) => `${v}%`}
+                valueWidth={44}
                 titleHint={`${expectedReturn(assumptions.postRetireEq ?? 70).toFixed(1)}% expected return`}
                 onChange={(v) => updateAssumption("postRetireEq", v)}
               />
