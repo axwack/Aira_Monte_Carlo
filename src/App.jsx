@@ -16388,7 +16388,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 ]}
                 format={(v) => `${v}%`}
                 valueWidth={44}
-                titleHint={`${expectedReturn(assumptions.preRetireEq ?? 91).toFixed(1)}% expected return`}
+                titleHint={`${expectedReturn(assumptions.preRetireEq ?? 91).toFixed(1)}% expected return — blended from 98 years (1928-2025) of real S&P 500 + bond history (Damodaran). See Help > Risk & Returns for the full rationale.`}
                 onChange={(v) => updateAssumption("preRetireEq", v)}
               />
               <Slider
@@ -16406,7 +16406,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 ]}
                 format={(v) => `${v}%`}
                 valueWidth={44}
-                titleHint={`${expectedReturn(assumptions.postRetireEq ?? 70).toFixed(1)}% expected return`}
+                titleHint={`${expectedReturn(assumptions.postRetireEq ?? 70).toFixed(1)}% expected return — blended from 98 years (1928-2025) of real S&P 500 + bond history (Damodaran). See Help > Risk & Returns for the full rationale.`}
                 onChange={(v) => updateAssumption("postRetireEq", v)}
               />
               <Slider
