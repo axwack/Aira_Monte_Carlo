@@ -1242,6 +1242,19 @@ describe("Roth conversion tax funding (§23)", () => {
     expect(r.convTaxFromTaxable + r.convTaxFromCash + r.convTaxFromPretax)
       .toBeCloseTo(r.conversionTax, 0);
   });
+
+  test("totalWithdrawal includes the conversion's own tax-funding draws, not just spending's", () => {
+    // Regression for the Year-by-Year table bug: Total Draw used to omit
+    // convTaxFrom* entirely, so the row's own displayed columns didn't sum
+    // to the row's own displayed Total Draw in a conversion year.
+    const r = y0({ ...CONV, taxFunding: "from_taxable" });
+    expect(r.conversionAmount).toBeGreaterThan(0);
+    expect(r.convTaxFromTaxable).toBeGreaterThan(0);
+    expect(r.totalWithdrawal).toBe(Math.round(
+      r.rmd + r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth
+      + r.convTaxFromTaxable + r.convTaxFromCash + r.convTaxFromPretax
+    ));
+  });
 });
 
 describe("taxFunding value contract (§23 follow-up)", () => {

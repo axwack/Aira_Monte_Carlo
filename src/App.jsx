@@ -214,9 +214,9 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.122";
-export const BUILD_TAG = "[main] v1.2.122 - Taxable-account yield tax drag. Taxable-category growth was previously ALL deferred to LTCG-at-withdrawal, which is wrong for the interest/dividend portion of a real account - that's taxed annually whether or not it's reinvested. Full per-security modeling was rejected (needs the deferred CSV/asset-allocation module); per-account custom growth rates were also rejected (breaks the stochastic engine's historical SP500/BONDS bootstrap and its stock/bond correlation pairing). Landed as two new GLOBAL profile fields instead, applied to any taxable-category balance in any mode (not gated to three_bucket): taxableYieldPct (annual yield as % of balance, default 0 = off) and taxableYieldOrdinaryPct (ordinary vs qualified-dividend/LTCG split, default 50). New pure fn taxableYieldSplit() (engine/taxableYield.js) computed once per year off the entering balance; ordinaryYield threads into otherIncTaxable, qualifiedYield into the ltcg tax-calc argument (both engines' fixed-point draw loop already funds the resulting extra tax via increased need, same mechanism as RMD/conversion tax); yieldAmount credits taxableBasis afterward WITHOUT touching the growth line, so total balance growth is bit-for-bit unchanged - only the already-taxed-vs-still-deferred split shifts, so the same dollars can never be taxed twice. Wired into both buildWithdrawalWaterfall.js and runMC independently (simulateDeterministicWithStrategy's non-smart path excluded - confirmed no per-category state to hook into; its smart path inherits this for free via delegation to buildWithdrawalWaterfall). Default 0 is a true no-op, proven by regression-lock tests in both engines - existing profiles are unaffected until a user opts in via the new Tax Settings card fields. 16 new tests (pure-function unit tests, hand-calculated engine tests incl. a worked basis-credit example, ghost-settings wiring for both engines) - 1088/1088 green.";
-export const BUILD_TIME = "2026-09-10T00:00:00Z";
+const APP_VERSION = "1.2.123";
+export const BUILD_TAG = "[main] v1.2.123 - Withdrawal Plan table presentation fixes. A user compared the Year-by-Year table's Total Draw against Spending and found rows that didn't reconcile - traced (logic-validator) to the engine's totalWithdrawal field silently excluding convTaxFromTaxable/Cash/Pretax (the Roth conversion's own tax-funding draws, which DO reduce real balances but were never added into the displayed total). Fixed at the source (buildWithdrawalWaterfall.js's totalWithdrawal, the single writer four other readers already depend on) plus visible +conv $X badges on Cash/Taxable/Pre-Tax so the identity balances using only what's on the row, no tooltip-hunting in a different column. Also added a Total Draw - Spending delta annotation per user request. Separately fixed B1 End: it was approximating Bucket 1's balance by picking ONE category and showing that category's WHOLE balance (silently dropping a second category if Bucket 1 spanned more than one, and overstating Bucket 1 whenever its category also held Bucket 2/3 money) - now uses bucketDollarTotals, the same fraction-weighted math the 3-Bucket engine itself uses, and distinguishes null (no account tagged B1) from a genuine $0 (depleted) rather than showing '-' for both. Found and disclosed (not yet fixed - it's the largest deferred item in this codebase's withdrawal engines, per three prior sessions' notes) that the Withdrawal Plan tab's second table (Deterministic Schedule, any non-'smart' strategy) runs a structurally different engine than the Sourcing section above it - one blended growth rate, no Roth-conversion concept (always shows $0 conversion) - while borrowing the Sourcing section's tax figures (which DO include conversion tax), so the two tables' numbers can genuinely disagree. Added an explicit disclosure banner rather than let the mismatch read as a bug. Also fixed a landmine-icon contradiction (anyLandmine excluded the early-withdrawal-penalty flag, so a row could show both the penalty icon and the 'no landmines' checkmark at once). 1089/1089 green.";
+export const BUILD_TIME = "2026-09-10T15:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -7578,12 +7578,17 @@ function WaterfallPlanView({ p, result }) {
   const { smart, naive, summary } = result;
   const rows = mode === "smart" ? smart.rows : naive.rows;
 
-  // Bucket 1 may be composed of any account category — match the table column to it
-  const b1Cats = new Set(
-    expandAccountBuckets(p.accounts)
-      .filter(piece => piece.bucket === 1)
-      .map(piece => piece.category || "cash")
-  );
+  // Bucket 1's true dollar share, summed across whichever categories it's
+  // tagged in — NOT "pick one category and show its whole balance" (the old
+  // b1Cats approach), which silently dropped a second category entirely and
+  // overstated Bucket 1 whenever its category also held Bucket 2/3 money
+  // (e.g. a taxable account split 40% B1 / 60% B2 showed the FULL taxable
+  // balance as "B1 End", so it could never visibly deplete). Reuses the
+  // exact fraction math the 3-Bucket engine itself uses (bucketStrategy.js),
+  // so this display can't disagree with what the simulation actually did.
+  const b1Pieces = expandAccountBuckets(p.accounts).filter(piece => piece.bucket === 1);
+  const hasB1 = b1Pieces.length > 0;
+  const b1FracsByCategory = bucketFractionsByCategory(p.accounts);
 
   // Operator cells — visually wire the withdrawal columns into the equation they satisfy
   const opThStyle = { padding: "0 3px", color: "var(--text-faint)", fontWeight: 400, fontSize: 11, textAlign: "center" };
@@ -7611,7 +7616,11 @@ function WaterfallPlanView({ p, result }) {
     "Roth Conversion": Math.round(r.conversionAmount),
   }));
 
-  const anyLandmine = (r) => r.landmines.ssTorpedo || r.landmines.irmaaTriggered || r.landmines.rmdActive;
+  // earlyPenalty wasn't included here, so a row could show BOTH the ⛔ early-
+  // withdrawal-penalty icon (gated on r.earlyPenalty > 0, below) AND the ✓
+  // "no landmines" checkmark side by side — contradictory, and it also meant
+  // the row didn't get the red highlight every other landmine type gets.
+  const anyLandmine = (r) => r.landmines.ssTorpedo || r.landmines.irmaaTriggered || r.landmines.rmdActive || r.earlyPenalty > 0;
   const anyConversion = rows.some(r => r.conversionAmount > 0);
   /* Withdrawal rate — one definition.
    *
@@ -7794,7 +7803,7 @@ function WaterfallPlanView({ p, result }) {
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
           Bracket cap reason shown in Pre-Tax column
           <br />
-          Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD)  + Roth = Spending + Housing + Carveouts + Planned one-off expenses + Fed/State/IRMAA taxes</strong> (Income = Social Security + Pension/Other + Annuity/Rental — All of it offsets spending before any draw) (Any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown.
+          Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD)  + Roth = Spending + Housing + Carveouts + Planned one-off expenses + Fed/State/IRMAA taxes</strong> (Income = Social Security + Pension/Other + Annuity/Rental — All of it offsets spending before any draw) (Any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown. In a Roth-conversion year, Cash/Taxable/Pre-Tax also carry a small <span style={{ color: "var(--accent-purple)" }}>+conv $X</span> badge — the share of that year's conversion tax paid from that account. Total Draw and the identity above include it.
         </div>
         <table className="roth-tbl">
           <thead>
@@ -7838,7 +7847,7 @@ function WaterfallPlanView({ p, result }) {
               {anyConversion && (
                 <ThInfo tip={"Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total."}>Roth Conv</ThInfo>
               )}
-              <ThInfo style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} tip={"Bucket 1 ending balance this year"}>B1 End</ThInfo>
+              <ThInfo style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} tip={"Bucket 1's true dollar share this year, summed across every account/category it's tagged in (not one category's whole balance). \"—\" means no account is tagged Bucket 1; \"$0\" means Bucket 1 has actually depleted."}>B1 End</ThInfo>
               <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th>
               <ThInfo tip={"What share of the portfolio this year's DRAW represents: Total Draw ÷ the portfolio at the START of the year.\n\nNot your spending rate. If income covers most of your spending, this stays low even when spending is high — which is the point of the column.\n\nGreen means within ±20% of your first-year rate, the Guyton-Klinger guardrail band. Amber = well below it, red = well above."}>WR <span style={{ fontSize: 9, color: "var(--text-muted)" }}>(of draw)</span></ThInfo>
               <th>
@@ -7855,11 +7864,13 @@ function WaterfallPlanView({ p, result }) {
           </thead>
           <tbody>
             {rows.map((r, rowIdx) => {
-              const b1End = b1Cats.has("cash")    ? r.cashEnd
-                          : b1Cats.has("taxable") ? r.taxableEnd
-                          : b1Cats.has("pretax")  ? r.pretaxEnd
-                          : b1Cats.has("roth")    ? r.rothEnd
-                          : 0;
+              // null = no account is tagged Bucket 1 at all ("—" is correct:
+              // there's nothing to show). 0 = Bucket 1 exists and has
+              // genuinely depleted — the whole point of tracking it, so it
+              // must read as "$0", not the same dash as "not applicable".
+              const b1End = hasB1
+                ? bucketDollarTotals({ cash: r.cashEnd, taxable: r.taxableEnd, pretax: r.pretaxEnd, roth: r.rothEnd }, b1FracsByCategory)[1]
+                : null;
               return (
               <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
                 <td>{r.age}</td>
@@ -7964,9 +7975,31 @@ function WaterfallPlanView({ p, result }) {
                   )}
                 </td>
                 <td style={opTdStyle}>+</td>
-                <td style={{ textAlign: "right", color: "var(--text-muted)" }} title={fmtDollar(r.fromCash)}>{r.fromCash > 0 ? fmtDollar(r.fromCash) : "—"}</td>
+                <td style={{ textAlign: "right", color: "var(--text-muted)" }} title={fmtDollar(r.fromCash)}>
+                  {r.fromCash > 0 ? fmtDollar(r.fromCash) : "—"}
+                  {/* This is the conversion's own tax bill, paid from Cash — a
+                      real draw the engine tracks (convTaxFromCash) but that
+                      isn't part of fromCash (the spending-driven draw). Shown
+                      as a separate badge, same pattern as the eventInflow
+                      badge above, so fromCash keeps meaning "spending share"
+                      while Total Draw's identity still balances with it added. */}
+                  {r.convTaxFromCash > 0 && (
+                    <span style={{ color: "var(--accent-purple)", fontSize: 10, marginLeft: 3, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}
+                          title={`+${fmtDollar(r.convTaxFromCash)} paid from Cash to fund this year's Roth conversion tax — see the Roth Conv column for the full breakdown.`}>
+                      +conv {fmtDollar(r.convTaxFromCash)}
+                    </span>
+                  )}
+                </td>
                 <td style={opTdStyle}>+</td>
-                <td style={{ textAlign: "right", color: "#3b82f6" }} title={fmtDollar(r.fromTaxable)}>{r.fromTaxable > 0 ? fmtDollar(r.fromTaxable) : "—"}</td>
+                <td style={{ textAlign: "right", color: "#3b82f6" }} title={fmtDollar(r.fromTaxable)}>
+                  {r.fromTaxable > 0 ? fmtDollar(r.fromTaxable) : "—"}
+                  {r.convTaxFromTaxable > 0 && (
+                    <span style={{ color: "var(--accent-purple)", fontSize: 10, marginLeft: 3, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}
+                          title={`+${fmtDollar(r.convTaxFromTaxable)} paid from Taxable to fund this year's Roth conversion tax — see the Roth Conv column for the full breakdown.`}>
+                      +conv {fmtDollar(r.convTaxFromTaxable)}
+                    </span>
+                  )}
+                </td>
                 <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "#f59e0b" }}
                     title={(() => {
@@ -7991,17 +8024,34 @@ function WaterfallPlanView({ p, result }) {
                       if (r.rmd > 0) t += ` = forced RMD ${fmtDollar(r.rmd)} + discretionary ${fmtDollar(r.fromPretax)}`;
                       t += ` — ${r.pretaxCapReason}`;
                       if (rmdExcess > 0) t += `. ${fmtDollar(rmdExcess)} of the RMD exceeds this year's need and is reinvested into Taxable.`;
+                      if (r.convTaxFromPretax > 0) t += ` ${fmtDollar(r.convTaxFromPretax)} more was withheld from the conversion itself to fund its own tax — see the Roth Conv column.`;
                       return t;
                     })()}>
                   {r.rmd > 0 && <span style={{ fontSize: 9, color: "var(--accent-purple)", marginRight: 2 }}>RMD {fmtDollar(r.rmd)}</span>}
                   {(r.fromPretax + r.rmd) > 0 ? fmtDollar(r.fromPretax + r.rmd) : "—"}
+                  {r.convTaxFromPretax > 0 && (
+                    <span style={{ color: "var(--accent-purple)", fontSize: 10, marginLeft: 3, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}
+                          title={`+${fmtDollar(r.convTaxFromPretax)} withheld from the conversion to fund its own tax — see the Roth Conv column for the full breakdown.`}>
+                      +conv {fmtDollar(r.convTaxFromPretax)}
+                    </span>
+                  )}
                 </td>
                 <td style={opTdStyle}>+</td>
                 <td style={{ textAlign: "right", color: "var(--positive)" }} title={fmtDollar(r.fromRoth)}>{r.fromRoth > 0 ? fmtDollar(r.fromRoth) : "—"}</td>
                 <td style={opTdStyle}>=</td>
                 <td style={{ textAlign: "right", color: "#e2e8f0", fontWeight: 600 }}
-                    title={`${fmtDollar(r.totalWithdrawal)} leaves the portfolio this year (Cash ${fmtDollar(r.fromCash)} + Taxable ${fmtDollar(r.fromTaxable)} + Pre-Tax ${fmtDollar(r.fromPretax + r.rmd)} + Roth ${fmtDollar(r.fromRoth)}) — covers spending, housing, carveouts, and all taxes`}>
+                    title={`${fmtDollar(r.totalWithdrawal)} leaves the portfolio this year (Cash ${fmtDollar(r.fromCash + (r.convTaxFromCash || 0))} + Taxable ${fmtDollar(r.fromTaxable + (r.convTaxFromTaxable || 0))} + Pre-Tax ${fmtDollar(r.fromPretax + r.rmd + (r.convTaxFromPretax || 0))} + Roth ${fmtDollar(r.fromRoth)}) — covers spending, housing, carveouts, all taxes, and this year's Roth conversion tax (the "+conv" badges to the left)`}>
                   {r.totalWithdrawal > 0 ? fmtDollar(r.totalWithdrawal) : "—"}
+                  {/* The delta a user has to compute by eye otherwise — "why
+                      is Total Draw bigger than Spending?" This IS the answer:
+                      housing + carveouts + taxes + conversion-tax funding,
+                      none of which is itself spending. */}
+                  {(r.totalWithdrawal - r.spending) !== 0 && (
+                    <div style={{ fontSize: 9, color: "var(--text-faint)", fontWeight: 400, marginTop: 1 }}
+                         title={`Total Draw ${fmtDollar(r.totalWithdrawal)} − Spending ${fmtDollar(r.spending)} — the gap is housing, carveouts, taxes, and any Roth-conversion tax funding, none of which is spending itself.`}>
+                      {r.totalWithdrawal > r.spending ? "+" : "−"}{fmtDollar(Math.abs(r.totalWithdrawal - r.spending))} vs spend
+                    </div>
+                  )}
                 </td>
                 {anyConversion && (
                   <td style={{ textAlign: "right", color: "var(--accent-purple)" }}
@@ -8077,7 +8127,10 @@ function WaterfallPlanView({ p, result }) {
                     )}
                   </td>
                 )}
-                <td style={{ textAlign: "right", color: b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0 ? "#f87171" : "var(--text-faint)", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }} title={fmtDollar(b1End)}>{b1End > 0 ? fmtDollar(b1End) : "—"}</td>
+                <td style={{ textAlign: "right", color: b1End === 0 || (b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0) ? "#f87171" : "var(--text-faint)", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }}
+                    title={b1End == null ? "No account is tagged Bucket 1" : b1End === 0 ? "Bucket 1 is depleted" : fmtDollar(b1End)}>
+                  {b1End == null ? "—" : fmtDollar(b1End)}
+                </td>
                 <td style={{ textAlign: "right", color: "#f87171" }}
                     title={(() => {
                       // "Fed Tax" is a sum of three separately-computed
@@ -8196,6 +8249,23 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
   // is how the chart title used to disagree with the picker beside it.
   const strategyLabel = getStrategyLabel(resolveStrategy(withdrawalStrategy));
 
+  // Only the "smart" strategy actually runs through buildWithdrawalWaterfall
+  // (see simulateDeterministicWithStrategy's dispatch) — every other
+  // strategy (gk, vpw, fixed, ...) falls to a separate, simpler engine: one
+  // blended growth rate for the whole portfolio (no cash/taxable/pretax/roth
+  // split), and no concept of a Roth conversion at all — Roth Conv reads $0
+  // here even in a year the Sourcing section converts real money, because
+  // this schedule's Fed/State Tax is borrowed from that same Sourcing-section
+  // calculation (so the tax IS real and DOES include any conversion), while
+  // every other column on this schedule is this engine's own, independent
+  // number. The two schedules can genuinely disagree — most visibly in a
+  // conversion year — because they're not the same calculation. Routing
+  // every strategy through the real per-account engine is real, tracked
+  // future work (three sessions have deferred it so far, per project
+  // memory), not a quick fix — this disclosure exists so the disagreement
+  // reads as a known limitation instead of a bug the user has to chase.
+  const notSmart = resolveStrategy(withdrawalStrategy) !== "smart";
+
   return (
     <>
       <div className="chart-card">
@@ -8203,6 +8273,21 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy }) {
           📈 Deterministic Schedule – {strategyLabel} · Median historical returns
           ({expectedReturn(p.preRetireEq ?? 91).toFixed(2)}% before age {resolveGlidepathSwitchAge(p)} / {expectedReturn(p.postRetireEq ?? 70).toFixed(2)}% after) · Inflation {inf}%
         </div>
+        {notSmart && (
+          <div style={{
+            fontSize: 11, color: "var(--text-secondary)", background: "rgba(251,191,36,0.06)",
+            border: "1px solid rgba(251,191,36,0.22)", borderRadius: 6, padding: "8px 10px",
+            marginBottom: 10, lineHeight: 1.5,
+          }}>
+            <strong style={{ color: "#fbbf24" }}>⚠ Simplified schedule.</strong> This "{strategyLabel}" view uses
+            one blended growth rate for your whole portfolio, not the real per-account draws the
+            Sourcing section above uses — and it never models a Roth conversion (Roth Conv. always
+            reads $0 here). Its Fed/State Tax figures ARE borrowed from the Sourcing section's real
+            plan though, including any conversion's tax — so Tax can be nonzero here in a year Roth
+            Conv. shows $0, and Portfolio End can differ from the Sourcing section's Port End by a
+            real amount. For your actual plan's numbers, use the Sourcing section above.
+          </div>
+        )}
         {/* Portfolio Balance is a genuine running total — a line, one $ axis. */}
         <ResponsiveContainer width="100%" height={340}>
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>

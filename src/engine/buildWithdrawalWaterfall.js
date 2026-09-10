@@ -1564,8 +1564,13 @@ export function buildWithdrawalWaterfall(params = {}) {
         needFromPort: Math.round(baseNeed),
         // Gross portfolio outflow for spending + taxes. The cascade draws
         // already fund the tax bill, so don't add tax on top; RMD is a real
-        // outflow too.
-        totalWithdrawal: Math.round(rmd + fromCash + fromTaxable + fromPretax + fromRoth),
+        // outflow too. In a conversion year the conversion's OWN tax is a
+        // separate real outflow (convTaxFrom*, funded per taxFunding) that
+        // must be added here too — omitting it understated every downstream
+        // reader (this table's Total Draw, the WR% card, the summary table,
+        // PrintReport) by exactly the conversion-tax funding draw.
+        totalWithdrawal: Math.round(rmd + fromCash + fromTaxable + fromPretax + fromRoth
+          + convTaxFromTaxable + convTaxFromCash + convTaxFromPretax),
       });
     }
 
