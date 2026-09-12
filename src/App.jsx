@@ -4445,6 +4445,52 @@ function saveCheckIns(list) {
     return false;
   }
 }
+// Cache of the last completed Monte Carlo run, so reopening the app shows the
+// numbers you last pressed Run for instead of spending a fresh simulation (or
+// showing an empty screen) on every visit. Stored with the signature of the
+// inputs that produced it, so the app can tell "these are your current
+// numbers" from "these are from before you changed something", and stamped
+// with the build so an engine change never re-presents results the current
+// code wouldn't reproduce.
+const LS_RESULTS_KEY = "aira_results_v1";
+function saveResultsToLocal(sig, mc, stress) {
+  try {
+    localStorage.setItem(LS_RESULTS_KEY, JSON.stringify({
+      sig, mc, stress, savedAt: new Date().toISOString(), buildTag: BUILD_TAG,
+    }));
+    return true;
+  } catch {
+    return false;   // private mode or quota — the app still works, it just re-runs
+  }
+}
+function loadResultsFromLocal() {
+  try {
+    const raw = localStorage.getItem(LS_RESULTS_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || data.buildTag !== BUILD_TAG) return null;
+    if (typeof data.sig !== "string" || !data.mc || typeof data.mc.rate !== "number") return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+// "just now" / "14:32" / "Mar 3" — enough to tell this session's numbers from
+// ones restored from a previous visit, without a precision nobody needs.
+function fmtLastRun(iso) {
+  try {
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return "";
+    const mins = Math.floor((Date.now() - then.getTime()) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins} min ago`;
+    const sameDay = then.toDateString() === new Date().toDateString();
+    if (sameDay) return then.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return then.toLocaleDateString([], { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
 function saveProfileToLocal(values) {
   try {
     const hasPropIncome = (values.properties || []).some(pr => Number(pr.income) > 0);
@@ -9328,11 +9374,22 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
     },
   ], [p, endAge, severity]);
 
-  // Quick estimates — deferred a tick so the tab paints before the run.
-  useEffect(() => {
-    let cancelled = false;
-    setEst(null);
-    const t = setTimeout(() => {
+  // These estimates are six simulations, so they run when asked and not
+  // before. The signature is what the last set was computed from: when the
+  // plan changes underneath them they are marked stale rather than silently
+  // recomputed.
+  const [estRunning, setEstRunning] = useState(false);
+  const estSigRef = useRef(null);
+  const inputSig = useMemo(() => {
+    try { return JSON.stringify(p) + "|" + severity + "|" + endAge; } catch { return null; }
+  }, [p, severity, endAge]);
+  const estStale = est != null && estSigRef.current !== inputSig;
+
+  const runEstimates = () => {
+    setEstRunning(true);
+    // Yield so the button can paint its running state before the engine
+    // takes the main thread; see runSimulation for the same pattern.
+    setTimeout(() => {
       const out = { base: runMC(p, endAge, STRESS_QUICK_PATHS, 7, true).rate };
       scenarios.forEach((s) => { out[s.id] = s.run(STRESS_QUICK_PATHS, 7).rate; });
       // The widow's-penalty counterfactual: the same plan with the modeled
@@ -9344,10 +9401,12 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
       out.noDeath = authoredDeath
         ? runMC({ ...p, spouse: { ...p.spouse, deathAge: null } }, endAge, STRESS_QUICK_PATHS, 7, true).rate
         : null;
-      if (!cancelled) setEst(out);
-    }, 30);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [scenarios, p, endAge, authoredDeath]);
+      estSigRef.current = inputSig;
+      setEst(out);
+      setFull({});   // full-path results were measured against the old inputs
+      setEstRunning(false);
+    }, 0);
+  };
 
   const runFull = (s) => {
     setRunning(s.id);
@@ -9373,8 +9432,9 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12, lineHeight: 1.5 }}>
         Each card re-runs the full engine with one thing gone wrong. The number is the share of
         simulated plans still funded; <b style={{ color: "var(--text-secondary)" }}>%</b> is the drop vs your
-        baseline. Cards show a fast estimate — press <b style={{ color: "var(--text-secondary)" }}>Run full</b> for
-        the precise {MC_PATHS_LABEL}-path result.
+        baseline. <b style={{ color: "var(--text-secondary)" }}>Run scenarios</b> gives every card a fast
+        estimate; <b style={{ color: "var(--text-secondary)" }}>Run full</b> gives one card the precise
+        {" "}{MC_PATHS_LABEL}-path result.
         {/* The success rate is widely read as "the chance my retirement
             works." It's narrower than that, and saying so changes how the
             number should be read. */}
@@ -9385,6 +9445,30 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
           <em> market</em> risk the plan absorbs, not the overall odds your retirement works out.
           Those assumptions are the scenarios; that is what these cards are for.
         </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <button
+          onClick={runEstimates}
+          disabled={estRunning}
+          className="mbtn"
+          style={{
+            fontSize: 12, padding: "6px 14px", fontWeight: 700,
+            background: estStale || !est ? "linear-gradient(135deg,#b45309,#d97706)" : undefined,
+            color: estStale || !est ? "#fff" : undefined,
+            opacity: estRunning ? 0.6 : 1,
+          }}
+        >
+          {estRunning
+            ? `Running ${STRESS_QUICK_PATHS_LABEL} paths…`
+            : est ? "↻ Re-run scenarios" : "▶ Run scenarios"}
+        </button>
+        <span style={{ fontSize: 11, color: estStale ? "var(--accent-gold)" : "var(--text-faint)" }}>
+          {estRunning ? "Testing your plan against each scenario…"
+            : !est ? "Nothing has been run yet — press Run scenarios to test your plan."
+            : estStale ? "⚠ Your plan changed — these results are from the previous inputs."
+            : "Up to date with your current plan."}
+        </span>
       </div>
 
       {/* The widow's-penalty delta.
@@ -9483,7 +9567,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
 
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
                 <span style={{ fontSize: 10, color: measured ? "#34d399" : "var(--text-faint)", fontWeight: 600 }}>
-                  {measured ? `✓ ${MC_PATHS_LABEL} paths` : est ? "fast estimate" : "estimating…"}
+                  {measured ? `✓ ${MC_PATHS_LABEL} paths` : est ? (estStale ? "previous inputs" : "fast estimate") : "not run yet"}
                 </span>
                 <button onClick={() => runFull(s)} disabled={isRunning || !est} className="mbtn"
                   style={{ fontSize: 11, padding: "3px 10px", opacity: isRunning || !est ? 0.5 : 1 }}>
@@ -9496,7 +9580,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
       </div>
 
       <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", marginTop: 12 }}>
-        {worst == null ? "Estimating worst case…"
+        {worst == null ? "Run the scenarios to see your worst case."
           : worst >= 0.70
           ? "Even the worst case here stays in the recoverable range."
           : "At least one scenario pushes the plan into fragile territory — worth a mitigation."}
@@ -15114,8 +15198,14 @@ export default function AiRAForecaster() {
   const [showWelcome, setShowWelcome] = useState(() => !loadProfileFromLocal());
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
-  const [mc, setMc] = useState(null);
-  const [stress, setStress] = useState(null);
+  // Opening the app presents the last run you asked for, rather than spending
+  // a simulation to redraw numbers you have already seen. Read once, here,
+  // because the staleness check below needs the inputs it was computed from.
+  const [cachedRun] = useState(loadResultsFromLocal);
+  const [mc, setMc] = useState(cachedRun?.mc ?? null);
+  const [stress, setStress] = useState(cachedRun?.stress ?? null);
+  // Nothing recomputes on its own any more, so say when these numbers are from.
+  const [lastRunAt, setLastRunAt] = useState(cachedRun?.savedAt ?? null);
   // Shared hover state so hovering a row in the age-band table highlights the
   // matching age column on the fan chart above (FanChart + MCBandTable are siblings).
   const [hoveredAge, setHoveredAge] = useState(null);
@@ -15251,7 +15341,7 @@ export default function AiRAForecaster() {
   }, [restoreReturn]);
   // Signature of the inputs the last run used; null until the first run is
   // launched. "Results are stale" means the current inputs differ from these.
-  const ranSigRef = useRef(null);
+  const ranSigRef = useRef(cachedRun?.sig ?? null);
   const runningRef = useRef(false);
   const sigRef = useRef(null);
   // Set true when the visitor enters from the landing so the next params
@@ -15593,6 +15683,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       const str = runStress(p, planAge, STRESS_PATHS, 99);
       setMc(rEnd_);
       setStress(str);
+      // Keep it for the next visit, tagged with the inputs it came from.
+      saveResultsToLocal(sigRef.current, rEnd_, str);
+      setLastRunAt(new Date().toISOString());
       runningRef.current = false;
       setRunning(false);
     }, 0);
@@ -15608,18 +15701,19 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   }, [params]);
   sigRef.current = paramsSig;
 
-  // Runs once automatically when the app first has real inputs to run on;
-  // after that the Run/Re-run button below owns every run, which is what the
-  // button was built for. (This used to auto-re-run on a 350ms debounce after
-  // any params change, which is what failed on slower machines: a full
-  // MC_PATHS-path simulation on the main thread after every slider nudge.)
+  // The Run/Re-run button owns every run. The single exception is a visitor
+  // with nothing to show: no cached run from last time and nothing run yet
+  // this session, where an empty screen would be worse than one simulation.
+  // (This used to auto-re-run on a 350ms debounce after any params change,
+  // which is what failed on slower machines: a full MC_PATHS-path simulation
+  // on the main thread after every slider nudge.)
   useEffect(() => {
     // Landing page is up; there are no real inputs to run on yet.
     if (showWelcome) return;
 
     if (ranSigRef.current === null) {
-      // Nothing has been run yet. A seeded landing entry runs itself, on the
-      // seeded numbers, in the effect just below.
+      // Nothing cached and nothing run. A seeded landing entry runs itself,
+      // on the seeded numbers, in the effect just below.
       if (!pendingRunRef.current) runSimulation();
       return;
     }
@@ -16557,6 +16651,11 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             >
               {running ? `Running ${MC_PATHS_LABEL} paths...` : stale ? "⚠ Inputs changed — Re-run" : "▶ Run Monte Carlo"}
             </button>
+            {lastRunAt && !running && (
+              <div style={{ fontSize: 10, color: "var(--text-faint)", textAlign: "center", marginTop: 5 }}>
+                Last run {fmtLastRun(lastRunAt)}
+              </div>
+            )}
           </div>
 
           <div className="main">
