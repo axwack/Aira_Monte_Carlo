@@ -15577,7 +15577,13 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     }, 40);
   }, [params]);
 
-  // Auto-run simulation with debouncing when params change
+  // Run once automatically on first load so there's a result to show;
+  // every run after that is user-initiated via the Run/Re-run button below.
+  // (Previously this auto-re-ran on every params change after a debounce —
+  // that's what was failing on some machines, since it fired a fresh
+  // MC_PATHS-path simulation on the main thread after every slider nudge.
+  // Flagging stale and waiting for the button is exactly what the button
+  // was built for.)
   useEffect(() => {
     if (isFirst.current) {
       isFirst.current = false;
@@ -15585,10 +15591,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       return;
     }
     setStale(true);
-    const timer = setTimeout(() => {
-      runSimulation();
-    }, 350);
-    return () => clearTimeout(timer);
   }, [params, runSimulation]);
 
   // Year-end deadline prompt. Reads the browser clock (this app has no
@@ -15639,21 +15641,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
 
  const swr = computeInitialWR(params).initWRpct.toFixed(1);
  const analogue = mc ? getAnalogue(mc.rate) : null;
-
-  // Auto-run simulation with debouncing when params change
-  useEffect(() => {
-    if (isFirst.current) {
-      isFirst.current = false;
-      runSimulation();
-      return;
-    }
-    setStale(true);
-    const timer = setTimeout(() => {
-      runSimulation();
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [params, runSimulation]);
-
 
   const TABS = [
     ["networth", "📊 Net Worth"],
