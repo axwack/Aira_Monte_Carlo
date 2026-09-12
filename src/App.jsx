@@ -15574,6 +15574,11 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     ranSigRef.current = sigRef.current;
     setRunning(true);
     setStale(false);
+    // Yield once so React can commit and paint "Running..." before the engine
+    // blocks the main thread. Zero delay, and deliberately not a debounce:
+    // nothing here waits for quiet, coalesces callers, or cancels a pending
+    // run. (requestAnimationFrame is the tempting alternative but paints the
+    // indicator only some of the time when a run starts from an effect.)
     setTimeout(() => {
       // Single horizon: every simulation is graded to the profile's own
       // plan age (params.endAge). No hardcoded reference ages. A shorter
@@ -15581,7 +15586,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       // test shares the same horizon.
       const p = paramsRef.current;
       // Record the inputs this run actually used, not the ones it was queued
-      // with — anything edited during the 40ms wait is included in the result.
+      // with — anything edited before this frame is included in the result.
       ranSigRef.current = sigRef.current;
       const planAge = p.endAge || 90;
       const rEnd_ = runMC(p, planAge, MC_PATHS, 43, true);
@@ -15590,7 +15595,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       setStress(str);
       runningRef.current = false;
       setRunning(false);
-    }, 40);
+    }, 0);
   }, []);
 
   // "Inputs changed" has to mean the numbers the simulation actually reads
@@ -16787,8 +16792,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                           }));
                           updateAssumption("accounts", scaledAccounts);
                         }
-                        setStale(true);
-                        setTimeout(runSimulation, 100);
+                        // Changing the baseline is an input edit like any
+                        // other: it marks the results stale and waits for the
+                        // Run button, rather than racing a run against state
+                        // that hasn't committed yet.
                       }}
                     />
                     {mc && (
