@@ -15168,12 +15168,13 @@ export default function AiRAForecaster() {
   );
   // Sidebar accordion — independently collapsible, not a true single-open
   // accordion, since these are live input controls a user may be actively
-  // adjusting in more than one section at once. Default open (unchanged
-  // from before this existed); collapsing is purely a per-user decluttering
-  // choice, not a state that changes what's simulated.
-  const [sbCoreOpen, setSbCoreOpen] = useState(true);
-  const [sbMacroOpen, setSbMacroOpen] = useState(true);
-  const [sbOptionsOpen, setSbOptionsOpen] = useState(true);
+  // adjusting in more than one section at once. Starts collapsed so the
+  // sidebar opens as a short list of section headers rather than three
+  // screens of stacked sliders; opening one is a click. Which sections are
+  // open is a per-user view choice and changes nothing that's simulated.
+  const [sbCoreOpen, setSbCoreOpen] = useState(false);
+  const [sbMacroOpen, setSbMacroOpen] = useState(false);
+  const [sbOptionsOpen, setSbOptionsOpen] = useState(false);
   // Cross-tab "Edit this on the X tab" pointers (e.g. RetirementPanel's
   // Withdrawal Strategy card) need to land on a specific sub-tab inside
   // ScenariosTab, not just the top-level tab. ScenariosTab's own sub-tab
