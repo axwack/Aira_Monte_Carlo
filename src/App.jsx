@@ -15249,7 +15249,11 @@ export default function AiRAForecaster() {
       : setToastTimed(setStripeToast, { msg: `⚠ ${restoreReturn.error}`, tone: "err" }, 15000);
     return () => clearTimeout(t);
   }, [restoreReturn]);
-  const isFirst = useRef(true);
+  // Signature of the inputs the last run used; null until the first run is
+  // launched. "Results are stale" means the current inputs differ from these.
+  const ranSigRef = useRef(null);
+  const runningRef = useRef(false);
+  const sigRef = useRef(null);
   // Set true when the visitor enters from the landing so the next params
   // update (after seeding) triggers one real Monte Carlo run with their numbers.
   const pendingRunRef = useRef(false);
@@ -15314,8 +15318,6 @@ export default function AiRAForecaster() {
     if (saved.tax !== undefined) setTax(saved.tax);
     if (saved.real !== undefined) setReal(saved.real);
     if (saved.withdrawalStrategy !== undefined) setWithdrawalStrategy(saved.withdrawalStrategy);
-
-    setStale(true);
   }, []);
 
   // Current age: one value, everywhere.
@@ -15560,7 +15562,16 @@ export default function AiRAForecaster() {
 
 const mortgagePayoffYear = mortgageSched.payoffYr;
 
+  // Read through a ref so this callback is stable for the life of the app.
+  // Effects that trigger a run depend on it, and a callback that changed
+  // identity with every params object would re-fire them on renders where
+  // nothing the simulation reads actually changed.
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
   const runSimulation = useCallback(() => {
+    runningRef.current = true;
+    ranSigRef.current = sigRef.current;
     setRunning(true);
     setStale(false);
     setTimeout(() => {
@@ -15568,30 +15579,55 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       // plan age (params.endAge). No hardcoded reference ages. A shorter
       // runway with the same funds correctly scores higher, and the stress
       // test shares the same horizon.
-      const planAge = params.endAge || 90;
-      const rEnd_ = runMC(params, planAge, MC_PATHS, 43, true);
-      const str = runStress(params, planAge, STRESS_PATHS, 99);
+      const p = paramsRef.current;
+      // Record the inputs this run actually used, not the ones it was queued
+      // with — anything edited during the 40ms wait is included in the result.
+      ranSigRef.current = sigRef.current;
+      const planAge = p.endAge || 90;
+      const rEnd_ = runMC(p, planAge, MC_PATHS, 43, true);
+      const str = runStress(p, planAge, STRESS_PATHS, 99);
       setMc(rEnd_);
       setStress(str);
+      runningRef.current = false;
       setRunning(false);
     }, 40);
-  }, [params]);
+  }, []);
 
-  // Run once automatically on first load so there's a result to show;
-  // every run after that is user-initiated via the Run/Re-run button below.
-  // (Previously this auto-re-ran on every params change after a debounce —
-  // that's what was failing on some machines, since it fired a fresh
-  // MC_PATHS-path simulation on the main thread after every slider nudge.
-  // Flagging stale and waiting for the button is exactly what the button
-  // was built for.)
+  // "Inputs changed" has to mean the numbers the simulation actually reads
+  // changed value. `assumptions` carries fields params doesn't use and gets
+  // rewritten with settings that don't affect a run, so keying off the params
+  // object itself would mark perfectly good results stale — visibly, right
+  // after entering from the landing page.
+  const paramsSig = useMemo(() => {
+    try { return JSON.stringify(params); } catch { return String(Date.now()); }
+  }, [params]);
+  sigRef.current = paramsSig;
+
+  // Runs once automatically when the app first has real inputs to run on;
+  // after that the Run/Re-run button below owns every run, which is what the
+  // button was built for. (This used to auto-re-run on a 350ms debounce after
+  // any params change, which is what failed on slower machines: a full
+  // MC_PATHS-path simulation on the main thread after every slider nudge.)
   useEffect(() => {
-    if (isFirst.current) {
-      isFirst.current = false;
-      runSimulation();
+    // Landing page is up; there are no real inputs to run on yet.
+    if (showWelcome) return;
+
+    if (ranSigRef.current === null) {
+      // Nothing has been run yet. A seeded landing entry runs itself, on the
+      // seeded numbers, in the effect just below.
+      if (!pendingRunRef.current) runSimulation();
       return;
     }
-    setStale(true);
-  }, [params, runSimulation]);
+
+    // A queued run reads the latest inputs when it fires, so it already
+    // covers this change — flagging stale here would be a lie it then clears.
+    if (runningRef.current) return;
+
+    // Compare against the inputs the last run used, so restoring a saved
+    // profile, or undoing an edit, doesn't leave a "changed" warning up for
+    // someone who changed nothing.
+    setStale(paramsSig !== ranSigRef.current);
+  }, [paramsSig, runSimulation, showWelcome]);
 
   // Year-end deadline prompt. Reads the browser clock (this app has no
   // server), so a PC with a wrong system date sees it at the wrong time —
@@ -15681,7 +15717,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       pendingRunRef.current = false;
       runSimulation();
     }
-  }, [params, runSimulation]);
+  }, [paramsSig, runSimulation]);
 
   // Seed the profile from the landing's quick-estimate inputs, then enter the app.
   const enterFromLanding = (inp) => {
