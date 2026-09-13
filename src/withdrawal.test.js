@@ -1129,6 +1129,19 @@ describe("waterfall rental income — one model, matching the other engines", ()
     expect(after.length).toBeGreaterThan(0);
     expect(after.every(r => r.annuityRental === 0)).toBe(true);
   });
+
+  // abEndYear: 0 is what an exported profile carries when the field was never
+  // touched (App.jsx's `assumptions.abEndYear ?? null` only substitutes for
+  // null/undefined, so a stored 0 passes straight through). App.jsx's own
+  // gates (`p.abEndYear && calYear > p.abEndYear`, used by runMC/runStress
+  // and simulateDeterministicWithStrategy) treat that as "no cutoff" — this
+  // engine must match, or the Withdrawal tab and PrintReport show $0 rental
+  // for every profile that never set the field while the MC/Stress success
+  // rate correctly counts it.
+  test("abEndYear: 0 (the untouched-field default) does NOT stop the stream", () => {
+    const rows = buildWithdrawalWaterfall({ ...RENTAL, abEndYear: 0 }).smart.rows;
+    expect(rows.every(r => r.annuityRental > 0)).toBe(true);
+  });
 });
 
 // ─── Item 10 / ENG-8: IRMAA guard caps the Roth conversion ────────────────────

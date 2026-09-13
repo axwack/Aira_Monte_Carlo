@@ -792,9 +792,19 @@ export function buildWithdrawalWaterfall(params = {}) {
       // fourth model. simulateDeterministicWithStrategy likewise shows full
       // planned rental.
       const abGrowthFactor = Math.pow(1 + (abGrowth || 3) / 100, Math.min(Math.max(0, age - retireAge), 20));
-      const annuity = (abEndYear == null || yr <= abEndYear)
-        ? Math.round(((ab > 0 ? ab : 0) + (propIncome || 0)) * abGrowthFactor)
-        : 0;
+      // Falsy abEndYear (0, null, undefined) means "no cutoff" — must match
+      // App.jsx's `p.abEndYear && calYear > p.abEndYear` gate (runMC's
+      // rentalForGK/effectiveAb and simulateDeterministicWithStrategy's `ab`)
+      // exactly. This used to read `abEndYear == null || yr <= abEndYear`,
+      // which treats 0 (the field's own unset default — see App.jsx's
+      // `abEndYear: assumptions.abEndYear ?? null`, which passes 0 through
+      // unchanged) as "ended in year zero," silently zeroing rental/annuity
+      // income for every profile that never touched the field. The Waterfall
+      // tab and PrintReport both read this row, so the bug was fully visible
+      // to users — not just an internal drift between engines.
+      const annuity = (abEndYear && yr > abEndYear)
+        ? 0
+        : Math.round(((ab > 0 ? ab : 0) + (propIncome || 0)) * abGrowthFactor);
       const fixedIncome = ss + annuity;
 
       // Other income streams (pensions, part-time work, etc.) — offset "need"
