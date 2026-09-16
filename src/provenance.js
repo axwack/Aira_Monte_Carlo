@@ -107,12 +107,9 @@ export const METRIC_CARDS = [
   { id: "wd-depletion", label: "Portfolio Depletion", kind: "point-in-time", at: "first depleted year",
     source: "depletionRow.age | 'Never'",
     formula: "The first age at which the portfolio reaches zero, or Never" },
-  { id: "wd-bucket-impact", label: "3-Bucket Impact", kind: "computed",
-    source: "endingValue(smart) − endingValue(baseline tax_reactive)",
-    formula: "Ending portfolio under the 3-Bucket strategy − ending portfolio under Tax-reactive, same profile" },
-  { id: "wd-bucket-tax-impact", label: "3-Bucket Tax Impact", kind: "computed",
-    source: "smart.totalTax − baseline(tax_reactive).totalTax",
-    formula: "Lifetime tax under the 3-Bucket strategy − lifetime tax under Tax-reactive, same profile" },
+  // "3-Bucket Impact" / "3-Bucket Tax Impact" cards removed in v1.2.129 along
+  // with the three_bucket ordering mode itself. Both reported a delta against a
+  // tax_reactive baseline that was measured to be zero.
 
   // ── Deterministic withdrawal view ────────────────────────────────────────
   { id: "det-port-retire", label: "Portfolio at Retirement", kind: "computed",

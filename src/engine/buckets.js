@@ -63,3 +63,75 @@ export function accountBucketPieces(a) {
 export function expandAccountBuckets(accounts) {
   return (accounts || []).flatMap(accountBucketPieces);
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * Bucket ACCOUNTING — how many dollars are in each bucket right now.
+ *
+ * These three moved here from engine/bucketStrategy.js when the `three_bucket`
+ * orderingMode was removed (v1.2.129). They are pure accounting over balances
+ * the simulation already tracks; nothing here changes what anything earns or
+ * the order accounts are drawn in. Their consumers are the 🧺 Buckets tab and
+ * the Withdrawal Plan's "B1 End" column.
+ *
+ * Buckets are a DERIVED VIEW, not tracked state: money physically lives in
+ * cash/taxable/pretax/roth balances, and a bucket total is that balance times
+ * the share of the category tagged to that bucket. Anything that wants to MOVE
+ * money between buckets needs real per-bucket balances first.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * For each account CATEGORY (cash/taxable/pretax/roth/hsa), what fraction of
+ * that category's total dollars sits in Bucket 1 / 2 / 3.
+ * @returns {{ [category]: { 1: number, 2: number, 3: number } }} fractions
+ *   summing to 1 per category (a category with $0 falls back to 100% in its
+ *   own default bucket, so lookups never divide by zero / produce NaN).
+ */
+export function bucketFractionsByCategory(accounts) {
+  const pieces = expandAccountBuckets(accounts);
+  const totals = {};
+  for (const piece of pieces) {
+    const cat = piece.category;
+    if (!totals[cat]) totals[cat] = { 1: 0, 2: 0, 3: 0, total: 0 };
+    const b = [1, 2, 3].includes(piece.bucket) ? piece.bucket : _defaultBucket(cat);
+    const bal = piece.balance || 0;
+    totals[cat][b] += bal;
+    totals[cat].total += bal;
+  }
+  const fracs = {};
+  for (const cat of Object.keys(totals)) {
+    const t = totals[cat];
+    if (t.total > 0) {
+      fracs[cat] = { 1: t[1] / t.total, 2: t[2] / t.total, 3: t[3] / t.total };
+    } else {
+      const b = _defaultBucket(cat);
+      fracs[cat] = { 1: b === 1 ? 1 : 0, 2: b === 2 ? 1 : 0, 3: b === 3 ? 1 : 0 };
+    }
+  }
+  return fracs;
+}
+
+/** A category with no accounts at all (not present in bucketFractionsByCategory's
+ * output) resolves here so callers don't need their own fallback branch. */
+export function fractionsForCategory(fracsByCategory, category) {
+  if (fracsByCategory && fracsByCategory[category]) return fracsByCategory[category];
+  const b = _defaultBucket(category);
+  return { 1: b === 1 ? 1 : 0, 2: b === 2 ? 1 : 0, 3: b === 3 ? 1 : 0 };
+}
+
+/**
+ * Total dollars currently sitting in each bucket, summed across every account
+ * CATEGORY, using that category's bucket fractions.
+ * @param {{cash?:number,taxable?:number,pretax?:number,roth?:number}} catBalances
+ * @param {object} fracsByCategory — from bucketFractionsByCategory.
+ */
+export function bucketDollarTotals(catBalances, fracsByCategory) {
+  const totals = { 1: 0, 2: 0, 3: 0 };
+  for (const cat of Object.keys(catBalances)) {
+    const bal = catBalances[cat] || 0;
+    const f = fractionsForCategory(fracsByCategory, cat);
+    totals[1] += bal * (f[1] || 0);
+    totals[2] += bal * (f[2] || 0);
+    totals[3] += bal * (f[3] || 0);
+  }
+  return totals;
+}

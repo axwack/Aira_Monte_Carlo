@@ -69,7 +69,7 @@ import {
   NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE, NIIT_RATE,
   getSeniorBonusDeduction, OBBBA_SENIOR_LAST_YEAR,
 } from "./engine/buildRothExplorer.js";
-import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR } from "./engine/buildWithdrawalWaterfall.js";
+import { buildWithdrawalWaterfall, accumulateToRetirement, resolveDrawOrder, effectiveRetireAge, gkReferenceWR, migrateOrderingMode } from "./engine/buildWithdrawalWaterfall.js";
 import { expectedReturn, SP500, BONDS, INFL } from "./engine/expectedReturn.js";
 import { resolveGlidepathSwitchAge, glidepathEquityWeight, glidepathEqPct } from "./engine/glidepath.js";
 import { jobContributionsForYear, householdAnnualContribution, totalRetirementIncome } from "./engine/contributions.js";
@@ -83,8 +83,7 @@ import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yea
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
 import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationNotice } from "./engine/withdrawalStrategies.js";
-import { _defaultBucket, accountBucketPieces, expandAccountBuckets, clampBucket } from "./engine/buckets.js";
-import { bucketFractionsByCategory, fractionsForCategory, blendEquityBond, blendBucketReturns, bucketDollarTotals, bucket2YieldSweep } from "./engine/bucketStrategy.js";
+import { _defaultBucket, accountBucketPieces, expandAccountBuckets, clampBucket, bucketFractionsByCategory, bucketDollarTotals } from "./engine/buckets.js";
 import { dollarBasisLabel, deflate, mcMedianAtAge, selectPortfolioAtAge } from "./engine/mcSelectors.js";
 import { taxableYieldSplit } from "./engine/taxableYield.js";
 // One declaration of every figure's arithmetic, rendered here and enforced by
@@ -214,16 +213,16 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.128";
-export const BUILD_TAG = `[main] v1.2.128 - "3-Bucket Strategy" renamed to what it actually does
-- Audit trigger: with/without a funded cash bucket measured the same in the crash stress test at 3,000 paths, at any bucket size
-- Cause is naming, not math: the mode never changed draw order (resolveDrawOrder returns the same order as tax_reactive) and a cash account already earns the cash rate in the default mode — so the toggle wasn't the thing being measured
-- Renamed "3-Bucket Strategy" -> "Bucket investing (same draw order)"; it does asset location + a B2->B1 yield sweep, not the full refill protocol
-- Fixed a wrong disclosure: it claimed B3 grows at the pre-retirement equity mix; the engine uses post-retirement (changed deliberately in v1.2.119, copy never followed)
-- Banner on the 4 refill primitives in bucketStrategy.js - built and unit-tested, zero production callers, which is what made them read as shipped
-- New src/bucketRefillNotWired.test.js locks it: fails if a refill primitive gets wired, if the draw orders diverge, or if the label re-promises the full strategy
-- About glossary now states which half AiRA simulates, plus the Kitces finding that freeze-only buckets match total-return rebalancing rather than beat it`;
-export const BUILD_TIME = "2026-09-16T02:00:00Z";
+const APP_VERSION = "1.2.129";
+export const BUILD_TAG = `[feature/remove-bucket-ordering-mode] v1.2.129 - Removed the bucket ordering mode
+- Measured it first: with the yield sweep off, three_bucket and tax_reactive produce a byte-identical result ($7,385,317 both). Asset location was a proven no-op
+- Why: B2 and B3 both resolved to postRetireEq, which IS the portfolio-wide retirement return (glidepath is a step function), and cash already earned cashRealReturn in every mode. Only the yield sweep moved anything - 0.10% of terminal portfolio
+- Deleted engine/bucketStrategy.js; its 3 accounting helpers (fractions, dollar totals) moved into engine/buckets.js, which is all the Buckets tab and the B1 End column ever needed
+- Removed the three_bucket option, bucket2YieldPct, and the bucket branches in runMC and buildWithdrawalWaterfall
+- migrateOrderingMode rewrites saved/imported profiles to tax_reactive; without it the draw-order radio renders with nothing selected. No user notice - the behavior change is the 0.1% sweep
+- b1Years/b2Years stay as Buckets tab planning inputs, now correctly declared as read by no engine
+- Buckets remain as an organizing view in the Buckets tab, which is what they are: an investing and behavioral frame, not a withdrawal-ordering rule`;
+export const BUILD_TIME = "2026-09-16T14:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -740,14 +739,8 @@ export const BLANK_PROFILE = {
   ruleOf55: false,                // separated from employer at 55+, plan not rolled over
   sepp72t: false,                 // a 72(t) SEPP is running
   sepp72tStartAge: null,          // series start age; must run to max(start+5, 59.5)
-  orderingMode: "tax_reactive",   // "tax_reactive"|"custom"|"pretax_first"|"three_bucket" — which bucket drains first (orthogonal to strategy + guardrails)
+  orderingMode: "tax_reactive",   // "tax_reactive"|"custom"|"pretax_first" — which bucket drains first (orthogonal to strategy + guardrails)
   withdrawalOrder: ["cash", "taxable", "pretax", "roth"], // used only when orderingMode === "custom"
-  // Flat annual yield (dividends/interest/coupons), 0-100 percent, swept from
-  // Bucket 2 into Bucket 1 as cash every year under orderingMode ===
-  // "three_bucket" — only takes effect in that mode. A general assumption
-  // (this engine doesn't model individual securities), not a per-holding
-  // dividend rate.
-  bucket2YieldPct: 3.0,
   // Bucket 1's target size, in years of spending — caps the yield sweep
   // above: once Bucket 1 reaches this size, Bucket 2 stops losing return to
   // it. Same concept BucketsTab already shows as its own (currently
@@ -1278,7 +1271,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // engine/bucketStrategy.js header comment). Computed once from today's
   // accounts, held constant for the whole path per the documented
   // simplification in buildWithdrawalWaterfall.js's identical precompute.
-  const bucketFracsMC = p.orderingMode === "three_bucket" ? bucketFractionsByCategory(p.accounts) : null;
   // Already-retired users enter the age they actually retired at, which is in
   // the past. Balances are always today's, so starting the drawdown there
   // would replay years that already happened. See effectiveRetireAge.
@@ -1498,10 +1490,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // see its definition for the rand()-count shim that keeps this branch
       // matching the seqOverride branch's rand() consumption.
       let r, inflY;
-      // Captured alongside r so the 3-Bucket strategy (below) can blend each
-      // account category's OWN equity weight against this same year's actual
-      // stock/bond draw, instead of only the portfolio-wide blend `r`. Stays
-      // unused (and costs nothing) when orderingMode !== "three_bucket".
+      // The seqOverride branch below builds `r` from these two directly.
       let stockReturnMC, bondReturnMC;
       if (seqOverride && y < seqOverride.length) {
         // Same weight portReturn would have used at this age. This line used
@@ -1518,8 +1507,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const bundle = drawYearBundle(age, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
         r = bundle.ret;
         inflY = bundle.inflY;
-        stockReturnMC = SP500[bundle.i];
-        bondReturnMC = BONDS[bundle.i];
       }
 
       const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
@@ -2039,43 +2026,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       magiTwoYearsAgo = magiOneYearAgo;
       magiOneYearAgo = finalMagiMC;
 
-      // Apply growth. Under the 3-Bucket strategy, each category earns a
-      // return blended from its OWN bucket-fraction split (this year's actual
-      // stock/bond draw, weighted by cashRealReturn/postRetireEq/preRetireEq
-      // per bucket 1/2/3) instead of the single portfolio-wide `r`. `r` itself
-      // is untouched and still drives every other consumer (GK guardrails,
-      // stress metrics) — only the balance growth step changes.
-      // Bucket 1/2/3 rates computed ONCE per year (not per category), so the
-      // Bucket 2 -> Bucket 1 income sweep below can adjust them before
-      // they're blended into each category's return. B2's yield leaves as
-      // cash instead of compounding in place — this reads current (post-draw)
-      // balances, so the sweep is based on what's actually left this year.
-      let bucketR1MC = cashRealReturn;
-      let bucketR2MC = blendEquityBond(stockReturnMC, bondReturnMC, p.postRetireEq);
-      // Bucket 3 uses postRetireEq too (NOT preRetireEq) — a Roth/HSA account
-      // left at its DEFAULT bucket (_defaultBucket: roth/hsa -> 3) must not
-      // silently get pushed more aggressive than the user's own chosen
-      // post-retirement mix just because this mode was turned on. Verified:
-      // preRetireEq here made a real profile's Stress Test outcome WORSE
-      // (91% equity Roth taking a bigger hit in the crash years than its
-      // normal 70% would have) — a silent regression, not a feature.
-      const bucketR3MC = blendEquityBond(stockReturnMC, bondReturnMC, p.postRetireEq);
-      if (bucketFracsMC && (p.bucket2YieldPct || 0) > 0) {
-        const bucketTotalsMC = bucketDollarTotals({ cash, pretax, roth, taxable }, bucketFracsMC);
-        // Cap the sweep at Bucket 1's target size (years-of-spending) — see
-        // matching comment in buildWithdrawalWaterfall.js. Without this, a
-        // large Bucket-2 balance (e.g. a 401k) loses real growth every year
-        // forever, even long after Bucket 1 already holds more than it needs.
-        const bucket1TargetMC = spSmiled * (p.b1Years ?? 2);
-        const sweptMC = bucket2YieldSweep(bucketTotalsMC[1], bucketTotalsMC[2], bucketR1MC, bucketR2MC, p.bucket2YieldPct, bucket1TargetMC);
-        bucketR1MC = sweptMC.r1;
-        bucketR2MC = sweptMC.r2;
-      }
-      const catGr = (category) => blendBucketReturns(fractionsForCategory(bucketFracsMC, category), bucketR1MC, bucketR2MC, bucketR3MC);
-      cash    = Math.max(0, cash    * (1 + (bucketFracsMC ? catGr("cash")    : cashRealReturn)));
-      pretax  = Math.max(0, pretax  * (1 + (bucketFracsMC ? catGr("pretax")  : r)));
-      roth    = Math.max(0, roth    * (1 + (bucketFracsMC ? catGr("roth")    : r)));
-      taxable = Math.max(0, taxable * (1 + (bucketFracsMC ? catGr("taxable") : r)));
+      // Apply growth. Cash earns its own safe rate; everything else earns the
+      // portfolio-wide glidepath return for this sampled year.
+      cash    = Math.max(0, cash    * (1 + cashRealReturn));
+      pretax  = Math.max(0, pretax  * (1 + r));
+      roth    = Math.max(0, roth    * (1 + r));
+      taxable = Math.max(0, taxable * (1 + r));
 
       totalPort = pretax + roth + taxable + cash;
       path.push(Math.round(totalPort));
@@ -4560,7 +4516,7 @@ function loadProfileFromLocal() {
     // as a silent ~1%/yr spending cut instead of an error — so remap here,
     // at the one point every saved profile enters the app, and stamp
     // `withdrawalStrategyMigratedFrom` so the UI can say it happened.
-    return migrateWithdrawalStrategy(data);
+    return migrateOrderingMode(migrateWithdrawalStrategy(data));
   } catch {
     return null;
   }
@@ -7233,25 +7189,18 @@ function AccountDrawOrder({ p, onAssumptionChange }) {
     set("withdrawalOrder", next);
   };
 
-  // 3-Bucket Strategy Impact now lives as a card in WaterfallPlanView's
-  // summary grid (right after Portfolio Depletion), not a banner here —
-  // it reuses the SAME `result`/`waterfall` that view already has, so this
-  // component doesn't need to compute or know about it at all.
-
-  // The first three options genuinely reorder the draw. The fourth does NOT —
-  // resolveDrawOrder returns the same cash→taxable→pretax→roth sequence for
-  // "three_bucket" as for "tax_reactive". What it changes is what each bucket
-  // is INVESTED IN (and so what it earns). It was labeled "3-Bucket Strategy"
-  // here, inside a control called "Account draw order", which promised the
-  // full advisor bucket protocol — spend B1 first, refill it from B3 in good
-  // years, freeze in bad ones. Only the asset-location half is built, so only
-  // that half is claimed. See the note above BEAR_REFILL_THRESHOLD in
-  // bucketStrategy.js for what a real refill protocol would still need.
+  // Every option here genuinely reorders the draw. A fourth, "three_bucket",
+  // was removed in v1.2.129: it never changed draw order at all, and its
+  // asset-location half was measured to be a bit-for-bit no-op (Bucket 2 and
+  // Bucket 3 both resolve to postRetireEq, which IS the portfolio-wide
+  // retirement return, and cash already earns cashRealReturn in every mode).
+  // Time-horizon buckets live on as an organizing/planning view in the
+  // 🧺 Buckets tab, which is where they belong — they are an investing and
+  // behavioral frame, not a withdrawal-ordering rule.
   const MODES = [
     ["tax_reactive", "Tax-reactive", true],
     ["custom",       "Custom",       false],
     ["pretax_first", "Pre-tax first", false],
-    ["three_bucket", "Bucket investing (same draw order)", false],
   ];
   const radioLbl = { fontSize: 12, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 5, cursor: "pointer", whiteSpace: "nowrap" };
   const arrow = (dis) => ({ background: dis ? "transparent" : "#0a1628", border: "1px solid #1e3a5f", color: dis ? "#334155" : "var(--accent-teal)", borderRadius: 4, width: 20, height: 18, cursor: dis ? "default" : "pointer", fontSize: 10, lineHeight: 1, padding: 0 });
@@ -7295,24 +7244,6 @@ function AccountDrawOrder({ p, onAssumptionChange }) {
         Earlier = drained first. RMDs are always taken first by law; the bracket cap, IRMAA guard, and Roth reserve below still apply to wherever pre-tax and Roth land.
       </div>
 
-      {mode === "three_bucket" && (
-        <div style={{ fontSize: 10.5, color: "var(--accent-teal)", marginTop: 6, lineHeight: 1.5, background: "rgba(56,189,248,0.08)", borderRadius: 6, padding: "6px 8px" }}>
-          This changes what your money is <strong>invested in</strong>, not the order accounts
-          are drawn — that stays the same as Tax-reactive. Money you've tagged{" "}
-          <strong>[B1]</strong> in Profile → Savings grows at your Cash return setting (so a
-          crash can't touch it); <strong>[B2]</strong> and <strong>[B3]</strong> both grow at
-          your Post-retirement equity mix. Each year Bucket 2 also passes its{" "}
-          <strong>{(p?.bucket2YieldPct ?? 0)}% yield</strong> across to Bucket 1, stopping once
-          Bucket 1 holds its {p?.b1Years ?? 2}-year target.
-          <br />
-          <span style={{ color: "var(--text-secondary)" }}>
-            What this does <em>not</em> do: it won't spend Bucket 1 first regardless of account
-            type, and it won't sell Bucket 3 to refill Bucket 1 in good years or freeze those
-            sales in bad ones. The 🧺 Buckets tab's monthly directive covers that — as guidance
-            for you to act on, not something the simulation carries out.
-          </span>
-        </div>
-      )}
     </div>
   );
 }
@@ -7865,41 +7796,6 @@ function WaterfallPlanView({ p, result }) {
           </div>
           <div className="ms">{depletionRow ? `(${depletionRow.yr})` : `lasts to age ${p.endAge || 90}`}</div>
         </div>
-        {p.orderingMode === "three_bucket" && (() => {
-          // NEUTRAL before/after, not a "you saved" claim — this feature's
-          // verified behavior is near-parity with Tax-reactive, not a
-          // guaranteed win. One extra deterministic run (fast, no debounce
-          // needed) against that baseline; `smart` (the "with buckets" side
-          // of both cards below) reuses the SAME `result` this whole view
-          // already has, so it's not a third, possibly-drifting copy of it.
-          const baseline = buildWithdrawalWaterfall({ ...p, orderingMode: "tax_reactive" });
-          const endingValue = (r) => (r.finalPretax||0)+(r.finalRoth||0)+(r.finalCash||0)+(r.finalTaxable||0);
-          const portfolioDelta = endingValue(smart) - endingValue(baseline.smart);
-          const taxDelta = (smart.totalTax || 0) - (baseline.smart.totalTax || 0);
-          const FLAT_BAND = 1_000; // below this, color neutral — noise, not signal, on a decades-long plan
-          const colorFor = (v, lowerIsBetter) => {
-            const signed = lowerIsBetter ? -v : v;
-            return Math.abs(v) < FLAT_BAND ? "var(--text-secondary)" : signed > 0 ? "#34d399" : "#f87171";
-          };
-          return (
-            <>
-              <div className="met">
-                <div className="ml">3-Bucket Impact</div>
-                <div className="mv" style={{ color: colorFor(portfolioDelta, false), fontSize: 16 }}>
-                  {portfolioDelta >= 0 ? "+" : "−"}{fmtDollar(Math.abs(portfolioDelta))}
-                </div>
-                <div className="ms">ending portfolio vs Tax-reactive</div>
-              </div>
-              <div className="met">
-                <div className="ml">3-Bucket Tax Impact</div>
-                <div className="mv" style={{ color: colorFor(taxDelta, true), fontSize: 16 }}>
-                  {taxDelta >= 0 ? "+" : "−"}{fmtDollar(Math.abs(taxDelta))}
-                </div>
-                <div className="ms">lifetime tax vs Tax-reactive{taxDelta < 0 ? " (less tax)" : taxDelta > 0 ? " (more tax)" : ""}</div>
-              </div>
-            </>
-          );
-        })()}
       </div>
 
       {/* Toggle */}
@@ -8554,9 +8450,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows }) 
                             <p>This schedule applies <strong>one blended return</strong> to your whole
                               portfolio. The Sourcing section applies a <strong>different return per
                               account</strong> — cash grows conservatively, other accounts follow your
-                              equity/bond mix{p.orderingMode === "three_bucket"
-                                ? ", and with bucket investing active, Bucket 1 is deliberately parked in a low-return, crash-resistant sleeve that widens this gap further"
-                                : ""}.</p>
+                              equity/bond mix.</p>
                             <p>The Sourcing section's number reflects your real accounts; treat this
                               schedule's Portfolio End as an approximation.</p>
                           </InfoModal>
@@ -8825,16 +8719,6 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
 
       {/* Monthly directive */}
       <div className="chart-card" style={{ borderLeft: `3px solid ${DC[directive.type]}` }}>
-        {params.orderingMode === "three_bucket" && (
-          <div style={{ fontSize: 10.5, color: "var(--accent-teal)", background: "rgba(56,189,248,0.08)", borderRadius: 6, padding: "5px 8px", marginBottom: 8 }}>
-            🧺 Bucket investing is active (Withdrawal Plan → Account draw order): the
-            simulation gives B1/B2/B3-tagged money different expected returns, and sweeps
-            Bucket 2's yield into Bucket 1 each year up to its target. The refill/replenish
-            guidance below is still advisory — selling Bucket 3 to refill Bucket 1, and
-            holding off in a down market, are manual steps you take, not ones the simulation
-            acts on. Account draw order is unchanged either way.
-          </div>
-        )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>📋 {monthName} {now.getFullYear()} — Retirement Directive</div>
@@ -12480,13 +12364,6 @@ function SavingsPanel({ values, onChange }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <ACard title="💰 Accounts" accent="var(--accent-teal)" desc="Every balance the plan draws from, grouped by tax treatment — the grouping is what decides the withdrawal order and the tax on each dollar.">
-      {values.orderingMode === "three_bucket" && (
-        <div style={{ fontSize: 11, color: "var(--accent-teal)", background: "rgba(56,189,248,0.08)", border: "1px solid rgba(56,189,248,0.18)", borderRadius: 6, padding: "6px 10px", marginBottom: 4, lineHeight: 1.5 }}>
-          🧺 Bucket investing is active (Withdrawal Plan tab): the <strong>[B1]/[B2]/[B3]</strong>
-          {" "}tags below now also set each account's expected return in the simulation, not
-          just its bucket display. They do not change which account is drawn from first.
-        </div>
-      )}
       {CATEGORIES.map(cat => {
         const catAccounts = accounts.filter(a => a.category === cat.key);
         return (
@@ -15665,7 +15542,6 @@ export default function AiRAForecaster() {
       // Account draw order (which bucket drains first) — orthogonal to strategy + guardrails.
       orderingMode: assumptions.orderingMode || "tax_reactive",
       withdrawalOrder: assumptions.withdrawalOrder || ["cash", "taxable", "pretax", "roth"],
-      bucket2YieldPct: assumptions.bucket2YieldPct ?? 3.0,
       b1Years: assumptions.b1Years ?? 2,
       b2Years: assumptions.b2Years ?? 5,
       fixedWithdrawalRate: (() => { const r = assumptions.fixedWithdrawalRate || 4.0; return r < 1 ? r : r / 100; })(), // normalize: stored as % (4) or decimal (0.04) → always decimal
@@ -16003,7 +15879,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   // Same retired-strategy migration the localStorage path
                   // gets. An exported JSON is the other way an old profile
                   // enters the app, and it shouldn't take a different route.
-                  const data = migrateWithdrawalStrategy(rawData);
+                  const data = migrateOrderingMode(migrateWithdrawalStrategy(rawData));
                   // Merged, never replaced — same rule the Progress tab's
                   // own import uses (handleImportCheckIns). Importing a
                   // profile onto a machine that already has a journal

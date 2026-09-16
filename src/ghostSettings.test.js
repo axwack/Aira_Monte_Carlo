@@ -81,6 +81,14 @@ const BASE = {
  */
 const INERT_BY_DESIGN = {
   name:                 "display only — report cover, not a calculation input",
+  // v1.2.129 removed the "three_bucket" ordering mode, the only engine that
+  // ever read these. They are now purely 🧺 Buckets tab planning inputs: they
+  // size the Bucket 1 / Bucket 2 runway targets the monthly directive checks
+  // your real balances against. Nothing in runMC or the waterfall reads them,
+  // and that is correct — buckets organize money, they do not change how the
+  // forecast grows or draws it.
+  b1Years:              "Buckets tab runway target; no engine reads it (see v1.2.129)",
+  b2Years:              "Buckets tab runway target; no engine reads it (see v1.2.129)",
   sex:                  "mortality is not yet modelled per-person",
   geminiApiKey:         "credential for the optional AI feature",
   geminiModel:          "AI model choice; not a model input",
@@ -107,14 +115,6 @@ const INERT_BY_DESIGN = {
   // Landmine DETECTION flags. They colour rows and raise warnings; they do not
   // change any draw or balance, so the numeric fingerprint cannot see them.
   ssTorpedoGuard:       "flags the landmine; does not alter draws",
-  // Promoted alongside b1Years (same commit, same BucketsTab display) so the
-  // two "years of spending" steppers share one profile-backed source of
-  // truth instead of one living in the profile and the other in
-  // localStorage for no reason. Only b1Years actually caps anything today
-  // (the yield sweep) — b2Years is genuinely inert until a Bucket-2-side
-  // consumer exists. Not a gap to close with a fixture; it has nothing to
-  // reach yet.
-  b2Years:              "promoted for BucketsTab display consistency; not yet read by any engine",
 };
 
 /**
@@ -156,8 +156,6 @@ const NEEDS_A_TARGETED_FIXTURE = {
   rothEmergencyReserve:    "this fixture never draws Roth, so the floor never binds",
   useAb:                   "gates rental; ab is already non-zero here",
   useJointRmdTable:        "needs a fixture that reaches RMD age with the joint gate open",
-  bucket2YieldPct:         "only read when orderingMode === 'three_bucket'; covered by withdrawal.test.js and bucketStrategy.test.js",
-  b1Years:                 "only read when orderingMode === 'three_bucket' (caps the yield sweep); covered by bucketStrategy.test.js",
   // Added by the spousal-SS engine wiring (§21, 2026-07-27, from another machine).
   // Only read when spouse.enabled is true, which BLANK_PROFILE defaults to false.
   // Proven live by the "spousal Social Security" block at the bottom of this file —

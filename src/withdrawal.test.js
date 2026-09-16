@@ -1,4 +1,4 @@
-import { buildWithdrawalWaterfall, resolveDrawOrder } from "./engine/buildWithdrawalWaterfall.js";
+import { buildWithdrawalWaterfall, resolveDrawOrder, migrateOrderingMode } from "./engine/buildWithdrawalWaterfall.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome } from "./engine/expenses.js";
 import { runMC, runStress } from "./App";
 
@@ -1000,15 +1000,13 @@ describe("Account draw order — runMC honors it (cross-engine, shared resolver)
   });
 });
 
-// ─── 3-Bucket asset-location strategy ──────────────────────────────────────────
-// The bug this feature exists to fix: an account tagged "Bucket 1" got the SAME
-// stochastic, shocked portfolio-wide return as everything else — tagging money
-// "safe" did nothing to its actual simulated growth. orderingMode: "three_bucket"
-// makes each account CATEGORY's return a blend of its bucket-fraction split
-// (cashRealReturn / postRetireEq / preRetireEq for buckets 1/2/3) instead of one
-// glidepath rate for the whole portfolio. Zero withdrawals in these fixtures
-// (fixed 0% rate, no GK floor) isolates pure growth so the math is hand-checkable.
-describe("3-Bucket strategy — engine behavior (orderingMode: 'three_bucket')", () => {
+// ─── Cash-category crash immunity (was the "3-Bucket strategy" block) ────────
+// v1.2.129 removed the "three_bucket" ordering mode. What it claimed to add —
+// protecting a cash bucket from a crash — was already true of the cash
+// CATEGORY in every mode, which is why turning the mode on measured as a
+// no-op. That pre-existing guarantee is what these tests pin down, so a future
+// change to the growth step can't quietly put cash back on the equity path.
+describe("cash-category money is immune to an equity crash sequence", () => {
   const BASE_MC = {
     currentAge: 65, retireAge: 65, endAge: 75, port: 0, contrib: 0, inf: 2.5,
     ssAge: 67, ssCola: 2.4, tax: false,
@@ -1017,74 +1015,52 @@ describe("3-Bucket strategy — engine behavior (orderingMode: 'three_bucket')",
     useJointRmdTable: false, twoHousehold: false,
     filingStatus: "mfj", stateOfResidence: "FL",
   };
-  const B1_ONLY = {
+  const CASH_ONLY = {
     ...BASE_MC,
     sp: 0, ssb: 0, useAb: false, smile: false,
     withdrawalStrategy: "fixed", fixedWithdrawalRate: 0,
     gkFloor: 0, gkCeiling: 999_999_999,
     cashRealReturn: 3.0,
     accounts: [
-      // category: cash, not taxable — Bucket 1 is cash-only (clampBucket,
-      // engine/buckets.js); a non-cash account tagged 1 would now clamp to
-      // 2 and defeat the point of this test.
-      { id: "b1", category: "cash", name: "All Bucket 1", balance: 500_000, bucket: 1 },
+      { id: "b1", category: "cash", name: "Cash moat", balance: 500_000, bucket: 1 },
     ],
   };
-  const PLAN_AGE = 75; // 10 years from retireAge 65 — matches Math.pow(1.03, 10) below
+  const PLAN_AGE = 75; // 10 years from retireAge 65 — matches Math.pow(1.03, 10)
   const N = 60, SEED = 7;
+  const lastRow = (r) => r.pcts[r.pcts.length - 1];
 
-  test("a cash Bucket-1 account is immune to a forced equity crash sequence, in both modes", () => {
-    // Cash-category money has always used cashGr regardless of any bucket
-    // tag or orderingMode — that's pre-existing category-level behavior,
-    // not something this feature adds. So both modes should be protected.
-    const withoutBuckets = runStress({ ...B1_ONLY, orderingMode: "tax_reactive" }, PLAN_AGE, N, SEED);
-    const withBuckets    = runStress({ ...B1_ONLY, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED);
-    const smoothGrowth = 500_000 * Math.pow(1.03, 10);
-    const lastRow = (r) => r.pcts[r.pcts.length - 1];
-    expect(lastRow(withoutBuckets).p50).toBeCloseTo(smoothGrowth, -3);
-    expect(lastRow(withBuckets).p50).toBeCloseTo(smoothGrowth, -3);
+  test("a cash account compounds at cashRealReturn through a forced crash", () => {
+    const res = runStress(CASH_ONLY, PLAN_AGE, N, SEED);
+    expect(lastRow(res).p50).toBeCloseTo(500_000 * Math.pow(1.03, 10), -3);
   });
 
-  test("a NON-cash account cannot buy Bucket-1 protection by tagging itself Bucket 1 (regression)", () => {
-    // This is the actual bug the whole 3-Bucket feature was built to fix —
-    // and now that Bucket 1 is constrained to cash-only (clampBucket), it's
-    // impossible to even attempt it: a taxable account tagged bucket:1 is
-    // silently treated as bucket 2 end to end, so it gets the crash-exposed
-    // equity blend, not the safe rate — exactly as if it were never tagged
-    // Bucket 1 at all. Proves the clamp is enforced through the full MC path,
-    // not just the bucket-fraction helper in isolation.
-    const fakeB1 = { ...B1_ONLY, accounts: [
-      { id: "b1", category: "taxable", name: "Mistagged Bucket 1", balance: 500_000, bucket: 1 },
-    ] };
-    const withBuckets = runStress({ ...fakeB1, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED);
-    const smoothGrowth = 500_000 * Math.pow(1.03, 10);
-    const lastRow = (r) => r.pcts[r.pcts.length - 1];
-    expect(lastRow(withBuckets).p50).toBeLessThan(smoothGrowth * 0.95);
+  test("a removed orderingMode value degrades to tax_reactive, not to something else", () => {
+    // Belt-and-braces for the enum removal: a profile saved before v1.2.129
+    // still carries orderingMode "three_bucket". migrateOrderingMode rewrites
+    // it at load, but an unmigrated object reaching an engine directly must
+    // still behave exactly like the default rather than silently taking some
+    // other branch.
+    const stale = runMC({ ...CASH_ONLY, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED, true);
+    const dflt  = runMC({ ...CASH_ONLY, orderingMode: "tax_reactive" }, PLAN_AGE, N, SEED, true);
+    expect(stale.pcts).toEqual(dflt.pcts);
   });
 
-  test("mixed allocation: only the Bucket-1 fraction is protected, not the whole balance", () => {
-    const half = {
-      ...B1_ONLY,
-      accounts: [
-        { id: "b1", category: "cash",    name: "Half Bucket 1", balance: 250_000, bucket: 1 },
-        { id: "b3", category: "taxable", name: "Half Bucket 3", balance: 250_000, bucket: 3 },
-      ],
-    };
-    const allB1 = runStress({ ...B1_ONLY, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED);
-    const mixed = runStress({ ...half, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED);
-    const lastRow = (r) => r.pcts[r.pcts.length - 1];
-    // Half the balance is Bucket 3 (preRetireEq-weighted, exposed to the crash
-    // sequence) — the blended median should sit below the all-Bucket-1 case.
-    expect(lastRow(mixed).p50).toBeLessThan(lastRow(allB1).p50);
+  test("migrateOrderingMode rewrites the removed value and leaves others alone", () => {
+    expect(migrateOrderingMode({ orderingMode: "three_bucket" }).orderingMode).toBe("tax_reactive");
+    expect(migrateOrderingMode({ orderingMode: "pretax_first" }).orderingMode).toBe("pretax_first");
+    expect(migrateOrderingMode({ orderingMode: "custom" }).orderingMode).toBe("custom");
+    expect(migrateOrderingMode(null)).toBeNull();
   });
 
-  test("toggling orderingMode back to tax_reactive is a true no-op vs. before this feature existed", () => {
-    // Same fixture, same seed — three_bucket OFF must reproduce exactly what
-    // the pre-existing tax_reactive path already did (bucketFracsMC is null).
-    const a = runMC({ ...B1_ONLY, orderingMode: "tax_reactive" }, PLAN_AGE, N, SEED, true);
-    const b = runMC({ ...B1_ONLY, orderingMode: "tax_reactive" }, PLAN_AGE, N, SEED, true);
+  test("bucket tags do not change the forecast at all", () => {
+    // The point of the removal: buckets organize money for planning, they do
+    // not alter what the simulation grows or draws. Same accounts, different
+    // tags, identical result.
+    const asB2 = { ...CASH_ONLY, accounts: [{ ...CASH_ONLY.accounts[0], bucket: 2 }] };
+    const asB3 = { ...CASH_ONLY, accounts: [{ ...CASH_ONLY.accounts[0], bucket: 3 }] };
+    const a = runMC(asB2, PLAN_AGE, N, SEED, true);
+    const b = runMC(asB3, PLAN_AGE, N, SEED, true);
     expect(a.pcts).toEqual(b.pcts);
-    expect(a.rate).toBe(b.rate);
   });
 });
 
