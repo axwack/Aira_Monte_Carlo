@@ -47,7 +47,6 @@ import { earlyWithdrawalPenalty, detectEmployerPlan, ruleOf55SeparationQualifies
 import { scheduleSpendForYear } from "./expenseImport.js";
 import { expectedReturn } from "./expectedReturn.js";
 import { resolveGlidepathSwitchAge } from "./glidepath.js";
-import { bucketFractionsByCategory, fractionsForCategory, blendBucketReturns, bucketDollarTotals, bucket2YieldSweep } from "./bucketStrategy.js";
 import { taxableYieldSplit } from "./taxableYield.js";
 
 const BASE_YEAR = new Date().getFullYear();
@@ -309,13 +308,34 @@ export function resolveDrawOrder(orderingMode, withdrawalOrder) {
     return out;
   }
   if (orderingMode === "pretax_first") return ["pretax", "cash", "taxable", "roth"];
-  // "three_bucket" changes what return each CATEGORY earns (see
-  // bucketFractionsByCategory in bucketStrategy.js) but not the category draw
-  // SEQUENCE itself — the tax-bracket/IRMAA/RMD sourcing logic those steps
-  // carry stays exactly as tax_reactive. Time-horizon-tier draw sequencing
-  // (spend Bucket 1 first regardless of category, gated refill from Bucket 3)
-  // is a separate, larger increment, not yet wired into this resolver.
-  return ["cash", "taxable", "pretax", "roth"]; // tax_reactive (default) and three_bucket
+  // Anything else (including a "three_bucket" value left in a profile saved
+  // before v1.2.129 removed that mode) resolves to the tax_reactive default.
+  return ["cash", "taxable", "pretax", "roth"];
+}
+
+/**
+ * Migrate a saved profile off the removed "three_bucket" ordering mode.
+ *
+ * Removing an enum value does not throw — every `=== "three_bucket"` test just
+ * goes false and the app quietly runs a different plan than the one the user
+ * picked. resolveDrawOrder above already degrades safely (its terminal return
+ * is the tax_reactive order, which is what three_bucket resolved to anyway),
+ * but the Account draw order radio group would render with NOTHING selected,
+ * since no option matches the saved value. So rewrite it at the two points a
+ * profile enters the app: localStorage load and JSON import.
+ *
+ * No user-facing migration notice, unlike migrateWithdrawalStrategy — that one
+ * announces itself because a retired spend rule genuinely changes the plan.
+ * This does not: the asset-location half of three_bucket was measured to be a
+ * bit-for-bit no-op (Bucket 2 and Bucket 3 both resolved to postRetireEq, which
+ * is the portfolio-wide retirement return, and cash already earned
+ * cashRealReturn in every mode), leaving only the Bucket 2 -> Bucket 1 yield
+ * sweep, worth about 0.1% of terminal portfolio on a mixed test profile.
+ */
+export function migrateOrderingMode(profile) {
+  if (!profile || typeof profile !== "object") return profile;
+  if (profile.orderingMode !== "three_bucket") return profile;
+  return { ...profile, orderingMode: "tax_reactive" };
 }
 
 /**
@@ -361,13 +381,6 @@ export function buildWithdrawalWaterfall(params = {}) {
     // "tax_reactive" reproduces the original cash→taxable→pretax→Roth sequence.
     orderingMode    = "tax_reactive",
     withdrawalOrder = ["cash", "taxable", "pretax", "roth"],
-    bucket2YieldPct = 3.0,
-    // Same b1Years concept BucketsTab already shows —
-    // caps how large Bucket 1 is allowed to grow from the yield sweep before
-    // it stops. Not yet promoted into BLANK_PROFILE's UI (BucketsTab still
-    // keeps its own copy in localStorage) — this default matches it so the
-    // two don't silently disagree until that promotion happens.
-    b1Years = 2,
     preRetireEq = 91,
     postRetireEq = 70,
     cashRealReturn,
@@ -680,15 +693,6 @@ export function buildWithdrawalWaterfall(params = {}) {
   // The user's chosen account draw order (used by the "smart" = your-plan scenario).
   // The "naive" comparison scenario always drains pre-tax first, uncapped.
   const smartDrawOrder = resolveDrawOrder(orderingMode, withdrawalOrder);
-
-  // 3-Bucket asset-location strategy (additive layer, orthogonal to the
-  // waterfall's draw sequencing/tax logic above — see engine/bucketStrategy.js
-  // header comment). Computed ONCE from today's accounts and held constant for
-  // the whole projection — a documented simplification, not a per-year
-  // re-simulation of account-level balances. Only the "smart"/your-plan
-  // scenario uses it; "naive" models an unsophisticated retiree by design and
-  // stays on the flat portfolio-wide glidepath regardless of this setting.
-  const bucketFracs = orderingMode === "three_bucket" ? bucketFractionsByCategory(accounts) : null;
 
   // ── Scenario runner ────────────────────────────────────────────────────────
   function runScenario(isSmart) {
@@ -1453,39 +1457,10 @@ export function buildWithdrawalWaterfall(params = {}) {
         };
       }
 
-      // 3-Bucket strategy: apply each category's bucket-blended rate instead
-      // of the flat cashGr/gr this scenario would otherwise use. Only the
-      // "smart" scenario opts in (see bucketFracs comment above).
-      const useBuckets = isSmart && bucketFracs;
-      // Bucket 1/2/3 rates for THIS year, with the Bucket 2 -> Bucket 1 income
-      // sweep applied before blending — mirrors runMC's identical logic. Uses
-      // current (pre-growth, post-draw-this-year) balances, computed fresh
-      // each year since balances shift as the plan draws down.
-      let bucketR1 = cashGr, bucketR2 = postGr;
-      // Bucket 3 uses postGr too, not preGr — see the matching comment in
-      // App.jsx (runMC): a Roth/HSA account defaulted into Bucket 3 must not
-      // silently become more aggressive than the user's chosen post-retirement
-      // mix just from turning this mode on.
-      const bucketR3 = postGr;
-      if (useBuckets && (bucket2YieldPct || 0) > 0) {
-        const totals = bucketDollarTotals({ cash, pretax, roth, taxable }, bucketFracs);
-        // Cap the sweep at Bucket 1's target size (years-of-spending, same
-        // b1Years concept BucketsTab already displays) — without this, the
-        // sweep unconditionally drained a fixed % of Bucket 2 every year
-        // forever, even once Bucket 1 already held far more than it needed.
-        // Verified against a real profile: this was the actual cause of a
-        // large 401(k) balance losing real growth for no benefit, since its
-        // much-smaller Bucket 1 target was reached almost immediately.
-        const bucket1Target = sp * b1Years;
-        const swept = bucket2YieldSweep(totals[1], totals[2], bucketR1, bucketR2, bucket2YieldPct, bucket1Target);
-        bucketR1 = swept.r1;
-        bucketR2 = swept.r2;
-      }
-      const bucketGrFor = (category) => blendBucketReturns(fractionsForCategory(bucketFracs, category), bucketR1, bucketR2, bucketR3);
-      const cashGrThisYr    = useBuckets ? bucketGrFor("cash")    : cashGr;
-      const taxableGrThisYr = useBuckets ? bucketGrFor("taxable") : gr;
-      const pretaxGrThisYr  = useBuckets ? bucketGrFor("pretax")  : gr;
-      const rothGrThisYr    = useBuckets ? bucketGrFor("roth")    : gr;
+      const cashGrThisYr    = cashGr;
+      const taxableGrThisYr = gr;
+      const pretaxGrThisYr  = gr;
+      const rothGrThisYr    = gr;
 
       cash    = Math.max(0, cash    - fromCash    - convTaxFromCash)    * (1 + cashGrThisYr);
       // NOTE (documented simplification): a taxable draw taken to PAY the conversion
