@@ -131,6 +131,30 @@ export function bucketCategoryReturn(i, fracsForCat, cashRealReturnDecimal, post
   return bucketCategoryReturnFromReturns(SP500[i], BONDS[i], fracsForCat, cashRealReturnDecimal, postRetireEqPct, preRetireEqPct);
 }
 
+/* ───────────────────────────────────────────────────────────────────────────
+ * NOT WIRED — the four exports below have ZERO production callers.
+ *
+ * bucketDrawCaps, BEAR_REFILL_THRESHOLD, bucket3DrawdownFromPeak and
+ * shouldFreezeRefill are imported by src/bucketStrategy.test.js and by nothing
+ * else. They are the refill-protocol half of the bucket strategy — spend
+ * Bucket 1 first, sell Bucket 3 to refill it when markets are up, freeze those
+ * sales when Bucket 3 is down more than BEAR_REFILL_THRESHOLD. That half was
+ * never built. What IS live is asset location (blendBucketReturns et al) plus
+ * the Bucket 2 -> Bucket 1 yield sweep (bucket2YieldSweep), and the UI now
+ * claims only those.
+ *
+ * Being unit-tested made these read as shipped during an audit, which is the
+ * specific trap this banner exists to close. Kept rather than deleted because
+ * a real refill protocol is scoped as the next increment and would use them;
+ * if that gets shelved for good, delete this block and its tests.
+ *
+ * Wiring them needs three things this module does not have: per-path trailing
+ * peak tracking for Bucket 3 (runMC has the real sequence, this module sees
+ * one year at a time), real per-bucket balances (buckets are a derived view of
+ * category balances today, not tracked state), and a documented answer for the
+ * deterministic engine, which has no market regime to freeze against.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
 /**
  * Floor/target dollar thresholds per bucket, lifted verbatim from
  * BucketsTab's existing math (App.jsx ~8219-8226) so the display tab and this

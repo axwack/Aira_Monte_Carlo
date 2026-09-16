@@ -214,9 +214,16 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.125";
-export const BUILD_TAG = "[main] v1.2.125 - Bucket 1 is now cash-only (design-authority + logic-validator consulted on real bucket-priority draw sequencing first). Bucket 1 promises to be the cash cushion, spendable without tax or an early-withdrawal penalty - only a cash-category account can back that promise. A pretax or Roth account tagged Bucket 1 either forces unnecessary ordinary income/penalty to honor 'spend first', or (today) gets drawn in normal tax-efficient order anyway, making the tag a false promise either way. Constraint added at the single source of truth (engine/buckets.js's accountBucketPieces, via a new clampBucket - any non-cash account or split tagged bucket 1 is treated as bucket 2 everywhere) plus the [B1] chip disabled at both UI entry points (SavingsPanel's per-account chips, AccountSplitEditor's per-slice chips) so it can't be mis-tagged going forward. This also resolves the earlier 'why is B1 End positive' confusion: once Bucket 1 can only be cash, cash was already drawn first in the existing tax-efficient order (cash before taxable/pretax/roth) - so 'spend Bucket 1 first' is true for free, no new sequencing engine needed. Real bucket-priority sequencing that overrides tax-efficient order (the bigger, deferred ask) was explicitly evaluated and NOT recommended: it doesn't match how real advisors build cash cushions and isn't needed once this constraint is in place. Updated 3 tests that had exploited the old free-form tagging (a taxable/Roth account claiming Bucket 1) to match the new constraint, and added explicit regression tests for the clamp in both engine/buckets.js and bucketStrategy.js consumers. 1098/1098 tests green.";
-export const BUILD_TIME = "2026-09-10T19:00:00Z";
+const APP_VERSION = "1.2.128";
+export const BUILD_TAG = `[main] v1.2.128 - "3-Bucket Strategy" renamed to what it actually does
+- Audit trigger: with/without a funded cash bucket measured the same in the crash stress test at 3,000 paths, at any bucket size
+- Cause is naming, not math: the mode never changed draw order (resolveDrawOrder returns the same order as tax_reactive) and a cash account already earns the cash rate in the default mode — so the toggle wasn't the thing being measured
+- Renamed "3-Bucket Strategy" -> "Bucket investing (same draw order)"; it does asset location + a B2->B1 yield sweep, not the full refill protocol
+- Fixed a wrong disclosure: it claimed B3 grows at the pre-retirement equity mix; the engine uses post-retirement (changed deliberately in v1.2.119, copy never followed)
+- Banner on the 4 refill primitives in bucketStrategy.js - built and unit-tested, zero production callers, which is what made them read as shipped
+- New src/bucketRefillNotWired.test.js locks it: fails if a refill primitive gets wired, if the draw orders diverge, or if the label re-promises the full strategy
+- About glossary now states which half AiRA simulates, plus the Kitces finding that freeze-only buckets match total-return rebalancing rather than beat it`;
+export const BUILD_TIME = "2026-09-16T02:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -3259,8 +3266,14 @@ const CSS = `
   .lp-cta:hover { transform:translateY(-1px); box-shadow:0 14px 32px -8px rgba(91,141,239,0.7); }
   .lp-skip { display:block; margin-top:15px; background:none; border:none; color:var(--text-muted); font-size:13px; cursor:pointer; font-family:'Inter',sans-serif; text-decoration:underline; padding:0; }
   .lp-skip:hover { color:var(--text-secondary); }
-  .layout { display:grid; grid-template-columns:340px 1fr; height:calc(100vh - 56px); overflow:hidden; }
-  .sidebar { border-right:1px solid rgba(255, 255, 255, 0.08); padding:14px 12px; overflow-y:auto; background:rgba(10,15,30,0.78); display:flex; flex-direction:column; gap:12px; min-height:0; }
+  /* minmax(0,1fr), not bare 1fr: a grid track's auto minimum is its content's
+     max-content width, so a wide child (the 15+ column Withdrawal Plan
+     table) silently grows the whole right-pane track past the viewport
+     instead of scrolling inside it — the browser has to be widened to see
+     it. minmax(0,1fr) removes that content-based floor so .main is held to
+     the track's actual size and its own overflow rules (below) take over. */
+  .layout { display:grid; grid-template-columns:340px minmax(0, 1fr); height:calc(100vh - 56px); overflow:hidden; }
+  .sidebar { border-right:1px solid rgba(255, 255, 255, 0.08); padding:14px 12px; overflow-y:auto; background:rgba(10,15,30,0.78); display:flex; flex-direction:column; gap:12px; min-height:0; min-width:0; }
   .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-card); padding:13px 12px; }
   .sb-title { font-size:11.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:10px; }
   .sl-row { display:flex; flex-direction:column; gap:6px; margin-bottom:13px; }
@@ -3281,8 +3294,26 @@ const CSS = `
   .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); flex-shrink:0; }
   .run-btn:hover { opacity:0.9; box-shadow:0 6px 20px rgba(14,165,233,0.35); }
   .run-btn:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
-  .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; min-height:0; }
-  .main > * { flex-shrink:0; }
+  .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; min-height:0; min-width:0; }
+  /* min-width:0 alongside flex-shrink:0: shrink is about the column axis
+     (height) here, not width — without min-width:0 a card holding a wide
+     table still stretches to that table's content width on the cross axis,
+     which is the other half of the same overflow this section fixes. */
+  .main > * { flex-shrink:0; min-width:0; }
+  /* One level isn't enough. Tab bodies nest their own
+     display:flex/flexDirection:column card stacks several layers deep
+     (WithdrawalPlanCombined > a plain section div > WaterfallPlanView, each
+     wrapping the next) before reaching the wide table's own overflow-x:auto
+     div. Each of those intermediate flex containers has the exact same
+     content-based auto-minimum-width problem .main > * fixes one level up —
+     min-width:0 only stops the wide child from being a floor on ITS
+     immediate flex parent, it doesn't cascade to grandparents. Rather than
+     hunting down and annotating every nested flex wrapper in every tab
+     (this pattern repeats across the app), apply the fix universally to
+     every descendant of .main: min-width:0 is already CSS's default value,
+     so this changes nothing for ordinary block boxes — it only removes the
+     content-based floor for the specific flex/grid items that have one. */
+  .main * { min-width:0; }
   .flag-w { border-left:3px solid #f59e0b; background:rgba(245,158,11,0.1); padding:7px 12px; font-size:12px; color:#fde68a; border-radius:0 8px 8px 0; margin-bottom:4px; font-weight:500; }
   .flag-i { border-left:3px solid #38bdf8; background:rgba(56,189,248,0.08); color:#bae6fd; border-radius:0 8px 8px 0; padding:7px 12px; font-size:12px; margin-bottom:4px; font-weight:500; }
   /* auto-fit (not a fixed 4-column count) so a row with fewer cards than
@@ -7207,11 +7238,20 @@ function AccountDrawOrder({ p, onAssumptionChange }) {
   // it reuses the SAME `result`/`waterfall` that view already has, so this
   // component doesn't need to compute or know about it at all.
 
+  // The first three options genuinely reorder the draw. The fourth does NOT —
+  // resolveDrawOrder returns the same cash→taxable→pretax→roth sequence for
+  // "three_bucket" as for "tax_reactive". What it changes is what each bucket
+  // is INVESTED IN (and so what it earns). It was labeled "3-Bucket Strategy"
+  // here, inside a control called "Account draw order", which promised the
+  // full advisor bucket protocol — spend B1 first, refill it from B3 in good
+  // years, freeze in bad ones. Only the asset-location half is built, so only
+  // that half is claimed. See the note above BEAR_REFILL_THRESHOLD in
+  // bucketStrategy.js for what a real refill protocol would still need.
   const MODES = [
     ["tax_reactive", "Tax-reactive", true],
     ["custom",       "Custom",       false],
     ["pretax_first", "Pre-tax first", false],
-    ["three_bucket", "3-Bucket Strategy", false],
+    ["three_bucket", "Bucket investing (same draw order)", false],
   ];
   const radioLbl = { fontSize: 12, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 5, cursor: "pointer", whiteSpace: "nowrap" };
   const arrow = (dis) => ({ background: dis ? "transparent" : "#0a1628", border: "1px solid #1e3a5f", color: dis ? "#334155" : "var(--accent-teal)", borderRadius: 4, width: 20, height: 18, cursor: dis ? "default" : "pointer", fontSize: 10, lineHeight: 1, padding: 0 });
@@ -7257,11 +7297,20 @@ function AccountDrawOrder({ p, onAssumptionChange }) {
 
       {mode === "three_bucket" && (
         <div style={{ fontSize: 10.5, color: "var(--accent-teal)", marginTop: 6, lineHeight: 1.5, background: "rgba(56,189,248,0.08)", borderRadius: 6, padding: "6px 8px" }}>
-          Also changes what each account category EARNS, not just the draw order: money
-          you've tagged <strong>[B1]</strong> in Profile → Savings grows at your Cash return
-          setting (safe from a crash), <strong>[B2]</strong> grows at your Post-retirement
-          equity mix, and <strong>[B3]</strong> grows at your Pre-retirement equity mix — see
-          the 🧺 Buckets tab to review or change those tags.
+          This changes what your money is <strong>invested in</strong>, not the order accounts
+          are drawn — that stays the same as Tax-reactive. Money you've tagged{" "}
+          <strong>[B1]</strong> in Profile → Savings grows at your Cash return setting (so a
+          crash can't touch it); <strong>[B2]</strong> and <strong>[B3]</strong> both grow at
+          your Post-retirement equity mix. Each year Bucket 2 also passes its{" "}
+          <strong>{(p?.bucket2YieldPct ?? 0)}% yield</strong> across to Bucket 1, stopping once
+          Bucket 1 holds its {p?.b1Years ?? 2}-year target.
+          <br />
+          <span style={{ color: "var(--text-secondary)" }}>
+            What this does <em>not</em> do: it won't spend Bucket 1 first regardless of account
+            type, and it won't sell Bucket 3 to refill Bucket 1 in good years or freeze those
+            sales in bad ones. The 🧺 Buckets tab's monthly directive covers that — as guidance
+            for you to act on, not something the simulation carries out.
+          </span>
         </div>
       )}
     </div>
@@ -8506,7 +8555,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows }) 
                               portfolio. The Sourcing section applies a <strong>different return per
                               account</strong> — cash grows conservatively, other accounts follow your
                               equity/bond mix{p.orderingMode === "three_bucket"
-                                ? ", and with 3-Bucket Strategy active, Bucket 1 is deliberately parked in a low-return, crash-resistant sleeve that widens this gap further"
+                                ? ", and with bucket investing active, Bucket 1 is deliberately parked in a low-return, crash-resistant sleeve that widens this gap further"
                                 : ""}.</p>
                             <p>The Sourcing section's number reflects your real accounts; treat this
                               schedule's Portfolio End as an approximation.</p>
@@ -8778,10 +8827,12 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
       <div className="chart-card" style={{ borderLeft: `3px solid ${DC[directive.type]}` }}>
         {params.orderingMode === "three_bucket" && (
           <div style={{ fontSize: 10.5, color: "var(--accent-teal)", background: "rgba(56,189,248,0.08)", borderRadius: 6, padding: "5px 8px", marginBottom: 8 }}>
-            🧺 3-Bucket Strategy is active: the simulation now gives B1/B2/B3-tagged money
-            different expected returns. The refill/replenish guidance below is still
-            advisory — moving money between buckets is a manual step you take, not yet
-            something the simulation acts on automatically.
+            🧺 Bucket investing is active (Withdrawal Plan → Account draw order): the
+            simulation gives B1/B2/B3-tagged money different expected returns, and sweeps
+            Bucket 2's yield into Bucket 1 each year up to its target. The refill/replenish
+            guidance below is still advisory — selling Bucket 3 to refill Bucket 1, and
+            holding off in a down market, are manual steps you take, not ones the simulation
+            acts on. Account draw order is unchanged either way.
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
@@ -12431,9 +12482,9 @@ function SavingsPanel({ values, onChange }) {
       <ACard title="💰 Accounts" accent="var(--accent-teal)" desc="Every balance the plan draws from, grouped by tax treatment — the grouping is what decides the withdrawal order and the tax on each dollar.">
       {values.orderingMode === "three_bucket" && (
         <div style={{ fontSize: 11, color: "var(--accent-teal)", background: "rgba(56,189,248,0.08)", border: "1px solid rgba(56,189,248,0.18)", borderRadius: 6, padding: "6px 10px", marginBottom: 4, lineHeight: 1.5 }}>
-          🧺 3-Bucket Strategy is active (Withdrawal Plan tab): the <strong>[B1]/[B2]/[B3]</strong>
+          🧺 Bucket investing is active (Withdrawal Plan tab): the <strong>[B1]/[B2]/[B3]</strong>
           {" "}tags below now also set each account's expected return in the simulation, not
-          just its bucket display.
+          just its bucket display. They do not change which account is drawn from first.
         </div>
       )}
       {CATEGORIES.map(cat => {

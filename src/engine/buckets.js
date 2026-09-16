@@ -10,9 +10,11 @@
  * `bucket` (1/2/3) is orthogonal to `category` (cash/taxable/pretax/roth/hsa):
  * category is the TAX axis (which account type pays this year — see
  * buildWithdrawalWaterfall.js), bucket is the TIME-HORIZON axis (how soon
- * this money is needed, and — when the "3-Bucket Strategy" orderingMode is
- * active — what it should be invested in). They compose; neither replaces
- * the other.
+ * this money is needed, and — when the "Bucket investing" orderingMode
+ * (`three_bucket`) is active — what it should be invested in). They compose;
+ * neither replaces the other. Note that orderingMode is a misnomer for this
+ * one value: `three_bucket` does not change the draw ORDER at all (see
+ * resolveDrawOrder in buildWithdrawalWaterfall.js), only asset location.
  */
 
 // Default bucket assignment by account category (user can override per account
