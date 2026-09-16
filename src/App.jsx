@@ -83,7 +83,7 @@ import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yea
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
 import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationNotice } from "./engine/withdrawalStrategies.js";
-import { _defaultBucket, accountBucketPieces, expandAccountBuckets, clampBucket, bucketFractionsByCategory, bucketDollarTotals } from "./engine/buckets.js";
+import { _defaultBucket, accountBucketPieces, expandAccountBuckets, clampBucket, bucketFractionsByCategory, bucketBalancesForRow, computeBucket1Runway } from "./engine/buckets.js";
 import { dollarBasisLabel, deflate, mcMedianAtAge, selectPortfolioAtAge } from "./engine/mcSelectors.js";
 import { taxableYieldSplit } from "./engine/taxableYield.js";
 // One declaration of every figure's arithmetic, rendered here and enforced by
@@ -213,16 +213,14 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.129";
-export const BUILD_TAG = `[feature/remove-bucket-ordering-mode] v1.2.129 - Removed the bucket ordering mode
-- Measured it first: with the yield sweep off, three_bucket and tax_reactive produce a byte-identical result ($7,385,317 both). Asset location was a proven no-op
-- Why: B2 and B3 both resolved to postRetireEq, which IS the portfolio-wide retirement return (glidepath is a step function), and cash already earned cashRealReturn in every mode. Only the yield sweep moved anything - 0.10% of terminal portfolio
-- Deleted engine/bucketStrategy.js; its 3 accounting helpers (fractions, dollar totals) moved into engine/buckets.js, which is all the Buckets tab and the B1 End column ever needed
-- Removed the three_bucket option, bucket2YieldPct, and the bucket branches in runMC and buildWithdrawalWaterfall
-- migrateOrderingMode rewrites saved/imported profiles to tax_reactive; without it the draw-order radio renders with nothing selected. No user notice - the behavior change is the 0.1% sweep
-- b1Years/b2Years stay as Buckets tab planning inputs, now correctly declared as read by no engine
-- Buckets remain as an organizing view in the Buckets tab, which is what they are: an investing and behavioral frame, not a withdrawal-ordering rule`;
-export const BUILD_TIME = "2026-09-16T14:00:00Z";
+const APP_VERSION = "1.2.130";
+export const BUILD_TAG = `[main] v1.2.130 - Bucket 1 Runway card on the Buckets tab
+- Answers the question the removed bucket-strategy toggle never actually answered: when does Bucket 1 run dry, and how much to move from Bucket 2 then
+- Reads the SAME engine schedule the Withdrawal Plan tab shows (buildWithdrawalWaterfall's smart.rows) - no second simulation, can't disagree with it
+- Replaced the old "Next review in ~X months" estimate, which used a flat linear guess (today's balance / today's monthly spend, no growth, no inflation, no income timing) - one runway number now, not two that could disagree
+- New engine/buckets.js exports: bucketBalancesForRow (shared selector - the Withdrawal Plan table's "B1 End" column now reads the same one instead of its own inline copy) and computeBucket1Runway (pure, hand-calc tested)
+- 1,073 tests / 46 suites green`;
+export const BUILD_TIME = "2026-09-16T18:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -7910,7 +7908,7 @@ function WaterfallPlanView({ p, result }) {
               // genuinely depleted — the whole point of tracking it, so it
               // must read as "$0", not the same dash as "not applicable".
               const b1End = hasB1
-                ? bucketDollarTotals({ cash: r.cashEnd, taxable: r.taxableEnd, pretax: r.pretaxEnd, roth: r.rothEnd }, b1FracsByCategory)[1]
+                ? bucketBalancesForRow(r, b1FracsByCategory)[1]
                 : null;
               return (
               <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
@@ -8625,14 +8623,30 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
   const b2Floor    = spendBasis * b2Years;
   const b2Target   = Math.max(b2Floor, Math.round(ssGapYears * spendBasis));
 
-  // Simulation row for tax guidance
-  const simRow = useMemo(() => {
+  // One call to the real engine, shared by the tax-guidance row below and the
+  // runway estimate further down — not two independent reads of the same
+  // simulation, and not a second, cruder projection of it (see the runway
+  // comment below for what this replaced).
+  const waterfallResult = useMemo(() => {
     if (!sp || !port) return null;
-    try { return buildWithdrawalWaterfall(params)?.smart?.rows?.[0] ?? null; }
+    try { return buildWithdrawalWaterfall(params); }
     catch { return null; }
   }, [params]);
+  const simRow = waterfallResult?.smart?.rows?.[0] ?? null;
   const marginalRate = simRow?.marginalBracket ?? 12;
   const irmaaRisk    = simRow?.landmines?.irmaaTriggered ?? false;
+
+  // Bucket 1 runway — see computeBucket1Runway (engine/buckets.js) for the
+  // depletion logic. This used to be approximated by a `monthsToFloor` flat
+  // linear estimate (today's balance minus today's floor, over today's flat
+  // monthly spend); reading the real schedule instead means it can't
+  // silently disagree with what the Withdrawal Plan tab shows for the same plan.
+  const runway = useMemo(() => {
+    if (!hasAccounts || b1Accts.length === 0) return null;
+    if (b1Actual < b1Floor) return null; // already below floor — the directive above already covers this
+    const fracs = bucketFractionsByCategory(params.accounts);
+    return computeBucket1Runway(waterfallResult?.smart?.rows, fracs, b1Years);
+  }, [hasAccounts, b1Accts.length, b1Actual, b1Floor, waterfallResult, params.accounts, b1Years]);
 
   // Directive logic
   const directive = useMemo(() => {
@@ -8703,9 +8717,8 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
       // Canonical rule: only replenish B2 from B3 when markets are favorable.
       return { type: "warning", title: "Bucket 2 below floor — replenish from Bucket 3", needed, steps, marketWarning: true };
     }
-    const monthsToFloor = monthly > 0 ? Math.round((b1Actual - b1Floor) / monthly) : null;
-    return { type: "ok", title: "All buckets healthy — no action needed", nextReview: monthsToFloor };
-  }, [b1Actual, b2Actual, b1Floor, b1Target, b2Floor, b2Target, b2Accts, b3Accts, marginalRate, irmaaRisk, hasAccounts, sp, monthly]);
+    return { type: "ok", title: "All buckets healthy — no action needed" };
+  }, [b1Actual, b2Actual, b1Floor, b1Target, b2Floor, b2Target, b2Accts, b3Accts, marginalRate, irmaaRisk, hasAccounts, sp]);
 
   // Styles
   const DC = { critical: "#f87171", warning: "var(--accent-gold)", ok: "#34d399", setup: "var(--text-faint)" };
@@ -8726,11 +8739,6 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
               {DI[directive.type]} {directive.title}
             </div>
           </div>
-          {directive.type === "ok" && directive.nextReview && (
-            <div style={{ fontSize: 10, color: "var(--text-faint)", textAlign: "right" }}>
-              Next review<br/>~{directive.nextReview} mo
-            </div>
-          )}
         </div>
 
         {directive.type === "setup" && (
@@ -8781,11 +8789,37 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
 
         {directive.type === "ok" && (
           <div style={{ fontSize: 11, color: "var(--text-faint)", lineHeight: 1.6 }}>
-            Bucket 1 will approach floor in ~{directive.nextReview ?? "?"} months at current draw rate.<br/>
-            Check back then — or sooner if spending increases or markets fall significantly.
+            Check back periodically — or sooner if spending increases or markets fall significantly.
+            {runway?.depleted && <> See the runway card below for when Bucket 1 is projected to need topping up.</>}
           </div>
         )}
       </div>
+
+      {/* Bucket 1 runway — reads the SAME projected schedule the Withdrawal
+          Plan tab shows, so this can't quietly disagree with it. See the
+          `runway` useMemo above for what "depleted" means here. */}
+      {runway && (
+        <div className="chart-card" style={{ borderLeft: `3px solid ${runway.depleted ? "var(--accent-gold)" : "#34d399"}` }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+            🧭 Bucket 1 Runway
+          </div>
+          {runway.depleted ? (
+            <div style={{ fontSize: 13, color: "#e2e8f0", lineHeight: 1.6 }}>
+              At your current plan, <strong>Bucket 1 covers spending through {runway.year}</strong> (age {runway.age}).
+              Around then, plan to move about <strong style={{ color: "var(--accent-gold)" }}>{fmtDollar(runway.refillAmount)}</strong>{" "}
+              from Bucket 2 to refill it to your {b1Years}-year target.
+              <div style={{ fontSize: 10.5, color: "var(--text-faint)", marginTop: 6 }}>
+                Based on your projected withdrawal schedule (Scenarios → 📋 Withdrawal Plan) — not a separate
+                projection, and not a crash forecast. A market drop or a spending change would move this date.
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: "#e2e8f0", lineHeight: 1.6 }}>
+              Bucket 1 is projected to stay funded through your full plan — no refill from Bucket 2 is currently expected.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Buffer + draw-mode controls */}
       <div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px", flexWrap: "wrap" }}>

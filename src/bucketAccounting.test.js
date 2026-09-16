@@ -17,6 +17,8 @@ import {
   bucketFractionsByCategory,
   fractionsForCategory,
   bucketDollarTotals,
+  bucketBalancesForRow,
+  computeBucket1Runway,
 } from "./engine/buckets.js";
 
 const acct = (category, balance, bucket, id = category + Math.random()) =>
@@ -106,5 +108,79 @@ describe("bucketDollarTotals", () => {
   test("category missing from fracsByCategory falls back to its default bucket", () => {
     const totals = bucketDollarTotals({ roth: 10_000 }, {}); // roth → default bucket 3
     expect(totals).toEqual({ 1: 0, 2: 0, 3: 10_000 });
+  });
+});
+
+describe("bucketBalancesForRow — the shared selector for a waterfall schedule row", () => {
+  const fracs = {
+    cash:    { 1: 1,   2: 0,   3: 0 },
+    taxable: { 1: 0,   2: 0.5, 3: 0.5 },
+    pretax:  { 1: 0,   2: 1,   3: 0 },
+    roth:    { 1: 0,   2: 0,   3: 1 },
+  };
+  const row = { cashEnd: 40_000, taxableEnd: 60_000, pretaxEnd: 200_000, rothEnd: 100_000 };
+
+  test("matches bucketDollarTotals on the row's four end-of-year balances (hand-calculated)", () => {
+    const result = bucketBalancesForRow(row, fracs);
+    // B1: all of cash = 40,000
+    // B2: half of taxable (30,000) + all of pretax (200,000) = 230,000
+    // B3: half of taxable (30,000) + all of roth (100,000) = 130,000
+    expect(result).toEqual(bucketDollarTotals(
+      { cash: row.cashEnd, taxable: row.taxableEnd, pretax: row.pretaxEnd, roth: row.rothEnd },
+      fracs
+    ));
+    expect(result[1]).toBeCloseTo(40_000, 6);
+    expect(result[2]).toBeCloseTo(230_000, 6);
+    expect(result[3]).toBeCloseTo(130_000, 6);
+  });
+
+  test("a missing field on the row is treated as $0, not a crash", () => {
+    const result = bucketBalancesForRow({ cashEnd: 10_000 }, fracs);
+    expect(result).toEqual({ 1: 10_000, 2: 0, 3: 0 });
+  });
+});
+
+describe("computeBucket1Runway", () => {
+  // All-cash Bucket 1, no Bucket 2/3 in play — isolates the depletion check.
+  const fracs = { cash: { 1: 1, 2: 0, 3: 0 } };
+
+  test("no rows → null (nothing to read)", () => {
+    expect(computeBucket1Runway(null, fracs, 2)).toBeNull();
+    expect(computeBucket1Runway([], fracs, 2)).toBeNull();
+  });
+
+  test("hand-calculated: B1 crosses below that year's spending on the 3rd row", () => {
+    // Spending 60,000/yr, B1 draining 60,000/yr from a 150,000 start:
+    // yr0 end 90,000 (>=60,000 spend, OK) — actually check against the
+    // row's OWN spending value, not the draw; construct explicit balances.
+    const rows = [
+      { age: 60, yr: 2030, spending: 60_000, cashEnd: 150_000, taxableEnd: 0, pretaxEnd: 0, rothEnd: 0 },
+      { age: 61, yr: 2031, spending: 61_500, cashEnd: 90_000,  taxableEnd: 0, pretaxEnd: 0, rothEnd: 0 },
+      { age: 62, yr: 2032, spending: 63_038, cashEnd: 28_500,  taxableEnd: 0, pretaxEnd: 0, rothEnd: 0 }, // 28,500 < 63,038 → depleted here
+      { age: 63, yr: 2033, spending: 64_614, cashEnd: 0,       taxableEnd: 0, pretaxEnd: 0, rothEnd: 0 },
+    ];
+    const result = computeBucket1Runway(rows, fracs, 2);
+    expect(result).toEqual({ depleted: true, age: 62, year: 2032, refillAmount: Math.round(63_038 * 2) });
+  });
+
+  test("B1 never drops below that year's spending → depleted: false", () => {
+    const rows = [
+      { age: 60, yr: 2030, spending: 60_000, cashEnd: 500_000, taxableEnd: 0, pretaxEnd: 0, rothEnd: 0 },
+      { age: 61, yr: 2031, spending: 61_500, cashEnd: 500_000, taxableEnd: 0, pretaxEnd: 0, rothEnd: 0 },
+    ];
+    expect(computeBucket1Runway(rows, fracs, 2)).toEqual({ depleted: false });
+  });
+
+  test("refillAmount scales with b1Years, using the depletion year's own spending", () => {
+    const rows = [{ age: 70, yr: 2040, spending: 80_000, cashEnd: 10_000, taxableEnd: 0, pretaxEnd: 0, rothEnd: 0 }];
+    expect(computeBucket1Runway(rows, fracs, 3).refillAmount).toBe(240_000);
+    expect(computeBucket1Runway(rows, fracs, 1).refillAmount).toBe(80_000);
+  });
+
+  test("bucket fractions apply — a cash account split off Bucket 1 doesn't count toward it", () => {
+    const halfFracs = { cash: { 1: 0.5, 2: 0.5, 3: 0 } };
+    const rows = [{ age: 60, yr: 2030, spending: 60_000, cashEnd: 100_000, taxableEnd: 0, pretaxEnd: 0, rothEnd: 0 }];
+    // Only 50,000 of the 100,000 cash is actually Bucket 1 — below the 60,000 spend.
+    expect(computeBucket1Runway(rows, halfFracs, 2)).toEqual({ depleted: true, age: 60, year: 2030, refillAmount: 120_000 });
   });
 });

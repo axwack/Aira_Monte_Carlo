@@ -135,3 +135,65 @@ export function bucketDollarTotals(catBalances, fracsByCategory) {
   }
   return totals;
 }
+
+/**
+ * Bucket 1/2/3 dollar totals for one year of an ALREADY-COMPUTED withdrawal
+ * schedule row (buildWithdrawalWaterfall's `smart.rows[i]`, or the
+ * deterministic view's equivalent). One reader for a value two UI surfaces
+ * need: the Withdrawal Plan table's "B1 End" column and the Buckets tab's
+ * runway estimate both call this instead of each inlining the same
+ * cash/taxable/pretax/roth -> bucket-fraction blend — see CLAUDE.md rule 8
+ * ("one engine-output value, one reader").
+ * @param {{cashEnd?:number,taxableEnd?:number,pretaxEnd?:number,rothEnd?:number}} row
+ * @param {object} fracsByCategory — from bucketFractionsByCategory(accounts),
+ *   computed ONCE from current account tags and held constant across the
+ *   projection (documented simplification shared with the rest of the
+ *   bucket-accounting code — buckets are a derived view, not tracked state).
+ */
+export function bucketBalancesForRow(row, fracsByCategory) {
+  return bucketDollarTotals(
+    { cash: row?.cashEnd, taxable: row?.taxableEnd, pretax: row?.pretaxEnd, roth: row?.rothEnd },
+    fracsByCategory
+  );
+}
+
+/**
+ * Bucket 1 runway: the first year an ALREADY-COMPUTED withdrawal schedule
+ * shows Bucket 1's balance dropping below that year's projected spending.
+ *
+ * This reads the real engine's own per-year numbers (buildWithdrawalWaterfall's
+ * `smart.rows`) rather than approximating with a flat linear rate — no
+ * inflation, no growth, no year-to-year spend variation, no idea when Social
+ * Security starts. Using the actual schedule means this can't quietly
+ * disagree with what the Withdrawal Plan tab already shows for the same plan.
+ *
+ * "Below that year's spending" is a documented simplification: it compares
+ * against the engine's own `row.spending` (that year's smiled/inflated base
+ * spend) directly, rather than re-deriving a second, UI-local notion of
+ * "floor" (e.g. netting out mortgage P&I or rental income the way the
+ * Buckets tab's own `spendBasis` does for TODAY's snapshot). Good enough for
+ * "when do I need to think about this," not a precision instrument.
+ *
+ * @param {Array} rows — buildWithdrawalWaterfall(params).smart.rows (or the
+ *   equivalent from any engine that emits the same row shape).
+ * @param {object} fracsByCategory — bucketFractionsByCategory(accounts).
+ * @param {number} b1Years — years-of-spending target (profile's b1Years),
+ *   used only to size the suggested refill amount, not the depletion check.
+ * @returns {null} when there's no schedule to read.
+ * @returns {{depleted:false}} when Bucket 1 never drops below a year's
+ *   spending anywhere in the projected schedule.
+ * @returns {{depleted:true, age:number, year:number, refillAmount:number}}
+ *   for the first year it does — refillAmount is that year's spending times
+ *   b1Years, i.e. what topping Bucket 1 back up to its target would cost in
+ *   that year's dollars.
+ */
+export function computeBucket1Runway(rows, fracsByCategory, b1Years) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  for (const r of rows) {
+    const b1AtRow = bucketBalancesForRow(r, fracsByCategory)[1];
+    if (b1AtRow < r.spending) {
+      return { depleted: true, age: r.age, year: r.yr, refillAmount: Math.round(r.spending * (b1Years ?? 2)) };
+    }
+  }
+  return { depleted: false };
+}
