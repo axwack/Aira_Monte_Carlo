@@ -15,6 +15,7 @@ import {
   progTax,
   irmaaCost,
   simulateDeterministicWithStrategy,
+  waterfallForActiveStrategy,
   getStandardDeduction,
   getIrmaaCeiling,
   getBracketCeiling,
@@ -2400,5 +2401,70 @@ describe("taxableYieldSplit — pure function", () => {
     const allQualified = taxableYieldSplit(200_000, 4, 0);
     expect(allQualified.ordinaryYield).toBe(0);
     expect(allQualified.qualifiedYield).toBe(8_000);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// waterfallForActiveStrategy — Section 1's waterfall must pace spending with
+// the SAVED distribution strategy, not always the Smart Waterfall hybrid
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("waterfallForActiveStrategy — Section 1 waterfall matches the saved distribution strategy", () => {
+  // Regression for the bug found 2026-09-17: buildWithdrawalWaterfall(p) with
+  // no spSchedule override paces spending with its own internal GK-guardrail/
+  // Bengen-at-15yr hybrid ("Smart Waterfall") REGARDLESS of
+  // p.withdrawalStrategy. A user whose saved strategy was Guyton-Klinger saw
+  // a "Smart Lifetime Tax" card, B1 End balances, and Buckets-tab runway
+  // estimate that all silently described the Smart Waterfall plan instead of
+  // their own — the same defect class simulateDeterministicWithStrategy's own
+  // comment documents fixing for its tax column ("five strategies... all
+  // displayed the same $210,686 of tax"). waterfallForActiveStrategy applies
+  // that identical fix to every OTHER consumer of buildWithdrawalWaterfall.
+  const FIXED = { ...BASE, withdrawalStrategy: "fixed", fixedWithdrawalRate: 0.05 };
+
+  test("fixed-% strategy: wired waterfall's spend path matches simulateDeterministicWithStrategy's own schedule, not the raw Smart Waterfall hybrid", () => {
+    const wired = waterfallForActiveStrategy(FIXED);
+    const det = simulateDeterministicWithStrategy(FIXED, FIXED.inf, "fixed");
+    const raw = buildWithdrawalWaterfall(FIXED); // the pre-fix call every consumer used to make directly
+
+    // Compared against det.spByYear (pass 1's own spend path — the exact
+    // schedule waterfallForActiveStrategy feeds the waterfall as spSchedule),
+    // not det.schedule (pass 2's further-adjusted display figures). Pass 2
+    // recomputes sp against its own corrected-tax portfolio trajectory — a
+    // documented, accepted single-iteration residual ("That residual is
+    // second-order... still a residual", simulateDeterministicWithStrategy's
+    // own comment above pass 2) — so det.schedule and det.spByYear
+    // legitimately differ by a small amount already, independent of this fix.
+    // What this fix guarantees is that Section 1 is built from THIS
+    // strategy's spend path (the same one Section 2's own tax figures are
+    // built from via wf2), not an unrelated Smart Waterfall hybrid.
+    for (let i = 0; i < det.spByYear.length; i++) {
+      expect(wired.smart.rows[i].spending).toBe(Math.round(det.spByYear[i].amount));
+    }
+
+    // And it must actually be DIFFERENT from what the old, unfixed call
+    // produced — proving this isn't a no-op. Fixed 5%-of-portfolio reacts to
+    // the portfolio every year; the Smart Waterfall hybrid's GK guardrails +
+    // Bengen switch do not, so a few years in they diverge meaningfully.
+    const laterIdx = Math.min(5, wired.smart.rows.length - 1, raw.smart.rows.length - 1);
+    expect(wired.smart.rows[laterIdx].spending).not.toBe(raw.smart.rows[laterIdx].spending);
+  });
+
+  test("smart strategy: waterfallForActiveStrategy is a pure pass-through (no behavior change for the one case that was already correct)", () => {
+    const SMART = { ...BASE, withdrawalStrategy: "smart" };
+    const wired = waterfallForActiveStrategy(SMART);
+    const raw = buildWithdrawalWaterfall(SMART);
+    expect(wired.summary.lifetimeTaxSmart).toBe(raw.summary.lifetimeTaxSmart);
+    expect(wired.smart.rows.map(r => r.spending)).toEqual(raw.smart.rows.map(r => r.spending));
+  });
+
+  test("explicit spSchedule import still wins over the distribution strategy (unchanged behavior)", () => {
+    const IMPORTED = {
+      ...BASE,
+      withdrawalStrategy: "gk",
+      spSchedule: [{ year: new Date().getFullYear(), amount: 60_000 }],
+    };
+    const wired = waterfallForActiveStrategy(IMPORTED);
+    const raw = buildWithdrawalWaterfall(IMPORTED);
+    expect(wired.smart.rows[0].spending).toBe(raw.smart.rows[0].spending);
   });
 });

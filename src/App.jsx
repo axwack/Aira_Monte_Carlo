@@ -213,14 +213,12 @@ const AGE_LIMITS = {
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.130";
-export const BUILD_TAG = `[main] v1.2.130 - Bucket 1 Runway card on the Buckets tab
-- Answers the question the removed bucket-strategy toggle never actually answered: when does Bucket 1 run dry, and how much to move from Bucket 2 then
-- Reads the SAME engine schedule the Withdrawal Plan tab shows (buildWithdrawalWaterfall's smart.rows) - no second simulation, can't disagree with it
-- Replaced the old "Next review in ~X months" estimate, which used a flat linear guess (today's balance / today's monthly spend, no growth, no inflation, no income timing) - one runway number now, not two that could disagree
-- New engine/buckets.js exports: bucketBalancesForRow (shared selector - the Withdrawal Plan table's "B1 End" column now reads the same one instead of its own inline copy) and computeBucket1Runway (pure, hand-calc tested)
-- 1,073 tests / 46 suites green`;
-export const BUILD_TIME = "2026-09-16T18:00:00Z";
+const APP_VERSION = "1.2.140";
+export const BUILD_TAG = `[main] v1.2.140 - Dropped the overloaded "Smart" label from the Withdrawal Plan summary cards
+- "Smart Lifetime Tax" renamed to "Your Plan's Lifetime Tax" - it was colliding with the unrelated "Smart Waterfall" PACING strategy option one dropdown over (this card is about DRAW ORDER, not how much to spend), and a user got confused by the overlap
+- Relabeled using the "Your plan" / "No plan" wording the mode toggle below already uses, instead of adding a third term; "tax-optimal waterfall" (engine jargon) replaced with the actual order spelled out (cash -> taxable -> pre-tax -> Roth)
+- Same rename applied to the provenance registry entry (provenance.js) and the PDF report's Lifetime Tax Summary section (PrintReport.jsx) so all three surfaces agree`;
+export const BUILD_TIME = "2026-09-17T09:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -2524,7 +2522,46 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   } catch { /* keep pass 1 */ }
 
   const finalSchedule = (pass2?.schedule?.length ? pass2 : pass1).schedule;
-  return { schedule: finalSchedule, portAtRetire: Math.round(portAtRetire), initWR };
+  // pass1.spByYear is this strategy's own pre-smile spend path, in
+  // buildWithdrawalWaterfall's spSchedule shape ([{year, amount}]) — exposed
+  // so callers other than this function's own pass 2 (e.g.
+  // waterfallForActiveStrategy below) can re-run the waterfall against the
+  // ACTUAL selected strategy's spending instead of its own internal
+  // GK/Bengen-at-15yr default. Not populated for withdrawalStrategy ===
+  // "smart" (returned earlier above) or when p.spSchedule already overrides
+  // every strategy identically — callers should treat a missing/empty
+  // spByYear as "no override needed."
+  return { schedule: finalSchedule, portAtRetire: Math.round(portAtRetire), initWR, spByYear: pass1.spByYear };
+}
+
+/**
+ * The one place that decides what spend schedule buildWithdrawalWaterfall
+ * should run against for a given profile — used by every UI surface that
+ * needs the waterfall's sourcing/tax detail for the user's ACTUAL saved
+ * strategy (the B1 End table, the Buckets tab's runway card, the
+ * Income & Expenses chart, the year-end tax-room prompt), instead of each
+ * one calling buildWithdrawalWaterfall(p) directly.
+ *
+ * buildWithdrawalWaterfall(p) with no spSchedule override always paces
+ * spending with its OWN internal GK-guardrail/Bengen-at-15yr hybrid — the
+ * "Smart Waterfall" distribution option — regardless of p.withdrawalStrategy.
+ * That's correct when the strategy actually IS "smart" (or the user supplied
+ * an explicit spSchedule import, which already overrides every strategy
+ * identically), but for gk/bengen/fixed/vpw/ninety_five_rule it silently
+ * substitutes a different plan's spending for the one on screen — the same
+ * defect simulateDeterministicWithStrategy's own comment documents fixing
+ * for ITS tax column ("five strategies... all displayed the same $210,686 of
+ * tax"). This applies that same fix — discover the strategy's own spend path
+ * first, then re-run the waterfall against it — to every other consumer.
+ */
+function waterfallForActiveStrategy(p) {
+  const strategy = resolveStrategy(p?.withdrawalStrategy);
+  if (strategy === "smart" || (p?.spSchedule && p.spSchedule.length)) {
+    return buildWithdrawalWaterfall(p);
+  }
+  const det = simulateDeterministicWithStrategy(p, p?.inf ?? 2.5, strategy);
+  if (!det?.spByYear?.length) return buildWithdrawalWaterfall(p); // defensive: no path found, fall back rather than throw
+  return buildWithdrawalWaterfall({ ...p, spSchedule: det.spByYear });
 }
 
 // Roth conversion explorer
@@ -5141,7 +5178,7 @@ const EXPENSE_CATS = [
 // by construction. Hovering a year updates the side panel from "Lifetime"
 // totals to that year's breakdown.
 function IncomeExpensesChart({ p, inf }) {
-  const rows = useMemo(() => buildWithdrawalWaterfall(p)?.smart?.rows ?? [], [p]);
+  const rows = useMemo(() => waterfallForActiveStrategy(p)?.smart?.rows ?? [], [p]);
 
   const data = useMemo(() => rows.map((r) => {
     const { medical, ltc, other } = categorizeCarveouts(p.carveouts, r.yr, inf);
@@ -7361,7 +7398,7 @@ function SourcingGuardrails({ p, onAssumptionChange, summary }) {
 
 // Hoisted out of WithdrawalPlanCombined so it isn't recreated on every render
 // (a fresh component identity each render remounts the subtree and drops focus).
-function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle }) {
+function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle, badge }) {
   return (
     <button
       onClick={onToggle}
@@ -7375,7 +7412,7 @@ function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle }) 
         textAlign: "left",
         cursor: "pointer",
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-start",
         gap: 14,
         marginBottom: open ? 10 : 0,
       }}
@@ -7387,6 +7424,13 @@ function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle }) 
         </div>
         <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 5 }}>{subtitle}</div>
       </div>
+      {/* Badge intercepts its own clicks so opening the "how this works" info
+          doesn't also collapse/expand the section it sits on top of. */}
+      {badge && (
+        <span onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0, marginTop: 1 }}>
+          {badge}
+        </span>
+      )}
     </button>
   );
 }
@@ -7409,9 +7453,34 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
   // Compute the waterfall once here so the guardrail strip (always visible) and the
   // table (when expanded) share it — no double compute, and the strip can show the
   // live "tax saved vs no plan" delta from the same summary.
-  const waterfall = useMemo(() => buildWithdrawalWaterfall(p), [p]);
+  const waterfall = useMemo(() => waterfallForActiveStrategy(p), [p]);
   // Set when this profile was loaded off a strategy that's since been retired.
   const migrated = migrationNotice(p.withdrawalStrategyMigratedFrom);
+
+  // Was its own persistent banner above both sections; moved into the
+  // top-right corner of both section headers, so it's visible on the content
+  // regardless of which one the user has open — rather than floating above
+  // both in a strip. Both sections share the SAME static badge: neither
+  // section's content actually flips on `previewStrategy` (Section 1 reads
+  // `p` directly; Section 2's dropdown-driven preview is a separate, already
+  // self-labeled state — see its "Preview how X paces spending" subtitle and
+  // the "Previewing your saved default" line under the dropdown below, which
+  // is where the preview/saved explanation now lives instead of on the badge
+  // itself). The badge just always names the one strategy actually saved.
+  const savedPlanBadge = (
+    <span
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 5,
+        padding: "3px 9px", borderRadius: 5, fontSize: 10.5, fontWeight: 700,
+        letterSpacing: ".03em", whiteSpace: "nowrap",
+        border: "1px solid rgba(52,211,153,0.35)",
+        background: "rgba(52,211,153,0.08)",
+        color: "#34d399",
+      }}
+    >
+      {"✓ Saved: " + getStrategyLabel(withdrawalStrategy)}
+    </span>
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -7476,48 +7545,11 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           a twisty would recreate the exact confusion the banner below was
           built to fix.
 
-          Relocated only — banner copy, button styling, tooltip and commit
-          logic are untouched. */}
+          Relocated only — dropdown, button styling and commit logic are
+          untouched. The persistent SAVED/PREVIEW state that used to sit here
+          as its own banner now renders as a small badge in the top-right
+          corner of each section header below — see `strategyStatusBadge`. */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-          {/* Persistent state banner. The commit affordance used to be an 11px amber
-              line BELOW the dropdown, plus a subtitle in the collapsible header — and
-              the app's own author read this screen as broken wiring, concluding the
-              strategy "doesn't switch". It switches; it just does not SAVE, because
-              this dropdown drives a preview. If the author misses that, everyone does.
-              The state now sits directly above the control you are about to touch, and
-              names the saved default at all times so the two screens visibly agree. */}
-          {/* Same fix as Toggle's `hint` (§28.2): a native title= tooltip is
-              hover-only (undiscoverable) and non-existent on touch — this now
-              opens on click via InfoModal, matching the established pattern. */}
-          <div
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              gap: 8, flexWrap: "wrap", padding: "6px 10px", borderRadius: 6,
-              border: `1px solid ${previewIsDefault ? "rgba(52,211,153,0.35)" : "rgba(251,191,36,0.55)"}`,
-              background: previewIsDefault ? "rgba(52,211,153,0.08)" : "rgba(251,191,36,0.12)",
-            }}
-          >
-            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".04em", color: previewIsDefault ? "#34d399" : "var(--accent-gold)" }}>
-              {previewIsDefault ? "✓ SAVED — USED EVERYWHERE" : "👁 PREVIEW ONLY — NOT SAVED"}
-              <InfoModal
-                title="How this works"
-                accent={previewIsDefault ? "#34d399" : "var(--accent-gold)"}
-                trigger={
-                  <span style={{ marginLeft: 5, color: "var(--text-secondary)", cursor: "pointer", display: "inline-flex" }}
-                        title="Tap or click for more info">
-                    <InfoIcon size={12} />
-                  </span>
-                }
-              >
-                <p style={{ margin: "0 0 10px" }}>The dropdown below is a PREVIEW. Changing it redraws the year-by-year table on this page so you can compare strategies — it does not change your plan, and it does not re-run the Monte Carlo.</p>
-                <p style={{ margin: "0 0 10px" }}>TO ACTUALLY CHANGE YOUR PLAN: pick a strategy in the dropdown, then click the yellow "Use ... in my plan" button that appears just below it. That is the only place in the app that saves your strategy — there is no strategy setting in the Profile tab.</p>
-                <p style={{ margin: 0 }}>ONCE SAVED, it drives everything: the Monte Carlo success rate, the Net Worth summary card on the home page, and every projection tab. Until you click it, all of those keep using your saved strategy — which is why the home card can show a different strategy than this dropdown.</p>
-              </InfoModal>
-            </span>
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              Your saved plan uses <strong style={{ color: "#e2e8f0" }}>{getStrategyLabel(withdrawalStrategy)}</strong>
-            </span>
-          </div>
           <select
             value={previewStrategy}
             onChange={(e) => setPreviewStrategy(e.target.value)}
@@ -7545,8 +7577,22 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
               to "applied app-wide." */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 24 }}>
             {previewIsDefault ? (
-              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              <span style={{ fontSize: 12, color: "var(--text-secondary)", display: "inline-flex", alignItems: "center", gap: 5 }}>
                 ✓ Previewing your saved default — the whole app (including Monte Carlo) uses this strategy.
+                <InfoModal
+                  title="How this works"
+                  accent="#34d399"
+                  trigger={
+                    <span style={{ color: "var(--text-secondary)", cursor: "pointer", display: "inline-flex" }}
+                          title="Tap or click for more info">
+                      <InfoIcon size={11} />
+                    </span>
+                  }
+                >
+                  <p style={{ margin: "0 0 10px" }}>The dropdown above is a <strong>PREVIEW</strong>. Changing it redraws the year-by-year table on this page so you can compare strategies — it does not change your plan, and it does not re-run the Monte Carlo.</p>
+                  <p style={{ margin: "0 0 10px" }}><strong>TO ACTUALLY CHANGE YOUR PLAN: </strong>Pick a strategy in the dropdown, then click the yellow "Use ... in my plan" button that appears just below it. That is the only place in the app that saves your strategy — there is no strategy setting in the Profile tab.</p>
+                  <p style={{ margin: 0 }}>ONCE SAVED, it drives everything: the Monte Carlo success rate, the Net Worth summary card on the home page, and every projection tab. Until you click it, all of those keep using your saved strategy — which is why the home card can show a different strategy than this dropdown. Your saved plan currently uses <strong style={{ color: "#e2e8f0" }}>{getStrategyLabel(withdrawalStrategy)}</strong>.</p>
+                </InfoModal>
               </span>
             ) : (
               <>
@@ -7601,6 +7647,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           color="var(--accent-teal)"
           question="Where does each year's spending come from?"
           subtitle={`Account-by-account sourcing — ${resolveDrawOrder(p.orderingMode, p.withdrawalOrder).map((b) => BUCKET_LABELS_SHORT[b]).join(" → ")} — with tax landmines flagged`}
+          badge={savedPlanBadge}
         />
         {/* Guardrails live inside the collapsible now — they're only
             revealed when the green sourcing section is expanded, alongside
@@ -7624,6 +7671,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           color="var(--accent-gold)"
           question="How does my chosen strategy pace spending year by year?"
           subtitle={`Preview how ${getStrategyLabel(previewStrategy)} paces spending — expand for the full year-by-year schedule and chart.`}
+          badge={savedPlanBadge}
         />
         {openStrategy && (
           <div style={{ paddingLeft: 4 }}>
@@ -7756,22 +7804,29 @@ function WaterfallPlanView({ p, result }) {
           conditional 3-Bucket cards) fills each row edge-to-edge instead of
           a fixed repeat(3,1fr) leaving a stranded partial row. */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+        {/* "Smart" collided with the unrelated "Smart Waterfall" PACING
+            strategy option in the Section 2 dropdown — same word, two
+            different things (this card is about DRAW ORDER, not how much to
+            spend), and a user tripped on it. Relabeled to match the "Your
+            plan" / "No plan" wording the toggle below already uses, instead
+            of inventing a third term. "waterfall" (engine jargon) replaced
+            with the actual order, spelled out. */}
         <div className="met">
-          <div className="ml">Smart Lifetime Tax</div>
+          <div className="ml">Your Plan's Lifetime Tax</div>
           <div className="mv" style={{ color: "#34d399", fontSize: 16 }}>{fmtDollar(summary.lifetimeTaxSmart)}</div>
-          <div className="ms">tax-optimal waterfall</div>
+          <div className="ms">drawn cash → taxable → pre-tax → Roth, in that order</div>
         </div>
         <div className="met">
           <div className="ml">Tax Savings vs No Plan</div>
           <div className="mv" style={{ color: summary.taxSavings > 0 ? "#34d399" : "#f87171", fontSize: 16 }}>
             {summary.taxSavings >= 0 ? "+" : ""}{fmtDollar(summary.taxSavings)}
           </div>
-          <div className="ms">vs pretax-first ordering</div>
+          <div className="ms">vs draining pre-tax first, no plan</div>
         </div>
         <div className="met">
           <div className="ml">Roth at Age {p.endAge || 90}</div>
           <div className="mv" style={{ color: "var(--accent-purple)", fontSize: 16 }}>{fmtDollar(summary.finalRothSmart)}</div>
-          <div className="ms">smart · {fmtDollar(summary.finalRothNaive)} without plan</div>
+          <div className="ms">your plan · {fmtDollar(summary.finalRothNaive)} without a plan</div>
         </div>
         <div className="met">
           <div className="ml">IRMAA Years Triggered</div>
@@ -7886,7 +7941,7 @@ function WaterfallPlanView({ p, result }) {
               {anyConversion && (
                 <ThInfo tip={"Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total."}>Roth Conv</ThInfo>
               )}
-              <ThInfo style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} tip={"Bucket 1's true dollar share this year, summed across every account/category it's tagged in (not one category's whole balance). \"—\" means no account is tagged Bucket 1; \"$0\" means Bucket 1 has actually depleted."}>B1 End</ThInfo>
+              <ThInfo style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} tip={"Bucket 1 is the safe cash reserve — the slice of your accounts tagged for near-term spending, tracked separately from Bucket 2 (income bridge) and Bucket 3 (long-term growth).\n\nThis column is Bucket 1's true dollar share of the portfolio at the end of each year, summed across every account/category it's tagged in — not one category's whole balance. A taxable account split 40% Bucket 1 / 60% Bucket 2 only contributes its 40% share here.\n\n\"—\" means no account is tagged Bucket 1 at all. \"$0\" means Bucket 1 has actually depleted. Hover any row's value for that year's exact calculation."}>B1 End</ThInfo>
               <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th>
               <ThInfo tip={"What share of the portfolio this year's DRAW represents: Total Draw ÷ the portfolio at the START of the year.\n\nNot your spending rate. If income covers most of your spending, this stays low even when spending is high — which is the point of the column.\n\nGreen means within ±20% of your first-year rate, the Guyton-Klinger guardrail band. Amber = well below it, red = well above."}>WR <span style={{ fontSize: 9, color: "var(--text-muted)" }}>(of draw)</span></ThInfo>
               <th>
@@ -7910,6 +7965,56 @@ function WaterfallPlanView({ p, result }) {
               const b1End = hasB1
                 ? bucketBalancesForRow(r, b1FracsByCategory)[1]
                 : null;
+              // Every term, not just the final one: each contributing
+              // category's own "Start − Draw [− Conv Tax] [+ reinvested] =
+              // pre-growth, × (1+rate) = End" line (straight off the
+              // cashStart/gr/etc. fields buildWithdrawalWaterfall.js now
+              // emits — see its row-push comment — never re-derived here),
+              // THEN that category's "End × B1% = contribution" tag line.
+              // The general explanation of what Bucket 1 IS lives in the
+              // column header's InfoModal (click the ⓘ next to "B1 End");
+              // this is the per-row arithmetic only. Categories with 0%
+              // tagged Bucket 1 (e.g. Roth, usually) are omitted so the
+              // tooltip doesn't pad itself with unused lines.
+              const b1Breakdown = hasB1 ? (() => {
+                const CAT_META = {
+                  cash:    { label: "Cash",    start: r.cashStart,    end: r.cashEnd,    draw: r.fromCash,    gr: r.cashGr,
+                             subtract: [["Conv Tax", r.convTaxFromCash]], add: [] },
+                  taxable: { label: "Taxable", start: r.taxableStart, end: r.taxableEnd, draw: r.fromTaxable, gr: r.gr,
+                             subtract: [["Conv Tax", r.convTaxFromTaxable]],
+                             add: [["RMD Surplus", r.rmdSurplus], ["Income Surplus", r.surplusToTaxable]] },
+                  pretax:  { label: "Pre-Tax", start: r.pretaxStart,  end: r.pretaxEnd,  draw: r.fromPretax,  gr: r.gr,
+                             subtract: [["Conversion Outflow", r.convPretaxOutflow]], add: [] },
+                  roth:    { label: "Roth",    start: r.rothStart,    end: r.rothEnd,    draw: r.fromRoth,    gr: r.gr,
+                             subtract: [], add: [["Conversion In", r.convToRoth]] },
+                };
+                const blocks = Object.keys(CAT_META)
+                  .map((cat) => {
+                    const frac = b1FracsByCategory[cat]?.[1] || 0;
+                    const m = CAT_META[cat];
+                    if (frac <= 0 || m.start == null) return null;
+                    let line = `${m.label} Start ${fmtDollar(m.start)} − Draw ${fmtDollar(m.draw || 0)}`;
+                    let preGrowth = m.start - (m.draw || 0);
+                    for (const [termLabel, val] of m.subtract) {
+                      if (val > 0) { line += ` − ${termLabel} ${fmtDollar(val)}`; preGrowth -= val; }
+                    }
+                    for (const [termLabel, val] of m.add) {
+                      if (val > 0) { line += ` + ${termLabel} ${fmtDollar(val)}`; preGrowth += val; }
+                    }
+                    preGrowth = Math.max(0, preGrowth);
+                    line += ` = ${fmtDollar(preGrowth)}`;
+                    if (m.gr != null) line += ` × (1 + ${(Math.round(m.gr * 1000) / 10)}% growth)`;
+                    line += ` = ${m.label} End ${fmtDollar(m.end)}`;
+                    const tagLine = `${m.label} End ${fmtDollar(m.end)} × ${Math.round(frac * 100)}% tagged B1 = ${fmtDollar(Math.round((m.end || 0) * frac))}`;
+                    return `${line}\n${tagLine}`;
+                  })
+                  .filter(Boolean);
+                if (!blocks.length) return null;
+                // Only state the sum explicitly when more than one category
+                // contributes — with one block its last line already ends
+                // in the total, so restating it reads as "$X = $X".
+                return blocks.length > 1 ? `${blocks.join("\n\n")}\n\nTotal B1 End = ${fmtDollar(b1End)}` : blocks[0];
+              })() : null;
               return (
               <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
                 <td>{r.age}</td>
@@ -8166,8 +8271,13 @@ function WaterfallPlanView({ p, result }) {
                     )}
                   </td>
                 )}
-                <td style={{ textAlign: "right", color: b1End === 0 || (b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0) ? "#f87171" : "var(--text-faint)", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }}
-                    title={b1End == null ? "No account is tagged Bucket 1" : b1End === 0 ? "Bucket 1 is depleted" : fmtDollar(b1End)}>
+                <td style={{ textAlign: "right", color: b1End === 0 || (b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0) ? "#f87171" : "#22d3ee", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }}
+                    title={
+                      b1End == null
+                        ? "No account is tagged Bucket 1"
+                        : [b1End === 0 ? "⚠ Bucket 1 is depleted." : null, b1Breakdown]
+                            .filter(Boolean).join("\n\n") || fmtDollar(b1End)
+                    }>
                   {b1End == null ? "—" : fmtDollar(b1End)}
                 </td>
                 <td style={{ textAlign: "right", color: "#f87171" }}
@@ -8629,7 +8739,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
   // comment below for what this replaced).
   const waterfallResult = useMemo(() => {
     if (!sp || !port) return null;
-    try { return buildWithdrawalWaterfall(params); }
+    try { return waterfallForActiveStrategy(params); }
     catch { return null; }
   }, [params]);
   const simRow = waterfallResult?.smart?.rows?.[0] ?? null;
@@ -9592,6 +9702,7 @@ function ScenariosTab({
 }) {
 
   const [scenarioSubTab, setScenarioSubTab] = useState(initialSubTab || "roth");
+  const [showSeq, setShowSeq] = useState(false);
 
   // Consume a pending cross-tab navigation request once, on arrival — a
   // pointer elsewhere in the app (e.g. RetirementPanel's Withdrawal Strategy
@@ -9653,21 +9764,9 @@ function ScenariosTab({
           <StressScenarioGrid p={baseParams} baseRate={mc?.rate ?? null} fmtPct={fmtPct} />
           {stress && (
             <>
-          <FanChart
-            // eslint-disable-next-line no-restricted-properties -- FanChart deflates the whole array itself; see noRawMcAccess.test.js.
-            pcts={stress.pcts}
-            retireAge={retireAge}
-            ssAge={ssAge}
-            rmdAge={rmdAge}
-            inf={inf}
-            useReal={real}
-            title="Stress test: 2000–2012 actual S&P sequence at retirement"
-            checkpoints={checkpoints}
-            portfolioGoal={portfolioGoal}
-            earlyRetireTarget={earlyRetireTarget}
-            dob={dob}
-            sex={sex}
-          />
+          {/* Moved up from below the fan chart — these two headline numbers
+              are the reason to open this sub-tab at all, so they sit right
+              under the scenario grid instead of buried under the chart. */}
           <div
             style={{
               display: "grid",
@@ -9699,30 +9798,61 @@ function ScenariosTab({
               <div className="ms">{formulaFor("stress-delta")}</div>
             </div>
           </div>
-          <div
-            style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 4 }}
+          <FanChart
+            // eslint-disable-next-line no-restricted-properties -- FanChart deflates the whole array itself; see noRawMcAccess.test.js.
+            pcts={stress.pcts}
+            retireAge={retireAge}
+            ssAge={ssAge}
+            rmdAge={rmdAge}
+            inf={inf}
+            useReal={real}
+            title="Stress test: 2000–2012 actual S&P sequence at retirement"
+            checkpoints={checkpoints}
+            portfolioGoal={portfolioGoal}
+            earlyRetireTarget={earlyRetireTarget}
+            dob={dob}
+            sex={sex}
+          />
+          {/* Year-by-year S&P sequence — the raw input the fan chart and the
+              two headline numbers above are already built from, so it's
+              supporting detail, not something that needs to be visible by
+              default. Closed unless asked for. */}
+          <button
+            onClick={() => setShowSeq((v) => !v)}
+            style={{
+              marginTop: 10, background: "transparent", border: "none",
+              color: "var(--accent-teal)", fontSize: 12, cursor: "pointer",
+              fontFamily: "inherit", padding: "4px 0",
+            }}
           >
-            {SEQ_2000_2012.map((r, i) => (
-              <span
-                key={i}
-                style={{
-                  padding: "2px 6px",
-                  borderRadius: 4,
-                  fontSize: 10,
-                  fontFamily: "'JetBrains Mono',monospace",
-                  background:
-                    r < 0 ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.12)",
-                  color: r < 0 ? "#f87171" : "#34d399",
-                  border: `1px solid ${
-                    r < 0 ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.25)"
-                  }`,
-                }}
-              >
-                {2000 + i}: {r > 0 ? "+" : ""}
-                {(r * 100).toFixed(1)}%
-              </span>
-            ))}
-          </div>
+            {showSeq ? "Hide year-by-year S&P sequence ▴" : "Show year-by-year S&P sequence ▾"}
+          </button>
+          {showSeq && (
+            <div
+              style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}
+            >
+              {SEQ_2000_2012.map((r, i) => (
+                <span
+                  key={i}
+                  style={{
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    fontSize: 10,
+                    fontFamily: "'JetBrains Mono',monospace",
+                    background:
+                      r < 0 ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.12)",
+                    color: r < 0 ? "#f87171" : "#34d399",
+                    border: `1px solid ${
+                      r < 0 ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.25)"
+                    }`,
+                  }}
+                >
+                  {2000 + i}: {r > 0 ? "+" : ""}
+                  {(r * 100).toFixed(1)}%
+                </span>
+              ))}
+            </div>
+          )}
             </>
           )}
         </div>
@@ -15227,7 +15357,6 @@ export default function AiRAForecaster() {
     saveCheckIns(next);
   };
 
-  const [showInterpretation, setShowInterpretation] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackType, setFeedbackType] = useState(null);
   const [feedbackText, setFeedbackText] = useState("");
@@ -15708,7 +15837,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     if (!forced && !isYearEndWindow(now)) return { show: false };
     const year = now.getFullYear();
     let rows = [];
-    try { rows = buildWithdrawalWaterfall(params)?.smart?.rows || []; } catch { rows = []; }
+    try { rows = waterfallForActiveStrategy(params)?.smart?.rows || []; } catch { rows = []; }
     return {
       show: true,
       year,
@@ -16657,13 +16786,73 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         <InfoDot size={12} title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`} />
                       </div>
                     </div>
+                    {/* design-authority (2026-09-17): was an inline expand/collapse
+                        panel below the hero card. Moved into an InfoModal so the
+                        interpretive content (odds analogy + 26-person visual) is a
+                        proper "fun spot" — one click, no layout shift, dismissible —
+                        instead of pushing the tabs down every time it's open.
+                        RotatingAnalogue's own click-to-cycle still works inside the
+                        modal: InfoModal's card stops click propagation to the
+                        backdrop, so cycling an analogy never closes the dialog. */}
                     {mc && (
-                      <button
-                        onClick={() => setShowInterpretation((v) => !v)}
-                        style={{ marginLeft: "auto", background: "transparent", border: "none", color: "var(--accent-teal)", fontSize: 13, cursor: "pointer", fontFamily: "inherit", padding: "4px 6px" }}
-                      >
-                        {showInterpretation ? "Hide details ▴" : "What does this mean? ▾"}
-                      </button>
+                      <span style={{ marginLeft: "auto" }}>
+                        <InfoModal
+                          title={`${fmtPct(mc.rate)} Success to Age ${endAge}`}
+                          accent={heroColor}
+                          trigger={
+                            <span style={{ color: "var(--accent-teal)", fontSize: 13, fontFamily: "inherit", padding: "4px 6px", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              What does this mean? ▾
+                            </span>
+                          }
+                        >
+                          {/* 26-person visual leads — most legible "fun" per pixel,
+                              per design-authority. Dots sized to fit InfoModal's
+                              480px max width in one row (26 × 12px + 25 × 3px gap
+                              ≈ 387px, under the ~424px usable width). */}
+                          {(() => {
+                            const success = Math.round(mc.rate * 26);
+                            const fail = 26 - success;
+                            return (
+                              <div style={{ marginBottom: 16 }}>
+                                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
+                                  If 26 people had your exact plan — age {endAge} horizon
+                                </div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 8 }}>
+                                  {Array.from({ length: 26 }, (_, i) => (
+                                    <div
+                                      key={i}
+                                      style={{
+                                        width: 12, height: 12, borderRadius: "50%",
+                                        background: i < success ? "var(--positive)" : "var(--negative)",
+                                        opacity: i < success ? 1 : 0.4,
+                                      }}
+                                      title={i < success ? "Survives" : "Depleted"}
+                                    />
+                                  ))}
+                                </div>
+                                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                                  <span style={{ color: "var(--positive)", fontWeight: 700 }}>{success}</span> make it to {endAge}.{" "}
+                                  {fail > 0 && (
+                                    <><span style={{ color: "var(--negative)", fontWeight: 700 }}>{fail}</span> run out.</>
+                                  )}
+                                  {fail === 0 && <span style={{ color: "#34d399" }}> Everyone makes it.</span>}
+                                </div>
+                                <div style={{ fontSize: 11, color: "var(--text-faint)", fontStyle: "italic", marginTop: 6 }}>
+                                  “100% doesn't exist — room for error IS the plan.” — Morgan Housel
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          {/* Odds analogy second, fully interactive — click cycles
+                              through every analogy in the same probability band. */}
+                          {analogue && (
+                            <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 12 }}>
+                              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>Put another way</div>
+                              <RotatingAnalogue rate={mc.rate} endAge={endAge} />
+                            </div>
+                          )}
+                        </InfoModal>
+                      </span>
                     )}
                   </div>
                   {/* Row 2 — secondary metrics, one line (paths + strategy name removed; strategy
@@ -16736,65 +16925,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 </div>
               );
             })()}
-
-            {/* Interpretive layer — the flight analogue + 26-person visual, available on demand
-                rather than always in your face (progressive disclosure). */}
-            {showInterpretation && (
-              <>
-                {analogue && <RotatingAnalogue rate={mc.rate} endAge={endAge} />}
-                {mc &&
-                  (() => {
-                    const success = Math.round(mc.rate * 26);
-                    const fail = 26 - success;
-                    return (
-                      <div
-                        style={{
-                          background: "var(--card-bg)",
-                          border: "1px solid rgba(255,255,255,0.07)",
-                          borderRadius: 10,
-                          padding: "12px 16px",
-                        }}
-                      >
-                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
-                          If 26 people had your exact plan — age {endAge} horizon
-                        </div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                          {Array.from({ length: 26 }, (_, i) => (
-                            <div
-                              key={i}
-                              style={{
-                                width: 18,
-                                height: 18,
-                                borderRadius: "50%",
-                                background: i < success ? "var(--positive)" : "var(--negative)",
-                                opacity: i < success ? 1 : 0.4,
-                                title: i < success ? "Survives" : "Depleted",
-                              }}
-                            />
-                          ))}
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                            <span style={{ color: "var(--positive)", fontWeight: 700 }}>{success}</span> make it to {endAge}.{" "}
-                            {fail > 0 && (
-                              <>
-                                <span style={{ color: "var(--negative)", fontWeight: 700 }}>{fail}</span> run out.
-                              </>
-                            )}
-                            {fail === 0 && <span style={{ color: "#34d399" }}> Everyone makes it.</span>}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#334155", fontStyle: "italic" }}>
-                            100% doesn't exist — room for error IS the plan. — Morgan Housel
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic" }}>
-                  As Bill Perkins says — spend in the right life phase. 🌴
-                </div>
-              </>
-            )}
 
             <div className="tabs">
               {TABS.map(([k, l]) => (
@@ -17240,4 +17370,4 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry };

@@ -987,6 +987,16 @@ export function buildWithdrawalWaterfall(params = {}) {
       let taxDue = 0;
       let earlyPenalty = { penalty: 0, exemptAmount: 0, reason: "" };
 
+      // Snapshot each bucket's balance right here — after RMD forcing
+      // (pretax already had `rmd` subtracted above) and after this year's
+      // cashFlowEvents deposit into cash, but before any discretionary draw.
+      // Nothing below the pass loop mutates cash/taxable/pretax/roth until
+      // the final assignment (~line 1499), so these stay valid through every
+      // pass. Emitted on the row so a UI tooltip can show "how did we get to
+      // $X End" term-by-term without re-deriving the engine's own numbers
+      // (CLAUDE.md rule 8 — one engine value, one reader).
+      const cashStart = cash, taxableStart = taxable, pretaxStart = pretax, rothStart = roth;
+
       // 12 passes, not 4: the tax↔draw fixed point converges geometrically at
       // roughly the marginal rate (~0.3x/pass), so 4 passes systematically
       // came up $100-350 short of the true tax bill every year — a persistent
@@ -1558,6 +1568,19 @@ export function buildWithdrawalWaterfall(params = {}) {
         taxableEnd: Math.round(taxable),
         pretaxEnd:  Math.round(pretax),
         rothEnd:    Math.round(roth),
+        // Every input the *End figures above were built from, so a UI
+        // tooltip can show the full "Start − Draw [− ConvTax] [+ reinvested]
+        // = pre-growth, × (1+rate) = End" chain per bucket without
+        // re-deriving any of it — see the cashStart/etc. snapshot comment
+        // above and CLAUDE.md rule 8.
+        cashStart:    Math.round(cashStart),
+        taxableStart: Math.round(taxableStart),
+        pretaxStart:  Math.round(pretaxStart),
+        rothStart:    Math.round(rothStart),
+        gr: taxableGrThisYr,     // == pretaxGrThisYr == rothGrThisYr this year
+        cashGr: cashGrThisYr,
+        convPretaxOutflow: Math.round(convPretaxOutflow),
+        surplusToTaxable: Math.round(surplusToTaxable),
         totalPort:  Math.round(cash + taxable + pretax + roth),
         spending:   Math.round(spSmiled),
         // The smile multiplier actually applied to this year's spend,

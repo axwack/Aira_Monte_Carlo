@@ -89,7 +89,7 @@ export const METRIC_CARDS = [
     formula: "Same sum, after conversions have shrunk the pre-tax balance" },
 
   // ── Withdrawal Plan summary ──────────────────────────────────────────────
-  { id: "wd-lifetime-tax", label: "Smart Lifetime Tax", kind: "computed",
+  { id: "wd-lifetime-tax", label: "Your Plan's Lifetime Tax", kind: "computed",
     source: "summary.lifetimeTaxSmart",
     formula: "Federal + state + IRMAA for every year of the plan, added up" },
   { id: "wd-tax-savings", label: "Tax Savings vs No Plan", kind: "computed",
