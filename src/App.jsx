@@ -97,6 +97,7 @@ import { AGE_LIMITS } from './data/ageLimits.js';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,RadarChart,PolarGrid,PolarAngleAxis,PolarRadiusAxis,Radar,} from "recharts";
 import { JOINT_RMD_TABLE } from './data/jointRmdTable.js';
 import { STATE_BRACKETS } from './data/stateBrackets.js';
+import { IRMAA_2026 } from './data/irmaa2026.js';
 
 // Dropped DM Sans / DM Mono. Down to one text family (Inter) and one mono
 // family (JetBrains Mono), both pulled in through the same @import in the CSS
@@ -2436,16 +2437,7 @@ const FED_BRACKETS_2026_SINGLE = [
   { lo: 256225, hi: 640600, rate: 0.35 },
   { lo: 640600, hi: Infinity, rate: 0.37 },
 ];
-// Kept byte-identical to buildRothExplorer.js's IRMAA_2026 — see that file's
-// comment for the whole-table off-by-one this corrected (each floor was
-// paired with the PRECEDING tier's surcharge, not its own).
-const IRMAA_2026 = [
-  { m: 218000, f: 2160 },
-  { m: 274000, f: 5470 },
-  { m: 342000, f: 8300 },
-  { m: 410000, f: 11130 },
-  { m: 750000, f: 12700 },
-];
+
 // IRS Pub 590-B Table III (Uniform Lifetime) divisors, 2022+ table.
 // Default table for owners whose sole-beneficiary spouse is NOT >10 years younger.
 // (The >10-years-younger Joint & Last Survivor case uses JOINT_RMD_TABLE above.)
