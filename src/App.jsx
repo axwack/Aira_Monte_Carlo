@@ -95,7 +95,7 @@ import { AdminPanel, useOwnerVerified } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 import { AGE_LIMITS } from './data/ageLimits.js';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,RadarChart,PolarGrid,PolarAngleAxis,PolarRadiusAxis,Radar,} from "recharts";
-
+import { JOINT_RMD_TABLE } from './data/jointRmdTable.js';
 // Dropped DM Sans / DM Mono. Down to one text family (Inter) and one mono
 // family (JetBrains Mono), both pulled in through the same @import in the CSS
 // constant below. We used to load two text fonts and two mono fonts for the
@@ -372,13 +372,7 @@ function computeInitialWR(p) {
     annualAdds, accumRate, nominalRate, inflRate, yrsToRetire };
 }
 
-const JOINT_RMD_TABLE = {
-  // Joint & Last Survivor — assumes spouse is 10 years younger (IRS Pub 590-B Table II excerpt)
-  73: 25.3, 74: 24.6, 75: 24.0, 76: 23.4, 77: 22.8,
-  78: 22.3, 79: 21.8, 80: 21.3, 81: 20.9, 82: 20.5,
-  83: 20.1, 84: 19.7, 85: 19.3, 86: 19.0, 87: 18.7,
-  88: 18.4, 89: 18.1, 90: 17.8,
-};
+
 
 // Progressive state income tax brackets (2025). null = no state income tax.
 // Brackets are inflation-indexed in calcYearTax / buildRothExplorer via idxB().
