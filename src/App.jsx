@@ -2290,7 +2290,19 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   // Same horizon rule as runMC.
   const planEndDet = planEndAgeOnPrimaryClock(p, p.endAge);
   const retYrs = planEndDet - retAgeDet;
-  let port = p.port;
+  // `p.port` is the aggregate starting balance the UI keeps in sync with the
+  // sum of `accounts` (see the account editor and the import path, which both
+  // recompute one from the other). Callers that build a profile from accounts
+  // alone — tests, and any programmatic entry point — leave it undefined, and
+  // reading it raw poisoned the whole schedule with NaN from year 0: the
+  // portfolio went NaN on the first draw, so every subsequent GK call tripped
+  // the `portfolioValue <= 0 || isNaN` guard and silently returned the floor
+  // with an empty guardrail sink (no event/reason/wr recorded). Fall back to
+  // the accounts sum so an accounts-only profile behaves identically to the
+  // in-sync UI profile; when `p.port` is a finite number, nothing changes.
+  let port = Number.isFinite(p.port)
+    ? p.port
+    : (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0);
 
   // Accumulation using median returns
   for (let y = 0; y < accYrs; y++) {
