@@ -46,6 +46,14 @@ const FUNDED = {
   currentAge: 60,
   retireAge: 60,
   endAge: 92,
+  // `port` and `contrib` are what the deterministic accumulation path compounds
+  // from. Without them this fixture rendered "$NaN" in EVERY Portfolio column,
+  // and no assertion noticed — the tests only checked that the right labels
+  // appeared. A money table full of NaN is the purest form of the provenance
+  // defect (a label asserting a value that was never computed), so the fixture
+  // now supplies them and a test below fails on any NaN in the output.
+  port: 2_500_000,
+  contrib: 0,
   dob: "1970-03-14",
   birthYear: 1970,
   inf: 2.5,
@@ -111,6 +119,11 @@ test("GK guardrails chart mounts for a funded plan and shows the spending-path s
   // Spending Path · Adjustment Events · Across All Scenarios).
   expect(text).toContain("Adjustment Events");
   expect(text).toContain("Portfolio (right axis)");
+  // No NaN anywhere in the rendered money. This surface prints a lot of dollars
+  // across the schedule, the guardrail bands and the summary cards, and "$NaN"
+  // is what a half-populated fixture (or a broken engine input) looks like on
+  // screen — silently, since it still renders.
+  expect(text).not.toContain("NaN");
 });
 
 test("GK guardrails chart mounts without throwing on a depleting (failure-year) plan", () => {
@@ -153,7 +166,13 @@ describe("guardrails cross-scenario strip (mc.gkStats)", () => {
     expect(text).toContain("Across 200 simulated scenarios");
     expect(text).toContain("cut spending in");
     expect(text).toContain("raised it in");
-    expect(text).toContain("cuts per scenario");
+    // Median FIRST, and the mean qualified as "among the paths that cut". The
+    // bare "avg N cuts per scenario" was removed because it read as the typical
+    // experience while the median path cuts zero times.
+    expect(text).toContain("cuts: typically");
+    expect(text).toContain("per scenario");
+    expect(text).toContain("on average among the");
+    expect(text).not.toMatch(/avg \d/);
     expect(text).toContain("spending seen");
     // The basis is RETIREMENT-YEAR dollars, named with the actual calendar year
     // (retireAge === currentAge here, so retirement year one IS the current

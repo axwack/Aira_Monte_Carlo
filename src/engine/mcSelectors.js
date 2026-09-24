@@ -113,3 +113,49 @@ export function selectPortfolioAtAge(mc, age, { retireAge, real = false, inf = 0
   const pcts = real ? deflate(mc.pcts, inf, true) : mc.pcts;
   return mcMedianAtAge(pcts, age, retireAge, pct);
 }
+
+/**
+ * The row index `age` maps to in `mc.pcts`, or -1 when there is none.
+ *
+ * Extracted so a selector that needs the DEFLATION FACTOR (rather than a
+ * percentile value) resolves the row the same way the percentile selectors do.
+ * Two independent index derivations is how the deflated and nominal views drift
+ * apart by a year.
+ */
+export function pctRowIndexAtAge(pcts, age, retireAge) {
+  if (!Array.isArray(pcts) || pcts.length === 0) return -1;
+  const byAge = pcts.findIndex((d) => d && d.age === age);
+  if (byAge >= 0) return byAge;
+  // Legacy rows without `age`: positional arithmetic, no clamp (past the end
+  // means "not modelled", never a fabricated year).
+  if (!Number.isFinite(pcts[0]?.age) && Number.isFinite(age) && Number.isFinite(retireAge)) {
+    const i = age - retireAge;
+    return i >= 0 && i < pcts.length ? i : -1;
+  }
+  return -1;
+}
+
+/**
+ * The MEAN of the terminal distribution, in the same basis as
+ * `selectPortfolioAtAge`.
+ *
+ * Why a separate selector: the mean is a published SCALAR (`mc.term.mean`) that
+ * runMC computes over every path — it is not a percentile column, so it cannot
+ * ride the percentile selector. But in a Real-$ view it must be deflated by the
+ * SAME factor those percentiles use, or the Overview would show a nominal mean
+ * sitting beside real percentiles and quietly overstate it (Rule 1: a figure
+ * whose basis differs from its neighbours' without saying so).
+ *
+ * Returns null when the mean is absent — never 0, for the reason documented on
+ * mcMedianAtAge (a confident $0 is indistinguishable from a dead portfolio).
+ */
+export function selectTerminalMeanAtAge(mc, age, { retireAge, real = false, inf = 0 } = {}) {
+  // eslint-disable-next-line no-restricted-properties -- this IS the selector; see this file's header.
+  const mean = mc?.term?.mean;
+  if (!Number.isFinite(mean)) return null;
+  if (!real) return mean;
+  // eslint-disable-next-line no-restricted-properties -- this IS the selector; see this file's header.
+  const i = pctRowIndexAtAge(mc?.pcts, age, retireAge);
+  if (i < 0) return mean;   // no basis to deflate by — show it as-is rather than scale it by a guess
+  return Math.round(mean / Math.pow(1 + inf / 100, i));
+}

@@ -84,7 +84,7 @@ import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAge
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
 import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationNotice } from "./engine/withdrawalStrategies.js";
 import { _defaultBucket, accountBucketPieces, expandAccountBuckets, clampBucket, bucketFractionsByCategory, bucketBalancesForRow, computeBucket1Runway } from "./engine/buckets.js";
-import { dollarBasisLabel, deflate, mcMedianAtAge, selectPortfolioAtAge } from "./engine/mcSelectors.js";
+import { dollarBasisLabel, deflate, mcMedianAtAge, selectPortfolioAtAge, selectTerminalMeanAtAge } from "./engine/mcSelectors.js";
 import { taxableYieldSplit } from "./engine/taxableYield.js";
 // One declaration of every figure's arithmetic, rendered here and enforced by
 // provenance.test.js. Never inline a formula string — it would drift from the test.
@@ -250,6 +250,19 @@ export const MC_BAND_LOW_RISK  = 0.90;
 export const MC_BAND_MODERATE  = 0.80;
 export const MC_BAND_ELEVATED  = 0.70;
 export const MC_BAND_HIGH      = 0.60;
+// Band COLOUR and band LABEL, hoisted to module scope so every surface that
+// colours a success figure reads the same thresholds. They used to be a local
+// `rateColor`/`riskLabel` inside MCTab while MCBandTable carried its OWN inline
+// `0.9 / 0.75` literals in `fundedColor` — two definitions of "what counts as a
+// good score", which is the drift the MC_BAND_* constants were introduced to
+// stop (see the comment above them). One definition, two consumers.
+const rateColor = (r) =>
+  r >= MC_BAND_LOW_RISK ? "var(--positive)" : r >= MC_BAND_MODERATE ? "#34d399" : r >= MC_BAND_ELEVATED ? "var(--accent-gold)" : r >= MC_BAND_HIGH ? "#f97316" : "var(--negative)";
+// Short form of the band, for a per-row badge where `riskLabel`'s sentence
+// would not fit. Keys off the same constants, so a badge and the headline it
+// summarises can never disagree about which band a rate is in.
+const bandLabel = (r) =>
+  r >= MC_BAND_LOW_RISK ? "Excellent" : r >= MC_BAND_MODERATE ? "Good" : r >= MC_BAND_ELEVATED ? "Concerning" : "Critical";
 // Not a band edge, on purpose — this is the "generally considered a solid
 // plan" rule of thumb from the planning literature, separate from our own
 // severity cutoffs above.
@@ -1271,7 +1284,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // APPLIED (guytonKlingerWithdrawal's `out` sink), never re-derived from the
   // spend path afterwards; a re-derivation would have to re-implement the
   // bands, the longevity rule and the income offset, and would drift.
-  const gkStats = { paths: 0, pathsWithCut: 0, pathsWithRaise: 0, cuts: 0, raises: 0, longevityHolds: 0, spendMinReal: Infinity, spendMaxReal: 0 };
+  const gkStats = { paths: 0, pathsWithCut: 0, pathsWithRaise: 0, cuts: 0, raises: 0, longevityHolds: 0, spendMinReal: Infinity, spendMaxReal: 0, cutCounts: [] };
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
   // resolveStrategy, not `|| "gk"`. A retired id (an old saved profile) or a
@@ -2059,6 +2072,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // Fold this path's guardrail behaviour into the run-level totals.
     gkStats.paths++;
     gkStats.cuts += pathCuts;
+    // Keep every path's own count. The MEAN alone was misleading on screen: the
+    // headline read "avg 8.9 cuts per scenario" while the median path never cut
+    // at all, because a minority of sequences cut repeatedly and dragged the
+    // average up. A mean is not a typical experience when the distribution is
+    // this skewed, so the distribution is kept and the median reported beside it
+    // (the same reasoning as Mean vs Median Final Balance on the Overview).
+    gkStats.cutCounts.push(pathCuts);
     if (pathCuts > 0) gkStats.pathsWithCut++;
     if (pathRaise) gkStats.pathsWithRaise++;
     results.push({ path, survived, exhaustAge, portAtRetire, bracketOverrideYears, rothReserveBrokenYears });
@@ -2102,6 +2122,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   const medR = rV[Math.floor(rV.length / 2)];
   const tV = results.map(r => r.path[r.path.length - 1]).sort((a, b) => a - b);
   const qt = p => tV[Math.floor(p * (tV.length - 1))];
+  // Mean of the terminal distribution. Deliberately NOT the average of p10..p90:
+  // that would be an average of five quantiles, which is not the distribution's
+  // mean and would understate it (the mean sits above the median here because a
+  // handful of very good sequences drag it up — the right tail the percentile
+  // ladder deliberately truncates). Rounded once, here, so every surface shows
+  // the same figure.
+  const termMean = tV.length ? Math.round(tV.reduce((s, v) => s + v, 0) / tV.length) : 0;
   // Mortality-weighted success: a failed path only fails you if you're alive
   // to experience it. Weight each failure by P(alive at its exhaust age),
   // from the same SSA table the fan chart's mortality overlay uses. The raw
@@ -2130,10 +2157,17 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       cutRate: gkStats.pathsWithCut / gkStats.paths,
       raiseRate: gkStats.pathsWithRaise / gkStats.paths,
       avgCutsPerPath: gkStats.cuts / gkStats.paths,
+      // The typical experience, and the average among the paths that actually
+      // cut. Reporting only the overall mean invited "the typical plan cuts ~9
+      // times", which the median-path chart directly contradicted.
+      medianCutsPerPath: gkStats.cutCounts.length
+        ? [...gkStats.cutCounts].sort((a, b) => a - b)[Math.floor(gkStats.cutCounts.length / 2)]
+        : 0,
+      avgCutsAmongCutters: gkStats.pathsWithCut > 0 ? gkStats.cuts / gkStats.pathsWithCut : 0,
     } : null,
     pcts,
     medR,
-    term: { p10: qt(0.1), p25: qt(0.25), p50: qt(0.5), p75: qt(0.75), p90: qt(0.9) },
+    term: { p10: qt(0.1), p25: qt(0.25), p50: qt(0.5), p75: qt(0.75), p90: qt(0.9), mean: termMean },
     N,
   };
 }
@@ -3200,7 +3234,7 @@ function useCountdown(dday, startDate) {
  * per age, plus the share of simulated paths still funded at that age.
  * Milestone rows (SS claiming, RMD start) are flagged so the table reads
  * like the chart's reference lines. */
-function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, hoveredAge, onHoverAge }) {
+function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, hoveredAge, onHoverAge, totalPaths, retireAge, landmarkOnly = false }) {
   const [show, setShow] = useState(false);
   // "What do these numbers mean?" — an inline, mobile-readable explainer
   // (not a browser tooltip) condensing the About page's "still-funded-percent"
@@ -3208,7 +3242,26 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
   const [showExplainer, setShowExplainer] = useState(false);
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
   if (!data || data.length === 0) return null;
-  const fundedColor = (a) => (a >= 0.9 ? "#34d399" : a >= 0.75 ? "var(--accent-gold)" : "#f87171");
+  // Landmark mode: fewer rows of the SAME table, for a summary surface. The
+  // Overview tab wants a handful of ages, not forty — but a condensed COPY of
+  // this table would be a second reader of `mc.pcts`, which is the anti-goal
+  // (REQUIREMENTS §41 §5). So the rows are filtered here and every cell below
+  // still comes from one implementation.
+  // Ages kept: the first, your retirement, SS claim, Medicare, first RMD, the
+  // decade markers inside the horizon, and the plan age — enough to see the
+  // shape without a second table.
+  const rows = useMemo(() => {
+    if (!landmarkOnly) return data;
+    const keep = new Set([data[0]?.age, data[data.length - 1]?.age, retireAge, ssAge, rmdAge, 60, 65, 70, 75, 80, 85].filter((a) => a != null));
+    const picked = data.filter((d) => keep.has(d.age));
+    // Never render an empty table if the horizon missed every landmark.
+    return picked.length ? picked : [data[0], data[data.length - 1]].filter(Boolean);
+  }, [data, landmarkOnly, retireAge, ssAge, rmdAge]);
+  // Colour comes from the shared band helper, not a local copy. This used to be
+  // `a >= 0.9 ? green : a >= 0.75 ? gold : red` — inline literals that had
+  // already drifted from the app's own bands (0.75 is not a band edge; 0.80 is).
+  // Two definitions of "a good score" is how five copies happened once before.
+  const fundedColor = (a) => rateColor(a ?? 1);
   return (
     <div className="chart-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show || showExplainer ? 8 : 0, flexWrap: "wrap", gap: 6 }}>
@@ -3244,9 +3297,21 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
       {show && (
         <>
           <div style={{ fontSize: 11, color: "var(--text-muted)", margin: "6px 0 8px", lineHeight: 1.5 }}>
-            Each row is one age from the fan chart above: the percentile spread of {MC_PATHS_LABEL} simulated
-            portfolios and the share of paths still funded. 10th %ile = pessimistic (90% of outcomes were better);
-            90th %ile = optimistic. 🏛️ Social Security starts · 📋 RMDs begin.
+            {landmarkOnly
+              ? "Landmark ages only — your retirement, Social Security claim, Medicare, first RMD and the decade markers inside your horizon. "
+              : "Each row is one age from the fan chart above: "}
+            The percentile spread of{" "}
+            {/* The RUN's path count, not the MC_PATHS constant. This sentence
+                said "3,000" no matter what was run, so after the path count
+                became user-adjustable (⚙ Advanced Settings) it described a
+                simulation the reader was not looking at. A caption that names a
+                number has to read the same value the table's own count column
+                does. */}
+            <strong style={{ color: "var(--text-secondary)" }}>
+              {totalPaths ? totalPaths.toLocaleString() : MC_PATHS_LABEL}
+            </strong>{" "}
+            simulated portfolios and the share of paths still funded. 10th %ile = pessimistic (90% of outcomes were better);
+            90th %ile = optimistic.
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="nw-table" style={{ fontSize: 12 }}>
@@ -3254,6 +3319,8 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
                 <tr>
                   <th>Age</th><th>Year</th>
                   <ThInfo tip={"Share of simulated paths whose portfolio has not run out by this age"}>Still Funded</ThInfo>
+                  <ThInfo tip={`How many of the ${totalPaths ? totalPaths.toLocaleString() : "simulated"} paths are still funded at this age — the same share as the column to its left, shown as a count`}>Success Count</ThInfo>
+                  <ThInfo tip={"Pre-Retirement = ages before you stop working; Retirement = the drawdown years. Your portfolio is still being added to in the first phase, so a low figure there means something different."}>Phase</ThInfo>
                   <ThInfo tip={"Pessimistic — 90% of simulated outcomes were better than this"}>10th %ile</ThInfo>
                   <th>25th %ile</th>
                   <ThInfo tip={"The median outcome — half of paths above, half below"}>Median</ThInfo>
@@ -3262,7 +3329,7 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
                 </tr>
               </thead>
               <tbody>
-                {data.map((d, i) => {
+                {rows.map((d, i) => {
                   const yr = CURRENT_YEAR + (d.age - (currentAge ?? d.age));
                   const isSS = d.age === ssAge, isRMD = d.age === rmdAge;
                   const isHovered = hoveredAge === d.age;
@@ -3286,8 +3353,25 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
                         {d.age}{isSS && " 🏛️"}{isRMD && " 📋"}
                       </td>
                       <td>{currentAge != null ? yr : "—"}</td>
-                      <td style={{ color: fundedColor(d.alive ?? 1), fontWeight: 600 }}>
-                        {d.alive != null ? `${(d.alive * 100).toFixed(1)}%` : "—"}
+                      {/* Band badge sits INSIDE the Still Funded cell: it is the
+                          same number, labelled with the app's band vocabulary —
+                          not a fourth success metric, and not a column of its
+                          own (that would just be the same figure twice). */}
+                      <td style={{ fontWeight: 600 }}>
+                        <span style={{ color: fundedColor(d.alive ?? 1) }}>
+                          {d.alive != null ? `${(d.alive * 100).toFixed(1)}%` : "—"}
+                        </span>
+                        {d.alive != null && (
+                          <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: fundedColor(d.alive), border: `1px solid ${withAlpha(fundedColor(d.alive), "44")}`, borderRadius: 999, padding: "1px 7px", whiteSpace: "nowrap" }}>
+                            {bandLabel(d.alive)}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                        {d.alive != null && totalPaths ? `${Math.round(d.alive * totalPaths).toLocaleString()}/${totalPaths.toLocaleString()}` : "—"}
+                      </td>
+                      <td style={{ textAlign: "left", color: "var(--text-muted)", whiteSpace: "nowrap", fontSize: 11 }}>
+                        {retireAge != null && d.age != null ? (d.age < retireAge ? "Pre-Retirement" : "Retirement") : "—"}
                       </td>
                       <td style={{ color: "#f87171" }}>{fmtDollar(d.p10)}</td>
                       <td style={{ color: "var(--accent-gold)" }}>{fmtDollar(d.p25)}</td>
@@ -3299,6 +3383,27 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
                 })}
               </tbody>
             </table>
+          </div>
+          {/* Band key. Built from the MC_BAND_* constants rather than retyped
+              percentages, so the legend can never disagree with the colours
+              above it — the failure mode the constants exist to prevent. */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", alignItems: "center", marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
+            <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>Still Funded:</span>
+            {[
+              { label: "Excellent", at: MC_BAND_LOW_RISK },
+              { label: "Good", at: MC_BAND_MODERATE },
+              { label: "Concerning", at: MC_BAND_ELEVATED },
+            ].map(({ label, at }) => (
+              <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: rateColor(at) }} />
+                {label} ({Math.round(at * 100)}%+)
+              </span>
+            ))}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: rateColor(0) }} />
+              Critical (below {Math.round(MC_BAND_ELEVATED * 100)}%)
+            </span>
+            <span style={{ color: "var(--text-faint)" }}>· 🏛️ Social Security starts · 📋 RMDs begin</span>
           </div>
         </>
       )}
@@ -9216,7 +9321,22 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
           <span style={{ fontWeight: 700, color: "var(--text-primary)" }}>Across {g.paths.toLocaleString()} simulated scenarios:</span>
           <span>guardrails <strong style={{ color: "#f87171" }}>cut spending in {pctS(g.cutRate)}</strong> of scenarios</span>
           <span><strong style={{ color: "#34d399" }}>raised it in {pctS(g.raiseRate)}</strong></span>
-          <span>avg <strong style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{g.avgCutsPerPath.toFixed(1)}</strong> cuts per scenario</span>
+          {/* Median first, mean second, and the mean NAMED as the average among
+              the paths that cut. "avg 8.9 cuts per scenario" alone read as "the
+              typical plan cuts ~9 times" — while the median path below cuts ZERO
+              times. Only a minority cut at all, and they cut repeatedly, so the
+              mean is not the typical case. Reporting the median without the
+              qualifier would hide the tail; reporting the mean without it
+              invented a typical case that does not exist. */}
+          <span>
+            cuts: typically <strong style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{g.medianCutsPerPath}</strong> per scenario
+            {g.avgCutsAmongCutters > 0 && (
+              <span style={{ color: "var(--text-muted)" }}>
+                {" "}(<strong style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{g.avgCutsAmongCutters.toFixed(1)}</strong> on average
+                among the {pctS(g.cutRate)} that cut)
+              </span>
+            )}
+          </span>
           <span style={{ color: "var(--text-muted)" }}>spending seen <strong style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{money(g.spendMinReal)}–{money(g.spendMaxReal)}</strong>/yr ({perMonth(g.spendMinReal)}–{perMonth(g.spendMaxReal)}/mo) in {retirementYear} dollars</span>
         </div>
       )}
@@ -9235,7 +9355,13 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
               One <strong style={{ color: "var(--text-secondary)" }}>median-returns</strong> path — teal is what you actually spend, riding between your floor and ceiling; the blue dashed line is the portfolio (right axis). ▲/▼ mark the years an adjustment fired.
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
-              {cutCount} cut{cutCount === 1 ? "" : "s"} · {raiseCount} raise{raiseCount === 1 ? "" : "s"}{holdCount ? ` · ${holdCount} held` : ""} · {retirementYear} $
+              {/* "· {retirementYear} $" was a bare year + currency sign with no
+                  unit word — it read as a broken number ("2041 $") and was the
+                  only one of this view's FOUR basis labels spelled that way
+                  (§41 A3 says "{retirementYear} dollars", and three of the four
+                  already did). Same convention everywhere or the basis stops
+                  being trustworthy. */}
+              {cutCount} cut{cutCount === 1 ? "" : "s"} · {raiseCount} raise{raiseCount === 1 ? "" : "s"}{holdCount ? ` · ${holdCount} held` : ""} · in {retirementYear} dollars
             </div>
           </div>
           <ResponsiveContainer width="100%" height={320}>
@@ -11108,6 +11234,176 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
   );
 }
 
+/**
+ * Monte Carlo Overview — the four-card verdict row (REQUIREMENTS §42 Spec A).
+ *
+ * READ-ONLY, one selector per figure (rule 8 / §41 §2):
+ *   Success Rate        mc.rate                    (a scalar; the guard covers
+ *                                                    the mc.pcts / mc.term DOLLAR
+ *                                                    arrays, not scalars)
+ *   Mean Final Balance  selectTerminalMeanAtAge()   — NOT an average of
+ *                                                    p10..p90, and NOT a raw
+ *                                                    mc.term read, so it deflates
+ *                                                    on the Real-$ toggle exactly
+ *                                                    as its neighbours do
+ *   Best Case / Median  selectPortfolioAtAge()      — mc.term.p50/p90 are the
+ *                                                    guarded fields; a direct read
+ *                                                    fails noRawMcAccess.test.js
+ *
+ * Each card declares itself in src/provenance.js with a prose formula, and
+ * renders that formula on screen (Rule 1a) — a card whose label class is not
+ * declared in the registry turns the build red.
+ */
+function MCOverviewCards({ mc, inf = 0, real = false, endAge, currentAge, retireAge }) {
+  if (!mc) return null;
+  const p50 = selectPortfolioAtAge(mc, endAge, { retireAge, real, inf, pct: "p50" });
+  const p90 = selectPortfolioAtAge(mc, endAge, { retireAge, real, inf, pct: "p90" });
+  const mean = selectTerminalMeanAtAge(mc, endAge, { retireAge, real, inf });
+  const money = (v) => (v == null ? "—" : fmtDollar(v));
+  // Basis named with the actual calendar year of retirement year one (§41 A3),
+  // never "today's dollars" — the spend the user types is consumed as-is in
+  // retirement year one and never inflated forward from today.
+  const retAge = effectiveRetireAge(retireAge, currentAge);
+  const basisYear = CURRENT_YEAR + Math.max(0, retAge - (currentAge ?? retAge));
+  const basis = real ? `${basisYear} dollars` : `future (${basisYear}-basis) dollars`;
+  const paths = mc.N ? mc.N.toLocaleString() : "simulated";
+
+  // Four explicit cards, NOT a `.map()` over the data above. Deliberate: the
+  // provenance gate counts literal label-class occurrences in this file and
+  // requires one registry entry each. A mapped card list appears exactly ONCE in
+  // source, so it would slide past the count check and let four undeclared cards
+  // ship — the loophole the registry exists to close. The values stay computed
+  // once, above; only the markup is repeated.
+  const cardStyle = { color: INFO_ACCENT.money, textAlign: "right" };
+  const provLine = { fontSize: 10, color: "var(--text-faint)", marginTop: 6, lineHeight: 1.45 };
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
+        <div className="met">
+          <div className="ml">Success Rate</div>
+          <div className="mv" style={{ color: INFO_ACCENT.positive, textAlign: "right" }}>{fmtPct(mc.rate)}</div>
+          <div className="ms">{paths} simulated paths, funded all the way to age {endAge}</div>
+          <div style={provLine}>{formulaFor("ov-success")}</div>
+        </div>
+        <div className="met">
+          <div className="ml">Mean Final Balance</div>
+          <div className="mv" style={cardStyle}>{money(mean)}</div>
+          <div className="ms">Average of every path at age {endAge} — the best sequences pull it above the median</div>
+          <div style={provLine}>{formulaFor("ov-mean-final")}</div>
+        </div>
+        <div className="met">
+          <div className="ml">Best Case (90th)</div>
+          <div className="mv" style={cardStyle}>{money(p90)}</div>
+          <div className="ms">90% of simulated outcomes ended below this · at age {endAge}</div>
+          <div style={provLine}>{formulaFor("ov-best-case")}</div>
+        </div>
+        <div className="met">
+          <div className="ml">Median Final Balance</div>
+          <div className="mv" style={{ color: "var(--accent-teal)", textAlign: "right" }}>{money(p50)}</div>
+          <div className="ms">Half of all outcomes ended above this · at age {endAge}</div>
+          <div style={provLine}>{formulaFor("ov-median")}</div>
+        </div>
+      </div>
+      <div style={{ fontSize: 10.5, color: "var(--text-faint)", marginTop: 6 }}>
+        Showing {basis}. Every figure is read from the same run — nothing here is recomputed in the UI.
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Persistent Verdict Header — REQUIREMENTS §41 verdict item #3.
+ *
+ * The brief's own acceptance test (§7): a cold user answers FOUR questions in
+ * 30 seconds without clicking —
+ *     is my money going to last · will it outlive ME · what's my worst case ·
+ *     when would it run out.
+ * Today the app opens on inputs, so that test fails: the answer lives inside a
+ * tab, below a Run button the user has to know to press.
+ *
+ * This strip sits above the tab bar and stays there, so the answer is on screen
+ * before any navigation. Every figure is a READ off the existing `mc` payload —
+ * no new engine work (rule 8):
+ *   survived to plan age   mc.rate            (scalar)
+ *   outlives you           mc.mwRate          (scalar, mortality-weighted)
+ *   worst case             selectPortfolioAtAge(pct p10)  ← the guarded field
+ *   median failure age     mc.medianExhaustAge
+ *
+ * LABELLING NOTE (Rule 1): the brief calls the p10 figure a "real floor SPEND".
+ * It is not spending — `term.p10` is the 10th-percentile final BALANCE, i.e. the
+ * pessimistic ending portfolio, not a spending level. Calling it spend would be
+ * exactly the mislabel class this codebase keeps paying for, so it is labelled
+ * as the worst-case balance and the basis is named with the retirement YEAR
+ * (§41 A3), never "today's dollars". The engine's actual spend floor is
+ * `mc.gkStats.spendMinReal` — a different number, available if wanted.
+ */
+function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAge }) {
+  if (!mc) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", marginBottom: 10, background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, fontSize: 11.5, color: "var(--text-muted)" }}>
+        <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>No verdict yet.</span>
+        <span>Run Monte Carlo from the sidebar and this strip will hold your four headline answers here, on every tab.</span>
+      </div>
+    );
+  }
+  const retAge = effectiveRetireAge(retireAge, currentAge);
+  const basisYear = CURRENT_YEAR + Math.max(0, retAge - (currentAge ?? retAge));
+  const worst = selectPortfolioAtAge(mc, endAge, { retireAge: retAge, real, inf, pct: "p10" });
+  const survived = mc.rate;
+  const outlives = mc.mwRate;
+  const exhaust = mc.medianExhaustAge;
+
+  const fact = { display: "flex", flexDirection: "column", gap: 1, minWidth: 0 };
+  const k = { fontSize: 9, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" };
+  const v = { fontSize: 17, fontWeight: 800, fontFamily: "var(--font-mono)", lineHeight: 1.1, whiteSpace: "nowrap" };
+  const sep = { width: 1, alignSelf: "stretch", background: "var(--divider)", flexShrink: 0 };
+
+  return (
+    <div
+      role="status"
+      style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "10px 16px", padding: "9px 14px", marginBottom: 10, background: "var(--card-bg)", border: "1px solid var(--card-border)", borderLeft: `3px solid ${rateColor(survived)}`, borderRadius: 8 }}
+    >
+      <div style={fact}>
+        <span style={k}>Funded to age {endAge}</span>
+        <span style={{ ...v, color: rateColor(survived) }}>{fmtPct(survived)}</span>
+      </div>
+      <div style={sep} />
+      <div style={fact}>
+        <span style={k}>Money outlives you</span>
+        <span style={{ ...v, color: rateColor(outlives ?? survived) }}>
+          {outlives != null ? fmtPct(outlives) : "—"}
+        </span>
+      </div>
+      <div style={sep} />
+      <div style={fact}>
+        <span style={k}>Worst case (10th) at {endAge}</span>
+        <span style={{ ...v, color: worst == null ? "var(--text-muted)" : worst > 0 ? "var(--accent-gold)" : "var(--negative)" }}>
+          {worst == null ? "—" : fmtDollar(worst)}
+        </span>
+      </div>
+      <div style={sep} />
+      <div style={fact}>
+        <span style={k}>Runs out (median)</span>
+        <span style={{ ...v, color: exhaust == null ? "var(--positive)" : "var(--accent-gold)" }}>
+          {exhaust == null ? "Never" : `Age ${exhaust}`}
+        </span>
+      </div>
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 10.5, color: "var(--text-faint)" }}>{real ? `${basisYear} dollars` : "future dollars"}</span>
+        <InfoModal title="Your four headline answers" accent={INFO_ACCENT.method}
+          trigger={<span style={{ cursor: "pointer", display: "inline-flex", color: INFO_ACCENT.method }}><InfoIcon size={13} /></span>}>
+          <ModalLede>These four numbers answer the questions that actually matter, before you open a single tab.</ModalLede>
+          <ModalP><Em color={INFO_ACCENT.positive}>Funded to age {endAge}</Em> — the share of simulated market histories where the portfolio still had money at your plan age. This is the conservative headline: it assumes you live all the way there.</ModalP>
+          <ModalP><Em color={INFO_ACCENT.positive}>Money outlives you</Em> — the same paths, re-weighted by your odds of actually being alive at each failure age. It is always at least as high as the first figure, and it answers the actuarial question rather than the worst-case one.</ModalP>
+          <ModalP><Em color={INFO_ACCENT.money}>Worst case</Em> — the 10th-percentile ending balance: 90% of simulated outcomes finished above it. A thin worst case beside a high success rate is one bad sequence away from joining the failures.</ModalP>
+          <ModalP><Em color={INFO_ACCENT.risk}>Runs out (median)</Em> — the middle failure age across the paths that DID run out. "Never" means fewer than half of all paths failed.</ModalP>
+          <ModalNote accent={INFO_ACCENT.method}>All four are read from the one simulation you last ran — nothing here is recomputed. Change an input and the strip goes stale with the rest of the results until you re-run.</ModalNote>
+        </InfoModal>
+      </div>
+    </div>
+  );
+}
+
 function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy, inf = 0, real = false, onAssumptionChange }) {
   // Every top-level panel on this tab is a twisty, and every one starts shut.
   // The tab had grown to five full-height explainer panels stacked above the
@@ -11199,8 +11495,6 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
     [`↳ ${ev.deferrable ? "discretionary" : "committed"}`, cfBasis(ev)],
   ]);
 
-  const rateColor = (r) =>
-    r >= MC_BAND_LOW_RISK ? "var(--positive)" : r >= MC_BAND_MODERATE ? "#34d399" : r >= MC_BAND_ELEVATED ? "var(--accent-gold)" : r >= MC_BAND_HIGH ? "#f97316" : "var(--negative)";
   const riskLabel = (r) =>
     r >= MC_BAND_LOW_RISK ? "Low risk — strong plan. As JL Collins would say — F-You Money."
     : r >= MC_BAND_MODERATE ? "Moderate risk — solid foundation. Consider small adjustments."
@@ -11713,20 +12007,12 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
       </div>
 
 
-      {/* Guyton-Klinger guardrails — surfaced HERE on the Monte Carlo tab
-          (2026-09-24) so the spending-flex view is discoverable, instead of
-          buried four levels deep in Scenarios → Withdrawal Plan. Same shared
-          <GuardrailsSpendingPath> the Withdrawal tab renders (rule 8, one
-          source). Gated on a guardrail-family strategy + a completed run. */}
-      {mc && isGuardrailStrategy(withdrawalStrategy) && (
-        <div className="chart-card">
-          <div className="ct">📉 Guardrails — how your spending flexes over time</div>
-          <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.55, marginBottom: 4 }}>
-            Your withdrawal strategy raises or cuts spending as markets move, keeping the plan funded. The dashed bands are your spending floor and ceiling; ▲/▼ mark the years an adjustment fired.
-          </div>
-          <GuardrailsView p={params} inf={inf} withdrawalStrategy={withdrawalStrategy} mc={mc} topRule={false} />
-        </div>
-      )}
+      {/* Guardrails MOVED to its own sub-tab of the Monte Carlo tab
+          (2026-09-24, Vincent's ask: "one is called simulation and the other
+          guardrails inside of this main tab"). It renders from the shell beside
+          this tab, because the fan chart and band table are shell-level children
+          of the Monte Carlo tab — a copy left here would appear under BOTH
+          sub-tabs and stop being a tab at all. The card chrome went with it. */}
 
       {/* Group 2: assumptions — panels the result was built from */}
       {/* Method explanation lives in the Success Rate card's ⓘ (SimMethodModal)
@@ -16564,6 +16850,14 @@ export default function AiRAForecaster() {
   const [activeTab, setTab] = useState(() =>
     loadProfileFromLocal() ? "networth" : "assumptions"
   );
+  // Monte Carlo's own two views (Vincent, 2026-09-24): "Simulation" holds the
+  // verdict + results + fan chart + band table + the per-run input audit trail;
+  // "Guardrails" holds the spending-flex analysis. They were one long scroll
+  // with the guardrails section wedged between the result and its assumptions.
+  // State lives here, not in MCTab, because the fan chart and the band table are
+  // SHELL-level children of this tab — a sub-tab bar inside MCTab could not hide
+  // them, and the Guardrails view would have appeared underneath both.
+  const [mcView, setMcView] = useState("simulation");
   // Sidebar accordion — independently collapsible, not a true single-open
   // accordion, since these are live input controls a user may be actively
   // adjusting in more than one section at once. Starts collapsed so the
@@ -18193,6 +18487,20 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               );
             })()}
 
+            {/* THE VERDICT, before the tabs. The brief's §7 test — answer "am I
+                okay?" in 30s without clicking — fails when the answer lives
+                inside a tab below a Run button. This strip is above every tab,
+                so the four headline answers are on screen the moment a run
+                exists, whichever tab the user lands on. */}
+            <VerdictHeader
+              mc={mc}
+              real={real}
+              inf={inf}
+              endAge={params.endAge}
+              currentAge={params.currentAge}
+              retireAge={params.retireAge}
+            />
+
             <div className="tabs">
               {TABS.map(([k, l]) => (
                 <button key={k} className={`tab ${activeTab === k ? "on" : ""}`} onClick={() => setTab(k)}>
@@ -18218,6 +18526,47 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               <>
                 {activeTab === "montecarlo" && (
                   <>
+                    {/* Monte Carlo's two views, in the app's own tab language:
+                        the teal UNDERLINE (`.tab.on`), not a new segmented
+                        control. Vincent, 2026-09-24: a filled pill track was a
+                        fourth tab idiom in an app whose established one is the
+                        underline — consistency wins over my hierarchy argument.
+                        Subordinate to the top-level bar by SIZE (12.5px vs 13px)
+                        and by FILL (the top bar tints its active tab; this one
+                        does not), so the levels still read as levels. */}
+                    <div role="tablist" aria-label="Monte Carlo views" style={{ display: "flex", gap: 2, borderBottom: "1px solid var(--divider)", marginBottom: 12, flexWrap: "wrap" }}>
+                      {[["simulation", "Simulation"], ["guardrails", "Guardrails"]].map(([k, label]) => {
+                        const on = mcView === k;
+                        return (
+                          <button
+                            key={k}
+                            role="tab"
+                            aria-selected={on}
+                            onClick={() => setMcView(k)}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              borderBottom: `2px solid ${on ? "var(--accent-teal)" : "transparent"}`,
+                              marginBottom: -1,
+                              padding: "8px 20px",
+                              fontSize: 12.5,
+                              fontWeight: on ? 800 : 600,
+                              color: on ? "var(--accent-teal)" : "var(--text-muted)",
+                              fontFamily: "var(--font-sans)",
+                              letterSpacing: "-0.01em",
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                              transition: "color 0.15s, border-color 0.15s",
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {mcView === "simulation" ? (
+                    <>
                     <MCTab
                       params={params}
                       mc={mc}
@@ -18301,7 +18650,39 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         endAge={endAge}
                         hoveredAge={hoveredAge}
                         onHoverAge={setHoveredAge}
+                        // Path count is user-adjustable (⚙ Advanced Settings),
+                        // so the Success Count column reads mc.N rather than the
+                        // MC_PATHS constant — otherwise a 500-path run would
+                        // print "3,000" beside every row.
+                        totalPaths={mc.N}
+                        // Phase boundary: the effective retirement age, the same
+                        // clamp the engines use (an already-retired user's phase
+                        // flips at today, not at a stale entered age).
+                        retireAge={effectiveRetireAge(params.retireAge, params.currentAge)}
                       />
+                    )}
+                    </>
+                    ) : (
+                      <div className="chart-card">
+                        <div className="ct">📉 Guardrails — how your spending flexes over time</div>
+                        <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.55, marginBottom: 4 }}>
+                          Your withdrawal strategy raises or cuts spending as markets move, keeping the plan funded.
+                          The dashed bands are your spending floor and ceiling; ▲/▼ mark the years an adjustment fired.
+                        </div>
+                        {/* GuardrailsView returns null for a strategy that has no guardrails, which
+                            would leave a blank tab with no explanation — the same dead-end the
+                            competitor's empty columns create. Say why instead. */}
+                        {isGuardrailStrategy(assumptions.withdrawalStrategy) ? (
+                          <GuardrailsView p={params} inf={inf} withdrawalStrategy={assumptions.withdrawalStrategy} mc={mc} topRule={false} />
+                        ) : (
+                          <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, padding: "10px 2px" }}>
+                            Your current spending strategy doesn’t use Guyton–Klinger guardrails, so there is nothing to
+                            flex here. Switch to a guardrail-family strategy (Guyton–Klinger, Risk-based, Kitces, or Smart
+                            Waterfall) in <strong style={{ color: "var(--text-secondary)" }}>Scenarios → Withdrawal Plan</strong> to
+                            see the spending path, its floor and ceiling, and every year an adjustment fired.
+                          </div>
+                        )}
+                      </div>
                     )}
                     {mc && <McTabDisclaimer />}
                   </>
@@ -18639,4 +19020,4 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView, SimMethodModal };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView, SimMethodModal, MCBandTable, bandLabel, MCOverviewCards, VerdictHeader };

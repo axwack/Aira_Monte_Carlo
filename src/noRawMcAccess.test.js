@@ -89,6 +89,14 @@ const ALLOWED = {
     // touch mc.pcts directly, everything else calls this instead.
     "if (!mc?.pcts) return null;",
     "const pcts = real ? deflate(mc.pcts, inf, true) : mc.pcts;",
+    // selectTerminalMeanAtAge(): the terminal MEAN is a published scalar, not a
+    // percentile column, so it cannot ride selectPortfolioAtAge — but in a Real-$
+    // view it must be deflated by the same factor the percentiles use, or the
+    // Overview would show a nominal mean beside real percentiles. Both reads
+    // live in THIS module (the owner of the basis convention), not in a
+    // component, which is the point the allow-list is protecting.
+    "const mean = mc?.term?.mean;",
+    "const i = pctRowIndexAtAge(mc?.pcts, age, retireAge);",
   ],
   "engine/explainScore.js": [
     // Structural validity check (array-ness/length) before doing anything

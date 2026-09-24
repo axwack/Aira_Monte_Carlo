@@ -110,6 +110,15 @@ test("runMC reports guardrail statistics that agree with its own path counts", (
   expect(mc.gkStats.raiseRate).toBeLessThanOrEqual(1);
   // avgCutsPerPath === total cuts / paths, by construction.
   expect(mc.gkStats.avgCutsPerPath).toBeCloseTo(mc.gkStats.cuts / 500, 6);
+  // The MEAN must not be shown alone: on this skewed distribution the median is
+  // the typical experience and the two genuinely differ. If they ever coincide
+  // the fixture stopped exercising the skew and the relabel would be untested.
+  expect(Number.isFinite(mc.gkStats.medianCutsPerPath)).toBe(true);
+  expect(mc.gkStats.medianCutsPerPath).toBeLessThanOrEqual(mc.gkStats.avgCutsPerPath);
+  // Average among the paths that actually cut >= the average over all paths,
+  // since the non-cutting paths pull the overall average down.
+  expect(mc.gkStats.avgCutsAmongCutters).toBeGreaterThanOrEqual(mc.gkStats.avgCutsPerPath);
+  if (mc.gkStats.pathsWithCut === 0) expect(mc.gkStats.avgCutsAmongCutters).toBe(0);
   // A path with at least one cut must be counted at least once.
   if (mc.gkStats.cuts > 0) expect(mc.gkStats.pathsWithCut).toBeGreaterThan(0);
   // The spending range must be a real, ordered range of positive dollars.

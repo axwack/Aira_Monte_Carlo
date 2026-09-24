@@ -62,6 +62,23 @@ export const METRIC_CARDS = [
     source: "leOpt / leCur",
     formula: "Lifetime tax ÷ lifetime income, shown for the optimized plan vs your current one" },
 
+  // ── Monte Carlo Overview (REQUIREMENTS §42 Spec A) ───────────────────────
+  // Every one of these is a read off the SAME run the MC results grid uses; none
+  // is re-derived. The dollar figures go through the shared selectors, so the
+  // Real-$ toggle moves them and the chart together.
+  { id: "ov-success", label: "Success Rate", kind: "computed",
+    source: "mc.rate",
+    formula: "Share of the simulated paths whose portfolio was still funded at your plan age" },
+  { id: "ov-mean-final", label: "Mean Final Balance", kind: "computed",
+    source: "selectTerminalMeanAtAge(mc, endAge)",
+    formula: "Average final balance across every simulated path — higher than the median because a few very good sequences pull it up" },
+  { id: "ov-best-case", label: "Best Case (90th)", kind: "computed",
+    source: "selectPortfolioAtAge(mc, endAge, pct: p90)",
+    formula: "The 90th-percentile final balance — 90% of simulated outcomes ended below it" },
+  { id: "ov-median", label: "Median Final Balance", kind: "computed",
+    source: "selectPortfolioAtAge(mc, endAge, pct: p50)",
+    formula: "The middle final balance — half of simulated outcomes ended above it, half below" },
+
   // ── Year-end conversion check-in ─────────────────────────────────────────
   { id: "ye-convert", label: "Convert This Amount", kind: "computed",
     source: "recConv (yearEndTaxRoom)",
