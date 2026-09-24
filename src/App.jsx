@@ -1014,7 +1014,31 @@ function guytonKlingerWithdrawal(
     }
 
     // Custom safety belt (not from the GK paper): clamp to floor/ceiling.
-    return Math.max(floor || 0, Math.min(ceiling || Infinity, w));
+    //
+    // A bind here reports its OWN event type, `constrained`, rather than folding
+    // into "cut"/"raise". Different cause, different remedy: a band rule fires
+    // because the portfolio drifted from the reference withdrawal rate, whereas
+    // this fires because the user's own gkFloorPct/gkCeilingPct settings left the
+    // rule nowhere to go. Merging them would let the headline number claim
+    // market-driven adjustments that were really produced by a slider — and it
+    // fixes an inverted signal, since tightening the band makes binding MORE
+    // frequent while leaving cutRate/raiseRate unchanged or lower.
+    //
+    // Detection compares `w` BEFORE the clamp. Testing the returned value against
+    // the band can never show a bind, because it has already been pulled inside
+    // it. The 1e-9 tolerance absorbs float noise on a value that landed exactly
+    // on a limit through multiplication.
+    const clampedW = Math.max(floor || 0, Math.min(ceiling || Infinity, w));
+    if (out && Number.isFinite(w)) {
+      if (Number.isFinite(ceiling) && w > ceiling + 1e-9) {
+        out.event = "constrained";
+        out.reason = "ceiling-bind";
+      } else if (floor != null && w < floor - 1e-9) {
+        out.event = "constrained";
+        out.reason = "floor-bind";
+      }
+    }
+    return clampedW;
 }
 
 /**
@@ -1284,7 +1308,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // APPLIED (guytonKlingerWithdrawal's `out` sink), never re-derived from the
   // spend path afterwards; a re-derivation would have to re-implement the
   // bands, the longevity rule and the income offset, and would drift.
-  const gkStats = { paths: 0, pathsWithCut: 0, pathsWithRaise: 0, cuts: 0, raises: 0, longevityHolds: 0, spendMinReal: Infinity, spendMaxReal: 0, cutCounts: [] };
+  //
+  // `constrained` / `pathsWithConstrained` track the THIRD event type: years the
+  // floor/ceiling band bound, which is a settings effect rather than a market
+  // effect and therefore never folded into cuts/raises.
+  const gkStats = { paths: 0, pathsWithCut: 0, pathsWithRaise: 0, cuts: 0, raises: 0, longevityHolds: 0, constrained: 0, pathsWithConstrained: 0, ceilingBinds: 0, floorBinds: 0, spendMinReal: Infinity, spendMaxReal: 0, cutCounts: [] };
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
   // resolveStrategy, not `|| "gk"`. A retired id (an old saved profile) or a
@@ -1429,6 +1457,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     let gkYearSink = null;
     let pathCuts = 0;
     let pathRaise = false;
+    // Years this path was constrained by the floor/ceiling band itself rather
+    // than by a GK band rule. Counted separately — see the `constrained` event
+    // note in guytonKlingerWithdrawal for why it must not join cuts/raises.
+    let pathConstrained = 0;
     let sp = p.sp;
     let lastReturn = 0;
 
@@ -1605,6 +1637,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           sp = guytonKlingerWithdrawal(totalPort, refWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age, gkIncomeOffset, gkFixedCosts, gkYearSink);
           if (gkYearSink.event === "cut") { pathCuts++; gkStats.cuts++; }
           else if (gkYearSink.event === "raise") { pathRaise = true; gkStats.raises++; }
+          else if (gkYearSink.event === "constrained") {
+            // Third type: the band bound, not a GK rule. Deliberately NOT counted
+            // as a cut or raise — see guytonKlingerWithdrawal's clamp note. A
+            // ceiling bind raises spend and a floor bind cuts it, so direction is
+            // recorded from which limit bound rather than inferred from `event`.
+            pathConstrained++;
+            gkStats.constrained++;
+            if (gkYearSink.reason === "ceiling-bind") gkStats.ceilingBinds++;
+            else if (gkYearSink.reason === "floor-bind") gkStats.floorBinds++;
+          }
           else if (gkYearSink.reason === "longevity-hold") gkStats.longevityHolds++;
         }
         else if (withdrawalStrategy === "fixed") {
@@ -2081,6 +2123,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     gkStats.cutCounts.push(pathCuts);
     if (pathCuts > 0) gkStats.pathsWithCut++;
     if (pathRaise) gkStats.pathsWithRaise++;
+    // `constrained` is per-path incidence of the band binding at least once.
+    // Reported as its own rate rather than merged, so tightening gkFloorPct /
+    // gkCeilingPct moves a visible number in the direction it should.
+    if (pathConstrained > 0) gkStats.pathsWithConstrained++;
     results.push({ path, survived, exhaustAge, portAtRetire, bracketOverrideYears, rothReserveBrokenYears });
   }
 
@@ -2164,6 +2210,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         ? [...gkStats.cutCounts].sort((a, b) => a - b)[Math.floor(gkStats.cutCounts.length / 2)]
         : 0,
       avgCutsAmongCutters: gkStats.pathsWithCut > 0 ? gkStats.cuts / gkStats.pathsWithCut : 0,
+      // Third event type — the floor/ceiling band binding, counted apart from the
+      // GK rules. `constrainedRate` is per-path incidence; the split lets the view
+      // say which limit bound, since a ceiling bind and a floor-bind imply
+      // opposite setting changes.
+      constrainedRate: gkStats.pathsWithConstrained / gkStats.paths,
+      avgConstrainedPerPath: gkStats.constrained / gkStats.paths,
     } : null,
     pcts,
     medR,
@@ -9292,9 +9344,12 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
     "Ceiling (real)": r.ceilingReal,
     "Portfolio (real)": r.portReal,
   }));
-  const events = rows.filter((r) => r.gkEvent === "cut" || r.gkEvent === "raise" || r.gkReason === "longevity-hold");
+  const events = rows.filter((r) => r.gkEvent === "cut" || r.gkEvent === "raise" || r.gkEvent === "constrained" || r.gkReason === "longevity-hold");
   const cutCount = rows.filter((r) => r.gkEvent === "cut").length;
   const raiseCount = rows.filter((r) => r.gkEvent === "raise").length;
+  // Band binds listed with the events (they moved spending) but counted apart,
+  // and split by which limit bound so the row can name it.
+  const constrainedCount = rows.filter((r) => r.gkEvent === "constrained").length;
   const holdCount = rows.filter((r) => r.gkReason === "longevity-hold").length;
   const money = (v) => fmtDollar(v || 0);
   const perMonth = (v) => fmtDollar(Math.round((v || 0) / 12));
@@ -9385,6 +9440,11 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                       <div style={{ color: "#60a5fa" }}>Portfolio {fmtDollar(row["Portfolio (real)"])}</div>
                       {ev === "cut" && <div style={{ color: "#f87171", fontWeight: 700, marginTop: 4 }}>▼ Spending cut {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate crossed the {Math.round(GK_BAND_PCT * 100)}% upper band</div>}
                       {ev === "raise" && <div style={{ color: "#34d399", fontWeight: 700, marginTop: 4 }}>▲ Spending raised {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate fell {Math.round(GK_BAND_PCT * 100)}% below the initial rate</div>}
+                      {ev === "constrained" && (
+                        <div style={{ color: "#f5a623", fontWeight: 700, marginTop: 4 }}>
+                          ◆ {row.gkReason === "floor-bind" ? "Floor bound" : "Ceiling bound"} — the guardrail rule was held at your {row.gkReason === "floor-bind" ? "floor" : "ceiling"} setting ({money(row[`${row.gkReason === "floor-bind" ? "Floor" : "Ceiling"} (real)`])}). This is a settings effect, not a market reaction.
+                        </div>
+                      )}
                       {!ev && row.gkReason === "longevity-hold" && <div style={{ color: "var(--accent-gold)", marginTop: 4 }}>Band crossed, but the longevity rule held — {GK_LONGEVITY_YEARS} years or fewer remain</div>}
                       {!ev && !row.gkReason && <div style={{ color: "var(--text-faint)", marginTop: 4 }}>No adjustment — inflation only</div>}
                     </div>
@@ -9400,6 +9460,18 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                     dot={(props) => {
                       const ev = gkChartData[props.index]?.gkEvent;
                       if (!ev) return <g key={`d${props.index}`} />;
+                      // Three shapes, not three colors. Cut/raise are vertical
+                      // triangles reading as "down/up"; a band bind is neither —
+                      // the settings ceiling or floor holding spend at a limit —
+                      // so it gets a diamond in the gold already used for the
+                      // floor line. Direction is carried by geometry rather than
+                      // colour alone because red/green is unreadable for ~8% of
+                      // readers, and a third colour would make that worse.
+                      if (ev === "constrained") {
+                        const d = 7, off = 11;
+                        const pts = `${props.cx},${props.cy - off - d} ${props.cx + d},${props.cy - off} ${props.cx},${props.cy - off + d} ${props.cx - d},${props.cy - off}`;
+                        return <polygon key={`e${props.index}`} points={pts} fill="#f5a623" stroke="var(--bg-base)" strokeWidth={1.5} />;
+                      }
                       const up = ev === "raise";
                       const w = 8.5, h = 13, gap = 11;
                       const baseY = up ? props.cy - gap : props.cy + gap;
@@ -9418,6 +9490,7 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
             <div className="li"><div className="ll" style={{ background: "#60a5fa" }} />Portfolio (right axis)</div>
             <div className="li"><span style={{ color: "#f87171", fontSize: 12 }}>▼</span> Cut</div>
             <div className="li"><span style={{ color: "#34d399", fontSize: 12 }}>▲</span> Raise</div>
+            <div className="li"><span style={{ color: "#f5a623", fontSize: 12 }}>◆</span> Band bound (your floor/ceiling setting)</div>
           </div>
         </>
       )}
@@ -9434,16 +9507,21 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
               <tbody>
                 {events.map((r) => {
                   const isCut = r.gkEvent === "cut", isRaise = r.gkEvent === "raise";
+                  // A band bind keeps its own row type. Note it can move spend in
+                  // EITHER direction (ceiling binds up, floor binds down), so the
+                  // colour follows the arithmetic delta while the label names the
+                  // limit — never a shared "cut" reading.
+                  const isConstrained = r.gkEvent === "constrained";
                   const delta = r.actualReal - r.priorReal;
-                  const c = isCut ? "#f87171" : isRaise ? "#34d399" : "var(--accent-gold)";
+                  const c = isConstrained ? "#f5a623" : isCut ? "#f87171" : isRaise ? "#34d399" : "var(--accent-gold)";
                   return (
                     <tr key={r.age}>
                       <td style={{ textAlign: "left" }}>{r.age}</td><td>{r.yr}</td>
-                      <td style={{ color: c, fontWeight: 700 }}>{isCut ? "▼ Cut" : isRaise ? "▲ Raise" : "Held"}</td>
+                      <td style={{ color: c, fontWeight: 700 }}>{isConstrained ? `◆ ${r.gkReason === "floor-bind" ? "Floor bound" : "Ceiling bound"}` : isCut ? "▼ Cut" : isRaise ? "▲ Raise" : "Held"}</td>
                       <td>{money(r.priorReal)}</td>
                       <td>{money(r.actualReal)}</td>
                       <td style={{ color: delta < 0 ? "#f87171" : delta > 0 ? "#34d399" : "var(--text-muted)" }}>{delta > 0 ? "+" : ""}{money(delta)}</td>
-                      <td style={{ textAlign: "left", color: "var(--text-muted)", fontSize: 11 }}>{isCut ? `Withdrawal rate crossed the ${Math.round(GK_BAND_PCT * 100)}% upper band` : isRaise ? `Withdrawal rate fell ${Math.round(GK_BAND_PCT * 100)}% below the initial rate` : `Band crossed, but ≤ ${GK_LONGEVITY_YEARS} years remained`}</td>
+                      <td style={{ textAlign: "left", color: "var(--text-muted)", fontSize: 11 }}>{isConstrained ? `GK rule's figure was held at your ${r.gkReason === "floor-bind" ? "floor" : "ceiling"} setting` : isCut ? `Withdrawal rate crossed the ${Math.round(GK_BAND_PCT * 100)}% upper band` : isRaise ? `Withdrawal rate fell ${Math.round(GK_BAND_PCT * 100)}% below the initial rate` : `Band crossed, but ≤ ${GK_LONGEVITY_YEARS} years remained`}</td>
                     </tr>
                   );
                 })}
@@ -9463,6 +9541,17 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                 ["Scenarios with a raise", pctS(g.raiseRate), "#34d399", `${Math.round(g.raiseRate * g.paths).toLocaleString()} of ${g.paths.toLocaleString()} paths raised spending`],
                 ["Avg cuts per scenario", g.avgCutsPerPath.toFixed(1), "var(--accent-gold)", "Averaged over every simulated path"],
                 ["Spending range seen", `${money(g.spendMinReal)}–${money(g.spendMaxReal)}`, "#60a5fa", `${perMonth(g.spendMinReal)}–${perMonth(g.spendMaxReal)}/mo · ${retirementYear} dollars`],
+                // Third event type, deliberately last: it answers a different
+                // question from the two above. cutRate/raiseRate are how often the
+                // MARKET moved you; this is how often your own band settings did.
+                // Tightening the floor/ceiling raises this number and should never
+                // make the first two look calmer than they are.
+                ...(g.constrainedRate != null ? [[
+                  "Scenarios where the band bound",
+                  pctS(g.constrainedRate),
+                  "#f5a623",
+                  `${Math.round((g.ceilingBinds || 0) + (g.floorBinds || 0)).toLocaleString()} bind-years (${(g.ceilingBinds || 0).toLocaleString()} ceiling · ${(g.floorBinds || 0).toLocaleString()} floor) across ${g.paths.toLocaleString()} paths — driven by your floor/ceiling settings, not by markets`,
+                ]] : []),
               ].map(([l, v, c, sub]) => (
                 <div key={l} style={{ background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, padding: "12px 14px" }}>
                   <div style={{ fontSize: 10.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{l}</div>

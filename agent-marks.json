@@ -76,7 +76,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function guytonKlingerWithdrawal(",
       "description": "GK guardrail + the optional `out` sink that records cut/raise/longevity-hold. Additive: callers passing no sink get an identical number.",
-      "sha": "354d437b4f22e460"
+      "sha": "f8fcaf6daaa4a6c9"
     },
     {
       "id": "waterfall-fedbrackets-emission",

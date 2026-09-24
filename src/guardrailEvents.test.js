@@ -14,7 +14,10 @@
  *   1. the new `out` sink reports cut / raise / longevity-hold correctly,
  *   2. callers that pass no sink are completely unaffected (numeric return),
  *   3. runMC's aggregate counts agree with the per-year events it recorded,
- *   4. the deterministic schedule carries the fields the chart reads.
+ *   4. the deterministic schedule carries the fields the chart reads,
+ *   5. a floor/ceiling BIND reports as its own third type, `constrained`, and is
+ *      never folded into cut/raise — see guytonKlingerWithdrawal's clamp note for
+ *      why those are different causes with different remedies.
  */
 
 import { guytonKlingerWithdrawal, runMC, simulateDeterministicWithStrategy, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS } from "./App";
@@ -65,6 +68,68 @@ test("an ordinary year reports no event", () => {
   guytonKlingerWithdrawal(1_000_000, 0.04, 40_000, 0.02, 0.02, 20_000, 90_000, 30, 0, 0, out);
   expect(out.event).toBeNull();
   expect(out.reason).toBeNull();
+});
+
+// ── The third event type: the band binding ───────────────────────────────────
+// A floor/ceiling bind is NOT a market reaction. It happens because the user's
+// own gkFloorPct / gkCeilingPct settings left the rule nowhere to go, so it gets
+// its own event name rather than borrowing cut/raise. Folding them together was
+// actively misleading: tightening the band makes binding MORE frequent while
+// leaving cutRate/raiseRate flat or lower, so narrowing your band to force
+// discipline made the panel claim the guardrails had calmed down.
+
+test("a CEILING bind reports `constrained`/`ceiling-bind`, not `raise`", () => {
+  const out = {};
+  // Prosperity wants +10% on 100k → 110k, but the ceiling sits at 105k.
+  const sp = guytonKlingerWithdrawal(4_000_000, 0.05, 100_000, 0.06, 0.02, 30_000, 105_000, 30, 0, 0, out);
+  expect(out.event).toBe("constrained");
+  expect(out.reason).toBe("ceiling-bind");
+  // The clamp really did cap it — and upward, which is why direction cannot be
+  // inferred from the event name.
+  expect(num(sp)).toBe(105_000);
+  expect(num(sp)).toBeGreaterThan(100_000);
+});
+
+test("a FLOOR bind reports `constrained`/`floor-bind`, not `cut`", () => {
+  const out = {};
+  // Preservation wants -10% on 100k → 90k, but the floor lifts it back to 95k.
+  const sp = guytonKlingerWithdrawal(400_000, 0.03, 100_000, -0.10, 0.02, 95_000, 500_000, 30, 0, 0, out);
+  expect(out.event).toBe("constrained");
+  expect(out.reason).toBe("floor-bind");
+  expect(num(sp)).toBe(95_000);
+  expect(num(sp)).toBeLessThan(100_000);
+});
+
+test("a band rule that stays inside the limits keeps its ORIGINAL event", () => {
+  // Guards against the clamp check swallowing genuine market events: same
+  // prosperity/cut setups as above, with a band wide enough not to bind.
+  const raised = {};
+  guytonKlingerWithdrawal(4_000_000, 0.05, 100_000, 0.06, 0.02, 30_000, 500_000, 30, 0, 0, raised);
+  expect(raised.event).toBe("raise");
+  expect(raised.reason).toBe("prosperity");
+
+  const cut = {};
+  guytonKlingerWithdrawal(400_000, 0.03, 100_000, -0.10, 0.02, 10_000, 500_000, 30, 0, 0, cut);
+  expect(cut.event).toBe("cut");
+  expect(cut.reason).toBe("preservation");
+});
+
+test("spend landing EXACTLY on a limit is not reported as a bind", () => {
+  // Float noise tolerance. `w` arriving at the ceiling through multiplication
+  // carries a residue (100k × 1.02 × 1.1 = 112200.00000000001), so a naive
+  // `w > ceiling` would manufacture a bind the user cannot act on. The ceiling
+  // here IS that exact float value.
+  const out = {};
+  const sp = guytonKlingerWithdrawal(4_000_000, 0.05, 100_000, 0.06, 0.02, 30_000, 112_200.00000000001, 30, 0, 0, out);
+  expect(out.event).toBe("raise");   // prosperity moved it there; no bind
+  expect(out.reason).toBe("prosperity");
+  expect(sp).toBeLessThanOrEqual(112_200.00000000001 + 1e-9);
+});
+
+test("the sink stays additive when a bind occurs (no-sink callers unaffected)", () => {
+  const bare = guytonKlingerWithdrawal(4_000_000, 0.05, 100_000, 0.06, 0.02, 30_000, 105_000, 30, 0, 0);
+  const withSink = guytonKlingerWithdrawal(4_000_000, 0.05, 100_000, 0.06, 0.02, 30_000, 105_000, 30, 0, 0, {});
+  expect(withSink).toBe(bare);
 });
 
 test("PASSING NO SINK RETURNS THE SAME NUMBER AS BEFORE (backward compatibility)", () => {
@@ -163,7 +228,81 @@ test("the deterministic schedule carries the fields the guardrails chart reads",
   for (const r of schedule) {
     if (r.gkEvent === "cut") expect(r.spAfterGK).toBeLessThanOrEqual(r.spEntering + 1);
     if (r.gkEvent === "raise") expect(r.spAfterGK).toBeGreaterThanOrEqual(r.spEntering - 1);
+    // A bind sits ON whichever limit bound it — and unlike cut/raise it can move
+    // spend either way, so it asserts equality with the band edge instead of an
+    // inequality against the prior year.
+    if (r.gkEvent === "constrained") {
+      if (r.gkReason === "ceiling-bind") expect(r.spAfterGK).toBeLessThanOrEqual(r.gkCeiling + 1);
+      if (r.gkReason === "floor-bind") expect(r.spAfterGK).toBeGreaterThanOrEqual(r.gkFloor - 1);
+    }
   }
+});
+
+test("a tight ceiling makes the deterministic schedule emit constrained rows", () => {
+  const P = {
+    currentAge: 60, retireAge: 60, endAge: 90, dob: "1970-03-14", birthYear: 1970,
+    inf: 2.5, sp: 100_000, ssAge: 67, ssb: 30_000, ab: 0, useAb: false,
+    tax: true, smile: false, preRetireEq: 91, postRetireEq: 70,
+    // Ceiling just above target spend so prosperity years clamp hard against it.
+    gkFloor: 60_000, gkCeiling: 103_000, gkFloorPct: 65, gkCeilingPct: 103,
+    withdrawalStrategy: "gk", cashRealReturn: 3.0, filingStatus: "mfj",
+    stateOfResidence: "NJ", useJointRmdTable: false,
+    accounts: [
+      { id: "t1", category: "pretax",  name: "401k",    balance: 1_200_000 },
+      { id: "t2", category: "roth",    name: "Roth",    balance:   250_000 },
+      { id: "t3", category: "taxable", name: "Taxable", balance:   250_000 },
+      { id: "t4", category: "cash",    name: "Cash",    balance:    80_000 },
+    ],
+  };
+  const { schedule } = simulateDeterministicWithStrategy(P, 2.5, "gk");
+  const binds = schedule.filter((r) => r.gkEvent === "constrained");
+  expect(binds.length).toBeGreaterThan(0);
+  // Every bind names a limit, and no bind is also counted as a market event.
+  for (const b of binds) {
+    expect(["ceiling-bind", "floor-bind"]).toContain(b.gkReason);
+  }
+});
+
+test("runMC counts `constrained` separately from cuts and raises", () => {
+  const base = {
+    currentAge: 60, retireAge: 60, endAge: 92, dob: "1970-03-14", birthYear: 1970,
+    inf: 2.5, sp: 110_000, ssAge: 67, ssb: 30_000, ab: 0, useAb: false,
+    tax: true, smile: true, preRetireEq: 91, postRetireEq: 70,
+    withdrawalStrategy: "gk", cashRealReturn: 3.0, filingStatus: "mfj",
+    stateOfResidence: "NJ", useJointRmdTable: false,
+    accounts: [
+      { id: "c1", category: "pretax",  name: "401k",    balance: 1_400_000 },
+      { id: "c2", category: "roth",    name: "Roth",    balance:   300_000 },
+      { id: "c3", category: "taxable", name: "Taxable", balance:   300_000 },
+      { id: "c4", category: "cash",    name: "Cash",    balance:   100_000 },
+    ],
+  };
+  const run = (gkFloor, gkCeiling) => runMC({ ...base, gkFloor, gkCeiling }, 92, 300, 42, true).gkStats;
+
+  const tight = run(60_000, 105_000);
+  expect(typeof tight.constrainedRate).toBe("number");
+  expect(tight.constrainedRate).toBeGreaterThan(0);
+  expect(tight.constrainedRate).toBeLessThanOrEqual(1);
+  // The two sub-counters sum to the total, so nothing leaks between them.
+  expect(tight.ceilingBinds + tight.floorBinds).toBe(tight.constrained);
+  expect(tight.pathsWithConstrained).toBeGreaterThan(0);
+  // avgConstrainedPerPath is per-path by construction, same as its cut twin.
+  expect(tight.avgConstrainedPerPath).toBeCloseTo(tight.constrained / 300, 6);
+
+  // THE REGRESSION THIS FEATURE EXISTS TO FIX: widening the band must REDUCE
+  // binding. Before `constrained`, tightening the band left cutRate/raiseRate
+  // flat or lower — an inverted signal on the exact control the user adjusted.
+  //
+  // Note the loose case is not zero. A $60k floor still binds when a bad
+  // sequence drives spending down to it, which is correct behaviour, not noise:
+  // the assertion is monotonic, and that ordering is what the UI promises.
+  const loose = run(60_000, 400_000);
+  expect(loose.constrained).toBeLessThan(tight.constrained);
+  expect(tight.constrainedRate).toBeGreaterThan(loose.constrainedRate);
+  // A floor low enough to never bind really does produce zero.
+  const unbounded = run(1_000, 50_000_000);
+  expect(unbounded.constrained).toBe(0);
+  expect(unbounded.constrainedRate).toBe(0);
 });
 
 test("the GK method constants stay coherent with the rules they describe", () => {
