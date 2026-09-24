@@ -412,9 +412,22 @@ describe('InfoIcon — SVG info affordance', () => {
     expect(div.innerHTML).toContain('currentColor');
   });
 
-  test('InfoDot exposes its explanation as a tooltip', () => {
+  // InfoDot used to expose its explanation through a `title=` attribute. That
+  // assertion had to change with the component: `title=` renders nothing on
+  // many desktop setups and cannot be opened at all on touch, so InfoDot now
+  // triggers the click-open InfoModal. The contract worth testing is therefore
+  // "the explanation is reachable by click", not "a title attribute exists" —
+  // asserting the old attribute would pin the bug in place.
+  test('InfoDot exposes its explanation through a click, not a dead title attribute', () => {
     const div = renderToDiv(React.createElement(InfoDot, { title: 'Explains the number' }));
-    expect(div.querySelector('[title="Explains the number"]')).not.toBeNull();
+    // Still renders the SVG affordance.
     expect(div.querySelector('svg')).not.toBeNull();
+    // No title= on the trigger any more — that was the unreachable pattern.
+    expect(div.querySelector('[title="Explains the number"]')).toBeNull();
+    // Clicking the trigger opens the dialog, and the explanation is readable.
+    const trigger = div.querySelector('span');
+    expect(trigger).not.toBeNull();
+    act(() => { trigger.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(document.body.textContent).toContain('Explains the number');
   });
 });

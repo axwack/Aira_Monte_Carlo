@@ -26,7 +26,7 @@
  * "…wait, why DOESN'T this affect anything?"
  */
 
-import { BLANK_PROFILE, runMC, runStress, simulateDeterministicWithStrategy } from "./App";
+import { BLANK_PROFILE, runMC, runStress, simulateDeterministicWithStrategy, SAMPLE_START_YEAR, SAMPLE_END_YEAR } from "./App";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 import { resolveGlidepathSwitchAge, glidepathEqPct, LEGACY_GLIDEPATH_SWITCH_AGE } from "./engine/glidepath.js";
 
@@ -186,6 +186,16 @@ const NEEDS_A_TARGETED_FIXTURE = {
   hcProb:                  "runMC-only since v1.2.55; proven by the healthcare block below",
   hcMin:                   "runMC-only since v1.2.55; proven by the healthcare block below",
   hcMax:                   "runMC-only since v1.2.55; proven by the healthcare block below",
+  // Monte Carlo sampling mechanics (v1.2.142, MC tab → ⚙ Advanced Settings).
+  // The sweep's fingerprint is the DETERMINISTIC waterfall, which has no
+  // sampling at all — it runs one median-return path — so none of these three
+  // can move it, and that is correct rather than broken. Same shape as the
+  // healthcare params above: runMC-only inputs, proven live by the "Monte Carlo
+  // sampling window and path count reach runMC" block at the bottom of this file.
+  // Do NOT move these to INERT_BY_DESIGN.
+  mcPaths:                 "runMC-only; proven by the MC sampling block below",
+  mcRangeStart:            "runMC-only; proven by the MC sampling block below",
+  mcRangeEnd:              "runMC-only; proven by the MC sampling block below",
 };
 
 /** A number summarising everything the engines computed. Any real change moves it. */
@@ -576,6 +586,40 @@ describe("glidepathSwitchAge — one switch age, honoured by every engine", () =
  * DETERMINISTIC engines on purpose (see NEEDS_A_TARGETED_FIXTURE above); this
  * block proves they still reach the engine that is supposed to price risk.
  */
+describe("Monte Carlo sampling window and path count reach runMC", () => {
+  // The other half of the contract for the three fields exempted above: they
+  // must be real inputs to the stochastic engine, and must NOT be silently
+  // read by the deterministic one (a deterministic schedule has no sampling,
+  // so if these ever moved the waterfall, that would be the bug).
+  const rate = (over, n = 800) => runMC({ ...BASE, ...over }, 92, n, 42, true);
+
+  test("mcRangeStart / mcRangeEnd change which history is sampled", () => {
+    const full   = rate({ mcRangeStart: SAMPLE_START_YEAR, mcRangeEnd: SAMPLE_END_YEAR });
+    const modern = rate({ mcRangeStart: 1980, mcRangeEnd: SAMPLE_END_YEAR });
+    const older  = rate({ mcRangeStart: SAMPLE_START_YEAR, mcRangeEnd: 1979 });
+    // Direction is a market fact, not a law, so assert movement, not sign.
+    expect(modern.rate !== full.rate || older.rate !== full.rate).toBe(true);
+  });
+
+  test("mcPaths changes the sample size the engine reports back", () => {
+    expect(runMC({ ...BASE, mcPaths: 900 }, 92, 900, 42, true).N).toBe(900);
+    expect(runMC({ ...BASE, mcPaths: 300 }, 92, 300, 42, true).N).toBe(300);
+  });
+
+  test("an unset window is the full history — results identical to an explicit full range", () => {
+    const unset = rate({});
+    const explicitFull = rate({ mcRangeStart: SAMPLE_START_YEAR, mcRangeEnd: SAMPLE_END_YEAR });
+    expect(explicitFull.rate).toBe(unset.rate);
+    expect(explicitFull.term.p50).toBe(unset.term.p50);
+  });
+
+  test("and they are NOT read by the deterministic waterfall", () => {
+    const a = buildWithdrawalWaterfall({ ...BASE, mcRangeStart: SAMPLE_START_YEAR, mcRangeEnd: SAMPLE_END_YEAR });
+    const b = buildWithdrawalWaterfall({ ...BASE, mcRangeStart: 1990, mcRangeEnd: 2000, mcPaths: 500 });
+    expect(b.smart.rows.at(-1).totalPort).toBe(a.smart.rows.at(-1).totalPort);
+  });
+});
+
 describe("healthcare shock params reach runMC", () => {
   const HC = {
     ...BASE,

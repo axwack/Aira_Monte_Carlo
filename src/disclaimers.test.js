@@ -28,6 +28,23 @@ describe("advice disclaimers are present", () => {
     expect(body).toContain('role="note"');
   });
 
+  // The notice is collapsed by default (four lines of amber on every results
+  // tab was a lot of prime screen). That makes the ALWAYS-VISIBLE line the
+  // thing that has to carry the warning — so assert its two load-bearing hooks
+  // are in the default summary, not only in the expandable long form. Without
+  // this, a future edit could hollow the summary out to "Not financial advice."
+  // and move every other word behind the toggle, which is the version a
+  // regulator would call a buried disclosure.
+  test("the always-visible short form carries the warning on its own", () => {
+    const body = bodyOf("SectionDisclaimer");
+    // The default summary string (used when a section passes none).
+    expect(body).toMatch(/Hypothetical model projections, not predictions/);
+    expect(body).toMatch(/Consult a licensed professional before acting/);
+    // And it is a real control, not a tooltip: a button with aria-expanded.
+    expect(body).toContain("aria-expanded={open}");
+    expect(body).toMatch(/Full disclosure/);
+  });
+
   test("Monte Carlo results carry an inline disclaimer", () => {
     expect(bodyOf("MCTab")).toContain("<SectionDisclaimer>");
   });

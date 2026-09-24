@@ -683,6 +683,14 @@ export function buildWithdrawalWaterfall(params = {}) {
     // it's sourced from a fixed 2-years-ago MAGI.
     return { fedTax: fedT, stateTax: stT, irmaa, totalTax: fedT + stT, irmaaFull: fedT + stT + irmaa,
              effectiveRate: (totInc + ltcg) > 0 ? (fedT + stT) / (totInc + ltcg) : 0, marginalBracket: margR,
+             // Exposed for the Tax Details modal's Federal Tax Bracket Analysis:
+             // the EXACT inflation-indexed bracket array this year was taxed
+             // with (fB), the deduction applied (ded = std + senior bonus), and
+             // the federal ORDINARY tax progTax(txInc, fB) returns. The modal
+             // walks fB over txInc to show per-bracket fill — its per-bracket
+             // sum equals fedOrdinary by construction (same array, same
+             // progTax formula), never an independent recompute (Rule 8).
+             fedBrackets: fB, deduction: Math.round(ded), fedOrdinary: Math.round(fedOrdinary),
              taxableIncome: txInc, totInc, taxSS, ltcgTax, niit, realizedGain: Math.round(ltcg),
              // This year's own MAGI (never the lookback substitution) —
              // runScenario stores this per age so it becomes magiLookback two
@@ -1544,6 +1552,9 @@ export function buildWithdrawalWaterfall(params = {}) {
         earlyPenaltyReason: earlyPenalty.reason,
         earlyPenaltyExempt: earlyPenalty.exemptAmount,
         effectiveRate: tax.effectiveRate, marginalBracket: tax.marginalBracket,
+        // Federal bracket ladder (this year's indexed array), deduction, and
+        // ordinary fed tax — for the Tax Details modal's bracket analysis.
+        fedBrackets: tax.fedBrackets, deduction: tax.deduction, fedOrdinary: tax.fedOrdinary,
         taxableIncome: tax.taxableIncome, totInc: tax.totInc, magi: Math.round(tax.magi),
         realizedGain: Math.round(realizedGain), ltcgTax: tax.ltcgTax, niit: tax.niit, taxSS: tax.taxSS,
         // Forced RMD beyond what spending + taxes consumed; reinvested into

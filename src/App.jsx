@@ -94,7 +94,7 @@ import { CreditBalanceBadge, CreditPackModal, RecoveryLinkModal, RestoreAccessMo
 import { AdminPanel, useOwnerVerified } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 import { AGE_LIMITS } from './data/ageLimits.js';
-import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,RadarChart,PolarGrid,PolarAngleAxis,PolarRadiusAxis,Radar,} from "recharts";
+import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,RadarChart,PolarGrid,PolarAngleAxis,PolarRadiusAxis,Radar,PieChart,Pie,Cell,} from "recharts";
 import { JOINT_RMD_TABLE } from './data/jointRmdTable.js';
 import { STATE_BRACKETS } from './data/stateBrackets.js';
 import { IRMAA_2026 } from './data/irmaa2026.js';
@@ -193,12 +193,13 @@ import { IRMAA_2026 } from './data/irmaa2026.js';
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.140";
-export const BUILD_TAG = `[main] v1.2.140 - Dropped the overloaded "Smart" label from the Withdrawal Plan summary cards
-- "Smart Lifetime Tax" renamed to "Your Plan's Lifetime Tax" - it was colliding with the unrelated "Smart Waterfall" PACING strategy option one dropdown over (this card is about DRAW ORDER, not how much to spend), and a user got confused by the overlap
-- Relabeled using the "Your plan" / "No plan" wording the mode toggle below already uses, instead of adding a third term; "tax-optimal waterfall" (engine jargon) replaced with the actual order spelled out (cash -> taxable -> pre-tax -> Roth)
-- Same rename applied to the provenance registry entry (provenance.js) and the PDF report's Lifetime Tax Summary section (PrintReport.jsx) so all three surfaces agree`;
-export const BUILD_TIME = "2026-09-17T09:00:00Z";
+const APP_VERSION = "1.2.141";
+export const BUILD_TAG = `[main] v1.2.141 - Guyton-Klinger guardrails: Spending Path with Adjustment Events
+- New "Spending Path with Guardrail Adjustments" chart on the Withdrawal Plan tab: floor/ceiling bands, prior-vs-actual spend, and a per-year cut/raise marker for every year the guardrail rule fired (deflated to retirement-year dollars). Every series is an engine output on the schedule row (spEntering / spAfterGK / gkFloor / gkCeiling / gkEvent) - the UI applies no guardrail arithmetic of its own (Rule 8)
+- runMC now returns mc.gkStats (cutRate / raiseRate / avgCutsPerPath / spend range) counted per path, for the cross-scenario summary
+- Added an agent attribution + tamper-evidence registry (agent-marks.json + src/agentMarks.js + scripts/agent-marks.mjs), enforced by src/agentMarks.test.js, so an edit to another agent's region fails the build instead of sliding in
+- Added a render smoke test for the guardrails chart (guardrailsChartRender.test.js) - the RothLadder-class gap that engine tests can't catch`;
+export const BUILD_TIME = "2026-09-24T00:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -212,6 +213,19 @@ export const MC_PATHS = 3000;            // Monte Carlo stochastic paths
 export const STRESS_PATHS = 2000;        // 2000–2012 sequence-risk stress paths
 export const MC_PATHS_LABEL = MC_PATHS.toLocaleString();      // "3,000"
 export const STRESS_PATHS_LABEL = STRESS_PATHS.toLocaleString(); // "2,000"
+// Bounds for the user-adjustable path count (MC tab → ⚙ Advanced Settings).
+// The floor keeps a percentile band statistically meaningful; the ceiling is
+// where a main-thread run stops feeling instant.
+export const MC_PATH_MIN = 500;
+export const MC_PATH_MAX = 20000;
+// The window of the Damodaran arrays in engine/expectedReturn.js: 1928–2025,
+// 98 paired years. The Monte Carlo samples whole calendar years out of this
+// range, so the range bounds are a property of the DATA, not a preference —
+// they live here as one pair of constants rather than being retyped into the
+// slider limits, the validation, and the modal copy.
+export const SAMPLE_START_YEAR = 1928;
+export const SAMPLE_END_YEAR = 2025;
+export const SAMPLE_YEARS = SAMPLE_END_YEAR - SAMPLE_START_YEAR + 1;
 // Monte Carlo score bands. rateColor() and riskLabel() used to each hardcode
 // these four numbers separately, and the explainer sentence had a fifth,
 // unrelated one baked in — that's how five copies of "what counts as a good
@@ -225,8 +239,7 @@ export const MC_BAND_HIGH      = 0.60;
 // severity cutoffs above.
 export const MC_SOLID_PLAN_RATE = 0.85;
 // Guyton-Klinger guardrails, as % of core spend
-export const GK_FLOOR_DEFAULT_PCT = 65;
-export const GK_CEILING_DEFAULT_PCT = 135;
+export const GK_FLOOR_DEFAULT_PCT = 65;export const GK_CEILING_DEFAULT_PCT = 135;
 // Dollar fallbacks used only when a profile predates the % fields
 export const GK_FLOOR_FALLBACK = 48_000;
 export const GK_CEILING_FALLBACK = 115_000;
@@ -305,6 +318,15 @@ export function applyTheme(theme) {
 // GK paper: cap CPI pass-through in Guyton-Klinger withdrawal adjustments at 6%.
 // Distinct from the INFL data clamp above (which bounds the historical CPI bootstrap).
 const GK_INFLATION_CAP = 0.06;
+// The other three GK paper numbers, named so the engine and the Advanced
+// Settings disclosure read from ONE definition. They used to be inline
+// literals in guytonKlingerWithdrawal, which meant the "20% band → ±10%"
+// sentence in the UI was a second, independently-typed copy of the rule — the
+// classic drift setup (the explainer and the engine disagreeing after one
+// edit). Percentages, so `* 100` at the display site.
+const GK_BAND_PCT = 0.20;    // WR vs initial WR that triggers an adjustment
+const GK_ADJUST_PCT = 0.10;  // size of the raise/cut when the band is crossed
+const GK_LONGEVITY_YEARS = 15; // no capital-preservation cut with ≤ this many years left
 
 const SEQ_2000_2012 = [
   -0.091, -0.119, -0.221, 0.287, 0.109, 0.048, 0.158, 0.055, -0.37, 0.265,
@@ -533,6 +555,15 @@ export const BLANK_PROFILE = {
   reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
   useJointRmdTable: false,      // default: use Uniform Lifetime table
   cashRealReturn: 3.0,          // default return for cash/HYSA (percent)
+  // ── Monte Carlo simulation mechanics (edited in the MC tab's ⚙ Advanced
+  // Settings, not in Profile). Both defaults reproduce the previous
+  // behaviour EXACTLY: MC_PATHS paths over the whole 1928–2025 history. That
+  // matters — an absent field must not change any existing result, so
+  // resolveSampleRange() returns null (= sample the full arrays) unless the
+  // user actually narrows the window.
+  mcPaths: MC_PATHS,            // stochastic paths per run
+  mcRangeStart: SAMPLE_START_YEAR,
+  mcRangeEnd: SAMPLE_END_YEAR,
   taxableBasisPct: 70,          // % of TODAY's taxable-brokerage balance that is cost basis (rest = unrealized LTCG)
   taxableYieldPct: 0,           // annual yield (%) taxed every year regardless of withdrawal — default off, 0 reproduces pre-feature behavior exactly
   taxableYieldOrdinaryPct: 50,  // % of that yield taxed as ordinary income (interest); rest at qualified-dividend/LTCG rates
@@ -789,7 +820,37 @@ function clip(v, lo, hi) {
 function bootstrapDraw(arr, rand) {
   return arr[Math.floor(rand() * arr.length)];
 }
-function portReturn(age, rand, preRetireEq, postRetireEq, switchAge) {
+/**
+ * Resolve the user's historical-sampling window into array offsets.
+ *
+ * Returns `null` when the window is the full history, which is the signal for
+ * every sampler to take its ORIGINAL `Math.floor(rand() * SP500.length)` path.
+ * That is deliberate: the full range must reproduce the pre-feature behaviour
+ * exactly — same rand() call count, same index mapping — so existing seeds,
+ * saved results and the whole test suite are unaffected by this feature
+ * existing. Only a genuinely narrowed window changes the indexing.
+ *
+ * Bounds come from SAMPLE_START_YEAR/SAMPLE_END_YEAR (the length of the
+ * Damodaran arrays), never from a literal, and a reversed or out-of-range
+ * input falls back to the full history rather than throwing.
+ */
+function resolveSampleRange(p) {
+  const lo = Number(p?.mcRangeStart);
+  const hi = Number(p?.mcRangeEnd);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+  const start = Math.max(0, Math.round(lo) - SAMPLE_START_YEAR);
+  const end   = Math.min(SP500.length - 1, Math.round(hi) - SAMPLE_START_YEAR);
+  if (end <= start) return null;                 // degenerate → full history
+  if (start === 0 && end === SP500.length - 1) return null;  // full → fast path
+  return { start, count: end - start + 1, lo: SAMPLE_START_YEAR + start, hi: SAMPLE_START_YEAR + end };
+}
+// One shared index pick, so portReturn and drawYearBundle can't drift apart on
+// what "sample a year" means (rule 8's spirit: one owner for one decision).
+function sampleYearIndex(rand, range) {
+  return range ? range.start + Math.floor(rand() * range.count)
+               : Math.floor(rand() * SP500.length);
+}
+function portReturn(age, rand, preRetireEq, postRetireEq, switchAge, range = null) {
   // The glidepath switches at `glidepathSwitchAge`, defaulting to the user's
   // retirement age. Callers pass the already-resolved age from
   // resolveGlidepathSwitchAge — see engine/glidepath.js for why this is
@@ -804,7 +865,7 @@ function portReturn(age, rand, preRetireEq, postRetireEq, switchAge) {
   // cov(stocks, bonds) = 0 and invents year combinations that never
   // happened. Needs SP500 and BONDS to be equal-length and year-aligned;
   // engine/expectedReturn.js guarantees both (Damodaran 1928-2025, 98 pairs).
-  const i = Math.floor(rand() * SP500.length);
+  const i = sampleYearIndex(rand, range);
   return eqW * SP500[i] + (1 - eqW) * BONDS[i];
 }
 // Paired return + inflation for one retirement year. Same shared index
@@ -821,9 +882,9 @@ function portReturn(age, rand, preRetireEq, postRetireEq, switchAge) {
 // test suite doesn't need rebalancing over an RNG-order shift. If we ever
 // drop that RNG-ordering discipline (see the comment above `netNeed offset`
 // in runMC), this can go.
-function drawYearBundle(age, rand, preRetireEq, postRetireEq, switchAge) {
+function drawYearBundle(age, rand, preRetireEq, postRetireEq, switchAge, range = null) {
   const eqW = glidepathEquityWeight(age, preRetireEq, postRetireEq, switchAge);
-  const i = Math.floor(rand() * SP500.length);
+  const i = sampleYearIndex(rand, range);
   rand(); // rand()-count shim — see comment above
   return {
     ret: eqW * SP500[i] + (1 - eqW) * BONDS[i],
@@ -849,8 +910,17 @@ function guytonKlingerWithdrawal(
     ceiling,
     yearsRemaining = Infinity,
     incomeOffset = 0,
-    fixedCosts = 0
+    fixedCosts = 0,
+    // Optional sink for WHAT the guardrail did this year. The function has
+    // always applied the cut/raise and then thrown that fact away by returning
+    // only a dollar figure, so nothing downstream — not the schedule, not the
+    // chart, not the "how often do the guardrails bind?" summary — could say
+    // whether a year was cut, raised, or left alone without re-deriving it from
+    // the paper's rules (a second copy that would drift). Callers that pass
+    // nothing keep the old numeric return exactly.
+    out = null
   ) {
+    if (out) { out.event = null; out.reason = null; out.currentWR = null; }
     // NaN guards — fall back to safe values if any parameter is invalid
     if (isNaN(portfolioValue) || portfolioValue <= 0) return floor || 0;
     if (isNaN(lastWithdrawal)) lastWithdrawal = floor || 0;
@@ -881,10 +951,22 @@ function guytonKlingerWithdrawal(
       const currentWR = portfolioValue !== 0 ? netNeed / portfolioValue : 0;
 
       // GK Prosperity Rule: WR drops 20% below initial → +10%
-      if (currentWR <= initialWR * 0.8) w *= 1.1;
+      if (currentWR <= initialWR * (1 - GK_BAND_PCT)) {
+        w *= 1 + GK_ADJUST_PCT;
+        if (out) { out.event = "raise"; out.reason = "prosperity"; }
+      }
       // GK Capital Preservation Rule: WR rises 20% above initial → -10%.
       // GK Longevity Rule: skip the cut when ≤15 years remaining.
-      else if (currentWR >= initialWR * 1.2 && yearsRemaining > 15) w *= 0.9;
+      else if (currentWR >= initialWR * (1 + GK_BAND_PCT) && yearsRemaining > GK_LONGEVITY_YEARS) {
+        w *= 1 - GK_ADJUST_PCT;
+        if (out) { out.event = "cut"; out.reason = "preservation"; }
+      } else if (out && currentWR >= initialWR * (1 + GK_BAND_PCT)) {
+        // The band was crossed but the longevity rule blocked the cut — worth
+        // distinguishing from "nothing happened", because it is the guardrail
+        // deliberately standing down near the end of the plan.
+        out.reason = "longevity-hold";
+      }
+      if (out) out.currentWR = currentWR;
     }
 
     // Custom safety belt (not from the GK paper): clamp to floor/ceiling.
@@ -1138,6 +1220,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     dob: p.dob, birthYear: p.birthYear, currentAge: p.currentAge, retireAge: retAgeMC,
   });
   const glideSwitchAgeMC = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeMC });
+  // Historical sampling window for this run (null = full 1928–2025 history).
+  // Resolved once so the accumulation loop, the retirement draw, and any
+  // future sampler all use the same window — the same single-resolution
+  // discipline the glidepath switch age above needs.
+  const sampleRangeMC = resolveSampleRange(p);
   const accYrs = Math.max(0, retAgeMC - p.currentAge);
   // The horizon follows whoever is alive. When the primary dies first and a
   // younger spouse survives, the money has to last until the survivor reaches
@@ -1147,6 +1234,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   const planEndMC = planEndAgeOnPrimaryClock(p, endAge);
   const retYrs = planEndMC - retAgeMC;
   const results = [];
+  // Guardrail-binding statistics, accumulated across every path so the
+  // Guardrails view can say how often the GK rules actually fire — the "cuts in
+  // X% of scenarios, raises in Y%" summary. Counted where the adjustment is
+  // APPLIED (guytonKlingerWithdrawal's `out` sink), never re-derived from the
+  // spend path afterwards; a re-derivation would have to re-implement the
+  // bands, the longevity rule and the income offset, and would drift.
+  const gkStats = { paths: 0, pathsWithCut: 0, pathsWithRaise: 0, cuts: 0, raises: 0, longevityHolds: 0, spendMin: Infinity, spendMax: 0 };
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
   // resolveStrategy, not `|| "gk"`. A retired id (an old saved profile) or a
@@ -1235,7 +1329,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     // Accumulation phase
     for (let y = 0; y < accYrs; y++) {
-      const ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
+      const ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
       pretax   = Math.max(0, pretax   * (1 + ret));
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
@@ -1287,6 +1381,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // marginal rate exceeds the target they chose.
     let bracketOverrideYears = 0;
     let rothReserveBrokenYears = 0;
+    // Per-path guardrail tallies (see gkStats above).
+    let gkYearSink = null;
+    let pathCuts = 0;
+    let pathRaise = false;
     let sp = p.sp;
     let lastReturn = 0;
 
@@ -1352,7 +1450,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         r = eqW * stockReturnMC + (1 - eqW) * bondReturnMC;
         inflY = bootstrapDraw(INFL, rand);
       } else {
-        const bundle = drawYearBundle(age, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
+        const bundle = drawYearBundle(age, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
         r = bundle.ret;
         inflY = bundle.inflY;
       }
@@ -1456,7 +1554,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           // a scheduled pension raise can't masquerade as portfolio
           // outperformance. See gkReferenceWR.
           const refWR = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
-          sp = guytonKlingerWithdrawal(totalPort, refWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age, gkIncomeOffset, gkFixedCosts);
+          // Record the guardrail's action for this path-year so the run can
+          // report how often the guardrails actually bind (the summary above
+          // the Guardrails chart). Accumulated per path, never re-derived.
+          gkYearSink = {};
+          sp = guytonKlingerWithdrawal(totalPort, refWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age, gkIncomeOffset, gkFixedCosts, gkYearSink);
+          if (gkYearSink.event === "cut") { pathCuts++; gkStats.cuts++; }
+          else if (gkYearSink.event === "raise") { pathRaise = true; gkStats.raises++; }
+          else if (gkYearSink.reason === "longevity-hold") gkStats.longevityHolds++;
         }
         else if (withdrawalStrategy === "fixed") {
           // Pure fixed %: draw = rate × port. No GK clamp — that defeats the purpose.
@@ -1521,6 +1626,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         }
       }
       lastReturn = r;
+
+      // Post-guardrail annual spending, tracked across every path and year —
+      // the "spending actually seen" range. Read AFTER the strategy block (so
+      // it is the spend the plan really asks for) and guarded to positive
+      // values, because a depleted path's trailing $0 years would otherwise
+      // drag the minimum to zero and make the range meaningless.
+      if (sp > 0) {
+        if (sp < gkStats.spendMin) gkStats.spendMin = sp;
+        if (sp > gkStats.spendMax) gkStats.spendMax = sp;
+      }
 
       // Income from SS and rental/AB. COLA compounds from the claiming age
       // (p.ssAge), not the retirement-year loop counter `y` — someone who
@@ -1897,6 +2012,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // Forecast tab headline) count the same $0 for that path, matching
     // `pcts`'s terminal row (the Net Worth tab chart) instead of diverging from it.
     while (path.length <= retYrs) path.push(0);
+    // Fold this path's guardrail behaviour into the run-level totals.
+    gkStats.paths++;
+    gkStats.cuts += pathCuts;
+    if (pathCuts > 0) gkStats.pathsWithCut++;
+    if (pathRaise) gkStats.pathsWithRaise++;
     results.push({ path, survived, exhaustAge, portAtRetire, bracketOverrideYears, rothReserveBrokenYears });
   }
 
@@ -1955,6 +2075,15 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     rothReserveBrokenRate,
     medianExhaustAge,
     mwRate,
+    // How often the spending guardrails actually bound, counted where they were
+    // applied. null-shaped (never Infinity) when no path registered a spend.
+    gkStats: gkStats.paths > 0 ? {
+      ...gkStats,
+      spendMin: Number.isFinite(gkStats.spendMin) ? gkStats.spendMin : 0,
+      cutRate: gkStats.pathsWithCut / gkStats.paths,
+      raiseRate: gkStats.pathsWithRaise / gkStats.paths,
+      avgCutsPerPath: gkStats.cuts / gkStats.paths,
+    } : null,
     pcts,
     medR,
     term: { p10: qt(0.1), p25: qt(0.25), p50: qt(0.5), p75: qt(0.75), p90: qt(0.9) },
@@ -2193,6 +2322,15 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     const gkIncomeOffset = ss + ab + otherIncTotal;
     const gkFixedCosts = housingCost + carveoutCost + evDet.committed;
 
+    // What the guardrail does this year, recorded rather than re-derived. Set
+    // by guytonKlingerWithdrawal via its `out` sink, consumed by the schedule
+    // row below and charted in the Guardrails view.
+    let gkEvent = null;
+    // The spend this year STARTS from, before the strategy touches it. GK's
+    // adjustments are relative to last year's figure, so the chart needs both
+    // ends of that move to show what a cut or raise actually did.
+    const spEntering = sp;
+
     // Apply withdrawal strategy (deterministic version)
     if (p.spSchedule && p.spSchedule.length) {
       // Detailed budget overrides the distribution strategy (see runMC note).
@@ -2202,7 +2340,10 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     } else {
       if (withdrawalStrategy === "gk") {
         const refWRd = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
-        sp = guytonKlingerWithdrawal(port, refWRd, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age, gkIncomeOffset, gkFixedCosts);
+        // `gkEvent` captures what the guardrail did, so the schedule can chart
+        // cuts and raises without re-deriving the rules (see the `out` param).
+        gkEvent = {};
+        sp = guytonKlingerWithdrawal(port, refWRd, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age, gkIncomeOffset, gkFixedCosts, gkEvent);
       }
       else if (withdrawalStrategy === "fixed") {
         // Pure fixed %: draw = rate × port. No GK clamp.
@@ -2311,6 +2452,18 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     schedule.push({
       age, yr,
       spending: Math.round(spSmiledDet),
+      // Guardrail provenance for this year, straight from the engine that
+      // applied it (see guytonKlingerWithdrawal's `out` param). `spEntering`
+      // and `spAfterGK` bracket the adjustment; floor/ceiling are the year's
+      // inflation-adjusted bands, so the chart's dashed lines are the limits
+      // the engine actually clamped to rather than a UI reconstruction.
+      spEntering: Math.round(spEntering),
+      spAfterGK: Math.round(sp),
+      gkEvent: gkEvent ? gkEvent.event : null,
+      gkReason: gkEvent ? gkEvent.reason : null,
+      gkWR: gkEvent && gkEvent.currentWR != null ? gkEvent.currentWR : null,
+      gkFloor: Math.round(adjFloor),
+      gkCeiling: Math.round(adjCeiling),
       ss, Rental: ab, OtherIncome: Math.round(otherIncTotal),
       portfolioDraw: Math.round(need),
       housingCost: Math.round(housingCost),
@@ -2553,24 +2706,67 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
  * of a page away.
  *
  * One component, not a retyped string, so the wording can't drift between
- * sections. Always visible on purpose: a disclaimer behind a hover tooltip
- * is unreachable on touch, same problem as the help text elsewhere.
+ * sections.
+ *
+ * ── Why it is collapsed, and why that is still enough ─────────────────────
+ * The full paragraph was four lines of amber on every results tab — a lot of
+ * prime screen for text nobody rereads. It now ships as a one-line short-form
+ * notice with the long form one click away.
+ *
+ * The legal line this walks: what a disclaimer has to do is WARN, and the two
+ * load-bearing hooks of this one are "not financial advice" and "consult a
+ * professional before acting". Both stay in the ALWAYS-VISIBLE line — they are
+ * never behind the rollout. Only the elaboration (that a success rate is a
+ * share of simulated scenarios rather than a probability, that past results
+ * don't predict future ones) is collapsed, and that elaboration is also
+ * permanent in the footer and the About panel regardless of this control.
+ * So the collapsed state is a complete short-form disclaimer on its own, not
+ * a stub that needs expanding to mean anything.
+ *
+ * Also note: a roll-out disclosure is a real control, not a tooltip. The old
+ * `title=`-only warnings were invisible on touch — the failure mode this
+ * codebase keeps hitting — so the toggle is a button with aria-expanded, and
+ * the text expands inline in the page rather than into a dialog.
  */
-function SectionDisclaimer({ children }) {
+function SectionDisclaimer({ children, summary }) {
+  const [open, setOpen] = useState(false);
   return (
     <div
       role="note"
       style={{
         fontSize: 11,
-        lineHeight: 1.6,
-        color: "#94a3b8",
-        background: "rgba(251,191,36,0.06)",
-        border: "1px solid rgba(251,191,36,0.22)",
-        borderRadius: 8,
-        padding: "9px 12px",
+        lineHeight: 1.55,
+        color: "var(--text-muted)",
+        background: "rgba(251,191,36,0.04)",
+        border: "1px solid rgba(251,191,36,0.16)",
+        borderLeft: "2px solid rgba(251,191,36,0.55)",
+        borderRadius: 7,
+        padding: "6px 10px",
       }}
     >
-      <strong style={{ color: "#fbbf24" }}>Not financial advice.</strong> {children}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ minWidth: 0 }}>
+          <strong style={{ color: "#fbbf24" }}>Not financial advice.</strong>{" "}
+          {summary || "Hypothetical model projections, not predictions. Consult a licensed professional before acting."}
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          style={{
+            background: "none", border: "none", padding: 0, cursor: "pointer",
+            color: "#fbbf24", fontSize: 10.5, fontWeight: 700, fontFamily: "var(--font-sans)",
+            whiteSpace: "nowrap", textDecoration: "underline", textUnderlineOffset: 2,
+          }}
+        >
+          {open ? "Hide full disclosure ▴" : "Full disclosure ▾"}
+        </button>
+      </div>
+      {open && (
+        <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid rgba(251,191,36,0.16)" }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -2613,23 +2809,34 @@ function InfoIcon({ size = 14, title, style }) {
  * Replaces the hand-rolled `infoDot` style object that used to get retyped
  * at each call site.
  */
-function InfoDot({ title, size = 14, color = "var(--text-secondary)", hoverColor = "#e2e8f0" }) {
+// Root-cause fix (2026-09-23): this used to be a `title=` tooltip only, which
+// shows nothing on many setups and is dead on touch — the exact trap that hid
+// the Success Rate card's explanation. Now it opens the same click InfoModal
+// the rest of the app uses, so the info actually displays. Same props, so
+// every caller is fixed at once. `heading` optionally titles the dialog.
+function InfoDot({ title, heading = "What this means", size = 14, color = "var(--text-secondary)", hoverColor = "#e2e8f0" }) {
   const [hover, setHover] = useState(false);
   return (
-    <span
-      title={title}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: size + 6, height: size + 6, borderRadius: "50%",
-        background: hover ? "rgba(255,255,255,0.16)" : "var(--card-border)",
-        color: hover ? hoverColor : color,
-        cursor: "help", transition: "background 0.15s, color 0.15s",
-      }}
+    <InfoModal
+      title={heading}
+      trigger={
+        <span
+          onMouseEnter={() => setHover(true)}
+          onMouseLeave={() => setHover(false)}
+          style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: size + 6, height: size + 6, borderRadius: "50%",
+            background: hover ? "rgba(255,255,255,0.16)" : "var(--card-border)",
+            color: hover ? hoverColor : color,
+            cursor: "pointer", transition: "background 0.15s, color 0.15s",
+          }}
+        >
+          <InfoIcon size={size} />
+        </span>
+      }
     >
-      <InfoIcon size={size} />
-    </span>
+      <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>{title}</div>
+    </InfoModal>
   );
 }
 
@@ -2672,6 +2879,71 @@ export const withAlpha = (color, hexAlpha) => {
   const pct = Math.round((parseInt(hexAlpha, 16) / 255) * 1000) / 10;
   return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 };
+
+// SINGLE SOURCE OF TRUTH for account-category label + color. Used by the
+// Savings panel editor (SavingsPanel) AND the sidebar AllocationDonut, so the
+// donut's slice colors can never drift from the account chips they summarize.
+export const ACCOUNT_CATEGORIES = [
+  { key: "pretax",  label: "Pre-Tax",        color: "#0ea5e9", defaultName: "401(k)" },
+  { key: "roth",    label: "Roth",           color: "var(--accent-purple)", defaultName: "Roth IRA" },
+  { key: "taxable", label: "Taxable",        color: "var(--accent-gold)", defaultName: "Brokerage" },
+  { key: "hsa",     label: "HSA",            color: "#34d399", defaultName: "HSA" },
+  { key: "cash",    label: "Cash / Savings", color: "var(--text-secondary)", defaultName: "Savings" },
+];
+
+// Tax-treatment donut of the CURRENT portfolio, by account category. Reads the
+// same accounts + ACCOUNT_CATEGORIES the profile editor writes — no re-derived
+// totals. Zero-balance categories are dropped so the ring shows only what the
+// user actually holds. Drawn as a CSS conic-gradient ring rather than a
+// Recharts Pie: a single-category (100%) portfolio is a full-circle slice,
+// which Recharts 3.8 renders as an EMPTY path — conic-gradient has no such
+// degenerate case, needs no chart lib mounted in an 84px box, and the
+// radial mask punches the hole so it reads as a ring over any background.
+function AllocationDonut({ accounts }) {
+  const data = ACCOUNT_CATEGORIES
+    .map((c) => ({ ...c, value: (accounts || []).filter((a) => a.category === c.key).reduce((s, a) => s + (a.balance || 0), 0) }))
+    .filter((d) => d.value > 0);
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total <= 0) return null;
+  let acc = 0;
+  const stops = data.map((d) => {
+    const start = (acc / total) * 360;
+    acc += d.value;
+    const end = (acc / total) * 360;
+    return `${d.color} ${start}deg ${end}deg`;
+  }).join(", ");
+  const ringMask = "radial-gradient(circle, transparent 33px, #000 34px)";
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+        Tax Treatment
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div
+          style={{
+            width: 84, height: 84, borderRadius: "50%", flexShrink: 0,
+            background: `conic-gradient(${stops})`,
+            WebkitMask: ringMask, mask: ringMask,
+          }}
+          title={data.map((d) => `${d.label}: ${fmtDollar(d.value)} (${((d.value / total) * 100).toFixed(0)}%)`).join("\n")}
+        />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+          {data.map((d) => (
+            <div key={d.key} title={`${d.label}: ${fmtDollar(d.value)}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--text-secondary)" }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: d.color, flexShrink: 0 }} />
+                {d.label}
+              </span>
+              <span style={{ color: "var(--text-muted)", fontFamily: "'JetBrains Mono',monospace" }}>
+                {((d.value / total) * 100).toFixed(0)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Numeric entry
 /* The one parser every typed number field uses. People paste what they see
@@ -2951,6 +3223,26 @@ const CSS = `
   :root {
     /* Deep neutral ink (less blue-cast), one indigo trust anchor,
        teal/gold/violet held to strict semantic roles. */
+    /* ── Type system ──────────────────────────────────────────────────────
+       'Inter' and 'JetBrains Mono' were declared all over this stylesheet but
+       NEVER loaded: there is no @font-face here and no webfont <link> in
+       public/index.html, so every one of those declarations silently fell
+       through to the browser default (Arial/Segoe on Windows, Times-adjacent
+       metrics in some embeds) while the app looked like it had a chosen face.
+       Rather than add a third-party font request — this app's whole pitch is
+       that your data stays on your machine, and a Google Fonts call hands
+       every visitor's IP to a third party — the stacks below name the best
+       SYSTEM faces in preference order. Inter is still first, so anyone who
+       has it installed gets it.
+       Tabular numerals are on globally: retirement figures are compared
+       column-to-column, and proportional digits make an aligned column of
+       dollars look ragged. */
+    --font-sans: 'Inter', ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                 'Segoe UI Variable Text', 'Segoe UI', Roboto, 'Helvetica Neue',
+                 Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono',
+                 'Cascadia Mono', 'Segoe UI Mono', Consolas, 'Liberation Mono',
+                 Menlo, monospace;
     --bg-base: #0a0c12;
     --bg-hdr: rgba(10,12,18,0.96);
     --card-bg: rgba(255,255,255,0.035);
@@ -3060,19 +3352,20 @@ const CSS = `
      uppercase-label inline style objects. */
   .card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-card); padding:13px; }
   .section-label { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; }
-  body { margin:0; font-family:'Inter',sans-serif; background:var(--bg-base); color:var(--text-primary); font-size:13px; line-height:1.5; }
+  body { margin:0; font-family:var(--font-sans); background:var(--bg-base); color:var(--text-primary); font-size:13px; line-height:1.5;
+    font-variant-numeric: tabular-nums; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility; }
   .app { min-height:100vh; background:var(--bg-base); }
   .hdr { background:var(--bg-hdr); border-bottom:1px solid var(--divider); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(16px); }
   .logo { font-size:25px; font-weight:800; letter-spacing:-0.03em; color:var(--text-primary); }
   .logo-sub { color:var(--accent); font-weight:400; font-size:16px; margin-left:6px; }
-  .mbtn { padding:5px 13px; border-radius:7px; border:1px solid var(--card-border); cursor:pointer; font-size:11px; font-family:'Inter',sans-serif; font-weight:500; transition:all 0.2s; background:transparent; color:var(--text-secondary); }
+  .mbtn { padding:5px 13px; border-radius:7px; border:1px solid var(--card-border); cursor:pointer; font-size:11px; font-family:var(--font-sans); font-weight:500; transition:all 0.2s; background:transparent; color:var(--text-secondary); }
   .mbtn:hover { color:var(--text-primary); border-color:var(--divider); }
   .mbtn.on { background:var(--accent); border-color:transparent; color:white; box-shadow:0 0 16px rgba(91,141,239,0.35); }
   .mbtn:disabled { opacity:0.4; cursor:not-allowed; }
   /* Thin divider separating the utility buttons from the support CTA. */
   .hdiv { width:1px; height:20px; background:var(--divider); margin:0 3px; flex-shrink:0; }
   /* Buy-me-a-coffee — the one prominent, filled support CTA in the header. */
-  .coffee-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 15px; border-radius:8px; border:none; background:linear-gradient(135deg,#f59e0b,#fbbf24); color:#231603; font-size:12px; font-weight:800; font-family:'Inter',sans-serif; letter-spacing:-0.01em; text-decoration:none; cursor:pointer; white-space:nowrap; box-shadow:0 3px 12px rgba(245,158,11,0.35); transition:transform 0.15s, box-shadow 0.15s, filter 0.15s; }
+  .coffee-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 15px; border-radius:8px; border:none; background:linear-gradient(135deg,#f59e0b,#fbbf24); color:#231603; font-size:12px; font-weight:800; font-family:var(--font-sans); letter-spacing:-0.01em; text-decoration:none; cursor:pointer; white-space:nowrap; box-shadow:0 3px 12px rgba(245,158,11,0.35); transition:transform 0.15s, box-shadow 0.15s, filter 0.15s; }
   .coffee-btn:hover { filter:brightness(1.07); transform:translateY(-1px); box-shadow:0 5px 16px rgba(245,158,11,0.5); }
   /* ── Visitor landing (first-screen hero) ── */
   .landing { min-height:100vh; background:var(--bg-base); display:flex; flex-direction:column; align-items:center; padding:clamp(26px,6vw,60px) 20px 60px; overflow-y:auto; }
@@ -3096,9 +3389,9 @@ const CSS = `
   .landing input[type=range].lp-range { -webkit-appearance:none; appearance:none; display:block; width:100%; height:6px; border-radius:100px; background:var(--divider); outline:none; margin:7px 0 18px; cursor:pointer; }
   .landing input[type=range].lp-range::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:22px; height:22px; border-radius:50%; background:var(--accent); border:3px solid var(--bg-base); box-shadow:0 2px 8px rgba(91,141,239,0.5); cursor:pointer; }
   .landing input[type=range].lp-range::-moz-range-thumb { width:20px; height:20px; border-radius:50%; background:var(--accent); border:3px solid var(--bg-base); cursor:pointer; }
-  .lp-cta { display:inline-flex; align-items:center; gap:9px; margin-top:26px; padding:15px 30px; border:none; border-radius:12px; background:var(--accent); color:#fff; font-size:17px; font-weight:700; font-family:'Inter',sans-serif; letter-spacing:-0.01em; cursor:pointer; box-shadow:0 10px 26px -8px rgba(91,141,239,0.55); transition:transform 0.15s, box-shadow 0.15s; }
+  .lp-cta { display:inline-flex; align-items:center; gap:9px; margin-top:26px; padding:15px 30px; border:none; border-radius:12px; background:var(--accent); color:#fff; font-size:17px; font-weight:700; font-family:var(--font-sans); letter-spacing:-0.01em; cursor:pointer; box-shadow:0 10px 26px -8px rgba(91,141,239,0.55); transition:transform 0.15s, box-shadow 0.15s; }
   .lp-cta:hover { transform:translateY(-1px); box-shadow:0 14px 32px -8px rgba(91,141,239,0.7); }
-  .lp-skip { display:block; margin-top:15px; background:none; border:none; color:var(--text-muted); font-size:13px; cursor:pointer; font-family:'Inter',sans-serif; text-decoration:underline; padding:0; }
+  .lp-skip { display:block; margin-top:15px; background:none; border:none; color:var(--text-muted); font-size:13px; cursor:pointer; font-family:var(--font-sans); text-decoration:underline; padding:0; }
   .lp-skip:hover { color:var(--text-secondary); }
   /* minmax(0,1fr), not bare 1fr: a grid track's auto minimum is its content's
      max-content width, so a wide child (the 15+ column Withdrawal Plan
@@ -3125,7 +3418,7 @@ const CSS = `
   .tog-label { font-size:12px; color:#cbd5e1; font-weight:500; display:inline-flex; align-items:center; gap:4px; flex:1; min-width:0; }
   .tog { width:34px; height:18px; border-radius:9px; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
   .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.4); }
-  .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); flex-shrink:0; }
+  .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-sans); transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); flex-shrink:0; }
   .run-btn:hover { opacity:0.9; box-shadow:0 6px 20px rgba(14,165,233,0.35); }
   .run-btn:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
   .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; min-height:0; min-width:0; }
@@ -3164,10 +3457,16 @@ const CSS = `
   .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:#cbd5e1; font-style:italic; }
   .analogue-fade { animation: analogueFade 0.6s ease; }
   @keyframes analogueFade { from { opacity: 0; } to { opacity: 1; } }
-  .tabs { display:flex; gap:3px; background:rgba(255,255,255,0.04); border-radius:10px; padding:3px; flex-wrap:wrap; }
-  .tab { flex:1; min-width:72px; padding:9px 6px; border:none; background:transparent; border-radius:7px; cursor:pointer; font-size:13px; font-family:'Inter',sans-serif; color:#64748b; transition:all 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; }
-  .tab:hover { color:#94a3b8; }
-  .tab.on { background:rgba(255,255,255,0.09); color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); font-weight:600; }
+  .recomputing { animation: recomputePulse 1.15s ease-in-out infinite; }
+  @keyframes recomputePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .tabs { display:flex; gap:2px; border-bottom:1px solid rgba(255,255,255,0.10); flex-wrap:wrap; }
+  .tab { flex:1; min-width:72px; padding:10px 6px; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; background:transparent; cursor:pointer; font-size:13px; font-family:var(--font-sans); color:#64748b; transition:color 0.15s, border-color 0.15s, background 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; border-radius:7px 7px 0 0; }
+  .tab:hover { color:#94a3b8; background:rgba(255,255,255,0.03); }
+  /* Folder-tab treatment: the active tab gets a tinted "page" surface that
+     reads as connected to the panel below, plus the teal/green highlighter
+     underline that was already carrying the state. The tint is one step of
+     the same accent so the tab and its panel look like one surface. */
+  .tab.on { color:var(--accent-teal); border-bottom-color:var(--accent-teal); font-weight:600; background:color-mix(in srgb, var(--accent-teal) 12%, transparent); }
   .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:15px 17px; }
   .ct { font-size:18px; color:#94a3b8; margin-bottom:12px; font-weight:500; }
   .leg { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
@@ -3176,10 +3475,46 @@ const CSS = `
   .ppl-grid { display:flex; flex-wrap:wrap; gap:4px; margin:8px 0; }
   .ppl-dot { width:18px; height:18px; border-radius:50%; }
   .roth-tbl { width:100%; border-collapse:collapse; font-size:12px; }
-  .roth-tbl th { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.09); }
+  /* ── Withdrawal table: grouped column views ───────────────────────────────
+     The year-by-year schedule carries 23 columns, which is more than anyone can
+     read across. Rather than maintain four separate hand-written tables (four
+     places to update on every engine change), the columns carry a group tag and
+     a view hides whole groups. Hiding is per-GROUP only, so a visible group's
+     colSpan in the header row is always correct and never needs recomputing.
+     This is the same "one table, different lenses" idea as the reference app's
+     Main / Growth / Withdrawals / Tax tabs. */
+  .wf-views { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+  .wf-views button { padding:4px 12px; font-size:11px; font-weight:600; border-radius:999px; cursor:pointer;
+    border:1px solid var(--card-border); background:transparent; color:var(--text-secondary);
+    font-family:var(--font-sans); transition:all 0.15s; }
+  .wf-views button:hover { color:var(--text-primary); }
+  .wf-views button.on { background:color-mix(in srgb, var(--accent-teal) 16%, transparent);
+    border-color:color-mix(in srgb, var(--accent-teal) 45%, transparent); color:var(--accent-teal); }
+  .wf-grp { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:0.14em;
+    color:var(--text-muted); text-align:center; padding:6px 6px 4px; white-space:nowrap;
+    border-bottom:1px solid var(--divider); }
+  .wf-grp-s { color:var(--accent-gold); }
+  .wf-grp-i { color:#34d399; }
+  .wf-grp-d { color:var(--accent-teal); }
+  .wf-grp-t { color:#fb923c; }
+  .wf-grp-b { color:var(--accent-purple); }
+  .wf-tbl[data-view="flows"] [data-cg="tax"],
+  .wf-tbl[data-view="flows"] [data-cg="risk"],
+  .wf-tbl[data-view="flows"] [data-cg="bal"] { display:none; }
+  .wf-tbl[data-view="tax"] [data-cg="spend"],
+  .wf-tbl[data-view="tax"] [data-cg="income"],
+  .wf-tbl[data-view="tax"] [data-cg="draw"],
+  .wf-tbl[data-view="tax"] [data-cg="conv"],
+  .wf-tbl[data-view="tax"] [data-cg="bal"] { display:none; }
+  .wf-tbl[data-view="bal"] [data-cg="spend"],
+  .wf-tbl[data-view="bal"] [data-cg="income"],
+  .wf-tbl[data-view="bal"] [data-cg="draw"],
+  .wf-tbl[data-view="bal"] [data-cg="conv"],
+  .wf-tbl[data-view="bal"] [data-cg="tax"],
+  .wf-tbl[data-view="bal"] [data-cg="risk"] { display:none; }  .roth-tbl th { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.09); }
   .roth-tbl th:first-child { text-align:left; }
   .roth-tbl td { padding:9px 8px; border-bottom:1px solid rgba(255,255,255,0.05); text-align:right; font-family:'JetBrains Mono',monospace; font-size:12px; color:#e2e8f0; }
-  .roth-tbl td:first-child { text-align:left; font-family:'Inter',sans-serif; color:#f1f5f9; }
+  .roth-tbl td:first-child { text-align:left; font-family:var(--font-sans); color:#f1f5f9; }
   .gold { background:rgba(251,191,36,0.07); }
   .gk-bar { background:rgba(14,165,233,0.07); border:1px solid rgba(14,165,233,0.2); border-radius:9px; padding:11px 15px; font-size:12px; color:#bae6fd; }
   .countdown-grid { display:flex; gap:5px; }
@@ -3192,7 +3527,7 @@ const CSS = `
   .nw-table th { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; border-bottom:1px solid rgba(255,255,255,0.09); text-align:right; font-weight:700; }
   .nw-table th:first-child { text-align:left; }
   .nw-table td { padding:8px 8px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right; font-family:'JetBrains Mono',monospace; color:#e2e8f0; }
-  .nw-table td:first-child { text-align:left; font-family:'Inter',sans-serif; color:#f1f5f9; }
+  .nw-table td:first-child { text-align:left; font-family:var(--font-sans); color:#f1f5f9; }
   .wizard-mobile-steps { display:none; }
   .ap-col { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px; }
   .ap-hdr { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:11px; }
@@ -3877,8 +4212,24 @@ function Hint({ text, width = 240 }) {
   );
 }
 
-function InfoModal({ title, children, accent = "#60a5fa", trigger }) {
-  const [open, setOpen] = React.useState(false);
+// `maxWidth` / `bodyMaxHeight` are additive overrides for content-heavy modals
+// (the tax-detail breakdown needs a wide, scrollable panel — 480px with no cap
+// would overflow the viewport). Defaults are unchanged, so every existing
+// caller renders exactly as before.
+//
+// `open` / `onClose` add a CONTROLLED mode. A per-row detail panel mounts once
+// and is pointed at whichever row was clicked, instead of one self-managing
+// InfoModal per row (40 rows would otherwise mean 40 independent dialogs whose
+// content each had to be built up front). Uncontrolled callers pass neither and
+// behave exactly as before.
+function InfoModal({ title, children, accent = "#60a5fa", trigger, maxWidth = 480, bodyMaxHeight = null, open: controlledOpen, onClose }) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (next) => {
+    if (isControlled) { if (!next && onClose) onClose(); }
+    else setUncontrolledOpen(next);
+  };
   const overlay = open ? ReactDOM.createPortal(
     <div
       onClick={() => setOpen(false)}
@@ -3888,19 +4239,21 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger }) {
       <div
         onClick={e => e.stopPropagation()}
         style={{ background:"#0f1729", border:`1px solid ${withAlpha(accent, "44")}`, borderRadius:12,
-          padding:28, maxWidth:480, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.6)" }}
+          padding:28, maxWidth, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.6)",
+          maxHeight: "calc(100vh - 48px)", display: "flex", flexDirection: "column" }}
       >
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexShrink: 0 }}>
           <div style={{ fontSize:15, fontWeight:700, color:accent }}>{title}</div>
           <button onClick={() => setOpen(false)}
             style={{ background:"transparent", border:"none", color:"var(--text-muted)",
               cursor:"pointer", fontSize:18, lineHeight:1 }}>✕</button>
         </div>
-        <div style={{ fontSize:13, color:"var(--text-secondary)", lineHeight:1.7 }}>{children}</div>
+        <div style={{ fontSize:13, color:"var(--text-secondary)", lineHeight:1.7,
+          ...(bodyMaxHeight ? { maxHeight: bodyMaxHeight, overflowY: "auto", paddingRight: 6 } : {}) }}>{children}</div>
         <button onClick={() => setOpen(false)}
           style={{ marginTop:20, width:"100%", background:accent+"22",
             border:`1px solid ${withAlpha(accent, "44")}`, borderRadius:8, padding:"8px 0",
-            color:accent, fontSize:13, fontWeight:600, cursor:"pointer" }}>
+            color:accent, fontSize:13, fontWeight:600, cursor:"pointer", flexShrink: 0 }}>
           Got it
         </button>
       </div>
@@ -3913,7 +4266,7 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger }) {
         <span onClick={() => setOpen(true)} style={{ cursor:"pointer", display:"inline-flex" }}>
           {trigger}
         </span>
-      ) : (
+      ) : isControlled ? null : (
         <span
           onClick={() => setOpen(true)}
           style={{ display:"inline-flex", alignItems:"center", justifyContent:"center",
@@ -3941,13 +4294,17 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger }) {
  * `tip` accepts the same plain strings the old `title=` used, including the
  * `&#10;&#10;` / "\n\n" paragraph breaks and "• " bullets they were written with.
  */
-function ThInfo({ children, tip, style, accent = "#93c5fd", modalTitle }) {
+// `...rest` is forwarded to the <th> so callers can hang attributes on the
+// header cell itself — the withdrawal table tags each column with `data-cg`
+// (its column group) so a view can hide whole groups in CSS. Without the
+// forward, those tags were silently dropped and the group views did nothing.
+function ThInfo({ children, tip, style, accent = "#93c5fd", modalTitle, ...rest }) {
   const paras = String(tip)
     .replace(/&#10;/g, "\n")
     .split(/\n\s*\n/)
     .filter(Boolean);
   return (
-    <th style={style}>
+    <th style={style} {...rest}>
       {children}{" "}
       <InfoModal
         title={modalTitle || (typeof children === "string" ? children.trim() : "About this column")}
@@ -4722,13 +5079,15 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           />
           <XAxis
             dataKey="age"
-            stroke="#1e3a5f"
-            tick={{ fill: "var(--text-faint)", fontSize: 11 }}
+            stroke="var(--divider)"
+            tickMargin={6}
+            tick={{ fill: "var(--text-muted)", fontSize: 11.5, fontFamily: "var(--font-mono)", letterSpacing: "0.01em" }}
           />
           <YAxis
             yAxisId="port"
-            stroke="#1e3a5f"
-            tick={{ fill: "var(--text-faint)", fontSize: 11 }}
+            stroke="var(--divider)"
+            tickMargin={4}
+            tick={{ fill: "var(--text-muted)", fontSize: 11.5, fontFamily: "var(--font-mono)" }}
             tickFormatter={(v) => fmtDollar(v)}
             width={MONEY_AXIS_WIDTH}
             domain={[0, maxY]}
@@ -4736,9 +5095,9 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           <Tooltip content={<Tip />} />
 
           {/* Vertical reference lines (D-Day, SS, RMD) */}
-          <ReferenceLine yAxisId="port" x={retireAge} stroke="var(--accent-gold)" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day (Retirement Date)", fill: "var(--accent-gold)", fontSize: 10, position: "top" }} />
-          <ReferenceLine yAxisId="port" x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: 10, position: "top" }} />
-          <ReferenceLine yAxisId="port" x={rmdAge} stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "#34d399", fontSize: 10, position: "top" }} />
+          <ReferenceLine yAxisId="port" x={retireAge} stroke="var(--accent-gold)" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day (Retirement Date)", fill: "var(--accent-gold)", fontSize: 11, fontWeight: 600, position: "top" }} />
+          <ReferenceLine yAxisId="port" x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: 11, fontWeight: 600, position: "top" }} />
+          <ReferenceLine yAxisId="port" x={rmdAge} stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "#34d399", fontSize: 11, fontWeight: 600, position: "top" }} />
 
           {/* Fan areas and percentile lines */}
           <Area yAxisId="port" type="monotone" dataKey="p90" stroke={FAN_COLORS["90th"]} strokeWidth={1} strokeDasharray="4 2" fill="url(#g90v5)" dot={false} name="90th" legendType="none" />
@@ -7538,8 +7897,348 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
   );
 }
 
+/**
+ * Tax Calculation Details — the click-open breakdown of ONE year's tax on the
+ * year-by-year withdrawal schedule.
+ *
+ * Replaces the `title=` tooltips that used to sit on the Fed Tax / State Tax /
+ * IRMAA cells. Those were genuinely unreachable: `title=` renders nothing on
+ * many desktop setups and does not exist at all on touch, so the explanation
+ * that makes the column readable was invisible to every phone and tablet user.
+ *
+ * RULE 8 — read only, never recompute. Every figure below comes off the
+ * buildWithdrawalWaterfall row this modal was opened from (r). The component
+ * calls no tax function, holds no bracket table, and embeds no threshold:
+ *   r.totInc / r.magi / r.taxableIncome / r.marginalBracket / r.taxSS / r.ss
+ *   r.fedTax / r.ltcgTax / r.niit / r.stateTax / r.irmaa / r.irmaaFull
+ *   r.earlyPenalty / r.effectiveRate / r.realizedGain
+ *   r.fromCash / r.fromTaxable / r.fromPretax / r.rmd / r.fromRoth
+ *   r.annuityRental / r.otherIncome / r.conversionAmount / r.conversionTax
+ *   r.cashEnd / r.taxableEnd / r.pretaxEnd / r.rothEnd / r.totalPort
+ *   r.stdDedYr / r.bracketTopYr   (null outside Roth-conversion years)
+ *
+ * The two derivations that DO appear are decompositions of numbers the engine
+ * already published, and they are labelled as such:
+ *   - federal ordinary tax = r.fedTax − r.ltcgTax − r.niit. The engine returns
+ *     fedTax as exactly that sum (buildWithdrawalWaterfall.js, `fedT`), so this
+ *     splits a published total into its published parts rather than recomputing
+ *     it. The long-standing Fed Tax tooltip used the same split.
+ *   - Monthly = Annualized ÷ 12, a unit conversion of a displayed figure.
+ */
+function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
+  if (!r) return null;
+  const money = (v) => fmtDollar(Math.round(Number(v) || 0));
+  const monthly = (v) => fmtDollar(Math.round((Number(v) || 0) / 12));
+  const mfj = filingStatusAt(p, r.age) !== "single";
+  const stateLabel = p?.twoHousehold ? "Non-resident (no state tax)" : (p?.stateOfResidence || "NJ");
+
+  const totInc   = Number(r.totInc) || 0;          // ordinary income (excludes LTCG)
+  const magi     = Number(r.magi) || 0;            // totInc + realized gain
+  const gain     = Number(r.realizedGain) || 0;
+  const fedTax   = Number(r.fedTax) || 0;
+  const ltcgTax  = Number(r.ltcgTax) || 0;
+  const niit     = Number(r.niit) || 0;
+  const stateTax = Number(r.stateTax) || 0;
+  const irmaa    = Number(r.irmaa) || 0;
+  const penalty  = Number(r.earlyPenalty) || 0;
+  // Decomposition of the published fedTax (see header note) — never negative.
+  const fedOrdinary = Math.max(0, fedTax - ltcgTax - niit);
+  const totalLoaded = fedTax + stateTax + irmaa + penalty;
+  // Gross income actually RECEIVED this year (spendable), summed from the same
+  // source rows shown below — excludes the Roth conversion amount, which is an
+  // internal pre-tax→Roth transfer, not spendable income (its tax IS in
+  // totalLoaded). "After tax" = what you keep = gross received − total tax, the
+  // basis the reference tool uses (Gross − Tax = After-Tax). MAGI was the wrong
+  // base: a Roth-funded year (MAGI ≈ 0) showed ≈ $0 after-tax while the retiree
+  // actually spent from tax-free Roth.
+  const grossIncome = (Number(r.rmd) || 0) + (Number(r.fromPretax) || 0) + (Number(r.fromTaxable) || 0)
+    + (Number(r.fromRoth) || 0) + (Number(r.ss) || 0) + (Number(r.annuityRental) || 0) + (Number(r.otherIncome) || 0);
+  const afterTax    = grossIncome - totalLoaded;
+  // SS inclusion, straight off the row's own two figures.
+  const ssPct = (Number(r.ss) || 0) > 0 ? Math.round((Number(r.taxSS) || 0) / Number(r.ss) * 100) : 0;
+
+  const section = { background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 9, padding: 14, marginBottom: 12 };
+  const secHead = { fontSize: 10, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 };
+  const tbl = { width: "100%", borderCollapse: "collapse", fontSize: 12 };
+  const thC = { textAlign: "right", color: "var(--text-faint)", fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", padding: "4px 6px", borderBottom: "1px solid rgba(255,255,255,0.1)" };
+  const tdL = { textAlign: "left", color: "var(--text-secondary)", padding: "5px 6px" };
+  const tdR = { textAlign: "right", fontFamily: "'JetBrains Mono',monospace", color: "var(--text-primary)", padding: "5px 6px", whiteSpace: "nowrap" };
+  const balCell = { flex: 1, textAlign: "center", padding: "8px 4px" };
+  const balLbl = { fontSize: 9, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.06em" };
+  const balVal = { fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "var(--text-primary)", marginTop: 3 };
+
+  // Income-source rows, assembled only from row fields. A source with no
+  // dollars this year is dropped, so a 2031 RMD-free year doesn't render a
+  // column of zeros.
+  const sources = [
+    r.rmd > 0 && { label: "Pre-Tax — RMD (forced)", amt: r.rmd, treat: "Ordinary income — required by law" },
+    r.fromPretax > 0 && { label: "Pre-Tax — discretionary draw", amt: r.fromPretax, treat: "Ordinary income" },
+    r.fromTaxable > 0 && { label: "Taxable brokerage", amt: r.fromTaxable, treat: gain > 0 ? `Capital gains on ${money(gain)} of realized gain` : "Cost basis only — no gain realized" },
+    r.fromRoth > 0 && { label: "Roth / tax-free", amt: r.fromRoth, treat: "Tax-free — no bracket, SS or IRMAA impact" },
+    r.ss > 0 && { label: "Social Security", amt: r.ss, treat: ssPct > 0 ? `${ssPct}% taxable (${money(r.taxSS)} included)` : "Not taxable this year" },
+    r.annuityRental > 0 && { label: "Annuity / rental income", amt: r.annuityRental, treat: "Ordinary income" },
+    r.otherIncome > 0 && { label: "Other income", amt: r.otherIncome, treat: "As entered" },
+    r.conversionAmount > 0 && { label: "Roth conversion (above)", amt: r.conversionAmount, treat: `Ordinary income — adds ${money(r.conversionTax)} to this year's tax` },
+  ].filter(Boolean);
+
+  // Federal bracket fill — walk taxable income across THIS year's own indexed
+  // bracket array (r.fedBrackets, straight from the engine's yearTax). Per
+  // bracket, amount = overlap of [lo,hi] with [0, taxableIncome] and tax =
+  // amount × rate — the exact same arithmetic progTax runs, so the column sums
+  // to the engine's fedOrdinary. No bracket table or inflation factor is
+  // rebuilt here (Rule 8): if the engine changed the ladder, this follows.
+  const fedBr = Array.isArray(r.fedBrackets) ? r.fedBrackets : [];
+  const ti    = Number(r.taxableIncome) || 0;
+  const bracketFill = [];
+  for (const b of fedBr) {
+    if (ti <= b.lo) break;
+    const amt = Math.min(ti, b.hi) - b.lo;
+    bracketFill.push({ rate: b.rate, lo: b.lo, hi: b.hi, amt, tax: Math.round(amt * b.rate) });
+  }
+  const marginalPct  = Math.round((Number(r.marginalBracket) || 0) * 100);
+  const deduction    = Number(r.deduction) || 0;
+  const effOnTaxable = ti > 0 ? (fedOrdinary / ti) * 100 : 0;
+  const bracketColor = (rate) => rate <= 0.12 ? "#22c55e" : rate <= 0.24 ? "var(--accent-gold)" : "#f87171";
+
+  return (
+    <InfoModal
+      title={`Tax Calculation Details — Age ${r.age} (${r.yr})`}
+      accent="var(--accent-teal)"
+      maxWidth={760}
+      bodyMaxHeight="62vh"
+      open={open}
+      onClose={onClose}
+    >
+      {/* Header — who, which rules, and the one number that matters */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+          Age {r.age} · {mfj ? "Married filing jointly" : "Single"} · {stateLabel}
+          {dollarBasis ? ` · ${dollarBasis}` : ""}
+        </div>
+        <div style={{ border: "1px solid var(--positive)", borderRadius: 8, padding: "6px 12px", textAlign: "right", background: "rgba(16,185,129,0.07)" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--positive)", fontFamily: "'JetBrains Mono',monospace" }}>{money(afterTax)}</div>
+          <div style={{ fontSize: 9, color: "var(--positive)", textTransform: "uppercase", letterSpacing: "0.08em" }}>After tax</div>
+        </div>
+      </div>
+
+      {/* 1. Portfolio balances — end-of-year, per bucket, from the row */}
+      <div style={section}>
+        <div style={secHead}>Portfolio Balances (end of {r.yr})</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <div style={balCell}><div style={balLbl}>Pre-Tax</div><div style={balVal}>{money(r.pretaxEnd)}</div></div>
+          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={balLbl}>Roth</div><div style={{ ...balVal, color: "var(--accent-purple)" }}>{money(r.rothEnd)}</div></div>
+          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={balLbl}>Taxable</div><div style={{ ...balVal, color: "var(--accent-gold)" }}>{money(r.taxableEnd)}</div></div>
+          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={balLbl}>Cash</div><div style={{ ...balVal, color: "#22d3ee" }}>{money(r.cashEnd)}</div></div>
+          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.1)" }}><div style={balLbl}>Total</div><div style={balVal}>{money(r.totalPort)}</div></div>
+        </div>
+      </div>
+
+      {/* 2. Income sources — annualized and monthly, with the treatment applied */}
+      <div style={section}>
+        <div style={secHead}>Income Sources</div>
+        <table style={tbl}>
+          <thead><tr><th style={{ ...thC, textAlign: "left" }}>Source</th><th style={thC}>Annualized</th><th style={thC}>Monthly</th><th style={{ ...thC, textAlign: "left" }}>Tax Treatment</th></tr></thead>
+          <tbody>
+            {sources.map((s) => (
+              <tr key={s.label}>
+                <td style={tdL}>{s.label}</td>
+                <td style={tdR}>{money(s.amt)}</td>
+                <td style={{ ...tdR, color: "var(--text-muted)" }}>{monthly(s.amt)}</td>
+                <td style={{ ...tdL, fontSize: 11, color: "var(--text-muted)" }}>{s.treat}</td>
+              </tr>
+            ))}
+            <tr>
+              <td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>Total gross income</td>
+              <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid rgba(255,255,255,0.12)" }}>{money(grossIncome)}</td>
+              <td style={{ ...tdR, color: "var(--text-muted)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>{monthly(grossIncome)}</td>
+              <td style={{ ...tdL, fontSize: 11, color: "var(--text-faint)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>Received this year{r.conversionAmount > 0 ? " (excl. Roth conversion transfer)" : ""}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* 3. How the taxable base was arrived at */}
+      <div style={section}>
+        <div style={secHead}>How This Year's Taxable Income Is Calculated</div>
+        <table style={tbl}>
+          <tbody>
+            <tr><td style={tdL}>Ordinary income (pre-tax draws + RMD + taxable SS + rental/other)</td><td style={tdR}>{money(totInc)}</td></tr>
+            <tr><td style={tdL}>+ Realized long-term capital gains</td><td style={tdR}>{money(gain)}</td></tr>
+            <tr>
+              <td style={{ ...tdL, fontWeight: 700, color: "#86efac", borderTop: "1px solid rgba(134,239,172,0.3)" }}>= MAGI (AGI before deductions)</td>
+              <td style={{ ...tdR, fontWeight: 700, color: "#86efac", borderTop: "1px solid rgba(134,239,172,0.3)" }}>{money(magi)}</td>
+            </tr>
+            {r.stdDedYr != null && (
+              <tr><td style={tdL}>− Deductions applied in {r.yr} (standard + senior bonus)</td><td style={tdR}>−{money(r.stdDedYr)}</td></tr>
+            )}
+            <tr><td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>= Taxable income</td><td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid rgba(255,255,255,0.12)" }}>{money(r.taxableIncome)}</td></tr>
+          </tbody>
+        </table>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, marginTop: 8 }}>
+          {r.stdDedYr != null
+            ? `Marginal bracket this year: ${Math.round((r.marginalBracket || 0) * 100)}%${r.bracketTopYr != null ? ` · bracket top ${money(r.bracketTopYr)} in ${r.yr} dollars` : ""}. Bracket tops are inflation-indexed, which is why this year's ceiling is above today's published figure — compare TAXABLE income against it, not the gross draw.`
+            : `Marginal bracket this year: ${Math.round((r.marginalBracket || 0) * 100)}%. The deduction and bracket ceiling for this year aren't stored on a row without a Roth conversion, so only the resulting taxable income is shown here — it is the engine's own figure, not a re-derivation.`}
+        </div>
+      </div>
+
+      {/* 4. The tax calculation itself */}
+      <div style={section}>
+        <div style={secHead}>Tax Calculation</div>
+        <table style={tbl}>
+          <tbody>
+            <tr><td style={tdL}>Federal tax on ordinary income</td><td style={tdR}>{money(fedOrdinary)}</td></tr>
+            <tr><td style={tdL}>Federal long-term capital gains tax{ltcgTax === 0 && gain > 0 ? " (0% bracket — gain fits under the threshold)" : ""}</td><td style={tdR}>{money(ltcgTax)}</td></tr>
+            <tr><td style={tdL}>Net investment income tax (NIIT 3.8%)</td><td style={tdR}>{money(niit)}</td></tr>
+            <tr><td style={tdL}>State tax ({p?.twoHousehold ? "not applied — non-resident" : (p?.stateOfResidence || "NJ")}{p?.stateOfResidence === "NJ" && (Number(r.taxSS) || 0) > 0 && !p?.twoHousehold ? " — SS exempt" : ""})</td><td style={tdR}>{money(stateTax)}</td></tr>
+            <tr>
+              <td style={tdL}>Medicare IRMAA surcharge <span style={{ fontSize: 10, color: "var(--text-faint)" }}>(from {r.yr - 2} MAGI — 2-yr lookback)</span></td>
+              <td style={tdR}>{money(irmaa)}</td>
+            </tr>
+            {penalty > 0 && (
+              <tr><td style={{ ...tdL, color: "#f87171" }}>⛔ Early-withdrawal penalty (IRC §72(t), 10%) — a separate additional tax</td><td style={{ ...tdR, color: "#f87171" }}>{money(penalty)}</td></tr>
+            )}
+            <tr>
+              <td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>= Total tax{r.earlyPenalty > 0 ? " (incl. penalty)" : ""}</td>
+              <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid rgba(255,255,255,0.12)" }}>{money(totalLoaded)}</td>
+            </tr>
+            <tr>
+              <td style={{ ...tdL, color: "var(--text-muted)" }}>Effective rate on {money(magi)} of income <span style={{ fontSize: 10, color: "var(--text-faint)" }}>(federal + state, excl. IRMAA &amp; penalty)</span></td>
+              <td style={{ ...tdR, color: "var(--text-muted)" }}>{((Number(r.effectiveRate) || 0) * 100).toFixed(1)}%</td>
+            </tr>
+            <tr><td style={{ ...tdL, fontWeight: 700, color: "var(--positive)" }}>= After tax</td><td style={{ ...tdR, fontWeight: 700, color: "var(--positive)" }}>{money(afterTax)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* 5. Federal Tax Bracket Analysis — how taxable income stacks across the
+             year's inflation-indexed brackets. Bar + table sum to fedOrdinary. */}
+      {bracketFill.length > 0 && ti > 0 && (
+        <div style={section}>
+          <div style={secHead}>Federal Tax Bracket Analysis</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.55, marginBottom: 10 }}>
+            Income ranges are inflation-adjusted to {r.yr}. Compare your <strong>taxable</strong> income ({money(ti)}) against them — the IRS widens brackets each year, so this year's ranges sit above today's published figures.
+          </div>
+          <div style={{ display: "flex", height: 26, borderRadius: 6, overflow: "hidden", marginBottom: 6, background: "rgba(255,255,255,0.05)" }}>
+            {bracketFill.map((f) => (
+              <div key={f.rate} title={`${Math.round(f.rate * 100)}% bracket — ${money(f.amt)} taxed here`} style={{ width: `${(f.amt / ti) * 100}%`, background: bracketColor(f.rate), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#04120a", minWidth: 24 }}>
+                {Math.round(f.rate * 100)}%
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 12 }}>Your taxable income: {money(ti)}</div>
+          <table style={tbl}>
+            <thead><tr><th style={{ ...thC, textAlign: "left" }}>Tax Rate</th><th style={{ ...thC, textAlign: "left" }}>Income Range ({r.yr} $)</th><th style={thC}>Amount in Bracket</th><th style={thC}>Tax</th></tr></thead>
+            <tbody>
+              {bracketFill.map((f) => (
+                <tr key={f.rate}>
+                  <td style={{ ...tdL, color: bracketColor(f.rate), fontWeight: 700 }}>{Math.round(f.rate * 100)}%</td>
+                  <td style={tdL}>{money(f.lo)} – {f.hi === Infinity ? "no ceiling" : money(f.hi)}</td>
+                  <td style={tdR}>{money(f.amt)}</td>
+                  <td style={tdR}>{money(f.tax)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>Total</td>
+                <td style={{ ...tdL, color: "var(--text-muted)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>{bracketFill.length} bracket{bracketFill.length === 1 ? "" : "s"} filled</td>
+                <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid rgba(255,255,255,0.12)" }}>{money(ti)}</td>
+                <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid rgba(255,255,255,0.12)" }}>{money(fedOrdinary)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div style={{ marginTop: 10, background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", borderRadius: 8, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent-purple)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>◇ Key Insights</div>
+            <div style={{ fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.8 }}>
+              Marginal tax rate (top bracket reached): <strong style={{ color: "var(--text-primary)" }}>{marginalPct}%</strong><br />
+              Effective rate on taxable income: <strong style={{ color: "var(--text-primary)" }}>{effOnTaxable.toFixed(1)}%</strong>
+              {deduction > 0 && (<><br />Tax saved from deductions: <strong style={{ color: "var(--positive)" }}>~{money(Math.round(deduction * (Number(r.marginalBracket) || 0)))}</strong> <span style={{ color: "var(--text-faint)" }}>({money(deduction)} deduction × {marginalPct}% marginal)</span></>)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Monthly summary — the same Gross − Tax = After-Tax identity as the
+             reference tool, per month. All three are ÷12 of figures above; the
+             identity holds because afterTax is defined as grossIncome − totalLoaded. */}
+      <div style={section}>
+        <div style={secHead}>Monthly Summary</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <div style={balCell}>
+            <div style={balLbl}>Gross Income</div>
+            <div style={balVal}>{monthly(grossIncome)}</div>
+            <div style={{ fontSize: 9, color: "var(--text-faint)", marginTop: 2 }}>{money(grossIncome)}/yr</div>
+          </div>
+          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.07)" }}>
+            <div style={balLbl}>Tax</div>
+            <div style={{ ...balVal, color: "#f87171" }}>−{monthly(totalLoaded)}</div>
+            <div style={{ fontSize: 9, color: "var(--text-faint)", marginTop: 2 }}>−{money(totalLoaded)}/yr</div>
+          </div>
+          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.1)" }}>
+            <div style={balLbl}>After-Tax</div>
+            <div style={{ ...balVal, color: "var(--positive)" }}>{monthly(afterTax)}</div>
+            <div style={{ fontSize: 9, color: "var(--text-faint)", marginTop: 2 }}>{money(afterTax)}/yr</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Disclosures — every total above shows what it was built from */}
+      <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.65, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10 }}>
+        <div style={{ marginBottom: 6 }}>
+          <strong style={{ color: "var(--text-secondary)" }}>What's inside these numbers.</strong>{" "}
+          {Number(r.ss) > 0
+            ? `Social Security is ${ssPct}% taxable this year (${money(r.taxSS)} of ${money(r.ss)})${r.landmines?.ssTorpedo ? " — the SS torpedo is active, meaning provisional income crossed the threshold where 85% becomes taxable" : ""}. `
+            : "Social Security is not being taxed this year. "}
+          {irmaa > 0
+            ? `IRMAA is charged this year because your ${r.yr - 2} MAGI exceeded the base Medicare tier; this year's income affects premiums in ${r.yr + 2}. `
+            : "No IRMAA surcharge this year. "}
+          {gain > 0 && ltcgTax === 0
+            ? `The realized gain of ${money(gain)} fell inside the 0% long-term capital gains bracket, so no federal tax is due on it. `
+            : ""}
+          {r.rothReserveBroken ? `The Roth emergency reserve was breached this year. ` : ""}
+        </div>
+        <div>
+          These are model estimates from the same tax engine that produced the schedule row above — a second, independent calculation is never run for this panel.
+          State tax is an estimate; actual liability depends on items not modeled here (itemized deductions, credits, local taxes). Consult a qualified tax professional.
+        </div>
+      </div>
+    </InfoModal>
+  );
+}
+
+/**
+ * Column-group segments for the year-by-year withdrawal table.
+ *
+ * `key`  — unique (React key, and the segment identity)
+ * `cg`   — the CSS group tag the columns carry; a view hides whole `cg`s
+ * `span` — how many columns the segment owns; constant, since hiding is per
+ *          group rather than per column, so a visible header span is always right
+ * `view` — which lens this segment belongs to (null = always visible)
+ *
+ * Order matches the table's left-to-right reading (the funding identity), so the
+ * group header can never disagree with the columns beneath it.
+ */
+const WF_SEGMENTS = [
+  { key: "time",   cg: "time",   span: 1, label: "Timeline",                     view: null,     cls: "" },
+  { key: "spend",  cg: "spend",  span: 2, label: "Spending",                     view: "flows",  cls: "wf-grp-s" },
+  { key: "income", cg: "income", span: 2, label: "Income — offsets spend first", view: "flows",  cls: "wf-grp-i" },
+  { key: "draw",   cg: "draw",   span: 9, label: "Withdrawals — in draw order",  view: "flows",  cls: "wf-grp-d" },
+  { key: "conv",   cg: "conv",   span: 1, label: "Roth",                         view: "flows",  cls: "wf-grp-d" },
+  { key: "b1",     cg: "bal",    span: 1, label: "Bucket 1",                     view: "bal",    cls: "wf-grp-b" },
+  { key: "tax",    cg: "tax",    span: 4, label: "Taxes",                        view: "tax",    cls: "wf-grp-t" },
+  { key: "risk",   cg: "risk",   span: 2, label: "Risk checks",                  view: "tax",    cls: "wf-grp-t" },
+  { key: "total",  cg: "bal",    span: 1, label: "Total",                        view: "bal",    cls: "wf-grp-b" },
+];
+
 function WaterfallPlanView({ p, result }) {
   const [mode, setMode] = useState("smart");
+  // One dialog, pointed at whichever year's Tax details was clicked. The old
+  // cells carried `title=` tooltips for this — a string that many desktop
+  // setups never render and touch devices cannot open at all, so the breakdown
+  // behind Fed Tax / State Tax / IRMAA was unreachable for a whole class of
+  // users. Click is the pattern that works everywhere.
+  const [taxRow, setTaxRow] = useState(null);
+  // Which column groups the year-by-year table shows. "all" is the full 23-column
+  // schedule; the others are lenses onto the same rows (see .wf-tbl CSS).
+  const [wfView, setWfView] = useState("all");
   const { smart, naive, summary } = result;
   const rows = mode === "smart" ? smart.rows : naive.rows;
 
@@ -7735,6 +8434,24 @@ function WaterfallPlanView({ p, result }) {
       {/* Year-by-year table */}
       <div className="chart-card" style={{ overflowX: "auto" }}>
         <div className="ct">Year-by-Year Withdrawal Schedule</div>
+        {/* Which lens the table is showing. 23 columns is more than anyone can
+            read across, so the same rows are offered grouped: everything, just
+            the flows, just the taxes, or just the balances. The funding identity
+            never changes — only how much of it is on screen at once. */}
+        <div className="wf-views">
+          <span style={{ fontSize: 11, color: "var(--text-muted)", marginRight: 2 }}>Show:</span>
+          {[["all", "All columns"], ["flows", "Flows (in → out)"], ["tax", "Taxes & risk"], ["bal", "Balances"]].map(([k, label]) => (
+            <button key={k} type="button" className={wfView === k ? "on" : ""} onClick={() => setWfView(k)}>{label}</button>
+          ))}
+        </div>
+        {wfView !== "all" && (
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
+            {wfView === "flows" && "Income is applied first; only the shortfall becomes a withdrawal. Draw columns are in the order the waterfall uses them."}
+            {wfView === "tax" && "Only the tax columns and the two risk checks — the funding columns are hidden so the tax picture fits on one screen."}
+            {wfView === "bal" && "Bucket 1 and the total portfolio at each year end. Switch to Flows to see what moved them."}
+            {" "}The full schedule is always one click away under <strong style={{ color: "var(--text-secondary)" }}>All columns</strong>.
+          </div>
+        )}
           LEGEND:
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
@@ -7742,16 +8459,29 @@ function WaterfallPlanView({ p, result }) {
           <br />
           Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD)  + Roth = Spending + Housing + Carveouts + Planned one-off expenses + Fed/State/IRMAA taxes</strong> (Income = Social Security + Pension/Other + Annuity/Rental — All of it offsets spending before any draw) (Any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown. In a Roth-conversion year, Cash/Taxable/Pre-Tax also carry a small <span style={{ color: "var(--accent-purple)" }}>+conv $X</span> badge — the share of that year's conversion tax paid from that account. Total Draw and the identity above include it.
         </div>
-        <table className="roth-tbl">
+        <table className="roth-tbl wf-tbl" data-view={wfView}>
           <thead>
+            {/* Group header. Column counts are the group's own column count and
+                are constant, because a view hides whole groups — so a visible
+                group's span is always right without recomputation. */}
             <tr>
-              <th>Age</th>
-              <ThInfo tip={"Target spending this year.\n\nOpen any row's Spending cell for the full need breakdown — housing, carveouts, planned one-off costs, other income and taxes."}>Spending</ThInfo>
-              <ThInfo style={opThStyle} tip={"Spending is funded by the income + draw columns to the right — see the funding identity above the table."}>←</ThInfo>
+              {WF_SEGMENTS.map((seg) => {
+                if (seg.key === "conv" && !anyConversion) return null;
+                return (
+                  <th key={seg.key} colSpan={seg.span} data-cg={seg.cg} className={`wf-grp ${seg.cls || ""}`}>
+                    {seg.label}
+                  </th>
+                );
+              })}
+            </tr>
+            <tr>
+              <th data-cg="time">Age</th>
+              <ThInfo data-cg="spend" tip={"Target spending this year.\n\nOpen any row's Spending cell for the full need breakdown — housing, carveouts, planned one-off costs, other income and taxes."}>Spending</ThInfo>
+              <ThInfo data-cg="spend" style={opThStyle} tip={"Spending is funded by the income + draw columns to the right — see the funding identity above the table."}>←</ThInfo>
               {/* This is the aggregate whose components a user couldn't
                   find, and its explanation used to be hover-only, so absent
                   on every phone. Click-open modal, visible affordance. */}
-              <th>
+              <th data-cg="income">
                 Income{" "}
                 <InfoModal title="Income — what this column contains" accent="var(--accent-teal)"
                   trigger={<span style={{ cursor: "pointer", display: "inline-flex", color: "var(--accent-teal)" }}><InfoIcon size={12} /></span>}>
@@ -7771,23 +8501,23 @@ function WaterfallPlanView({ p, result }) {
                   </p>
                 </InfoModal>
               </th>
-              <th style={opThStyle}>+</th>
-              <ThInfo tip={"Step 3 — drawn first from the portfolio"}>Cash</ThInfo>
-              <th style={opThStyle}>+</th>
-              <ThInfo tip={"Step 4 — drawn after cash is exhausted"}>Taxable</ThInfo>
-              <th style={opThStyle}>+</th>
-              <ThInfo tip={"Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k."}>Pre-Tax</ThInfo>
-              <th style={opThStyle}>+</th>
-              <ThInfo tip={"Step 6 — last resort; emergency reserve floor maintained"}>Roth</ThInfo>
-              <th style={opThStyle}>=</th>
-              <ThInfo tip={"Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes."}>Total Draw</ThInfo>
+              <th data-cg="income" style={opThStyle}>+</th>
+              <ThInfo data-cg="draw" tip={"Step 3 — drawn first from the portfolio"}>Cash</ThInfo>
+              <th data-cg="draw" style={opThStyle}>+</th>
+              <ThInfo data-cg="draw" tip={"Step 4 — drawn after cash is exhausted"}>Taxable</ThInfo>
+              <th data-cg="draw" style={opThStyle}>+</th>
+              <ThInfo data-cg="draw" tip={"Step 5 — TOTAL pretax outflow this year: forced RMD + discretionary draw (capped at your bracket-ceiling target). This is the amount to actually withdraw from your IRA/401k."}>Pre-Tax</ThInfo>
+              <th data-cg="draw" style={opThStyle}>+</th>
+              <ThInfo data-cg="draw" tip={"Step 6 — last resort; emergency reserve floor maintained"}>Roth</ThInfo>
+              <th data-cg="draw" style={opThStyle}>=</th>
+              <ThInfo data-cg="draw" tip={"Total leaving your portfolio this year: Cash + Taxable + Pre-Tax (incl. RMD) + Roth. The single number to enact — it covers spending, housing, carveouts, and all taxes."}>Total Draw</ThInfo>
               {anyConversion && (
-                <ThInfo tip={"Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total."}>Roth Conv</ThInfo>
+                <ThInfo data-cg="conv" tip={"Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total."}>Roth Conv</ThInfo>
               )}
-              <ThInfo style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} tip={"Bucket 1 is the safe cash reserve — the slice of your accounts tagged for near-term spending, tracked separately from Bucket 2 (income bridge) and Bucket 3 (long-term growth).\n\nThis column is Bucket 1's true dollar share of the portfolio at the end of each year, summed across every account/category it's tagged in — not one category's whole balance. A taxable account split 40% Bucket 1 / 60% Bucket 2 only contributes its 40% share here.\n\n\"—\" means no account is tagged Bucket 1 at all. \"$0\" means Bucket 1 has actually depleted. Hover any row's value for that year's exact calculation."}>B1 End</ThInfo>
-              <th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Eff %</th>
-              <ThInfo tip={"What share of the portfolio this year's DRAW represents: Total Draw ÷ the portfolio at the START of the year.\n\nNot your spending rate. If income covers most of your spending, this stays low even when spending is high — which is the point of the column.\n\nGreen means within ±20% of your first-year rate, the Guyton-Klinger guardrail band. Amber = well below it, red = well above."}>WR <span style={{ fontSize: 9, color: "var(--text-muted)" }}>(of draw)</span></ThInfo>
-              <th>
+              <ThInfo data-cg="bal" style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} tip={"Bucket 1 is the safe cash reserve — the slice of your accounts tagged for near-term spending, tracked separately from Bucket 2 (income bridge) and Bucket 3 (long-term growth).\n\nThis column is Bucket 1's true dollar share of the portfolio at the end of each year, summed across every account/category it's tagged in — not one category's whole balance. A taxable account split 40% Bucket 1 / 60% Bucket 2 only contributes its 40% share here.\n\n\"—\" means no account is tagged Bucket 1 at all. \"$0\" means Bucket 1 has actually depleted. Hover any row's value for that year's exact calculation."}>B1 End</ThInfo>
+              <th data-cg="tax">Fed Tax</th><th data-cg="tax">State Tax</th><th data-cg="tax">IRMAA</th><th data-cg="tax">Eff %</th>
+              <ThInfo data-cg="risk" tip={"What share of the portfolio this year's DRAW represents: Total Draw ÷ the portfolio at the START of the year.\n\nNot your spending rate. If income covers most of your spending, this stays low even when spending is high — which is the point of the column.\n\nGreen means within ±20% of your first-year rate, the Guyton-Klinger guardrail band. Amber = well below it, red = well above."}>WR <span style={{ fontSize: 9, color: "var(--text-muted)" }}>(of draw)</span></ThInfo>
+              <th data-cg="risk">
                 <LandmineTip
                   emoji="💣"
                   label="Tax Landmines"
@@ -7796,7 +8526,7 @@ function WaterfallPlanView({ p, result }) {
                 />
                 {" "}Landmines
               </th>
-              <th>Port End</th>
+              <th data-cg="bal">Port End</th>
             </tr>
           </thead>
           <tbody>
@@ -7860,8 +8590,8 @@ function WaterfallPlanView({ p, result }) {
               })() : null;
               return (
               <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
-                <td>{r.age}</td>
-                <td style={{ textAlign: "right" }}
+                <td data-cg="time">{r.age}</td>
+                <td data-cg="spend" style={{ textAlign: "right" }}
                     title={`Spending ${fmtDollar(r.spending)}`
                       // The smile quietly re-scales this cell — say so.
                       + (r.smileFactor != null && Math.abs(r.smileFactor - 1) >= 0.005
@@ -7901,8 +8631,8 @@ function WaterfallPlanView({ p, result }) {
                     </span>
                   )}
                 </td>
-                <td style={opTdStyle}>←</td>
-                <td style={{ textAlign: "right", color: "var(--accent-teal)" }}
+                <td data-cg="spend" style={opTdStyle}>←</td>
+                <td data-cg="income" style={{ textAlign: "right", color: "var(--accent-teal)" }}
                     title={(() => {
                       // A user reported that the components shown didn't add
                       // up to the total. The engine was right — otherIncome
@@ -7961,8 +8691,8 @@ function WaterfallPlanView({ p, result }) {
                     </span>
                   )}
                 </td>
-                <td style={opTdStyle}>+</td>
-                <td style={{ textAlign: "right", color: "var(--text-muted)" }} title={fmtDollar(r.fromCash)}>
+                <td data-cg="income" style={opTdStyle}>+</td>
+                <td data-cg="draw" style={{ textAlign: "right", color: "var(--text-muted)" }} title={fmtDollar(r.fromCash)}>
                   {r.fromCash > 0 ? fmtDollar(r.fromCash) : "—"}
                   {/* This is the conversion's own tax bill, paid from Cash — a
                       real draw the engine tracks (convTaxFromCash) but that
@@ -7977,8 +8707,8 @@ function WaterfallPlanView({ p, result }) {
                     </span>
                   )}
                 </td>
-                <td style={opTdStyle}>+</td>
-                <td style={{ textAlign: "right", color: "#3b82f6" }} title={fmtDollar(r.fromTaxable)}>
+                <td data-cg="draw" style={opTdStyle}>+</td>
+                <td data-cg="draw" style={{ textAlign: "right", color: "#3b82f6" }} title={fmtDollar(r.fromTaxable)}>
                   {r.fromTaxable > 0 ? fmtDollar(r.fromTaxable) : "—"}
                   {r.convTaxFromTaxable > 0 && (
                     <span style={{ color: "var(--accent-purple)", fontSize: 10, marginLeft: 3, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}
@@ -7987,8 +8717,8 @@ function WaterfallPlanView({ p, result }) {
                     </span>
                   )}
                 </td>
-                <td style={opTdStyle}>+</td>
-                <td style={{ textAlign: "right", color: "#f59e0b" }}
+                <td data-cg="draw" style={opTdStyle}>+</td>
+                <td data-cg="draw" style={{ textAlign: "right", color: "#f59e0b" }}
                     title={(() => {
                       // The displayed figure is the total pretax outflow the
                       // user actually has to withdraw: forced RMD +
@@ -8023,10 +8753,10 @@ function WaterfallPlanView({ p, result }) {
                     </span>
                   )}
                 </td>
-                <td style={opTdStyle}>+</td>
-                <td style={{ textAlign: "right", color: "var(--positive)" }} title={fmtDollar(r.fromRoth)}>{r.fromRoth > 0 ? fmtDollar(r.fromRoth) : "—"}</td>
-                <td style={opTdStyle}>=</td>
-                <td style={{ textAlign: "right", color: "#e2e8f0", fontWeight: 600 }}
+                <td data-cg="draw" style={opTdStyle}>+</td>
+                <td data-cg="draw" style={{ textAlign: "right", color: "var(--positive)" }} title={fmtDollar(r.fromRoth)}>{r.fromRoth > 0 ? fmtDollar(r.fromRoth) : "—"}</td>
+                <td data-cg="draw" style={opTdStyle}>=</td>
+                <td data-cg="draw" style={{ textAlign: "right", color: "#e2e8f0", fontWeight: 600 }}
                     title={`${fmtDollar(r.totalWithdrawal)} leaves the portfolio this year (Cash ${fmtDollar(r.fromCash + (r.convTaxFromCash || 0))} + Taxable ${fmtDollar(r.fromTaxable + (r.convTaxFromTaxable || 0))} + Pre-Tax ${fmtDollar(r.fromPretax + r.rmd + (r.convTaxFromPretax || 0))} + Roth ${fmtDollar(r.fromRoth)}) — covers spending, housing, carveouts, all taxes, and this year's Roth conversion tax (the "+conv" badges to the left)`}>
                   {r.totalWithdrawal > 0 ? fmtDollar(r.totalWithdrawal) : "—"}
                   {/* The delta a user has to compute by eye otherwise — "why
@@ -8041,7 +8771,7 @@ function WaterfallPlanView({ p, result }) {
                   )}
                 </td>
                 {anyConversion && (
-                  <td style={{ textAlign: "right", color: "var(--accent-purple)" }}
+                  <td data-cg="conv" style={{ textAlign: "right", color: "var(--accent-purple)" }}
                       title={(() => {
                         if (!(r.conversionAmount > 0)) return "No conversion this year";
                         let t = `Converted ${fmtDollar(r.conversionAmount)} pretax → Roth`
@@ -8114,7 +8844,7 @@ function WaterfallPlanView({ p, result }) {
                     )}
                   </td>
                 )}
-                <td style={{ textAlign: "right", color: b1End === 0 || (b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0) ? "#f87171" : "#22d3ee", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }}
+                <td data-cg="bal" style={{ textAlign: "right", color: b1End === 0 || (b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0) ? "#f87171" : "#22d3ee", fontSize: 11, borderLeft: "1px solid rgba(148,163,184,0.15)" }}
                     title={
                       b1End == null
                         ? "No account is tagged Bucket 1"
@@ -8123,38 +8853,38 @@ function WaterfallPlanView({ p, result }) {
                     }>
                   {b1End == null ? "—" : fmtDollar(b1End)}
                 </td>
-                <td style={{ textAlign: "right", color: "#f87171" }}
-                    title={(() => {
-                      // "Fed Tax" is a sum of three separately-computed
-                      // pieces, and the engine returns all three — they were
-                      // just never rendered. fedTax = ordinary + ltcgTax +
-                      // niit (buildWithdrawalWaterfall ~464).
-                      const ltcg = r.ltcgTax || 0, niit = r.niit || 0;
-                      const ordinary = Math.max(0, (r.fedTax || 0) - ltcg - niit);
-                      const parts = [`ordinary income ${fmtDollar(ordinary)}`];
-                      if (ltcg > 0) parts.push(`long-term capital gains ${fmtDollar(ltcg)}`);
-                      if (niit > 0) parts.push(`net investment income tax ${fmtDollar(niit)}`);
-                      let t = `${fmtDollar(r.fedTax)} federal = ${parts.join(" + ")}`;
-                      if (r.realizedGain > 0) t += `\n\nRealized gain on the taxable draw: ${fmtDollar(r.realizedGain)}.`;
-                      if (r.earlyPenalty > 0) t += `\n\n⛔ PLUS ${fmtDollar(r.earlyPenalty)} early-withdrawal penalty (IRC 72(t), 10%) — a SEPARATE additional tax, NOT included in the federal figure above.`;
-                      if (r.taxSS > 0) t += `\n${fmtDollar(r.taxSS)} of your Social Security is taxable this year`
-                        + (r.ss > 0 ? ` (${Math.round(r.taxSS / r.ss * 100)}% of ${fmtDollar(r.ss)}).` : ".");
-                      return t;
-                    })()}>
+                {/* Fed Tax / State Tax / IRMAA used to explain themselves with
+                    `title=` strings. The breakdown is now the click-open
+                    TaxDetailsModal (one instance, above), so these cells carry
+                    one shared "Tax details" affordance instead of three
+                    tooltips that touch users could never open. */}
+                <td data-cg="tax" style={{ textAlign: "right", color: "#f87171" }}>
                   {fmtDollar(r.fedTax)}
                   {(r.ltcgTax > 0 || r.niit > 0) && (
                     <span style={{ color: "#fca5a5", fontSize: 9, marginLeft: 2 }}
-                          title="Includes capital-gains tax and/or net investment income tax — not just ordinary income">*</span>
+                          aria-label="Includes capital-gains tax and/or net investment income tax">*</span>
                   )}
+                  <div style={{ marginTop: 1 }}>
+                    <button
+                      type="button"
+                      onClick={() => setTaxRow(r)}
+                      aria-label={`Tax details for age ${r.age} (${r.yr})`}
+                      style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer",
+                        fontSize: 9.5, fontWeight: 700, color: "var(--accent-teal)",
+                        textDecoration: "underline", textUnderlineOffset: 2, whiteSpace: "nowrap" }}
+                    >
+                      Tax details
+                    </button>
+                  </div>
                 </td>
-                <td style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "var(--text-faint)" }} title={fmtDollar(r.stateTax)}>
+                <td data-cg="tax" style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "var(--text-faint)" }}>
                   {r.stateTax > 0 ? fmtDollar(r.stateTax) : "—"}
                 </td>
-                <td style={{ textAlign: "right", color: r.irmaa > 0 ? "#fb923c" : "var(--text-faint)" }} title={fmtDollar(r.irmaa)}>
+                <td data-cg="tax" style={{ textAlign: "right", color: r.irmaa > 0 ? "#fb923c" : "var(--text-faint)" }}>
                   {r.irmaa > 0 ? fmtDollar(r.irmaa) : "—"}
                 </td>
-                <td style={{ textAlign: "right" }}>{(r.effectiveRate * 100).toFixed(1)}%</td>
-                <td style={{ textAlign: "right", color: rowWRColor(rowIdx), fontWeight: 600, fontSize: 11 }}
+                <td data-cg="tax" style={{ textAlign: "right" }}>{(r.effectiveRate * 100).toFixed(1)}%</td>
+                <td data-cg="risk" style={{ textAlign: "right", color: rowWRColor(rowIdx), fontWeight: 600, fontSize: 11 }}
                     title={(() => {
                       const wr = wrAt(rowIdx);
                       if (wr == null) return "No portfolio at the start of this year.";
@@ -8165,7 +8895,7 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
                     })()}>
                   {(() => { const wr = wrAt(rowIdx); return wr == null ? "—" : (wr * 100).toFixed(1) + "%"; })()}
                 </td>
-                <td style={{ textAlign: "center", fontSize: 14 }}>
+                <td data-cg="risk" style={{ textAlign: "center", fontSize: 14 }}>
                   {r.landmines.ssTorpedo && (() => {
                     const provisional = Math.round((r.ss || 0) * 0.5 + (r.rmd || 0) + (r.fromPretax || 0) + (r.annuityRental || 0));
                     const thresh = (p?.filingStatus || "mfj") !== "single" ? 44_000 : 34_000;
@@ -8208,13 +8938,25 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
                   })()}
                   {!anyLandmine(r) && <span style={{ color: "#34d399", fontSize: 10 }}>✓</span>}
                 </td>
-                <td style={{ textAlign: "right", color: "var(--text-secondary)" }} title={fmtDollar(r.totalPort)}>{fmtDollar(r.totalPort)}</td>
+                <td data-cg="bal" style={{ textAlign: "right", color: "var(--text-secondary)" }} title={fmtDollar(r.totalPort)}>{fmtDollar(r.totalPort)}</td>
               </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+
+      {/* The single dialog the per-row "Tax details" buttons open. Mounted
+          once, outside the row map, so 40 rows don't mean 40 dialog
+          instances — only the opened one renders its content. Every figure it
+          shows comes from the row it was handed (rule 8). */}
+      <TaxDetailsModal
+        r={taxRow}
+        p={p}
+        dollarBasis="nominal dollars for that year"
+        open={taxRow != null}
+        onClose={() => setTaxRow(null)}
+      />
     </div>
   );
 }
@@ -8231,6 +8973,37 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows }) 
     "Total Withdrawal": s.totalWithdrawal,
     "Portfolio End": s.portfolioEnd,
     Spending: s.spending,
+    // Guardrail series, straight off the schedule row the engine emitted —
+    // including the floor/ceiling it actually clamped to, and the cut/raise it
+    // actually applied. Nothing here is re-derived from the spend path.
+    "Prior spend": s.spEntering,
+    "Post-guardrail": s.spAfterGK ?? s.spending,
+    Floor: s.gkFloor,
+    Ceiling: s.gkCeiling,
+    gkEvent: s.gkEvent,
+    gkReason: s.gkReason,
+  }));
+  // Guardrail activity for the deterministic path — the summary strip above the
+  // chart. Only meaningful for the GK-family strategies; every other strategy
+  // adjusts spending by rule (fixed %, inflation-only) rather than by guardrail,
+  // so the strip says so instead of showing a row of zeros.
+  const gkRows = schedule.filter((s) => s.gkEvent != null || s.gkReason != null);
+  const cutCount = schedule.filter((s) => s.gkEvent === "cut").length;
+  const raiseCount = schedule.filter((s) => s.gkEvent === "raise").length;
+  const holdCount = schedule.filter((s) => s.gkReason === "longevity-hold").length;
+  const gkApplies = ["gk", "smart", "risk", "kitces", "vanguard", "endowment", "cape", "one_n"].includes(resolveStrategy(withdrawalStrategy));
+  // Real (retirement-year) dollars for the floor/ceiling/spend bands: the
+  // schedule is nominal per year, so a nominal floor line would climb forever
+  // and hide what the guardrail is actually doing. Deflating by the schedule's
+  // own inflation assumption keeps the floor flat, which is what a "real
+  // spending floor" means.
+  const realAt = (v, i) => Math.round((v || 0) / Math.pow(1 + (inf || 0) / 100, i));
+  const gkChartData = chartData.map((d, i) => ({
+    ...d,
+    "Prior spend (real)": realAt(d["Prior spend"], i),
+    "Actual spend (real)": realAt(d["Post-guardrail"], i),
+    "Floor (real)": realAt(d.Floor, i),
+    "Ceiling (real)": realAt(d.Ceiling, i),
   }));
 
   if (!schedule || schedule.length === 0) {
@@ -8293,6 +9066,92 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows }) 
         <div className="leg">
           <div className="li"><div className="ll" style={{ background: "var(--accent-teal)" }} />Portfolio Balance</div>
         </div>
+
+        {/* ── Guardrails ──────────────────────────────────────────────────
+            The spending path with its adjustment events: what the plan asked
+            for (prior spend), what the guardrail allowed (actual), and the
+            floor/ceiling band it was clamped inside — with a ▲/▼ marking every
+            year the rule fired. Every series is an engine output on the
+            schedule row (spEntering / spAfterGK / gkFloor / gkCeiling / gkEvent);
+            the UI applies no guardrail arithmetic of its own (rule 8).
+            Deflated to retirement-year dollars, so the floor reads as a flat
+            line rather than a rising nominal one. */}
+        {gkApplies && (
+          <div style={{ marginTop: 20, borderTop: "1px solid var(--divider)", paddingTop: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+                Spending Path with Guardrail Adjustments
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                {cutCount} cut{cutCount === 1 ? "" : "s"} · {raiseCount} raise{raiseCount === 1 ? "" : "s"}
+                {holdCount ? ` · ${holdCount} held by the longevity rule` : ""}
+                {" · in today's dollars"}
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={gkChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
+                <XAxis dataKey="age" stroke="var(--divider)" tickMargin={6}
+                       tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} />
+                <YAxis stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH}
+                       tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }}
+                       tickFormatter={(v) => fmtDollar(v)} />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload || !payload.length) return null;
+                    const row = gkChartData.find((d) => d.age === label) || {};
+                    const monthly = (v) => fmtDollar(Math.round((v || 0) / 12));
+                    const ev = row.gkEvent;
+                    return (
+                      <div style={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, padding: "9px 12px", fontSize: 11.5, lineHeight: 1.6 }}>
+                        <div style={{ fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>Age {label}</div>
+                        <div style={{ color: "var(--text-secondary)" }}>Prior spend <strong style={{ fontFamily: "var(--font-mono)" }}>{fmtDollar(row["Prior spend (real)"])}</strong> <span style={{ color: "var(--text-faint)" }}>({monthly(row["Prior spend (real)"])}/mo)</span></div>
+                        <div style={{ color: "var(--text-secondary)" }}>After guardrail <strong style={{ fontFamily: "var(--font-mono)" }}>{fmtDollar(row["Actual spend (real)"])}</strong> <span style={{ color: "var(--text-faint)" }}>({monthly(row["Actual spend (real)"])}/mo)</span></div>
+                        <div style={{ color: "var(--text-muted)" }}>Floor {fmtDollar(row["Floor (real)"])} · Ceiling {fmtDollar(row["Ceiling (real)"])}</div>
+                        {ev === "cut" && <div style={{ color: "#f87171", fontWeight: 700, marginTop: 4 }}>▼ Spending cut {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate crossed the {Math.round(GK_BAND_PCT * 100)}% upper band</div>}
+                        {ev === "raise" && <div style={{ color: "#34d399", fontWeight: 700, marginTop: 4 }}>▲ Spending raised {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate fell {Math.round(GK_BAND_PCT * 100)}% below the initial rate</div>}
+                        {!ev && row.gkReason === "longevity-hold" && <div style={{ color: "var(--accent-gold)", marginTop: 4 }}>Band crossed, but the longevity rule held — {GK_LONGEVITY_YEARS} years or fewer remain</div>}
+                        {!ev && !row.gkReason && <div style={{ color: "var(--text-faint)", marginTop: 4 }}>No adjustment — inflation only</div>}
+                      </div>
+                    );
+                  }}
+                />
+                {/* Band first so the lines sit on top of it. */}
+                <Area type="monotone" dataKey="Ceiling (real)" stroke="none" fill="rgba(52,211,153,0.07)" />
+                <Line type="monotone" dataKey="Floor (real)" stroke="#f5a623" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
+                <Line type="monotone" dataKey="Ceiling (real)" stroke="#34d399" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
+                <Line type="monotone" dataKey="Prior spend (real)" stroke="var(--text-faint)" strokeWidth={1.2} strokeDasharray="2 3" dot={false} />
+                <Line type="monotone" dataKey="Actual spend (real)" stroke="var(--accent-teal)" strokeWidth={2.4}
+                      dot={(props) => {
+                        const ev = gkChartData[props.index]?.gkEvent;
+                        if (!ev) return <g key={`d${props.index}`} />;
+                        const up = ev === "raise";
+                        // A small triangle above/below the point, so the events
+                        // read at a glance the way the reference chart's markers do.
+                        const y = up ? props.cy - 9 : props.cy + 9;
+                        const pts = `${props.cx},${y - (up ? -5 : 5)} ${props.cx - 5},${y + (up ? 1 : -1)} ${props.cx + 5},${y + (up ? 1 : -1)}`;
+                        return <polygon key={`e${props.index}`} points={pts} fill={up ? "#34d399" : "#f87171"} stroke="var(--bg-base)" strokeWidth={1} />;
+                      }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+            <div className="leg">
+              <div className="li"><div className="ll" style={{ background: "var(--accent-teal)" }} />Actual spending</div>
+              <div className="li"><div className="ll" style={{ background: "var(--text-faint)" }} />Prior year's spending</div>
+              <div className="li"><div className="ll" style={{ background: "#f5a623" }} />Floor</div>
+              <div className="li"><div className="ll" style={{ background: "#34d399" }} />Ceiling</div>
+              <div className="li"><span style={{ color: "#f87171", fontSize: 12 }}>▼</span> Cut</div>
+              <div className="li"><span style={{ color: "#34d399", fontSize: 12 }}>▲</span> Raise</div>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.55, marginTop: 8 }}>
+              Guardrails are relative to <em>last year's</em> spending, so the dashed "prior" line is what each
+              adjustment moved away from. The GK rules in force — {Math.round(GK_BAND_PCT * 100)}% band,
+              {" "}{Math.round(GK_ADJUST_PCT * 100)}% adjustment, no cut inside the last {GK_LONGEVITY_YEARS} years,
+              inflation capped at {Math.round(GK_INFLATION_CAP * 100)}% — are set on the Monte Carlo tab's
+              ⚙ Advanced Settings.
+            </div>
+          </div>
+        )}
 
         {/* Spending/Withdrawal are each year's OWN number, not a flow between
             years — bars, not lines, sharing the same age x-axis as the chart
@@ -9718,7 +10577,239 @@ function ScenariosTab({
   );
 }
 
-function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy, inf = 0, real = false }) {
+/**
+ * Monte Carlo — ⚙ Advanced Settings.
+ *
+ * Simulation mechanics live here rather than in Profile, because they answer
+ * "how do I run the model?", not "what is my plan?" — the same Proximity split
+ * the Withdrawal tab's guardrail strip uses. The controls are the ones that
+ * only mean anything inside a simulation:
+ *
+ *   Simulations per run   — path count (was the fixed MC_PATHS constant)
+ *   Historical range      — which calendar years the bootstrap may draw from
+ *                           (was: always the full 1928–2025 history)
+ *   Spending guardrails   — GK floor/ceiling as % of core spend (moved here
+ *                           from the Profile spending card, which now points
+ *                           at this dialog instead of duplicating the inputs)
+ *
+ * The GK paper's own numbers (band, adjustment size, inflation cap, longevity
+ * cutoff) are NOT editable: they are the published method, and exposing them as
+ * sliders would invite a plan that is no longer Guyton-Klinger. They are shown
+ * as read-only disclosure, read from the same constants the engine uses.
+ *
+ * Every control writes through `onAssumptionChange`, so this dialog and the
+ * engine read one value — there is no second copy of these settings anywhere.
+ */
+function MCAdvancedSettings({ p, onAssumptionChange }) {
+  const range = resolveSampleRange(p);
+  const startYr = Number.isFinite(Number(p?.mcRangeStart)) ? Math.round(Number(p.mcRangeStart)) : SAMPLE_START_YEAR;
+  const endYr   = Number.isFinite(Number(p?.mcRangeEnd))   ? Math.round(Number(p.mcRangeEnd))   : SAMPLE_END_YEAR;
+  const pathCount = Math.max(MC_PATH_MIN, Math.min(MC_PATH_MAX, Math.round(Number(p?.mcPaths) || MC_PATHS)));
+
+  // Stats for the window actually being sampled. Display-only summary of the
+  // SAME arrays the bootstrap draws from — it does not feed the engine, and it
+  // is not a second source of truth for any number the engine reports.
+  const stat = useMemo(() => {
+    const lo = range ? range.start : 0;
+    const hi = range ? range.start + range.count - 1 : SP500.length - 1;
+    const n = hi - lo + 1;
+    const mean = (arr) => {
+      let s = 0;
+      for (let i = lo; i <= hi; i++) s += arr[i];
+      return s / n;
+    };
+    const worst = (arr) => {
+      let w = Infinity;
+      for (let i = lo; i <= hi; i++) w = Math.min(w, arr[i]);
+      return w;
+    };
+    return {
+      n, years: `${SAMPLE_START_YEAR + lo}–${SAMPLE_START_YEAR + hi}`,
+      eq: mean(SP500), bond: mean(BONDS), infl: mean(INFL), worst: worst(SP500),
+    };
+  }, [range]);
+
+  const set = (k, v) => onAssumptionChange && onAssumptionChange(k, v);
+  const setRange = (which, raw) => {
+    const v = Math.round(Number(raw));
+    if (!Number.isFinite(v)) return;
+    if (which === "start") set("mcRangeStart", Math.max(SAMPLE_START_YEAR, Math.min(v, endYr - 1)));
+    else set("mcRangeEnd", Math.min(SAMPLE_END_YEAR, Math.max(v, startYr + 1)));
+  };
+
+  const sec = { background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 9, padding: 14, marginBottom: 12 };
+  const secHead = { fontSize: 10, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 };
+  const row = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" };
+  const lbl = { fontSize: 12.5, color: "var(--text-secondary)", fontWeight: 600 };
+  const help = { fontSize: 11, color: "var(--text-muted)", lineHeight: 1.55, marginTop: -4, marginBottom: 10 };
+  const kv = { display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 4 };
+  const isDefaultRange = startYr === SAMPLE_START_YEAR && endYr === SAMPLE_END_YEAR;
+  const isDefaultPaths = pathCount === MC_PATHS;
+
+  return (
+    <InfoModal title="Monte Carlo — Advanced Settings" accent="var(--accent-teal)" maxWidth={640} bodyMaxHeight="64vh"
+      trigger={
+        <button type="button"
+          style={{ padding: "5px 12px", fontSize: 11, borderRadius: 7, cursor: "pointer",
+            border: "1px solid var(--card-border)", background: "transparent", color: "var(--text-secondary)",
+            fontWeight: 600, whiteSpace: "nowrap" }}>
+          ⚙ Advanced Settings
+        </button>
+      }
+    >
+      {/* Simulations */}
+      <div style={sec}>
+        <div style={secHead}>Simulations</div>
+        <div style={row}>
+          <span style={lbl}>Simulated paths per run</span>
+          <ANumInput value={pathCount} onSet={(v) => set("mcPaths", Math.max(MC_PATH_MIN, Math.min(MC_PATH_MAX, Math.round(v))))}
+                     min={MC_PATH_MIN} max={MC_PATH_MAX} step={500} />
+        </div>
+        <div style={help}>
+          Each path replays your whole plan against a different sequence of historical market years.
+          More paths steady the success rate and the percentile bands; fewer finish faster. Default {MC_PATHS_LABEL}.
+          {!isDefaultPaths ? ` Currently ${pathCount.toLocaleString()} — re-run Monte Carlo to apply.` : ""}
+        </div>
+      </div>
+
+      {/* Historical sampling range — the competitor's marquee control */}
+      <div style={sec}>
+        <div style={secHead}>Historical Range To Sample</div>
+        <div style={row}>
+          <span style={lbl}>From</span>
+          <ANumInput value={startYr} onSet={(v) => setRange("start", v)} min={SAMPLE_START_YEAR} max={SAMPLE_END_YEAR - 1} step={1} />
+        </div>
+        <div style={row}>
+          <span style={lbl}>Through</span>
+          <ANumInput value={endYr} onSet={(v) => setRange("end", v)} min={SAMPLE_START_YEAR + 1} max={SAMPLE_END_YEAR} step={1} />
+        </div>
+        <div style={help}>
+          The engine bootstraps whole calendar years — stocks, bonds and inflation drawn together from the
+          same year — so narrowing this window changes which markets your plan is tested against. Sample
+          1928–{SAMPLE_END_YEAR} for every kind of history including the Depression and the 1970s stagflation,
+          or a later window to test only the modern era.
+          {!isDefaultRange ? " Re-run Monte Carlo to apply." : ""}
+        </div>
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10 }}>
+          <div style={{ ...kv, fontWeight: 700, color: "var(--text-secondary)" }}>
+            <span>{isDefaultRange ? "Sampling full history" : "Sampling a narrowed window"}</span>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{stat.years} · {stat.n} yrs</span>
+          </div>
+          <div style={kv}><span style={{ color: "var(--text-muted)" }}>Average equity year</span><span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--text-primary)" }}>{(stat.eq * 100).toFixed(2)}%</span></div>
+          <div style={kv}><span style={{ color: "var(--text-muted)" }}>Average bond year</span><span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--text-primary)" }}>{(stat.bond * 100).toFixed(2)}%</span></div>
+          <div style={kv}><span style={{ color: "var(--text-muted)" }}>Average inflation</span><span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--text-primary)" }}>{(stat.infl * 100).toFixed(2)}%</span></div>
+          <div style={kv}><span style={{ color: "var(--text-muted)" }}>Worst equity year in window</span><span style={{ fontFamily: "'JetBrains Mono',monospace", color: "#f87171" }}>{(stat.worst * 100).toFixed(2)}%</span></div>
+        </div>
+        {!isDefaultRange && (
+          <button type="button" onClick={() => { set("mcRangeStart", SAMPLE_START_YEAR); set("mcRangeEnd", SAMPLE_END_YEAR); }}
+            style={{ marginTop: 10, padding: "4px 10px", fontSize: 11, borderRadius: 6, cursor: "pointer",
+              border: "1px solid var(--card-border)", background: "transparent", color: "var(--accent-teal)", fontWeight: 600 }}>
+            Reset to full history ({SAMPLE_START_YEAR}–{SAMPLE_END_YEAR})
+          </button>
+        )}
+      </div>
+
+      {/* Return & cost assumptions — moved out of Profile's "Monte Carlo Model
+          Parameters" card, which was a second copy of the sidebar's Macro &
+          Sensitivity card. Trimmed to the four that actually change a
+          projection's shape: inflation, the cash rate, the SS COLA, and the
+          equity glide. Deliberately NOT here: the two portfolio targets
+          (earlyRetireTarget / portfolioGoal) — those are GOALS, not model
+          parameters, so they stay in Profile where the rest of the plan lives. */}
+      <div style={sec}>
+        <div style={secHead}>Return &amp; Cost Assumptions</div>
+        <div style={row}>
+          <span style={lbl}>Inflation (CPI)</span>
+          <ANumInput value={p.inf ?? 2.5} onSet={(v) => set("inf", v)} min={0} max={15} step={0.1} suffix="%" />
+        </div>
+        <div style={help}>
+          Indexes spending, deflates every Real-$ figure, and drives the Social Security COLA.
+        </div>
+        <div style={row}>
+          <span style={lbl}>Cash return</span>
+          <ANumInput value={p.cashRealReturn ?? 3.0} onSet={(v) => set("cashRealReturn", v)} min={0} max={8} step={0.1} suffix="%" />
+        </div>
+        <div style={help}>
+          What the cash bucket earns (HYSA, SGOV, money market) — in the Monte Carlo and the Withdrawal Plan alike.
+        </div>
+        <div style={row}>
+          <span style={lbl}>SS COLA / yr</span>
+          <ANumInput value={p.ssCola ?? 2.4} onSet={(v) => set("ssCola", v)} min={0} max={6} step={0.1} suffix="%" />
+        </div>
+        <div style={help}>
+          Annual Social Security cost-of-living adjustment. Applies from your claim age, not from retirement.
+        </div>
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10, marginTop: 4 }}>
+          <div style={{ ...row, marginBottom: 6 }}>
+            <span style={lbl}>Equity glide</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ANumInput value={p.preRetireEq ?? 91} onSet={(v) => set("preRetireEq", v)} min={50} max={100} step={1} suffix="%" />
+              <span style={{ color: "var(--text-muted)", fontSize: 12 }}>→</span>
+              <ANumInput value={p.postRetireEq ?? 70} onSet={(v) => set("postRetireEq", v)} min={30} max={100} step={1} suffix="%" />
+            </span>
+          </div>
+          <div style={row}>
+            <span style={{ ...lbl, fontWeight: 500, color: "var(--text-muted)" }}>Switch to the second mix at age</span>
+            <input
+              type="number"
+              value={p.glidepathSwitchAge ?? ""}
+              placeholder={`${p.retireAge ?? ""}`}
+              min={AGE_LIMITS.retire.min}
+              max={AGE_LIMITS.retire.max}
+              onChange={(e) => set("glidepathSwitchAge", e.target.value ? parseInt(e.target.value, 10) : null)}
+              onFocus={selectAllOnFocus}
+              style={{ width: 84, background: "var(--row-highlight)", border: "1px solid var(--card-border)", color: "var(--text-primary)", borderRadius: 6, padding: "3px 8px", fontSize: 12, fontFamily: "var(--font-mono)" }}
+            />
+          </div>
+          <div style={help}>
+            Stock share while saving → stock share once retired, and the age you shift. The second number is your
+            sequence-of-returns dial: raising it lifts the median outcome but widens the downside, so the success
+            rate can fall even as the median rises. Both set the average return AND the volatility. Blank switch age
+            = shift at retirement (age {p.retireAge}).
+            {" "}Blended expected returns: {expectedReturn(p.preRetireEq ?? 91).toFixed(1)}% before, {expectedReturn(p.postRetireEq ?? 70).toFixed(1)}% after.
+          </div>
+        </div>
+      </div>
+
+      {/* Spending guardrails — moved here from the Profile spending card */}
+      <div style={sec}>
+        <div style={secHead}>Spending Guardrails</div>
+        <div style={row}>
+          <span style={lbl}>Floor — % of core spend</span>
+          <ANumInput value={p.gkFloorPct ?? GK_FLOOR_DEFAULT_PCT} onSet={(v) => set("gkFloorPct", v)} min={50} max={95} step={5} suffix="%" />
+        </div>
+        <div style={row}>
+          <span style={lbl}>Ceiling — % of core spend</span>
+          <ANumInput value={p.gkCeilingPct ?? GK_CEILING_DEFAULT_PCT} onSet={(v) => set("gkCeilingPct", v)} min={105} max={200} step={5} suffix="%" />
+        </div>
+        <div style={help}>
+          The hard floor and cap on real spending, applied after every Guyton-Klinger adjustment: spending
+          will never fall below the floor even after repeated cuts, nor rise above the ceiling after repeated raises.
+          These apply to the GK-family strategies (Guyton-Klinger, Risk, Kitces) and the Smart waterfall.
+        </div>
+        {/* Read-only: the published method, cited from the engine's own constants
+            so the sentence cannot drift from the arithmetic. */}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10, fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.6 }}>
+          <div style={{ fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>Guyton-Klinger rules in force (fixed by the method)</div>
+          <div>Withdrawal rate {Math.round(GK_BAND_PCT * 100)}% above the initial rate → cut spending {Math.round(GK_ADJUST_PCT * 100)}%.</div>
+          <div>Withdrawal rate {Math.round(GK_BAND_PCT * 100)}% below the initial rate → raise spending {Math.round(GK_ADJUST_PCT * 100)}%.</div>
+          <div>No cut when {GK_LONGEVITY_YEARS} years or fewer remain to your plan age.</div>
+          <div>Inflation pass-through applied only after a positive-return year, capped at {Math.round(GK_INFLATION_CAP * 100)}%/yr.</div>
+        </div>
+      </div>
+
+      {/* What the run costs, stated plainly — the honest version of the
+          reference design's "29 yr plan / 127 simulations" badge. */}
+      <div style={{ fontSize: 11, color: "var(--text-faint)", lineHeight: 1.6 }}>
+        Plan horizon {Math.max(0, (p.endAge || 0) - effectiveRetireAge(p.retireAge, p.currentAge))} yrs ·
+        {" "}{pathCount.toLocaleString()} paths × {stat.n}-year sampling window ({stat.years}) ·
+        both applied on the next run from the Monte Carlo tab.
+      </div>
+    </InfoModal>
+  );
+}
+
+function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy, inf = 0, real = false, onAssumptionChange }) {
   // Every top-level panel on this tab is a twisty, and every one starts shut.
   // The tab had grown to five full-height explainer panels stacked above the
   // result cards, so the number the user actually came for sat a screen and a
@@ -9937,14 +11028,24 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <SectionDisclaimer>
-        These are hypothetical projections generated by a model, not a prediction and not a
-        recommendation to buy, sell, or hold any investment. A success rate is the share of
-        simulated scenarios in which the portfolio survived — it is not a probability that
-        your actual retirement will succeed, and past market results do not guarantee future
-        ones. Discuss any decision with a licensed financial, tax, or legal professional who
-        knows your full circumstances.
-      </SectionDisclaimer>
+      {/* Tab header row: what this tab IS on the left, how to change how it runs
+          on the right. The simulation mechanics used to be scattered through
+          Profile (path count was a constant, the sampling window didn't exist,
+          the guardrails sat in the spending card) — one control here, opening
+          one dialog, is the single point of control for all of them. */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+          <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>Monte Carlo simulation</span>
+          {" — "}
+          {(() => {
+            const paths = Math.max(MC_PATH_MIN, Math.min(MC_PATH_MAX, Math.round(Number(params?.mcPaths) || MC_PATHS)));
+            const r = resolveSampleRange(params);
+            const yrs = r ? `${SAMPLE_START_YEAR + r.start}–${SAMPLE_START_YEAR + r.start + r.count - 1}` : `${SAMPLE_START_YEAR}–${SAMPLE_END_YEAR}`;
+            return `${paths.toLocaleString()} paths · sampling ${yrs}`;
+          })()}
+        </div>
+        <MCAdvancedSettings p={params} onAssumptionChange={onAssumptionChange} />
+      </div>
 
       {/* The answer, first.
           The results grid used to render last, under five collapsed
@@ -9957,8 +11058,43 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
       {mc && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           <div style={{ background: `${withAlpha(rateColor(mc.rate), "12")}`, border: `1.5px solid ${withAlpha(rateColor(mc.rate), "44")}`, borderRadius: 10, padding: 18 }}>
-            <div className="section-label" style={{ marginBottom: 8 }}>SUCCESS RATE <span role="img" aria-label="information" title={`Of your ${MC_PATHS_LABEL} Monte Carlo simulations, the share where the portfolio still has money at age ${params.endAge}. This is the conservative headline number — it assumes you live all the way to the plan age. The purple "…outlives you" figure below re-weights it by your odds of actually being alive at each failure age, so it's always a touch higher.`} style={{ color: "#60a5fa", cursor: "help" }}>ℹ️</span></div>
-            <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(mc.rate), fontFamily: "'JetBrains Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtPct(mc.rate)}</div>
+            {/* Header row: label + info on the left, confidence badge parked
+                top-right where the card had empty space. */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
+              <div className="section-label" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                SUCCESS RATE
+                {/* Was a `title=`-only span, which showed nothing on this
+                    machine and is dead on touch — same trap as InfoDot. Now a
+                    click-open InfoModal, the one disclosure pattern here that
+                    actually fires. */}
+                <InfoModal
+                  title="Success Rate"
+                  trigger={<span role="img" aria-label="What Success Rate means" style={{ color: "#60a5fa", cursor: "pointer", fontSize: 12 }}>ℹ️</span>}
+                >
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>
+                    {`Of your ${MC_PATHS_LABEL} Monte Carlo simulations, the share where the portfolio still has money at age ${params.endAge}. This is the conservative headline number — it assumes you live all the way to the plan age. The purple "…outlives you" figure below re-weights it by your odds of actually being alive at each failure age, so it's always a touch higher.`}
+                  </div>
+                </InfoModal>
+              </div>
+              {/* Confidence badge — glanceable status icon + band label, keyed
+                  to the same MC_BAND_* thresholds as rateColor/riskLabel (no new
+                  magic numbers). Absorbed from the removed Chance-of-Success
+                  ring card so the success signal has ONE home. */}
+              {(() => {
+                const [icon, label] =
+                  mc.rate >= MC_BAND_LOW_RISK ? ["🏆", "HIGH CONFIDENCE"]
+                  : mc.rate >= MC_BAND_MODERATE ? ["✅", "SOLID"]
+                  : mc.rate >= MC_BAND_ELEVATED ? ["⚠️", "NEEDS ATTENTION"]
+                  : ["🚨", "AT RISK"];
+                return (
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: withAlpha(rateColor(mc.rate), "1a"), border: `1px solid ${withAlpha(rateColor(mc.rate), "44")}`, borderRadius: 20, padding: "4px 10px 4px 8px", flexShrink: 0 }}>
+                    <span role="img" aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>{icon}</span>
+                    <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.06em", color: rateColor(mc.rate), whiteSpace: "nowrap" }}>{label}</span>
+                  </div>
+                );
+              })()}
+            </div>
+            <div style={{ fontSize: 48, fontWeight: 900, color: rateColor(mc.rate), fontFamily: "'JetBrains Mono',monospace", lineHeight: 1, marginBottom: 8 }}>{fmtPct(mc.rate)}</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>of {MC_PATHS_LABEL} simulations last to age {params.endAge}</div>
             {mc.mwRate != null && (
               <div
@@ -10017,6 +11153,14 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           </div>
       )}
 
+      {/* The ReadyAimRetire-style analysis card row was dismantled per Vincent:
+          the Plan Analysis narrative moved INTO the "Why your score" panel
+          below (its natural home — plain-language summary of the score);
+          Key Metrics was cut (duplicated the MEDIAN FINAL BALANCE grid card);
+          Retirement Timeline was cut too (retire age / years / plan end are
+          already in the sidebar D-Day card and Profile) rather than left as a
+          lone orphan card. Easy to restore any of these if wanted. */}
+
       {/* Group 1: analysis — panels about this result */}
       <GroupHeading
         label="Explanation of Your Outcome"
@@ -10043,6 +11187,19 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         // one saying "3 drivers" isn't.
         const riskCount = ex.drivers.filter((d) => d.severity === "risk").length;
         const headTone = tone[ex.drivers[0].severity] || tone.watch;
+        // Plain-language summary of the score (moved here from the removed
+        // "Plan Analysis" card). Keyed to the SAME MC_BAND_* thresholds as
+        // rateColor/riskLabel — and it can say uncomfortable things; the
+        // competitor's always-cheerful version can't. Always visible above the
+        // collapsible driver detail.
+        const narrative =
+          mc.rate >= MC_BAND_LOW_RISK
+            ? { head: "Excellent news — your plan shows exceptional resilience.", body: `With a ${fmtPct(mc.rate)} success rate across ${MC_PATHS_LABEL} simulated markets, your plan withstands even historically challenging conditions.` }
+            : mc.rate >= MC_BAND_MODERATE
+            ? { head: "Your plan is on solid ground, with room to strengthen it.", body: `${fmtPct(mc.rate)} of simulated markets fund the plan to age ${params.endAge}. Small adjustments — spending guardrails or conversion timing — often close the remaining gap.` }
+            : mc.rate >= MC_BAND_ELEVATED
+            ? { head: "Your plan works in most scenarios, but shortfalls are common enough to plan around.", body: `${fmtPct(1 - mc.rate)} of simulated runs deplete before age ${params.endAge}${mc.medianExhaustAge ? ` (median failure at ${mc.medianExhaustAge})` : ""}. The drivers below show what moves this number most.` }
+            : { head: "Heads up — this plan runs out of money in more scenarios than it survives.", body: `Only ${fmtPct(mc.rate)} of simulated markets fund the plan to ${params.endAge}. The biggest levers are spending, retirement timing, and withdrawal order — all adjustable on the left.` };
         return (
           <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
             <SectionHeader
@@ -10052,6 +11209,12 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
               color={headTone.fg}
               hint={`${ex.drivers.length} driver${ex.drivers.length === 1 ? "" : "s"}${riskCount ? ` · ${riskCount} flagged as risk` : ""}`}
             />
+            {/* Plain-language verdict (from the old Plan Analysis card), always
+                shown; the driver breakdown below is the expandable detail. */}
+            <div style={{ borderLeft: `3px solid ${rateColor(mc.rate)}`, paddingLeft: 12, margin: "12px 0 4px" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.4, marginBottom: 5 }}>{narrative.head}</div>
+              <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.55 }}>{narrative.body}</div>
+            </div>
             {showWhy && (<>
             <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
               {ex.headline} Ranked by how much each one moves the outcome.
@@ -10424,6 +11587,23 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         )}
       </div>
 
+      {/* Disclaimer LAST, matching the Withdrawal tab's placement and the
+          earlier design-authority ruling recorded there: a "not financial
+          advice" notice has to be reliably present, not first. Sitting above the
+          results it pushed the answer the user opened this tab for below the
+          fold — the same "promote the summary, don't bury it" problem the
+          v1.2.110 regroup fixed. The always-visible short form keeps the two
+          legal hooks ("not financial advice", "consult a licensed professional")
+          on screen; the elaboration is one click away and also permanent in the
+          footer and the Terms of Service. */}
+      <SectionDisclaimer>
+        These are hypothetical projections generated by a model, not a prediction and not a
+        recommendation to buy, sell, or hold any investment. A success rate is the share of
+        simulated scenarios in which the portfolio survived — it is not a probability that
+        your actual retirement will succeed, and past market results do not guarantee future
+        ones. Discuss any decision with a licensed financial, tax, or legal professional who
+        knows your full circumstances.
+      </SectionDisclaimer>
     </div>
   );
 }
@@ -12307,13 +13487,7 @@ function SavingsPanel({ values, onChange }) {
   // every visit.
   const [showTaxAssumptions, setShowTaxAssumptions] = useState(false);
 
-  const CATEGORIES = [
-    { key: "pretax",  label: "Pre-Tax",        color: "#0ea5e9", defaultName: "401(k)" },
-    { key: "roth",    label: "Roth",           color: "var(--accent-purple)", defaultName: "Roth IRA" },
-    { key: "taxable", label: "Taxable",        color: "var(--accent-gold)", defaultName: "Brokerage" },
-    { key: "hsa",     label: "HSA",            color: "#34d399", defaultName: "HSA" },
-    { key: "cash",    label: "Cash / Savings", color: "var(--text-secondary)", defaultName: "Savings" },
-  ];
+  const CATEGORIES = ACCOUNT_CATEGORIES; // hoisted to module scope — shared with the sidebar AllocationDonut
 
   const catSum = (cat) => accounts.filter(a => a.category === cat).reduce((s, a) => s + (a.balance || 0), 0);
   const autoTotal = accounts.reduce((s, a) => s + (a.balance || 0), 0);
@@ -13225,44 +14399,18 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is a number where, if you hit this, would reconsider your target goal? This is a number that is a secondary decision. If you hit this, would you be ok with this goal if something caused a change in your plan,">
           <ANumInput value={values.portfolioGoal} onSet={(v) => onChange("portfolioGoal", v)} min={0} max={MAX_MONEY_INPUT} step={50000} />
         </ARow>
-        {/* Moved here from Personal Profile: it's a return assumption, so it
-            belongs with the other return/market assumptions. */}
-
-        <ARow label="Inflation (CPI)" desc="Annual inflation rate used for spending indexing, Monte Carlo real-dollar deflation, and Social Security COLA adjustments.">
-          <ANumInput value={values.inf ?? 2.5} onSet={(v) => onChange("inf", v)} min={0} max={15} step={0.1} suffix="%" />
-        </ARow>
-
-        <ARow label="Cash return" desc="Annual return on cash/savings (HYSA, SGOV, money market). Drives the cash bucket in the Monte Carlo AND the Withdrawal Plan tab.">
-          <ANumInput value={values.cashRealReturn} onSet={(v) => onChange("cashRealReturn", v)} min={0} max={8} step={0.1} suffix="%" />
-        </ARow>
-        <ARow label="SS COLA / yr" desc="Social Security cost-of-living adjustment (default 2.4%)">
-          <ANumInput value={values.ssCola} onSet={(v) => onChange("ssCola", v)} min={0} max={6} step={0.1} suffix="%" />
-        </ARow>
-        <ARow label="Pre-retirement equity weight" desc="Stock share while you're still saving, up to your retirement age. Higher = more growth and bigger swings, which you can absorb because you aren't withdrawing yet. Sets both the average return AND the volatility in the Monte Carlo. Default 91%.">
-          <ANumInput value={values.preRetireEq} onSet={(v) => onChange("preRetireEq", v)} min={50} max={100} step={1} suffix="%" />
-        </ARow>
-        <ARow label="Post-retirement equity weight" desc="Stock share once you retire. This is your sequence-of-returns dial: raising it lifts the median outcome but widens the downside, so success rate can FALL even as the median rises. Lower it if an early crash would end the plan. Default 70%.">
-          <ANumInput value={values.postRetireEq} onSet={(v) => onChange("postRetireEq", v)} min={30} max={100} step={1} suffix="%" />
-        </ARow>
-        {/* Sits directly under the two weights it arbitrates between — this
-            field answers "which one applies this year?", so it belongs beside
-            them, not with the retirement-age inputs it is deliberately NOT
-            tied to. Blank = the default, so the row reads as optional. */}
-        <ARow
-          label="Switch to the post-retirement mix at age"
-          desc={`When you shift from the pre- to the post-retirement stock share. Leave blank to shift at your retirement age (${values.retireAge}) — the default. Set it LATER to stay aggressive into early retirement (a bridge job or pension can fund the gap), or EARLIER to de-risk before you stop working. This is a separate decision from when you retire.`}
-        >
-          <input
-            type="number"
-            value={values.glidepathSwitchAge ?? ""}
-            onChange={(e) => onChange("glidepathSwitchAge", e.target.value ? parseInt(e.target.value) : null)}
-            placeholder={`${values.retireAge ?? ""}`}
-            min={AGE_LIMITS.retire.min}
-            max={AGE_LIMITS.retire.max}
-            style={{ width: 100, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }}
-            onFocus={selectAllOnFocus}
-          />
-        </ARow>
+        {/* The model parameters that used to sit here — inflation, cash return,
+            SS COLA, the two equity weights and the glidepath switch age — moved
+            into the Monte Carlo tab's ⚙ Advanced Settings, alongside the
+            simulation mechanics they act on. Two of them (the equity weights and
+            SS COLA) were ALSO in the sidebar's Macro & Sensitivity card, so this
+            card was a second edit surface for one value; the trim removes that.
+            The two rows above stay: they are plan GOALS, not model parameters. */}
+        <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(13,148,136,0.06)", border: "1px solid rgba(13,148,136,0.2)", borderRadius: 8, fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.55 }}>
+          Inflation, cash return, Social Security COLA and your equity glide are model parameters, not plan
+          facts — they now live in <strong style={{ color: "var(--accent-teal)" }}>Monte Carlo → ⚙ Advanced Settings</strong>,
+          with the rest of the simulation settings.
+        </div>
       </div>
 
       {/* HEALTHCARE SHOCK CARD */}
@@ -14735,13 +15883,17 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
               <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
               <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'JetBrains Mono',monospace" }}>{guardFromImport ? fmtDollar(ceiling) : `${ceilingPct}%`}</div><div style={{ fontSize: 10, color: "#334155" }}>{guardFromImport ? "full budget / yr" : `${fmtDollar(ceiling)} / yr`}</div></div>
             </div>
-            <div style={{ marginTop: 14, display: "flex", gap: 16, justifyContent: "center" }}>
-              <WFieldRow label="Floor %" helper="Hard floor on real spending. Spending will never drop below this even after multiple GK cuts. Lower % = willing to belt-tighten more in bad markets.">
-                <ANumInput value={values.gkFloorPct ?? GK_FLOOR_DEFAULT_PCT} onSet={(v) => onChange("gkFloorPct", v)} min={50} max={95} step={5} suffix="%" />
-              </WFieldRow>
-              <WFieldRow label="Ceiling %" helper="Cap on lifestyle creep. Spending will never rise above this even after multiple GK raises. Higher % = willing to spend more freely in bull markets.">
-                <ANumInput value={values.gkCeilingPct ?? GK_CEILING_DEFAULT_PCT} onSet={(v) => onChange("gkCeilingPct", v)} min={105} max={200} step={5} suffix="%" />
-              </WFieldRow>
+            {/* The Floor/Ceiling inputs used to live here AND nowhere else. They
+                are simulation guardrails, not plan facts, so they moved into
+                the Monte Carlo tab's ⚙ Advanced Settings dialog (see
+                MCAdvancedSettings) — the tab where you actually watch them
+                bind. This card keeps the read-outs above, so nothing is lost
+                here, and points at the one place they are now edited rather
+                than keeping a second set of controls (rule 1: single point of
+                control). */}
+            <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(13,148,136,0.06)", border: "1px solid rgba(13,148,136,0.2)", borderRadius: 8, fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.55 }}>
+              Floor and ceiling are edited in <strong style={{ color: "var(--accent-teal)" }}>Monte Carlo → ⚙ Advanced Settings</strong> →
+              Spending Guardrails, alongside the rest of the simulation settings. The values in force are shown above.
             </div>
             <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(14,165,233,0.06)", border: "1px solid rgba(14,165,233,0.18)", borderRadius: 8, fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.55 }}>
               <div style={{ fontWeight: 700, color: "#7dd3fc", marginBottom: 6 }}>Guyton‑Klinger — the 5 rules</div>
@@ -15613,7 +16765,12 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       // with — anything edited before this frame is included in the result.
       ranSigRef.current = sigRef.current;
       const planAge = p.endAge || 90;
-      const rEnd_ = runMC(p, planAge, MC_PATHS, 43, true);
+      // Path count is user-adjustable (MC tab → ⚙ Advanced Settings); the
+      // default is the MC_PATHS constant, so an untouched profile runs exactly
+      // as before. Clamped here rather than trusted, because this value
+      // arrives from a persisted profile that a hand-edit could malform.
+      const paths = Math.max(MC_PATH_MIN, Math.min(MC_PATH_MAX, Math.round(p.mcPaths || MC_PATHS)));
+      const rEnd_ = runMC(p, planAge, paths, 43, true);
       const str = runStress(p, planAge, STRESS_PATHS, 99);
       setMc(rEnd_);
       setStress(str);
@@ -16257,6 +17414,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   </div>
                 );
               })()}
+              <AllocationDonut accounts={assumptions.accounts} />
               {yearEndInfo.show && (
                 <YearEndStrip room={yearEndInfo.room} days={yearEndInfo.days} year={yearEndInfo.year} />
               )}
@@ -16419,80 +17577,35 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               <div className="sb-title" onClick={() => setSbMacroOpen(v => !v)}
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
                 <span>{sbMacroOpen ? "▾" : "▸"} Macro &amp; Sensitivity</span>
-                <span style={{ fontSize: 10, color: "var(--accent-gold)", fontWeight: 600, textTransform: "none" }}>⚡ Sensitivity</span>
+                <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600, textTransform: "none" }}>read-out</span>
               </div>
               {sbMacroOpen && (<>
-              <Slider
-                label="Inflation (CPI)"
-                value={inf}
-                min={1.0}
-                max={8.0}
-                step={0.1}
-                stepNudge={0.5}
-                quickPills={[
-                  { lbl: "2.0% (Low)", val: 2.0 },
-                  { lbl: "2.5% (Fed Baseline)", val: 2.5 },
-                  { lbl: "3.5% (Elevated)", val: 3.5 },
-                  { lbl: "5.0% (Stagflation)", val: 5.0 },
-                ]}
-                format={(v) => Number(v).toFixed(1) + "%/yr"}
-                onChange={(v) => {
-                  const val = Number(Number(v).toFixed(2));
-                  setInf(val);
-                  updateAssumption("inf", val);
-                }}
-              />
-              <Slider
-                label="Phase 1 Stocks (Pre-Retire)"
-                value={assumptions.preRetireEq ?? 91}
-                min={20}
-                max={100}
-                step={5}
-                stepNudge={5}
-                quickPills={[
-                  { lbl: "60/40", val: 60 },
-                  { lbl: "80/20", val: 80 },
-                  { lbl: "90/10", val: 90 },
-                  { lbl: "100%", val: 100 },
-                ]}
-                format={(v) => `${v}%`}
-                valueWidth={44}
-                titleHint={`${expectedReturn(assumptions.preRetireEq ?? 91).toFixed(1)}% expected return — blended from 98 years (1928-2025) of real S&P 500 + bond history (Damodaran). See Help > Risk & Returns for the full rationale.`}
-                onChange={(v) => updateAssumption("preRetireEq", v)}
-              />
-              <Slider
-                label="Phase 2 Stocks (Post-Retire)"
-                value={assumptions.postRetireEq ?? 70}
-                min={20}
-                max={100}
-                step={5}
-                stepNudge={5}
-                quickPills={[
-                  { lbl: "40/60", val: 40 },
-                  { lbl: "60/40", val: 60 },
-                  { lbl: "70/30", val: 70 },
-                  { lbl: "80/20", val: 80 },
-                ]}
-                format={(v) => `${v}%`}
-                valueWidth={44}
-                titleHint={`${expectedReturn(assumptions.postRetireEq ?? 70).toFixed(1)}% expected return — blended from 98 years (1928-2025) of real S&P 500 + bond history (Damodaran). See Help > Risk & Returns for the full rationale.`}
-                onChange={(v) => updateAssumption("postRetireEq", v)}
-              />
-              <Slider
-                label="Social Security COLA"
-                value={assumptions.ssCola ?? 2.4}
-                min={0.0}
-                max={6.0}
-                step={0.1}
-                stepNudge={0.5}
-                quickPills={[
-                  { lbl: "0% (Frozen)", val: 0.0 },
-                  { lbl: "2.4% (Historical)", val: 2.4 },
-                  { lbl: "3.5% (High)", val: 3.5 },
-                ]}
-                format={(v) => Number(v).toFixed(1) + "%/yr"}
-                onChange={(v) => updateAssumption("ssCola", Number(Number(v).toFixed(2)))}
-              />
+              {/* These four were editable HERE and again in the Monte Carlo
+                  tab's ⚙ Advanced Settings — two live controls writing one
+                  value, which is exactly the Single Point of Control violation
+                  this project's design rules exist to prevent (and a user could
+                  set 5% inflation in one and read 2.5% in the other). The
+                  sidebar keeps what a sidebar is for — the current values, all
+                  of them at a glance — and the dialog owns the editing. The
+                  button below is that dialog, so this is still one click. */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "7px 10px", fontSize: 12, marginBottom: 12 }}>
+                <span style={{ color: "var(--text-muted)" }}>Inflation (CPI)</span>
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{Number(assumptions.inf ?? inf ?? 2.5).toFixed(1)}%/yr</span>
+                <span style={{ color: "var(--text-muted)" }}>Equity glide</span>
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>
+                  {assumptions.preRetireEq ?? 91}% → {assumptions.postRetireEq ?? 70}%
+                  <span style={{ color: "var(--text-faint)" }}> @{assumptions.glidepathSwitchAge ?? assumptions.retireAge ?? "—"}</span>
+                </span>
+                <span style={{ color: "var(--text-muted)" }}>SS COLA / yr</span>
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{Number(assumptions.ssCola ?? 2.4).toFixed(1)}%</span>
+                <span style={{ color: "var(--text-muted)" }}>Cash return</span>
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{Number(assumptions.cashRealReturn ?? 3.0).toFixed(1)}%</span>
+                <span style={{ color: "var(--text-muted)" }}>Expected return</span>
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>
+                  {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(1)}% → {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(1)}%
+                </span>
+              </div>
+              <MCAdvancedSettings p={assumptions} onAssumptionChange={updateAssumption} />
               </>)}
             </div>
 
@@ -16617,7 +17730,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               const sep = <span style={{ color: "var(--text-faint)" }}>·</span>;
               const strat = resolveStrategy(assumptions.withdrawalStrategy);
               return (
-                <div className="met" style={{ borderLeft: `4px solid ${heroColor}` }}>
+                <div className={`met ${running ? "recomputing" : ""}`} style={{ borderLeft: `4px solid ${heroColor}` }}>
                   {/* Row 1 — the one number that matters, with the disclosure toggle aligned right. */}
                   <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
@@ -16815,6 +17928,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       inf={inf}
                       real={real}
                       withdrawalStrategy={assumptions.withdrawalStrategy}
+                      onAssumptionChange={updateAssumption}
                       onSetBaselineFromCheckpoint={(value) => {
                         setPort(value);
                         const currentTotal = port;
@@ -17213,4 +18327,4 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView };
