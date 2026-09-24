@@ -23,7 +23,7 @@
 
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import { DeterministicWithdrawalView } from "./App";
+import { DeterministicWithdrawalView, runMC } from "./App";
 
 // react-dom only treats act() as the ambient environment when this flag is set.
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -107,8 +107,10 @@ test("GK guardrails chart mounts for a funded plan and shows the spending-path s
   // The deterministic schedule rendered (not the empty-state fallback)...
   expect(text).toContain("Deterministic Schedule");
   expect(text).not.toContain("No data available");
-  // ...and the guardrail spending-path section is present for a GK-family strategy.
-  expect(text).toContain("Spending Path with Guardrail Adjustments");
+  // ...and the guardrail view is present for a GK-family strategy (tabbed now:
+  // Spending Path · Adjustment Events · Across All Scenarios).
+  expect(text).toContain("Adjustment Events");
+  expect(text).toContain("Portfolio (right axis)");
 });
 
 test("GK guardrails chart mounts without throwing on a depleting (failure-year) plan", () => {
@@ -127,6 +129,82 @@ test("non-guardrail strategy (bengen) renders the schedule but hides the guardra
     );
   }).not.toThrow();
   expect(text).toContain("Deterministic Schedule");
-  // Bengen is not a guardrail strategy, so the adjustment-events section is absent.
-  expect(text).not.toContain("Spending Path with Guardrail Adjustments");
+  // Bengen is not a guardrail strategy, so the guardrail view is absent.
+  expect(text).not.toContain("Adjustment Events");
+});
+
+/**
+ * The cross-scenario summary strip — the FIRST reader of mc.gkStats.
+ *
+ * Drives the engine rather than hand-building a gkStats object, so this also
+ * catches a rename or re-scope on the engine side (the field names carry the
+ * dollar BASIS: spendMinReal/spendMaxReal, retirement-year dollars).
+ */
+describe("guardrails cross-scenario strip (mc.gkStats)", () => {
+  const mcFor = (over = {}, n = 200) =>
+    runMC({ ...FUNDED, gkFloorPct: 65, gkCeilingPct: 135, ...over }, FUNDED.endAge, n, 7, true);
+
+  test("renders the cross-scenario counts when a run exists, with the basis year named", () => {
+    const mc = mcFor();
+    expect(mc.gkStats).toBeTruthy();
+    const text = renderToText(
+      <DeterministicWithdrawalView p={FUNDED} inf={2.5} withdrawalStrategy="gk" smartRows={[]} mc={mc} />
+    );
+    expect(text).toContain("Across 200 simulated scenarios");
+    expect(text).toContain("cut spending in");
+    expect(text).toContain("raised it in");
+    expect(text).toContain("cuts per scenario");
+    expect(text).toContain("spending seen");
+    // The basis is RETIREMENT-YEAR dollars, named with the actual calendar year
+    // (retireAge === currentAge here, so retirement year one IS the current
+    // year). "today's dollars" would be the wrong label — see §41 A3.
+    const retirementYear = new Date().getFullYear();
+    expect(text).toContain(`${retirementYear} dollars`);
+    // Both endpoints of the range must be real, ordered dollars.
+    expect(mc.gkStats.spendMinReal).toBeGreaterThan(0);
+    expect(mc.gkStats.spendMaxReal).toBeGreaterThan(mc.gkStats.spendMinReal);
+  });
+
+  test("the strip is ABSENT before a run — no confident $0", () => {
+    // No mc at all (fresh session, nothing run yet).
+    const text = renderToText(
+      <DeterministicWithdrawalView p={FUNDED} inf={2.5} withdrawalStrategy="gk" smartRows={[]} />
+    );
+    // The guardrail view (tabs) renders, but the cross-scenario STRIP does not
+    // (no mc). The "Across All Scenarios" tab LABEL is always present, so we
+    // assert on the strip's own text ("simulated scenarios" / "spending seen").
+    expect(text).toContain("Adjustment Events");
+    expect(text).not.toContain("simulated scenarios");
+    expect(text).not.toContain("spending seen");
+  });
+
+  test("the strip is ABSENT when gkStats is null", () => {
+    const text = renderToText(
+      <DeterministicWithdrawalView p={FUNDED} inf={2.5} withdrawalStrategy="gk" smartRows={[]} mc={{ gkStats: null, rate: 0.9 }} />
+    );
+    expect(text).not.toContain("spending seen");
+  });
+
+  test("spendMinReal/spendMaxReal are retirement-year dollars, not nominal", () => {
+    // DISCRIMINATING BY CONSTRUCTION. The guardrail clamps each year's spend
+    // into `gkFloor * cumInfl` … `gkCeiling * cumInfl`. Deflating by the same
+    // cumInfl therefore puts the real range back inside the BASE band —
+    // [$60,000, $130,000] for this fixture — and that is exactly what makes the
+    // basis testable: the observed real max came back at 130,000, the ceiling
+    // itself.
+    //
+    // A nominal recording could not pass this. The ceiling is multiplied by
+    // cumInfl every year, so by the final year nominal spend reaches
+    // 130,000 x 1.025^31 ≈ $280K — the upper bound below fails loudly. Stating
+    // the bound (rather than asserting the field merely exists) is the point.
+    const mc = mcFor();
+    expect(mc.gkStats.spendMinReal).toBeGreaterThanOrEqual(FUNDED.gkFloor);
+    expect(mc.gkStats.spendMinReal).toBeLessThanOrEqual(FUNDED.gkCeiling);
+    expect(mc.gkStats.spendMaxReal).toBeLessThanOrEqual(FUNDED.gkCeiling);
+    expect(mc.gkStats.spendMaxReal).toBeGreaterThanOrEqual(FUNDED.gkFloor);
+    // Nominal would blow past the ceiling by the end of the horizon.
+    expect(mc.gkStats.spendMaxReal).toBeLessThan(Math.round(FUNDED.gkCeiling * 1.05));
+    // And the band is genuinely exercised, not a degenerate single value.
+    expect(mc.gkStats.spendMaxReal).toBeGreaterThan(mc.gkStats.spendMinReal);
+  });
 });

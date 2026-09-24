@@ -193,13 +193,29 @@ import { IRMAA_2026 } from './data/irmaa2026.js';
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.141";
-export const BUILD_TAG = `[main] v1.2.141 - Guyton-Klinger guardrails: Spending Path with Adjustment Events
+const APP_VERSION = "1.2.145";
+export const BUILD_TAG = `[main] v1.2.145 - Guardrails view rebuilt as tabs (Spending Path · Adjustment Events · Across All Scenarios)
+- <GuardrailsView>: cross-scenario headline strip stays persistent; sub-tabs split the crowded stack. Spending Path adds the Portfolio line on a 2nd (right) axis for more info; Adjustment Events lists every cut/raise (age, from→to, why); Across All Scenarios expands mc.gkStats into stat cards. Median-path emptiness is explained, not hidden (bad sequences live in the cross-scenario tab)
+- Prominent cut/raise triangles (~17x13px)
+- PRIOR (v1.2.144): Uniform info-modal styling + semantic accent palette (INFO_ACCENT) + modal body-text kit (ModalLede/ModalP/Em/ModalNote)
+- ONE header template for EVERY info modal, in the shared InfoModal shell: an accent icon badge + the title carrying a 2.5px accent underline over a faint accent hairline. Fix all of them at the source, not per modal
+- Semantic accent palette INFO_ACCENT (colors for ideas): method=teal, money=blue, tax=purple, positive=green, risk=amber. Applied to Success-rate method modal (teal), Median Final Balance (blue/money), the Tax Modeling + Non-Resident State Tax modals (purple)
+- Fixed the shell's "Got it" button hex-alpha concat bug (accent+"22" produced invalid CSS for var() tokens - the v1.2.112 class of bug) → withAlpha()
+- Guardrail cut/raise triangles made prominent (~17x13px, offset clear of the spend line)
+- PRIOR (v1.2.143): Guardrails chart surfaced on the Monte Carlo tab + info-modal cleanup
+- Guardrails "Spending Path with Guardrail Adjustments" chart (+ cross-scenario strip) is now discoverable on the Monte Carlo tab, not buried 4 levels deep in Scenarios → Withdrawal Plan. Extracted DeepSeek's chart verbatim into one shared <GuardrailsSpendingPath> rendered by BOTH tabs (rule 8 - one source, no drift); gated via isGuardrailStrategy()
+- Fixed a dead MEDIAN FINAL BALANCE ⓘ (was a title=-only span, dead on touch) → real click InfoModal
+- Moved the MC-tab "Not financial advice" banner from mid-page (between inputs and the fan chart) to the true bottom, after the chart + band table
+- Rich "How this simulation works" modal on the Success Rate ⓘ
+- The Success Rate card's "ⓘ How this works" link opens a Chance-of-Success method modal: what it is, the 4-phase method, why probability beats a single projection, a "what the simulation draws from" pool-stats box (real 1928-2025 Damodaran arrays), and the data source
+- Describes AiRA's ACTUAL engine: a bootstrap Monte Carlo that draws random years WITH REPLACEMENT, order reshuffled - NOT a sequential historical replay (the past won't repeat in order). Removed the competitor-style filter-by-year table that implied a replay method we don't use
+- design-authority verdict (2026-09-24): deleted the duplicate inline "View method & data" card (opened the same modal as the ⓘ - single point of control); kept "Simulation inputs & assumptions" inline as the per-run audit trail (Rule 5)
+- PRIOR (v1.2.141): Guyton-Klinger guardrails Spending Path with Adjustment Events
 - New "Spending Path with Guardrail Adjustments" chart on the Withdrawal Plan tab: floor/ceiling bands, prior-vs-actual spend, and a per-year cut/raise marker for every year the guardrail rule fired (deflated to retirement-year dollars). Every series is an engine output on the schedule row (spEntering / spAfterGK / gkFloor / gkCeiling / gkEvent) - the UI applies no guardrail arithmetic of its own (Rule 8)
 - runMC now returns mc.gkStats (cutRate / raiseRate / avgCutsPerPath / spend range) counted per path, for the cross-scenario summary
 - Added an agent attribution + tamper-evidence registry (agent-marks.json + src/agentMarks.js + scripts/agent-marks.mjs), enforced by src/agentMarks.test.js, so an edit to another agent's region fails the build instead of sliding in
 - Added a render smoke test for the guardrails chart (guardrailsChartRender.test.js) - the RothLadder-class gap that engine tests can't catch`;
-export const BUILD_TIME = "2026-09-24T00:00:00Z";
+export const BUILD_TIME = "2026-09-24T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -238,6 +254,21 @@ export const MC_BAND_HIGH      = 0.60;
 // plan" rule of thumb from the planning literature, separate from our own
 // severity cutoffs above.
 export const MC_SOLID_PLAN_RATE = 0.85;
+
+// Semantic accent palette for info modals — ONE color per KIND of idea, so a
+// modal's tint tells you its domain at a glance. Pass as InfoModal `accent`.
+// The header template (icon badge + underline + hairline) is uniform in the
+// InfoModal shell; only the hue changes by meaning. Tokens (not raw hex) so
+// dark/light theming carries through; the shell routes every alpha through
+// withAlpha(), so a var() token never gets string-concatenated into bad CSS.
+export const INFO_ACCENT = {
+  method:   "var(--accent-teal)",    // how it works / neutral explanation
+  money:    "#60a5fa",               // balances, portfolio values, percentiles
+  tax:      "var(--accent-purple)",  // tax, IRMAA, brackets, Roth conversions
+  positive: "var(--positive)",       // success, probability, "good" outcomes
+  risk:     "var(--accent-gold)",    // warnings, landmines, caution
+};
+
 // Guyton-Klinger guardrails, as % of core spend
 export const GK_FLOOR_DEFAULT_PCT = 65;export const GK_CEILING_DEFAULT_PCT = 135;
 // Dollar fallbacks used only when a profile predates the % fields
@@ -1240,7 +1271,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // APPLIED (guytonKlingerWithdrawal's `out` sink), never re-derived from the
   // spend path afterwards; a re-derivation would have to re-implement the
   // bands, the longevity rule and the income offset, and would drift.
-  const gkStats = { paths: 0, pathsWithCut: 0, pathsWithRaise: 0, cuts: 0, raises: 0, longevityHolds: 0, spendMin: Infinity, spendMax: 0 };
+  const gkStats = { paths: 0, pathsWithCut: 0, pathsWithRaise: 0, cuts: 0, raises: 0, longevityHolds: 0, spendMinReal: Infinity, spendMaxReal: 0 };
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
   // resolveStrategy, not `|| "gk"`. A retired id (an old saved profile) or a
@@ -1628,13 +1659,26 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       lastReturn = r;
 
       // Post-guardrail annual spending, tracked across every path and year —
-      // the "spending actually seen" range. Read AFTER the strategy block (so
-      // it is the spend the plan really asks for) and guarded to positive
-      // values, because a depleted path's trailing $0 years would otherwise
-      // drag the minimum to zero and make the range meaningless.
+      // the "spending actually seen" range.
+      //
+      // REAL dollars, deflated to the RETIREMENT YEAR (cumInfl is 1 at y === 0,
+      // so retirement year one is the yardstick — the same basis
+      // engine/mcSelectors.js::deflate() uses, and the same one the spend the
+      // user typed is consumed in). Nominal would have been the easy version and
+      // the wrong one: a nominal range spanning 30 years of inflation mostly
+      // measures the inflation, so the low end is always year one and the high
+      // end always the last year — a range that says nothing about the
+      // guardrails. The field NAMES carry the basis (`...Real`) because
+      // "spendMin" with an unstated basis is exactly how a dollar figure ends up
+      // labelled "today's dollars" when it is retirement-year dollars
+      // (REQUIREMENTS §41 A3).
+      //
+      // Positive values only: a depleted path's trailing $0 years would drag the
+      // minimum to zero and make the range meaningless.
       if (sp > 0) {
-        if (sp < gkStats.spendMin) gkStats.spendMin = sp;
-        if (sp > gkStats.spendMax) gkStats.spendMax = sp;
+        const spReal = sp / cumInfl;
+        if (spReal < gkStats.spendMinReal) gkStats.spendMinReal = spReal;
+        if (spReal > gkStats.spendMaxReal) gkStats.spendMaxReal = spReal;
       }
 
       // Income from SS and rental/AB. COLA compounds from the claiming age
@@ -2077,9 +2121,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     mwRate,
     // How often the spending guardrails actually bound, counted where they were
     // applied. null-shaped (never Infinity) when no path registered a spend.
+    // The spend range is in RETIREMENT-YEAR dollars (see the accumulation note
+    // in the year loop) — label it with that basis, never "today's dollars".
     gkStats: gkStats.paths > 0 ? {
       ...gkStats,
-      spendMin: Number.isFinite(gkStats.spendMin) ? gkStats.spendMin : 0,
+      spendMinReal: Number.isFinite(gkStats.spendMinReal) ? Math.round(gkStats.spendMinReal) : 0,
+      spendMaxReal: Math.round(gkStats.spendMaxReal),
       cutRate: gkStats.pathsWithCut / gkStats.paths,
       raiseRate: gkStats.pathsWithRaise / gkStats.paths,
       avgCutsPerPath: gkStats.cuts / gkStats.paths,
@@ -2836,6 +2883,98 @@ function InfoDot({ title, heading = "What this means", size = 14, color = "var(-
       }
     >
       <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>{title}</div>
+    </InfoModal>
+  );
+}
+
+// ── "How this simulation works" — the rich Chance-of-Success method modal.
+// Single entry point: the Success Rate card's ⓘ (design-authority verdict,
+// 2026-09-24 — the old inline "View method & data" card was a duplicate
+// trigger to this same dialog and was deleted). Describes AiRA's ACTUAL engine:
+// a bootstrap Monte Carlo that draws random years (with replacement, order
+// reshuffled) from the real 1928–2025 Damodaran arrays runMC samples
+// (SP500/BONDS/INFL) — NOT a sequential historical replay. The pool-stats box
+// characterizes that distribution honestly instead of aping a year-scrubber.
+function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks, trigger }) {
+  const strat = resolveStrategy(withdrawalStrategy);
+  // Honest characterization of the bootstrap POOL — the distribution runMC
+  // samples from — NOT a year-by-year scenario table (that would ape a
+  // sequential-backtest app; AiRA draws years at random, never in order).
+  const pool = useMemo(() => {
+    const eq = SP500.map((v) => v * 100);
+    const infl = INFL.map((v) => (v ?? 0) * 100);
+    const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+    return {
+      years: SP500.length,
+      eqAvg: mean(eq),
+      eqBest: Math.max(...eq),
+      eqWorst: Math.min(...eq),
+      downPct: Math.round((eq.filter((v) => v < 0).length / eq.length) * 100),
+      inflAvg: mean(infl),
+    };
+  }, []);
+  return (
+    <InfoModal
+      title="Chance of Success — How This Simulation Works"
+      accent={INFO_ACCENT.method}
+      maxWidth={640}
+      bodyMaxHeight="72vh"
+      trigger={trigger}
+    >
+      <div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 10 }}>What is Chance of Success?</div>
+          <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>
+            It runs your plan through <strong style={{ color: "#e2e8f0" }}>{MC_PATHS_LABEL} Monte Carlo simulations</strong>. For <em>every year</em> of your retirement, each path draws a <strong style={{ color: "#e2e8f0" }}>random</strong> year from <strong style={{ color: "#e2e8f0" }}>{SAMPLE_YEARS} years of real market history (1928–2025)</strong> and applies that year’s actual S&P 500 return, 10-year Treasury return, and inflation <em>together</em> — so the real correlation between them survives (e.g. 2008’s −36.6% stocks paired with its +20.1% bond rally).
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.65 }}>
+            Years are drawn <strong style={{ color: "var(--text-secondary)" }}>with replacement</strong> and the <strong style={{ color: "var(--text-secondary)" }}>order is reshuffled on every path</strong> — so 2008 might strike twice in one run and never in another. This is a bootstrap of history into thousands of <em>plausible</em> futures, <strong style={{ color: "var(--text-secondary)" }}>not a replay of one past sequence in calendar order</strong>.
+          </div>
+          <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>
+            A path “succeeds” if the portfolio still has money at age {params.endAge}. The success rate is the share of paths that survive. <strong style={{ color: "var(--accent-teal)" }}>Above {Math.round(MC_SOLID_PLAN_RATE * 100)}% is generally considered a solid plan.</strong>
+          </div>
+          <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
+            AiRA also applies <strong style={{ color: "var(--accent-gold)" }}>{getStrategyDescription(withdrawalStrategy)}</strong>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14, fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 3 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each path draws a random paired S&P 500 + bond year, blended by glide path. Contributions added annually.</div>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 3 }}>2. Retirement spending</div>Fresh random returns each year. {params.smile !== false ? "Blanchett smile curve." : "Flat real spending."} SS{params.ab > 0 ? " and rental" : ""} income offsets draws.</div>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 3 }}>3. {getStrategyLabel(strat)} {strat === "gk" ? "guardrails" : "strategy"}</div>{strategyHowItWorks[strat] || strategyHowItWorks.gk}</div>
+            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 3 }}>4. Survival check</div>Balance above $0 through age {params.endAge} = success. The fan chart shows the 10th–90th percentile spread.</div>
+          </div>
+          <div style={{ marginTop: 14, background: "rgba(13,148,136,0.08)", border: "1px solid rgba(13,148,136,0.25)", borderRadius: 8, padding: "12px 14px" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-teal)", marginBottom: 6 }}>Why this beats a single projection</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
+              <li>Built on real historical market performance, not a guessed average</li>
+              <li>Reports a probability and a range, not one false-precision number</li>
+              <li>Captures sequence-of-returns risk — the order of good and bad years</li>
+              <li>Surfaces both best-case and worst-case outcomes</li>
+            </ul>
+          </div>
+          <div style={{ marginTop: 12, fontSize: 11, color: "var(--text-faint)", lineHeight: 1.6 }}>
+            <strong style={{ color: "var(--text-muted)" }}>Data source:</strong> Aswath Damodaran’s historical returns dataset (S&P 500, 10-year U.S. Treasury, CPI-U), 1928–2025, paired by calendar year. No winsorization — real tail years (1931, 2008, 2022) are kept.
+          </div>
+        </div>
+        <div style={{ marginTop: 16, background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, padding: "14px 16px" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-primary)", marginBottom: 3 }}>What the simulation draws from</div>
+          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 10, lineHeight: 1.55 }}>
+            The pool of <strong style={{ color: "var(--text-secondary)" }}>{pool.years} real market years (1928–2025)</strong>. Each simulated year picks one at random — <strong style={{ color: "var(--text-secondary)" }}>the past won’t repeat in order</strong>, so we reshuffle history, we don’t replay it.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(128px, 1fr))", gap: 10 }}>
+            {[
+              ["Avg stock year", `${pool.eqAvg >= 0 ? "+" : ""}${pool.eqAvg.toFixed(1)}%`, "var(--accent-teal)"],
+              ["Best / worst", `+${pool.eqBest.toFixed(0)}% / ${pool.eqWorst.toFixed(0)}%`, "var(--text-secondary)"],
+              ["Down years", `${pool.downPct}% of ${pool.years}`, "#f87171"],
+              ["Avg inflation", `${pool.inflAvg.toFixed(1)}%`, "var(--accent-gold)"],
+            ].map(([l, v, c]) => (
+              <div key={l} style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)", borderRadius: 6, padding: "8px 10px" }}>
+                <div style={{ fontSize: 9.5, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>{l}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: c, fontFamily: "var(--font-mono)" }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </InfoModal>
   );
 }
@@ -4222,6 +4361,33 @@ function Hint({ text, width = 240 }) {
 // InfoModal per row (40 rows would otherwise mean 40 independent dialogs whose
 // content each had to be built up front). Uncontrolled callers pass neither and
 // behave exactly as before.
+// ── Info-modal body text kit ────────────────────────────────────────────────
+// A shared FORMAT for modal bodies so they read as one family instead of a wall
+// of gray text. The template, top to bottom:
+//   <ModalLede>       one-line takeaway (bold, primary)         — the answer
+//   <ModalP>          supporting copy, with <Em>key terms</Em>  — the why
+//   <ModalNote>       tinted callout for a caveat / "it is NOT" — the catch
+// Em defaults to a neutral emphasis; pass color for a semantic key term
+// (e.g. the modal's INFO_ACCENT so the term matches the header).
+function ModalLede({ children }) {
+  return <div style={{ fontSize: 14.5, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: 10 }}>{children}</div>;
+}
+function ModalP({ children }) {
+  return <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.75, margin: "0 0 10px" }}>{children}</p>;
+}
+function Em({ children, color = "var(--text-primary)" }) {
+  return <strong style={{ color, fontWeight: 700 }}>{children}</strong>;
+}
+function ModalNote({ children, accent = "var(--accent-gold)", icon = "→" }) {
+  return (
+    <div style={{ display: "flex", gap: 9, background: withAlpha(accent, "12"), border: `1px solid ${withAlpha(accent, "33")}`,
+      borderLeft: `3px solid ${accent}`, borderRadius: 8, padding: "10px 12px", marginTop: 4 }}>
+      <span aria-hidden="true" style={{ color: accent, fontWeight: 800, flexShrink: 0, lineHeight: 1.5 }}>{icon}</span>
+      <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.6 }}>{children}</div>
+    </div>
+  );
+}
+
 function InfoModal({ title, children, accent = "#60a5fa", trigger, maxWidth = 480, bodyMaxHeight = null, open: controlledOpen, onClose }) {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
   const isControlled = controlledOpen !== undefined;
@@ -4242,16 +4408,27 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger, maxWidth = 48
           padding:28, maxWidth, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.6)",
           maxHeight: "calc(100vh - 48px)", display: "flex", flexDirection: "column" }}
       >
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexShrink: 0 }}>
-          <div style={{ fontSize:15, fontWeight:700, color:accent }}>{title}</div>
+        {/* Uniform header for EVERY info modal: an accent icon badge + the
+            title carrying a 2.5px accent underline (the "how it works" look),
+            over a faint accent hairline that separates header from body. One
+            shell, so every modal in the app reads as one family. */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12,
+          marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${withAlpha(accent, "22")}`, flexShrink: 0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
+            <span aria-hidden="true" style={{ display:"inline-flex", alignItems:"center", justifyContent:"center",
+              width:28, height:28, borderRadius:8, background:withAlpha(accent, "1a"),
+              border:`1px solid ${withAlpha(accent, "44")}`, color:accent, fontSize:14, fontWeight:800, flexShrink:0 }}>ⓘ</span>
+            <div style={{ fontSize:16, fontWeight:800, color:"var(--text-primary)", lineHeight:1.3,
+              borderBottom:`2.5px solid ${accent}`, paddingBottom:4 }}>{title}</div>
+          </div>
           <button onClick={() => setOpen(false)}
             style={{ background:"transparent", border:"none", color:"var(--text-muted)",
-              cursor:"pointer", fontSize:18, lineHeight:1 }}>✕</button>
+              cursor:"pointer", fontSize:18, lineHeight:1, marginTop:2, flexShrink:0 }}>✕</button>
         </div>
         <div style={{ fontSize:13, color:"var(--text-secondary)", lineHeight:1.7,
           ...(bodyMaxHeight ? { maxHeight: bodyMaxHeight, overflowY: "auto", paddingRight: 6 } : {}) }}>{children}</div>
         <button onClick={() => setOpen(false)}
-          style={{ marginTop:20, width:"100%", background:accent+"22",
+          style={{ marginTop:20, width:"100%", background:withAlpha(accent, "22"),
             border:`1px solid ${withAlpha(accent, "44")}`, borderRadius:8, padding:"8px 0",
             color:accent, fontSize:13, fontWeight:600, cursor:"pointer", flexShrink: 0 }}>
           Got it
@@ -7637,7 +7814,7 @@ function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle, ba
   );
 }
 
-function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange }) {
+function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange, mc }) {
   // design-authority (2026-09-09): both defaulted to true, which is why every
   // first visit rendered draw order + guardrails + waterfall table AND the
   // strategy chart all at once, on top of the disclaimer/orientation/strategy
@@ -7877,7 +8054,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         />
         {openStrategy && (
           <div style={{ paddingLeft: 4 }}>
-            <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={previewStrategy} smartRows={waterfall.smart.rows} />
+            <DeterministicWithdrawalView p={p} inf={inf} withdrawalStrategy={previewStrategy} smartRows={waterfall.smart.rows} mc={mc} />
           </div>
         )}
       </div>
@@ -8961,7 +9138,230 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
   );
 }
 
-function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows }) {
+// Guyton-Klinger "Spending Path with Guardrail Adjustments" — extracted from
+// DeterministicWithdrawalView so the SAME chart+strip renders both there (the
+// Withdrawal Plan tab) and on the Monte Carlo tab, from one source (rule 8 — no
+// second copy that could drift). Self-contained: computes its own deterministic
+// schedule and the cross-scenario strip reads mc.gkStats. Returns null for
+// non-GK strategies and before a run, so callers can drop it in unconditionally.
+// The chart JSX is DeepSeek-flash's, moved verbatim; only the data prep and the
+// gating/wrapper moved.
+// Which distribution strategies flex spending via guardrails (so the GK
+// spending-path chart is meaningful). One list, read by GuardrailsSpendingPath
+// AND by the callers that gate its container — never duplicate the set.
+const GUARDRAIL_STRATEGIES = ["gk", "smart", "risk", "kitces", "vanguard", "endowment", "cape", "one_n"];
+function isGuardrailStrategy(strategy) {
+  return GUARDRAIL_STRATEGIES.includes(resolveStrategy(strategy));
+}
+
+// Guyton-Klinger guardrails — a tabbed view (Spending Path · Adjustment Events ·
+// Across All Scenarios), mirroring the competitor's structure but honest to
+// AiRA's engine. One shared component rendered by BOTH the Withdrawal Plan tab
+// and the Monte Carlo tab (rule 8 — one source, no drift). The Spending Path
+// chart is DeepSeek-flash's, verbatim, plus a Portfolio line on a 2nd axis.
+// Self-contained: computes its own deterministic schedule; the cross-scenario
+// figures read mc.gkStats. Returns null for non-GK strategies and before a run.
+function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
+  const [subTab, setSubTab] = useState("path");
+  const gkApplies = isGuardrailStrategy(withdrawalStrategy);
+  const { schedule } = useMemo(
+    () => simulateDeterministicWithStrategy(p, inf, withdrawalStrategy),
+    [p, inf, withdrawalStrategy]
+  );
+  if (!gkApplies || !schedule || schedule.length === 0) return null;
+
+  const realAt = (v, i) => Math.round((v || 0) / Math.pow(1 + (inf || 0) / 100, i));
+  const rows = schedule.map((s, i) => ({
+    age: s.age, yr: s.yr, gkEvent: s.gkEvent, gkReason: s.gkReason,
+    priorReal: realAt(s.spEntering, i),
+    actualReal: realAt(s.spAfterGK ?? s.spending, i),
+    floorReal: realAt(s.gkFloor, i),
+    ceilingReal: realAt(s.gkCeiling, i),
+    portReal: realAt(s.portfolioEnd, i),
+  }));
+  const gkChartData = rows.map((r) => ({
+    age: r.age, gkEvent: r.gkEvent, gkReason: r.gkReason,
+    "Prior spend (real)": r.priorReal,
+    "Actual spend (real)": r.actualReal,
+    "Floor (real)": r.floorReal,
+    "Ceiling (real)": r.ceilingReal,
+    "Portfolio (real)": r.portReal,
+  }));
+  const events = rows.filter((r) => r.gkEvent === "cut" || r.gkEvent === "raise" || r.gkReason === "longevity-hold");
+  const cutCount = rows.filter((r) => r.gkEvent === "cut").length;
+  const raiseCount = rows.filter((r) => r.gkEvent === "raise").length;
+  const holdCount = rows.filter((r) => r.gkReason === "longevity-hold").length;
+  const money = (v) => fmtDollar(v || 0);
+  const perMonth = (v) => fmtDollar(Math.round((v || 0) / 12));
+  const retAgeForBasis = effectiveRetireAge(p.retireAge, p.currentAge);
+  const retirementYear = CURRENT_YEAR + Math.max(0, retAgeForBasis - (p.currentAge ?? retAgeForBasis));
+  const g = mc?.gkStats;
+  const pctS = (v) => `${Math.round((v || 0) * 100)}%`;
+
+  const TabBtn = ({ id, label }) => (
+    <button onClick={() => setSubTab(id)} style={{
+      background: "none", border: "none", cursor: "pointer", padding: "6px 2px",
+      fontSize: 12.5, fontWeight: subTab === id ? 800 : 600,
+      color: subTab === id ? "var(--accent-teal)" : "var(--text-muted)",
+      borderBottom: `2px solid ${subTab === id ? "var(--accent-teal)" : "transparent"}`,
+    }}>{label}</button>
+  );
+
+  return (
+    <div style={topRule ? { marginTop: 20, borderTop: "1px solid var(--divider)", paddingTop: 14 } : undefined}>
+      {/* Persistent cross-scenario headline (Monte Carlo result). Absent before a
+          run — it is an MC figure, so there is nothing honest to show yet. */}
+      {g && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "6px 18px", padding: "8px 12px", marginBottom: 12, background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, fontSize: 11.5, color: "var(--text-secondary)" }}>
+          <span style={{ fontWeight: 700, color: "var(--text-primary)" }}>Across {g.paths.toLocaleString()} simulated scenarios:</span>
+          <span>guardrails <strong style={{ color: "#f87171" }}>cut spending in {pctS(g.cutRate)}</strong> of scenarios</span>
+          <span><strong style={{ color: "#34d399" }}>raised it in {pctS(g.raiseRate)}</strong></span>
+          <span>avg <strong style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{g.avgCutsPerPath.toFixed(1)}</strong> cuts per scenario</span>
+          <span style={{ color: "var(--text-muted)" }}>spending seen <strong style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{money(g.spendMinReal)}–{money(g.spendMaxReal)}</strong>/yr ({perMonth(g.spendMinReal)}–{perMonth(g.spendMaxReal)}/mo) in {retirementYear} dollars</span>
+        </div>
+      )}
+
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 18, borderBottom: "1px solid var(--divider)", marginBottom: 12 }}>
+        <TabBtn id="path" label="Spending Path" />
+        <TabBtn id="events" label={`Adjustment Events${events.length ? ` (${events.length})` : ""}`} />
+        <TabBtn id="scenarios" label="Across All Scenarios" />
+      </div>
+
+      {subTab === "path" && (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+            <div style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5, flex: "1 1 260px" }}>
+              One <strong style={{ color: "var(--text-secondary)" }}>median-returns</strong> path — teal is what you actually spend, riding between your floor and ceiling; the blue dashed line is the portfolio (right axis). ▲/▼ mark the years an adjustment fired.
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
+              {cutCount} cut{cutCount === 1 ? "" : "s"} · {raiseCount} raise{raiseCount === 1 ? "" : "s"}{holdCount ? ` · ${holdCount} held` : ""} · {retirementYear} $
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={320}>
+            <ComposedChart data={gkChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
+              <XAxis dataKey="age" stroke="var(--divider)" tickMargin={6} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} />
+              <YAxis yAxisId="spend" stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} tickFormatter={(v) => fmtDollar(v)} />
+              <YAxis yAxisId="port" orientation="right" stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH} tick={{ fill: "#60a5fa", fontSize: 10, fontFamily: "var(--font-mono)" }} tickFormatter={(v) => fmtDollar(v)} />
+              <Tooltip
+                content={({ active, payload, label }) => {
+                  if (!active || !payload || !payload.length) return null;
+                  const row = gkChartData.find((d) => d.age === label) || {};
+                  const monthly = (v) => fmtDollar(Math.round((v || 0) / 12));
+                  const ev = row.gkEvent;
+                  return (
+                    <div style={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, padding: "9px 12px", fontSize: 11.5, lineHeight: 1.6 }}>
+                      <div style={{ fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>Age {label}</div>
+                      <div style={{ color: "var(--text-secondary)" }}>Prior spend <strong style={{ fontFamily: "var(--font-mono)" }}>{fmtDollar(row["Prior spend (real)"])}</strong> <span style={{ color: "var(--text-faint)" }}>({monthly(row["Prior spend (real)"])}/mo)</span></div>
+                      <div style={{ color: "var(--text-secondary)" }}>After guardrail <strong style={{ fontFamily: "var(--font-mono)" }}>{fmtDollar(row["Actual spend (real)"])}</strong> <span style={{ color: "var(--text-faint)" }}>({monthly(row["Actual spend (real)"])}/mo)</span></div>
+                      <div style={{ color: "var(--text-muted)" }}>Floor {fmtDollar(row["Floor (real)"])} · Ceiling {fmtDollar(row["Ceiling (real)"])}</div>
+                      <div style={{ color: "#60a5fa" }}>Portfolio {fmtDollar(row["Portfolio (real)"])}</div>
+                      {ev === "cut" && <div style={{ color: "#f87171", fontWeight: 700, marginTop: 4 }}>▼ Spending cut {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate crossed the {Math.round(GK_BAND_PCT * 100)}% upper band</div>}
+                      {ev === "raise" && <div style={{ color: "#34d399", fontWeight: 700, marginTop: 4 }}>▲ Spending raised {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate fell {Math.round(GK_BAND_PCT * 100)}% below the initial rate</div>}
+                      {!ev && row.gkReason === "longevity-hold" && <div style={{ color: "var(--accent-gold)", marginTop: 4 }}>Band crossed, but the longevity rule held — {GK_LONGEVITY_YEARS} years or fewer remain</div>}
+                      {!ev && !row.gkReason && <div style={{ color: "var(--text-faint)", marginTop: 4 }}>No adjustment — inflation only</div>}
+                    </div>
+                  );
+                }}
+              />
+              <Area yAxisId="spend" type="monotone" dataKey="Ceiling (real)" stroke="none" fill="rgba(52,211,153,0.07)" />
+              <Line yAxisId="spend" type="monotone" dataKey="Floor (real)" stroke="#f5a623" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
+              <Line yAxisId="spend" type="monotone" dataKey="Ceiling (real)" stroke="#34d399" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
+              <Line yAxisId="spend" type="monotone" dataKey="Prior spend (real)" stroke="var(--text-faint)" strokeWidth={1.2} strokeDasharray="2 3" dot={false} />
+              <Line yAxisId="port" type="monotone" dataKey="Portfolio (real)" stroke="#60a5fa" strokeWidth={2} strokeDasharray="5 3" dot={false} />
+              <Line yAxisId="spend" type="monotone" dataKey="Actual spend (real)" stroke="var(--accent-teal)" strokeWidth={2.4}
+                    dot={(props) => {
+                      const ev = gkChartData[props.index]?.gkEvent;
+                      if (!ev) return <g key={`d${props.index}`} />;
+                      const up = ev === "raise";
+                      const w = 8.5, h = 13, gap = 11;
+                      const baseY = up ? props.cy - gap : props.cy + gap;
+                      const apexY = up ? baseY - h : baseY + h;
+                      const pts = `${props.cx - w},${baseY} ${props.cx + w},${baseY} ${props.cx},${apexY}`;
+                      return <polygon key={`e${props.index}`} points={pts} fill={up ? "#34d399" : "#f87171"} stroke="var(--bg-base)" strokeWidth={1.5} />;
+                    }}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+          <div className="leg">
+            <div className="li"><div className="ll" style={{ background: "var(--accent-teal)" }} />Actual spending</div>
+            <div className="li"><div className="ll" style={{ background: "var(--text-faint)" }} />Prior year's spending</div>
+            <div className="li"><div className="ll" style={{ background: "#f5a623" }} />Floor</div>
+            <div className="li"><div className="ll" style={{ background: "#34d399" }} />Ceiling</div>
+            <div className="li"><div className="ll" style={{ background: "#60a5fa" }} />Portfolio (right axis)</div>
+            <div className="li"><span style={{ color: "#f87171", fontSize: 12 }}>▼</span> Cut</div>
+            <div className="li"><span style={{ color: "#34d399", fontSize: 12 }}>▲</span> Raise</div>
+          </div>
+        </>
+      )}
+
+      {subTab === "events" && (
+        events.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.6, padding: "10px 4px" }}>
+            No guardrail adjustments fired on this median-returns path — spending simply tracked inflation every year. A weaker market sequence would trigger cuts; the <strong style={{ color: "var(--text-secondary)" }}>Across All Scenarios</strong> tab shows how often that happens across all {g ? g.paths.toLocaleString() : "3,000"} simulated runs.
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="nw-table" style={{ fontSize: 12 }}>
+              <thead><tr><th>Age</th><th>Year</th><th>Event</th><th>From</th><th>To</th><th>Change</th><th>Why</th></tr></thead>
+              <tbody>
+                {events.map((r) => {
+                  const isCut = r.gkEvent === "cut", isRaise = r.gkEvent === "raise";
+                  const delta = r.actualReal - r.priorReal;
+                  const c = isCut ? "#f87171" : isRaise ? "#34d399" : "var(--accent-gold)";
+                  return (
+                    <tr key={r.age}>
+                      <td style={{ textAlign: "left" }}>{r.age}</td><td>{r.yr}</td>
+                      <td style={{ color: c, fontWeight: 700 }}>{isCut ? "▼ Cut" : isRaise ? "▲ Raise" : "Held"}</td>
+                      <td>{money(r.priorReal)}</td>
+                      <td>{money(r.actualReal)}</td>
+                      <td style={{ color: delta < 0 ? "#f87171" : delta > 0 ? "#34d399" : "var(--text-muted)" }}>{delta > 0 ? "+" : ""}{money(delta)}</td>
+                      <td style={{ textAlign: "left", color: "var(--text-muted)", fontSize: 11 }}>{isCut ? `Withdrawal rate crossed the ${Math.round(GK_BAND_PCT * 100)}% upper band` : isRaise ? `Withdrawal rate fell ${Math.round(GK_BAND_PCT * 100)}% below the initial rate` : `Band crossed, but ≤ ${GK_LONGEVITY_YEARS} years remained`}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>All figures in {retirementYear} dollars. Change is relative to the prior year's spending.</div>
+          </div>
+        )
+      )}
+
+      {subTab === "scenarios" && (
+        g ? (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+              {[
+                ["Scenarios with a cut", pctS(g.cutRate), "#f87171", `${Math.round(g.cutRate * g.paths).toLocaleString()} of ${g.paths.toLocaleString()} paths cut spending at least once`],
+                ["Scenarios with a raise", pctS(g.raiseRate), "#34d399", `${Math.round(g.raiseRate * g.paths).toLocaleString()} of ${g.paths.toLocaleString()} paths raised spending`],
+                ["Avg cuts per scenario", g.avgCutsPerPath.toFixed(1), "var(--accent-gold)", "Averaged over every simulated path"],
+                ["Spending range seen", `${money(g.spendMinReal)}–${money(g.spendMaxReal)}`, "#60a5fa", `${perMonth(g.spendMinReal)}–${perMonth(g.spendMaxReal)}/mo · ${retirementYear} dollars`],
+              ].map(([l, v, c, sub]) => (
+                <div key={l} style={{ background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, padding: "12px 14px" }}>
+                  <div style={{ fontSize: 10.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{l}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: c, fontFamily: "var(--font-mono)" }}>{v}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 3, lineHeight: 1.4 }}>{sub}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.6, marginTop: 12 }}>
+              The Spending Path tab illustrates one <em>median</em> path — usually benign, so few adjustments fire there. These figures count how the guardrails actually behave across all {g.paths.toLocaleString()} simulated markets, the bad sequences included.{g.longevityHolds > 0 ? ` In ${g.longevityHolds.toLocaleString()} path-years a cut was skipped because ${GK_LONGEVITY_YEARS} years or fewer remained (the longevity rule).` : ""}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 12.5, color: "var(--text-muted)", padding: "10px 4px" }}>Run Monte Carlo to see how the guardrails behave across all simulated scenarios.</div>
+        )
+      )}
+
+      <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.55, marginTop: 12, borderTop: "1px solid var(--divider)", paddingTop: 10 }}>
+        Guardrails move spending relative to <em>last year's</em> level. The GK rules in force — {Math.round(GK_BAND_PCT * 100)}% band, {Math.round(GK_ADJUST_PCT * 100)}% adjustment, no cut inside the last {GK_LONGEVITY_YEARS} years, inflation capped at {Math.round(GK_INFLATION_CAP * 100)}% — are set on the Monte Carlo tab's ⚙ Advanced Settings.
+      </div>
+    </div>
+  );
+}
+
+function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc }) {
   const [showTable, setShowTable] = useState(true);
   const data = useMemo(
     () => simulateDeterministicWithStrategy(p, inf, withdrawalStrategy),
@@ -8983,28 +9383,9 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows }) 
     gkEvent: s.gkEvent,
     gkReason: s.gkReason,
   }));
-  // Guardrail activity for the deterministic path — the summary strip above the
-  // chart. Only meaningful for the GK-family strategies; every other strategy
-  // adjusts spending by rule (fixed %, inflation-only) rather than by guardrail,
-  // so the strip says so instead of showing a row of zeros.
-  const gkRows = schedule.filter((s) => s.gkEvent != null || s.gkReason != null);
-  const cutCount = schedule.filter((s) => s.gkEvent === "cut").length;
-  const raiseCount = schedule.filter((s) => s.gkEvent === "raise").length;
-  const holdCount = schedule.filter((s) => s.gkReason === "longevity-hold").length;
-  const gkApplies = ["gk", "smart", "risk", "kitces", "vanguard", "endowment", "cape", "one_n"].includes(resolveStrategy(withdrawalStrategy));
-  // Real (retirement-year) dollars for the floor/ceiling/spend bands: the
-  // schedule is nominal per year, so a nominal floor line would climb forever
-  // and hide what the guardrail is actually doing. Deflating by the schedule's
-  // own inflation assumption keeps the floor flat, which is what a "real
-  // spending floor" means.
-  const realAt = (v, i) => Math.round((v || 0) / Math.pow(1 + (inf || 0) / 100, i));
-  const gkChartData = chartData.map((d, i) => ({
-    ...d,
-    "Prior spend (real)": realAt(d["Prior spend"], i),
-    "Actual spend (real)": realAt(d["Post-guardrail"], i),
-    "Floor (real)": realAt(d.Floor, i),
-    "Ceiling (real)": realAt(d.Ceiling, i),
-  }));
+  // The Guyton-Klinger spending-path chart + cross-scenario strip now live in
+  // the shared <GuardrailsSpendingPath> (rendered below, and on the MC tab) —
+  // its data prep moved with it.
 
   if (!schedule || schedule.length === 0) {
     return <div className="chart-card">No data available. Run Monte Carlo first.</div>;
@@ -9067,91 +9448,9 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows }) 
           <div className="li"><div className="ll" style={{ background: "var(--accent-teal)" }} />Portfolio Balance</div>
         </div>
 
-        {/* ── Guardrails ──────────────────────────────────────────────────
-            The spending path with its adjustment events: what the plan asked
-            for (prior spend), what the guardrail allowed (actual), and the
-            floor/ceiling band it was clamped inside — with a ▲/▼ marking every
-            year the rule fired. Every series is an engine output on the
-            schedule row (spEntering / spAfterGK / gkFloor / gkCeiling / gkEvent);
-            the UI applies no guardrail arithmetic of its own (rule 8).
-            Deflated to retirement-year dollars, so the floor reads as a flat
-            line rather than a rising nominal one. */}
-        {gkApplies && (
-          <div style={{ marginTop: 20, borderTop: "1px solid var(--divider)", paddingTop: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
-                Spending Path with Guardrail Adjustments
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                {cutCount} cut{cutCount === 1 ? "" : "s"} · {raiseCount} raise{raiseCount === 1 ? "" : "s"}
-                {holdCount ? ` · ${holdCount} held by the longevity rule` : ""}
-                {" · in today's dollars"}
-              </div>
-            </div>
-            <ResponsiveContainer width="100%" height={280}>
-              <ComposedChart data={gkChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
-                <XAxis dataKey="age" stroke="var(--divider)" tickMargin={6}
-                       tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} />
-                <YAxis stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH}
-                       tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }}
-                       tickFormatter={(v) => fmtDollar(v)} />
-                <Tooltip
-                  content={({ active, payload, label }) => {
-                    if (!active || !payload || !payload.length) return null;
-                    const row = gkChartData.find((d) => d.age === label) || {};
-                    const monthly = (v) => fmtDollar(Math.round((v || 0) / 12));
-                    const ev = row.gkEvent;
-                    return (
-                      <div style={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, padding: "9px 12px", fontSize: 11.5, lineHeight: 1.6 }}>
-                        <div style={{ fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>Age {label}</div>
-                        <div style={{ color: "var(--text-secondary)" }}>Prior spend <strong style={{ fontFamily: "var(--font-mono)" }}>{fmtDollar(row["Prior spend (real)"])}</strong> <span style={{ color: "var(--text-faint)" }}>({monthly(row["Prior spend (real)"])}/mo)</span></div>
-                        <div style={{ color: "var(--text-secondary)" }}>After guardrail <strong style={{ fontFamily: "var(--font-mono)" }}>{fmtDollar(row["Actual spend (real)"])}</strong> <span style={{ color: "var(--text-faint)" }}>({monthly(row["Actual spend (real)"])}/mo)</span></div>
-                        <div style={{ color: "var(--text-muted)" }}>Floor {fmtDollar(row["Floor (real)"])} · Ceiling {fmtDollar(row["Ceiling (real)"])}</div>
-                        {ev === "cut" && <div style={{ color: "#f87171", fontWeight: 700, marginTop: 4 }}>▼ Spending cut {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate crossed the {Math.round(GK_BAND_PCT * 100)}% upper band</div>}
-                        {ev === "raise" && <div style={{ color: "#34d399", fontWeight: 700, marginTop: 4 }}>▲ Spending raised {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate fell {Math.round(GK_BAND_PCT * 100)}% below the initial rate</div>}
-                        {!ev && row.gkReason === "longevity-hold" && <div style={{ color: "var(--accent-gold)", marginTop: 4 }}>Band crossed, but the longevity rule held — {GK_LONGEVITY_YEARS} years or fewer remain</div>}
-                        {!ev && !row.gkReason && <div style={{ color: "var(--text-faint)", marginTop: 4 }}>No adjustment — inflation only</div>}
-                      </div>
-                    );
-                  }}
-                />
-                {/* Band first so the lines sit on top of it. */}
-                <Area type="monotone" dataKey="Ceiling (real)" stroke="none" fill="rgba(52,211,153,0.07)" />
-                <Line type="monotone" dataKey="Floor (real)" stroke="#f5a623" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
-                <Line type="monotone" dataKey="Ceiling (real)" stroke="#34d399" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
-                <Line type="monotone" dataKey="Prior spend (real)" stroke="var(--text-faint)" strokeWidth={1.2} strokeDasharray="2 3" dot={false} />
-                <Line type="monotone" dataKey="Actual spend (real)" stroke="var(--accent-teal)" strokeWidth={2.4}
-                      dot={(props) => {
-                        const ev = gkChartData[props.index]?.gkEvent;
-                        if (!ev) return <g key={`d${props.index}`} />;
-                        const up = ev === "raise";
-                        // A small triangle above/below the point, so the events
-                        // read at a glance the way the reference chart's markers do.
-                        const y = up ? props.cy - 9 : props.cy + 9;
-                        const pts = `${props.cx},${y - (up ? -5 : 5)} ${props.cx - 5},${y + (up ? 1 : -1)} ${props.cx + 5},${y + (up ? 1 : -1)}`;
-                        return <polygon key={`e${props.index}`} points={pts} fill={up ? "#34d399" : "#f87171"} stroke="var(--bg-base)" strokeWidth={1} />;
-                      }}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-            <div className="leg">
-              <div className="li"><div className="ll" style={{ background: "var(--accent-teal)" }} />Actual spending</div>
-              <div className="li"><div className="ll" style={{ background: "var(--text-faint)" }} />Prior year's spending</div>
-              <div className="li"><div className="ll" style={{ background: "#f5a623" }} />Floor</div>
-              <div className="li"><div className="ll" style={{ background: "#34d399" }} />Ceiling</div>
-              <div className="li"><span style={{ color: "#f87171", fontSize: 12 }}>▼</span> Cut</div>
-              <div className="li"><span style={{ color: "#34d399", fontSize: 12 }}>▲</span> Raise</div>
-            </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.55, marginTop: 8 }}>
-              Guardrails are relative to <em>last year's</em> spending, so the dashed "prior" line is what each
-              adjustment moved away from. The GK rules in force — {Math.round(GK_BAND_PCT * 100)}% band,
-              {" "}{Math.round(GK_ADJUST_PCT * 100)}% adjustment, no cut inside the last {GK_LONGEVITY_YEARS} years,
-              inflation capped at {Math.round(GK_INFLATION_CAP * 100)}% — are set on the Monte Carlo tab's
-              ⚙ Advanced Settings.
-            </div>
-          </div>
-        )}
+        {/* GK spending-path chart + cross-scenario strip — now the shared
+            <GuardrailsSpendingPath> (also rendered on the Monte Carlo tab). */}
+        <GuardrailsView p={p} inf={inf} withdrawalStrategy={withdrawalStrategy} mc={mc} topRule />
 
         {/* Spending/Withdrawal are each year's OWN number, not a flow between
             years — bars, not lines, sharing the same age x-axis as the chart
@@ -10561,7 +10860,7 @@ function ScenariosTab({
       )}
 
       {scenarioSubTab === "withdrawals" && (
-        <WithdrawalPlanCombined p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} onAssumptionChange={onAssumptionChange} />
+        <WithdrawalPlanCombined p={baseParams} inf={inf} withdrawalStrategy={withdrawalStrategy} onAssumptionChange={onAssumptionChange} mc={mc} />
       )}
 
       {scenarioSubTab === "roth" && <RothLadder params={baseParams} onSaveConversionOverride={onSaveConversionOverride} onRemoveConversionOverride={onRemoveConversionOverride} onAssumptionChange={onAssumptionChange} />}
@@ -10817,7 +11116,6 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   // the reasoning one click away.
   const [showWhy, setShowWhy] = useState(false);
   const [showInputs, setShowInputs] = useState(false);
-  const [showHow, setShowHow] = useState(false);
   const [showCheckpoints, setShowCheckpoints] = useState(false);
   // "Full assumptions ↓" on the AT A GLANCE card is a pointer, not a second
   // source: it opens and scrolls to the one panel that owns the full list,
@@ -11067,14 +11365,12 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                     machine and is dead on touch — same trap as InfoDot. Now a
                     click-open InfoModal, the one disclosure pattern here that
                     actually fires. */}
-                <InfoModal
-                  title="Success Rate"
-                  trigger={<span role="img" aria-label="What Success Rate means" style={{ color: "#60a5fa", cursor: "pointer", fontSize: 12 }}>ℹ️</span>}
-                >
-                  <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>
-                    {`Of your ${MC_PATHS_LABEL} Monte Carlo simulations, the share where the portfolio still has money at age ${params.endAge}. This is the conservative headline number — it assumes you live all the way to the plan age. The purple "…outlives you" figure below re-weights it by your odds of actually being alive at each failure age, so it's always a touch higher.`}
-                  </div>
-                </InfoModal>
+                <SimMethodModal
+                  params={params}
+                  withdrawalStrategy={withdrawalStrategy}
+                  strategyHowItWorks={strategyHowItWorks}
+                  trigger={<span aria-label="How this simulation works" style={{ color: "#60a5fa", cursor: "pointer", fontSize: 10.5, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px dashed rgba(96,165,250,0.45)" }}>ⓘ How this works</span>}
+                />
               </div>
               {/* Confidence badge — glanceable status icon + band label, keyed
                   to the same MC_BAND_* thresholds as rateColor/riskLabel (no new
@@ -11111,7 +11407,13 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             </div>
           </div>
           <div style={{ background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
-            <div className="section-label" style={{ marginBottom: 8 }}>MEDIAN FINAL BALANCE <span role="img" aria-label="information" title={`The middle outcome: the 50th-percentile portfolio value remaining at age ${params.endAge}. Half of all simulations finish above this and half below — the typical leftover, not a floor or a guarantee. The 10th–90th percentile spread beneath shows how wide the range of outcomes really is.`} style={{ color: "#60a5fa", cursor: "help" }}>ℹ️</span></div>
+            <div className="section-label" style={{ marginBottom: 8, display: "inline-flex", alignItems: "center", gap: 6 }}>MEDIAN FINAL BALANCE
+              <InfoModal title="Median Final Balance" accent={INFO_ACCENT.money} trigger={<span role="img" aria-label="What Median Final Balance means" style={{ color: "#60a5fa", cursor: "pointer", fontSize: 12 }}>ℹ️</span>}>
+                <ModalLede>The typical leftover — not a floor, and not a guarantee.</ModalLede>
+                <ModalP>The <Em color={INFO_ACCENT.money}>50th-percentile</Em> portfolio value remaining at age {params.endAge}: half of all simulations finish <Em>above</Em> this line, half <Em>below</Em>.</ModalP>
+                <ModalNote accent={INFO_ACCENT.money}>The <Em color={INFO_ACCENT.money}>10th–90th percentile</Em> spread beneath shows how wide the range of outcomes really is — that spread matters more than this single midpoint.</ModalNote>
+              </InfoModal>
+            </div>
             <div style={{ fontSize: 42, fontWeight: 900, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtDollar(termAt("p50"))}</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>50th percentile at age {params.endAge} · {dollarBasis}</div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 14 }}>Half of all simulations end above this. A higher balance cushions against sequence-of-returns risk.</div>
@@ -11411,31 +11713,30 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
       </div>
 
 
+      {/* Guyton-Klinger guardrails — surfaced HERE on the Monte Carlo tab
+          (2026-09-24) so the spending-flex view is discoverable, instead of
+          buried four levels deep in Scenarios → Withdrawal Plan. Same shared
+          <GuardrailsSpendingPath> the Withdrawal tab renders (rule 8, one
+          source). Gated on a guardrail-family strategy + a completed run. */}
+      {mc && isGuardrailStrategy(withdrawalStrategy) && (
+        <div className="chart-card">
+          <div className="ct">📉 Guardrails — how your spending flexes over time</div>
+          <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.55, marginBottom: 4 }}>
+            Your withdrawal strategy raises or cuts spending as markets move, keeping the plan funded. The dashed bands are your spending floor and ceiling; ▲/▼ mark the years an adjustment fired.
+          </div>
+          <GuardrailsView p={params} inf={inf} withdrawalStrategy={withdrawalStrategy} mc={mc} topRule={false} />
+        </div>
+      )}
+
       {/* Group 2: assumptions — panels the result was built from */}
+      {/* Method explanation lives in the Success Rate card's ⓘ (SimMethodModal)
+          — the single entry point per design-authority (2026-09-24). This group
+          is now just the per-run input audit trail (Rule 5). */}
       <GroupHeading
         label="What this is based on"
-        sub="The method behind the simulation and every input it was given"
+        sub="Every input this result was built from"
         accent="var(--text-muted)"
       />
-      <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
-        <SectionHeader label="How this simulation works" open={showHow} onToggle={() => setShowHow(!showHow)} color="var(--text-muted)" />
-        {showHow && (
-          <>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>
-              A Monte Carlo simulation tests your retirement plan against <strong style={{ color: "#e2e8f0" }}>{MC_PATHS_LABEL} different market scenarios</strong> using randomized annual returns drawn from 99 years of actual S&P 500 history. Instead of assuming a single fixed growth rate, it models the real-world uncertainty of markets — some years boom, some years crash — and tells you how often your savings last through retirement. <strong style={{ color: "var(--accent-teal)" }}>A success rate above {Math.round(MC_SOLID_PLAN_RATE * 100)}% is generally considered a solid plan.</strong>
-            </div>
-            <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-muted)" }}>
-              AiRA also applies <strong style={{ color: "var(--accent-gold)" }}>{getStrategyDescription(withdrawalStrategy)}</strong>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14, fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
-            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each of {MC_PATHS_LABEL} paths independently draws a random S&P 500 year and a random bond year, blended by glide path weight. Contributions are added annually. The result is a unique portfolio value at retirement for each path.</div>
-            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>2. Retirement spending</div>Each path draws fresh random returns year by year. {params.smile !== false ? "Spending follows the Blanchett smile curve." : "Spending stays flat in real terms (smile curve off)."} SS{params.ab > 0 ? " and Rental" : ""} income offset draws.{params.ab > 0 ? ` Rental fails ${Math.round(100 - (params.abReliability ?? 80))}% of years randomly.` : ""}{(params.hcProb ?? 3.5) > 0 ? ` Healthcare shocks hit ${params.hcProb ?? 3.5}% of years after age ${params.hcShockAge ?? 72}.` : ""}</div>
-            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>3. {getStrategyLabel(resolveStrategy(withdrawalStrategy))} {resolveStrategy(withdrawalStrategy) === "gk" ? "guardrails" : "strategy"}</div>{strategyHowItWorks[resolveStrategy(withdrawalStrategy)] || strategyHowItWorks.gk}</div>
-            <div><div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>4. Survival check</div>A path "succeeds" if the portfolio balance stays above $0 through the target age. The success rate is the percentage of paths that survive. The fan chart shows the 10th–90th percentile spread of all outcomes.</div>
-            </div>
-          </>
-        )}
-      </div>
 
       {/* Inputs collapsible — source of record for every model assumption. */}
       <div ref={inputsRef} style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16, scrollMarginTop: 16 }}>
@@ -11596,15 +11897,25 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           legal hooks ("not financial advice", "consult a licensed professional")
           on screen; the elaboration is one click away and also permanent in the
           footer and the Terms of Service. */}
-      <SectionDisclaimer>
-        These are hypothetical projections generated by a model, not a prediction and not a
-        recommendation to buy, sell, or hold any investment. A success rate is the share of
-        simulated scenarios in which the portfolio survived — it is not a probability that
-        your actual retirement will succeed, and past market results do not guarantee future
-        ones. Discuss any decision with a licensed financial, tax, or legal professional who
-        knows your full circumstances.
-      </SectionDisclaimer>
+      {/* Disclaimer moved OUT of MCTab to the very bottom of the Monte Carlo
+          tab (after the fan chart + band table) — it was rendering mid-page,
+          between the inputs panel and the Forecast Portfolio chart, eating
+          prime real estate. See the montecarlo tab render (renders
+          <McTabDisclaimer/> last). */}
     </div>
+  );
+}
+
+function McTabDisclaimer() {
+  return (
+    <SectionDisclaimer>
+      These are hypothetical projections generated by a model, not a prediction and not a
+      recommendation to buy, sell, or hold any investment. A success rate is the share of
+      simulated scenarios in which the portfolio survived — it is not a probability that
+      your actual retirement will succeed, and past market results do not guarantee future
+      ones. Discuss any decision with a licensed financial, tax, or legal professional who
+      knows your full circumstances.
+    </SectionDisclaimer>
   );
 }
 
@@ -17645,7 +17956,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span className="tog-label">🏛 Tax</span>
-                  <InfoModal title="🏛 Tax Modeling — How It Works" accent="#d97706">
+                  <InfoModal title="🏛 Tax Modeling — How It Works" accent={INFO_ACCENT.tax}>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> When ON, every year's withdrawal is grossed up by a full tax calculation so the <em>after-tax</em> amount you keep matches your spending target. Without it, the engine would draw exactly your spend number and silently underfund you by whatever taxes are owed.</p>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What's modeled each year:</strong> federal brackets with the standard deduction, the Social Security tax torpedo (provisional-income inclusion), IRMAA Medicare surcharges, and your state's brackets (skipped when Non-resident is on). Tax rises naturally over retirement as Social Security starts and RMDs force pre-tax draws.</p>
                     <p style={{ margin:"0 0 10px" }}>Single filers owe more than MFJ at the same income because of halved brackets and standard deduction.</p>
@@ -17669,7 +17980,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               <div className="tog-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span className="tog-label">🌴 Non-resident (no state tax)</span>
-                  <InfoModal title="🌴 Non-Resident State Tax — How It Works" accent="var(--accent-purple)">
+                  <InfoModal title="🌴 Non-Resident State Tax — How It Works" accent={INFO_ACCENT.tax}>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> Removes state income tax from every year of the simulation. Use this if you (or you and your spouse) qualify as a non-resident of your listed state for the year.</p>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF (default):</strong> State tax applies to all taxable income. Use this if you're a resident of your listed state.</p>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON:</strong> State tax zeroed out. Use this if you've broken residency (e.g. spending most of the year abroad and meeting your state's non-residency rules).</p>
@@ -17992,6 +18303,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         onHoverAge={setHoveredAge}
                       />
                     )}
+                    {mc && <McTabDisclaimer />}
                   </>
                 )}
                 {activeTab === "scenarios" && (
@@ -18327,4 +18639,4 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView, SimMethodModal };

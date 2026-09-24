@@ -46,7 +46,11 @@ describe("advice disclaimers are present", () => {
   });
 
   test("Monte Carlo results carry an inline disclaimer", () => {
-    expect(bodyOf("MCTab")).toContain("<SectionDisclaimer>");
+    // v1.2.144: the disclaimer text moved out of MCTab into McTabDisclaimer so it
+    // renders at the very bottom of the Monte Carlo tab (after the fan chart +
+    // band table) instead of mid-page. Still present, still mounted on the tab.
+    expect(bodyOf("McTabDisclaimer")).toContain("<SectionDisclaimer>");
+    expect(SRC).toContain("<McTabDisclaimer");
   });
 
   test("the withdrawal schedule carries an inline disclaimer", () => {
@@ -54,7 +58,7 @@ describe("advice disclaimers are present", () => {
   });
 
   test("the Monte Carlo notice refuses to call a success rate a prediction", () => {
-    const body = bodyOf("MCTab");
+    const body = bodyOf("McTabDisclaimer");
     expect(body).toMatch(/not a prediction/i);
     expect(body).toMatch(/licensed/i);
   });

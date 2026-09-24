@@ -100,7 +100,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function InfoModal(",
       "description": "SHARED: the dialog shell both agents use. deepseek-flash added maxWidth/bodyMaxHeight + controlled open/onClose. Change it carefully and re-stamp.",
-      "sha": "2194346388ae130e"
+      "sha": "169dfc5409ff23ff"
     }
   ]
 }

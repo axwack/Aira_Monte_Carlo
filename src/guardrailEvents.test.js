@@ -113,8 +113,12 @@ test("runMC reports guardrail statistics that agree with its own path counts", (
   // A path with at least one cut must be counted at least once.
   if (mc.gkStats.cuts > 0) expect(mc.gkStats.pathsWithCut).toBeGreaterThan(0);
   // The spending range must be a real, ordered range of positive dollars.
-  expect(mc.gkStats.spendMax).toBeGreaterThan(mc.gkStats.spendMin);
-  expect(mc.gkStats.spendMin).toBeGreaterThan(0);
+  // RETIREMENT-YEAR dollars, not nominal — the field names carry the basis
+  // (renamed from spendMin/spendMax for exactly that reason), and
+  // guardrailsChartRender.test.js proves the deflation by bounding the range
+  // inside the guardrail's own base floor/ceiling.
+  expect(mc.gkStats.spendMaxReal).toBeGreaterThan(mc.gkStats.spendMinReal);
+  expect(mc.gkStats.spendMinReal).toBeGreaterThan(0);
 });
 
 test("the deterministic schedule carries the fields the guardrails chart reads", () => {
