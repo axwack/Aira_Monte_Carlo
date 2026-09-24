@@ -1,10 +1,13 @@
 /**
  * VerdictHeader — the persistent four-answer strip (REQUIREMENTS §41 verdict #3).
  *
- * The brief's acceptance test (§7) is that a cold user answers four questions in
- * 30 seconds WITHOUT CLICKING: will the money last · will it outlive me · what is
- * my worst case · when does it run out. This strip is mounted above the tab bar
- * so all four are on screen before any navigation.
+ * The brief's acceptance test (§7) is that a cold user answers the questions that
+ * matter in 30 seconds WITHOUT CLICKING. "Will the money last" is answered by the
+ * hero success number on the card directly above this strip, so the strip no
+ * longer repeats it; it leads with the starting withdrawal rate, then the three
+ * survival answers: will it outlive me · what is my worst case · when does it run
+ * out. This strip is mounted above the tab bar so all are on screen before any
+ * navigation.
  *
  * What this pins down:
  *  1. All four figures render from ONE `mc` object — the strip is a read.
@@ -53,16 +56,20 @@ const P = {
 };
 
 const MC = runMC(P, P.endAge, 300, 13, true);
-const base = { inf: 2.5, endAge: P.endAge, currentAge: P.currentAge, retireAge: P.retireAge };
+const base = { inf: 2.5, endAge: P.endAge, currentAge: P.currentAge, retireAge: P.retireAge, swr: "3.5", swrBenchmark: 0.04 };
 
-test("renders all four headline answers from one mc object", () => {
+test("renders all four headline cards from one mc object", () => {
   const text = renderToText(<VerdictHeader mc={MC} {...base} real={false} />);
-  expect(text).toContain(`Funded to age ${P.endAge}`);
+  // "Funded to age" is no longer duplicated here — the success rate is the hero
+  // number on the card above the strip. The strip leads with the withdrawal rate
+  // instead, then the three survival answers.
+  expect(text).toContain("Withdrawal rate");
+  expect(text).not.toContain("Funded to age");
   expect(text).toContain("Money outlives you");
   expect(text).toContain(`Worst case (10th) at ${P.endAge}`);
   expect(text).toContain("Runs out (median)");
-  // The values themselves, in fmtPct's own format (one decimal).
-  expect(text).toContain(`${(MC.rate * 100).toFixed(1)}%`);
+  // The withdrawal rate is passed in as the already-formatted swr string.
+  expect(text).toContain(`${base.swr}%`);
   if (MC.mwRate != null) expect(text).toContain(`${(MC.mwRate * 100).toFixed(1)}%`);
 });
 

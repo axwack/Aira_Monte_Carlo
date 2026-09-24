@@ -11438,7 +11438,7 @@ function MCOverviewCards({ mc, inf = 0, real = false, endAge, currentAge, retire
  * (§41 A3), never "today's dollars". The engine's actual spend floor is
  * `mc.gkStats.spendMinReal` — a different number, available if wanted.
  */
-function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAge }) {
+function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAge, swr, swrBenchmark = 0.04 }) {
   if (!mc) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", marginBottom: 10, background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, fontSize: 11.5, color: "var(--text-muted)" }}>
@@ -11465,8 +11465,10 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
       style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "10px 16px", padding: "9px 14px", marginBottom: 10, background: "var(--card-bg)", border: "1px solid var(--card-border)", borderLeft: `3px solid ${rateColor(survived)}`, borderRadius: 8 }}
     >
       <div style={fact}>
-        <span style={k}>Funded to age {endAge}</span>
-        <span style={{ ...v, color: rateColor(survived) }}>{fmtPct(survived)}</span>
+        <span style={k}>Withdrawal rate</span>
+        <span style={{ ...v, color: +swr <= 3 ? "var(--positive)" : +swr <= 4 ? "#34d399" : +swr <= 5 ? "#f59e0b" : "var(--negative)" }}>
+          {swr != null ? `${swr}%` : "—"}
+        </span>
       </div>
       <div style={sep} />
       <div style={fact}>
@@ -11494,8 +11496,8 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
         <InfoModal title="Your four headline answers" accent={INFO_ACCENT.method}
           trigger={<span style={{ cursor: "pointer", display: "inline-flex", color: INFO_ACCENT.method }}><InfoIcon size={13} /></span>}>
           <ModalLede>These four numbers answer the questions that actually matter, before you open a single tab.</ModalLede>
-          <ModalP><Em color={INFO_ACCENT.positive}>Funded to age {endAge}</Em> — the share of simulated market histories where the portfolio still had money at your plan age. This is the conservative headline: it assumes you live all the way there.</ModalP>
-          <ModalP><Em color={INFO_ACCENT.positive}>Money outlives you</Em> — the same paths, re-weighted by your odds of actually being alive at each failure age. It is always at least as high as the first figure, and it answers the actuarial question rather than the worst-case one.</ModalP>
+          <ModalP><Em color={INFO_ACCENT.money}>Withdrawal rate</Em> — first-year spending net of guaranteed income, divided by the portfolio at retirement, against a {(swrBenchmark * 100).toFixed(0)}% benchmark. It sizes the draw the plan starts from; the success rate on the card above is what says whether that rate holds to age {endAge}.</ModalP>
+          <ModalP><Em color={INFO_ACCENT.positive}>Money outlives you</Em> — the same paths, re-weighted by your odds of actually being alive at each failure age. It is always at least as high as the funded-to-age success rate on the card above, and it answers the actuarial question rather than the worst-case one.</ModalP>
           <ModalP><Em color={INFO_ACCENT.money}>Worst case</Em> — the 10th-percentile ending balance: 90% of simulated outcomes finished above it. A thin worst case beside a high success rate is one bad sequence away from joining the failures.</ModalP>
           <ModalP><Em color={INFO_ACCENT.risk}>Runs out (median)</Em> — the middle failure age across the paths that DID run out. "Never" means fewer than half of all paths failed.</ModalP>
           <ModalNote accent={INFO_ACCENT.method}>All four are read from the one simulation you last ran — nothing here is recomputed. Change an input and the strip goes stale with the rest of the results until you re-run.</ModalNote>
@@ -18434,7 +18436,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             {(() => {
               const heroColor = mc ? (mc.rate >= 0.85 ? "var(--positive)" : mc.rate >= 0.7 ? "#f59e0b" : "var(--negative)") : "#334155";
               const sep = <span style={{ color: "var(--text-faint)" }}>·</span>;
-              const strat = resolveStrategy(assumptions.withdrawalStrategy);
               return (
                 <div className={`met ${running ? "recomputing" : ""}`} style={{ borderLeft: `4px solid ${heroColor}` }}>
                   {/* Row 1 — the one number that matters, with the disclosure toggle aligned right. */}
@@ -18517,8 +18518,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       </span>
                     )}
                   </div>
-                  {/* Row 2 — secondary metrics, one line (paths + strategy name removed; strategy
-                      lives in its own strip below, withdrawal rate kept here only). */}
+                  {/* Row 2 — secondary metrics, one line: portfolio at plan age and the
+                      spend target. Withdrawal rate moved to the verdict strip as its own
+                      card, and the strategy-detail strip was removed, so this row carries
+                      no strategy copy. */}
                   <div style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 11, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 12px" }}>
                     {/* `mc.medR` is the median portfolio at the start of
                         retirement (runMC captures portAtRetire before the
@@ -18557,26 +18560,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     <span title="Your spending target — the figure you entered, shown monthly. This is money to spend AFTER tax: the engine withdraws enough extra from the portfolio to cover the tax bill on top of this amount, so taxes are not taken out of it. Covered by Social Security, rental and other income first, then your portfolio draw. The success rate on the left is what tells you whether this target holds.">
                       <strong style={{ color: "var(--accent-gold)" }}>${(Math.round(params.sp / 12)).toLocaleString()}/mo</strong> your spend target <span style={{ fontSize: 12, opacity: 0.75 }}>(after tax)</span>
                     </span>
-                    {sep}
-                    <span title="Initial withdrawal rate = (First year spending − guaranteed income) ÷ Portfolio at retirement.">
-                      <strong style={{ color: +swr <= 3 ? "var(--positive)" : +swr <= 4 ? "#34d399" : +swr <= 5 ? "#f59e0b" : "var(--negative)" }}>{swr}%</strong> withdrawal rate ({(params.safeWithdrawalRate * 100).toFixed(0)}% benchmark)
-                    </span>
-                  </div>
-                  {/* Row 3 — strategy detail strip, pulled in from the old standalone gk-bar.
-                      Facts only; the editorial "spend in the right life phase" line moved to the
-                      collapsed panel. Withdrawal rate dropped here (shown once, in Row 2). */}
-                  <div style={{ fontSize: 13, color: "#bae6fd", marginTop: 12, paddingTop: 11, borderTop: "1px solid rgba(14,165,233,0.18)", lineHeight: 1.55 }}>
-                    <strong style={{ color: "var(--accent-teal)" }}>{getStrategyLabel(strat)} Strategy:</strong>{" "}
-                    {strat === "gk" ? (
-                      <>Floor {fmtDollar(params.gkFloor)} · Ceiling {fmtDollar(params.gkCeiling)} · State tax {assumptions.twoHousehold ? "OFF (non-resident)" : "ON (resident)"}.</>
-                    ) : strat === "fixed" ? (
-                      <>Withdrawal rate {(params.fixedWithdrawalRate * 100).toFixed(1)}% of portfolio.</>
-                    ) : strat === "vpw" ? (
-                      <>Amortized to age {params.vpwEndAge ?? params.endAge ?? 100} at {((params.vpwRealReturn ?? 0.0376) * 100).toFixed(2)}% assumed real return.</>
-                    ) : (
-                      <>Dynamic spending based on portfolio performance.</>
-                    )}{" "}
-                    Rental modeled at {params.abReliability}% reliability. Healthcare shocks {params.hcProb}%/yr from age {params.hcShockAge}.
                   </div>
                   {/* Sector / life-phase badge — lower far right, aligned under the toggle. */}
                   {analogue && (
@@ -18600,6 +18583,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               endAge={params.endAge}
               currentAge={params.currentAge}
               retireAge={params.retireAge}
+              swr={swr}
+              swrBenchmark={params.safeWithdrawalRate}
             />
 
             <div className="tabs">
