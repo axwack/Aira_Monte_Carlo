@@ -3475,44 +3475,161 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
   );
 }
 
+// The five life-phase "sectors" the badge cycles through as retirement age
+// advances. Each carries the age window it covers and the one-line reason it
+// matters, so the badge's InfoModal can explain the current phase (and the
+// whole arc) instead of leaving "Sector 1: The Escape" as an unexplained label.
+const SECTORS = [
+  {
+    n: "Sector 1: The Escape",
+    color: "var(--negative)",
+    range: "Before age 59½",
+    active: (age) => age < 59.5,
+    desc: (
+      <>
+        <ModalLede>The pre-59½ penalty zone — the years you have to bridge before tax-deferred money is reachable without a penalty.</ModalLede>
+        <ModalP>
+          Withdrawals from <Em>Traditional 401(k) / IRA</Em> accounts before 59½ trigger a
+          {" "}<Em color="var(--negative)">10% early-withdrawal penalty</Em> on top of ordinary income tax.
+          The play is to <Em>escape</Em> to 59½ by living on your taxable brokerage, cash
+          reserves, and Roth contributions — or a structured <Em>72(t) / SEPP</Em> — without
+          touching the penalized accounts.
+        </ModalP>
+        <ModalNote accent="var(--negative)">
+          This is the highest sequence-of-returns risk window: an early market drop lands while
+          the portfolio is largest and no penalty-free lever is available yet.
+        </ModalNote>
+      </>
+    ),
+  },
+  {
+    n: "Sector 2: The Gap",
+    color: "#0ea5e9",
+    range: "Age 59½ – 63",
+    active: (age) => age >= 59.5 && age < 63,
+    desc: (
+      <>
+        <ModalLede>Penalty-free withdrawals unlock, but Social Security, Medicare, and RMDs haven't started yet.</ModalLede>
+        <ModalP>
+          These are the <Em>gap years</Em>: the 10% penalty is gone, income is often at its
+          lowest, and you're still before the 2-year <Em>IRMAA lookback</Em> that sets Medicare
+          premiums at 65. Typically the cleanest, lowest-bracket window for
+          {" "}<Em color="var(--accent-purple)">Roth conversions</Em>.
+        </ModalP>
+      </>
+    ),
+  },
+  {
+    n: "Sector 3: The Maneuver",
+    color: "var(--accent-gold)",
+    range: "Age 65 – 72",
+    active: (age) => age >= 65 && age < 72,
+    desc: (
+      <>
+        <ModalLede>Medicare and Social Security are live; required distributions still aren't. Your last window to steer income.</ModalLede>
+        <ModalP>
+          Medicare starts at 65, so <Em color="var(--accent-purple)">IRMAA tiers</Em> now drive
+          your premiums; Social Security may have begun. But <Em>RMDs haven't started</Em>, so this
+          is the window to finish conversions and maneuver taxable income before distributions
+          become mandatory.
+        </ModalP>
+      </>
+    ),
+  },
+  {
+    n: "Sector 4: The Torpedo",
+    color: "#f97316",
+    range: "Age 73+",
+    active: (age) => age >= 72 && age < 73,
+    desc: (
+      <>
+        <ModalLede>The tax torpedo: Required Minimum Distributions begin whether you need the money or not.</ModalLede>
+        <ModalP>
+          <Em color="#f97316">RMDs</Em> start at age 73 (SECURE 2.0), forcing taxable withdrawals
+          from tax-deferred accounts on the IRS schedule. Those forced distributions can push you
+          into a higher bracket and a higher <Em color="var(--accent-purple)">IRMAA tier</Em> —
+          the "torpedo" that a large un-converted balance sets off.
+        </ModalP>
+      </>
+    ),
+  },
+  {
+    n: "Sector 5: Legacy",
+    color: "var(--accent-purple)",
+    range: "Wealth transfer",
+    active: () => false,
+    desc: (
+      <>
+        <ModalLede>The wealth-transfer phase — the focus shifts from your spend to what passes to heirs.</ModalLede>
+        <ModalP>
+          RMDs are ongoing; planning turns to estate efficiency and beneficiary tax treatment —
+          the <Em>10-year inherited-IRA rule</Em> that governs how fast heirs must draw down what
+          they receive.
+        </ModalP>
+      </>
+    ),
+  },
+];
+
 function SectorBadge({ age }) {
-  const sectors = [
-    { n: "Sector 1: The Escape", color: "var(--negative)", active: age < 59.5 },
-    {
-      n: "Sector 2: The Gap",
-      color: "#0ea5e9",
-      active: age >= 59.5 && age < 63,
-    },
-    {
-      n: "Sector 3: The Maneuver",
-      color: "var(--accent-gold)",
-      active: age >= 65 && age < 72,
-    },
-    {
-      n: "Sector 4: The Torpedo",
-      color: "#f97316",
-      active: age >= 72 && age < 73,
-    },
-    { n: "Sector 5: Legacy", color: "var(--accent-purple)", active: false },
-  ];
-  const cur = sectors.find((s) => s.active) || sectors[0];
+  const cur = SECTORS.find((s) => s.active(age)) || SECTORS[0];
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        background: `${withAlpha(cur.color, "18")}`,
-        border: `1px solid ${withAlpha(cur.color, "44")}`,
-        borderRadius: 12,
-        padding: "2px 10px",
-        fontSize: 10,
-        color: cur.color,
-        fontWeight: 600,
-      }}
+    <InfoModal
+      title="Life-phase sectors"
+      accent={cur.color}
+      maxWidth={460}
+      trigger={
+        <span
+          title="Tap or click to learn about this retirement phase"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            background: `${withAlpha(cur.color, "18")}`,
+            border: `1px solid ${withAlpha(cur.color, "44")}`,
+            borderRadius: 12,
+            padding: "2px 10px",
+            fontSize: 10,
+            color: cur.color,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          ⚡ {cur.n} <InfoIcon size={11} />
+        </span>
+      }
     >
-      ⚡ {cur.n}
-    </span>
+      <ModalP>
+        AiRA splits the retirement horizon into <Em>five sectors</Em> — each a distinct tax-and-access
+        regime. Your current phase is highlighted below.
+      </ModalP>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
+        {SECTORS.map((s) => {
+          const isCur = s.n === cur.n;
+          return (
+            <div
+              key={s.n}
+              style={{
+                border: `1px solid ${withAlpha(s.color, isCur ? "66" : "22")}`,
+                borderLeft: `3px solid ${s.color}`,
+                background: withAlpha(s.color, isCur ? "14" : "08"),
+                borderRadius: 8,
+                padding: "10px 12px",
+                opacity: isCur ? 1 : 0.85,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: s.color }}>
+                  ⚡ {s.n}{isCur ? " — you are here" : ""}
+                </span>
+                <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{s.range}</span>
+              </div>
+              {s.desc}
+            </div>
+          );
+        })}
+      </div>
+    </InfoModal>
   );
 }
 
