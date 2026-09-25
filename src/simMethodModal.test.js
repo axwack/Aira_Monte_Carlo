@@ -62,3 +62,16 @@ test("mounts for a non-GK strategy too (strategy label path)", () => {
     );
   }).not.toThrow();
 });
+
+test("mounts with NO strategyHowItWorks prop — the hero ⓘ relies on the module-level default", () => {
+  // The headline "Success to Age" ⓘ lives in the main component, which has no
+  // MCTab-local strategy map to pass. It must fall back to STRATEGY_HOW_IT_WORKS
+  // for every live strategy without throwing.
+  for (const s of ["gk", "smart", "bengen", "fixed", "vpw", "ninety_five_rule"]) {
+    expect(() => {
+      renderToText(
+        <SimMethodModal params={PARAMS} withdrawalStrategy={s} trigger={<span>info</span>} />
+      );
+    }).not.toThrow();
+  }
+});

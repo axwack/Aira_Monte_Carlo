@@ -3087,7 +3087,21 @@ function InfoDot({ title, heading = "What this means", size = 14, color = "var(-
 // reshuffled) from the real 1928–2025 Damodaran arrays runMC samples
 // (SP500/BONDS/INFL) — NOT a sequential historical replay. The pool-stats box
 // characterizes that distribution honestly instead of aping a year-scrubber.
-function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks, trigger }) {
+// One plain-language description per withdrawal strategy, keyed by resolved
+// strategy id. Module scope so every ⓘ that opens SimMethodModal (the hero
+// "Success to Age" ⓘ and the Monte Carlo tab's Success Rate card) reads the
+// same text — it used to be local to MCTab, which is why the hero ⓘ could not
+// reach the rich modal at all.
+const STRATEGY_HOW_IT_WORKS = {
+  gk: "Guyton‑Klinger guardrails — Every year, if the current withdrawal rate exceeds 120% of the initial rate, spending cuts 10% (never below floor). If it falls below 80%, spending increases 10% (never above ceiling).",
+  fixed: "Fixed Percentage — You withdraw a constant percentage of the current portfolio each year, automatically adjusting with market value.",
+  vpw: "Variable Percentage Withdrawal (VPW) — Spending is recalculated annually as the portfolio amortized over your remaining years, so the plan is designed to spend down to roughly zero by your plan-to age.",
+  ninety_five_rule: "95% Rule — Spending can drop to 95% of last year's amount during downturns, otherwise tracks inflation.",
+  bengen: "Bengen 4% Rule — Withdraw a fixed percentage of the STARTING portfolio value in year one, then increase that dollar amount with inflation every year after. Spending never reacts to portfolio performance, for better or worse — an honest model of late-stage risk for fixed-budget retirees.",
+  smart: "Smart Waterfall (hybrid) — Guyton‑Klinger guardrails while more than 15 years remain in the plan, then switches to the Bengen 4% Rule for the final 15 years — the split matches GK's own longevity-safety-brake threshold, so the switch happens exactly where GK's brake would otherwise be disabled."
+};
+
+function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRATEGY_HOW_IT_WORKS, trigger }) {
   const strat = resolveStrategy(withdrawalStrategy);
   // Honest characterization of the bootstrap POOL — the distribution runMC
   // samples from — NOT a year-by-year scenario table (that would ape a
@@ -11843,14 +11857,8 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
     </div>
   );
 
-  const strategyHowItWorks = {
-  gk: "Guyton‑Klinger guardrails — Every year, if the current withdrawal rate exceeds 120% of the initial rate, spending cuts 10% (never below floor). If it falls below 80%, spending increases 10% (never above ceiling).",
-  fixed: "Fixed Percentage — You withdraw a constant percentage of the current portfolio each year, automatically adjusting with market value.",
-  vpw: "Variable Percentage Withdrawal (VPW) — Spending is recalculated annually as the portfolio amortized over your remaining years, so the plan is designed to spend down to roughly zero by your plan-to age.",
-  ninety_five_rule: "95% Rule — Spending can drop to 95% of last year's amount during downturns, otherwise tracks inflation.",
-  bengen: "Bengen 4% Rule — Withdraw a fixed percentage of the STARTING portfolio value in year one, then increase that dollar amount with inflation every year after. Spending never reacts to portfolio performance, for better or worse — an honest model of late-stage risk for fixed-budget retirees.",
-  smart: "Smart Waterfall (hybrid) — Guyton‑Klinger guardrails while more than 15 years remain in the plan, then switches to the Bengen 4% Rule for the final 15 years — the split matches GK's own longevity-safety-brake threshold, so the switch happens exactly where GK's brake would otherwise be disabled."
-};
+  // strategyHowItWorks moved to module scope (STRATEGY_HOW_IT_WORKS, next to
+  // SimMethodModal) so the hero "Success to Age" ⓘ and this tab share ONE copy.
 
   const startEdit = (cp) => {
     setEditingId(cp.id);
@@ -11945,7 +11953,6 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                 <SimMethodModal
                   params={params}
                   withdrawalStrategy={withdrawalStrategy}
-                  strategyHowItWorks={strategyHowItWorks}
                   trigger={<span aria-label="How this simulation works" style={{ color: "#60a5fa", cursor: "pointer", fontSize: 10.5, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px dashed rgba(96,165,250,0.45)" }}>ⓘ How this works</span>}
                 />
               </div>
@@ -18727,7 +18734,24 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       </div>
                       <div style={{ fontSize: 15, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 5 }}>
                         Success to Age {endAge}
-                        <InfoDot size={12} title={`Percentage of simulations where your portfolio lasted to age ${endAge}, after all spending, taxes, healthcare shocks, and modeled expenses.`} />
+                        {/* Opens the SAME rich method modal as the Monte Carlo tab's
+                            Success Rate card (one component, one copy — rule 8).
+                            This was an InfoDot with one sentence, so the hero ⓘ
+                            never reached the real explanation of how the number is
+                            made. Trigger mirrors InfoDot's round icon. */}
+                        <SimMethodModal
+                          params={params}
+                          withdrawalStrategy={withdrawalStrategy}
+                          trigger={
+                            <span
+                              role="img"
+                              aria-label="How this simulation works"
+                              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 18, height: 18, borderRadius: "50%", background: "var(--card-border)", color: "var(--text-secondary)", cursor: "pointer" }}
+                            >
+                              <InfoIcon size={12} />
+                            </span>
+                          }
+                        />
                       </div>
                     </div>
                     {/* design-authority (2026-09-17): was an inline expand/collapse
