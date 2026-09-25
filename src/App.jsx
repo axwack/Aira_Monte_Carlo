@@ -10530,7 +10530,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
               Around then, plan to move about <strong style={{ color: "var(--accent-gold)" }}>{fmtDollar(runway.refillAmount)}</strong>{" "}
               from Bucket 2 to refill it to your {b1Years}-year target.
               <div style={{ fontSize: 10.5, color: "var(--text-faint)", marginTop: 6 }}>
-                Based on your projected withdrawal schedule (Scenarios → 📋 Withdrawal Plan) — not a separate
+                Based on your projected withdrawal schedule (Analysis → Withdrawal Plan) — not a separate
                 projection, and not a crash forecast. A market drop or a spending change would move this date.
               </div>
             </div>
@@ -15448,7 +15448,7 @@ function AssumptionsPanel({ values, onChange }) {
           After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
         </div>
         <div style={{ fontSize: 11, color: "var(--text-faint)", lineHeight: 1.5, marginBottom: 12 }}>
-          The bracket-fill target is set on <strong style={{ color: "var(--accent-purple)" }}>Scenarios → 📊 Conversion Plan</strong>,
+          The bracket-fill target is set on <strong style={{ color: "var(--accent-purple)" }}>Analysis → Roth Conversions → Conversion Plan</strong>,
           right above the ladder it shapes — it's saved here in your profile so the Withdrawal Plan
           and Monte Carlo runs use the same setting.
         </div>
@@ -15525,7 +15525,7 @@ function AssumptionsPanel({ values, onChange }) {
           The <strong style={{ color: "var(--accent)" }}>account draw order</strong> (which bucket drains first —
           tax-reactive, custom, or pre-tax first) and the sourcing guardrails — pre-tax bracket ceiling,
           IRMAA guard, Roth reserve, and SS-torpedo warnings — are set on{" "}
-          <strong style={{ color: "var(--accent-teal)" }}>Scenarios → 📋 Withdrawal Plan</strong>, right above the
+          <strong style={{ color: "var(--accent-teal)" }}>Analysis → Withdrawal Plan</strong>, right above the
           waterfall they shape. The distribution strategy stays here in Profile.
         </div>
       </ACard>
@@ -19239,7 +19239,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                           <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, padding: "10px 2px" }}>
                             Your current spending strategy doesn’t use Guyton–Klinger guardrails, so there is nothing to
                             flex here. Switch to a guardrail-family strategy (Guyton–Klinger, Risk-based, Kitces, or Smart
-                            Waterfall) in <strong style={{ color: "var(--text-secondary)" }}>Scenarios → Withdrawal Plan</strong> to
+                            Waterfall) in <strong style={{ color: "var(--text-secondary)" }}>Analysis → Withdrawal Plan</strong> to
                             see the spending path, its floor and ceiling, and every year an adjustment fired.
                           </div>
                         )}

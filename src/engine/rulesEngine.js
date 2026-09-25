@@ -480,7 +480,7 @@ export const RULES = [
     action: "Consider Smart Waterfall withdrawal strategy",
     reason: ({ params }) => {
       const pretax = preTaxTotal(params);
-      return `$${Math.round(pretax).toLocaleString()} pretax balance — naive ordering drains it first and pushes income into higher brackets. To enable: (1) Forecast sidebar → Withdrawal Strategy → select "📋 Smart Waterfall (Tax-Optimal)", then re-run Monte Carlo. (2) Profile → Assumptions → Withdrawal Order → configure your bracket ceiling and IRMAA guard. (3) Scenarios → 📋 Withdrawal Plan to compare Smart vs Naive lifetime taxes.`;
+      return `$${Math.round(pretax).toLocaleString()} pretax balance — naive ordering drains it first and pushes income into higher brackets. To enable: (1) Forecast sidebar → Withdrawal Strategy → select "📋 Smart Waterfall (Tax-Optimal)", then re-run Monte Carlo. (2) Profile → Assumptions → Withdrawal Order → configure your bracket ceiling and IRMAA guard. (3) Analysis → Withdrawal Plan to compare Smart vs Naive lifetime taxes.`;
     },
     deadline: "At retirement",
   },
