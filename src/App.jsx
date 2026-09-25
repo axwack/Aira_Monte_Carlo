@@ -285,6 +285,97 @@ export const INFO_ACCENT = {
   risk:     "var(--accent-gold)",    // warnings, landmines, caution
 };
 
+/**
+ * PillTab — the app's one row-of-choices idiom.
+ *
+ * WHY: three groups of pills had each grown their own active state, and a fourth
+ * lived in `.mbtn.on`. Four ways to say "this one is selected" means a user has
+ * to learn the gesture again on every screen, and it means every new control
+ * starts by copying whichever neighbour the author last looked at.
+ *
+ * THE TREATMENT (Vincent, 2026-09-25): bare text on a shared hairline, active
+ * item marked by a 2px accent underline — the same language as the top-level
+ * tabs and the Monte Carlo Simulation/Guardrails row. An earlier pass gave these
+ * a tinted surface + coloured border box; on screen that read as a wall of
+ * buttons competing with the tabs above them, and the boxes made every row look
+ * like a form control rather than navigation. The accent colour carries the
+ * state; no fill and no border box.
+ *
+ * WHAT IS STILL NOT UNIFIED, ON PURPOSE: the accent colour. Some rows encode
+ * meaning in their hue and flattening it would delete information —
+ *   · Bracket Fill: green = safe bracket, amber = caution, red = 32%+ / IRMAA risk
+ *   · Tax Room:     amber marks figures anchored to REAL entered income, versus
+ *                   the optimizer's projections elsewhere in the row
+ * So `accentFor` is a prop and each caller passes what the choice MEANS. It now
+ * paints the active item's text AND its underline, which is the only colour the
+ * row needs.
+ *
+ * `size` exists because the Analysis row is primary navigation (7 items, wide
+ * spacing) while the compact rows sit inside a settings card; forcing one size
+ * on both is what made the Analysis row look like a form last time.
+ */
+function PillTab({
+  options, value, onChange, accentFor,
+  defaultAccent = INFO_ACCENT.method,
+  ariaLabel, style, size = "md",
+}) {
+  const SIZES = {
+    md: { fontSize: 12, padding: "7px 13px" },
+    sm: { fontSize: 11, padding: "5px 10px" },
+  };
+  const s = SIZES[size] || SIZES.md;
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      style={{
+        display: "flex",
+        // No gap: the items sit flush on the hairline like real tabs, separated
+        // by their own padding. `marginBottom:-1` on each item drops it onto the
+        // rule so the active underline replaces the grey line instead of
+        // floating above it.
+        gap: 2,
+        flexWrap: "wrap",
+        alignItems: "stretch",
+        // The full-width hairline the underline sits on — this is the line that
+        // makes a row of labels read as a tab bar.
+        borderBottom: "1px solid var(--divider)",
+        ...style,
+      }}
+    >
+      {options.map(([key, label]) => {
+        const on = key === value;
+        const accent = (accentFor && accentFor(key)) || defaultAccent;
+        return (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(key)}
+            style={{
+              background: "transparent",
+              border: "none",
+              borderBottom: `2px solid ${on ? accent : "transparent"}`,
+              marginBottom: -1,
+              padding: s.padding,
+              fontSize: s.fontSize,
+              fontFamily: "var(--font-sans)",
+              fontWeight: on ? 800 : 600,
+              letterSpacing: "-0.01em",
+              whiteSpace: "nowrap",
+              color: on ? accent : "var(--text-muted)",
+              cursor: "pointer",
+              transition: "color 0.15s, border-color 0.15s",
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // Guyton-Klinger guardrails, as % of core spend
 export const GK_FLOOR_DEFAULT_PCT = 65;export const GK_CEILING_DEFAULT_PCT = 135;
 // Dollar fallbacks used only when a profile predates the % fields
@@ -6331,35 +6422,23 @@ const modeDescs = {
         }}
       >
         <div style={{ display: "flex", gap: 4 }}>
-          {["thisyear", "optimized", "taxes", "table", "scenarios"].map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              style={{
-                padding: "4px 10px",
-                borderRadius: 6,
-                border: v === "thisyear"
-                  ? (view === v ? "1px solid #f59e0b" : "1px solid rgba(245,158,11,0.3)")
-                  : "1px solid rgba(255,255,255,0.1)",
-                cursor: "pointer",
-                fontSize: 10,
-                fontFamily: "inherit",
-                fontWeight: 600,
-                background: view === v
-                  ? (v === "thisyear" ? "rgba(245,158,11,0.15)" : "rgba(13,148,136,0.2)")
-                  : "transparent",
-                color: view === v
-                  ? (v === "thisyear" ? "var(--accent-gold)" : "var(--accent-teal)")
-                  : "var(--text-muted)",
-              }}
-            >
-              {v === "thisyear"   ? "💰 Tax Room"
-               : v === "optimized"  ? "📊 Conversion Plan"
-               : v === "taxes" ? "⚖️ Taxes"
-               : v === "table"      ? "📋 Year-by-Year"
-               :                      "🗺️ 3-Scenario"}
-            </button>
-          ))}
+        {/* Same PillTab idiom. Tax Room keeps its amber because the colour is
+            meaningful here, not decorative: it marks the views grounded in
+            income you actually entered, as against the optimizer's projections. */}
+        <PillTab
+          ariaLabel="Roth conversion view"
+          size="sm"
+          options={[
+            ["thisyear", "💰 Tax Room"],
+            ["optimized", "📊 Conversion Plan"],
+            ["taxes", "⚖️ Taxes"],
+            ["table", "📋 Year-by-Year"],
+            ["scenarios", "🗺️ 3-Scenario"],
+          ]}
+          value={view}
+          onChange={setView}
+          accentFor={(k) => (k === "thisyear" ? "var(--accent-gold)" : INFO_ACCENT.method)}
+        />
         </div>
         <button
           onClick={() => setShowInputs(!showInputs)}
@@ -6391,44 +6470,25 @@ const modeDescs = {
         </div>
         <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
 
-          {Object.entries(modeLabels).map(([k, v]) => {
-            const isHigh = ["fill_32","fill_35","fill_37"].includes(k);
-            const isCaution = k === "fill_24";
-            const isSafe = ["no_convert","fill_10","fill_12"].includes(k);
-            const isDefault = k === "fill_22";
-
-            let bgColor = "transparent";
-            let textColor = "var(--text-muted)";
-            let borderColor = "rgba(255,255,255,0.1)";
-
-            if (rothMode === k) {
-              if (isHigh) { bgColor = "rgba(239,68,68,0.15)"; textColor = "#f87171"; borderColor = "var(--negative)"; }
-              else if (isCaution) { bgColor = "rgba(245,158,11,0.15)"; textColor = "var(--accent-gold)"; borderColor = "#f59e0b"; }
-              else if (isSafe) { bgColor = "rgba(16,185,129,0.15)"; textColor = "#34d399"; borderColor = "var(--positive)"; }
-              else { bgColor = "rgba(13,148,136,0.15)"; textColor = "var(--accent-teal)"; borderColor = "var(--positive)"; }
-            }
-            
-            return (
-              <button
-                key={k}
-                onClick={() => setRothMode(k)}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  fontSize: 10,
-                  fontFamily: "inherit",
-                  fontWeight: 600,
-                  border: `1px solid ${borderColor}`,
-                  background: bgColor,
-                  color: textColor,
-                  transition: "all 0.15s",
-                }}
-              >
-                {v}
-              </button>
-            );
-          })}
+          {/* One idiom now (see PillTab). The risk grading is preserved as the
+              ACCENT rather than a coloured border-box: green = safe bracket,
+              amber = caution, red = 32%+ / IRMAA exposure. Flattening these to a
+              single colour would delete a warning that stops someone converting
+              into a bracket cliff, so the hue stays meaningful and only the
+              chrome is shared. */}
+          <PillTab
+            ariaLabel="Bracket fill strategy"
+            size="sm"
+            options={Object.entries(modeLabels)}
+            value={rothMode}
+            onChange={setRothMode}
+            accentFor={(k) => {
+              if (["fill_32", "fill_35", "fill_37"].includes(k)) return "var(--negative)";
+              if (k === "fill_24") return "var(--accent-gold)";
+              if (["no_convert", "fill_10", "fill_12"].includes(k)) return "var(--positive)";
+              return INFO_ACCENT.method;
+            }}
+          />
         </div>
         <div style={{ fontSize: 10, color: "var(--text-muted)", fontStyle: "italic" }}>
           {modeDescs[rothMode]}
@@ -11094,36 +11154,17 @@ function ScenariosTab({
 
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          gap: 4,
-          marginBottom: 12,
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-          paddingBottom: 8,
-        }}
-      >
-        {SCENARIO_SUBTABS.map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setScenarioSubTab(key)}
-            style={{
-              padding: "5px 12px",
-              fontSize: 13,
-              borderRadius: 6,
-              border: "none",
-              cursor: "pointer",
-              background:
-                scenarioSubTab === key
-                  ? "rgba(255,255,255,0.1)"
-                  : "transparent",
-              color: scenarioSubTab === key ? "#e2e8f0" : "var(--text-faint)",
-              fontFamily: "inherit",
-            }}
-          >
-            {label}
-          </button>
-        ))}
+      {/* Navigation, so one accent throughout — no meaning is carried by hue
+          here, unlike the bracket-fill and Tax Room rows. The wrapper no longer
+          paints its own bottom rule: PillTab now owns the hairline, and two
+          hairlines one pixel apart is what made this row look doubled. */}
+      <div style={{ marginBottom: 12 }}>
+        <PillTab
+          ariaLabel="Analysis view"
+          options={SCENARIO_SUBTABS}
+          value={scenarioSubTab}
+          onChange={setScenarioSubTab}
+        />
       </div>
 
       {scenarioSubTab === "stress" && (
@@ -19346,4 +19387,4 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView, SimMethodModal, MCBandTable, bandLabel, MCOverviewCards, VerdictHeader, NetWorthTip };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView, SimMethodModal, MCBandTable, bandLabel, MCOverviewCards, VerdictHeader, NetWorthTip, PillTab };
