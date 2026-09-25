@@ -193,8 +193,11 @@ import { IRMAA_2026 } from './data/irmaa2026.js';
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.145";
-export const BUILD_TAG = `[main] v1.2.145 - Guardrails view rebuilt as tabs (Spending Path · Adjustment Events · Across All Scenarios)
+const APP_VERSION = "1.2.146";
+export const BUILD_TAG = `[main] v1.2.146 - Life-phase Sector badge is now a clickable InfoModal (all five sectors, current phase marked "You are here"), and the sector age windows are contiguous
+- SectorBadge opens the shared InfoModal explaining every sector (age window + tax-and-access regime); the active phase carries a "You are here" pill instead of a wrapping em-dash suffix
+- Fixed dead age ranges: sectors now partition the whole age line with no gaps/overlaps (Escape <59½ · Gap 59½-65 · Maneuver 65-73 · Torpedo 73-80 · Legacy 80+). Previously ages 63-65 and 73+ matched no sector and mislabeled as "Sector 1: The Escape"
+- PRIOR (v1.2.145): Guardrails view rebuilt as tabs (Spending Path · Adjustment Events · Across All Scenarios)
 - <GuardrailsView>: cross-scenario headline strip stays persistent; sub-tabs split the crowded stack. Spending Path adds the Portfolio line on a 2nd (right) axis for more info; Adjustment Events lists every cut/raise (age, from→to, why); Across All Scenarios expands mc.gkStats into stat cards. Median-path emptiness is explained, not hidden (bad sequences live in the cross-scenario tab)
 - Prominent cut/raise triangles (~17x13px)
 - PRIOR (v1.2.144): Uniform info-modal styling + semantic accent palette (INFO_ACCENT) + modal body-text kit (ModalLede/ModalP/Em/ModalNote)
@@ -215,7 +218,7 @@ export const BUILD_TAG = `[main] v1.2.145 - Guardrails view rebuilt as tabs (Spe
 - runMC now returns mc.gkStats (cutRate / raiseRate / avgCutsPerPath / spend range) counted per path, for the cross-scenario summary
 - Added an agent attribution + tamper-evidence registry (agent-marks.json + src/agentMarks.js + scripts/agent-marks.mjs), enforced by src/agentMarks.test.js, so an edit to another agent's region fails the build instead of sliding in
 - Added a render smoke test for the guardrails chart (guardrailsChartRender.test.js) - the RothLadder-class gap that engine tests can't catch`;
-export const BUILD_TIME = "2026-09-24T12:00:00Z";
+export const BUILD_TIME = "2026-09-25T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -3505,8 +3508,8 @@ const SECTORS = [
   {
     n: "Sector 2: The Gap",
     color: "#0ea5e9",
-    range: "Age 59½ – 63",
-    active: (age) => age >= 59.5 && age < 63,
+    range: "Age 59½ – 65",
+    active: (age) => age >= 59.5 && age < 65,
     desc: (
       <>
         <ModalLede>Penalty-free withdrawals unlock, but Social Security, Medicare, and RMDs haven't started yet.</ModalLede>
@@ -3522,8 +3525,8 @@ const SECTORS = [
   {
     n: "Sector 3: The Maneuver",
     color: "var(--accent-gold)",
-    range: "Age 65 – 72",
-    active: (age) => age >= 65 && age < 72,
+    range: "Age 65 – 73",
+    active: (age) => age >= 65 && age < 73,
     desc: (
       <>
         <ModalLede>Medicare and Social Security are live; required distributions still aren't. Your last window to steer income.</ModalLede>
@@ -3539,8 +3542,8 @@ const SECTORS = [
   {
     n: "Sector 4: The Torpedo",
     color: "#f97316",
-    range: "Age 73+",
-    active: (age) => age >= 72 && age < 73,
+    range: "Age 73 – 80",
+    active: (age) => age >= 73 && age < 80,
     desc: (
       <>
         <ModalLede>The tax torpedo: Required Minimum Distributions begin whether you need the money or not.</ModalLede>
@@ -3556,8 +3559,8 @@ const SECTORS = [
   {
     n: "Sector 5: Legacy",
     color: "var(--accent-purple)",
-    range: "Wealth transfer",
-    active: () => false,
+    range: "Age 80+",
+    active: (age) => age >= 80,
     desc: (
       <>
         <ModalLede>The wealth-transfer phase — the focus shifts from your spend to what passes to heirs.</ModalLede>
