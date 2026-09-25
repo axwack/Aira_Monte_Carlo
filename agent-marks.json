@@ -44,7 +44,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function TaxDetailsModal(",
       "description": "Click-open Tax Calculation Details modal. Reads the waterfall row only (rule 8) — no second tax computation.",
-      "sha": "08dc202e2adaba79"
+      "sha": "96cf4307473aae23"
     },
     {
       "id": "mc-advanced-settings",
@@ -59,8 +59,8 @@
       "owner": "deepseek-flash",
       "file": "src/App.jsx",
       "startAnchor": "const WF_SEGMENTS = [",
-      "description": "Column-group segments for the year-by-year table. Span sum MUST equal the table's column count (23) or the grouped header misaligns.",
-      "sha": "a0c46b3488f1d434"
+      "description": "Column-group segments for the year-by-year table. Span sum MUST equal the table's column count (24) or the grouped header misaligns.",
+      "sha": "11d009678d5705e7"
     },
     {
       "id": "mc-sampling-window",

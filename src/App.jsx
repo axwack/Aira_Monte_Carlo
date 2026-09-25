@@ -4042,7 +4042,11 @@ const CSS = `
   .wf-views button:hover { color:var(--text-primary); }
   .wf-views button.on { background:color-mix(in srgb, var(--accent-teal) 16%, transparent);
     border-color:color-mix(in srgb, var(--accent-teal) 45%, transparent); color:var(--accent-teal); }
-  .wf-grp { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:0.14em;
+  /* line-height:1 is load-bearing, not cosmetic: the group row's box height is
+     what --wf-grp-h has to equal for the second header row to stack under it
+     (see the frozen-column block below). Body line-height is 1.5, which would
+     make this row 9*1.5 = 13.5px of text instead of 9. */
+  .wf-grp { font-size:9px; line-height:1; font-weight:800; text-transform:uppercase; letter-spacing:0.14em;
     color:var(--text-muted); text-align:center; padding:6px 6px 4px; white-space:nowrap;
     border-bottom:1px solid var(--divider); }
   .wf-grp-s { color:var(--accent-gold); }
@@ -4063,7 +4067,74 @@ const CSS = `
   .wf-tbl[data-view="bal"] [data-cg="draw"],
   .wf-tbl[data-view="bal"] [data-cg="conv"],
   .wf-tbl[data-view="bal"] [data-cg="tax"],
-  .wf-tbl[data-view="bal"] [data-cg="risk"] { display:none; }  .roth-tbl th { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.09); }
+  .wf-tbl[data-view="bal"] [data-cg="risk"] { display:none; }
+  /* ── Frozen Age column, sticky headers, row striping ──────────────────────
+     The schedule is 24 columns wide, so once a reader scrolls right the row's
+     year leaves the screen and the numbers stop meaning anything. Three pieces,
+     and each one is load-bearing for the others:
+
+       1. TWO STICKY HEADER ROWS. Sticky needs a known offset for the second
+          row, so the group row's height is DECLARED as --wf-grp-h and reused as
+          row 2's top. It is not measured, it is arithmetic: the group cell is
+          white-space:nowrap at font-size 9px / line-height 1 with 6px top +
+          4px bottom padding and a 1px rule = 9+6+4+1 = 20px under the global
+          border-box rule. Change any of those and --wf-grp-h changes with them,
+          or row 2 overlaps row 1.
+       2. ONE ROW-BACKGROUND VARIABLE. A sticky cell painted transparent shows
+          the columns sliding underneath it, so every sticky cell must paint the
+          SAME fill as its row. --wf-row-bg is that single source: the zebra,
+          the hover and the landmine row all write to it rather than each
+          setting a background of its own, which is what keeps the frozen cell
+          looking like part of its row at every scroll position.
+       3. EXPLICIT NUMERIC LAYERS. Body sticky (2) < header rows (3) < frozen
+          header cell (4). Numbers on purpose: at z-index auto the frozen Age
+          header slides UNDER the group header it is meant to sit on. Operator
+          columns carry no z-index and stay at the base layer.
+
+     border-collapse MUST be separate: under collapse, borders are not painted
+     on sticky cells and rows visibly lose their rules part-way through a
+     scroll. Tints reuse existing theme tokens (--row-highlight, --bg-danger)
+     instead of new hexes, so a theme flip re-tints the table and light mode
+     keeps its contrast. */
+  .wf-scroll { max-height:72vh; overflow:auto; border:1px solid var(--divider); border-radius:8px; }
+  .wf-scroll:focus-visible { outline:2px solid var(--accent-teal); outline-offset:2px; }
+  .wf-tbl { --wf-grp-h:20px; --wf-age-w:58px; --wf-stripe:rgba(255,255,255,0.03);
+    --wf-head-bg:var(--bg-base); border-collapse:separate; border-spacing:0; }
+  html[data-theme="light"] .wf-tbl { --wf-stripe:rgba(15,23,42,0.035); }
+  .wf-tbl tbody tr { --wf-row-bg:transparent; }
+  .wf-tbl tbody tr:nth-child(even) { --wf-row-bg:var(--wf-stripe); }
+  .wf-tbl tbody tr.wf-landmine { --wf-row-bg:var(--bg-danger); }
+  /* Hover is written last so it wins the specificity tie with .wf-landmine. */
+  .wf-tbl tbody tr:hover { --wf-row-bg:var(--row-highlight); }
+  .wf-tbl tbody td { background:var(--wf-row-bg); }
+  .wf-tbl [data-cg="time"] { position:sticky; left:0; width:var(--wf-age-w);
+    min-width:var(--wf-age-w); background:var(--wf-row-bg,var(--wf-head-bg)); }
+  .wf-tbl thead [data-cg="time"] { z-index:4; }
+  .wf-tbl tbody [data-cg="time"] { z-index:2; }
+  .wf-tbl thead th { position:sticky; z-index:3; background:var(--wf-head-bg); }
+  .wf-tbl thead tr:nth-child(1) th { top:0; height:var(--wf-grp-h); }
+  .wf-tbl thead tr:nth-child(2) th { top:var(--wf-grp-h); }
+  /* The frozen column's right edge, so content scrolled under it reads as
+     continuing beneath it rather than as clipped at a hard line. */
+  .wf-tbl [data-cg="time"]::after { content:""; position:absolute; top:0; bottom:0;
+    left:100%; width:6px; pointer-events:none;
+    background:linear-gradient(90deg, rgba(10,12,18,0.30), transparent); }
+  html[data-theme="light"] .wf-tbl [data-cg="time"]::after {
+    background:linear-gradient(90deg, rgba(15,23,42,0.16), transparent); }
+  /* Trailing action column — outside the funding identity, so it is separated
+     by a rule and never shares a data segment's colour. No lens hides it. */
+  .wf-tbl [data-cg="act"] { border-left:1px solid var(--divider); text-align:center; white-space:nowrap; }
+  .wf-act-btn { background:transparent; border:none; padding:2px 4px; cursor:pointer;
+    font-family:var(--font-sans); font-size:9.5px; font-weight:700; color:var(--accent-teal);
+    text-decoration:underline; text-underline-offset:2px; white-space:nowrap; }
+  .wf-act-btn:hover { color:var(--text-primary); }
+  /* Row-level tax-risk marker. The frozen Age cell is the only column that no
+     lens hides, so a landmine year stays visible in the default Flows view
+     rather than only in Taxes & risk (R4). Never colour-only — it has a label. */
+  .wf-risk-dot { display:inline-block; width:6px; height:6px; border-radius:50%;
+    background:var(--negative); margin-left:5px; vertical-align:middle; }
+  .wf-basis { font-size:11px; font-weight:600; color:var(--text-muted); margin-left:6px; }
+  .roth-tbl th { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.09); }
   .roth-tbl th:first-child { text-align:left; }
   .roth-tbl td { padding:9px 8px; border-bottom:1px solid rgba(255,255,255,0.05); text-align:right; font-family:'JetBrains Mono',monospace; font-size:12px; color:#e2e8f0; }
   .roth-tbl td:first-child { text-align:left; font-family:var(--font-sans); color:#f1f5f9; }
@@ -8763,6 +8834,35 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
   );
 }
 
+/* ── The schedule's lens and its dollar basis — two decisions, named ─────────
+ *
+ * WF_BASIS_REAL: the year-by-year table is NOMINAL, and that is fixed rather
+ * than toggled. buildWithdrawalWaterfall takes no `inf`/real input and never
+ * calls deflate(), and this component is handed only `p` and `result`, so every
+ * figure in the table is in future-year dollars. §43 R5 decided the table
+ * STATES that, rather than silently deflating its cells: per-cell deflation in
+ * the render would be a second reader of the deflation primitive, which rule 8
+ * keeps in exactly one place (deflate(), engine/mcSelectors.js). The same
+ * decision is why a "Today's $" column must not be added beside these columns —
+ * that is the mixed-basis table §43 refuses.
+ */
+const WF_BASIS_REAL = false;
+
+/* Progressive disclosure (ethos P6): the 24-column schedule is the reference
+ * view, not the default one. Flows is the default because it answers the
+ * question the table exists to answer — where the money came from — and it
+ * keeps the whole funding identity on screen. All columns stays a permanent
+ * control, never a hidden mode. */
+const WF_VIEW_DEFAULT = "flows";
+const WF_VIEWS = [
+  ["flows", "Flows (in \u2192 out)"],
+  ["all",   "All columns"],
+  ["tax",   "Taxes & risk"],
+  ["bal",   "Balances"],
+];
+/* Named so the key is greppable and lives in one place. */
+const WF_VIEW_STORAGE_KEY = "aira.wfTableView";
+
 /**
  * Column-group segments for the year-by-year withdrawal table.
  *
@@ -8773,7 +8873,9 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
  * `view` — which lens this segment belongs to (null = always visible)
  *
  * Order matches the table's left-to-right reading (the funding identity), so the
- * group header can never disagree with the columns beneath it.
+ * group header can never disagree with the columns beneath it. The trailing
+ * `act` segment sits deliberately OUTSIDE that identity — it holds an action,
+ * not a figure — which is why it is last and why no lens hides it.
  */
 const WF_SEGMENTS = [
   { key: "time",   cg: "time",   span: 1, label: "Timeline",                     view: null,     cls: "" },
@@ -8785,6 +8887,12 @@ const WF_SEGMENTS = [
   { key: "tax",    cg: "tax",    span: 4, label: "Taxes",                        view: "tax",    cls: "wf-grp-t" },
   { key: "risk",   cg: "risk",   span: 2, label: "Risk checks",                  view: "tax",    cls: "wf-grp-t" },
   { key: "total",  cg: "bal",    span: 1, label: "Total",                        view: "bal",    cls: "wf-grp-b" },
+  // Trailing row actions. Deliberately NOT part of the identity above — it holds
+  // an action, not a figure — so it sits past the last operator with its own
+  // left rule (see .wf-tbl [data-cg="act"]), and it is the one segment no lens
+  // hides: the trigger for a row's tax breakdown has to stay reachable from
+  // every view.
+  { key: "act",    cg: "act",    span: 1, label: "",                             view: null,     cls: "wf-act" },
 ];
 
 function WaterfallPlanView({ p, result }) {
@@ -8795,9 +8903,21 @@ function WaterfallPlanView({ p, result }) {
   // behind Fed Tax / State Tax / IRMAA was unreachable for a whole class of
   // users. Click is the pattern that works everywhere.
   const [taxRow, setTaxRow] = useState(null);
-  // Which column groups the year-by-year table shows. "all" is the full 23-column
-  // schedule; the others are lenses onto the same rows (see .wf-tbl CSS).
-  const [wfView, setWfView] = useState("all");
+  // Which column groups the year-by-year table shows. "all" is the full
+  // 24-column schedule; the others are lenses onto the same rows (see the
+  // .wf-tbl CSS). Initialised from the saved choice, and every access is
+  // wrapped: localStorage throws outright in private mode and in sandboxed
+  // iframes, and a lens preference must never be able to blank the table.
+  const [wfView, setWfView] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(WF_VIEW_STORAGE_KEY);
+      return WF_VIEWS.some(([k]) => k === saved) ? saved : WF_VIEW_DEFAULT;
+    } catch { return WF_VIEW_DEFAULT; }
+  });
+  const chooseWfView = (k) => {
+    setWfView(k);
+    try { window.localStorage.setItem(WF_VIEW_STORAGE_KEY, k); } catch { /* preference only */ }
+  };
   const { smart, naive, summary } = result;
   const rows = mode === "smart" ? smart.rows : naive.rows;
 
@@ -8844,6 +8964,17 @@ function WaterfallPlanView({ p, result }) {
   // "no landmines" checkmark side by side — contradictory, and it also meant
   // the row didn't get the red highlight every other landmine type gets.
   const anyLandmine = (r) => r.landmines.ssTorpedo || r.landmines.irmaaTriggered || r.landmines.rmdActive || r.earlyPenalty > 0;
+  /* Names for the traps anyLandmine() detects, used ONLY for the frozen Age
+   * cell's marker label. anyLandmine() remains the single boolean that decides
+   * whether a row is flagged; this only says WHICH ones, so the marker is not a
+   * colour-only signal. The amounts and the long explanations stay in the
+   * Landmines column — this is a name list, not a second description (rule 8). */
+  const trapNames = (r) => [
+    [r.landmines.ssTorpedo,      "Social Security tax torpedo"],
+    [r.landmines.irmaaTriggered, "IRMAA Medicare surcharge"],
+    [r.landmines.rmdActive,      "required minimum distribution"],
+    [r.earlyPenalty > 0,         "early-withdrawal penalty"],
+  ].filter(([on]) => on).map(([, name]) => name);
   const anyConversion = rows.some(r => r.conversionAmount > 0);
   /* Withdrawal rate — one definition.
    *
@@ -8990,27 +9121,39 @@ function WaterfallPlanView({ p, result }) {
         </ResponsiveContainer>
       </div>
 
-      {/* Year-by-year table */}
-      <div className="chart-card" style={{ overflowX: "auto" }}>
-        <div className="ct">Year-by-Year Withdrawal Schedule</div>
+      {/* Year-by-year table. The scroll container lives here, not on the card,
+          so the sticky headers and the frozen column have exactly one
+          scrollport to stick to. */}
+      <div className="chart-card">
+        <div className="ct">
+          Year-by-Year Withdrawal Schedule
+          {/* Stated, never implied (R5). The waterfall is nominal — see
+              WF_BASIS_REAL for why this is a fixed label and not a toggle. */}
+          <span className="wf-basis">{dollarBasisLabel(WF_BASIS_REAL)}</span>
+        </div>
         {/* Which lens the table is showing. 23 columns is more than anyone can
             read across, so the same rows are offered grouped: everything, just
             the flows, just the taxes, or just the balances. The funding identity
             never changes — only how much of it is on screen at once. */}
         <div className="wf-views">
           <span style={{ fontSize: 11, color: "var(--text-muted)", marginRight: 2 }}>Show:</span>
-          {[["all", "All columns"], ["flows", "Flows (in → out)"], ["tax", "Taxes & risk"], ["bal", "Balances"]].map(([k, label]) => (
-            <button key={k} type="button" className={wfView === k ? "on" : ""} onClick={() => setWfView(k)}>{label}</button>
+          {WF_VIEWS.map(([k, label]) => (
+            <button key={k} type="button" className={wfView === k ? "on" : ""} onClick={() => chooseWfView(k)}>{label}</button>
           ))}
         </div>
-        {wfView !== "all" && (
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
-            {wfView === "flows" && "Income is applied first; only the shortfall becomes a withdrawal. Draw columns are in the order the waterfall uses them."}
-            {wfView === "tax" && "Only the tax columns and the two risk checks — the funding columns are hidden so the tax picture fits on one screen."}
-            {wfView === "bal" && "Bucket 1 and the total portfolio at each year end. Switch to Flows to see what moved them."}
-            {" "}The full schedule is always one click away under <strong style={{ color: "var(--text-secondary)" }}>All columns</strong>.
-          </div>
-        )}
+        {/* One orientation line, always present. It has two jobs: explain the
+            lens that is open, and say that taxes/risk are in another one —
+            otherwise the default Flows view reads as though these years had no
+            tax consequences at all (R4). */}
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
+          {wfView === "all" && "The full schedule — every column, in draw order. "}
+          {wfView === "flows" && "Income is applied first; only the shortfall becomes a withdrawal. Draw columns are in the order the waterfall uses them. "}
+          {wfView === "tax" && "Only the tax columns and the two risk checks — the funding columns are hidden so the tax picture fits on one screen. "}
+          {wfView === "bal" && "Bucket 1 and the total portfolio at each year end. Switch to Flows to see what moved them. "}
+          {wfView !== "tax" && <>Taxes and the two risk checks are in <strong style={{ color: "var(--text-secondary)" }}>Taxes &amp; risk</strong>. </>}
+          A landmine year carries a red dot in the Age column.
+          {" "}The full schedule is always one click away under <strong style={{ color: "var(--text-secondary)" }}>All columns</strong>.
+        </div>
           LEGEND:
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
          ⚡ SS Torpedo &nbsp;|&nbsp; 💊 IRMAA triggered &nbsp;|&nbsp; 📋 RMDs active &nbsp;|&nbsp;
@@ -9018,6 +9161,8 @@ function WaterfallPlanView({ p, result }) {
           <br />
           Columns read left→right in draw order. Funding identity each year: <strong>Income + Cash + Taxable + Pre-Tax (incl. RMD)  + Roth = Spending + Housing + Carveouts + Planned one-off expenses + Fed/State/IRMAA taxes</strong> (Income = Social Security + Pension/Other + Annuity/Rental — All of it offsets spending before any draw) (Any RMD forced out beyond that need is reinvested into Taxable — hover the Pre-Tax cell for the split). Hover the Spending cell for that year's full need breakdown. In a Roth-conversion year, Cash/Taxable/Pre-Tax also carry a small <span style={{ color: "var(--accent-purple)" }}>+conv $X</span> badge — the share of that year's conversion tax paid from that account. Total Draw and the identity above include it.
         </div>
+        <div className="wf-scroll" role="region" tabIndex={0}
+             aria-label="Year-by-year withdrawal schedule — scrollable table">
         <table className="roth-tbl wf-tbl" data-view={wfView}>
           <thead>
             {/* Group header. Column counts are the group's own column count and
@@ -9027,7 +9172,12 @@ function WaterfallPlanView({ p, result }) {
               {WF_SEGMENTS.map((seg) => {
                 if (seg.key === "conv" && !anyConversion) return null;
                 return (
-                  <th key={seg.key} colSpan={seg.span} data-cg={seg.cg} className={`wf-grp ${seg.cls || ""}`}>
+                  <th key={seg.key} colSpan={seg.span} data-cg={seg.cg}
+                      className={`wf-grp ${seg.cls || ""}`}
+                      // The action segment has no label to read and is not a data
+                      // group, so it is hidden from assistive tech; the column's
+                      // own header cell below carries the accessible name.
+                      aria-hidden={seg.key === "act" ? true : undefined}>
                     {seg.label}
                   </th>
                 );
@@ -9086,6 +9236,10 @@ function WaterfallPlanView({ p, result }) {
                 {" "}Landmines
               </th>
               <th data-cg="bal">Port End</th>
+              {/* Trailing row actions. The group cell above is empty on purpose
+                  — an action is not a data group — but the column itself still
+                  needs an accessible name. */}
+              <th data-cg="act" aria-label="Row actions"></th>
             </tr>
           </thead>
           <tbody>
@@ -9148,8 +9302,20 @@ function WaterfallPlanView({ p, result }) {
                 return blocks.length > 1 ? `${blocks.join("\n\n")}\n\nTotal B1 End = ${fmtDollar(b1End)}` : blocks[0];
               })() : null;
               return (
-              <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(239,68,68,0.07)" : undefined }}>
-                <td data-cg="time">{r.age}</td>
+              <tr key={r.age} className={anyLandmine(r) ? "wf-landmine" : undefined}>
+                <td data-cg="time">
+                  {r.age}
+                  {/* Landmine marker. The Risk group is hidden in the default
+                      Flows lens, so without this a landmine year would be
+                      invisible in the view most readers land on (R4). Labelled,
+                      never colour-only — and it restates no figure: the amounts
+                      stay in the Landmines column. */}
+                  {anyLandmine(r) && (
+                    <span className="wf-risk-dot" role="img"
+                          title={`Tax risk this year: ${trapNames(r).join(", ")}`}
+                          aria-label={`Tax risk this year: ${trapNames(r).join(", ")}`} />
+                  )}
+                </td>
                 <td data-cg="spend" style={{ textAlign: "right" }}
                     title={`Spending ${fmtDollar(r.spending)}`
                       // The smile quietly re-scales this cell — say so.
@@ -9414,27 +9580,17 @@ function WaterfallPlanView({ p, result }) {
                 </td>
                 {/* Fed Tax / State Tax / IRMAA used to explain themselves with
                     `title=` strings. The breakdown is now the click-open
-                    TaxDetailsModal (one instance, above), so these cells carry
-                    one shared "Tax details" affordance instead of three
-                    tooltips that touch users could never open. */}
+                    TaxDetailsModal (one instance, above). Its trigger used to sit
+                    in this cell, under the number; it has MOVED to the trailing
+                    actions column (data-cg="act") so that there is exactly one
+                    trigger per row and it stays reachable in every lens. Do not
+                    re-add one here. */}
                 <td data-cg="tax" style={{ textAlign: "right", color: "#f87171" }}>
                   {fmtDollar(r.fedTax)}
                   {(r.ltcgTax > 0 || r.niit > 0) && (
                     <span style={{ color: "#fca5a5", fontSize: 9, marginLeft: 2 }}
                           aria-label="Includes capital-gains tax and/or net investment income tax">*</span>
                   )}
-                  <div style={{ marginTop: 1 }}>
-                    <button
-                      type="button"
-                      onClick={() => setTaxRow(r)}
-                      aria-label={`Tax details for age ${r.age} (${r.yr})`}
-                      style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer",
-                        fontSize: 9.5, fontWeight: 700, color: "var(--accent-teal)",
-                        textDecoration: "underline", textUnderlineOffset: 2, whiteSpace: "nowrap" }}
-                    >
-                      Tax details
-                    </button>
-                  </div>
                 </td>
                 <td data-cg="tax" style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "var(--text-faint)" }}>
                   {r.stateTax > 0 ? fmtDollar(r.stateTax) : "—"}
@@ -9498,11 +9654,25 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
                   {!anyLandmine(r) && <span style={{ color: "#34d399", fontSize: 10 }}>✓</span>}
                 </td>
                 <td data-cg="bal" style={{ textAlign: "right", color: "var(--text-secondary)" }} title={fmtDollar(r.totalPort)}>{fmtDollar(r.totalPort)}</td>
+                {/* The row's single action, relocated here from the Fed Tax cell
+                    (R3): a row action belongs with the row's actions, and this
+                    column is visible in every lens. Exactly one per row. */}
+                <td data-cg="act">
+                  <button
+                    type="button"
+                    className="wf-act-btn"
+                    onClick={() => setTaxRow(r)}
+                    aria-label={`Tax details for age ${r.age} (${r.yr})`}
+                  >
+                    Tax details
+                  </button>
+                </td>
               </tr>
               );
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* The single dialog the per-row "Tax details" buttons open. Mounted
@@ -19411,4 +19581,4 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView, SimMethodModal, MCBandTable, bandLabel, MCOverviewCards, VerdictHeader, NetWorthTip, PillTab };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView, SimMethodModal, MCBandTable, bandLabel, MCOverviewCards, VerdictHeader, NetWorthTip, PillTab, WaterfallPlanView, WF_SEGMENTS, WF_BASIS_REAL, WF_VIEW_DEFAULT, WF_VIEW_STORAGE_KEY };
