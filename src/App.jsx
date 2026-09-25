@@ -3581,6 +3581,7 @@ function SectorBadge({ age }) {
       title="Life-phase sectors"
       accent={cur.color}
       maxWidth={460}
+      bodyMaxHeight="60vh"
       trigger={
         <span
           title="Tap or click to learn about this retirement phase"
