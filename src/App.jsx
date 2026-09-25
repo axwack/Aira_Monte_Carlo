@@ -3897,13 +3897,23 @@ const CSS = `
   .recomputing { animation: recomputePulse 1.15s ease-in-out infinite; }
   @keyframes recomputePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
   .tabs { display:flex; gap:2px; border-bottom:1px solid rgba(255,255,255,0.10); flex-wrap:wrap; }
-  .tab { flex:1; min-width:72px; padding:10px 6px; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; background:transparent; cursor:pointer; font-size:13px; font-family:var(--font-sans); color:#64748b; transition:color 0.15s, border-color 0.15s, background 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; border-radius:7px 7px 0 0; }
+  .tab { flex:1; min-width:72px; padding:10px 6px; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; background:transparent; cursor:pointer; font-size:13px; font-family:var(--font-sans); color:#64748b; transition:color 0.15s, border-color 0.15s, background 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; border-radius:7px 7px 0 0; position:relative; overflow:hidden; }
   .tab:hover { color:#94a3b8; background:rgba(255,255,255,0.03); }
+  /* The active tab's teal underline used to stop at that button's own width, so
+     the "you are here" marker read as a short dash floating under one label
+     while the grey rule carried on past it either side. This strip spans the
+     whole bar and overflow:hidden on the button clips it to the selected tab,
+     so the highlighter runs edge to edge like the reference design — and it
+     stays right however the buttons wrap, with no hardcoded widths or nth-child
+     maths. Sits on the border line itself (bottom:0, over the 2px
+     border-bottom) rather than below it. */
+  .tab::after { content:""; position:absolute; left:0; right:0; bottom:0; height:2px; background:var(--accent-teal); transform:scaleX(0); transform-origin:left; transition:transform 0.15s ease; pointer-events:none; }
   /* Folder-tab treatment: the active tab gets a tinted "page" surface that
      reads as connected to the panel below, plus the teal/green highlighter
      underline that was already carrying the state. The tint is one step of
      the same accent so the tab and its panel look like one surface. */
   .tab.on { color:var(--accent-teal); border-bottom-color:var(--accent-teal); font-weight:600; background:color-mix(in srgb, var(--accent-teal) 12%, transparent); }
+  .tab.on::after { transform:scaleX(1); }
   .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:15px 17px; }
   .ct { font-size:18px; color:#94a3b8; margin-bottom:12px; font-weight:500; }
   .leg { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
@@ -12685,6 +12695,107 @@ function MortgageTab({ values, onChange }) {
 // the full history (the $0-vs-null bug, the flat-tail clamp bug, and the
 // three-call-sites-disagreed bug this consolidation fixed).
 
+/**
+ * Net Worth chart tooltip — a component breakdown of the hovered year.
+ *
+ * The shared <Tip/> lists whatever series happen to be on the chart, which for
+ * this one reads "Liquid Portfolio / Mortgage Debt / Real Estate / Net Worth" —
+ * four lines where two are the same money counted twice (Mortgage Debt is shown
+ * negative and already subtracted inside Net Worth), and none of them says which
+ * accounts the liquid figure is made of.
+ *
+ * This version leads with the total and shows the composition under it:
+ * pre-tax · tax-free (Roth + HSA) · taxable · cash, then real estate and the
+ * mortgage that comes off. It also names the calendar year and whose figures
+ * these are, so a hover answers "what am I looking at" without a trip to the
+ * legend.
+ *
+ * Buckets come from ACCOUNT_CATEGORIES — the same source the sidebar donut and
+ * the account editor use — so the split can't drift from what the user entered.
+ * The liquid total itself is NOT re-summed here: it stays the engine's number
+ * from the row, and the bucket lines are shown only when they reconcile to it
+ * (see the check below). If they ever stop reconciling, the breakdown hides
+ * rather than contradicting the headline.
+ */
+function NetWorthTip({ active, payload, label, p }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload || {};
+  const liquid = row["Liquid Portfolio"];
+  const mort = row["Mortgage Debt"] || 0;
+  const re = row["Real Estate"] || 0;
+  const nw = row["Net Worth"];
+  const yr = Number.isFinite(label) ? new Date().getFullYear() + (label - (p?.currentAge ?? label)) : null;
+
+  // Account-category split of the liquid portfolio, from the profile the user
+  // filled in. Cash and "cash-like" categories roll into one line so the block
+  // stays short; Roth + HSA group as tax-free.
+  const accts = p?.accounts || [];
+  const sumOf = (keys) => accts.filter((a) => keys.includes(a.category)).reduce((s, a) => s + (a.balance || 0), 0);
+  const groups = [
+    { name: "Pre-Tax",     color: "#0ea5e9", value: sumOf(["pretax"]) },
+    { name: "Tax-Free",    color: "#34d399", value: sumOf(["roth", "hsa"]) },
+    { name: "Taxable",     color: "var(--accent-gold)", value: sumOf(["taxable"]) },
+    { name: "Cash",        color: "#94a3b8", value: sumOf(["cash"]) },
+  ].filter((g) => g.value > 0);
+  const groupTotal = groups.reduce((s, g) => s + g.value, 0);
+  // These are TODAY'S entered balances. The chart line is a projection, so at
+  // any age past the current one the two are different numbers by construction -
+  // and they must never be presented as if the split adds up to the hovered
+  // year. So the block is labelled as what it is (a "from" line under the first
+  // data point, where they genuinely do coincide; otherwise an explicitly
+  // today-labelled composition), and it is dropped entirely once the projection
+  // has run past them by more than a rounding step.
+  // "Equal to the hovered year" has to mean actually equal, not "within a few
+  // percent" — a 1-2% drift is exactly what one year of growth looks like, and
+  // calling that the year's own composition would be the lie this whole guard
+  // exists to prevent. So the unlabelled case is tight (rounding only), while
+  // the split stays visible-but-labelled for a little while longer, until the
+  // projection has overtaken today's total.
+  const atStart = Number.isFinite(liquid) && Math.abs(liquid - groupTotal) <= 1;
+  const stillTraceableToToday = Number.isFinite(liquid) && liquid > 0 && liquid <= groupTotal * 1.5;
+
+  const line = (name, value, color, opts = {}) => (
+    <div key={name} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 1 }}>
+      <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: "inline-block", flexShrink: 0 }} />
+      <span style={{ color: "var(--text-secondary)" }}>{name}: </span>
+      <span style={{ color: opts.muted ? "var(--text-muted)" : "#f1f5f9" }}>{fmtDollar(value)}</span>
+    </div>
+  );
+
+  return (
+    <div className="tip-box">
+      <div style={{ color: "#4d5c72", marginBottom: 4 }}>
+        Age {label}{yr ? ` · ${yr}` : ""}
+      </div>
+      {line("Liquid Portfolio", liquid ?? 0, "#0ea5e9")}
+      {groups.length > 0 && (atStart || stillTraceableToToday) && (
+        <div style={{ marginLeft: 14, marginBottom: 2 }}>
+          {!atStart && (
+            <div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 1 }}>
+              from today's balances of:
+            </div>
+          )}
+          {groups.map((g) => (
+            <div key={g.name} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <span style={{ width: 6, height: 6, borderRadius: 1, background: g.color, display: "inline-block", flexShrink: 0, opacity: 0.75 }} />
+              <span style={{ color: "var(--text-muted)" }}>{g.name}: </span>
+              <span style={{ color: "var(--text-muted)" }}>{fmtDollar(g.value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {re > 0 && line("Real Estate", re, "var(--accent-gold)")}
+      {mort !== 0 && line("Mortgage Debt", mort, "var(--negative)", { muted: true })}
+      {Number.isFinite(nw) && (
+        <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid rgba(255,255,255,0.14)", display: "flex", justifyContent: "space-between", gap: 10 }}>
+          <span style={{ color: "var(--text-secondary)", fontWeight: 700 }}>Total Net Worth</span>
+          <span style={{ color: "#f1f5f9", fontWeight: 700 }}>{fmtDollar(nw)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NetWorthTab({ p, mc, inf, real }) {
   const [showRE, setShowRE] = useState(false);
   // The per-age chart line and "Net worth at age X" card go through
@@ -12958,7 +13069,7 @@ function NetWorthTab({ p, mc, inf, real }) {
               tickFormatter={(v) => fmtDollar(v)}
               width={MONEY_AXIS_WIDTH}
             />
-            <Tooltip content={<Tip />} />
+            <Tooltip content={<NetWorthTip p={p} />} />
             <Line
               type="monotone"
               dataKey="Liquid Portfolio"
@@ -19235,4 +19346,4 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   );
 }
 
-export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView, SimMethodModal, MCBandTable, bandLabel, MCOverviewCards, VerdictHeader };
+export { runMC, runStress, mortgageSchedule, calcYearTax, getRmdStartAge, guytonKlingerWithdrawal, progTax, irmaaCost, simulateDeterministicWithStrategy, waterfallForActiveStrategy, getStandardDeduction, getIrmaaCeiling, getBracketCeiling, loadCheckIns, saveCheckIns, ProgressTab, planShapeScores, mergeCheckIns, ageFromDob, AGE_LIMITS, InfoIcon, InfoDot, mcMedianAtAge, selectPortfolioAtAge, deflate, ANumInput, parseNumericEntry, TaxDetailsModal, resolveSampleRange, MCAdvancedSettings, GK_BAND_PCT, GK_ADJUST_PCT, GK_LONGEVITY_YEARS, DeterministicWithdrawalView, SimMethodModal, MCBandTable, bandLabel, MCOverviewCards, VerdictHeader, NetWorthTip };
