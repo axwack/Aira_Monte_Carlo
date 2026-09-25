@@ -3618,11 +3618,19 @@ function SectorBadge({ age }) {
                 opacity: isCur ? 1 : 0.85,
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 800, color: s.color }}>
-                  ⚡ {s.n}{isCur ? " — you are here" : ""}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                {/* Left group wraps as a unit; the "You are here" marker is a
+                    real pill (not an em-dash text suffix that dropped to its own
+                    line and read as a floating dash). */}
+                <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, minWidth: 0, flex: "1 1 auto" }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: s.color }}>⚡ {s.n}</span>
+                  {isCur && (
+                    <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
+                      color: s.color, background: withAlpha(s.color, "22"), border: `1px solid ${withAlpha(s.color, "55")}`,
+                      borderRadius: 999, padding: "1px 7px", lineHeight: 1.55, whiteSpace: "nowrap" }}>You are here</span>
+                  )}
                 </span>
-                <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{s.range}</span>
+                <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{s.range}</span>
               </div>
               {s.desc}
             </div>
