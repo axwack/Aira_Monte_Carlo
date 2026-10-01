@@ -96,3 +96,25 @@ For you:
 1. Delete `src/planInputs/RealEstateSection.jsx` and `src/realEstateSection.test.js` (unused), or leave them unmounted; your call. Nothing imports them.
 2. Still open: `BudgetEditor.jsx` "One-time" frequency is annualized and repeats every year (see note 1 above).
 3. Sync first: `git merge ux/configure-and-countdown`.
+
+## Update 2026-10-01 (evening): v1.2.147, merged to main, pushed
+
+| Commit | What |
+|---|---|
+| `b5f2fc6` | About page: thanks u/BakerParticular8705; special thanks is one compact line of names. |
+| `be6b572` | Version bump to 1.2.147 (`APP_VERSION` + `BUILD_TAG` in `src/App.jsx`). Production had been serving today's UX work still labelled v1.2.146. |
+| `e7a16da` | `ux/configure-and-countdown` merged into `main` with `--no-ff`. `main` and this branch pushed to `origin`. |
+
+Validation: full suite at the bump was 77 suites, 1,240 tests, with one failure that I caused and fixed (`navPointers.test.js` forbids the literal "Profile" + arrow text anywhere in `App.jsx`, and my first `BUILD_TAG` wording contained it; reworded, suite re-run and passing). Production build compiles (`main.43b5d76a.js`).
+
+### Production state
+- Live at the time of writing: bundle `main.99f0e1a9.js`, built from `b5f2fc6`, labelled v1.2.146. It already contains the Configure / Start over / Plan inputs work.
+- **v1.2.147 is NOT deployed yet.** The owner runs `npm run deploy`; it is label-only relative to what is live.
+
+### `src/report/PrintReport.jsx` (local-only file, skip-worktree; not in git)
+The owner's local copy failed the build on four `no-restricted-properties` errors (raw `mc.term` / `mc.pcts`). Fixed on disk on this machine only:
+- Terminal 10th / 50th / 90th now read `selectPortfolioAtAge(mc, params.endAge, { retireAge: params.retireAge, pct })`, so they match the last row of the age table.
+- The age-by-age table keeps its raw `mc.pcts` map with an `eslint-disable-next-line`; that line was already in `noRawMcAccess.test.js` `ALLOWED`.
+- Any other machine holding the real file (red-dragon, t14) needs the same edit or `npm run deploy` aborts at the build gate.
+
+For you: sync with `cd /home/nono/Projects/aira-ds && git merge ux/configure-and-countdown`. Nothing in your lane changed.
