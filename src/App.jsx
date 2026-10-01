@@ -83,6 +83,7 @@ import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yea
 import CountdownCard from "./CountdownCard";
 import DateField from "./DateField";
 import SpouseDobField from "./SpouseDobField";
+import { BucketLegend, BucketResetButton } from "./BucketLegend";
 import { NavContext, GoStep } from "./NavContext";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 import { bucketColor } from "./engine/bucketColors";
@@ -14546,6 +14547,10 @@ function SavingsPanel({ values, onChange }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <ACard title="💰 Accounts" accent="var(--accent-teal)" desc="Every balance the plan draws from, grouped by tax treatment — the grouping is what decides the withdrawal order and the tax on each dollar.">
+      <BucketLegend />
+      <div style={{ fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5, marginTop: -4 }}>
+        B1 / B2 / B3 sets how soon each account's money is needed. Each account starts at its category's default; ↺ appears when you change it.
+      </div>
       {CATEGORIES.map(cat => {
         const catAccounts = accounts.filter(a => a.category === cat.key);
         return (
@@ -14589,13 +14594,16 @@ function SavingsPanel({ values, onChange }) {
                           style={{
                             background: active ? cat.color + "33" : "transparent",
                             border: `1px solid ${active ? cat.color : "rgba(255,255,255,0.1)"}`,
-                            color: disabled ? "#1e293b" : active ? cat.color : "#334155",
+                            color: disabled ? "var(--text-faint)" : active ? cat.color : "var(--text-muted)",
                             borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 700,
                             cursor: disabled ? "not-allowed" : "pointer", lineHeight: 1.4,
                             opacity: disabled ? 0.5 : 1,
                           }}>B{b}</button>
                       );
                     })
+                  )}
+                  {!hasSplits && clampBucket(acct.bucket ?? _defaultBucket(acct.category), acct.category) !== clampBucket(_defaultBucket(acct.category), acct.category) && (
+                    <BucketResetButton account={acct} onReset={(id, b) => setBucket(id, b)} />
                   )}
                   <button onClick={() => toggleSplit(acct.id)} title="Split this account across buckets" style={{
                     background: (hasSplits || editing) ? cat.color + "33" : cat.color + "14",
