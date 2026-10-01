@@ -202,8 +202,12 @@ import { IRMAA_2026 } from './data/irmaa2026.js';
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.146";
-export const BUILD_TAG = `[main] v1.2.146 - Life-phase Sector badge is now a clickable InfoModal (all five sectors, current phase marked "You are here"), and the sector age windows are contiguous
+const APP_VERSION = "1.2.147";
+export const BUILD_TAG = `[main] v1.2.147 - Plan inputs consolidation: sidebar Configure button, Start over, and stale Profile pointers now link to the right Plan inputs step
+- Sidebar Configure button and Start over (with confirm); countdown shows honest years/months and hides until a real date of birth exists
+- Plan inputs gains the Real Estate & Debt step and an inline budget editor in Spending & Expenses; the Analysis view is read-only
+- Edit accounts / Edit split open the Current Savings step; Mortgage/Housing row says why it is empty
+- PRIOR (v1.2.146): Life-phase Sector badge is now a clickable InfoModal (all five sectors, current phase marked "You are here"), and the sector age windows are contiguous
 - SectorBadge opens the shared InfoModal explaining every sector (age window + tax-and-access regime); the active phase carries a "You are here" pill instead of a wrapping em-dash suffix
 - Fixed dead age ranges: sectors now partition the whole age line with no gaps/overlaps (Escape <59½ · Gap 59½-65 · Maneuver 65-73 · Torpedo 73-80 · Legacy 80+). Previously ages 63-65 and 73+ matched no sector and mislabeled as "Sector 1: The Escape"
 - PRIOR (v1.2.145): Guardrails view rebuilt as tabs (Spending Path · Adjustment Events · Across All Scenarios)
