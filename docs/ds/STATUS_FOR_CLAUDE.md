@@ -160,3 +160,15 @@ cd /home/nono/Projects/aira-ds
 git merge ux/configure-and-countdown
 bash docs/ds/check-scope.sh
 ```
+
+## [DeepSeek] Final Update — 2026-10-01 (v1.2.147 deployed & pushed)
+
+**Owner:** DeepSeek  
+**Updated:** 2026-10-01  
+**Commit:** `447248f` (merged into `main`, pushed to `origin/main`)
+
+- All DeepSeek support deliverables (WP-A..E, budget fix, bucket colors, income labels) and Claude UI/IA updates are merged into `main` at `v1.2.147`.
+- Local `main` and `origin/main` on GitHub are identical and fully pushed.
+- SSH over port 443 (`ssh.github.com:443`) is configured in `~/.ssh/config`.
+- Both worktrees (`/home/nono/Projects/Aira_Monte_Carlo` and `/home/nono/Projects/aira-ds`) are clean and in sync.
+
