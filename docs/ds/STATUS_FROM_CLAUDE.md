@@ -40,12 +40,31 @@ Updated: 2026-10-01 · Branch: `ux/configure-and-countdown` @ `dd9567f` (main ch
 - Spouse date-of-birth field still uses the raw `<input type="date">` (same typing weakness as the field I fixed).
 - Browser verification: the Chrome extension cannot reach the dev server from my shell, so V1/V2 and the date field are verified by tests and code reading, not by eye. The owner has confirmed the date field works.
 
-## Your next steps (stay in lane)
-1. Sync from my branch (command above).
-2. Update `incomeLabels.js` tooltip text so it only names locations that exist today, or mark them "after Plan Inputs consolidation".
-3. Send the housing-state field for item 3 above, if you can find it.
-4. Review `dd9567f` (`git show dd9567f`) and send comments in `APP_JSX_REQUESTS.md`; do not edit `src/App.jsx`.
-5. Use `git add -f` for any new `.md` (gitignored).
+## Your work packages (you OWN these files end to end; run in parallel with mine)
+
+You write the component, its tests, and a short mount note. I only add the import and one JSX line to `App.jsx`
+(and re-stamp). Props in, callbacks out: components must not import from `App.jsx` and must not hold the source of truth.
+You may READ `App.jsx` freely to learn today's behaviour, markup and prop shapes; you may not edit it.
+
+| # | You own (new/owned files) | What to build | Mount point (I do this) |
+|---|---|---|---|
+| WP-A | `src/planInputs/RealEstateSection.jsx` + `src/realEstateSection.test.js` | The single editor for properties and the primary mortgage (value, mortgage balance, annual income, rate, start, ORIGINAL term, extra/mo). Reproduce today's behaviour from the `RealEstate` component in `App.jsx` (~12560-12700), including the right-aligned header fix, `plain`/ungrouped rules, and "Original term (yrs)". Props: `properties`, `mortgage {balance, rate, start, term, extra}`, `onUpdateProperty(id, field, value)`, `onAddProperty()`, `onRemoveProperty(id)`, `onMortgageChange(field, value)`. | New section "Real Estate & Debt" in Plan inputs; Analysis -> Real Estate becomes read-only with an "Edit in Plan Inputs" link |
+| WP-B | `src/planInputs/BudgetEditor.jsx` + `src/budgetEditor.test.js` | Inline detailed-budget editor from `docs/ds/budget-editor-spec.md`. Output must be exactly what `src/engine/expenseImport.js` already accepts (reuse its parsing/validation, do not duplicate). Props: `value`, `onChange`. Include the "not covered here: mortgage/rent, debt, medical, LTC, income tax" note. | Plan inputs -> Spending & Expenses |
+| WP-C | `src/SpouseDobField.jsx` + `src/spouseDobField.test.js` | Spouse date of birth built on `src/DateField.jsx` (import it; do not edit it): same styling as the current raw input (~`App.jsx` 15735), `max` = today, shows the age-gap hint props passed in. Props: `value`, `onSet`. | Replaces the raw `<input type="date">` in the spouse block |
+| WP-D | `src/CountdownCard.jsx`, `src/engine/retirementTarget.js` (+ their tests `countdownCard.test.js`, `retirementTarget.test.js`) are now **yours** | Isis: "don't show a countdown until the user has entered the data to make it meaningful". When `dob` is empty OR `dobIsEstimate`, render a compact "Add your date of birth to see your countdown" card with a button calling the new `onConfigure` prop. Keep everything else as is. Update tests. | I pass `onConfigure={() => navigateToTab("assumptions")}` |
+| WP-E | `src/BucketLegend.jsx` + `src/bucketLegend.test.js` | A one-line legend ("Bucket 1 = cash cushion (cash accounts only) - Bucket 2 - Bucket 3") using `bucketColors.js`, plus `BucketResetButton` (tiny reset-to-category-default control; default rule lives in `src/engine/buckets.js`, import it, do not copy). Props: `account`, `onReset`. | Above and beside the accounts list in Plan inputs |
+
+Also yours, same as before: `docs/ds/*.md`, `src/engine/bucketColors.js`, `src/engine/incomeLabels.js` (+ tests).
+
+Process: sync first (`git merge ux/configure-and-countdown`), work, run `bash docs/ds/check-scope.sh` (I widened your lane to the files above), commit small, then update `docs/ds/STATUS_FOR_CLAUDE.md` with "ready to mount: WP-x" and the exact JSX line you expect. I mount each one in its own commit.
+
+Review request (smaller): `git show dd9567f`; put comments in `docs/ds/APP_JSX_REQUESTS.md`. Still open for you: fix `incomeLabels.js` tooltips so they only name locations that exist today, and send the exact profile field that distinguishes "housing inside core spending" from "no mortgage" (see deviation 3).
+
+## Change tags (so we both know who wrote what)
+- Every region I changed in `src/App.jsx` is registered in `agent-marks.json` with owner `aira-claude`:
+  `claude-not-entered-rows`, `claude-reset-profile`, `claude-date-input`, `claude-income-expense-stack`, `claude-verdict-header`.
+  List them with `node scripts/agent-marks.mjs --list`. If you ever need a change inside one, request it; do not edit it.
+- My commits are on `ux/configure-and-countdown` and carry a `Co-Authored-By: Claude` trailer; yours are on `ux/ds-support`.
 
 ## Guard rails (unchanged)
 - Only I edit `src/App.jsx`. Registered regions in `agent-marks.json` need `node scripts/agent-marks.mjs --stamp` after an intentional change.
