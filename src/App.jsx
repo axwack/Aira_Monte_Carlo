@@ -82,6 +82,7 @@ import { earlyWithdrawalPenalty, detectEmployerPlan, ruleOf55SeparationQualifies
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
 import CountdownCard from "./CountdownCard";
 import DateField from "./DateField";
+import SpouseDobField from "./SpouseDobField";
 import { NavContext, GoStep } from "./NavContext";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 import { bucketColor } from "./engine/bucketColors";
@@ -15754,16 +15755,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
                 label="Spouse's date of birth"
                 helper="Their own age drives when their benefit starts, when they reach Medicare at 65, and their own RMD age. Leave blank to assume they are the same age as you."
               >
-                <input
-                  type="date"
-                  value={sp.dob || ""}
-                  onChange={(e) => setSpouse({ dob: e.target.value })}
-                  style={{
-                    background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0",
-                    borderRadius: 6, padding: "5px 8px", fontSize: 12,
-                    fontFamily: "'JetBrains Mono',monospace", width: 130,
-                  }}
-                />
+                <SpouseDobField value={sp.dob || ""} onSet={(dob) => setSpouse({ dob })} />
               </WFieldRow>
               {/* Disclose the derivation where it's entered: a date field
                   that silently shifts ten years of income needs to show
