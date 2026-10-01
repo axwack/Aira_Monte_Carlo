@@ -39,6 +39,11 @@ export const ABOUT_THANKS = {
       handle: "topshot.rhit",
       url:    "",
       note:   ""
+    },
+    {
+      handle: "u/BakerParticular8705",
+      url:    "",
+      note:   ""
     }
   ],
 };
