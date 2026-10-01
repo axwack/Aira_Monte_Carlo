@@ -83,6 +83,7 @@ import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yea
 import CountdownCard from "./CountdownCard";
 import DateField from "./DateField";
 import { INCOME_LABELS } from "./engine/incomeLabels";
+import { bucketColor } from "./engine/bucketColors";
 import { retirementTarget, formatRemaining } from "./engine/retirementTarget";
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
@@ -3768,8 +3769,8 @@ const CSS = `
     --card-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 20px rgba(0,0,0,0.2);
     --text-primary: #eef1f6;
     --text-secondary: #9aa4b2;
-    --text-muted: #626d7d;
-    --text-faint: #3f4753;
+    --text-muted: #7f8b9c;  /* 5.3:1 on card (was 3.5) */
+    --text-faint: #778395;  /* 4.8:1 on card (was 1.95) */
     --accent: #5b8def;
     --accent-teal: #4fd1ae;
     --accent-purple: #a78bfa;
@@ -4260,7 +4261,7 @@ const TaxYearTip = ({ active, payload, label }) => {
         </div>
       </td>
       <td style={{ padding: "4px 0 4px 12px", textAlign: "right", fontSize: 11, color: note ? "#374151" : "#e2e8f0" }}>
-        {note ? <em style={{ fontSize: 10, color: "#334155" }}>{note}</em> : N(optV)}
+        {note ? <em style={{ fontSize: 10, color: "var(--text-faint)" }}>{note}</em> : N(optV)}
       </td>
       <td style={{ padding: "4px 0 4px 8px", textAlign: "right", fontSize: 11, color: "var(--text-muted)" }}>
         {note ? "" : N(curV)}
@@ -7011,7 +7012,7 @@ const modeDescs = {
             <div style={{ fontSize: 10, color: "var(--text-faint)", margin: "8px 0 4px", display: "flex", gap: 14, flexWrap: "wrap" }}>
               <span>📌 <span style={{ color: "var(--accent-gold)" }}>Amber</span> = pinned from Tax Room or manual entry</span>
               <span>🔮 <span style={{ color: "var(--accent-teal)" }}>Default</span> = optimizer projection</span>
-              <span>📅 <span style={{ color: "#334155" }}>Gray</span> = historical (already past)</span>
+              <span>📅 <span style={{ color: "var(--text-faint)" }}>Gray</span> = historical (already past)</span>
               <span style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
                 💰 Net→Roth basis:{" "}
                 {params?.taxFunding === "from_conv"
@@ -7049,7 +7050,7 @@ const modeDescs = {
                     ? "rgba(245,158,11,0.07)"
                     : undefined;
                   const sourceLabel = isPast
-                    ? <span style={{ color: "#334155", fontSize: 9 }}>📅 Past</span>
+                    ? <span style={{ color: "var(--text-faint)", fontSize: 9 }}>📅 Past</span>
                     : isPinned
                     ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         <span style={{ color: "var(--accent-gold)", fontWeight: 700, fontSize: 9 }}>📌 Pinned</span>
@@ -7697,7 +7698,7 @@ const modeDescs = {
       <div
         style={{
           fontSize: 9,
-          color: "#334155",
+          color: "var(--text-faint)",
           fontStyle: "italic",
           textAlign: "center",
         }}
@@ -10103,7 +10104,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
         </div>
       )}
       {acctList.length === 0 && (
-        <div style={{ marginTop: 8, fontSize: 10, color: "#334155", fontStyle: "italic" }}>No accounts assigned — use B{num} chips in Profile → Savings</div>
+        <div style={{ marginTop: 8, fontSize: 10, color: "var(--text-faint)", fontStyle: "italic" }}>No accounts assigned — use B{num} chips in Profile → Savings</div>
       )}
     </div>
   );
@@ -10383,7 +10384,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
             <button onClick={() => setYears(Math.max(min, val - 1))} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-secondary)", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>−</button>
             <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", minWidth: 14, textAlign: "center" }}>{val}</span>
             <button onClick={() => setYears(Math.min(max, val + 1))} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-secondary)", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>+</button>
-            <span style={{ fontSize: 9, color: "#334155" }}>{hint}</span>
+            <span style={{ fontSize: 9, color: "var(--text-faint)" }}>{hint}</span>
           </div>
           );
         })}
@@ -10415,15 +10416,15 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
 
       {/* Bucket status cards */}
       <div style={{ display: "flex", gap: 10 }}>
-        <BucketCard num={1} color="#0ea5e9" label="Bucket 1 — Cash" horizon={`0–${b1Years} years · pay bills now`}
+        <BucketCard num={1} color={bucketColor(1)} label="Bucket 1 — Cash" horizon={`0–${b1Years} years · pay bills now`}
           actual={b1Actual} floor={b1Floor} target={b1Target} accounts={b1Accts} monthly={monthly}
           role={`${b1Years}-year runway at ${fmtDollar(spendBasis)}/yr ${drawMode === "net" ? "net draw" : "gross spend"}. Pays bills now — NEVER dual-purpose.`}
           holdings="HYSA · Money market · T-bills · CDs" />
-        <BucketCard num={2} color="var(--accent-purple)" label="Bucket 2 — Income" horizon={`${b1Years}–${b1Years + b2Years} years · refills B1`}
+        <BucketCard num={2} color={bucketColor(2)} label="Bucket 2 — Income" horizon={`${b1Years}–${b1Years + b2Years} years · refills B1`}
           actual={b2Actual} floor={b2Floor} target={b2Target} accounts={b2Accts} monthly={monthly}
           role={`Bridges ${ssGapYears}-yr SS gap (age ${retireAge}→${ssAge}). Refills Bucket 1 as it depletes.`}
           holdings="30–50% Equities · 50–70% Bonds · REITs" />
-        <BucketCard num={3} color="var(--positive)" label="Bucket 3 — Growth" horizon={`${b1Years + b2Years}+ years · last resort`}
+        <BucketCard num={3} color={bucketColor(3)} label="Bucket 3 — Growth" horizon={`${b1Years + b2Years}+ years · last resort`}
           actual={b3Actual} floor={0} target={0} accounts={b3Accts} monthly={monthly}
           role="Protects against inflation & grows wealth for a decade or more."
           holdings="50–100% Equities · Broad-market equity · International" />
@@ -11655,7 +11656,7 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
     >
       <div style={fact}>
         <span style={k}>Withdrawal rate</span>
-        <span style={{ ...v, color: +swr <= 3 ? "var(--positive)" : +swr <= 4 ? "#34d399" : +swr <= 5 ? "#f59e0b" : "var(--negative)" }}>
+        <span style={{ ...v, color: "var(--text-primary)" }}>
           {swr != null ? `${swr}%` : "—"}
         </span>
       </div>
@@ -11669,14 +11670,14 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
       <div style={sep} />
       <div style={fact}>
         <span style={k}>Worst case (10th) at {endAge}</span>
-        <span style={{ ...v, color: worst == null ? "var(--text-muted)" : worst > 0 ? "var(--accent-gold)" : "var(--negative)" }}>
+        <span style={{ ...v, color: worst == null ? "var(--text-muted)" : worst > 0 ? "var(--text-primary)" : "var(--negative)" }}>
           {worst == null ? "—" : fmtDollar(worst)}
         </span>
       </div>
       <div style={sep} />
       <div style={fact}>
         <span style={k}>Runs out (median)</span>
-        <span style={{ ...v, color: exhaust == null ? "var(--positive)" : "var(--accent-gold)" }}>
+        <span style={{ ...v, color: exhaust == null ? "var(--positive)" : "var(--text-primary)" }}>
           {exhaust == null ? "Never" : `Age ${exhaust}`}
         </span>
         {exhaust != null && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>in the paths that fail</span>}
@@ -12644,10 +12645,10 @@ function MortgageTab({ values, onChange }) {
         {/* Totals row */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
           {[
-            { l:"Total value",    v:totalValue,    c:"#0ea5e9" },
-            { l:"Total mortgage", v:totalMortgage, c:"#f87171" },
-            { l:"Total equity",   v:totalEquity,   c:"var(--positive)" },
-            { l:"Annual income",  v:totalIncome,   c:"var(--accent-purple)" },
+            { l:"Total value",    v:totalValue,    c:"var(--text-primary)" },
+            { l:"Total mortgage", v:totalMortgage, c:"var(--text-primary)" },
+            { l:"Total equity",   v:totalEquity,   c:"var(--text-primary)" },
+            { l:"Annual income",  v:totalIncome,   c:"var(--text-primary)" },
           ].map(m => (
             <div key={m.l} className="met">
               <div className="ml">{m.l}</div>
@@ -12665,21 +12666,21 @@ function MortgageTab({ values, onChange }) {
         <div className="metrics" style={{ marginBottom:12 }}>
           <div className="met">
             <div className="ml">Current balance</div>
-            <div className="mv" style={{ color:"#0ea5e9", fontSize:18 }}>{fmtDollar(bal)}</div>
+            <div className="mv" style={{ color:"var(--text-primary)", fontSize:18 }}>{fmtDollar(bal)}</div>
           </div>
           <div className="met">
             <div className="ml">Payoff year</div>
-            <div className="mv" style={{ color:"var(--positive)", fontSize:18 }}>{sched.payoffYr}</div>
+            <div className="mv" style={{ color:"var(--text-primary)", fontSize:18 }}>{sched.payoffYr}</div>
             <div className="ms">With ${extra}/mo extra</div>
           </div>
           <div className="met">
             <div className="ml">Interest saved</div>
-            <div className="mv" style={{ color:"#34d399", fontSize:18 }}>{fmtDollar(sched.interestSaved)}</div>
+            <div className="mv" style={{ color:"var(--text-primary)", fontSize:18 }}>{fmtDollar(sched.interestSaved)}</div>
             <div className="ms">vs no extra</div>
           </div>
           <div className="met">
             <div className="ml">Monthly P&I</div>
-            <div className="mv" style={{ color:"var(--text-secondary)", fontSize:18 }}>{fmtDollar(sched.pmt)}</div>
+            <div className="mv" style={{ color:"var(--text-primary)", fontSize:18 }}>{fmtDollar(sched.pmt)}</div>
             <div className="ms">At {rate}% fixed</div>
           </div>
         </div>
@@ -12996,7 +12997,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
             earlier, so a missing-data $0 was presented as "net worth at 90". */}
         <div className="met">
           <div className="ml">Net worth at age {lastDataAge ?? planAge}</div>
-          <div className="mv" style={{ color: dataStopsEarly ? "var(--accent-gold)" : "#0ea5e9", fontSize: 18 }}>
+          <div className="mv" style={{ color: dataStopsEarly ? "var(--accent-gold)" : "var(--text-primary)", fontSize: 18 }}>
             {fmtDollar(finalNW)}
           </div>
           <div className="ms">
@@ -13008,7 +13009,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
         </div>
         <div className="met">
           <div className="ml">Mortgage‑free</div>
-          <div className="mv" style={{ color: "var(--accent-purple)", fontSize: 18 }}>
+          <div className="mv" style={{ color: "var(--text-primary)", fontSize: 18 }}>
             {p.mortBalance > 0 ? mortSched.payoffYr : "—"}
           </div>
           <div className="ms">
@@ -13017,7 +13018,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
         </div>
         <div className="met">
           <div className="ml">Real estate equity</div>
-          <div className="mv" style={{ color: "var(--accent-gold)", fontSize: 18 }}>
+          <div className="mv" style={{ color: "var(--text-primary)", fontSize: 18 }}>
             {fmtDollar(reEquity)}
           </div>
           <div className="ms">NOT in liquid total</div>
@@ -14359,7 +14360,7 @@ function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt }) {
             ← Previous
           </button>
 
-          <div style={{ fontSize: 11, color: "#334155" }}>{step + 1} / {STEPS.length}</div>
+          <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{step + 1} / {STEPS.length}</div>
 
           <button
             onClick={goNext}
@@ -15266,7 +15267,7 @@ function AssumptionsPanel({ values, onChange }) {
               >×</button>
             </div>
           ))}
-          <div style={{ fontSize: 9, color: "#334155", marginBottom: 6 }}>Label · $/yr · End year (calendar year when obligation ends)</div>
+          <div style={{ fontSize: 9, color: "var(--text-faint)", marginBottom: 6 }}>Label · $/yr · End year (calendar year when obligation ends)</div>
           <button
             onClick={() => onChange("carveouts", [...(values.carveouts || []), { id: Date.now().toString(), label: "", annual: 0, endYear: new Date().getFullYear() + 5 }])}
             style={{ fontSize: 11, background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.25)", color: "var(--accent)", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}
@@ -15424,7 +15425,7 @@ function AssumptionsPanel({ values, onChange }) {
       <div
         style={{
           fontSize: 10,
-          color: "#334155",
+          color: "var(--text-faint)",
           fontStyle: "italic",
           textAlign: "right",
         }}
@@ -16869,9 +16870,9 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
                 : <>Floor = {floorPct}% of core spend · Ceiling = {ceilingPct}% of core spend</>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "var(--accent-gold)", fontFamily: "'JetBrains Mono',monospace" }}>{guardFromImport ? fmtDollar(floor) : `${floorPct}%`}</div><div style={{ fontSize: 10, color: "#334155" }}>{guardFromImport ? "essentials / yr" : `${fmtDollar(floor)} / yr`}</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "var(--accent-gold)", fontFamily: "'JetBrains Mono',monospace" }}>{guardFromImport ? fmtDollar(floor) : `${floorPct}%`}</div><div style={{ fontSize: 10, color: "var(--text-faint)" }}>{guardFromImport ? "essentials / yr" : `${fmtDollar(floor)} / yr`}</div></div>
               <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'JetBrains Mono',monospace" }}>{guardFromImport ? fmtDollar(ceiling) : `${ceilingPct}%`}</div><div style={{ fontSize: 10, color: "#334155" }}>{guardFromImport ? "full budget / yr" : `${fmtDollar(ceiling)} / yr`}</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'JetBrains Mono',monospace" }}>{guardFromImport ? fmtDollar(ceiling) : `${ceilingPct}%`}</div><div style={{ fontSize: 10, color: "var(--text-faint)" }}>{guardFromImport ? "full budget / yr" : `${fmtDollar(ceiling)} / yr`}</div></div>
             </div>
             {/* The Floor/Ceiling inputs used to live here AND nowhere else. They
                 are simulation guardrails, not plan facts, so they moved into
@@ -16903,7 +16904,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
           <>
             <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 12 }}>📊 Fixed Percentage Withdrawal</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 16 }}>Each year, withdraw a fixed percentage of the current portfolio balance.</div>
-            <div style={{ textAlign: "center", marginBottom: 14 }}><div style={{ fontSize: 11, color: "var(--text-faint)" }}>Withdrawal Rate</div><div style={{ fontSize: 32, fontWeight: 700, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace" }}>{values.fixedWithdrawalRate || 4.0}%</div><div style={{ fontSize: 10, color: "#334155" }}>of portfolio balance each year</div></div>
+            <div style={{ textAlign: "center", marginBottom: 14 }}><div style={{ fontSize: 11, color: "var(--text-faint)" }}>Withdrawal Rate</div><div style={{ fontSize: 32, fontWeight: 700, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace" }}>{values.fixedWithdrawalRate || 4.0}%</div><div style={{ fontSize: 10, color: "var(--text-faint)" }}>of portfolio balance each year</div></div>
             <div style={{ display: "flex", justifyContent: "center" }}>
               <WFieldRow label="Withdrawal Rate" helper="Annual percentage of portfolio to withdraw (default 4%).">
                 <ANumInput value={values.fixedWithdrawalRate ?? 4.0} onSet={(v) => onChange("fixedWithdrawalRate", v)} min={2} max={10} step={0.1} suffix="%" />
@@ -18366,7 +18367,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 if (propValue === 0) return null;
                 return (
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 6 }}>
-                    <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Net Worth <span style={{ color: "#334155" }}>(+RE equity)</span></span>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Net Worth <span style={{ color: "var(--text-faint)" }}>(+RE equity)</span></span>
                     <span style={{ fontSize: 14, fontWeight: 700, color: "var(--accent-purple)", fontFamily: "'JetBrains Mono',monospace" }}>
                       {fmtDollar(netWorth)}
                     </span>
@@ -18829,7 +18830,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         the household to spend. Nothing said so before,
                         which is why it needed saying. */}
                     <span title="Your spending target — the figure you entered, shown monthly. This is money to spend AFTER tax: the engine withdraws enough extra from the portfolio to cover the tax bill on top of this amount, so taxes are not taken out of it. Covered by Social Security, rental and other income first, then your portfolio draw. The success rate on the left is what tells you whether this target holds.">
-                      <strong style={{ color: "var(--accent-gold)" }}>${(Math.round(params.sp / 12)).toLocaleString()}/mo</strong> your spend target <span style={{ fontSize: 12, opacity: 0.75 }}>(after tax)</span>
+                      <strong style={{ color: "var(--accent)" }}>${(Math.round(params.sp / 12)).toLocaleString()}/mo</strong> your spend target <span style={{ fontSize: 12, opacity: 0.75 }}>(after tax)</span>
                     </span>
                   </div>
                   {/* Sector / life-phase badge — lower far right, aligned under the toggle. */}
