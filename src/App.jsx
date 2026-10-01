@@ -11381,11 +11381,11 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
         <div style={secHead}>Historical Range To Sample</div>
         <div style={row}>
           <span style={lbl}>From</span>
-          <ANumInput value={startYr} onSet={(v) => setRange("start", v)} min={SAMPLE_START_YEAR} max={SAMPLE_END_YEAR - 1} step={1} />
+          <ANumInput value={startYr} onSet={(v) => setRange("start", v)} min={SAMPLE_START_YEAR} max={SAMPLE_END_YEAR - 1} step={1} plain />
         </div>
         <div style={row}>
           <span style={lbl}>Through</span>
-          <ANumInput value={endYr} onSet={(v) => setRange("end", v)} min={SAMPLE_START_YEAR + 1} max={SAMPLE_END_YEAR} step={1} />
+          <ANumInput value={endYr} onSet={(v) => setRange("end", v)} min={SAMPLE_START_YEAR + 1} max={SAMPLE_END_YEAR} step={1} plain />
         </div>
         <div style={help}>
           The engine bootstraps whole calendar years — stocks, bonds and inflation drawn together from the
@@ -11668,6 +11668,7 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
         <span style={{ ...v, color: exhaust == null ? "var(--positive)" : "var(--accent-gold)" }}>
           {exhaust == null ? "Never" : `Age ${exhaust}`}
         </span>
+        {exhaust != null && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>in the paths that fail</span>}
       </div>
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 10.5, color: "var(--text-faint)" }}>{real ? `${basisYear} dollars` : "future dollars"}</span>
@@ -11676,8 +11677,8 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
           <ModalLede>These four numbers answer the questions that actually matter, before you open a single tab.</ModalLede>
           <ModalP><Em color={INFO_ACCENT.money}>Withdrawal rate</Em> — first-year spending net of guaranteed income, divided by the portfolio at retirement, against a {(swrBenchmark * 100).toFixed(0)}% benchmark. It sizes the draw the plan starts from; the success rate on the card above is what says whether that rate holds to age {endAge}.</ModalP>
           <ModalP><Em color={INFO_ACCENT.positive}>Money outlives you</Em> — the same paths, re-weighted by your odds of actually being alive at each failure age. It is always at least as high as the funded-to-age success rate on the card above, and it answers the actuarial question rather than the worst-case one.</ModalP>
-          <ModalP><Em color={INFO_ACCENT.money}>Worst case</Em> — the 10th-percentile ending balance: 90% of simulated outcomes finished above it. A thin worst case beside a high success rate is one bad sequence away from joining the failures.</ModalP>
-          <ModalP><Em color={INFO_ACCENT.risk}>Runs out (median)</Em> — the middle failure age across the paths that DID run out. "Never" means fewer than half of all paths failed.</ModalP>
+          <ModalP><Em color={INFO_ACCENT.money}>Worst case</Em> — the 10th-percentile ending balance: 90% of simulated outcomes finished above it. A small worst case beside a high success rate is one bad sequence away from joining the failures.</ModalP>
+          <ModalP><Em color={INFO_ACCENT.risk}>Runs out (median)</Em> — the typical age at which the simulated paths that ran out of money did so (the middle one). It describes only the paths that failed, not your whole plan, so a high success rate can sit beside a young age here. "Never" appears only when no simulated path ran out. When few paths fail, this figure rests on few paths: treat it as indicative.</ModalP>
           <ModalNote accent={INFO_ACCENT.method}>All four are read from the one simulation you last ran — nothing here is recomputed. Change an input and the strip goes stale with the rest of the results until you re-run.</ModalNote>
         </InfoModal>
       </div>
@@ -12700,7 +12701,7 @@ function MortgageTab({ values, onChange }) {
 
       {/* ── AMORTIZATION TABLE ── */}
       <div className="chart-card">
-        <div className="ct">Amortization — first 10 years with extra payments</div>
+        <div className="ct">Amortization — first 10 years{extra > 0 ? " with extra payments" : ""}</div>
         <table className="nw-table">
           <thead>
             <tr><th>Year</th><th>Principal</th><th>Interest</th><th>Extra</th><th>Balance</th></tr>
@@ -12828,7 +12829,7 @@ function NetWorthTip({ active, payload, label, p }) {
   );
 }
 
-function NetWorthTab({ p, mc, inf, real }) {
+export function NetWorthTab({ p, mc, inf, real }) {
   const [showRE, setShowRE] = useState(false);
   // The per-age chart line and "Net worth at age X" card go through
   // selectPortfolioAtAge() below (the shared basis-aware lookup — see its
@@ -12994,9 +12995,11 @@ function NetWorthTab({ p, mc, inf, real }) {
         <div className="met">
           <div className="ml">Mortgage‑free</div>
           <div className="mv" style={{ color: "var(--accent-purple)", fontSize: 18 }}>
-            {mortSched.payoffYr}
+            {p.mortBalance > 0 ? mortSched.payoffYr : "—"}
           </div>
-          <div className="ms">With extra payments</div>
+          <div className="ms">
+            {p.mortBalance > 0 ? (p.mortExtra > 0 ? "With extra payments" : "Standard payments") : "No mortgage modeled"}
+          </div>
         </div>
         <div className="met">
           <div className="ml">Real estate equity</div>
@@ -14840,7 +14843,7 @@ function selectAllOnFocus(e) {
   requestAnimationFrame(() => { try { el.select(); } catch { /* detached */ } });
 }
 
-function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
+function ANumInput({ value, onSet, min, max, step, suffix = "", plain = false }) {
   const [isFocused, setIsFocused] = useState(false);
   const [localValue, setLocalValue] = useState("");
   // A fractional step (0.1, 0.5) means this field takes decimals — hint the
@@ -14918,7 +14921,7 @@ function ANumInput({ value, onSet, min, max, step, suffix = "" }) {
   const displayValue = isFocused
     ? localValue
     : (value != null && !isNaN(value)
-        ? new Intl.NumberFormat('en-US').format(value)
+        ? (plain ? String(value) : new Intl.NumberFormat('en-US').format(value))
         : "");
 
   return (
