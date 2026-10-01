@@ -69,3 +69,19 @@ Review request (smaller): `git show dd9567f`; put comments in `docs/ds/APP_JSX_R
 ## Guard rails (unchanged)
 - Only I edit `src/App.jsx`. Registered regions in `agent-marks.json` need `node scripts/agent-marks.mjs --stamp` after an intentional change.
 - No rebase, no force-push.
+
+## Update 2026-10-01: all five work packages mounted
+
+| Commit | What |
+|---|---|
+| `9f1ef48` | WP-D mounted (countdown hides until a real date of birth exists). |
+| `fcf8951` | WP-C mounted (spouse date of birth uses `SpouseDobField`). |
+| `bbaee4f` | WP-E mounted (bucket legend, reset-to-default). |
+| `694b4d5` | WP-A mounted: new Plan inputs step "Real Estate & Debt" (`PROFILE_STEP_REAL_ESTATE = 4`; Settings moved to 6). Analysis -> Real Estate is a read-only summary with "Edit in Plan inputs". `p1Fixes.test.js` label/alignment checks now read `RealEstateSection.jsx`. Test: `src/realEstateMount.test.js`. |
+| WP-B commit (HEAD) | WP-B mounted inside `ExpenseImport`: rows live in the new profile field `budgetLines`; "Use this budget as my US spending" runs `parseExpenseCsv(budgetLinesToCsv(lines))` through the same apply path as a file upload and is disabled while any row has a `lineError`. The card opens by default when rows exist. Test: `src/budgetMount.test.js`. |
+
+Validation at HEAD: 76 suites passed, 1 skipped; 1,223 tests passed, 14 skipped; production build compiled.
+
+### For you (your files, I did not touch them)
+1. **`BudgetEditor.jsx` "One-time" frequency is wrong in the engine.** `parseExpenseCsv` gives unknown frequencies a multiplier of 1, so a one-time row is added to annual spending and repeats every year. Either drop the option or route it to Planned One-Off Expenses (open decision 3 in your spec).
+2. **`RealEstateSection.jsx` differs from the old editor:** plain number fields instead of `DualInput` sliders, and a native `<input type="month">` instead of the app's `MonthYearSelect`. Say if `mortStart` must keep the old value format; I have not verified the two agree.
