@@ -82,6 +82,7 @@ import { earlyWithdrawalPenalty, detectEmployerPlan, ruleOf55SeparationQualifies
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
 import CountdownCard from "./CountdownCard";
 import DateField from "./DateField";
+import { INCOME_LABELS } from "./engine/incomeLabels";
 import { retirementTarget, formatRemaining } from "./engine/retirementTarget";
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
@@ -5930,7 +5931,7 @@ function categorizeCarveouts(carveouts, yr, inf) {
  * inflow into its bucket and computes the year's draw separately, so the
  * two are independent money-in figures. */
 const INCOME_CATS = [
-  ["Savings Drawdown", "var(--accent-teal)"],
+  [INCOME_LABELS.savingsDrawdown, "var(--accent-teal)"],
   ["Social Security", "#7c3aedcc"],
   ["Annuity/Rental", "#295ff1cc"],
   ["Pension/Other", "#eab308cc"],
@@ -5963,7 +5964,7 @@ function IncomeExpensesChart({ p, inf }) {
       "Social Security": r.ss,
       "Annuity/Rental": r.annuityRental,
       "Pension/Other": r.otherIncome,
-      "Savings Drawdown": r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth,
+      [INCOME_LABELS.savingsDrawdown]: r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth,
       "One-Off Income": r.eventInflow || 0,
       "Roth Conversion": r.conversionAmount,
       "General/Living": r.spending,
@@ -5997,6 +5998,7 @@ function IncomeExpensesChart({ p, inf }) {
         data={data} categories={INCOME_CATS}
         hoverYr={hoverYr} hoverRow={hoverRow}
         onMove={onMove} onLeave={onLeave}
+        footnote="Where each row comes from: Annuity/Rental = your Annuity/Benefit input plus each property's Annual income. Social Security and Pension/Other come from their own inputs. Withdrawals from 401(k)/IRA, taxable, cash and Roth accounts are all in Savings & 401(k)/IRA Drawdown, never in Annuity/Rental."
       />
       <IncomeExpenseStack
         title="📉 Estimated Expenses"
@@ -6004,13 +6006,14 @@ function IncomeExpensesChart({ p, inf }) {
         data={data} categories={EXPENSE_CATS}
         hoverYr={hoverYr} hoverRow={hoverRow}
         onMove={onMove} onLeave={onLeave}
+        dashKeys={notEnteredKeys(p)}
         reconcile
-        footnote="Capital Gains Tax is not yet separately modeled (shown as $0) — realized gains on taxable-account draws are folded into Income Tax. Roth conversion tax and IRMAA surcharges are funded directly from the pre-tax bucket, so totals here may differ slightly from the Income side."
+        footnote="A dash means nothing was entered for that row, which is not the same as zero cost: Medical, Long-Term Care and Other Expenses appear only if you add carveouts (or Planned One-Off Expenses), and Mortgage/Housing only if a mortgage is entered and housing is not already inside your spending target. Capital Gains Tax is not yet separately modeled (shown as —) — realized gains on taxable-account draws are folded into Income Tax. Roth conversion tax and IRMAA surcharges are funded directly from the pre-tax bucket, so totals here may differ slightly from the Income side."
       />
       {p.ssAge > p.retireAge && (
         <div className="flag-w" style={{ fontSize: 11 }}>
           ⚠ Social Security gap, ages {p.retireAge}–{p.ssAge - 1} — with no SS yet, your
-          portfolio carries the full spending need (the green Savings Drawdown above is
+          portfolio carries the full spending need (the green Savings & 401(k)/IRA Drawdown above is
           largest here). This is the highest sequence-of-returns risk window.
         </div>
       )}
@@ -6034,7 +6037,15 @@ function ReconLine({ label, value, color }) {
   );
 }
 
-function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverRow, onMove, onLeave, footnote, reconcile }) {
+/** Expense rows that are 0 only because nothing was entered, so they show "—" instead of a confident $0. */
+export function notEnteredKeys(p) {
+  const keys = ["Capital Gains Tax"];
+  if (!(p.carveouts || []).length) keys.push("Medical", "Long-Term Care", "Other Expenses");
+  if (!(p.mortBalance > 0)) keys.push("Mortgage/Housing");
+  return keys;
+}
+
+function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverRow, onMove, onLeave, footnote, reconcile, dashKeys = [] }) {
   const rows = categories.map(([key, color]) => ({
     key, color,
     value: hoverRow ? (hoverRow[key] || 0) : data.reduce((s, d) => s + (d[key] || 0), 0),
@@ -6049,7 +6060,7 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
   const sumKey = (k) => hoverRow ? (hoverRow[k] || 0) : data.reduce((s, d) => s + (d[k] || 0), 0);
   const recon = reconcile ? (() => {
     const guaranteed   = sumKey("Social Security") + sumKey("Annuity/Rental") + sumKey("Pension/Other");
-    const draw         = sumKey("Savings Drawdown");                 // true portfolio draw
+    const draw         = sumKey(INCOME_LABELS.savingsDrawdown);                 // true portfolio draw
     const coreSpend    = sumKey("General/Living");
     const housingCarve = sumKey("Mortgage/Housing") + sumKey("Medical") + sumKey("Long-Term Care") + sumKey("Other Expenses");
     const taxes        = sumKey("Income Tax") + sumKey("Capital Gains Tax");
@@ -6083,7 +6094,7 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
                 <span style={{ width: 9, height: 9, borderRadius: 2, background: color, display: "inline-block" }} />
                 {key}
               </div>
-              <div style={{ color: "#e2e8f0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(value)}</div>
+              <div style={{ color: "#e2e8f0", fontFamily: "'JetBrains Mono',monospace" }}>{value === 0 && dashKeys.includes(key) ? "—" : fmtDollar(value)}</div>
             </div>
           ))}
           <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 8, paddingTop: 6, fontWeight: 700 }}>
@@ -6104,7 +6115,7 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
               </div>
               <ReconLine label="Taxes (paid from pre-tax accounts)" value={recon.taxes} color="#f87171" />
               <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
-                “Drawn from savings” is the green <strong style={{ color: "#a9d1ac" }}>Savings Drawdown</strong> bar above — your spending plus housing &amp; carveouts, minus the income you already receive. Taxes are the <em>extra</em> the plan must produce on top, funded from your pre-tax accounts.
+                “Drawn from savings” is the green <strong style={{ color: "#a9d1ac" }}>Savings &amp; 401(k)/IRA Drawdown</strong> bar above — your spending plus housing &amp; carveouts, minus the income you already receive. Taxes are the <em>extra</em> the plan must produce on top, funded from your pre-tax accounts.
               </div>
             </div>
           )}
@@ -11670,10 +11681,10 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
         </span>
         {exhaust != null && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>in the paths that fail</span>}
       </div>
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 10.5, color: "var(--text-faint)" }}>{real ? `${basisYear} dollars` : "future dollars"}</span>
+      <div style={sep} />
+      <div style={fact}>
         <InfoModal title="Your four headline answers" accent={INFO_ACCENT.method}
-          trigger={<span style={{ cursor: "pointer", display: "inline-flex", color: INFO_ACCENT.method }}><InfoIcon size={13} /></span>}>
+          trigger={<span aria-label="What are these four numbers?" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, color: INFO_ACCENT.method, fontSize: 10.5, fontWeight: 600 }}><InfoIcon size={13} /> What are these?</span>}>
           <ModalLede>These four numbers answer the questions that actually matter, before you open a single tab.</ModalLede>
           <ModalP><Em color={INFO_ACCENT.money}>Withdrawal rate</Em> — first-year spending net of guaranteed income, divided by the portfolio at retirement, against a {(swrBenchmark * 100).toFixed(0)}% benchmark. It sizes the draw the plan starts from; the success rate on the card above is what says whether that rate holds to age {endAge}.</ModalP>
           <ModalP><Em color={INFO_ACCENT.positive}>Money outlives you</Em> — the same paths, re-weighted by your odds of actually being alive at each failure age. It is always at least as high as the funded-to-age success rate on the card above, and it answers the actuarial question rather than the worst-case one.</ModalP>
@@ -11681,6 +11692,9 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
           <ModalP><Em color={INFO_ACCENT.risk}>Runs out (median)</Em> — the typical age at which the simulated paths that ran out of money did so (the middle one). It describes only the paths that failed, not your whole plan, so a high success rate can sit beside a young age here. "Never" appears only when no simulated path ran out. When few paths fail, this figure rests on few paths: treat it as indicative.</ModalP>
           <ModalNote accent={INFO_ACCENT.method}>All four are read from the one simulation you last ran — nothing here is recomputed. Change an input and the strip goes stale with the rest of the results until you re-run.</ModalNote>
         </InfoModal>
+      </div>
+      <div style={{ marginLeft: "auto" }}>
+        <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{real ? `${basisYear} dollars` : "future dollars"}</span>
       </div>
     </div>
   );
@@ -11928,8 +11942,8 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           <div style={{ background: `${withAlpha(rateColor(mc.rate), "12")}`, border: `1.5px solid ${withAlpha(rateColor(mc.rate), "44")}`, borderRadius: 10, padding: 18 }}>
             {/* Header row: label + info on the left, confidence badge parked
                 top-right where the card had empty space. */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
-              <div className="section-label" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
+              <div className="section-label" style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: "2px 8px" }}>
                 SUCCESS RATE
                 {/* Was a `title=`-only span, which showed nothing on this
                     machine and is dead on touch — same trap as InfoDot. Now a
@@ -11938,7 +11952,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                 <SimMethodModal
                   params={params}
                   withdrawalStrategy={withdrawalStrategy}
-                  trigger={<span aria-label="How this simulation works" style={{ color: "#60a5fa", cursor: "pointer", fontSize: 10.5, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px dashed rgba(96,165,250,0.45)" }}>ⓘ How this works</span>}
+                  trigger={<span aria-label="How this simulation works" style={{ color: "#60a5fa", cursor: "pointer", fontSize: 10.5, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px dashed rgba(96,165,250,0.45)", display: "inline-flex", alignItems: "center", gap: 4 }}><InfoIcon size={12} /> How this works</span>}
                 />
               </div>
               {/* Confidence badge — glanceable status icon + band label, keyed
@@ -11977,7 +11991,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           </div>
           <div style={{ background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
             <div className="section-label" style={{ marginBottom: 8, display: "inline-flex", alignItems: "center", gap: 6 }}>MEDIAN FINAL BALANCE
-              <InfoModal title="Median Final Balance" accent={INFO_ACCENT.money} trigger={<span role="img" aria-label="What Median Final Balance means" style={{ color: "#60a5fa", cursor: "pointer", fontSize: 12 }}>ℹ️</span>}>
+              <InfoModal title="Median Final Balance" accent={INFO_ACCENT.money} trigger={<span role="img" aria-label="What Median Final Balance means" style={{ color: INFO_ACCENT.method, cursor: "pointer", display: "inline-flex" }}><InfoIcon size={13} /></span>}>
                 <ModalLede>The typical leftover — not a floor, and not a guarantee.</ModalLede>
                 <ModalP>The <Em color={INFO_ACCENT.money}>50th-percentile</Em> portfolio value remaining at age {params.endAge}: half of all simulations finish <Em>above</Em> this line, half <Em>below</Em>.</ModalP>
                 <ModalNote accent={INFO_ACCENT.money}>The <Em color={INFO_ACCENT.money}>10th–90th percentile</Em> spread beneath shows how wide the range of outcomes really is — that spread matters more than this single midpoint.</ModalNote>
@@ -12590,7 +12604,7 @@ function MortgageTab({ values, onChange }) {
 
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
                 <div>
-                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Gross value</div>
+                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4, textAlign:"right" }}>Gross value</div>
                   {/* `max` bounds the DRAG range only — DualInput's typed field
                       accepts values above it (see Slider.commitDraft). A 999B max
                       here made one pixel of travel worth ~$1.4B, so the slider
@@ -12599,12 +12613,12 @@ function MortgageTab({ values, onChange }) {
                     format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"value",v)}/>
                 </div>
                 <div>
-                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Mortgage balance</div>
+                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4, textAlign:"right" }}>Mortgage balance</div>
                   <DualInput label="" value={prop.mortgage||0} min={0} max={10_000_000} step={1_000}
                     format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"mortgage",v)}/>
                 </div>
                 <div>
-                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4 }}>Annual income (opt)</div>
+                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4, textAlign:"right" }}>Annual income (opt)</div>
                   <DualInput label="" value={prop.income||0} min={0} max={200_000} step={1_000}
                     format={v=>`$${Math.round(v).toLocaleString()}/yr`} onChange={v=>updateProp(prop.id,"income",v)}/>
                 </div>
@@ -12676,7 +12690,7 @@ function MortgageTab({ values, onChange }) {
             onChange={v=>{ onChange("mortBalance",v); updateProp(properties[0]?.id,"mortgage",v); }}/>
           <DualInput label="Rate %" value={rate} min={0} max={12} step={0.125}
             format={v=>v.toFixed(3)+"%"} onChange={v=>onChange("mortRate",v)}/>
-          <DualInput label="Term (yrs)" value={term} min={10} max={30} step={1}
+          <DualInput label="Original term (yrs)" value={term} min={10} max={30} step={1}
             format={v=>v+" yrs"} onChange={v=>onChange("mortTerm",v)}/>
           <DualInput label="Extra/mo" value={extra} min={0} max={5_000} step={50}
             format={v=>"$"+v.toLocaleString()+"/mo"} onChange={v=>onChange("mortExtra",v)}/>
@@ -18820,7 +18834,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   </div>
                   {/* Sector / life-phase badge — lower far right, aligned under the toggle. */}
                   {analogue && (
-                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, marginTop: 10 }}>
+                      <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-muted)", textTransform: "uppercase" }}>Current life phase</span>
                       <SectorBadge age={currentAge} />
                     </div>
                   )}
