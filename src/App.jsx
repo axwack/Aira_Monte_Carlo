@@ -4517,25 +4517,15 @@ function AboutButton() {
                 <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
                   {ABOUT_THANKS.intro}
                 </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {ABOUT_THANKS.people.map(pr => (
-                    <div key={pr.handle} style={{
-                      padding: "11px 14px", borderRadius: 9,
-                      background: "rgba(251,191,36,0.06)",
-                      border: "1px solid rgba(251,191,36,0.22)",
-                    }}>
+                {/* One wrapped line of names, not a card per person: the list grows and cards ate the modal. */}
+                <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.9 }}>
+                  {ABOUT_THANKS.people.map((pr, i) => (
+                    <span key={pr.handle} title={pr.note || undefined} style={{ whiteSpace: "nowrap" }}>
+                      {i > 0 && <span style={{ color: "var(--text-faint)", margin: "0 8px" }}>·</span>}
                       {pr.url ? (
-                        <a href={pr.url} target="_blank" rel="noreferrer"
-                          style={{ fontSize: 13, fontWeight: 700, color: "var(--accent-gold)", textDecoration: "none" }}>
-                          {pr.handle} <span style={{ fontSize: 10, color: "#78716c" }}>↗</span>
-                        </a>
-                      ) : (
-                        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent-gold)" }}>{pr.handle}</span>
-                      )}
-                      {pr.note ? (
-                        <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.55, marginTop: 5 }}>{pr.note}</div>
-                      ) : null}
-                    </div>
+                        <a href={pr.url} target="_blank" rel="noreferrer" style={{ color: "inherit", textDecoration: "underline", textDecorationColor: "var(--text-faint)" }}>{pr.handle}</a>
+                      ) : pr.handle}
+                    </span>
                   ))}
                 </div>
               </div>
