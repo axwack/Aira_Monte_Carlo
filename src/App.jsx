@@ -85,6 +85,7 @@ import DateField from "./DateField";
 import SpouseDobField from "./SpouseDobField";
 import { BucketLegend, BucketResetButton } from "./BucketLegend";
 import RealEstateSection from "./planInputs/RealEstateSection";
+import BudgetEditor, { budgetLinesToCsv, lineError } from "./planInputs/BudgetEditor";
 import { NavContext, GoStep } from "./NavContext";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 import { bucketColor } from "./engine/bucketColors";
@@ -723,6 +724,7 @@ export const BLANK_PROFILE = {
   // [{id, label, year, amount, recurEveryYears, recurUntilYear, inflate, deferrable}]
   cashFlowEvents: [],
   spSchedule: null,             // [{year, amount}] explicit per-year core spend from a detailed CSV import; null = use sp + strategy
+  budgetLines: [],              // rows typed into the inline budget editor (Plan inputs > Spending & Expenses)
   spImportMeta: null,           // { mode, fileName, importedAt, total|years, essentialTotal } — display only, for the import summary card
   rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
   fafsaGuard: false,            // cap Roth conversions during college aid years — set true + fafsaEndYear to activate
@@ -16338,39 +16340,45 @@ function ExpenseImport({ values, onChange }) {
   const fileRef = useRef(null);
   const meta = values.spImportMeta || null;
 
+  // One apply path for both the uploaded file and the inline editor's rows.
+  const applyCsv = (text, fileName) => {
+    setError(""); setWarnings([]);
+    try {
+      const r = parseExpenseCsv(text);
+      setWarnings(r.warnings || []);
+      const importedAt = new Date().toISOString();
+      if (r.mode === "multi") {
+        onChange("spSchedule", r.schedule);
+        onChange("spImportMeta", {
+          mode: "multi", fileName, importedAt,
+          years: r.schedule.length,
+          firstYear: r.schedule[0].year, lastYear: r.schedule[r.schedule.length - 1].year,
+        });
+      } else {
+        // Single-year budget lands in the US Spending field; clear any prior schedule.
+        onChange("sp", r.total);
+        onChange("spSchedule", null);
+        onChange("spImportMeta", {
+          mode: "single", fileName, importedAt,
+          total: r.total, essentialTotal: r.essentialTotal ?? null,
+          lineCount: r.lineItems.length,
+        });
+      }
+    } catch (err) {
+      setError(err.message || "Could not read that file.");
+    }
+  };
+
   const handleFile = (file) => {
     if (!file) return;
-    setError(""); setWarnings([]);
     const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const r = parseExpenseCsv(String(e.target.result || ""));
-        setWarnings(r.warnings || []);
-        const importedAt = new Date().toISOString();
-        if (r.mode === "multi") {
-          onChange("spSchedule", r.schedule);
-          onChange("spImportMeta", {
-            mode: "multi", fileName: file.name, importedAt,
-            years: r.schedule.length,
-            firstYear: r.schedule[0].year, lastYear: r.schedule[r.schedule.length - 1].year,
-          });
-        } else {
-          // Single-year budget lands in the US Spending field; clear any prior schedule.
-          onChange("sp", r.total);
-          onChange("spSchedule", null);
-          onChange("spImportMeta", {
-            mode: "single", fileName: file.name, importedAt,
-            total: r.total, essentialTotal: r.essentialTotal ?? null,
-            lineCount: r.lineItems.length,
-          });
-        }
-      } catch (err) {
-        setError(err.message || "Could not read that file.");
-      }
-    };
+    reader.onload = (e) => applyCsv(String(e.target.result || ""), file.name);
     reader.onerror = () => setError("Could not read that file.");
     reader.readAsText(file);
   };
+
+  const budgetLines = values.budgetLines || [];
+  const budgetReady = budgetLines.length > 0 && budgetLines.every((l) => !lineError(l));
 
   const clearImport = () => {
     onChange("spSchedule", null);
@@ -16380,6 +16388,15 @@ function ExpenseImport({ values, onChange }) {
   };
 
   return (
+    <>
+    <BudgetEditor value={budgetLines} onChange={(next) => onChange("budgetLines", next)} />
+    {budgetLines.length > 0 && (
+      <button type="button" className="cfg-btn" disabled={!budgetReady} data-testid="budget-apply"
+        style={{ width: "auto", margin: "8px 0 0", padding: "6px 14px", opacity: budgetReady ? 1 : 0.5 }}
+        onClick={() => applyCsv(budgetLinesToCsv(budgetLines), "the budget you typed")}>
+        Use this budget as my US spending
+      </button>
+    )}
     <div style={{ marginTop: 14, padding: "12px 14px", background: "rgba(168,85,247,0.06)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: 8 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: "#c4b5fd", marginBottom: 4 }}>📄 Import detailed expenses (CSV)</div>
       <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 8 }}>
@@ -16453,6 +16470,7 @@ function ExpenseImport({ values, onChange }) {
         </div>
       )}
     </div>
+    </>
   );
 }
 
@@ -16522,7 +16540,7 @@ function ExpensesPanel({ values, onChange }) {
         </div>
       </ACard>
 
-      <ACard title="Detailed Expense Budget" accent="#c4b5fd" desc="Optional. Upload a real line-item budget instead of typing one number." collapsible defaultOpen={false}>
+      <ACard title="Detailed Expense Budget" accent="#c4b5fd" desc="Optional. Type or upload a real line-item budget instead of one number." collapsible defaultOpen={(values.budgetLines || []).length > 0}>
         <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
           Instead of typing a single spending number above, upload your real line-item budget.
           A <strong style={{ color: "#cbd5e1" }}>one-year</strong> budget is summed into the US Spending field
