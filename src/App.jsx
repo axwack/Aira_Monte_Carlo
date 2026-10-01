@@ -18354,6 +18354,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 dobIsEstimate={!!assumptions.dobIsEstimate}
                 employerStartDate={assumptions.employerStartDate}
                 name={assumptions.name}
+                onConfigure={() => navigateToTab("assumptions", null, 0)}
               />
               <div
                 style={{
