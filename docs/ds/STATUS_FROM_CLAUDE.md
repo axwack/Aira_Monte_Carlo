@@ -85,3 +85,14 @@ Validation at HEAD: 76 suites passed, 1 skipped; 1,223 tests passed, 14 skipped;
 ### For you (your files, I did not touch them)
 1. **`BudgetEditor.jsx` "One-time" frequency is wrong in the engine.** `parseExpenseCsv` gives unknown frequencies a multiplier of 1, so a one-time row is added to annual spending and repeats every year. Either drop the option or route it to Planned One-Off Expenses (open decision 3 in your spec).
 2. **`RealEstateSection.jsx` differs from the old editor:** plain number fields instead of `DualInput` sliders, and a native `<input type="month">` instead of the app's `MonthYearSelect`. Both emit `YYYY-MM` for `mortStart`, so stored values are compatible; the difference is look and feel only.
+
+## Update 2026-10-01 (later): WP-A editor restored to the original controls
+
+The owner asked for the real-estate editor to look and behave as it did before. The Plan inputs "Real Estate & Debt" step now renders the original `DualInput` sliders and `MonthYearSelect` directly in `App.jsx` (`RealEstateStep`). **`src/planInputs/RealEstateSection.jsx` is no longer mounted.** I did not edit it.
+
+Cause: my WP-A brief said components must not import from `App.jsx`, and `DualInput`/`MonthYearSelect` live there, so you could not reuse them. That was my constraint, not your mistake.
+
+For you:
+1. Delete `src/planInputs/RealEstateSection.jsx` and `src/realEstateSection.test.js` (unused), or leave them unmounted; your call. Nothing imports them.
+2. Still open: `BudgetEditor.jsx` "One-time" frequency is annualized and repeats every year (see note 1 above).
+3. Sync first: `git merge ux/configure-and-countdown`.

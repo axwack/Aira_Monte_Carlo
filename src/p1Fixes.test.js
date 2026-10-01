@@ -4,8 +4,6 @@ import { notEnteredKeys } from "./App";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 
 const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
-// The real-estate editor moved out of App.jsx into the Plan inputs section (WP-A).
-const RE_SRC = fs.readFileSync(path.join(__dirname, "planInputs/RealEstateSection.jsx"), "utf8");
 
 describe("expense rows that were never entered", () => {
   test("no carveouts and no mortgage -> dash Medical/LTC/Other/Housing and always Capital Gains", () => {
@@ -23,12 +21,12 @@ test("savings row is labelled as including 401(k)/IRA draws", () => {
 });
 
 test("labels and captions", () => {
-  expect(RE_SRC).toContain('label="Original term (yrs)"');
+  expect(SRC).toContain('label="Original term (yrs)"');
   expect(SRC).toContain("Current life phase");
   expect(SRC).not.toMatch(/ℹ️<\/span>\}>/); // Median Final Balance uses the standard icon
 });
 
 test("real-estate headers are right-aligned over their inputs", () => {
-  expect(RE_SRC).toMatch(/labelStyle = \{[^}]*textAlign: "right"/);
-  ["Gross value", "Mortgage balance", "Annual income (opt)"].forEach((l) => expect(RE_SRC).toContain(`label="${l}"`));
+  ["Gross value", "Mortgage balance", "Annual income (opt)"].forEach((l) =>
+    expect(SRC).toMatch(new RegExp(`textAlign:"right" \\}\\}>${l.replace(/[()]/g, "\\$&")}</div>`)));
 });

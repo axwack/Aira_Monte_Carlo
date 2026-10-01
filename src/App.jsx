@@ -84,7 +84,6 @@ import CountdownCard from "./CountdownCard";
 import DateField from "./DateField";
 import SpouseDobField from "./SpouseDobField";
 import { BucketLegend, BucketResetButton } from "./BucketLegend";
-import RealEstateSection from "./planInputs/RealEstateSection";
 import BudgetEditor, { budgetLinesToCsv, lineError } from "./planInputs/BudgetEditor";
 import { NavContext, GoStep } from "./NavContext";
 import { INCOME_LABELS } from "./engine/incomeLabels";
@@ -13942,30 +13941,134 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   );
 }
 
-/** Plan inputs > Real Estate & Debt: wires DeepSeek's controlled RealEstateSection to the profile.
- * Same state and the same primary-mortgage sync MortgageTab used to own; MortgageTab is now read-only. */
-const MORT_FIELD = { balance: "mortBalance", rate: "mortRate", start: "mortStart", term: "mortTerm", extra: "mortExtra" };
+/** Plan inputs > Real Estate & Debt: the one editor for properties and the primary mortgage
+ * (same sliders and month picker the Analysis tab had; MortgageTab is now a read-only summary). */
 function RealEstateStep({ values, onChange }) {
   const properties = values.properties || [{ id: "p1", label: "Primary Residence", value: 0, mortgage: 0, income: 0 }];
-  const updateProperty = (id, field, val) => {
+  const updateProp = (id, field, val) => {
     onChange("properties", properties.map((p) => (p.id === id ? { ...p, [field]: val } : p)));
+    // Keep primary mortgage in sync with mortgage calculator
     if (id === properties[0]?.id && field === "mortgage") onChange("mortBalance", val);
   };
+  const addProperty = () => {
+    if (properties.length >= 5) return;
+    onChange("properties", [...properties, { id: "p" + Date.now(), label: `Property ${properties.length + 1}`, value: 0, mortgage: 0, income: 0 }]);
+  };
+  const removeProperty = (id) => {
+    if (properties.length <= 1) return;
+    onChange("properties", properties.filter((p) => p.id !== id));
+  };
   return (
-    <RealEstateSection
-      properties={properties}
-      mortgage={{ balance: values.mortBalance, rate: values.mortRate, start: values.mortStart, term: values.mortTerm, extra: values.mortExtra }}
-      onUpdateProperty={updateProperty}
-      onAddProperty={() => {
-        if (properties.length >= 5) return;
-        onChange("properties", [...properties, { id: "p" + Date.now(), label: `Property ${properties.length + 1}`, value: 0, mortgage: 0, income: 0 }]);
-      }}
-      onRemoveProperty={(id) => {
-        if (properties.length <= 1) return;
-        onChange("properties", properties.filter((p) => p.id !== id));
-      }}
-      onMortgageChange={(field, val) => MORT_FIELD[field] && onChange(MORT_FIELD[field], val)}
-    />
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div>
+          <div style={{ fontSize:16, fontWeight:600, color:"#e2e8f0" }}>Real Estate &amp; Debt</div>
+          <div style={{ fontSize:11, color:"var(--text-muted)" }}>Property values, mortgages, and rental income used by the plan.</div>
+        </div>
+        {properties.length < 5 && (
+          <button onClick={addProperty}
+            style={{ padding:"4px 12px", borderRadius:6,
+              border:"1px dashed rgba(13,148,136,0.4)", background:"transparent",
+              color:"var(--positive)", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
+            + Add property
+          </button>
+        )}
+      </div>
+
+      {properties.map((prop, idx) => {
+        const equity  = (prop.value||0) - (prop.mortgage||0);
+        const isFirst = idx === 0;
+        return (
+          <div key={prop.id} style={{
+            background: isFirst ? "rgba(13,148,136,0.05)" : "var(--card-bg)",
+            border:`1px solid ${isFirst ? "rgba(13,148,136,0.25)" : "var(--card-border)"}`,
+            borderRadius:10, padding:14,
+          }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <input type="text" value={prop.label}
+                onChange={e => updateProp(prop.id, "label", e.target.value)}
+                style={{ fontSize:13, fontWeight:600, color:"#e2e8f0",
+                  background:"transparent", border:"none", outline:"none",
+                  borderBottom:"1px solid rgba(255,255,255,0.12)",
+                  padding:"2px 0", width:180, fontFamily:"'DM Sans',sans-serif" }}/>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                {isFirst && (
+                  <span style={{ fontSize:9, color:"var(--positive)",
+                    background:"rgba(13,148,136,0.1)", border:"1px solid rgba(13,148,136,0.3)",
+                    borderRadius:8, padding:"2px 7px" }}>
+                    Primary · wired to mortgage calc
+                  </span>
+                )}
+                {properties.length > 1 && (
+                  <button onClick={() => removeProperty(prop.id)} aria-label={`Remove ${prop.label || "property"}`}
+                    style={{ background:"transparent", border:"none", color:"var(--text-faint)",
+                      cursor:"pointer", fontSize:13, padding:"2px 4px", transition:"color 0.15s" }}
+                    onMouseEnter={e=>e.currentTarget.style.color="#f87171"}
+                    onMouseLeave={e=>e.currentTarget.style.color="var(--text-faint)"}>
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
+              <div>
+                <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4, textAlign:"right" }}>Gross value</div>
+                {/* `max` bounds the DRAG range only — DualInput's typed field
+                    accepts values above it (see Slider.commitDraft). A 999B max
+                    here made one pixel of travel worth ~$1.4B, so the slider
+                    could not land on any real house price. */}
+                <DualInput label="" value={prop.value||0} min={0} max={10_000_000} step={5_000}
+                  format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"value",v)}/>
+              </div>
+              <div>
+                <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4, textAlign:"right" }}>Mortgage balance</div>
+                <DualInput label="" value={prop.mortgage||0} min={0} max={10_000_000} step={1_000}
+                  format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"mortgage",v)}/>
+              </div>
+              <div>
+                <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4, textAlign:"right" }}>Annual income (opt)</div>
+                <DualInput label="" value={prop.income||0} min={0} max={200_000} step={1_000}
+                  format={v=>`$${Math.round(v).toLocaleString()}/yr`} onChange={v=>updateProp(prop.id,"income",v)}/>
+              </div>
+            </div>
+
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <span style={{ fontSize:10, color:"var(--text-muted)" }}>Net equity:</span>
+              <span style={{ fontSize:13, fontWeight:700,
+                fontFamily:"'JetBrains Mono',monospace",
+                color: equity >= 0 ? "var(--positive)" : "#f87171" }}>
+                {equity < 0 ? "-" : ""}{fmtDollar(Math.abs(equity))}
+              </span>
+              {(prop.income||0) > 0 && (
+                <span style={{ fontSize:10, color:"#059669" }}>
+                  · {fmtDollar(prop.income)}/yr income
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="chart-card">
+        <div className="ct">{properties[0]?.label || "Primary Residence"} · Mortgage</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          <DualInput label="Balance" value={values.mortBalance||0} min={0} max={1_500_000} step={1_000}
+            format={v=>fmtDollar(v)}
+            onChange={v=>{ onChange("mortBalance",v); updateProp(properties[0]?.id,"mortgage",v); }}/>
+          <DualInput label="Rate %" value={values.mortRate||6.5} min={0} max={12} step={0.125}
+            format={v=>v.toFixed(3)+"%"} onChange={v=>onChange("mortRate",v)}/>
+          <DualInput label="Original term (yrs)" value={values.mortTerm||30} min={10} max={30} step={1}
+            format={v=>v+" yrs"} onChange={v=>onChange("mortTerm",v)}/>
+          <DualInput label="Extra/mo" value={values.mortExtra||0} min={0} max={5_000} step={50}
+            format={v=>"$"+v.toLocaleString()+"/mo"} onChange={v=>onChange("mortExtra",v)}/>
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            <span style={{ fontSize:11, color:"var(--text-secondary)", minWidth:70 }}>Start date</span>
+            <MonthYearSelect value={values.mortStart || "2020-01"} onSet={v=>onChange("mortStart",v)}/>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
