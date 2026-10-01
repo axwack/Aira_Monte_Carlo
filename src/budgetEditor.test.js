@@ -17,6 +17,8 @@ test("editor adds a line and reports its controlled value", () => {
   act(() => Array.from(el.querySelectorAll("button")).find((b) => b.textContent.includes("Add budget line")).click());
   expect(values.at(-1)).toHaveLength(1);
   expect(el.querySelector('[data-testid="budget-line-0"]')).not.toBeNull();
+  expect(Array.from(el.querySelectorAll('[aria-label="Budget frequency 1"] option')).map((o) => o.textContent))
+    .toEqual(["Monthly", "Quarterly", "Annually"]);
   act(() => root.unmount());
 });
 

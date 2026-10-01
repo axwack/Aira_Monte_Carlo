@@ -7,7 +7,7 @@ This is a follow-up feature, not required for the first UX cleanup. It should re
 Under `Plan Inputs → Spending & Expenses → Detailed Expense Budget`:
 
 - Add a button: `Add budget line`.
-- Each line has: category, frequency, Must Spend, Like to Spend, optional end year, and delete.
+- Each line has: category, recurring frequency, Must Spend, Like to Spend, optional end year, and delete.
 - Provide a yearly/monthly toggle only for input convenience; normalize to annual values before engine use.
 - Show an annualized preview beside each line.
 - Keep the existing CSV import/export path for power users.
@@ -18,7 +18,7 @@ Under `Plan Inputs → Spending & Expenses → Detailed Expense Budget`:
 | Field | Required | Notes |
 |---|---|---|
 | Category | yes | Free text or a controlled category list; preserve imported category names. |
-| Frequency | yes | Monthly, quarterly, annually, or one-time. |
+| Frequency | yes | Monthly, quarterly, or annually. One-off expenses belong in Planned One-Off Expenses, not this recurring budget. |
 | Must Spend | yes | Essential annualized floor. |
 | Like to Spend | yes | Desired annualized ceiling; must be ≥ Must Spend. |
 | Starts | optional | Defaults to the current plan year. |
@@ -39,3 +39,5 @@ Under `Plan Inputs → Spending & Expenses → Detailed Expense Budget`:
 2. Whether `Must Spend`/`Like to Spend` should feed the current GK floor/ceiling exactly as the importer does.
 3. Whether one-off events belong here or remain under One-Off Income & Windfalls / Planned One-Off Expenses.
 4. Whether a category taxonomy is worth the migration cost for existing free-text imports.
+
+One-off events are intentionally excluded from this recurring editor because the existing `parseExpenseCsv` fallback treats unknown frequencies as annual. Use Planned One-Off Expenses for costs that should occur once.
