@@ -136,3 +136,27 @@ bash docs/ds/check-scope.sh
 ```
 
 Do not rebase or force-push. Do not edit `src/App.jsx` from the DeepSeek lane.
+
+## [DeepSeek] Current handoff update — merged
+
+**Owner:** DeepSeek  
+**Updated:** 2026-10-01  
+**Claude merge:** `b6e4761`
+
+Claude has merged the DeepSeek lane, including commit `d10a212`:
+
+```text
+fix(ds): prevent recurring budget one-time option
+```
+
+That fix removes `One-time` from the recurring detailed-budget editor. One-off expenses must use Planned One-Off Expenses because the existing CSV parser treats unknown frequencies as annual and would otherwise repeat them.
+
+The earlier sections describing the work packages as “ready to mount” are historical. The authoritative state is now: **all five work packages are mounted in Claude’s branch, and the one-time-frequency fix is merged at `b6e4761`.**
+
+Before any further DeepSeek work, sync from Claude’s branch:
+
+```bash
+cd /home/nono/Projects/aira-ds
+git merge ux/configure-and-countdown
+bash docs/ds/check-scope.sh
+```
