@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { retirementTarget, describeCountdown } from "./engine/retirementTarget";
+import { parseCalendarDate } from "./engine/ages";
 
 // Owns its own clock so a tick re-renders only this card, never the app root.
 // Once a minute is plenty: nothing here is finer than a day.
@@ -8,7 +9,7 @@ export const COUNTDOWN_TICK_MS = 60000;
 /** % of the working career elapsed, start → target. null when it can't be said honestly. */
 export function careerProgress(startDate, target, now = new Date()) {
   if (!startDate || !target) return null;
-  const s = new Date(startDate);
+  const s = parseCalendarDate(startDate);
   if (isNaN(s) || s >= target.date) return null;
   return Math.max(0, Math.min(100, ((now - s) / (target.date - s)) * 100));
 }
@@ -54,7 +55,7 @@ export default function CountdownCard({ dob, retireAge, dobIsEstimate, employerS
             <div className="progress-fill" style={{ width: `${pct.toFixed(1)}%` }} />
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--text-muted)", marginTop: 3 }}>
-            <span>Career since {new Date(employerStartDate).getFullYear()}</span>
+            <span>Career since {parseCalendarDate(employerStartDate).getFullYear()}</span>
             <span style={{ color: "var(--accent-teal)", fontWeight: 600 }}>{pct.toFixed(1)}% done</span>
           </div>
         </>

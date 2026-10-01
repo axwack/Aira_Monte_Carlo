@@ -44,3 +44,9 @@ test("careerProgress: null without an honest start date, clamped otherwise", () 
   expect(careerProgress("2000-01-01", target, new Date(2020, 0, 1))).toBeCloseTo(50, 0);
   expect(careerProgress("2000-01-01", target, new Date(2060, 0, 1))).toBe(100);
 });
+
+test("start date is shown as entered, not shifted a day west of UTC", () => {
+  const { el, root } = mount({ dob: "1980-03-10", retireAge: 65, employerStartDate: "2000-01-01" });
+  expect(el.textContent).toMatch(/Career since 2000/);
+  act(() => root.unmount());
+});

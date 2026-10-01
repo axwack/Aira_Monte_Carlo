@@ -16913,11 +16913,6 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
   );
 }
 
-function formatDate(dateString) {
-  if (!dateString) return "Start date";
-    const d = new Date(dateString);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
 
 
 // Landing quick-estimate.
