@@ -59,7 +59,7 @@ The "spending smiles," guardrails, or projections provided by Aira may not be su
 consult your fiduciary, CPA or tax accountant. 
 
  * ============================================================ */
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo, useContext } from "react";
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_THANKS, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import {
@@ -84,6 +84,7 @@ import CountdownCard from "./CountdownCard";
 import DateField from "./DateField";
 import SpouseDobField from "./SpouseDobField";
 import { BucketLegend, BucketResetButton } from "./BucketLegend";
+import RealEstateSection from "./planInputs/RealEstateSection";
 import { NavContext, GoStep } from "./NavContext";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 import { bucketColor } from "./engine/bucketColors";
@@ -12516,37 +12517,8 @@ function MortgageTab({ values, onChange }) {
     }));
   }, [sched, schedNE]);
 
-  // Properties state — sourced from assumptions via values
-  const properties = values.properties || [
-    { id:"p1", label:"Primary Residence", value:0, mortgage:0, income:0 },
-    { id:"p2", label:"Property 2",        value:0, mortgage:0, income:0 },
-  ];
-
-  const updateProp = (id, field, val) => {
-    const updated = properties.map(p => p.id === id ? { ...p, [field]: val } : p);
-    onChange("properties", updated);
-    // Keep primary mortgage in sync with mortgage calculator
-    if (id === properties[0]?.id && field === "mortgage") {
-      onChange("mortBalance", val);
-    }
-  };
-
-  const updateLabel = (id, label) => {
-    onChange("properties", properties.map(p => p.id === id ? { ...p, label } : p));
-  };
-
-  const addProperty = () => {
-    if (properties.length >= 5) return;
-    onChange("properties", [
-      ...properties,
-      { id:"p"+Date.now(), label:`Property ${properties.length + 1}`, value:0, mortgage:0, income:0 },
-    ]);
-  };
-
-  const removeProperty = (id) => {
-    if (properties.length <= 1) return;
-    onChange("properties", properties.filter(p => p.id !== id));
-  };
+  const properties = values.properties || [{ id: "p1", label: "Primary Residence", value: 0, mortgage: 0, income: 0 }];
+  const nav = useContext(NavContext);
 
   const totalValue    = properties.reduce((s, p) => s + (p.value||0), 0);
   const totalMortgage = properties.reduce((s, p) => s + (p.mortgage||0), 0);
@@ -12556,94 +12528,23 @@ function MortgageTab({ values, onChange }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
 
-      {/* ── PROPERTY CARDS ── */}
+      {/* Read-only summary. The one editor lives in Plan inputs > Real Estate & Debt. */}
       <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, flexWrap:"wrap" }}>
           <div style={{ fontSize:12, fontWeight:600, color:"#e2e8f0" }}>Properties</div>
-          {properties.length < 5 && (
-            <button onClick={addProperty}
-              style={{ padding:"4px 12px", borderRadius:6,
-                border:"1px dashed rgba(13,148,136,0.4)", background:"transparent",
-                color:"var(--positive)", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
-              + Add property
+          {nav && (
+            <button type="button" className="cfg-btn" style={{ width:"auto", margin:0, padding:"6px 14px" }}
+              onClick={() => nav("assumptions", null, PROFILE_STEP_REAL_ESTATE)}>
+              Edit in Plan inputs →
             </button>
           )}
         </div>
-
-        {properties.map((prop, idx) => {
-          const equity  = (prop.value||0) - (prop.mortgage||0);
-          const isFirst = idx === 0;
-          return (
-            <div key={prop.id} style={{
-              background: isFirst ? "rgba(13,148,136,0.05)" : "var(--card-bg)",
-              border:`1px solid ${isFirst ? "rgba(13,148,136,0.25)" : "var(--card-border)"}`,
-              borderRadius:10, padding:14,
-            }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-                <input type="text" value={prop.label}
-                  onChange={e => updateLabel(prop.id, e.target.value)}
-                  style={{ fontSize:13, fontWeight:600, color:"#e2e8f0",
-                    background:"transparent", border:"none", outline:"none",
-                    borderBottom:"1px solid rgba(255,255,255,0.12)",
-                    padding:"2px 0", width:180, fontFamily:"'DM Sans',sans-serif" }}/>
-                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  {isFirst && (
-                    <span style={{ fontSize:9, color:"var(--positive)",
-                      background:"rgba(13,148,136,0.1)", border:"1px solid rgba(13,148,136,0.3)",
-                      borderRadius:8, padding:"2px 7px" }}>
-                      Primary · wired to mortgage calc
-                    </span>
-                  )}
-                  {properties.length > 1 && (
-                    <button onClick={() => removeProperty(prop.id)}
-                      style={{ background:"transparent", border:"none", color:"var(--text-faint)",
-                        cursor:"pointer", fontSize:13, padding:"2px 4px", transition:"color 0.15s" }}
-                      onMouseEnter={e=>e.currentTarget.style.color="#f87171"}
-                      onMouseLeave={e=>e.currentTarget.style.color="var(--text-faint)"}>
-                      ✕
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
-                <div>
-                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4, textAlign:"right" }}>Gross value</div>
-                  {/* `max` bounds the DRAG range only — DualInput's typed field
-                      accepts values above it (see Slider.commitDraft). A 999B max
-                      here made one pixel of travel worth ~$1.4B, so the slider
-                      could not land on any real house price. */}
-                  <DualInput label="" value={prop.value||0} min={0} max={10_000_000} step={5_000}
-                    format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"value",v)}/>
-                </div>
-                <div>
-                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4, textAlign:"right" }}>Mortgage balance</div>
-                  <DualInput label="" value={prop.mortgage||0} min={0} max={10_000_000} step={1_000}
-                    format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"mortgage",v)}/>
-                </div>
-                <div>
-                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:4, textAlign:"right" }}>Annual income (opt)</div>
-                  <DualInput label="" value={prop.income||0} min={0} max={200_000} step={1_000}
-                    format={v=>`$${Math.round(v).toLocaleString()}/yr`} onChange={v=>updateProp(prop.id,"income",v)}/>
-                </div>
-              </div>
-
-              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                <span style={{ fontSize:10, color:"var(--text-muted)" }}>Net equity:</span>
-                <span style={{ fontSize:13, fontWeight:700,
-                  fontFamily:"'JetBrains Mono',monospace",
-                  color: equity >= 0 ? "var(--positive)" : "#f87171" }}>
-                  {equity < 0 ? "-" : ""}{fmtDollar(Math.abs(equity))}
-                </span>
-                {(prop.income||0) > 0 && (
-                  <span style={{ fontSize:10, color:"#059669" }}>
-                    · {fmtDollar(prop.income)}/yr income
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {properties.filter(pr => (pr.value||0) || (pr.mortgage||0) || (pr.income||0)).map((prop) => (
+          <div key={prop.id} style={{ display:"flex", justifyContent:"space-between", gap:12, flexWrap:"wrap", fontSize:12, color:"var(--text-secondary)", border:"1px solid var(--card-border)", borderRadius:8, padding:"8px 12px" }}>
+            <strong style={{ color:"var(--text-primary)" }}>{prop.label}</strong>
+            <span>Value {fmtDollar(prop.value||0)} · Mortgage {fmtDollar(prop.mortgage||0)} · Equity {fmtDollar((prop.value||0)-(prop.mortgage||0))}{(prop.income||0) > 0 ? ` · ${fmtDollar(prop.income)}/yr income` : ""}</span>
+          </div>
+        ))}
 
         {/* Totals row */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
@@ -12685,22 +12586,6 @@ function MortgageTab({ values, onChange }) {
             <div className="ml">Monthly P&I</div>
             <div className="mv" style={{ color:"var(--text-primary)", fontSize:18 }}>{fmtDollar(sched.pmt)}</div>
             <div className="ms">At {rate}% fixed</div>
-          </div>
-        </div>
-
-        <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
-          <DualInput label="Balance" value={bal} min={0} max={1_500_000} step={1_000}
-            format={v=>fmtDollar(v)}
-            onChange={v=>{ onChange("mortBalance",v); updateProp(properties[0]?.id,"mortgage",v); }}/>
-          <DualInput label="Rate %" value={rate} min={0} max={12} step={0.125}
-            format={v=>v.toFixed(3)+"%"} onChange={v=>onChange("mortRate",v)}/>
-          <DualInput label="Original term (yrs)" value={term} min={10} max={30} step={1}
-            format={v=>v+" yrs"} onChange={v=>onChange("mortTerm",v)}/>
-          <DualInput label="Extra/mo" value={extra} min={0} max={5_000} step={50}
-            format={v=>"$"+v.toLocaleString()+"/mo"} onChange={v=>onChange("mortExtra",v)}/>
-          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            <span style={{ fontSize:11, color:"var(--text-secondary)", minWidth:70 }}>Start date</span>
-            <MonthYearSelect value={start} onSet={v=>onChange("mortStart",v)}/>
           </div>
         </div>
 
@@ -13016,7 +12901,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
             {p.mortBalance > 0 ? mortSched.payoffYr : "—"}
           </div>
           <div className="ms">
-            {p.mortBalance > 0 ? (p.mortExtra > 0 ? "With extra payments" : "Standard payments") : "No mortgage modeled"}
+            {p.mortBalance > 0 ? (p.mortExtra > 0 ? "With extra payments" : "Standard payments") : <>No mortgage modeled · <GoStep step={PROFILE_STEP_REAL_ESTATE}>add one</GoStep></>}
           </div>
         </div>
         <div className="met">
@@ -14055,10 +13940,38 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   );
 }
 
+/** Plan inputs > Real Estate & Debt: wires DeepSeek's controlled RealEstateSection to the profile.
+ * Same state and the same primary-mortgage sync MortgageTab used to own; MortgageTab is now read-only. */
+const MORT_FIELD = { balance: "mortBalance", rate: "mortRate", start: "mortStart", term: "mortTerm", extra: "mortExtra" };
+function RealEstateStep({ values, onChange }) {
+  const properties = values.properties || [{ id: "p1", label: "Primary Residence", value: 0, mortgage: 0, income: 0 }];
+  const updateProperty = (id, field, val) => {
+    onChange("properties", properties.map((p) => (p.id === id ? { ...p, [field]: val } : p)));
+    if (id === properties[0]?.id && field === "mortgage") onChange("mortBalance", val);
+  };
+  return (
+    <RealEstateSection
+      properties={properties}
+      mortgage={{ balance: values.mortBalance, rate: values.mortRate, start: values.mortStart, term: values.mortTerm, extra: values.mortExtra }}
+      onUpdateProperty={updateProperty}
+      onAddProperty={() => {
+        if (properties.length >= 5) return;
+        onChange("properties", [...properties, { id: "p" + Date.now(), label: `Property ${properties.length + 1}`, value: 0, mortgage: 0, income: 0 }]);
+      }}
+      onRemoveProperty={(id) => {
+        if (properties.length <= 1) return;
+        onChange("properties", properties.filter((p) => p.id !== id));
+      }}
+      onMortgageChange={(field, val) => MORT_FIELD[field] && onChange(MORT_FIELD[field], val)}
+    />
+  );
+}
+
 /** ProfileWizard step index of "Current Savings" (accounts, balances, split). Keep in sync with STEPS below. */
 export const PROFILE_STEP_SAVINGS = 1;
 export const PROFILE_STEP_SPENDING = 3;
-export const PROFILE_STEP_SETTINGS = 5;
+export const PROFILE_STEP_REAL_ESTATE = 4;
+export const PROFILE_STEP_SETTINGS = 6;
 
 export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, jumpTo }) {
   const [step, setStep] = useState(jumpTo?.step ?? 0);
@@ -14145,6 +14058,15 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
             : `Budget loaded · ${fmtDollar(values.spImportMeta.total)}/yr`)
         : `Spending ${fmtDollar((values.sp || 0) + (values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)))}/yr`,
     },
+    {
+      label: "Real Estate & Debt", icon: "🏠",
+      sub: (() => {
+        const props = values.properties || [];
+        const v = props.reduce((a, x) => a + (x.value || 0), 0);
+        const m = props.reduce((a, x) => a + (x.mortgage || 0), 0);
+        return v || m ? `${fmtDollar(v)} property · ${fmtDollar(m)} mortgage` : "Home value, mortgage, rental income";
+      })(),
+    },
     { label: "Retirement Plan", icon: "🎯", sub: `Projected Retirement Age ${values.retireAge}` },
     { label: "Settings", icon: "⚙️", sub: "Calculation & app settings", isSettings: true },
   ];
@@ -14154,6 +14076,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
     <SavingsPanel values={values} onChange={onChange} />,
     <ContribPanel values={values} onChange={onChange} onNavigateStep={setStep} />,
     <ExpensesPanel values={values} onChange={onChange} />,
+    <RealEstateStep values={values} onChange={onChange} />,
     <RetirementPanel values={values} onChange={onChange} onNavigateStep={setStep} onNavigateTab={onNavigateTab} />,
     <AssumptionsPanel values={values} onChange={onChange} />,
   ];
