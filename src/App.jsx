@@ -80,6 +80,8 @@ import { scheduleSpendForYear, parseExpenseCsv, resolveSpendGuardrails, SINGLE_Y
 import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { earlyWithdrawalPenalty, detectEmployerPlan, ruleOf55SeparationQualifies, EARLY_PENALTY_AGE } from "./engine/earlyWithdrawal.js";
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
+import CountdownCard from "./CountdownCard";
+import { retirementTarget, formatRemaining } from "./engine/retirementTarget";
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
 import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationNotice } from "./engine/withdrawalStrategies.js";
@@ -575,6 +577,7 @@ export const BLANK_PROFILE = {
   label: "My Plan",
   name: "",
   dob: "",
+  dobIsEstimate: false,        // true when dob was invented from the landing's age slider
   sex: "blended",              // "male" | "female" | "blended"
   stateOfResidence: "",
   currentAge: 50,
@@ -3363,37 +3366,6 @@ function RotatingAnalogue({ rate, endAge }) {
   );
 }
 
-function useCountdown(dday, startDate) {
-  const calc = () => {
-    const diff = Math.max(0, dday - new Date());
-    const start = new Date(startDate);
-    const now = new Date();
-    let pct = 0;
-
-    if (start < dday && now > start) {
-      const total = dday - start;
-      const elapsed = now - start;
-      pct = Math.min(100, (elapsed / total) * 100);
-    }
-
-    return {
-      days: Math.floor(diff / 86400000),
-      hours: Math.floor((diff % 86400000) / 3600000),
-      mins: Math.floor((diff % 3600000) / 60000),
-      secs: Math.floor((diff % 60000) / 1000),
-      pct: pct.toFixed(1),
-    };
-  };
-  const [cd, setCd] = useState(calc);
-
-  useEffect(() => {
-    const t = setInterval(() => setCd(calc()), 1000);
-    return () => clearInterval(t);
-  }, [dday, startDate]);
-
-  return cd;
-}
-
 // dollarBasisLabel/deflate/mcMedianAtAge/selectPortfolioAtAge moved to
 // engine/mcSelectors.js (imported at the top of this file) so the rules
 // engine, score explainer, and printable report can share them without a
@@ -4069,10 +4041,10 @@ const CSS = `
   .roth-tbl td:first-child { text-align:left; font-family:var(--font-sans); color:#f1f5f9; }
   .gold { background:rgba(251,191,36,0.07); }
   .gk-bar { background:rgba(14,165,233,0.07); border:1px solid rgba(14,165,233,0.2); border-radius:9px; padding:11px 15px; font-size:12px; color:#bae6fd; }
-  .countdown-grid { display:flex; gap:5px; }
-  .cd-unit { text-align:center; background:rgba(255,255,255,0.05); border-radius:6px; padding:5px 8px; min-width:38px; }
-  .cd-val { font-size:17px; font-weight:800; color:#f0fdfa; font-family:'JetBrains Mono',monospace; line-height:1; }
-  .cd-lbl { font-size:9px; color:#64748b; letter-spacing:0.12em; margin-top:2px; }
+  .cfg-btn { display:block; width:100%; margin:0 0 12px; padding:9px 12px; border:0; border-radius:8px; background:var(--accent-teal); color:#04201c; font-size:13px; font-weight:800; letter-spacing:0.02em; cursor:pointer; text-align:center; }
+  .cfg-btn:hover { filter:brightness(1.08); }
+  .cfg-btn:focus-visible, .sb-edit:focus-visible { outline:2px solid var(--accent-teal); outline-offset:2px; }
+  .sb-edit { background:none; border:0; padding:0; color:var(--accent-teal); font-size:10px; font-weight:600; text-decoration:underline; cursor:pointer; }
   .progress-bar { height:5px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden; margin-top:6px; }
   .progress-fill { height:100%; background:linear-gradient(90deg,#0ea5e9,#38bdf8); border-radius:3px; transition:width 1s; }
   .nw-table { width:100%; border-collapse:collapse; font-size:12px; }
@@ -5303,7 +5275,7 @@ function fmtLastRun(iso) {
     return "";
   }
 }
-function saveProfileToLocal(values) {
+export function saveProfileToLocal(values) {
   try {
     const hasPropIncome = (values.properties || []).some(pr => Number(pr.income) > 0);
     const payload = {
@@ -5317,6 +5289,17 @@ function saveProfileToLocal(values) {
       buildTag: BUILD_TAG,
     };
     localStorage.setItem(LS_PROFILE_KEY, JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+/** Start over: forget the saved plan and its cached results, nothing else
+ * (check-ins, bucket config, theme, year-end ack are separate keys and stay). */
+export function resetLocalProfile() {
+  try {
+    localStorage.removeItem(LS_PROFILE_KEY);
+    localStorage.removeItem(LS_RESULTS_KEY);
     return true;
   } catch {
     return false;
@@ -13547,9 +13530,10 @@ function CardDetailPanel({ card, onClose }) {
 function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rmdAgeProp }) {
   const currentYear = new Date().getFullYear();
   const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
-  const daysToRetire = Math.max(0,
-    Math.floor((new Date(`${retireYear}-03-15`) - new Date()) / 86400000)
-  );
+  const daysToRetire = formatRemaining(
+    retirementTarget({ dob: assumptions?.dob, retireAge: params?.retireAge }) ||
+      { date: new Date(retireYear, 5, 15) }
+  )?.totalDays ?? 0;
 
   const [cards, setCards]               = useState(null);
   const [loadingAI, setLoadingAI]       = useState(false);
@@ -17255,7 +17239,10 @@ export default function AiRAForecaster() {
   // sidebar opens as a short list of section headers rather than three
   // screens of stacked sliders; opening one is a click. Which sections are
   // open is a per-user view choice and changes nothing that's simulated.
-  const [sbCoreOpen, setSbCoreOpen] = useState(false);
+  const [profileSavedBefore] = useState(() => !!loadProfileFromLocal());
+  const [sbCoreOpen, setSbCoreOpen] = useState(() => !loadProfileFromLocal()); // first run: show the basics
+  const [confirmStartOver, setConfirmStartOver] = useState(false);
+  const skipAutosave = useRef(false);
   const [sbMacroOpen, setSbMacroOpen] = useState(false);
   const [sbOptionsOpen, setSbOptionsOpen] = useState(false);
   // Cross-tab "Edit this on the X tab" pointers (e.g. RetirementPanel's
@@ -17469,7 +17456,7 @@ export default function AiRAForecaster() {
   };
 
   const updateAssumption = useCallback(
-    (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val })),
+    (key, val) => setAssumptions((prev) => ({ ...prev, [key]: val, ...(key === "dob" ? { dobIsEstimate: false } : {}) })),
     []
   );
 
@@ -17541,6 +17528,7 @@ export default function AiRAForecaster() {
     if (!autosaveReady.current) { autosaveReady.current = true; return; }
     if (showWelcome) return;
     const t = setTimeout(() => {
+      if (skipAutosave.current) return; // Start over in progress
       if (saveProfileToLocal(liveProfile)) setLastAutosaveAt(new Date());
     }, 1000);
     return () => clearTimeout(t);
@@ -17562,19 +17550,6 @@ export default function AiRAForecaster() {
     if (typeof override === "number" && override > 0) return override;
     return getRmdStartAge({ dob: assumptions.dob, currentAge });
   }, [assumptions.dob, assumptions.rmdStartAge, currentAge]);
-
-  const DDAY_dynamic = useMemo(() => {
-    try {
-      const d = new Date(assumptions.dob);
-      if (isNaN(d)) return new Date("2030-03-14T00:00:00");
-      return new Date(d.getFullYear() + retAge, d.getMonth(), d.getDate());
-    } catch {
-      return new Date("2030-03-14T00:00:00");
-    }
-  }, [assumptions.dob, retAge]);
-
-  const days = Math.max(0, Math.floor((DDAY_dynamic - new Date()) / 86400000));
-  const countdown = useCountdown(DDAY_dynamic, assumptions.employerStartDate);
 
   // Main params object for simulations – uses assumptions, NOT BLANK_PROFILE
   const params = useMemo(
@@ -17869,7 +17844,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     ["montecarlo", "🎲 Forecast"],
     ["scenarios", "📋 Analysis"],
     ["actionplan", "✅ Action Plan"],
-    ["assumptions", "💵 Profile"],
+    ["assumptions", "⚙️ Plan inputs"],
   ];
 
   const needsMC = ["montecarlo", "networth"];
@@ -17919,6 +17894,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       setContrib(inp.contrib);
       setSp(inp.spend);
       updateAssumption("dob", `${yr - inp.curAge}-06-15`);
+      updateAssumption("dobIsEstimate", true); // June 15 is a placeholder, not a birthday
       setStale(true);
       pendingRunRef.current = true;
     }
@@ -18144,6 +18120,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     ...data,
                     name: data.name || "",
                     dob: data.dob || "",
+                    dobIsEstimate: !!data.dobIsEstimate,
                     stateOfResidence: data.stateOfResidence || "NJ",
                     filingStatus: data.filingStatus || "mfj",
                     // Match BLANK_PROFILE's fresh-profile default (false)
@@ -18341,45 +18318,16 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
         <div className="layout">
           <div className="sidebar">
             <div className="sb-card">
-              <div className="sb-title">D-Day (Retirement) Countdown</div>
-              {/* Target-date label — the days figure is redundant with the
-                  ticking DD/HH/MM/SS grid immediately below, so this line
-                  names the target once (the date) and leaves the counting
-                  to the grid. */}
-              <div style={{
-                fontSize: 12, color: "var(--text-secondary)", marginTop: 4, marginBottom: 10,
-                display: "flex", justifyContent: "space-between", alignItems: "baseline",
-              }}>
-                <span>Retirement Date</span>
-                <span style={{ color: "var(--accent-teal)", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>
-                  {DDAY_dynamic.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                </span>
-              </div>
-              <div className="countdown-grid">
-                {[
-                  { v: countdown.days, l: "DAYS" },
-                  { v: countdown.hours, l: "HRS" },
-                  { v: countdown.mins, l: "MIN" },
-                  { v: countdown.secs, l: "SEC" },
-                ].map((u) => (
-                  <div key={u.l} className="cd-unit">
-                    <div className="cd-val">{String(u.v).padStart(2, "0")}</div>
-                    <div className="cd-lbl">{u.l}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${countdown.pct}%` }} />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#334155", marginTop: 3 }}>
-                <span>{formatDate(assumptions.employerStartDate)} (Start date)</span>
-                <span style={{ color: "var(--accent-teal)", fontWeight: 600 }}>{countdown.pct}%</span>
-              </div>
-              {assumptions.name && (
-                <div style={{ fontSize: 18, color: "var(--accent-teal)", textAlign: "right", marginTop: 8, fontWeight: 600, letterSpacing: "0.01em" }}>
-                  📋 {assumptions.name}
-                </div>
-              )}
+              <button type="button" className="cfg-btn" onClick={() => navigateToTab("assumptions")}>
+                {profileSavedBefore ? "Adjust values" : "Configure your plan"} →
+              </button>
+              <CountdownCard
+                dob={assumptions.dob}
+                retireAge={retAge}
+                dobIsEstimate={!!assumptions.dobIsEstimate}
+                employerStartDate={assumptions.employerStartDate}
+                name={assumptions.name}
+              />
               <div
                 style={{
                   marginTop: 10,
@@ -18390,7 +18338,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   alignItems: "baseline",
                 }}
               >
-                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Liquid Portfolio</span>
+                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Liquid Portfolio{" "}
+                  <button type="button" className="sb-edit" onClick={() => navigateToTab("assumptions")} aria-label="Edit accounts and balances">Edit accounts</button>
+                </span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", letterSpacing: "-0.5px" }}>
                   {fmtDollar(port)}
                 </span>
@@ -18411,6 +18361,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 );
               })()}
               <AllocationDonut accounts={assumptions.accounts} />
+              <div style={{ textAlign: "right", marginTop: 4 }}>
+                <button type="button" className="sb-edit" onClick={() => navigateToTab("assumptions")} aria-label="Edit account split">Edit split</button>
+              </div>
               {yearEndInfo.show && (
                 <YearEndStrip room={yearEndInfo.room} days={yearEndInfo.days} year={yearEndInfo.year} />
               )}
@@ -18495,7 +18448,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             <div className="sb-card">
               <div className="sb-title" onClick={() => setSbCoreOpen(v => !v)}
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-                <span>{sbCoreOpen ? "▾" : "▸"} Retirement Core</span>
+                <span>{sbCoreOpen ? "▾" : "▸"} Plan basics</span>
                 <span style={{ fontSize: 10, color: "var(--accent-teal)", fontWeight: 600, textTransform: "none" }}>Primary</span>
               </div>
               {sbCoreOpen && (<>
@@ -19154,6 +19107,25 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       if (k === "ab") setAb(v);
                     }}
                   />
+                  <div className="sb-card" style={{ marginTop: 16 }}>
+                    <div className="sb-title">Start over</div>
+                    {!confirmStartOver ? (
+                      <button type="button" className="sb-edit" style={{ fontSize: 12 }} onClick={() => setConfirmStartOver(true)}>
+                        Reset to the quick-start screen…
+                      </button>
+                    ) : (
+                      <div role="alertdialog" aria-label="Confirm start over" style={{ fontSize: 12, lineHeight: 1.6 }}>
+                        This deletes your saved plan and returns to the quick-start screen. Export your profile first if you want to keep it.
+                        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                          <button type="button" className="cfg-btn" style={{ margin: 0 }} onClick={() => setConfirmStartOver(false)}>Cancel</button>
+                          <button type="button" className="cfg-btn" style={{ margin: 0, background: "#f87171" }}
+                            onClick={() => { skipAutosave.current = true; resetLocalProfile(); window.location.reload(); }}>
+                            Delete and start over
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   </>
                 )}
               </>
