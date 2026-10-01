@@ -81,6 +81,7 @@ import { evaluateRules as evaluateRulesEngine } from "./engine/rulesEngine.js";
 import { earlyWithdrawalPenalty, detectEmployerPlan, ruleOf55SeparationQualifies, EARLY_PENALTY_AGE } from "./engine/earlyWithdrawal.js";
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
 import CountdownCard from "./CountdownCard";
+import DateField from "./DateField";
 import { retirementTarget, formatRemaining } from "./engine/retirementTarget";
 import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAgeAt, personsAtLeastAge, filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, firstToDie, contribStopOnPrimaryClock } from "./engine/ages.js";
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
@@ -14719,7 +14720,7 @@ function AboutYouPanel({ values, onChange }) {
           label="Date of Birth"
           desc={`Current age: ${derivedAge} · Used to derive D-Day (Day of Retirement) and accumulation years`}
         >
-          <ADateInput value={values.dob} onSet={(v) => onChange("dob", v)} />
+          <ADateInput value={values.dob} max={new Date().toISOString().slice(0, 10)} onSet={(v) => onChange("dob", v)} />
         </ARow>
         <ARow
           label="State of Residence at Retirement"
@@ -14978,12 +14979,12 @@ function AStateSelect({ value, onSet }) {
   );
 }
 
-function ADateInput({ value, onSet }) {
+function ADateInput({ value, onSet, max }) {
   return (
-    <input
-      type="date"
-      value={value || ""}
-      onChange={(e) => onSet(e.target.value)}
+    <DateField
+      value={value}
+      onSet={onSet}
+      max={max}
       style={{ background:"#0d1b2a", border:"1px solid #1e3a5f", color:"#e2e8f0", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"'JetBrains Mono',monospace" }}
     />
   );
