@@ -52,7 +52,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function MCAdvancedSettings(",
       "description": "Monte Carlo Advanced Settings dialog: paths, historical sampling range, return/cost assumptions, guardrails. Sole editable home for the model parameters.",
-      "sha": "fabc25508858948d"
+      "sha": "b3b962763043e0ed"
     },
     {
       "id": "withdrawal-table-segments",
@@ -101,6 +101,46 @@
       "startAnchor": "function InfoModal(",
       "description": "SHARED: the dialog shell both agents use. deepseek-flash added maxWidth/bodyMaxHeight + controlled open/onClose. Change it carefully and re-stamp.",
       "sha": "169dfc5409ff23ff"
+    },
+    {
+      "id": "claude-not-entered-rows",
+      "owner": "aira-claude",
+      "file": "src/App.jsx",
+      "startAnchor": "export function notEnteredKeys(",
+      "description": "Expense rows that were never entered show a dash instead of $0 (UX round 2).",
+      "sha": "009164d455d80bbe"
+    },
+    {
+      "id": "claude-reset-profile",
+      "owner": "aira-claude",
+      "file": "src/App.jsx",
+      "startAnchor": "export function resetLocalProfile(",
+      "description": "Start over: removes only aira_profile_v1 + aira_results_v1 (UX round 1).",
+      "sha": "867adfd18ac587ec"
+    },
+    {
+      "id": "claude-date-input",
+      "owner": "aira-claude",
+      "file": "src/App.jsx",
+      "startAnchor": "function ADateInput(",
+      "description": "Date field wrapper using DateField so half-typed years never reach the profile.",
+      "sha": "7421514cf8e9c582"
+    },
+    {
+      "id": "claude-income-expense-stack",
+      "owner": "aira-claude",
+      "file": "src/App.jsx",
+      "startAnchor": "function IncomeExpenseStack(",
+      "description": "Income/expense legend panel: dash for never-entered rows, provenance footnotes.",
+      "sha": "c0bbf3c8134d010a"
+    },
+    {
+      "id": "claude-verdict-header",
+      "owner": "aira-claude",
+      "file": "src/App.jsx",
+      "startAnchor": "function VerdictHeader(",
+      "description": "Four headline answers strip: Runs-out wording, info icon beside the numbers.",
+      "sha": "5e44affaaa1e70b3"
     }
   ]
 }

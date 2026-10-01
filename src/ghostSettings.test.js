@@ -81,6 +81,7 @@ const BASE = {
  */
 const INERT_BY_DESIGN = {
   name:                 "display only — report cover, not a calculation input",
+  dobIsEstimate:        "display only — labels the sidebar countdown as approximate; the dob itself still drives the engines",
   // v1.2.129 removed the "three_bucket" ordering mode, the only engine that
   // ever read these. They are now purely 🧺 Buckets tab planning inputs: they
   // size the Bucket 1 / Bucket 2 runway targets the monthly directive checks
