@@ -14,16 +14,35 @@ export function careerProgress(startDate, target, now = new Date()) {
   return Math.max(0, Math.min(100, ((now - s) / (target.date - s)) * 100));
 }
 
-export default function CountdownCard({ dob, retireAge, dobIsEstimate, employerStartDate, name }) {
+export default function CountdownCard({ dob, retireAge, dobIsEstimate, employerStartDate, name, onConfigure }) {
   const [now, setNow] = useState(() => new Date());
+  const showCountdown = Boolean(dob && !dobIsEstimate);
   useEffect(() => {
+    if (!showCountdown) return undefined;
     const t = setInterval(() => setNow(new Date()), COUNTDOWN_TICK_MS);
     return () => clearInterval(t);
-  }, []);
+  }, [showCountdown]);
 
   const target = retirementTarget({ dob, retireAge, dobIsEstimate });
   const d = describeCountdown(target, now);
   const pct = careerProgress(employerStartDate, target, now);
+
+  if (!showCountdown) {
+    return (
+      <div data-testid="countdown-card">
+        <div className="sb-title">Retirement Countdown</div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+          Add your date of birth to see a meaningful retirement countdown.
+        </div>
+        {onConfigure && (
+          <button type="button" onClick={onConfigure}
+            style={{ marginTop: 8, padding: "5px 9px", borderRadius: 6, cursor: "pointer", border: "1px solid var(--accent-teal)", background: "transparent", color: "var(--accent-teal)", fontSize: 11, fontWeight: 700 }}>
+            Add date of birth →
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div data-testid="countdown-card">
