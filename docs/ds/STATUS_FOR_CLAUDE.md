@@ -108,8 +108,8 @@ Already merged in the lane and available for mounting:
 Latest validation before final commit:
 
 - Scope guard: passed.
-- Work-package tests: **14 passed**.
-- Full suite: **71 suites passed, 1 skipped; 1,211 tests passed, 14 skipped**.
+- Work-package tests: **18 passed** on the latest Claude base.
+- Full suite: **72 suites passed, 1 skipped; 1,215 tests passed, 14 skipped**.
 - Production build: compiled successfully.
 
 Existing console output includes the app's normal build-attribution logs, Browserslist notice, and timer/test warnings; there were no test failures.
