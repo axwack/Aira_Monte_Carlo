@@ -1,92 +1,122 @@
 # DeepSeek lane status for Claude
 
-Updated: 2026-10-01
+Updated: 2026-10-01 · DeepSeek branch: `ux/ds-support`
 
 ## Current state
 
-The DeepSeek support lane is complete and clean.
+The next DeepSeek work packages are implemented in the separate lane and are ready for Claude to mount. DeepSeek did not edit `src/App.jsx`.
 
-- Working directory: `/home/nono/Projects/aira-ds`
-- Branch: `ux/ds-support`
-- Claude's main checkout: `/home/nono/Projects/Aira_Monte_Carlo`
-- Claude's branch: `ux/configure-and-countdown`
-- DeepSeek did **not** edit `src/App.jsx` or any existing source file.
-- DeepSeek's working tree is clean.
+- DeepSeek checkout: `/home/nono/Projects/aira-ds`
+- Claude checkout: `/home/nono/Projects/Aira_Monte_Carlo`
+- Claude owns all `src/App.jsx` integration and mount points.
+- DeepSeek owns the new component files listed below.
 
-## Commits ready to merge
+## Work packages ready to mount
 
-The lane has two DeepSeek commits:
+### WP-D — Countdown behavior
 
-```text
-7b90880 docs(ds): add App.jsx integration requests
-e28a0bc docs(ds): add UX support audits and pure helpers
-```
+Files:
 
-The branch already includes Claude's base through:
+- `src/CountdownCard.jsx`
+- `src/countdownCard.test.js`
 
-```text
-b569975 chore(marks): re-stamp mc-advanced-settings after intentional year-input change
-```
+Behavior:
 
-## What was added
+- Real DOB + non-estimated DOB: normal countdown.
+- Missing DOB or estimated/synthetic DOB: compact card saying `Add your date of birth to see a meaningful retirement countdown.`
+- Optional `onConfigure` callback renders an `Add date of birth →` button.
+- Timer is not created while the countdown is hidden.
 
-### Reports and specifications
+Mount request: pass `onConfigure={() => navigateToTab("assumptions")}` at the existing CountdownCard mount. See `docs/ds/APP_JSX_REQUESTS.md#5`.
 
-- `docs/ds/color-inventory.md`
-  - Current color usage mapped to the approved semantic model.
-  - Identifies the teal/green collision between input accents and positive outcomes.
-  - Recommends distinct outcome and input hue pairs.
+### WP-C — Spouse DOB field
 
-- `docs/ds/contrast-audit.md`
-  - WCAG contrast calculations for dark and light theme text tokens.
-  - Current dark-mode failures for `--text-muted` and `--text-faint`.
-  - Recommended dark values:
+Files:
 
-    ```css
-    --text-muted: #7f8b9c;
-    --text-faint: #778395;
-    ```
+- `src/SpouseDobField.jsx`
+- `src/spouseDobField.test.js`
 
-- `docs/ds/bucket-colors.md`
-  - Maps existing bucket color drift.
-  - Documents the proposed single source of truth.
+Behavior:
 
-- `docs/ds/engine-factcheck.md`
-  - Explains when Mortgage/Housing is modeled and why a bare `$0` is misleading.
-  - No engine code was changed.
+- Reuses the guarded `DateField` component.
+- Uses the existing date-field styling.
+- Limits the date to the local current day.
+- Controlled props: `value`, `onSet`, optional `hint`.
 
-- `docs/ds/plan-inputs-map.md`
-  - Maps current editable fields into the approved Plan Inputs architecture.
-  - Identifies the canonical source for each input.
+Mount request: replace the raw spouse date input with `SpouseDobField`. See `APP_JSX_REQUESTS.md#6`.
 
-- `docs/ds/budget-editor-spec.md`
-  - Proposal for a future inline detailed-budget editor.
-  - This remains a separate follow-up feature.
+### WP-E — Bucket legend/reset
 
-- `docs/ds/APP_JSX_REQUESTS.md`
-  - Exact integration requests for Claude, since Claude owns `src/App.jsx`.
+Files:
 
-### Pure helpers and tests
+- `src/BucketLegend.jsx`
+- `src/bucketLegend.test.js`
+
+Behavior:
+
+- Visible legend for Bucket 1 cash cushion, Bucket 2 income bridge, Bucket 3 growth/long-term.
+- `BucketResetButton` delegates default assignment to `engine/buckets.js` rather than copying rules.
+
+Mount request: render the legend above the accounts list and reset control beside B1/B2/B3. See `APP_JSX_REQUESTS.md#7`.
+
+### WP-A — Real Estate & Debt editor
+
+Files:
+
+- `src/planInputs/RealEstateSection.jsx`
+- `src/realEstateSection.test.js`
+
+Behavior:
+
+- Controlled property list with value, mortgage balance, and annual income.
+- Primary mortgage editor with balance, rate, start month, original term, and extra payment.
+- Primary-property mortgage balance synchronizes through callbacks.
+- Property totals and equity are visible.
+- No engine or mortgage math is duplicated.
+
+Mount request: add it to Plan Inputs as the canonical editor and make Analysis → Real Estate read-only with an Edit in Plan Inputs action. See `APP_JSX_REQUESTS.md#8`.
+
+### WP-B — Inline detailed budget editor
+
+Files:
+
+- `src/planInputs/BudgetEditor.jsx`
+- `src/budgetEditor.test.js`
+
+Behavior:
+
+- Controlled line-item editor for category, frequency, Must Spend, and Like to Spend.
+- Validates category, nonnegative values, and Like to Spend ≥ Must Spend.
+- Preserves the exclusion explanation for mortgage/rent, debt, medical, LTC, and income tax.
+- Exports parser-compatible CSV through `budgetLinesToCsv`.
+- Does not duplicate `parseExpenseCsv` or change engine behavior.
+
+Mount request: add under Plan Inputs → Spending & Expenses. See `APP_JSX_REQUESTS.md#9`.
+
+## Existing helper work
+
+Already merged in the lane and available for mounting:
 
 - `src/engine/bucketColors.js`
-- `src/bucketColors.test.js`
 - `src/engine/incomeLabels.js`
+- `src/bucketColors.test.js`
 - `src/incomeLabels.test.js`
 - `src/tzDates.test.js`
 
-The helpers are intentionally not wired into `App.jsx` yet. Claude should integrate them using `docs/ds/APP_JSX_REQUESTS.md`.
+## Validation
 
-## Validation completed
+Latest validation before final commit:
 
 - Scope guard: passed.
-- Targeted tests after syncing the latest Claude base: **17 passed**.
-- Full test suite before the final base synchronization: **1,192 passed, 14 skipped**.
+- Work-package tests: **14 passed**.
+- Full suite: **71 suites passed, 1 skipped; 1,211 tests passed, 14 skipped**.
 - Production build: compiled successfully.
-- No Monte Carlo, withdrawal, tax, RMD, mortgage, or bucket-accounting math was changed.
 
-## Merge instructions
+Existing console output includes the app's normal build-attribution logs, Browserslist notice, and timer/test warnings; there were no test failures.
 
-From Claude's checkout:
+## Merge/sync process
+
+DeepSeek will commit these additions on `ux/ds-support`. Claude should merge from the main checkout:
 
 ```bash
 cd /home/nono/Projects/Aira_Monte_Carlo
@@ -95,31 +125,9 @@ git status
 git merge --no-ff ux/ds-support
 ```
 
-The merge should be clean because DeepSeek added only new files and Claude owns `src/App.jsx`.
+Then Claude should mount each work package in separate commits, run the full suite/build, and update its own completion status.
 
-After merging:
-
-```bash
-npm test -- --watchAll=false --runInBand
-npm run build
-```
-
-## Claude's remaining work
-
-1. Read `docs/ds/APP_JSX_REQUESTS.md`.
-2. Wire `bucketColors.js` into true bucket surfaces while keeping tax-category colors separate.
-3. Wire `incomeLabels.js` into the Income/Expenses chart.
-4. Add truthful provenance and “not entered” states for zero rows.
-5. Route Real Estate/Mortgage editing through the canonical Plan Inputs location.
-6. Add `Edit in Plan Inputs` links from read-only Analysis/Net Worth surfaces.
-7. Apply the approved color semantics selectively; do not perform an unreviewed app-wide re-theme.
-8. Apply the contrast recommendations after visual verification.
-9. Reproduce and fix the two screenshot-based layout issues at 1024/1280/1440px.
-10. Run the full suite and production build on the merged result.
-
-## Important scope rule
-
-DeepSeek's lane is not a second editor for `src/App.jsx`. If further App.jsx changes are needed, Claude should implement them directly or record them in `docs/ds/APP_JSX_REQUESTS.md` for review. If Claude adds commits to `ux/configure-and-countdown` before merging, DeepSeek should sync with:
+If Claude commits more work before the merge, DeepSeek should sync first:
 
 ```bash
 cd /home/nono/Projects/aira-ds
@@ -127,4 +135,4 @@ git merge ux/configure-and-countdown
 bash docs/ds/check-scope.sh
 ```
 
-Do not rebase or force-push either lane.
+Do not rebase or force-push. Do not edit `src/App.jsx` from the DeepSeek lane.

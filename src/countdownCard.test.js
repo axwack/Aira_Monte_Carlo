@@ -18,12 +18,19 @@ test("real dob shows the exact date; no HRS/MIN/SEC", () => {
   act(() => root.unmount());
 });
 
-test("estimated dob shows only the year and says estimate", () => {
-  const { el, root } = mount({ dob: "1980-06-15", retireAge: 65, dobIsEstimate: true });
-  expect(el.textContent).toMatch(/Retirement year: 2045/);
-  expect(el.textContent).not.toMatch(/Jun 15/);
-  expect(el.textContent).toMatch(/estimate/);
-  act(() => root.unmount());
+test("missing or estimated dob hides the countdown and offers configuration", () => {
+  const onConfigure = jest.fn();
+  const missing = mount({ retireAge: 65, onConfigure });
+  expect(missing.el.textContent).toMatch(/Add your date of birth/i);
+  expect(missing.el.textContent).not.toMatch(/Retirement year/);
+  act(() => missing.el.querySelector("button").click());
+  expect(onConfigure).toHaveBeenCalledTimes(1);
+  act(() => missing.root.unmount());
+
+  const estimated = mount({ dob: "1980-06-15", retireAge: 65, dobIsEstimate: true, onConfigure });
+  expect(estimated.el.textContent).toMatch(/Add your date of birth/i);
+  expect(estimated.el.textContent).not.toMatch(/Jun 15|Retirement year/);
+  act(() => estimated.root.unmount());
 });
 
 test("ticks once a minute and clears its timer on unmount", () => {
