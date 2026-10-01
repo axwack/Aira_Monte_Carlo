@@ -82,6 +82,7 @@ import { earlyWithdrawalPenalty, detectEmployerPlan, ruleOf55SeparationQualifies
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd.js";
 import CountdownCard from "./CountdownCard";
 import DateField from "./DateField";
+import { NavContext, GoStep } from "./NavContext";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 import { bucketColor } from "./engine/bucketColors";
 import { retirementTarget, formatRemaining } from "./engine/retirementTarget";
@@ -9469,7 +9470,7 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
                         emoji="💊"
                         label="IRMAA Surcharge"
                         color="#fb923c"
-                        detail={`This year's ${fmtDollar(r.irmaa)} surcharge is based on your ${r.yr - 2} income (IRMAA uses a 2-year lookback — the current Tier-1 threshold ~$218,000 MFJ was checked against that year's MAGI, not this year's). Income this year affects premiums in ${r.yr + 2}. Enable IRMAA Guard in Profile → Withdrawal Order to cap pretax draws before this threshold.`}
+                        detail={`This year's ${fmtDollar(r.irmaa)} surcharge is based on your ${r.yr - 2} income (IRMAA uses a 2-year lookback — the current Tier-1 threshold ~$218,000 MFJ was checked against that year's MAGI, not this year's). Income this year affects premiums in ${r.yr + 2}. Enable IRMAA Guard in Plan inputs → Settings → Withdrawal Order to cap pretax draws before this threshold.`}
                       />
                     );
                   })()}
@@ -10104,7 +10105,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
         </div>
       )}
       {acctList.length === 0 && (
-        <div style={{ marginTop: 8, fontSize: 10, color: "var(--text-faint)", fontStyle: "italic" }}>No accounts assigned — use B{num} chips in Profile → Savings</div>
+        <div style={{ marginTop: 8, fontSize: 10, color: "var(--text-faint)", fontStyle: "italic" }}>No accounts assigned — use B{num} chips in <GoStep step={PROFILE_STEP_SAVINGS}>Plan inputs → Current Savings</GoStep></div>
       )}
     </div>
   );
@@ -10291,9 +10292,9 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
         {directive.type === "setup" && (
           <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6 }}>
             To get a directive:<br/>
-            1. Enter your account balances in <strong style={{ color: "#e2e8f0" }}>Profile → Savings</strong><br/>
+            1. Enter your account balances in <GoStep step={PROFILE_STEP_SAVINGS}>Plan inputs → Current Savings</GoStep><br/>
             2. Use the <strong style={{ color: "#e2e8f0" }}>[B1] [B2] [B3]</strong> buttons to assign each account to a bucket<br/>
-            3. Enter your annual spending in <strong style={{ color: "#e2e8f0" }}>Profile → Spending</strong>
+            3. Enter your annual spending in <GoStep step={PROFILE_STEP_SPENDING}>Plan inputs → Spending &amp; Expenses</GoStep>
           </div>
         )}
 
@@ -10304,7 +10305,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
         )}
         {directive.b1Empty && (
           <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 11, color: "#7dd3fc", lineHeight: 1.6 }}>
-            <strong>No B1 account assigned yet.</strong> Bucket 1 currently holds <strong>$0</strong>. To receive this transfer you need a cash account (HYSA, money market, SGOV) tagged as B1 in <strong>Profile → Savings</strong>. The steps below show which B2 accounts to sell — the proceeds go into that new B1 account.
+            <strong>No B1 account assigned yet.</strong> Bucket 1 currently holds <strong>$0</strong>. To receive this transfer you need a cash account (HYSA, money market, SGOV) tagged as B1 in <GoStep step={PROFILE_STEP_SAVINGS}>Plan inputs → Current Savings</GoStep>. The steps below show which B2 accounts to sell — the proceeds go into that new B1 account.
           </div>
         )}
         {directive.steps?.length > 0 && (
@@ -11979,7 +11980,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             {mc.mwRate != null && (
               <div
                 style={{ fontSize: 12, color: "var(--accent-purple)", marginBottom: 10, fontWeight: 600 }}
-                title={`Mortality-weighted success. The headline rate assumes you live all the way to ${params.endAge} — but a path that runs out of money at, say, 88 only fails you if you're alive at 88. This weights each failed path by the SSA probability (${params.sex || "blended"} setting, Profile → Personal) of being alive at its failure age. It answers the actuarial question "what's the chance my money outlives me?" — always ≥ the headline rate, which remains the conservative planning number.`}
+                title={`Mortality-weighted success. The headline rate assumes you live all the way to ${params.endAge} — but a path that runs out of money at, say, 88 only fails you if you're alive at 88. This weights each failed path by the SSA probability (${params.sex || "blended"} setting, Plan inputs → About You) of being alive at its failure age. It answers the actuarial question "what's the chance my money outlives me?" — always ≥ the headline rate, which remains the conservative planning number.`}
               >
                 ◐ {fmtPct(mc.mwRate)} chance your money outlives you
               </div>
@@ -13058,7 +13059,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
             monthly = Math.round(port * benchRate / 12);
             label   = "Estimated spending target";
             note    = `${pctOf(benchRate)}% of portfolio · no target set · after tax`;
-            hint    = `You have not entered a spending target, so this is a placeholder: ${pctOf(benchRate)}% of your ${fmtDollar(port)} portfolio, divided by 12. Enter your real target in Profile → Spending. Money to spend after tax.`;
+            hint    = `You have not entered a spending target, so this is a placeholder: ${pctOf(benchRate)}% of your ${fmtDollar(port)} portfolio, divided by 12. Enter your real target in Plan inputs → Spending & Expenses. Money to spend after tax.`;
           }
 
           return (
@@ -13667,7 +13668,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   const aiDisabledReason = !profileReady
     ? "Complete your profile and run Monte Carlo first"
     : !hasAiAccess
-    ? "Buy AiRA credits or add a free Gemini API key in Profile → Assumptions"
+    ? "Buy AiRA credits or add a free Gemini API key in Plan inputs → Settings"
     : "Run AI analysis on your plan";
 
   const COLORS = {
@@ -13707,7 +13708,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
           )}
           {!loadingAI && !cards && profileReady && !hasAiAccess && !BILLING_ENABLED && (
             <span style={{ fontSize: 11, color: "var(--accent-gold)" }}>
-              🔒 Add a free Gemini key in Profile → Assumptions ·{" "}
+              🔒 Add a free Gemini key in <GoStep step={PROFILE_STEP_SETTINGS}>Plan inputs → Settings</GoStep> ·{" "}
               <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-gold)", textDecoration: "underline" }}>
                 Get one here
               </a>
@@ -14054,6 +14055,8 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
 
 /** ProfileWizard step index of "Current Savings" (accounts, balances, split). Keep in sync with STEPS below. */
 export const PROFILE_STEP_SAVINGS = 1;
+export const PROFILE_STEP_SPENDING = 3;
+export const PROFILE_STEP_SETTINGS = 5;
 
 export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, jumpTo }) {
   const [step, setStep] = useState(jumpTo?.step ?? 0);
@@ -17936,6 +17939,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   }
 
   return (
+    <NavContext.Provider value={navigateToTab}>
     <>
       <style>{CSS}</style>
       <div className="app">
@@ -18646,7 +18650,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle OFF (default):</strong> State tax applies to all taxable income. Use this if you're a resident of your listed state.</p>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Toggle ON:</strong> State tax zeroed out. Use this if you've broken residency (e.g. spending most of the year abroad and meeting your state's non-residency rules).</p>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>Spending is independent:</strong> Total portfolio draw = US Spending + Out-of-Country Spending regardless of this toggle. The toggle only changes whether the US-domestic portion is state-taxed. Check your state's non-residency rules before turning this on — every state defines it differently (number of days, place of work, family location, etc.).</p>
-                    <p style={{ margin:0 }}><strong style={{ color:"#e2e8f0" }}>Set it up:</strong> In your Profile → Spending, set <em>Primary Annual Spending</em> for your at-home budget and <em>Out-of-State Spending</em> for your travel/abroad budget. If Out-of-State Spending is left at $0, it falls back to your primary spending.</p>
+                    <p style={{ margin:0 }}><strong style={{ color:"#e2e8f0" }}>Set it up:</strong> In Plan inputs → Spending & Expenses, set <em>Primary Annual Spending</em> for your at-home budget and <em>Out-of-State Spending</em> for your travel/abroad budget. If Out-of-State Spending is left at $0, it falls back to your primary spending.</p>
                   </InfoModal>
                 </div>
                 <div
@@ -19405,6 +19409,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
         </div>
       )}
     </>
+    </NavContext.Provider>
   );
 }
 
