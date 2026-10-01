@@ -34,3 +34,12 @@ test("an invalid line blocks applying the budget", () => {
   act(() => root.unmount());
   el.remove();
 });
+
+test("the spending step says whether to leave housing out of the number", () => {
+  const own = mount({ ...BLANK_PROFILE });
+  expect(own.el.querySelector('[data-testid="spend-housing-note"]').textContent).toMatch(/Leave your mortgage payment out/);
+  act(() => own.root.unmount()); own.el.remove();
+  const none = mount({ ...BLANK_PROFILE, housingType: "none" });
+  expect(none.el.querySelector('[data-testid="spend-housing-note"]').textContent).toMatch(/Include your housing costs/);
+  act(() => none.root.unmount()); none.el.remove();
+});

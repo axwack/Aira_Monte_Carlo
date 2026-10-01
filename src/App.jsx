@@ -6013,8 +6013,9 @@ function IncomeExpensesChart({ p, inf }) {
         hoverYr={hoverYr} hoverRow={hoverRow}
         onMove={onMove} onLeave={onLeave}
         dashKeys={notEnteredKeys(p)}
+        zeroNotes={{ "Mortgage/Housing": housingRowNote(p, data.reduce((a, d) => a + (d["Mortgage/Housing"] || 0), 0)) }}
         reconcile
-        footnote="A dash means nothing was entered for that row, which is not the same as zero cost: Medical, Long-Term Care and Other Expenses appear only if you add carveouts (or Planned One-Off Expenses), and Mortgage/Housing only if a mortgage is entered and housing is not already inside your spending target. Capital Gains Tax is not yet separately modeled (shown as —) — realized gains on taxable-account draws are folded into Income Tax. Roth conversion tax and IRMAA surcharges are funded directly from the pre-tax bucket, so totals here may differ slightly from the Income side."
+        footnote="A dash means nothing was entered for that row, which is not the same as zero cost: Medical, Long-Term Care and Other Expenses appear only if you add carveouts (or Planned One-Off Expenses), and Mortgage/Housing says why when it is empty (nothing entered, housing already inside your spending, or the loan is paid off before these years begin). Only the primary property's mortgage is charged as a payment. Capital Gains Tax is not yet separately modeled (shown as —) — realized gains on taxable-account draws are folded into Income Tax. Roth conversion tax and IRMAA surcharges are funded directly from the pre-tax bucket, so totals here may differ slightly from the Income side."
       />
       {p.ssAge > p.retireAge && (
         <div className="flag-w" style={{ fontSize: 11 }}>
@@ -6051,7 +6052,17 @@ export function notEnteredKeys(p) {
   return keys;
 }
 
-function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverRow, onMove, onLeave, footnote, reconcile, dashKeys = [] }) {
+/** Why the Mortgage/Housing row is empty, from the same fields the engine reads (housingType, mortBalance,
+ * annualRent). "" when a housing cost is actually charged. `lifetimeTotal` = the row's total over the chart's years. */
+export function housingRowNote(p, lifetimeTotal) {
+  const type = p.housingType || "own";
+  if (type === "none") return "included in your spending";
+  if (type === "rent") return p.annualRent > 0 ? "" : "no rent entered";
+  if (!(p.mortBalance > 0)) return "no mortgage entered";
+  return lifetimeTotal > 0 ? "" : "paid off before retirement";
+}
+
+function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverRow, onMove, onLeave, footnote, reconcile, dashKeys = [], zeroNotes = {} }) {
   const rows = categories.map(([key, color]) => ({
     key, color,
     value: hoverRow ? (hoverRow[key] || 0) : data.reduce((s, d) => s + (d[key] || 0), 0),
@@ -6098,9 +6109,12 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
             <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#cbd5e1" }}>
                 <span style={{ width: 9, height: 9, borderRadius: 2, background: color, display: "inline-block" }} />
-                {key}
+                <span>
+                  {key}
+                  {value === 0 && zeroNotes[key] && <span style={{ display: "block", fontSize: 10, color: "var(--text-muted)" }}>{zeroNotes[key]}</span>}
+                </span>
               </div>
-              <div style={{ color: "#e2e8f0", fontFamily: "'JetBrains Mono',monospace" }}>{value === 0 && dashKeys.includes(key) ? "—" : fmtDollar(value)}</div>
+              <div style={{ color: "#e2e8f0", fontFamily: "'JetBrains Mono',monospace" }}>{value === 0 && (zeroNotes[key] || dashKeys.includes(key)) ? "—" : fmtDollar(value)}</div>
             </div>
           ))}
           <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 8, paddingTop: 6, fontWeight: 700 }}>
@@ -14046,6 +14060,11 @@ function RealEstateStep({ values, onChange }) {
                 </span>
               )}
             </div>
+            {!isFirst && (
+              <div data-testid={`${prop.id}-payment-note`} style={{ fontSize:10, color:"var(--text-muted)", marginTop:8, lineHeight:1.5 }}>
+                This mortgage balance counts toward net worth only. AiRA charges a payment for the primary property's mortgage only, so include this loan's payment in your spending.
+              </div>
+            )}
           </div>
         );
       })}
@@ -16610,6 +16629,13 @@ function ExpensesPanel({ values, onChange }) {
           This is money that reaches your household. AiRA withdraws extra from the portfolio
           to pay the tax bill <em>on top of</em> this figure, so do not add taxes in yourself
           and do not reduce it for them.
+          <div data-testid="spend-housing-note" style={{ marginTop: 6 }}>
+            {(values.housingType || "own") === "none"
+              ? <>Include your housing costs in this number: Housing type is set to “None / already in spend”, so AiRA adds nothing for housing.</>
+              : (values.housingType === "rent"
+                ? <>Leave rent out of this number: AiRA adds your Annual rent on top of it.</>
+                : <>Leave your mortgage payment out of this number: AiRA adds it on top, from <GoStep step={PROFILE_STEP_REAL_ESTATE}>Real Estate &amp; Debt</GoStep>, until the loan is paid off.</>)}
+          </div>
         </div>
         <WFieldRow label="US Spending (annual)" helper="Domestic household spending in today's dollars, after tax. Subject to state income tax when residing in-state.">
           <ANumInput value={values.sp || 0} onSet={(v) => onChange("sp", v)} min={0} max={MAX_MONEY_INPUT} step={1000} suffix="/yr" />

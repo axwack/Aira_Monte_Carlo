@@ -25,6 +25,18 @@ test("Plan inputs has a Real Estate & Debt step that edits the profile (single s
   const props = calls.filter(([k]) => k === "properties").pop()[1];
   expect(props).toHaveLength(2);
   expect(props[0]).toEqual(home);
+  // only the primary mortgage is charged as a payment, and a second property's card says so
+  expect(el.querySelector('[data-testid="p1-payment-note"]')).toBeNull();
+  act(() => root.unmount());
+  el.remove();
+});
+
+test("a non-primary property says its mortgage is not charged as a payment", () => {
+  const { el, root } = mount({ ...BLANK_PROFILE, properties: [
+    { id: "p1", label: "Home", value: 400000, mortgage: 0, income: 0 },
+    { id: "p2", label: "Condo", value: 300000, mortgage: 340000, income: 0 },
+  ] });
+  expect(el.querySelector('[data-testid="p2-payment-note"]').textContent).toMatch(/net worth only/);
   act(() => root.unmount());
   el.remove();
 });

@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { notEnteredKeys } from "./App";
+import { notEnteredKeys, housingRowNote } from "./App";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 
 const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
@@ -29,4 +29,13 @@ test("labels and captions", () => {
 test("real-estate headers are right-aligned over their inputs", () => {
   ["Gross value", "Mortgage balance", "Annual income (opt)"].forEach((l) =>
     expect(SRC).toMatch(new RegExp(`textAlign:"right" \\}\\}>${l.replace(/[()]/g, "\\$&")}</div>`)));
+});
+
+test("Mortgage/Housing row says why it is empty instead of a bare $0", () => {
+  expect(housingRowNote({ housingType: "none", mortBalance: 340_000 }, 0)).toBe("included in your spending");
+  expect(housingRowNote({ mortBalance: 0 }, 0)).toBe("no mortgage entered");
+  expect(housingRowNote({ housingType: "rent", annualRent: 0 }, 0)).toBe("no rent entered");
+  expect(housingRowNote({ mortBalance: 340_000 }, 0)).toBe("paid off before retirement");
+  expect(housingRowNote({ mortBalance: 340_000 }, 250_000)).toBe("");
+  expect(housingRowNote({ housingType: "rent", annualRent: 24_000 }, 0)).toBe("");
 });
