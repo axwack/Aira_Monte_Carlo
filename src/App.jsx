@@ -14052,8 +14052,14 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   );
 }
 
-function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt }) {
-  const [step, setStep] = useState(0);
+/** ProfileWizard step index of "Current Savings" (accounts, balances, split). Keep in sync with STEPS below. */
+export const PROFILE_STEP_SAVINGS = 1;
+
+export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, jumpTo }) {
+  const [step, setStep] = useState(jumpTo?.step ?? 0);
+  // Deep links from the sidebar ("Edit accounts") land on the step that holds the field.
+  // `jumpTo` is {step, n}; n changes on every click so the same step can be requested twice.
+  useEffect(() => { if (jumpTo) setStep(jumpTo.step); }, [jumpTo]);
   const [saveStatus, setSaveStatus] = useState("");
 
   const flashStatus = (msg) => {
@@ -17266,8 +17272,11 @@ export default function AiRAForecaster() {
   // value — set right before switching activeTab, consumed once, then
   // cleared so a later manual visit to Analysis doesn't get silently redirected.
   const [pendingScenarioSubTab, setPendingScenarioSubTab] = useState(null);
-  const navigateToTab = useCallback((tab, subTab = null) => {
+  const [profileJump, setProfileJump] = useState(null);
+  // profileStep: ProfileWizard step index to open (1 = Current Savings). Optional.
+  const navigateToTab = useCallback((tab, subTab = null, profileStep = null) => {
     if (subTab) setPendingScenarioSubTab(subTab);
+    if (profileStep != null) setProfileJump({ step: profileStep, n: Date.now() });
     setTab(tab);
   }, []);
   // The visitor landing is the homepage for anyone without a saved profile
@@ -18353,7 +18362,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 }}
               >
                 <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Liquid Portfolio{" "}
-                  <button type="button" className="sb-edit" onClick={() => navigateToTab("assumptions")} aria-label="Edit accounts and balances">Edit accounts</button>
+                  <button type="button" className="sb-edit" onClick={() => navigateToTab("assumptions", null, PROFILE_STEP_SAVINGS)} aria-label="Edit accounts and balances">Edit accounts</button>
                 </span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", letterSpacing: "-0.5px" }}>
                   {fmtDollar(port)}
@@ -18376,7 +18385,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               })()}
               <AllocationDonut accounts={assumptions.accounts} />
               <div style={{ textAlign: "right", marginTop: 4 }}>
-                <button type="button" className="sb-edit" onClick={() => navigateToTab("assumptions")} aria-label="Edit account split">Edit split</button>
+                <button type="button" className="sb-edit" onClick={() => navigateToTab("assumptions", null, PROFILE_STEP_SAVINGS)} aria-label="Edit account split">Edit split</button>
               </div>
               {yearEndInfo.show && (
                 <YearEndStrip room={yearEndInfo.room} days={yearEndInfo.days} year={yearEndInfo.year} />
@@ -19107,6 +19116,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 {activeTab === "assumptions" && (
                   <>
                   <ProfileWizard
+                    jumpTo={profileJump}
                     onNavigateTab={navigateToTab}
                     autosavedAt={lastAutosaveAt}
                     values={liveProfile}
