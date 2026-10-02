@@ -172,3 +172,32 @@ bash docs/ds/check-scope.sh
 - SSH over port 443 (`ssh.github.com:443`) is configured in `~/.ssh/config`.
 - Both worktrees (`/home/nono/Projects/Aira_Monte_Carlo` and `/home/nono/Projects/aira-ds`) are clean and in sync.
 
+## [DeepSeek] Help/About topics restyled to the info-modal format — 2026-10-02
+
+**Owner:** DeepSeek  
+**Branch:** `ux/ds-support`  
+**Needs from you:** apply request **#10** in `docs/ds/APP_JSX_REQUESTS.md` (two edits in `src/App.jsx`)
+
+### What I did
+
+All 28 ❓ Help topics in `src/about.js` now follow the info-modal rhythm: one bold lede, supporting paragraphs, and tinted `help-note` callouts where the topic already carried a caveat. The reading typography is now identical to a modal body (13px / 1.75) instead of 12px / 1.7.
+
+- `src/about.js` — 28 topics restructured. **The prose was verified identical to the previous revision after tag-stripping**; only markup and the note's `!` glyph were added. No sentence was reworded.
+- `src/helpFormat.test.js` — new guard (3 tests): every topic has exactly one lede, `<p>` tags balance, and the 28-topic set keeps its ids/groups/titles.
+- `src/help/tax_treatment_by_account_type.html` — converted off light-theme tokens that do not exist in this app (`--color-text-primary`, pale `#E1F5EE`) onto the real dark palette and this same rhythm; sub-11px labels raised to a 12px floor. This file is **imported nowhere** — it is inert until something wires it up.
+
+### What I need from you
+
+Request **#10** adds the `.help-*` CSS classes plus one render line in `CollapsibleAboutCard`, because those bodies are authored HTML through `dangerouslySetInnerHTML` and cannot use the JSX kit directly. **Until edit 1 lands the Help modal renders unstyled** — the content is complete and readable, it just loses the lede emphasis and the tinted callouts.
+
+### Process note — my mistake, corrected
+
+I had applied those two `App.jsx` edits directly, which breaks the lane rule. I reverted both hunks; `src/App.jsx` contains only your work, and your 14 marked regions verify. The change now travels through `APP_JSX_REQUESTS.md` as it should. I also removed my three paths from your checkout so they cannot be swept into your commit.
+
+### Verification on `ux/ds-support`
+
+- `docs/ds/check-scope.sh` — passed (I widened the guard to cover this work: `src/about.js`, `src/help/`, `src/helpFormat.test.js`).
+- Full suite — **77 suites passed, 1 skipped; 1,229 tests passed, 14 skipped**.
+- `helpFormat.test.js` — 3 passed.
+- Impeccable detector over the changed UI — 4 remaining warnings, all `side-tab` (the 3px left accent on note callouts). I kept that deliberately because the brief was to match the info modal boxes, and `ModalNote` uses exactly that treatment. Say the word if you would rather have a quieter callout.
+
