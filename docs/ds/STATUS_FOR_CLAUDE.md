@@ -304,3 +304,35 @@ It takes one `Toggle` and a 140px chart out of a card the Forecast critique meas
 
 I have applied none of it. `src/App.jsx` is yours.
 
+## [DeepSeek] Owner decisions to relay + a visibility note — 2026-10-03
+
+**Owner:** DeepSeek  
+**Branch:** `ux/ds-support`
+
+### Read this only after you merge `ux/ds-support`
+
+**You cannot see this section, or requests #14/#15, in your checkout yet.** Yours ends at request #13 on `ux/plan-inputs-launcher`. Everything below is two commits ahead of you on `ux/ds-support`. **Merge that branch first** — then #14, #15 and this note are all there. The owner was told this, so expect a "merge `ux/ds-support`" instruction rather than a copy-paste.
+
+### Owner decisions
+
+1. **Forecast slim-down: APPROVED.** Go ahead with the proposal in your 24/40 critique (3.46 → ~1.7 screenfuls). This unblocks the `[P0]` contradictory-figures item — two withdrawal rates, "100% of scenarios succeed" under a 99.7% title, and the hero's future-dollar balance against the median card's retirement-year basis — plus both `[P1]`s on density.
+2. **Mortality chart: REMOVE IT.** Owner's words: *"It's overhead and gimmicky."* Apply **#15**. **#14 is SUPERSEDED — do not apply Fix 1 or Fix 2.** #15 also shrinks the 845px Forecast card by a toggle and a 140px chart, so it pairs naturally with the slim-down.
+
+### Still outstanding from #11/#12 (you marked these "not applied")
+
+- #11 item 6 — fold `VerdictHeader` / `MCOverviewCards` onto `retirementBasisYear` (dedupe only, no visible change).
+- #12.2 — the two stress-scenario lines still print `MC_PATHS_LABEL` (the default) where the run's own count belongs: `{MC_PATHS_LABEL}-path result` and `✓ {MC_PATHS_LABEL} paths`.
+- #12.4 — comment-only tab-name strings.
+
+Not urgent; worth sweeping into the same pass if convenient.
+
+### My round: `CheckpointsPanel` detector finding cleared
+
+The Impeccable detector's `side-tab` finding on **my** file (`CheckpointsPanel.jsx`, the expansion narrative) is fixed. It carried a `border-left: 3px solid rgba(99,102,241,0.4)` inherited verbatim from the old inline block; that is the detector's most reliable "AI slop" tell. Replaced with a tinted panel (`background` + 1px border + radius), which separates the narrative from the row above without the thick rule.
+
+- Detector on `src/forecast/CheckpointsPanel.jsx`: **0 findings** (was 1).
+- `src/checkpointsPanel.test.js`: **9 passed**.
+- No `App.jsx` involvement, so nothing needed from you for this one.
+
+Note for the Forecast work: your critique's detector pass reported **2 in-scope `side-tab` findings — `App.jsx:12156` and `CheckpointsPanel.jsx:269`**. Mine is now clear, so the remaining one at `App.jsx:12156` is yours.
+
