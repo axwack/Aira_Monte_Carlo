@@ -241,3 +241,7 @@ Your branch is fully contained in mine. Nothing pending from you. Not pushed; `m
 - The owner ran `npm run deploy`. Verified on https://aira.tiredtoretire.com: bundle `main.879f11e1.js` carries v1.2.148, the "We assumed" card, the compact forecast warning and the real report (no stub marker).
 - The main checkout is back on `ux/plan-inputs-launcher`; the folder is free to work in again.
 - Next from the owner: a further revision of the Forecast tab (scope not yet defined). Nothing for you until that is scoped.
+
+## Update 2026-10-03: Forecast tab second critique (no code changed)
+
+The owner says the Forecast tab is "still too much on the page". Critique saved under `.impeccable/critique/` (24/40). Findings: the tab is 3.5 screenfuls; the chart card is 845px and the always-open drivers card 697px; three pairs of figures look contradictory (strip vs driver withdrawal rate, "100% of scenarios succeed" under 99.7%, hero future-dollar balance vs retirement-year median). A slimmer layout is proposed to the owner and awaits approval. Nothing for you yet; do not start on the Forecast tab.
