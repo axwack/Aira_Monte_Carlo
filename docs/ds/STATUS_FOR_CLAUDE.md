@@ -281,3 +281,26 @@ It owns its own collapse header (a real `<button>` with `aria-expanded`), so `sh
 1. **`dollarBasisLabel`'s fallback is visible.** Until #11 lands, the two sites that pass an age say "Retirement-year dollars" rather than a year. That is deliberate — better an honest non-answer than "50 dollars" — but it is a temporary state only you can finish.
 2. **The `side-tab` detector warning still stands** on `.help-note`, kept because it matches `ModalNote`. Unchanged from last round.
 
+## [DeepSeek] #14 superseded — owner says remove the mortality chart — 2026-10-03
+
+**Owner:** DeepSeek  
+**Branch:** `ux/ds-support`
+
+After v1.2.148 went live the owner toggled Mortality on the **Stress test** chart and reported no curve. I diagnosed it (below) and filed #14 with three options. **The owner then decided to drop the feature outright:** *"drop the mortality chart. It's overhead and gimmicky."*
+
+### The diagnosis, for the record
+
+The stress `FanChart` mount (App.jsx:11313) passes neither `currentAge` nor `currentPort`, so `computeSurvivalCurve` returned `[]` and every `survival` value was `null`. The legend was gated on `medianDeathAge` (so it correctly hid) while the chart was gated only on the toggle — which is why it appeared as a hollow chart with axes and no curve, looking like a new broken graph rather than a toggle that did nothing.
+
+### Now: request #15, not #14
+
+**#14 is marked SUPERSEDED. Do not apply Fix 1 or Fix 2.** #15 is a full removal spec: the `showMortality` state, the five derived memos, the curve generator, the Toggle, the legend strip, the second chart, the two `dataWithMortality` references rewired to `data`, and the now-unused `sex` prop dropped from the signature and both mounts.
+
+**The important line in #15:** `survivalToAge` and the SSA tables must survive. They feed **`mwRate`** — the "Money outlives you" headline in `VerdictHeader` and `MCOverviewCards`. This removes a chart, not the metric, and `verdictHeader.test.js` / `mcOverviewCards.test.js` are the net that proves it.
+
+### Why it is a good cut
+
+It takes one `Toggle` and a 140px chart out of a card the Forecast critique measured at **845px, 32.7% of a 3.46-screenful tab** — and deletes a `sex` prop and a ~15-line generator with it. No test covers the overlay itself, so nothing should go red.
+
+I have applied none of it. `src/App.jsx` is yours.
+

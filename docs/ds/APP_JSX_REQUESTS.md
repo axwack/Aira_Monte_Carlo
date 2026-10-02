@@ -538,3 +538,80 @@ Two consequences worth a decision:
 2. On the **Stress test** chart the curve is identical to the Forecast one (it depends only on the user's age and sex, not on the sampled sequence), so it may be redundant there. Dropping the Mortality toggle from the stress chart is a defensible alternative to Fix 1.
 
 I have not applied any of this — `src/App.jsx` is yours. Say which of Fix 1 / Fix 2 / drop-the-toggle you want and I will stop asking.
+
+> **SUPERSEDED by #15.** The owner's decision: *"drop the mortality chart. It's overhead and gimmicky."* Do not apply Fix 1 or Fix 2. Delete the feature instead — the spec is below.
+
+---
+
+## #15 — [DeepSeek] Remove the mortality chart entirely
+
+**Owner's decision, 2026-10-03:** *"drop the mortality chart. It's overhead and gimmicky."* This supersedes #14. Do **not** fix the empty shell; remove the feature.
+
+Scope is the **FanChart overlay only**. The mortality-weighted success figure is a different feature and must survive untouched (see "What must NOT be touched").
+
+### Delete — state and derived data (all inside `FanChart`, App.jsx:5548-5645)
+
+| Line | Symbol |
+|---|---|
+| 5550 | `const [showMortality, setShowMortality] = useState(false);` |
+| 5618-5622 | `mortalityData` |
+| 5624-5628 | `mortByAge` |
+| 5630-5634 | `medianDeathAge` (and its comment) |
+| 5636-5639 | `q25DeathAge` |
+| 5641-5645 | `dataWithMortality` (and its comment) |
+
+The curve generator `computeSurvivalCurve` (App.jsx:5531-5545) becomes dead once `mortalityData` is gone — delete it too, and the comment block above it if it only describes the overlay.
+
+### Delete — markup
+
+| Line | What |
+|---|---|
+| 5654 | `<Toggle … label="Mortality" accent="var(--negative)" />` — **keep** the Milestones toggle on 5655 |
+| 5658-5671 | the red "P(alive) — chart below" legend strip, including the "50% of people your age have died by…" sentence |
+| 5922-5946 | the whole second chart: `{showMortality && (<ResponsiveContainer …>` through its closing `)}`, including both `ReferenceLine`s ("50% alive" / "25% alive") and `<Line dataKey="survival" …>` |
+
+### Rewire — two references to the deleted data
+
+```jsx
+5719:          data={dataWithMortality}      →   data={data}
+5768:  const row = dataWithMortality.find(…)  →   const row = data.find(…)
+```
+
+Line 5719 is the fan chart itself. Reverting it to `data` is required, not cosmetic — `dataWithMortality` existed only to carry the `survival` key, so the rendering is otherwise identical.
+
+Line 5768 is the hover highlight. It reads only `row.p90/p75/p50/p25/p10`, never `survival`, so this is a safe rename.
+
+### Drop the now-unused `sex` prop
+
+After the deletions, `sex` is referenced in `FanChart` **only** by the curve and the legend (5621, 5665). Remove it from:
+
+- the `FanChart` signature (5548),
+- the Forecast mount (`sex={assumptions.sex}`, 19011),
+- the Stress mount (`sex={sex}`, 11326).
+
+And fix the comment it leaves behind at **17662-17663**:
+
+```js
+      // Mortality weighting for runMC's "money outlives you" metric — same
+      // sex setting the fan chart's SSA survival overlay uses.
+```
+
+The second clause is no longer true. Keep the first: `sex` still drives the mortality-weighted success figure.
+
+Also update the two comments that point at the overlay — 19005 (*"and the survival curve with it"*) and 17664's tail.
+
+### What must NOT be touched
+
+- **`survivalToAge`** (App.jsx:5518) — still exported, still tested, and still used by runMC at 2301 to compute **`mwRate`**, the "Money outlives you" headline in `VerdictHeader` and `MCOverviewCards`. The `sex` setting keeps feeding that.
+- **`SSA_QX_MALE` / `SSA_QX_FEMALE`** — they feed `survivalToAge`.
+- Everything in the Help topic `still-funded-percent`, which explains the mortality-weighted companion figure in prose.
+
+### Why this is a good cut, beyond taste
+
+It removes one of the two `Toggle`s and a whole 140px chart from a card the Forecast critique measured at **845px (32.7% of a 3.46-screenful tab)**. It also deletes the `sex` prop and a ~15-line generator. No test covers the overlay — the mortality tests cover `survivalToAge`/`mwRate`, which stay.
+
+### Verification I would expect
+
+`verdictHeader.test.js` and `mcOverviewCards.test.js` still assert the mortality-weighted figure, so they are the regression net for "we removed the chart, not the metric". Full suite should be otherwise unchanged.
+
+I have not applied any of this; `src/App.jsx` is yours.
