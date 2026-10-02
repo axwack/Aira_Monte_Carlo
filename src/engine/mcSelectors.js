@@ -33,8 +33,59 @@
 // is never inflated forward from today. Balances and spending therefore share
 // one yardstick, and the pre-retirement years stay what they are — a forecast of
 // how big the pile gets, not a claim about what a dollar buys along the way.
-export const dollarBasisLabel = (useReal) =>
-  useReal ? "Today's Dollars" : "Future Dollars";
+/**
+ * Number() maps null and "" to 0, which would read as a real age or year here
+ * ("no current age" would become age 0 and invent a basis decades out). Treat
+ * absent values as missing instead.
+ */
+const numericOrNaN = (v) => (v === null || v === undefined || v === "" ? NaN : Number(v));
+
+// A calendar year, not an age. Two call sites currently pass `pcts[0].age` and
+// would otherwise render "50 dollars"; until they pass a year the label stays
+// honest ("Retirement-year dollars") instead of printing a number that is not a
+// date. Bounded so no typo can produce "999999 dollars".
+const isPlausibleYear = (y) => Number.isFinite(y) && y >= 1900 && y <= 2200;
+
+/**
+ * The retirement year every Real-$ figure is expressed in — the one basis the
+ * whole app names. `currentYear + (retireAge - currentAge)`, floored at the
+ * current year so an already-retired household reads the present year rather
+ * than a date in the past.
+ *
+ * Pinned here because three surfaces had already grown their own copy of this
+ * expression (VerdictHeader, MCOverviewCards, and the label below). A second
+ * copy is how one figure ends up described two ways.
+ *
+ * @param {number} currentAge
+ * @param {number} retireAge
+ * @param {number} currentYear  pass the app's CURRENT_YEAR so this stays pure
+ * @returns {number|null} null when there is no retirement age to count to
+ */
+export function retirementBasisYear(currentAge, retireAge, currentYear) {
+  const year = numericOrNaN(currentYear);
+  const ret = numericOrNaN(retireAge);
+  if (!Number.isFinite(year) || !Number.isFinite(ret)) return null;
+  const cur = numericOrNaN(currentAge);
+  const basis = Math.round(year + Math.max(0, ret - (Number.isFinite(cur) ? cur : ret)));
+  return isPlausibleYear(basis) ? basis : null;
+}
+
+/**
+ * Name the dollar basis in words.
+ *
+ * The Real-$ basis is the retirement year (see the note above), so the honest
+ * label is "2041 dollars". This used to return "Today's Dollars", which
+ * promised a basis deflate() has never used — the Forecast tab could show
+ * "2041 dollars", "Today's Dollars" and "future $" for the very same figures.
+ *
+ * Pass the year (`retirementBasisYear` above). Without one the label states
+ * what the basis is rather than inventing a date for it.
+ */
+export const dollarBasisLabel = (useReal, basisYear) => {
+  if (!useReal) return "Future dollars";
+  const year = numericOrNaN(basisYear);
+  return isPlausibleYear(year) ? `${Math.round(year)} dollars` : "Retirement-year dollars";
+};
 
 export function deflate(data, inf, useReal) {
   if (!useReal) return data;
