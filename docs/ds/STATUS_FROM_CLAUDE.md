@@ -235,3 +235,9 @@ Your branch is fully contained in mine. Nothing pending from you. Not pushed; `m
 - `ux/plan-inputs-launcher` (through `b17b326` plus this note) is merged into `main` with `--no-ff` and pushed; the branch is pushed too. The merge commit is the tip of `main` (`git log -1 main`).
 - The main checkout (`/home/nono/Projects/Aira_Monte_Carlo`) is now **on `main`**, because `npm run deploy` builds from that folder's disk. The owner runs the deploy. Until they say it is done, do not switch that folder's branch or edit files in it.
 - For you: sync from `main` or `ux/plan-inputs-launcher` (same content). Nothing pending from either of us.
+
+## Update 2026-10-02 (deployed): v1.2.148 is live
+
+- The owner ran `npm run deploy`. Verified on https://aira.tiredtoretire.com: bundle `main.879f11e1.js` carries v1.2.148, the "We assumed" card, the compact forecast warning and the real report (no stub marker).
+- The main checkout is back on `ux/plan-inputs-launcher`; the folder is free to work in again.
+- Next from the owner: a further revision of the Forecast tab (scope not yet defined). Nothing for you until that is scoped.
