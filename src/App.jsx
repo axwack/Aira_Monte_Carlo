@@ -3977,6 +3977,35 @@ const CSS = `
   .main * { min-width:0; }
   .flag-w { border-left:3px solid #f59e0b; background:rgba(245,158,11,0.1); padding:7px 12px; font-size:12px; color:#fde68a; border-radius:0 8px 8px 0; margin-bottom:4px; font-weight:500; }
   .flag-i { border-left:3px solid #38bdf8; background:rgba(56,189,248,0.08); color:#bae6fd; border-radius:0 8px 8px 0; padding:7px 12px; font-size:12px; margin-bottom:4px; font-weight:500; }
+  /* ── Help / About body — the info-modal kit's rhythm, authored in HTML ──
+     The ❓ Help modal and its cards render authored HTML from about.js via
+     dangerouslySetInnerHTML, so they cannot use the JSX kit directly
+     (ModalLede / ModalP / Em / ModalNote). These classes ARE that kit, in
+     CSS, at the same values: change them together, or the help copy grows a
+     second body style — the drift this block exists to prevent. */
+  .help-body { font-size:13px; color:var(--text-secondary); line-height:1.75; }
+  .help-body p { margin:0 0 10px; }
+  .help-body > *:last-child { margin-bottom:0; }
+  .help-lede { font-size:14.5px; font-weight:700; color:var(--text-primary); line-height:1.5; margin:0 0 10px; }
+  .help-sub { font-size:13px; font-weight:700; color:var(--text-primary); line-height:1.5; margin:16px 0 7px; }
+  .help-body strong { color:var(--text-primary); font-weight:700; }
+  .help-body em { font-style:italic; }
+  .help-body ul { margin:0 0 10px; padding-left:20px; }
+  .help-body li { margin-bottom:4px; }
+  .help-body code { font-family:var(--font-mono); font-size:12px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); border-radius:4px; padding:1px 5px; }
+  /* The ModalNote look. Accent comes from --note-accent so a risk-toned note
+     is a modifier, not a second rule that can fall out of step. */
+  .help-note { --note-accent: var(--accent-gold); display:flex; gap:9px;
+    background:rgba(245,166,35,0.07); border:1px solid rgba(245,166,35,0.2);
+    border-left:3px solid var(--note-accent); border-radius:8px; padding:10px 12px;
+    margin:0 0 10px; font-size:12.5px; color:var(--text-secondary); line-height:1.6; }
+  .help-note--risk { --note-accent: var(--negative); background:rgba(248,113,113,0.07);
+    border-top-color:rgba(248,113,113,0.2); border-right-color:rgba(248,113,113,0.2);
+    border-bottom-color:rgba(248,113,113,0.2); border-left:3px solid var(--note-accent); }
+  .help-note--method { --note-accent: var(--accent-teal); background:rgba(20,184,166,0.07);
+    border-top-color:rgba(20,184,166,0.2); border-right-color:rgba(20,184,166,0.2);
+    border-bottom-color:rgba(20,184,166,0.2); border-left:3px solid var(--note-accent); }
+  .help-note-icon { color:var(--note-accent); font-weight:800; flex-shrink:0; line-height:1.6; }
   /* auto-fit (not a fixed 4-column count) so a row with fewer cards than
      the column count STRETCHES to fill the width instead of leaving empty
      gaps — a fixed repeat(4,1fr) left a lone 5th card stranded on its own
@@ -4440,8 +4469,7 @@ function CollapsibleAboutCard({ entry, defaultOpen = false }) {
           transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
       </button>
       {open && (
-        <div style={{ fontSize:12, color:"var(--text-secondary)", lineHeight:1.7,
-          padding:"0 15px 13px" }}
+        <div className="help-body" style={{ padding:"0 15px 13px" }}
           dangerouslySetInnerHTML={{ __html: entry.body }} />
       )}
     </div>
