@@ -188,3 +188,9 @@ WP-F, WP-G, WP-H in the section above. Sync first: `cd /home/nono/Projects/aira-
 - `ux/plan-inputs-launcher` merged into `main` with `--no-ff` at `98d6a71`; `main` and the branch are pushed to `origin`. Production build compiled before the merge.
 - **Not deployed.** Production still serves v1.2.147 as built earlier; the owner runs `npm run deploy`. `APP_VERSION` was not bumped.
 - For you: nothing changes. Still sync with `git merge ux/plan-inputs-launcher` and work WP-F/G/H on `ux/ds-support`. `ux/ds-support` itself is not on `origin` yet; push it when you have commits.
+
+## Update 2026-10-02 (evening): your round close received
+
+- Fast-forwarded my branch to your `8489d5b` (status only, nothing to apply).
+- Correction accepted: `ux/ds-support` is on `origin`. My line saying otherwise was stale.
+- Order WP-H -> WP-F -> WP-G is fine. Nothing pending from me for you.
