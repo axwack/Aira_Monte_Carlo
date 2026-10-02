@@ -471,3 +471,70 @@ Behaviour is otherwise identical: same columns, same `real: false` comparison ag
 ### One thing I did NOT change, and why
 
 The panel still lists the 6 most recent rather than paginating. Adding a pager is a design decision, not a defect; the count line makes the truncation honest in the meantime. Say the word if you would rather it paginate.
+
+---
+
+## #14 — [DeepSeek] The mortality curve is an empty shell on the Stress test chart
+
+**Reported by the owner after deploying v1.2.148:** toggling **Mortality** on Analysis → Stress Test adds a chart at the bottom with axes and a grid but **no curve**.
+
+### Cause: the Stress mount never passes `currentAge`
+
+`App.jsx:11313-11327` mounts `FanChart` for the stress test with `pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, portfolioGoal, earlyRetireTarget, dob, sex` — but **no `currentAge` and no `currentPort`**. `computeSurvivalCurve` bails on a falsy age:
+
+```js
+const mortalityData = useMemo(() => {
+  if (!currentAge) return [];        // stress chart lands here
+
+const mortByAge = useMemo(() => { … }, [mortalityData]);   // {}
+const dataWithMortality = … mortByAge[d.age] ?? null       // every row null
+```
+
+So every `survival` value is `null` and `<Line dataKey="survival">` has nothing to draw.
+
+**Why the chart still appears:** the legend strip is correctly gated twice —
+
+```jsx
+{showMortality && medianDeathAge && (   // hidden here: medianDeathAge is null
+```
+
+— but the chart itself is gated only on the toggle:
+
+```jsx
+{showMortality && (                     // renders anyway, empty
+  <ResponsiveContainer width="100%" height={140}>
+```
+
+That asymmetry is what makes it look like a new, broken graph instead of a toggle that quietly did nothing. It is a defect in its own right, independent of the missing prop.
+
+### Fix 1 — pass the props (App.jsx:11313)
+
+Add to the stress `FanChart`:
+
+```jsx
+                        currentAge={currentAge}
+                        currentPort={params.port}
+```
+
+That is what the Forecast mount at `18988` already does, with a comment explaining `currentAge` must be the DERIVED age rather than `assumptions.currentAge`. The same omission also disables the accumulation ramp and the "you are here" dot on that chart, since `accumData` returns `[]` without `currentPort`.
+
+### Fix 2 — never render an empty survival chart
+
+Gate the second chart on having data, so this class of bug cannot look like a feature:
+
+```jsx
+{showMortality && dataWithMortality.some((d) => d.survival != null) && (
+```
+
+Cheap, and it means a future missing prop shows nothing at all rather than a hollow chart.
+
+### Design question for the owner, not for me to decide
+
+The separate chart below the fan is **deliberate**, not new behaviour — see the comment at `App.jsx:5918-5921`: a shared age x-axis is used *"without faking a dual-axis alignment between dollars and probability."* So the curve is meant to sit underneath, not overlay the fan.
+
+Two consequences worth a decision:
+
+1. If the owner expected the curve to **overlay** the fan chart, that is a change of design, not a bug fix, and it reopens the dual-axis question that comment settled.
+2. On the **Stress test** chart the curve is identical to the Forecast one (it depends only on the user's age and sex, not on the sampled sequence), so it may be redundant there. Dropping the Mortality toggle from the stress chart is a defensible alternative to Fix 1.
+
+I have not applied any of this — `src/App.jsx` is yours. Say which of Fix 1 / Fix 2 / drop-the-toggle you want and I will stop asking.
