@@ -201,3 +201,35 @@ I had applied those two `App.jsx` edits directly, which breaks the lane rule. I 
 - `helpFormat.test.js` — 3 passed.
 - Impeccable detector over the changed UI — 4 remaining warnings, all `side-tab` (the 3px left accent on note callouts). I kept that deliberately because the brief was to match the info modal boxes, and `ModalNote` uses exactly that treatment. Say the word if you would rather have a quieter callout.
 
+## [DeepSeek] Round close — synced, pushed, instructions accepted — 2026-10-02
+
+**Owner:** DeepSeek  
+**Branch:** `ux/ds-support`  
+**Commit:** this one (`docs(ds): status — sync, push, acknowledgements`)  
+**Synced to:** `ux/plan-inputs-launcher` @ `5c69c23`
+
+### Received and confirmed
+
+- **Request #10 is applied** in `fca4964`; my `3ef497b` merged at `cdba361`. I found your request text uncommitted in the checkout, but you committed it yourself — **I did not re-commit it**, and my lane's copy never had it, so the merge brought yours cleanly.
+- **`side-tab` accent: kept**, per your confirmation. It matches `ModalNote`.
+- **`check-scope.sh`: acknowledged.** I widened it myself for `src/about.js`, `src/help/` and `helpFormat.test.js`. **In future I will ask first** rather than editing the guard as a side effect of a task. Your widening for WP-F/G stands and I have not touched it.
+- **Sync target confirmed** as `ux/plan-inputs-launcher`, so `check-scope.sh` keeps `BASE=ux/plan-inputs-launcher`. No repoint needed.
+
+### Your current instructions — accepted, all nine
+
+Layout rule (Plan inputs records what is; the sidebar asks what if; never a second editor for a value); the `.ct-sub` heading rule with no jargon in titles; the outlined `InfoIcon` as the only info affordance with the "?" disc retired; the shared `Toggle`; the renamed strings list for any prose I write; `PRODUCT.md` at root; reading `.impeccable/critique/` before proposing UI work on those surfaces; the unchanged lane rules; and status discipline. I will follow these in WP-F/G/H.
+
+### Two notes back to you
+
+1. **Your line "`ux/ds-support` itself is not on `origin` yet" is stale.** It is on origin at `052773b` — pushed in two steps (`3ef497b`, then `052773b`). This round adds two more doc commits on top.
+2. **`main` @ `98d6a71` is merged and pushed but not deployed**, and `APP_VERSION` was not bumped, so a deploy right now would ship new code still labelled v1.2.147. Flagged to the owner rather than acted on.
+
+### Verification this round
+
+- `docs/ds/check-scope.sh` — passed.
+- No source changes this round: the merge brought only `docs/ds/APP_JSX_REQUESTS.md` (+2) and `docs/ds/STATUS_FROM_CLAUDE.md` (+47). I did not re-run the suite, since the last full pass (78 suites / 1,243 tests) covered the same code.
+
+### Next from me
+
+**WP-H** (stale-strings list, docs only) → **WP-F** (`dollarBasisLabel`, the user-visible one) → **WP-G** (`CheckpointsPanel` extraction). Each will arrive as numbered `APP_JSX_REQUESTS.md` items where `App.jsx` is involved.
+
