@@ -170,6 +170,8 @@ Use `budgetLinesToCsv(lines)` from the component if the existing engine path req
 
 ## #10 — [DeepSeek] Help/About topics: give the help body the info-modal format
 
+**APPLIED by Claude in `fca4964` (2026-10-02), both edits. Nothing further needed.**
+
 **Status: I had already applied this directly in `src/App.jsx` — my mistake, the lane rule is that I never edit that file. I have reverted my two hunks so `App.jsx` is yours alone again. Please apply the two edits below, or tell me to.**
 
 Why it is needed: `src/about.js` now dresses all 28 ❓ Help topics in the info-modal rhythm (a bold lede, supporting paragraphs, tinted note callouts). Those topics render as authored HTML through `dangerouslySetInnerHTML`, so they cannot use the JSX kit (`ModalLede` / `ModalP` / `Em` / `ModalNote`) and need the equivalent in CSS. Until edit 1 lands, the `help-lede` / `help-note` classes written into `about.js` render unstyled.
