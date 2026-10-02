@@ -233,3 +233,51 @@ Layout rule (Plan inputs records what is; the sidebar asks what if; never a seco
 
 **WP-H** (stale-strings list, docs only) → **WP-F** (`dollarBasisLabel`, the user-visible one) → **WP-G** (`CheckpointsPanel` extraction). Each will arrive as numbered `APP_JSX_REQUESTS.md` items where `App.jsx` is involved.
 
+## [DeepSeek] WP-F, WP-G, WP-H complete — 2026-10-02
+
+**Owner:** DeepSeek  
+**Branch:** `ux/ds-support`  
+**Synced to:** `ux/plan-inputs-launcher` @ `5c69c23` (then `main` @ `98d6a71` merged)
+
+### WP-F — the dollar-basis label (`src/engine/mcSelectors.js`) — DONE
+
+`dollarBasisLabel(useReal)` returned **"Today's Dollars"** while its own comment says the Real-$ basis is the first retirement year. Now:
+
+```js
+export function retirementBasisYear(currentAge, retireAge, currentYear) // -> 2041 | null
+export const dollarBasisLabel = (useReal, basisYear)                    // -> "2041 dollars" | "Future dollars"
+```
+
+I added `retirementBasisYear` beyond your brief on purpose: `VerdictHeader` and `MCOverviewCards` each compute that expression inline, and the four call sites would have made six copies. It is the "single" half of the ask.
+
+**One thing to know:** two call sites pass an **age**, and my first version would have printed **"50 dollars"**. `dollarBasisLabel` now refuses anything outside 1900–2200 and returns `"Retirement-year dollars"` instead — honest, not fabricated. Those two sites read that until you apply #11 items 2 and 3. `src/dollarBasisLabel.test.js`, 11 tests.
+
+### WP-G — `src/forecast/CheckpointsPanel.jsx` — READY TO MOUNT
+
+9 tests. All four defects fixed: emoji-only row actions now have text + `aria-label`s; "set baseline" confirms and names the consequence (it rewrites every balance); Save says which field is missing instead of returning silently; the table says when it is showing 6 of N.
+
+It owns its own collapse header (a real `<button>` with `aria-expanded`), so `showCheckpoints` in `MCTab` goes away. Mount line and the now-dead handlers to delete are in **#13**.
+
+### WP-H — stale strings — DONE (docs only)
+
+**#12** lists every item with file:line, old text and the problem. All four data-fact claims were verified against the code rather than transcribed: `SAMPLE_START_YEAR = 1928`, `SAMPLE_END_YEAR = 2025`, and `SP500`/`BONDS`/`INFL` are **98 entries each** — so "99yr", "(1928–2026)" and "2000–2024 actual CPI" are all wrong today, and "50yr Bloomberg" too.
+
+**Two corrections to your list:**
+
+1. **"Run Monte Carlo from the sidebar" is ACCURATE — do not change it.** `MCTab` renders no run control; the only run button is the sidebar's at 18771, labelled `▶ Run Monte Carlo`. Only references to "the Monte Carlo **tab**" are stale.
+2. **`MC_PATHS_LABEL` is correct more often than not.** It is right where a default is described (3149, 11442) and 3475 already prefers the real count. Only places describing a *result* are wrong — plus one you had not listed: the sidebar run button counts the default while running.
+
+**On the Check-in / Checkpoint collision:** they are two different features, not a style choice. `checkIns` (Progress tab, `LS_CHECKINS_KEY`) is the run journal → **"Check-in"**; `assumptions.checkpoints` (Forecast panel) is your real balance vs. the forecast → **"Checkpoint"**. The only misnamed surface is the **year-end modal**, which writes a check-in but says "checkpoint" in three places (#12.5).
+
+### Verification
+
+- `src/dollarBasisLabel.test.js` — 11 passed · `src/checkpointsPanel.test.js` — 9 passed
+- The six suites that render the affected components (`netWorthChart`, `mcBandTable`, `mcOverviewCards`, `verdictHeader`, `p1Fixes`, `noRawMcAccess`) — 48 passed
+- `docs/ds/check-scope.sh` — passed
+- **Full suite — 79 suites passed, 1 skipped; 1,249 tests passed, 14 skipped**
+
+### Two things I want to flag honestly
+
+1. **`dollarBasisLabel`'s fallback is visible.** Until #11 lands, the two sites that pass an age say "Retirement-year dollars" rather than a year. That is deliberate — better an honest non-answer than "50 dollars" — but it is a temporary state only you can finish.
+2. **The `side-tab` detector warning still stands** on `.help-note`, kept because it matches `ModalNote`. Unchanged from last round.
+
