@@ -86,6 +86,7 @@ import SpouseDobField from "./SpouseDobField";
 import { BucketLegend, BucketResetButton } from "./BucketLegend";
 import BudgetEditor, { budgetLinesToCsv, lineError } from "./planInputs/BudgetEditor";
 import { NavContext, GoStep } from "./NavContext";
+import CheckpointsPanel from "./forecast/CheckpointsPanel";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 import { bucketColor } from "./engine/bucketColors";
 import { retirementTarget, formatRemaining } from "./engine/retirementTarget";
@@ -93,7 +94,7 @@ import { ageFromDob, parseCalendarDate, personAgeNow, spouseAgeOffset, spouseAge
 import { survivorFra, survivorReductionFactor, survivorBasis, resolveSurvivorClaimAge } from "./engine/survivorBenefit.js";
 import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationNotice } from "./engine/withdrawalStrategies.js";
 import { _defaultBucket, accountBucketPieces, expandAccountBuckets, clampBucket, bucketFractionsByCategory, bucketBalancesForRow, computeBucket1Runway } from "./engine/buckets.js";
-import { dollarBasisLabel, deflate, mcMedianAtAge, selectPortfolioAtAge, selectTerminalMeanAtAge } from "./engine/mcSelectors.js";
+import { dollarBasisLabel, retirementBasisYear, deflate, mcMedianAtAge, selectPortfolioAtAge, selectTerminalMeanAtAge } from "./engine/mcSelectors.js";
 import { taxableYieldSplit } from "./engine/taxableYield.js";
 // One declaration of every figure's arithmetic, rendered here and enforced by
 // provenance.test.js. Never inline a formula string — it would drift from the test.
@@ -202,8 +203,14 @@ import { IRMAA_2026 } from './data/irmaa2026.js';
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.147";
-export const BUILD_TAG = `[main] v1.2.147 - Plan inputs consolidation: sidebar Configure button, Start over, and stale Profile pointers now link to the right Plan inputs step
+const APP_VERSION = "1.2.148";
+export const BUILD_TAG = `[main] v1.2.148 - Clearer first run and Forecast: facts live in Plan inputs, what-if sliders in the sidebar; plain headings; keyboard access
+- Standalone Configure / Adjust values launcher; Retirement Age, Planning Horizon, US Spending and SS Start Age are edited by the sidebar sliders only
+- After the quick estimate, a "We assumed" card lists what was filled in, and the app opens on the retire age the estimate showed
+- Forecast tab reordered: chart first, then why and what to do, the age table, assumptions, and checkpoints; the "not covered" warning is one line with details on click
+- Checkpoints panel rebuilt (labelled actions, confirm before set baseline); one dollar-basis label naming the retirement year
+- Top bar grouped and de-cluttered; Options card uses one toggle and one info icon; switches and pop-ups work from the keyboard; Help opens one topic at a time
+- PRIOR (v1.2.147): Plan inputs consolidation: sidebar Configure button, Start over, and stale Profile pointers now link to the right Plan inputs step
 - Sidebar Configure button and Start over (with confirm); countdown shows honest years/months and hides until a real date of birth exists
 - Plan inputs gains the Real Estate & Debt step and an inline budget editor in Spending & Expenses; the Analysis view is read-only
 - Edit accounts / Edit split open the Current Savings step; Mortgage/Housing row says why it is empty
@@ -3430,7 +3437,7 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
     <div className="chart-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show || showExplainer ? 8 : 0, flexWrap: "wrap", gap: 6 }}>
         <div className="ct" style={{ marginBottom: 0 }}>
-          📊 Age-by-Age Projection Bands · {dollarBasisLabel(useReal, pcts?.[0]?.age)}
+          📊 Age-by-Age Projection Bands · {dollarBasisLabel(useReal, retirementBasisYear(currentAge, retireAge, CURRENT_YEAR))}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button
@@ -7917,10 +7924,10 @@ function YearEndModal({ room, days, year, onClose, onSaveCheckIn, canCheckIn }) 
         <YearEndBody room={room} days={days} year={year} />
 
         <div style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0", margin: "14px 0 6px" }}>
-          2 &middot; Record a checkpoint
+          2 &middot; Record a check-in
         </div>
         <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 8 }}>
-          A year-end snapshot of your real balances and success rate. Checkpoints anchor the
+          A year-end snapshot of your real balances and success rate. Check-ins anchor the
           projection to what actually happened, so next year&rsquo;s plan starts from fact
           rather than from last year&rsquo;s forecast.
         </div>
@@ -7931,7 +7938,7 @@ function YearEndModal({ room, days, year, onClose, onSaveCheckIn, canCheckIn }) 
             onClick={() => { onSaveCheckIn?.(); setSaved(true); }}
             style={{ fontSize: 12, padding: "5px 12px", opacity: (!canCheckIn || saved) ? 0.5 : 1 }}
           >
-            {saved ? "Checkpoint saved" : "Save checkpoint"}
+            {saved ? "Check-in saved" : "Save check-in"}
           </button>
           <button className="mbtn" onClick={onClose} style={{ fontSize: 12, padding: "5px 12px" }}>
             Close
@@ -9877,7 +9884,7 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
       )}
 
       <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.55, marginTop: 12, borderTop: "1px solid var(--divider)", paddingTop: 10 }}>
-        Guardrails move spending relative to <em>last year's</em> level. The GK rules in force — {Math.round(GK_BAND_PCT * 100)}% band, {Math.round(GK_ADJUST_PCT * 100)}% adjustment, no cut inside the last {GK_LONGEVITY_YEARS} years, inflation capped at {Math.round(GK_INFLATION_CAP * 100)}% — are set on the Monte Carlo tab's ⚙ Advanced Settings.
+        Guardrails move spending relative to <em>last year's</em> level. The GK rules in force — {Math.round(GK_BAND_PCT * 100)}% band, {Math.round(GK_ADJUST_PCT * 100)}% adjustment, no cut inside the last {GK_LONGEVITY_YEARS} years, inflation capped at {Math.round(GK_INFLATION_CAP * 100)}% — are set in the Forecast tab's ⚙ Advanced Settings.
       </div>
     </div>
   );
@@ -11606,7 +11613,7 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
       <div style={{ fontSize: 11, color: "var(--text-faint)", lineHeight: 1.6 }}>
         Plan horizon {Math.max(0, (p.endAge || 0) - effectiveRetireAge(p.retireAge, p.currentAge))} yrs ·
         {" "}{pathCount.toLocaleString()} paths × {stat.n}-year sampling window ({stat.years}) ·
-        both applied on the next run from the Monte Carlo tab.
+        both applied on the next run.
       </div>
     </InfoModal>
   );
@@ -11798,14 +11805,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   // null = not yet touched: the drivers open by themselves when one is flagged as a risk.
   const [showWhy, setShowWhy] = useState(null);
   const [showInputs, setShowInputs] = useState(false);
-  const [showCheckpoints, setShowCheckpoints] = useState(false);
   const [showGaps, setShowGaps] = useState(false);
-  const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [expandedCpId, setExpandedCpId] = useState(null);
-  const [newCpDate, setNewCpDate] = useState("");
-  const [newCpValue, setNewCpValue] = useState("");
-  const [newCpNote, setNewCpNote] = useState("");
 
   // Clamped the same way runMC/simulateDeterministicWithStrategy clamp
   // their own start age (see effectiveRetireAge) — a user who enters a
@@ -11833,8 +11833,9 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   // age (params.endAge) rather than trusting mc.term's implicit horizon,
   // which can differ from endAge when a survivor's clock extends the plan.
   const termAt = (k) => selectPortfolioAtAge(mc, params.endAge, { retireAge: effRetireAge, real, inf, pct: k }) ?? 0;
-  // eslint-disable-next-line no-restricted-properties -- structural metadata (which age the data starts at), not a dollar value.
-  const dollarBasis = dollarBasisLabel(real, mc?.pcts?.[0]?.age ?? effRetireAge);
+  const dollarBasis = dollarBasisLabel(real, retirementBasisYear(params.currentAge, effRetireAge, CURRENT_YEAR));
+  // The run's own path count where a RESULT is described; the default only before a run.
+  const pathsLabel = mc?.N ? mc.N.toLocaleString() : MC_PATHS_LABEL;
   const mortSched = params.mortBalance > 0
     ? mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0)
     : null;
@@ -11939,45 +11940,6 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
 
   // strategyHowItWorks moved to module scope (STRATEGY_HOW_IT_WORKS, next to
   // SimMethodModal) so the hero "Success to Age" ⓘ and this tab share ONE copy.
-
-  const startEdit = (cp) => {
-    setEditingId(cp.id);
-    setNewCpDate(cp.date);
-    setNewCpValue(cp.value.toString());
-    setNewCpNote(cp.note || "");
-    setShowAddCheckpoint(true);
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setNewCpDate("");
-    setNewCpValue("");
-    setNewCpNote("");
-    setShowAddCheckpoint(false);
-  };
-
-  const handleSaveCheckpoint = () => {
-    if (!newCpDate || !newCpValue) return;
-    const cpData = {
-      date: newCpDate,
-      value: Number(newCpValue),
-      note: newCpNote || "",
-    };
-    let updatedCheckpoints;
-    if (editingId) {
-      updatedCheckpoints = checkpoints.map(cp => cp.id === editingId ? { ...cp, ...cpData } : cp);
-    } else {
-      const newCp = { id: Date.now().toString(), ...cpData };
-      updatedCheckpoints = [...checkpoints, newCp];
-    }
-    onUpdateCheckpoints(updatedCheckpoints);
-    setEditingId(null);
-    setNewCpDate("");
-    setNewCpValue("");
-    setNewCpNote("");
-    setShowAddCheckpoint(false);
-  };
-
 
   // A 40+ year retirement runs past the evidence behind two of this
   // model's defaults. The simulation itself is honest — it bootstraps
@@ -12174,7 +12136,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         // collapsible driver detail.
         const narrative =
           mc.rate >= MC_BAND_LOW_RISK
-            ? { head: "Excellent news — your plan shows exceptional resilience.", body: `With a ${fmtPct(mc.rate)} success rate across ${MC_PATHS_LABEL} simulated markets, your plan withstands even historically challenging conditions.` }
+            ? { head: "Excellent news — your plan shows exceptional resilience.", body: `With a ${fmtPct(mc.rate)} success rate across ${pathsLabel} simulated markets, your plan withstands even historically challenging conditions.` }
             : mc.rate >= MC_BAND_MODERATE
             ? { head: "Your plan is on solid ground, with room to strengthen it.", body: `${fmtPct(mc.rate)} of simulated markets fund the plan to age ${params.endAge}. Small adjustments — spending guardrails or conversion timing — often close the remaining gap.` }
             : mc.rate >= MC_BAND_ELEVATED
@@ -12337,7 +12299,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
                     ["Windfalls", "Deposited to the account you chose, then compound"],
                     ["One-off costs", "Added on top of that year's spend"],
                     ["Timing", "Fires in one year only, accumulation or retirement"],
-                    ["Applied to", `All ${MC_PATHS_LABEL} paths + the year-by-year plan`],
+                    ["Applied to", `All ${pathsLabel} paths + the year-by-year plan`],
                   ]} />
                 </div>
               </div>
@@ -12345,9 +12307,9 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, color: "#34d399", marginBottom: 10 }}>MARKET & STATISTICAL MODEL</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-                <InputCard title="Return Distribution" rows={[["Model", "Historical bootstrap"], ["Equity data", "99yr S&P 500 (1928–2026)"], [`Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`, "Equity / Bonds"], [`Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`, "Equity / Bonds"]]} />
-                <InputCard title="Inflation & Guardrails" rows={[["Inflation", "Historical bootstrap"], ["Inflation source", "2000–2024 actual CPI"], ["GK floor", fmtDollar(params.gkFloor) + "/yr"], ["GK ceiling", fmtDollar(params.gkCeiling) + "/yr"]]} />
-                <InputCard title="Simulation Parameters" rows={[["Simulations", `${MC_PATHS_LABEL} paths`], ["Horizon", `Age ${params.endAge || 90} (your plan age)`], ["Withdrawal", getStrategyLabel(params.withdrawalStrategy || "smart")], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
+                <InputCard title="Return Distribution" rows={[["Model", "Historical bootstrap"], ["Equity data", `${SAMPLE_YEARS}yr S&P 500 (${SAMPLE_START_YEAR}–${SAMPLE_END_YEAR})`], [`Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`, "Equity / Bonds"], [`Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`, "Equity / Bonds"]]} />
+                <InputCard title="Inflation & Guardrails" rows={[["Inflation", "Historical bootstrap"], ["Inflation source", `CPI for the same years (${SAMPLE_START_YEAR}–${SAMPLE_END_YEAR})`], ["GK floor", fmtDollar(params.gkFloor) + "/yr"], ["GK ceiling", fmtDollar(params.gkCeiling) + "/yr"]]} />
+                <InputCard title="Simulation Parameters" rows={[["Simulations", `${pathsLabel} paths`], ["Horizon", `Age ${params.endAge || 90} (your plan age)`], ["Withdrawal", getStrategyLabel(params.withdrawalStrategy || "smart")], ["Rental reliability", `${params.abReliability ?? 80}% per year`]]} />
               </div>
             </div>
           </>
@@ -12360,173 +12322,20 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         sub="Record real balances and compare them with the forecast"
         accent="var(--text-muted)"
       />
-      {/* Checkpoint panel */}
-      <div className="chart-card" style={{ marginBottom: 12 }}>
-        <SectionHeader
-          label="Portfolio checkpoints (actual vs. forecast)"
-          open={showCheckpoints}
-          onToggle={() => setShowCheckpoints(!showCheckpoints)}
-          color="var(--accent-teal)"
-          hint={checkpoints?.length ? `${checkpoints.length} saved` : "none saved yet"}
-        />
-        {showCheckpoints && (<>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
-          Add real portfolio values at specific dates to compare against the simulation's projected median path. This helps you see if you're ahead or behind your retirement goals.
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <button
-            onClick={() => {
-              if (showAddCheckpoint) cancelEdit();
-              else {
-                setEditingId(null);
-                setNewCpDate("");
-                setNewCpValue("");
-                setNewCpNote("");
-                setShowAddCheckpoint(true);
-              }
-            }}
-            style={{ background: "rgba(13,148,136,0.2)", border: "1px solid #0d9488", borderRadius: 6, padding: "4px 12px", color: "var(--accent-teal)", cursor: "pointer" }}
-          >
-            {showAddCheckpoint ? "− Hide Form" : "+ Add Checkpoint"}
-          </button>
-        </div>
-        {showAddCheckpoint && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
-            <input type="date" value={newCpDate} onChange={e => setNewCpDate(e.target.value)} style={{ background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
-            <input type="number" placeholder="Portfolio value ($)" value={newCpValue} onChange={e => setNewCpValue(e.target.value)} style={{ width: 140, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }}
-                onFocus={selectAllOnFocus}
-              />
-            <input type="text" placeholder="Note (optional)" value={newCpNote} onChange={e => setNewCpNote(e.target.value)} style={{ width: 240, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "6px 8px" }} />
-            <button onClick={handleSaveCheckpoint} style={{ background: "var(--positive)", border: "none", borderRadius: 6, padding: "6px 16px", color: "white", cursor: "pointer" }}>
-              {editingId ? "Update Checkpoint" : "Save Checkpoint"}
-            </button>
-            {editingId && (
-              <button onClick={cancelEdit} style={{ background: "transparent", border: "1px solid #f87171", borderRadius: 6, padding: "6px 12px", color: "#f87171", cursor: "pointer" }}>
-                Cancel
-              </button>
-            )}
-          </div>
-        )}
-        {checkpoints && checkpoints.length > 0 && (
-          <div style={{ overflowX: "auto", marginTop: 12 }}>
-            <table className="nw-table" style={{ fontSize: 14 }}>
-              <thead>
-                <tr>
-                  <th>Date</th><th>Actual</th><th>MC Median</th><th>vs Forecast</th>
-                  <th>Growth Since</th><th>Status</th><th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...checkpoints].reverse().slice(0, 6).map(cp => {
-                  // Shared helper — same string-compared month-day bug as
-                  // the checkpoint dots in FanChart had.
-                  const age = ageFromDob(dob, cp.date);
-                  // real: false, on purpose — `cp.value` is what the user's
-                  // portfolio actually held on a real calendar date (an
-                  // actual balance, not a forecast), so it's inherently a
-                  // nominal dollar figure. Deflating only the forecast side
-                  // here would compare it against a basis `cp.value` was
-                  // never in.
-                  const p50AtAge  = age !== null
-                    ? (selectPortfolioAtAge(mc, age, { retireAge: effRetireAge, real: false }) ?? 0)
-                    : 0;
-                  const delta     = p50AtAge > 0 ? cp.value - p50AtAge : null;
-                  const status    = p50AtAge > 0 ? (delta > 0 ? "Ahead" : delta < 0 ? "Behind" : "On track") : "Pre‑retirement";
-                  const deltaColor = delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "var(--text-secondary)";
-
-                  // Growth from this checkpoint to NOW
-                  const currentPort  = params?.port || 0;
-                  const growthAbs    = currentPort - cp.value;
-                  const growthPct    = cp.value > 0 ? growthAbs / cp.value : 0;
-                  const growthColor  = growthAbs >= 0 ? "#34d399" : "#f87171";
-
-                  const isExpanded = expandedCpId === cp.id;
-
-                  // Auto-generated narrative
-                  const narrativeAge  = age !== null ? `age ${age}` : "that date";
-                  const vsText        = delta !== null
-                    ? `${Math.abs(delta / cp.value * 100).toFixed(1)}% ${delta >= 0 ? "ahead of" : "behind"} the median forecast (${fmtDollar(p50AtAge)})`
-                    : "before the retirement simulation begins";
-                  const growthText    = `Since this snapshot, the portfolio has ${growthAbs >= 0 ? "grown" : "declined"} ${growthAbs >= 0 ? "+" : ""}${fmtDollar(growthAbs)} (${growthAbs >= 0 ? "+" : ""}${(growthPct * 100).toFixed(1)}%) to today's ${fmtDollar(currentPort)}.`;
-                  const noteText      = cp.note ? ` Note: "${cp.note}".` : "";
-                  const narrative     = `At ${narrativeAge} on ${cp.date ? new Date(cp.date + "T00:00:00").toLocaleDateString() : "—"}, your portfolio was ${fmtDollar(cp.value)} — ${vsText}.${noteText} ${growthText}`;
-
-                  return (
-                    <React.Fragment key={cp.id}>
-                      <tr
-                        onClick={() => setExpandedCpId(isExpanded ? null : cp.id)}
-                        style={{ cursor: "pointer", background: isExpanded ? "rgba(99,102,241,0.08)" : undefined }}
-                      >
-                        <td>
-                          <span style={{ marginRight: 4, fontSize: 10, color: "var(--text-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
-                          {cp.date ? new Date(cp.date + "T00:00:00").toLocaleDateString() : "—"}
-                          {cp.note && <span style={{ marginLeft: 6, fontSize: 14, color: "var(--text-muted)" }}>· {cp.note}</span>}
-                        </td>
-                        <td style={{ fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(cp.value)}</td>
-                        <td style={{ color: "var(--text-muted)" }}>{p50AtAge > 0 ? fmtDollar(p50AtAge) : "—"}</td>
-                        <td style={{ color: deltaColor, fontFamily: "'JetBrains Mono',monospace" }}>
-                          {delta !== null ? (delta >= 0 ? "+" : "") + fmtDollar(delta) : "—"}
-                          {delta !== null && p50AtAge > 0 && (
-                            <span style={{ fontSize: 10, marginLeft: 4 }}>
-                              ({delta >= 0 ? "+" : ""}{(delta / p50AtAge * 100).toFixed(1)}%)
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ color: growthColor, fontFamily: "'JetBrains Mono',monospace" }}>
-                          {(growthAbs >= 0 ? "+" : "") + fmtDollar(growthAbs)}
-                          <span style={{ fontSize: 10, marginLeft: 4 }}>
-                            ({growthAbs >= 0 ? "+" : ""}{(growthPct * 100).toFixed(1)}%)
-                          </span>
-                        </td>
-                        <td style={{ color: deltaColor }}>{status}</td>
-                        <td onClick={e => e.stopPropagation()}>
-                          <button onClick={() => startEdit(cp)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", marginRight: 4 }}>✏️</button>
-                          <button onClick={() => onDeleteCheckpoint(cp.id)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>🗑️</button>
-                          <button onClick={() => onSetBaselineFromCheckpoint(cp.value)} style={{ background: "none", border: "none", color: "var(--accent-teal)", cursor: "pointer", marginLeft: 4 }} title="Roll forward to this value">📍</button>
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr style={{ background: "rgba(99,102,241,0.05)" }}>
-                          <td colSpan={7} style={{ padding: "10px 16px" }}>
-                            <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7, fontStyle: "italic", borderLeft: "3px solid rgba(99,102,241,0.4)", paddingLeft: 12 }}>
-                              {narrative}
-                            </div>
-                            <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
-                              <div style={{ background: "var(--card-bg)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                                <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 2 }}>Snapshot value</div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(cp.value)}</div>
-                              </div>
-                              {p50AtAge > 0 && (
-                                <div style={{ background: "var(--card-bg)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                                  <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 2 }}>vs Median forecast</div>
-                                  <div style={{ fontSize: 14, fontWeight: 700, color: deltaColor, fontFamily: "'JetBrains Mono',monospace" }}>
-                                    {delta >= 0 ? "+" : ""}{fmtDollar(delta)} ({delta >= 0 ? "+" : ""}{(delta / p50AtAge * 100).toFixed(1)}%)
-                                  </div>
-                                </div>
-                              )}
-                              <div style={{ background: "var(--card-bg)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                                <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 2 }}>Growth since snapshot</div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: growthColor, fontFamily: "'JetBrains Mono',monospace" }}>
-                                  {growthAbs >= 0 ? "+" : ""}{fmtDollar(growthAbs)} ({growthAbs >= 0 ? "+" : ""}{(growthPct * 100).toFixed(1)}%)
-                                </div>
-                              </div>
-                              <div style={{ background: "var(--card-bg)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                                <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 2 }}>Current portfolio</div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(currentPort)}</div>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-        </>)}
-      </div>
+      {/* The panel is DeepSeek's src/forecast/CheckpointsPanel.jsx (WP-G): labelled
+          row actions, a confirm before "set baseline", and a reason when Save
+          cannot proceed. It owns its own collapse header. */}
+      <CheckpointsPanel
+        checkpoints={checkpoints}
+        mc={mc}
+        retireAge={effRetireAge}
+        dob={dob}
+        currentPort={params?.port || 0}
+        fmtDollar={fmtDollar}
+        onUpdate={onUpdateCheckpoints}
+        onDelete={onDeleteCheckpoint}
+        onSetBaseline={onSetBaselineFromCheckpoint}
+      />
 
       {/* Disclaimer LAST, matching the Withdrawal tab's placement and the
           earlier design-authority ruling recorded there: a "not financial
@@ -12949,7 +12758,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
             {fmtDollar(finalNW)}
           </div>
           <div className="ms">
-            {showRE ? "Incl." : "Excl."} real estate · {dollarBasisLabel(real)}
+            {showRE ? "Incl." : "Excl."} real estate · {dollarBasisLabel(real, retirementBasisYear(p.currentAge, p.retireAge, CURRENT_YEAR))}
             {dataStopsEarly && (
               <span style={{ color: "var(--accent-gold)" }}> · projection stops here, not {planAge}</span>
             )}
@@ -13049,7 +12858,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
             <div>
               <div className="ct" style={{ margin: 0 }}>{showRE ? "Net worth projection" : "Portfolio projection"}</div>
               <div className="ct-sub" style={{ margin: "2px 0 0" }}>
-                Typical outcome, every 5 years to age {lastDataAge ?? planAge} · {dollarBasisLabel(real)}{showRE ? "" : " · excludes real estate"}
+                Typical outcome, every 5 years to age {lastDataAge ?? planAge} · {dollarBasisLabel(real, retirementBasisYear(p.currentAge, p.retireAge, CURRENT_YEAR))}{showRE ? "" : " · excludes real estate"}
               </div>
             </div>
             <span
@@ -18640,10 +18449,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               >
                 <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.9 }}>
                   <div>
-                    📈 <span style={{ color: "var(--accent-teal)" }}>Equity:</span> 99yr S&P bootstrap [-30 / +30%]
+                    📈 <span style={{ color: "var(--accent-teal)" }}>Equity:</span> {SAMPLE_YEARS}yr S&P bootstrap [-30 / +30%]
                   </div>
                   <div>
-                    📊 <span style={{ color: "var(--accent-purple)" }}>Bonds:</span> 50yr Bloomberg [-15 / +20%]
+                    📊 <span style={{ color: "var(--accent-purple)" }}>Bonds:</span> {SAMPLE_YEARS}yr bond history [-15 / +20%]
                   </div>
                   <div>
                     📉  <span style={{ color: "var(--accent-gold)" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
@@ -18868,7 +18677,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 background: stale ? "linear-gradient(135deg,#b45309,#d97706)" : undefined,
               }}
             >
-              {running ? `Running ${MC_PATHS_LABEL} paths...` : stale ? "⚠ Inputs changed — Re-run" : "▶ Run Monte Carlo"}
+              {running ? `Running ${Math.round(Number(params?.mcPaths) || MC_PATHS).toLocaleString()} paths...` : stale ? "⚠ Inputs changed — Re-run" : "▶ Run Monte Carlo"}
             </button>
             {lastRunAt && !running && (
               <div style={{ fontSize: 10, color: "var(--text-faint)", textAlign: "center", marginTop: 5 }}>
@@ -19184,7 +18993,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         rmdAge={rmdAge}
                         inf={inf}
                         useReal={real}
-                        title={`Forecast Portfolio · Retirement Age ${endAge} · ${MC_PATHS_LABEL} Scenarios`}
+                        title={`Forecast Portfolio · Plan age ${endAge} · ${mc.N.toLocaleString()} scenarios`}
                         checkpoints={assumptions.checkpoints}
                         earlyRetireTarget={assumptions.earlyRetireTarget}
                         dob={assumptions.dob}

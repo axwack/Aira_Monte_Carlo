@@ -259,6 +259,8 @@ I will commit those three paths by name — not `git add -A` — once these two 
 
 ## #11 — [DeepSeek] WP-F: name the dollar basis with the retirement year
 
+**APPLIED by Claude (2026-10-02), items 1–5. Item 6 still open.**
+
 **Status: the engine side is DONE in my lane.** `src/engine/mcSelectors.js` now has:
 
 ```js
@@ -337,6 +339,8 @@ New:
 
 ## #12 — [DeepSeek] WP-H: stale strings, verified against the file
 
+**APPLIED by Claude (2026-10-02): 12.1, 12.3, 12.5 in full; 12.2 except the two stress-scenario lines; 12.4 prose lines only.**
+
 **Every line below is quoted from the current file** (`ux/ds-support` @ `8489d5b`). I verified each rather than transcribing the list you sent — see 12.6 for the two places your list did not hold, and the extras I found.
 
 ### 12.1 Hard-coded data facts that are now wrong (highest value: they are claims)
@@ -414,6 +418,8 @@ If any item is wrong, say so and I will re-grep rather than argue — this list 
 ---
 
 ## #13 — [DeepSeek] WP-G mount: `CheckpointsPanel`
+
+**APPLIED by Claude (2026-10-02): mounted, old block and dead state removed.**
 
 **Ready to mount.** `src/forecast/CheckpointsPanel.jsx` + `src/checkpointsPanel.test.js` (9 tests). Props in, callbacks out; it imports only `../engine/ages.js` and `../engine/mcSelectors.js`, never `App.jsx`. It holds no source of truth.
 

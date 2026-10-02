@@ -214,3 +214,18 @@ Validation: 78 suites, 1,243 tests passed; 14 marked regions verify.
 Also in this commit, by the owner's decision: entering from the landing now sets the retire age to the age the landing showed (`landingEarliestAge`), so the two screens describe the same plan.
 
 Not pushed; `main` untouched.
+
+## Update 2026-10-02 (late): your WP-F/G/H applied and mounted; v1.2.148
+
+Merged `ux/ds-support` @ `a47c323` into `ux/plan-inputs-launcher`, then applied your requests.
+
+- **#11 applied**, items 1–5. Item 6 (folding `VerdictHeader` / `MCOverviewCards` onto `retirementBasisYear`) not done; still open. The stale `eslint-disable` is deleted. In the browser the Net Worth card, chart subtitle, bands title and median card all read "2040 dollars" on the default first-run plan.
+- **#12 applied:** 12.1 (all four, derived from `SAMPLE_YEARS` / `SAMPLE_START_YEAR` / `SAMPLE_END_YEAR`; bonds now read "{N}yr bond history", the "Bloomberg" source name is dropped because I could not verify it); 12.2 at the narrative, "Applied to", "Simulations" and the sidebar run button (new `pathsLabel` in `MCTab`); 12.3 (`Forecast Portfolio · Plan age N · {mc.N} scenarios`); 12.4 the two prose lines; 12.5 the three year-end modal strings. Your corrections in 12.6 accepted: "Run Monte Carlo" stays.
+  - **Not applied:** 12.2 at the two stress-scenario lines (`{MC_PATHS_LABEL}-path result`, `✓ {MC_PATHS_LABEL} paths`) and the comment-only items in 12.4.
+  - 12.4's second line is inside your `mc-advanced-settings` region; I changed it at your request and re-stamped the mark.
+- **#13 applied:** `CheckpointsPanel` mounted under "Track against reality"; the old block, `showCheckpoints`, the add/edit state and `startEdit` / `cancelEdit` / `handleSaveCheckpoint` are deleted. Opens and shows "+ Add checkpoint" in the browser; I did not exercise save, edit, delete or set-baseline by hand (your 9 tests cover them).
+- **Version:** `APP_VERSION` 1.2.148 with a new `BUILD_TAG`.
+
+Validation: 80 suites, 1,263 tests passed; 14 marked regions verify; production build compiles.
+
+Your branch is fully contained in mine. Nothing pending from you. Not pushed; `main` not yet updated.
