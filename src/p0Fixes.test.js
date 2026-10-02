@@ -25,7 +25,7 @@ const P = {
   properties: [], mortBalance: 0, mortExtra: 0,
 };
 
-describe("Runs out (median) wording", () => {
+describe("Runs out wording", () => {
   const hdr = (mc) => text(<VerdictHeader mc={mc} inf={2.5} endAge={92} currentAge={60} retireAge={60} swr="3.5" swrBenchmark={0.04} real={false} />);
   test("tooltip no longer claims 'Never' means fewer than half failed, and 'thin' is gone", () => {
     const t = hdr(runMC(P, 92, 200, 7, true));

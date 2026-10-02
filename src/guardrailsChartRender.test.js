@@ -113,7 +113,7 @@ test("GK guardrails chart mounts for a funded plan and shows the spending-path s
     );
   }).not.toThrow();
   // The deterministic schedule rendered (not the empty-state fallback)...
-  expect(text).toContain("Deterministic Schedule");
+  expect(text).toContain("Steady-return schedule");
   expect(text).not.toContain("No data available");
   // ...and the guardrail view is present for a GK-family strategy (tabbed now:
   // Spending Path · Adjustment Events · Across All Scenarios).
@@ -141,7 +141,7 @@ test("non-guardrail strategy (bengen) renders the schedule but hides the guardra
       <DeterministicWithdrawalView p={{ ...FUNDED, withdrawalStrategy: "bengen" }} inf={2.5} withdrawalStrategy="bengen" smartRows={[]} />
     );
   }).not.toThrow();
-  expect(text).toContain("Deterministic Schedule");
+  expect(text).toContain("Steady-return schedule");
   // Bengen is not a guardrail strategy, so the guardrail view is absent.
   expect(text).not.toContain("Adjustment Events");
 });
