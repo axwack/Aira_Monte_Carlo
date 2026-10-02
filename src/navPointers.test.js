@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import fs from "fs";
 import path from "path";
 import { NavContext, GoStep } from "./NavContext";
-import { PROFILE_STEP_SAVINGS, PROFILE_STEP_SPENDING, PROFILE_STEP_SETTINGS } from "./App";
+import { PROFILE_STEP_SAVINGS, PROFILE_STEP_MONEY_IN, PROFILE_STEP_SPENDING, PROFILE_STEP_SETTINGS } from "./App";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
@@ -17,6 +17,7 @@ test("step constants match the wizard order", () => {
   const steps = SRC.slice(SRC.indexOf("const STEPS = ["));
   const labels = [...steps.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
   expect(labels[PROFILE_STEP_SAVINGS]).toBe("Current Savings");
+  expect(labels[PROFILE_STEP_MONEY_IN]).toBe("Money In");
   expect(labels[PROFILE_STEP_SPENDING]).toBe("Spending & Expenses");
   expect(labels[PROFILE_STEP_SETTINGS]).toBe("Settings");
 });

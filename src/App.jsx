@@ -3951,7 +3951,7 @@ const CSS = `
   .tog-row { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; gap:8px; flex-wrap:nowrap; }
   .sb-card > .tog-row:last-child { margin-bottom:0; }
   .tog-label { font-size:12px; line-height:18px; color:#cbd5e1; font-weight:500; flex:1; min-width:0; }
-  .tog { width:34px; height:18px; border-radius:9px; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
+  .tog { width:34px; height:18px; border:0; padding:0; border-radius:9px; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
   .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.4); }
   .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-sans); transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); flex-shrink:0; }
   .run-btn:hover { opacity:0.9; box-shadow:0 6px 20px rgba(14,165,233,0.35); }
@@ -4094,10 +4094,18 @@ const CSS = `
   .gk-bar { background:rgba(14,165,233,0.07); border:1px solid rgba(14,165,233,0.2); border-radius:9px; padding:11px 15px; font-size:12px; color:#bae6fd; }
   .cfg-btn { display:block; width:100%; margin:0 0 12px; padding:9px 12px; border:0; border-radius:8px; background:var(--accent-teal); color:#04201c; font-size:13px; font-weight:800; letter-spacing:0.02em; cursor:pointer; text-align:center; }
   .cfg-btn:hover { filter:brightness(1.08); }
-  .cfg-btn:focus-visible, .sb-edit:focus-visible, .donut-btn:focus-visible { outline:2px solid var(--accent-teal); outline-offset:2px; }
+  .cfg-btn:focus-visible, .sb-edit:focus-visible, .donut-btn:focus-visible, .tog:focus-visible, .info-trig:focus-visible, .sb-title[role=button]:focus-visible { outline:2px solid var(--accent-teal); outline-offset:2px; }
   .cfg-launch { margin:0; min-height:44px; flex-shrink:0; }
   .cfg-launch:active { transform:translateY(1px); }
   .cfg-launch[aria-current] { background:transparent; color:var(--accent-teal); box-shadow:inset 0 0 0 1.5px var(--accent-teal); }
+  .assume-row { display:flex; justify-content:space-between; align-items:baseline; gap:10px; width:100%; padding:7px 0; border:0; border-top:1px solid rgba(255,255,255,0.06); background:none; color:var(--text-primary); font:inherit; font-size:12px; text-align:left; cursor:pointer; }
+  .assume-row span:last-child { color:var(--accent-teal); font-size:11px; font-weight:600; text-decoration:underline; flex-shrink:0; }
+  .assume-row:focus-visible { outline:2px solid var(--accent-teal); outline-offset:2px; }
+  .gap-row { display:flex; align-items:baseline; gap:9px; width:100%; padding:9px 13px; border:1px solid rgba(251,191,36,0.32); border-radius:9px; background:rgba(251,191,36,0.07); color:#cbd5e1; font:inherit; font-size:12.5px; line-height:1.5; text-align:left; cursor:pointer; }
+  .gap-row > span:first-child, .gap-row strong { color:var(--accent-gold); }
+  .gap-row:hover { background:rgba(251,191,36,0.11); }
+  .gap-row:focus-visible { outline:2px solid var(--accent-gold); outline-offset:2px; }
+  .gap-more { color:var(--accent-gold); font-weight:700; white-space:nowrap; text-decoration:underline; text-underline-offset:3px; }
   .donut-btn { padding:0; border:0; background:none; border-radius:50%; cursor:pointer; flex-shrink:0; }
   .donut-btn:hover { filter:brightness(1.2); }
   .sb-edit { background:none; border:0; padding:0; color:var(--accent-teal); font-size:10px; font-weight:600; text-decoration:underline; cursor:pointer; }
@@ -4424,6 +4432,7 @@ function Toggle({ val, onChange, label, accent = "var(--positive)", hint, infoTi
             accent={infoAccent || accent}
             trigger={
               <span style={{ marginLeft: 6, color: "var(--text-secondary)", cursor: "pointer", display: "inline-flex", verticalAlign: "-2px" }}
+                    role="img" aria-label={`About ${typeof label === "string" ? label : "this option"}`}
                     title="Tap or click for more info">
                 <InfoIcon size={13} />
               </span>
@@ -4436,13 +4445,15 @@ function Toggle({ val, onChange, label, accent = "var(--positive)", hint, infoTi
           </InfoModal>
         )}
       </span>
-      <div
+      <button
+        type="button" role="switch" aria-checked={!!val}
+        aria-label={typeof label === "string" ? label : undefined}
         className="tog"
         onClick={() => onChange(!val)}
         style={{ background: val ? accent : "rgba(255,255,255,0.1)" }}
       >
-        <div className="tok" style={{ left: val ? 18 : 2 }} />
-      </div>
+        <span className="tok" style={{ left: val ? 18 : 2 }} />
+      </button>
     </div>
   );
 }
@@ -4450,14 +4461,20 @@ function Toggle({ val, onChange, label, accent = "var(--positive)", hint, infoTi
 // About page content — edit everything below this line freely.
 // No component changes needed, just update the objects and arrays.
 
-function CollapsibleAboutCard({ entry, defaultOpen = false }) {
-  const [open, setOpen] = React.useState(defaultOpen);
+// `open` + `onToggle` make it controlled, so a list can keep one topic open at
+// a time (Help). Without them it manages itself (search results stay all-open).
+function CollapsibleAboutCard({ entry, defaultOpen = false, open: controlled, onToggle }) {
+  const [selfOpen, setSelfOpen] = React.useState(defaultOpen);
+  const open = controlled ?? selfOpen;
+  const ref = React.useRef(null);
+  // When the topic above collapses, this one jumps up the page: keep it in view.
+  React.useEffect(() => { if (controlled) ref.current?.scrollIntoView?.({ block: "nearest" }); }, [controlled]);
   return (
-    <div style={{ background:"var(--card-bg)",
+    <div ref={ref} style={{ background:"var(--card-bg)",
       border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, overflow:"hidden" }}>
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={onToggle || (() => setSelfOpen(o => !o))}
         style={{ width:"100%", display:"flex", alignItems:"center",
           justifyContent:"space-between", gap:8, padding:"13px 15px",
           background:"transparent", border:"none", cursor:"pointer",
@@ -4632,6 +4649,7 @@ function AboutButton() {
 function HelpButton() {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const [openId, setOpenId] = React.useState(null); // one topic open at a time
 
   const overlay = open ? ReactDOM.createPortal(
     <div
@@ -4707,13 +4725,13 @@ function HelpButton() {
                     textTransform:"uppercase", marginBottom:9 }}>{g}</div>
                   <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
                     {filtered.filter(e => e.group === g).map(e => (
-                      <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} />
+                      <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} {...(q ? {} : { open: openId === e.id, onToggle: () => setOpenId((id) => (id === e.id ? null : e.id)) })} />
                     ))}
                   </div>
                 </div>
               ))}
               {ungrouped.map(e => (
-                <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} />
+                <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} {...(q ? {} : { open: openId === e.id, onToggle: () => setOpenId((id) => (id === e.id ? null : e.id)) })} />
               ))}
             </div>
           );
@@ -4822,9 +4840,18 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger, maxWidth = 48
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const trigRef = React.useRef(null);
   const setOpen = (next) => {
     if (isControlled) { if (!next && onClose) onClose(); }
     else setUncontrolledOpen(next);
+    if (!next) trigRef.current?.focus(); // hand focus back to whatever opened it
+  };
+  // Keyboard users open with Enter/Space; the trigger is a span (not a
+  // <button>) because some callers place it inside other controls.
+  const trigProps = {
+    ref: trigRef, role: "button", tabIndex: 0, "aria-haspopup": "dialog", className: "info-trig",
+    onClick: () => setOpen(true),
+    onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } },
   };
   const overlay = open ? ReactDOM.createPortal(
     <div
@@ -4833,8 +4860,12 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger, maxWidth = 48
         display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}
     >
       <div
+        role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined}
+        tabIndex={-1}
+        ref={(el) => { if (el && !el.contains(document.activeElement)) el.focus(); }}
+        onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } }}
         onClick={e => e.stopPropagation()}
-        style={{ background:"#0f1729", border:`1px solid ${withAlpha(accent, "44")}`, borderRadius:12,
+        style={{ outline:"none", background:"#0f1729", border:`1px solid ${withAlpha(accent, "44")}`, borderRadius:12,
           padding:28, maxWidth, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.6)",
           maxHeight: "calc(100vh - 48px)", display: "flex", flexDirection: "column" }}
       >
@@ -4851,7 +4882,7 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger, maxWidth = 48
             <div style={{ fontSize:16, fontWeight:800, color:"var(--text-primary)", lineHeight:1.3,
               borderBottom:`2.5px solid ${accent}`, paddingBottom:4 }}>{title}</div>
           </div>
-          <button onClick={() => setOpen(false)}
+          <button onClick={() => setOpen(false)} aria-label="Close"
             style={{ background:"transparent", border:"none", color:"var(--text-muted)",
               cursor:"pointer", fontSize:18, lineHeight:1, marginTop:2, flexShrink:0 }}>✕</button>
         </div>
@@ -4870,12 +4901,12 @@ function InfoModal({ title, children, accent = "#60a5fa", trigger, maxWidth = 48
   return (
     <>
       {trigger ? (
-        <span onClick={() => setOpen(true)} style={{ cursor:"pointer", display:"inline-flex" }}>
+        <span {...trigProps} style={{ cursor:"pointer", display:"inline-flex" }}>
           {trigger}
         </span>
       ) : isControlled ? null : (
         <span
-          onClick={() => setOpen(true)}
+          {...trigProps} aria-label="More info"
           style={{ display:"inline-flex", alignItems:"center", justifyContent:"center",
             width:16, height:16, borderRadius:"50%", background:"var(--card-border)",
             border:`1px solid ${withAlpha(accent, "44")}`, color:accent, fontSize:10, fontWeight:700,
@@ -7342,7 +7373,7 @@ const modeDescs = {
                 }}
               >
                 <div className="met">
-                  <div className="ml">Lifetime RMDs — Without</div>
+                  <div className="ml">Lifetime RMDs — Without Conversions</div>
                   <div
                     className="mv"
                     style={{ color: "#f87171", fontSize: 16 }}
@@ -11768,6 +11799,7 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
   const [showWhy, setShowWhy] = useState(null);
   const [showInputs, setShowInputs] = useState(false);
   const [showCheckpoints, setShowCheckpoints] = useState(false);
+  const [showGaps, setShowGaps] = useState(false);
   const [showAddCheckpoint, setShowAddCheckpoint] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [expandedCpId, setExpandedCpId] = useState(null);
@@ -12052,6 +12084,63 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           already in the sidebar D-Day card and Profile) rather than left as a
           lone orphan card. Easy to restore any of these if wanted. */}
 
+      {/* What the forecast leaves out: one line that still says WHAT is missing
+          and WHICH WAY it errs (so the honesty survives without a click), with
+          the detail and the "what to do" in the standard info pop-up. It was a
+          full-width block taking a fifth of the screen. Click, not hover: a
+          hover-only pop-up never opens on a phone. */}
+      {(longHorizon || preMedicare > 0) && (<>
+        <button type="button" className="gap-row" onClick={() => setShowGaps(true)} aria-haspopup="dialog">
+          <span aria-hidden="true">⚠</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            {preMedicare > 0 && longHorizon
+              ? <><strong>Not in this forecast:</strong> {preMedicare} years of health insurance before Medicare, plus 2 long-retirement caveats. The plan looks better than it is.</>
+              : preMedicare > 0
+              ? <><strong>Not in this forecast:</strong> health insurance for your {preMedicare} years before Medicare. The plan looks better than it is.</>
+              : <><strong>{planHorizon}-year retirement:</strong> the spending curve and the 4% rule are stretched past their evidence.</>}
+          </span>
+          <span className="gap-more">What to do ›</span>
+        </button>
+        <InfoModal title="What this forecast leaves out" accent="var(--accent-gold)" maxWidth={560} bodyMaxHeight="60vh" open={showGaps} onClose={() => setShowGaps(false)}>
+          <ModalLede>These are not modelled, and they make the plan look better than it is.</ModalLede>
+          {preMedicare > 0 && (<>
+            <ModalP>
+              <Em color="var(--accent-gold)">Health insurance before Medicare.</Em>{" "}
+              You have {preMedicare} years to cover before 65. AiRA models catastrophic healthcare
+              shocks but not ACA marketplace premiums.
+            </ModalP>
+            <ModalNote><strong>What to do:</strong> include those premiums in your annual spending yourself.</ModalNote>
+            <ModalP>
+              <Em color="var(--accent-gold)">Roth conversions before 65.</Em>{" "}
+              The Roth conversion planner optimises against tax brackets and IRMAA, and IRMAA does not
+              begin until 63. It does not know about ACA premium subsidies, which phase out on income.
+            </ModalP>
+            <ModalNote><strong>What to do:</strong> before 65, check the subsidy you would lose before acting on a recommended conversion. It can cost more than the conversion saves in tax.</ModalNote>
+          </>)}
+          {longHorizon && (<>
+            <ModalP>
+              <Em color="var(--accent-gold)">The spending curve is extrapolated.</Em>{" "}
+              The Blanchett smile measures retirees in their 60s and 70s; applied from age {effRetireAge} it
+              assumes your real spending drifts down to about{" "}
+              {Math.round(spendingSmileFactor(Math.min(80, params.endAge), effRetireAge) * 100)}% of today's by 80.
+              That is well past the data it was fitted on.
+            </ModalP>
+            <ModalNote><strong>What to do:</strong> turn off <strong>Reduce spending with age</strong> in the sidebar Options for a flat-real plan. It is a stricter and, over {planHorizon} years, more defensible test.</ModalNote>
+            <ModalP>
+              <Em color="var(--accent-gold)">4% is a 30-year rule.</Em>{" "}
+              Bengen and Guyton-Klinger were derived for ~30-year retirements. The success rate
+              is computed honestly for the rate you chose; it is the rule of thumb, not the simulation,
+              that does not transfer.
+            </ModalP>
+            <ModalNote><strong>What to do:</strong> over {planHorizon} years the sustainable rate is materially lower, commonly cited near 3.0–3.5%. Compare your withdrawal rate with that.</ModalNote>
+          </>)}
+          <ModalP>
+            What is modelled: retiring at {effRetireAge} is fully simulated across all {planHorizon} years,
+            with the early-withdrawal penalty, the bridge to Social Security, and bracket-capped drawdown.
+          </ModalP>
+        </InfoModal>
+      </>)}
+
       {/* Why, and what to do: the reasons behind the number, then what the model leaves out. */}
       <GroupHeading
         label="Why, and what to do"
@@ -12133,54 +12222,6 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         );
       })()}
 
-
-      {/* Lifted out of the collapsed inputs panel: it says the plan looks better
-          than it is and what to change, so it must not need a click to be seen. */}
-          {(longHorizon || preMedicare > 0) && (
-            <div style={{ background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.32)", borderRadius: 10, padding: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--accent-gold)", marginBottom: 8 }}>
-                ⚠ {longHorizon ? `${planHorizon}-YEAR RETIREMENT — ` : ""}WHAT THIS MODEL DOES NOT COVER
-              </div>
-              <div style={{ fontSize: 12.5, color: "#cbd5e1", lineHeight: 1.65, marginBottom: 10 }}>
-                Retiring at {effRetireAge} is fully simulated — {MC_PATHS_LABEL} paths across all {planHorizon} years,
-                with the early-withdrawal penalty, the bridge to Social Security, and bracket-capped
-                drawdown all modelled. What follows is not modelled, and it makes the plan look{" "}
-                <strong style={{ color: "#e2e8f0" }}>better</strong> than it is:
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {preMedicare > 0 && (
-                  <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                    <strong style={{ color: "var(--accent-gold)" }}>Health insurance before Medicare is not modelled.</strong>{" "}
-                    You have {preMedicare} years to cover before 65. AiRA models catastrophic healthcare
-                    shocks but not ACA marketplace premiums — you must include them in your annual
-                    spending yourself. Related: the Roth conversion planner optimises against tax
-                    brackets and IRMAA, and IRMAA does not begin until 63. It does not know about ACA
-                    premium subsidies, which phase out on income — so before 65 a conversion it
-                    recommends can cost more in lost subsidy than it saves in tax.
-                  </div>
-                )}
-                {longHorizon && (
-                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                  <strong style={{ color: "var(--accent-gold)" }}>The spending curve is extrapolated.</strong>{" "}
-                  The Blanchett smile measures retirees in their 60s and 70s; applied from age {effRetireAge} it
-                  assumes your real spending drifts down to about{" "}
-                  {Math.round(spendingSmileFactor(Math.min(80, params.endAge), effRetireAge) * 100)}% of today's by 80.
-                  That is well past the data it was fitted on. Turn off <strong>Smile spending</strong> in
-                  the sidebar for a flat-real plan — a stricter and, over {planHorizon} years, more defensible test.
-                </div>
-                )}
-                {longHorizon && (
-                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                  <strong style={{ color: "var(--accent-gold)" }}>4% is a 30-year rule.</strong>{" "}
-                  Bengen and Guyton-Klinger were derived for ~30-year retirements. Over {planHorizon} years the
-                  sustainable rate is materially lower — commonly cited near 3.0–3.5%. The success rate
-                  above is computed honestly for the rate you chose; it is the <em>rule of thumb</em>, not
-                  the simulation, that does not transfer.
-                </div>
-                )}
-              </div>
-            </div>
-          )}
 
       {/* Year by year */}
       {bandTable}
@@ -12914,15 +12955,22 @@ export function NetWorthTab({ p, mc, inf, real }) {
             )}
           </div>
         </div>
+        {/* A card for something the user never entered is an empty state dressed
+            as a metric ("Mortgage-free —", "Real estate equity $0"). Each shows
+            only once there is something to show; the line under the row says
+            what is missing and where to add it. */}
+        {p.mortBalance > 0 && (
         <div className="met">
           <div className="ml">Mortgage‑free</div>
           <div className="mv" style={{ color: "var(--text-primary)", fontSize: 18 }}>
-            {p.mortBalance > 0 ? mortSched.payoffYr : "—"}
+            {mortSched.payoffYr}
           </div>
           <div className="ms">
-            {p.mortBalance > 0 ? (p.mortExtra > 0 ? "With extra payments" : "Standard payments") : <>No mortgage modeled · <GoStep step={PROFILE_STEP_REAL_ESTATE}>add one</GoStep></>}
+            {p.mortExtra > 0 ? "With extra payments" : "Standard payments"}
           </div>
         </div>
+        )}
+        {reTotal > 0 && (
         <div className="met">
           <div className="ml">Real estate equity</div>
           <div className="mv" style={{ color: "var(--text-primary)", fontSize: 18 }}>
@@ -12930,6 +12978,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
           </div>
           <div className="ms">Not counted in your portfolio</div>
         </div>
+        )}
         {/* This card used to render three different quantities under one
             label ("Safe spending target") and one strategy caption. Only
             two of the three are computed; the middle branch — by far the
@@ -12980,6 +13029,12 @@ export function NetWorthTab({ p, mc, inf, real }) {
           );
         })()}
       </div>
+      {!(p.mortBalance > 0 && reTotal > 0) && (
+        <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: -4 }}>
+          {[!(reTotal > 0) && "No real estate entered", !(p.mortBalance > 0) && "No mortgage modeled"].filter(Boolean).join(" · ")}
+          {" · "}<GoStep step={PROFILE_STEP_REAL_ESTATE}>add in Plan inputs</GoStep>
+        </div>
+      )}
 
       <div className="chart-card">
         <div
@@ -14100,6 +14155,7 @@ function RealEstateStep({ values, onChange }) {
 
 /** ProfileWizard step index of "Current Savings" (accounts, balances, split). Keep in sync with STEPS below. */
 export const PROFILE_STEP_SAVINGS = 1;
+export const PROFILE_STEP_MONEY_IN = 2;
 export const PROFILE_STEP_SPENDING = 3;
 export const PROFILE_STEP_REAL_ESTATE = 4;
 export const PROFILE_STEP_SETTINGS = 6;
@@ -17388,6 +17444,11 @@ export default function AiRAForecaster() {
       el.querySelector("input")?.focus({ preventScroll: true });
     }, 0);
   }, []);
+  // A clickable section title that also works from the keyboard.
+  const twisty = (open, fn) => ({
+    role: "button", tabIndex: 0, "aria-expanded": open, onClick: fn,
+    onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); } },
+  });
   const tabsRef = useRef(null);
   const openPlanInputs = useCallback((step = null) => {
     navigateToTab("assumptions", null, step);
@@ -17409,6 +17470,9 @@ export default function AiRAForecaster() {
   // and never sees it. Dismissal still holds for the session (React
   // state), so entering the app is a one-click, non-repeating action.
   const [showWelcome, setShowWelcome] = useState(() => !loadProfileFromLocal());
+  // True for the session that arrived through the quick estimate: the app then
+  // owes the visitor a list of what it assumed beyond their four answers.
+  const [fromLanding, setFromLanding] = useState(false);
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
   // Opening the app presents the last run you asked for, rather than spending
@@ -18037,8 +18101,13 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       setSp(inp.spend);
       updateAssumption("dob", `${yr - inp.curAge}-06-15`);
       updateAssumption("dobIsEstimate", true); // June 15 is a placeholder, not a birthday
+      // The landing's headline is "You can retire at N". Open the app on that
+      // same N, or the two screens describe different plans.
+      const landingAge = landingIsRetired(inp) ? null : landingEarliestAge(inp);
+      if (landingAge != null) { setRetAge(landingAge); updateAssumption("retireAge", landingAge); }
       setStale(true);
       pendingRunRef.current = true;
+      setFromLanding(true);
     }
     dismissWelcome();
     setTab(inp ? "networth" : "assumptions");
@@ -18471,6 +18540,37 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               aria-current={activeTab === "assumptions" ? "page" : undefined}>
               {activeTab === "assumptions" ? "Editing plan inputs" : `${profileSavedBefore ? "Adjust values" : "Configure your plan"} →`}
             </button>
+            {/* The landing shows a rule-of-thumb answer; the app shows the full
+                simulation, which needs more than four answers. Say what was
+                filled in on the visitor's behalf, each line a way to fix it —
+                otherwise the two screens just look like they disagree. Only
+                assumptions that still hold are listed. */}
+            {fromLanding && (() => {
+              const funded = (assumptions.accounts || []).filter((a) => (a.balance || 0) > 0);
+              const items = [
+                assumptions.dobIsEstimate && [`Born mid-${String(assumptions.dob || "").slice(0, 4)}`, () => openPlanInputs(0)],
+                funded.length === 1 && [`All ${fmtDollar(port)} in one ${ACCOUNT_CATEGORIES.find((c) => c.key === funded[0].category)?.label || "account"} account`, () => openPlanInputs(PROFILE_STEP_SAVINGS)],
+                ssb === BLANK_PROFILE.ssb && [`Social Security of ${fmtDollar(ssb)}/yr from age ${assumptions.ssAge}`, () => openPlanInputs(PROFILE_STEP_MONEY_IN)],
+                retAge === BLANK_PROFILE.retireAge && [`Retiring at ${retAge}, planning to age ${endAge}`, () => focusLever("retireAge")],
+              ].filter(Boolean);
+              if (!items.length) return null;
+              return (
+                <div className="sb-card" data-testid="we-assumed">
+                  <div className="sb-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>We assumed</span>
+                    <button type="button" className="sb-edit" style={{ textTransform: "none", letterSpacing: 0 }} onClick={() => setFromLanding(false)}>Hide</button>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 8 }}>
+                    The quick estimate was a rule of thumb. These results come from the full simulation, using your four answers plus the assumptions below. Change any that are wrong.
+                  </div>
+                  {items.map(([text, go]) => (
+                    <button key={text} type="button" className="assume-row" onClick={go}>
+                      <span>{text}</span><span aria-hidden="true">Change</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
             <div className="sb-card">
               <CountdownCard
                 dob={assumptions.dob}
@@ -18598,7 +18698,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
 
             <div className="sb-card">
-              <div className="sb-title" onClick={() => setSbCoreOpen(v => !v)}
+              <div className="sb-title" {...twisty(sbCoreOpen, () => setSbCoreOpen(v => !v))}
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
                 <span>{sbCoreOpen ? "▾" : "▸"} Plan basics</span>
               </div>
@@ -18666,7 +18766,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               </>)}
             </div>
             <div className="sb-card">
-              <div className="sb-title" onClick={() => setSbMacroOpen(v => !v)}
+              <div className="sb-title" {...twisty(sbMacroOpen, () => setSbMacroOpen(v => !v))}
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
                 <span>{sbMacroOpen ? "▾" : "▸"} Market assumptions</span>
               </div>
@@ -18701,7 +18801,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
 
             <div className="sb-card">
-              <div className="sb-title" onClick={() => setSbOptionsOpen(v => !v)} style={{ cursor: "pointer" }}>
+              <div className="sb-title" {...twisty(sbOptionsOpen, () => setSbOptionsOpen(v => !v))} style={{ cursor: "pointer" }}>
                 {sbOptionsOpen ? "▾" : "▸"} Options
               </div>
               {sbOptionsOpen && (<>

@@ -194,3 +194,23 @@ WP-F, WP-G, WP-H in the section above. Sync first: `cd /home/nono/Projects/aira-
 - Fast-forwarded my branch to your `8489d5b` (status only, nothing to apply).
 - Correction accepted: `ux/ds-support` is on `origin`. My line saying otherwise was stale.
 - Order WP-H -> WP-F -> WP-G is fine. Nothing pending from me for you.
+
+## Update 2026-10-02 (night): accessibility, empty cards, Help, "We assumed", compact warning — COMMITTED, safe to merge
+
+You are on WP-F/G/H; none of this touches the checkpoints block, `dollarBasisLabel` or the strings on your list. Quote text from the committed tree (`612a579`), and I will reconcile when I apply your requests.
+
+Changed (one commit on `ux/plan-inputs-launcher`):
+- `InfoModal`: trigger is `role="button"` + Enter/Space (`.info-trig`); panel has `role="dialog"`, `aria-modal`, takes focus, closes on Escape, returns focus. `info-modal-shell` mark re-stamped. **For WP-G:** use `InfoModal` as is; do not build your own dialog.
+- `Toggle`: the switch is a `<button role="switch" aria-checked>`; `.tok` is a `<span>`.
+- Sidebar section titles are keyboard-openable (`twisty()` helper).
+- Net Worth: "Mortgage-free" and "Real estate equity" cards render only when entered; one line under the row says what is missing.
+- Help: `CollapsibleAboutCard` takes optional `open` / `onToggle`; Help keeps one topic open at a time (search results still all open). No change to `about.js`.
+- First-run "We assumed" card in the sidebar (`fromLanding` state, `.assume-row`); new export `PROFILE_STEP_MONEY_IN = 2`, covered in `navPointers.test.js`.
+- Forecast: the "does not cover" block is now a one-line `.gap-row` under the result cards opening an `InfoModal` titled "What this forecast leaves out". Its copy now says "Reduce spending with age" instead of "Smile spending" — **drop that string from WP-H if you listed it.**
+- Roth page: "Lifetime RMDs — Without Conversions".
+
+Validation: 78 suites, 1,243 tests passed; 14 marked regions verify.
+
+Also in this commit, by the owner's decision: entering from the landing now sets the retire age to the age the landing showed (`landingEarliestAge`), so the two screens describe the same plan.
+
+Not pushed; `main` untouched.
