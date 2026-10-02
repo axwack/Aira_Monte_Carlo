@@ -4289,7 +4289,7 @@ const Tip = ({ active, payload, label }) => {
             <div key={i} style={{ color: c, marginBottom: 1, display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: c, display: "inline-block", flexShrink: 0 }} />
               <span style={{ color: "var(--text-secondary)" }}>{p.name}: </span>
-              {p.name === "P(alive)" ? `${Math.round(p.value * 100)}%` : fmtDollar(p.value)}
+              {fmtDollar(p.value)}
             </div>
           );
         })}
@@ -5511,9 +5511,8 @@ const SSA_QX_FEMALE = [
   0.30462,                                  // 100
 ];
 
-/* P(alive at toAge | alive at fromAge) from the same SSA period life table
- * the fan chart's mortality overlay uses, one mortality source for the whole
- * app. Ages below 50 are treated as q=0 (negligible for this app's planning
+/* P(alive at toAge | alive at fromAge) from the SSA period life table above,
+ * the one mortality source for the whole app. Ages below 50 are treated as q=0 (negligible for this app's planning
  * ranges); ages past 100 hold the age-100 rate. Exported for tests. */
 export function survivalToAge(fromAge, toAge, sex = "blended") {
   if (toAge <= fromAge) return 1;
@@ -5528,26 +5527,8 @@ export function survivalToAge(fromAge, toAge, sex = "blended") {
   return sex === "male" ? survM : sex === "female" ? survF : (survM + survF) / 2;
 }
 
-function computeSurvivalCurve(startAge, endAge, sex = "blended") {
-  const maleQx   = SSA_QX_MALE;
-  const femaleQx = SSA_QX_FEMALE;
-  const curve = [];
-  let survM = 1, survF = 1;
-  for (let age = startAge; age <= Math.min(endAge, 100); age++) {
-    const i = Math.min(age - 50, 50);
-    if (i >= 0) {
-      survM *= (1 - (maleQx[i]   || 0));
-      survF *= (1 - (femaleQx[i] || 0));
-    }
-    const surv = sex === "male" ? survM : sex === "female" ? survF : (survM + survF) / 2;
-    curve.push({ age, survival: Math.max(0, surv) });
-  }
-  return curve;
-}
-
-function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, hhProfile, preRetireEq, sex, hoveredAge }) {
+function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, hhProfile, preRetireEq, hoveredAge }) {
   const [showTargets, setShowTargets] = useState(true);
-  const [showMortality, setShowMortality] = useState(false);
 
   const rawData = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
 
@@ -5615,35 +5596,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     return Math.max(maxPortfolio, portfolioGoal || 0, earlyRetireTarget || 0, currentPort || 0) * 1.05;
   }, [data, portfolioGoal, earlyRetireTarget, currentPort]);
 
-  // Mortality overlay — survival probability merged into chart data
-  const mortalityData = useMemo(() => {
-    if (!currentAge) return [];
-    return computeSurvivalCurve(currentAge, Math.max(...(data.map(d => d.age).filter(Boolean)), 100), sex || "blended");
-  }, [currentAge, data, sex]);
-
-  const mortByAge = useMemo(() => {
-    const m = {};
-    mortalityData.forEach(d => { m[d.age] = d.survival; });
-    return m;
-  }, [mortalityData]);
-
-  // Median death age (50% survival) for the reference line
-  const medianDeathAge = useMemo(() => {
-    const pt = mortalityData.find(d => d.survival <= 0.5);
-    return pt ? pt.age : null;
-  }, [mortalityData]);
-
-  const q25DeathAge = useMemo(() => {
-    const pt = mortalityData.find(d => d.survival <= 0.25);
-    return pt ? pt.age : null;
-  }, [mortalityData]);
-
-  // Merge survival into chart data for the secondary axis
-  const dataWithMortality = useMemo(() =>
-    data.map(d => ({ ...d, survival: mortByAge[d.age] ?? null })),
-    [data, mortByAge]
-  );
-
   return (
     <div className="chart-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
@@ -5651,24 +5603,9 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           {title}
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Toggle val={showMortality} onChange={setShowMortality} label="Mortality" accent="var(--negative)" />
           <Toggle val={showTargets} onChange={setShowTargets} label="Milestones" accent="#f59e0b" />
         </div>
       </div>
-      {showMortality && medianDeathAge && (
-        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 8, padding: "6px 10px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="rgba(239,68,68,0.6)" strokeWidth="1.5" strokeDasharray="5 3"/></svg>
-            <span style={{ fontSize: 11, color: "rgba(239,68,68,0.8)", fontWeight: 600 }}>P(alive) — chart below</span>
-          </div>
-          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            SSA {sex === "male" ? "male" : sex === "female" ? "female" : "blended"} survival probability by age.
-            50% of people your age have died by <strong style={{ color: "#e2e8f0" }}>age {medianDeathAge}</strong>
-            {q25DeathAge ? <>, 75% by <strong style={{ color: "#e2e8f0" }}>age {q25DeathAge}</strong></> : ""}.
-            For most retirees, dying before going broke is far more likely than running out of money.
-          </span>
-        </div>
-      )}
       {showTargets && (() => {
         const currentYear   = new Date().getFullYear();
         const pctsData      = pcts || [];
@@ -5716,7 +5653,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
       })()}
       <ResponsiveContainer width="100%" height={640}>
         <ComposedChart
-          data={dataWithMortality}
+          data={data}
           margin={{ top: 28, right: 48, left: 0, bottom: 0 }}
         >
           <defs>
@@ -5765,7 +5702,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           {/* Hover highlight — when a row in the age-band table below is hovered,
               spotlight that age column and mark its percentile values on the fan. */}
           {hoveredAge != null && (() => {
-            const row = dataWithMortality.find((d) => d.age === hoveredAge);
+            const row = data.find((d) => d.age === hoveredAge);
             if (!row) return null;
             const dot = (val, color) =>
               val == null ? null : (
@@ -5914,38 +5851,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           })()}
         </ComposedChart>
       </ResponsiveContainer>
-
-      {/* Survival probability — its own chart, its own axis (%), sharing the
-          age x-axis with the portfolio chart above so the two still read
-          together without faking a dual-axis alignment between dollars and
-          probability. */}
-      {showMortality && (
-        <ResponsiveContainer width="100%" height={140}>
-          <ComposedChart data={dataWithMortality} margin={{ top: 8, right: 48, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
-            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 11 }} />
-            <YAxis
-              stroke="rgba(239,68,68,0.3)"
-              tick={{ fill: "rgba(239,68,68,0.5)", fontSize: 10 }}
-              tickFormatter={(v) => `${Math.round(v * 100)}%`}
-              domain={[0, 1]}
-              tickCount={6}
-              width={MONEY_AXIS_WIDTH}
-            />
-            <Tooltip content={<Tip />} />
-            {medianDeathAge && (
-              <ReferenceLine x={medianDeathAge} stroke="rgba(239,68,68,0.5)" strokeWidth={1} strokeDasharray="3 3"
-                label={{ value: "50% alive", fill: "rgba(239,68,68,0.7)", fontSize: 9, position: "insideTopRight" }} />
-            )}
-            {q25DeathAge && (
-              <ReferenceLine x={q25DeathAge} stroke="rgba(239,68,68,0.3)" strokeWidth={1} strokeDasharray="2 4"
-                label={{ value: "25% alive", fill: "rgba(239,68,68,0.5)", fontSize: 9, position: "insideTopRight" }} />
-            )}
-            <Line type="monotone" dataKey="survival" stroke="rgba(239,68,68,0.6)"
-              strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="P(alive)" connectNulls />
-          </ComposedChart>
-        </ResponsiveContainer>
-      )}
 
       {/* Unified Legend */}
       <div className="leg">
@@ -11225,7 +11130,6 @@ function ScenariosTab({
   earlyRetireTarget,
   portfolioGoal,
   dob,
-  sex,
   assumptions,
   onAssumptionChange,
   onSaveConversionOverride,
@@ -11323,7 +11227,6 @@ function ScenariosTab({
             portfolioGoal={portfolioGoal}
             earlyRetireTarget={earlyRetireTarget}
             dob={dob}
-            sex={sex}
           />
           {/* Year-by-year S&P sequence — the raw input the fan chart and the
               two headline numbers above are already built from, so it's
@@ -11796,7 +11699,7 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
   );
 }
 
-function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, sex, onSetBaselineFromCheckpoint, withdrawalStrategy, inf = 0, real = false, onAssumptionChange, chart, bandTable }) {
+function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, onSetBaselineFromCheckpoint, withdrawalStrategy, inf = 0, real = false, onAssumptionChange, chart, bandTable }) {
   // Every top-level panel on this tab is a twisty, and every one starts shut.
   // The tab had grown to five full-height explainer panels stacked above the
   // result cards, so the number the user actually came for sat a screen and a
@@ -17660,8 +17563,7 @@ export default function AiRAForecaster() {
       hcMin: assumptions.hcMin,
       hcMax: assumptions.hcMax,
       cashRealReturn: assumptions.cashRealReturn ?? 3.0,
-      // Mortality weighting for runMC's "money outlives you" metric — same
-      // sex setting the fan chart's SSA survival overlay uses.
+      // Mortality weighting for runMC's "money outlives you" metric.
       sex: assumptions.sex || "blended",
       taxableBasisPct: assumptions.taxableBasisPct ?? 70,
       taxableYieldPct: assumptions.taxableYieldPct ?? 0,
@@ -18961,7 +18863,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         )
                       }
                       dob={assumptions.dob}
-                      sex={assumptions.sex}
                       inf={inf}
                       real={real}
                       withdrawalStrategy={assumptions.withdrawalStrategy}
@@ -19001,14 +18902,12 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         // Derived age, not assumptions.currentAge — that
                         // stored field never changes when the birthday
                         // does, so the fan kept plotting the old age (and
-                        // the accumulation ramp, "you are here" dot, and
-                        // survival curve with it).
+                        // the accumulation ramp and "you are here" dot with it).
                         currentAge={currentAge}
                         currentPort={params.port}
                         contrib={params.contrib}
                         hhProfile={params}
                         preRetireEq={params.preRetireEq ?? 91}
-                        sex={assumptions.sex}
                         hoveredAge={hoveredAge}
                       />
                       )}
@@ -19093,7 +18992,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     withdrawalStrategy={assumptions.withdrawalStrategy}
                     checkpoints={assumptions.checkpoints}
                     dob={assumptions.dob}
-                    sex={assumptions.sex}
                     assumptions={assumptions}
                     onAssumptionChange={updateAssumption}
                     onSaveConversionOverride={(year, amount, income) => {
