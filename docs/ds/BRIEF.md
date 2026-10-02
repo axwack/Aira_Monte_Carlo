@@ -43,3 +43,32 @@ Claude may add commits on `ux/configure-and-countdown`. Pull them in with:
 
 ## Handing back
 Commit small, with clear messages, and tell the user "ready to merge". Claude merges.
+
+## Standing workflow rule — owner, 2026-10-03
+
+**Update the graph, read the codebase through it, then run code.**
+
+Before executing anything in a checkout — tests, build, dev server, deploy — refresh that checkout's knowledge graph and orient through it first:
+
+```bash
+cd <checkout> && graphify update .        # AST only, no LLM needed
+grep -m1 "Built from commit" graphify-out/GRAPH_REPORT.md
+git rev-parse HEAD                        # these two must match
+```
+
+Then find things through the graph instead of grepping blind:
+
+- `graphify god-nodes` — the architectural hubs, most-connected first
+- `graphify query "<question>"` — BFS traversal, returns nodes with `file:line`
+- `graphify explain "<symbol>"` / `graphify affected "<symbol>"` — neighbours, and what a change touches
+- `graphify path "A" "B"` — how two things connect
+
+Practical notes, learned the hard way:
+
+- `graphify-out/` is gitignored, so updating never dirties the working tree.
+- Skip the rebuild only when `Built from commit` already equals `git rev-parse HEAD`.
+- **The `src/App.jsx` "syntax error" warning is a known tree-sitter JSX false positive.** Verify with `@babel/parser` before believing it; never chase it.
+- 8 `.sql` files stay out of the graph until `tree_sitter_sql` is installed (`pip install "graphifyy[sql]"`).
+- Community labels need an LLM backend (`graphify label`); AST extraction and every query above do not.
+
+Last full refresh: `8d942b1` — 165 files, 1,260 nodes, 3,065 edges, 77 communities.
