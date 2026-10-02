@@ -245,3 +245,37 @@ Your branch is fully contained in mine. Nothing pending from you. Not pushed; `m
 ## Update 2026-10-03: Forecast tab second critique (no code changed)
 
 The owner says the Forecast tab is "still too much on the page". Critique saved under `.impeccable/critique/` (24/40). Findings: the tab is 3.5 screenfuls; the chart card is 845px and the always-open drivers card 697px; three pairs of figures look contradictory (strip vs driver withdrawal rate, "100% of scenarios succeed" under 99.7%, hero future-dollar balance vs retirement-year median). A slimmer layout is proposed to the owner and awaits approval. Nothing for you yet; do not start on the Forecast tab.
+
+## Update 2026-10-03 (later): mortality chart removed (#15); Forecast slim-down applied
+
+Merged `ux/ds-support` @ `fea5a25` into `ux/plan-inputs-launcher`. Not pushed; `main` untouched; no version bump yet.
+
+**#15 applied** (`8d942b1`). #14 not applied, as instructed. `survivalToAge`, the SSA tables and `mwRate` are untouched. Also removed: the `P(alive)` tooltip branch and the pass-through `sex` prop on `StressTab` / `MCTab`.
+
+**Forecast slim-down applied** (owner approved the 24/40 proposal). Measured at 1440x900 on the default first-run plan: the Forecast tab is 1.87 screenfuls (was 3.46); no horizontal scroll at 390px.
+
+Layout, top to bottom:
+- Verdict strip has a fifth cell, **"Stress test 2000–12"** (`VerdictHeader` takes `stress`). The pop-up is now titled "Your headline answers". Mark `claude-verdict-header` re-stamped.
+- The run details ("3,000 paths · sampling …", "How this works", Advanced Settings) moved out of `MCTab` into the shell, on the Simulation | Guardrails row.
+- The amber "Not in this forecast" row is first inside the tab.
+- Chart card: no title on the Forecast mount; Trigger and Reassess are one line each; **Chart | Table** switch (`FanChart` takes `table`; `MCBandTable` takes `embedded`); legend is 4 items; chart height is `clamp(320px, 50vh, 640px)`.
+- One percentile row under the chart: "Balance at age N · {basis}" with 10th / 25th / Median / 75th / 90th.
+- **"What's driving this"**: one `<details>` line per driver; the first opens only when it is a risk.
+- "Simulation inputs & assumptions" and your `CheckpointsPanel`, both collapsed. No change to your file.
+
+Removed UI text (drop from any string list you keep): the "STRESS TEST (2000–2012)" card with its HIGH CONFIDENCE / SOLID / NEEDS ATTENTION / AT RISK badge and the risk sentence (including "F-You Money"); the "MEDIAN FINAL BALANCE" card and its pop-up; "Why your score is N%" and the "Excellent news…" summary; the three group headings ("Why, and what to do", "What this is based on", "Track against reality"); "Monte Carlo simulation —"; the "Forecast Portfolio · Plan age N · N scenarios" chart title; the Trigger / Reassess explanatory sentences; "D-Day" in the goal status (the chart's own reference line still says it).
+
+The three contradictory pairs:
+- **Withdrawal rate.** `explainScore(p, mc, initWR)` takes `computeInitialWR(p)` as an optional third argument and uses it, so the driver shows the strip's figure (both 2.4% on the default plan). Without it the old estimate is the fallback. The detail sentence now reads "Year one draws $X from the portfolio — N% of a projected $Y at retirement."
+- **"100% of scenarios succeed" under 99.7%.** The summary is gone from the page, and `explainScore` prints the rate to one decimal in `headline` and in the depletion driver.
+- **Hero balance basis.** The hero's "at age N" balance follows the Real-$ toggle and prints `dollarBasisLabel` ("2040 dollars"), the same figure and label as the percentile row.
+
+Also fixed: "about 1 years" / "1 yrs" in the early-penalty driver.
+
+Validation: 80 suites, 1,263 tests passed; 14 marked regions verify; desktop and 390px checked in headless Chrome, no console errors.
+
+Not done, still open:
+- [P2] Y-axis scaled to the 75th percentile; the odd top tick (49,835,238); the clipped "Trig" label.
+- The table-to-chart hover highlight (`hoveredAge`) can no longer be seen, since chart and table are not on screen together. Code left in place.
+- #11 item 6, #12.2 (two stress lines), #12.4 comments: not swept in.
+- The side-tab finding you pointed at (the summary's left rule) went with the summary; the strip and hero still use a left accent rule.

@@ -3405,8 +3405,8 @@ function RotatingAnalogue({ rate, endAge }) {
  * per age, plus the share of simulated paths still funded at that age.
  * Milestone rows (SS claiming, RMD start) are flagged so the table reads
  * like the chart's reference lines. */
-function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, hoveredAge, onHoverAge, totalPaths, retireAge, landmarkOnly = false }) {
-  const [show, setShow] = useState(false);
+function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, hoveredAge, onHoverAge, totalPaths, retireAge, landmarkOnly = false, embedded = false }) {
+  const [show, setShow] = useState(embedded);
   // "What do these numbers mean?" — an inline, mobile-readable explainer
   // (not a browser tooltip) condensing the About page's "still-funded-percent"
   // card. Independent of `show` so it's reachable even with the table collapsed.
@@ -3434,7 +3434,7 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
   // Two definitions of "a good score" is how five copies happened once before.
   const fundedColor = (a) => rateColor(a ?? 1);
   return (
-    <div className="chart-card">
+    <div className={embedded ? undefined : "chart-card"}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show || showExplainer ? 8 : 0, flexWrap: "wrap", gap: 6 }}>
         <div className="ct" style={{ marginBottom: 0 }}>
           📊 Age-by-Age Projection Bands · {dollarBasisLabel(useReal, retirementBasisYear(currentAge, retireAge, CURRENT_YEAR))}
@@ -3447,9 +3447,11 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
           >
             ℹ️ What do these numbers mean?
           </button>
-          <button onClick={() => setShow(!show)} className="mbtn" style={{ fontSize: 12, padding: "3px 8px" }}>
-            {show ? "Hide Table" : "Show Table"}
-          </button>
+          {!embedded && (
+            <button onClick={() => setShow(!show)} className="mbtn" style={{ fontSize: 12, padding: "3px 8px" }}>
+              {show ? "Hide Table" : "Show Table"}
+            </button>
+          )}
         </div>
       </div>
       {showExplainer && (
@@ -5527,8 +5529,9 @@ export function survivalToAge(fromAge, toAge, sex = "blended") {
   return sex === "male" ? survM : sex === "female" ? survF : (survM + survF) / 2;
 }
 
-function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, hhProfile, preRetireEq, hoveredAge }) {
+function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpoints, earlyRetireTarget, dob, portfolioGoal, currentAge, currentPort, contrib, hhProfile, preRetireEq, hoveredAge, table }) {
   const [showTargets, setShowTargets] = useState(true);
+  const [view, setView] = useState("chart");
 
   const rawData = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
 
@@ -5598,60 +5601,46 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
 
   return (
     <div className="chart-card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-        <div className="ct" style={{ margin: 0 }}>
-          {title}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
+        <div style={{ minWidth: 0 }}>
+          {title && <div className="ct" style={{ margin: 0 }}>{title}</div>}
+          {showTargets && (() => {
+            const currentYear = new Date().getFullYear();
+            // One line per goal: the amount, then when the median path reaches it.
+            const goalLine = (icon, name, amount, color) => {
+              const cross = (pcts || []).find(d => d.p50 >= amount);
+              const diff = cross ? cross.age - (retireAge || 65) : 0;
+              const yrs = `${Math.abs(diff)} yr${Math.abs(diff) !== 1 ? "s" : ""}`;
+              return (
+                <span>
+                  <strong style={{ color }}>{icon} {name} ${Math.round(amount).toLocaleString()}</strong>{" "}
+                  {!cross
+                    ? "not reached on the median path"
+                    : `age ${cross.age} · ${currentYear + (cross.age - (currentAge || 60))} · ${diff < 0 ? `${yrs} before retirement` : diff === 0 ? "at retirement" : `${yrs} after retirement`}`}
+                </span>
+              );
+            };
+            return (
+              <div style={{ display: "flex", gap: "2px 18px", flexWrap: "wrap", fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                {goalLine("🚀", "Trigger", earlyRetireTarget, "#8b5cf6")}
+                {goalLine("🎯", "Reassess", portfolioGoal, "#f59e0b")}
+              </div>
+            );
+          })()}
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {table && ["chart", "table"].map((k) => (
+            <button key={k} type="button" className={`mbtn ${view === k ? "on" : ""}`} aria-pressed={view === k} onClick={() => setView(k)} style={{ padding: "3px 10px" }}>
+              {k === "chart" ? "Chart" : "Table"}
+            </button>
+          ))}
           <Toggle val={showTargets} onChange={setShowTargets} label="Milestones" accent="#f59e0b" />
         </div>
       </div>
-      {showTargets && (() => {
-        const currentYear   = new Date().getFullYear();
-        const pctsData      = pcts || [];
-        const reassessCross = pctsData.find(d => d.p50 >= portfolioGoal);
-        const triggerCross  = pctsData.find(d => d.p50 >= earlyRetireTarget);
-
-        const crossBadge = (cross, accentColor) => {
-          if (!cross) return <span style={{ fontSize: 10, color: "var(--text-faint)", fontStyle: "italic" }}>Not reached on median path</span>;
-          const crossYear = currentYear + (cross.age - (currentAge || 60));
-          const diff = cross.age - (retireAge || 65);
-          const timing = diff < 0
-            ? <span style={{ color: "#34d399" }}>{Math.abs(diff)} yr{Math.abs(diff) !== 1 ? "s" : ""} before D‑Day (Retirement) ✅</span>
-            : diff === 0
-            ? <span style={{ color: "var(--accent-gold)" }}>At retirement ✅</span>
-            : <span style={{ color: "#fb923c" }}>{diff} yr{diff !== 1 ? "s" : ""} after D‑Day</span>;
-          return (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-              <div style={{ background: `${withAlpha(accentColor, "22")}`, border: `1px solid ${withAlpha(accentColor, "55")}`, borderRadius: 6, padding: "3px 10px", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: accentColor, fontFamily: "'JetBrains Mono',monospace" }}>Age {cross.age} · {crossYear}</span>
-                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>·</span>
-                <span style={{ fontSize: 11 }}>{timing}</span>
-              </div>
-            </div>
-          );
-        };
-
-        return (
-          <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
-          <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#8b5cf6", marginBottom: 3 }}>🚀 Trigger — ${Math.round(earlyRetireTarget).toLocaleString()}</div>
-              <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                Your early-exit number. If the median hits this before D-Day, the math says you're done — regardless of your original timeline.
-              </div>
-              {crossBadge(triggerCross, "#8b5cf6")}
-            </div>
-            <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 3 }}>🎯 Reassess — ${Math.round(portfolioGoal).toLocaleString()}</div>
-              <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                Your minimum acceptable goal. When the median MC path crosses this line, your plan is already viable — anything above is upside.
-              </div>
-              {crossBadge(reassessCross, "#f59e0b")}
-            </div>
-          </div>
-        );
-      })()}
-      <ResponsiveContainer width="100%" height={640}>
+      {view === "table" ? table : (<>
+      {/* Height follows the viewport so the whole chart fits on one screen. */}
+      <div style={{ height: "clamp(320px, 50vh, 640px)" }}>
+      <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
           data={data}
           margin={{ top: 28, right: 48, left: 0, bottom: 0 }}
@@ -5851,20 +5840,15 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           })()}
         </ComposedChart>
       </ResponsiveContainer>
+      </div>
 
-      {/* Unified Legend */}
+      {/* Legend: the two goal lines are named in the status line above. */}
       <div className="leg">
         {[
           ...(showTargets && accumData.length > 0 ? [{ c: "#60a5fa", l: "Expected path" }] : []),
-          { c: FAN_COLORS["90th"], l: "90th %ile" },
-          { c: FAN_COLORS["75th"], l: "75th %ile" },
           { c: FAN_COLORS["Median"], l: "Median" },
-          { c: FAN_COLORS["25th"], l: "25th %ile" },
-          { c: FAN_COLORS["10th"], l: "10th %ile" },
-          ...(showTargets ? [
-            { c: "#f59e0b", l: `🎯 Reassess $${Math.round(portfolioGoal).toLocaleString()}` },
-            { c: "#8b5cf6", l: `🚀 Trigger $${Math.round(earlyRetireTarget).toLocaleString()}` },
-          ] : []),
+          { c: `linear-gradient(90deg, ${FAN_COLORS["75th"]} 50%, ${FAN_COLORS["25th"]} 50%)`, l: "75th / 25th %ile" },
+          { c: `linear-gradient(90deg, ${FAN_COLORS["90th"]} 50%, ${FAN_COLORS["10th"]} 50%)`, l: "90th / 10th %ile" },
         ].map((i) => (
           <div key={i.l} className="li">
             <div className="ll" style={{ background: i.c }} />
@@ -5872,6 +5856,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           </div>
         ))}
       </div>
+      </>)}
     </div>
   );
 }
@@ -11625,12 +11610,12 @@ function MCOverviewCards({ mc, inf = 0, real = false, endAge, currentAge, retire
  * (§41 A3), never "today's dollars". The engine's actual spend floor is
  * `mc.gkStats.spendMinReal` — a different number, available if wanted.
  */
-function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAge, swr, swrBenchmark = 0.04 }) {
+function VerdictHeader({ mc, stress, real = false, inf = 0, endAge, currentAge, retireAge, swr, swrBenchmark = 0.04 }) {
   if (!mc) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", marginBottom: 10, background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, fontSize: 11.5, color: "var(--text-muted)" }}>
         <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>No verdict yet.</span>
-        <span>Run Monte Carlo from the sidebar and this strip will hold your four headline answers here, on every tab.</span>
+        <span>Run Monte Carlo from the sidebar and this strip will hold your headline answers here, on every tab.</span>
       </div>
     );
   }
@@ -11680,16 +11665,24 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
         </span>
         {exhaust != null && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>in the paths that fail</span>}
       </div>
+      {stress && (<>
+        <div style={sep} />
+        <div style={fact}>
+          <span style={k}>Stress test 2000–12</span>
+          <span style={{ ...v, color: rateColor(stress.rate) }}>{fmtPct(stress.rate)}</span>
+        </div>
+      </>)}
       <div style={sep} />
       <div style={fact}>
-        <InfoModal title="Your four headline answers" accent={INFO_ACCENT.method}
-          trigger={<span aria-label="What are these four numbers?" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, color: INFO_ACCENT.method, fontSize: 10.5, fontWeight: 600 }}><InfoIcon size={13} /> What are these?</span>}>
-          <ModalLede>These four numbers answer the questions that actually matter, before you open a single tab.</ModalLede>
+        <InfoModal title="Your headline answers" accent={INFO_ACCENT.method}
+          trigger={<span aria-label="What are these numbers?" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, color: INFO_ACCENT.method, fontSize: 10.5, fontWeight: 600 }}><InfoIcon size={13} /> What are these?</span>}>
+          <ModalLede>These numbers answer the questions that actually matter, before you open a single tab.</ModalLede>
           <ModalP><Em color={INFO_ACCENT.money}>Withdrawal rate</Em> — first-year spending net of guaranteed income, divided by the portfolio at retirement, against a {(swrBenchmark * 100).toFixed(0)}% benchmark. It sizes the draw the plan starts from; the success rate on the card above is what says whether that rate holds to age {endAge}.</ModalP>
           <ModalP><Em color={INFO_ACCENT.positive}>Money outlives you</Em> — the same paths, re-weighted by your odds of actually being alive at each failure age. It is always at least as high as the funded-to-age success rate on the card above, and it answers the actuarial question rather than the worst-case one.</ModalP>
           <ModalP><Em color={INFO_ACCENT.money}>Worst case</Em> — the 10th-percentile ending balance: 90% of simulated outcomes finished above it. A small worst case beside a high success rate is one bad sequence away from joining the failures.</ModalP>
           <ModalP><Em color={INFO_ACCENT.risk}>Runs out</Em> — the typical age at which the simulated paths that ran out of money did so (the middle one). It describes only the paths that failed, not your whole plan, so a high success rate can sit beside a young age here. "Never" appears only when no simulated path ran out. When few paths fail, this figure rests on few paths: treat it as indicative.</ModalP>
-          <ModalNote accent={INFO_ACCENT.method}>All four are read from the one simulation you last ran — nothing here is recomputed. Change an input and the strip goes stale with the rest of the results until you re-run.</ModalNote>
+          {stress && <ModalP><Em color={INFO_ACCENT.risk}>Stress test</Em> — the share of paths funded to age {endAge} when retirement opens with the actual 2000–2012 S&amp;P 500 sequence. The year-by-year detail is on Analysis → Stress Test.</ModalP>}
+          <ModalNote accent={INFO_ACCENT.method}>All of them are read from the one simulation you last ran — nothing here is recomputed. Change an input and the strip goes stale with the rest of the results until you re-run.</ModalNote>
         </InfoModal>
       </div>
       <div style={{ marginLeft: "auto" }}>
@@ -11699,14 +11692,7 @@ function VerdictHeader({ mc, real = false, inf = 0, endAge, currentAge, retireAg
   );
 }
 
-function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, onSetBaselineFromCheckpoint, withdrawalStrategy, inf = 0, real = false, onAssumptionChange, chart, bandTable }) {
-  // Every top-level panel on this tab is a twisty, and every one starts shut.
-  // The tab had grown to five full-height explainer panels stacked above the
-  // result cards, so the number the user actually came for sat a screen and a
-  // half below the fold. Collapsed-by-default puts the answer first and leaves
-  // the reasoning one click away.
-  // null = not yet touched: the drivers open by themselves when one is flagged as a risk.
-  const [showWhy, setShowWhy] = useState(null);
+function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, onDeleteCheckpoint, portfolioGoal, earlyRetireTarget, dob, onSetBaselineFromCheckpoint, withdrawalStrategy, inf = 0, real = false, onAssumptionChange, chart }) {
   const [showInputs, setShowInputs] = useState(false);
   const [showGaps, setShowGaps] = useState(false);
 
@@ -11776,38 +11762,10 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
     [`↳ ${ev.deferrable ? "discretionary" : "committed"}`, cfBasis(ev)],
   ]);
 
-  const riskLabel = (r) =>
-    r >= MC_BAND_LOW_RISK ? "Low risk — strong plan. As JL Collins would say — F-You Money."
-    : r >= MC_BAND_MODERATE ? "Moderate risk — solid foundation. Consider small adjustments."
-    : r >= MC_BAND_ELEVATED ? "Elevated risk — plan needs some work."
-    : "High risk — most scenarios deplete savings before target age.";
-
   // `hint` is what stays visible while a panel is shut — the one fact that
   // tells the user whether opening it is worth a click (how many score
   // drivers, how many saved checkpoints). Without it, collapsing hides not
   // just the detail but the fact that there's any.
-  // Group headings for the tab's two panel clusters. These needed their own
-  // tier: the first pass reused `.section-label`, which is 11px/700/
-  // uppercase — identical to the twisty headers below them, so a "group"
-  // heading rendered as a sibling of the things it was supposed to contain.
-  // Hierarchy here is carried by three things at once (size + rail +
-  // brightness), because letter-spacing alone at 11px reads as another
-  // label, not a level up:
-  //   GROUP    13px / 800 / --text-primary / accent rail   ← this
-  //   twisty   11px / 700 / accent hue                     ← SectionHeader
-  //   card     9px  / 600 / --text-faint                   ← InputCard
-  // Rail color also ranks the two groups: teal on the result cluster (the
-  // one the user came for), muted on the supporting cluster.
-  const GroupHeading = ({ label, sub, accent = "var(--accent-teal)" }) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: "var(--space-lg)", marginBottom: "calc(var(--space-xs) * -1)" }}>
-      <div aria-hidden="true" style={{ width: 3, alignSelf: "stretch", minHeight: 30, borderRadius: 2, background: accent, flexShrink: 0 }} />
-      <div style={{ minWidth: 0 }}>
-        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.16em", lineHeight: 1.25 }}>{label}</h3>
-        {sub && <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 3, lineHeight: 1.45 }}>{sub}</div>}
-      </div>
-      <div aria-hidden="true" style={{ flex: 1, height: 1, minWidth: 12, background: "linear-gradient(90deg, var(--divider), transparent)" }} />
-    </div>
-  );
 
   const SectionHeader = ({ label, open, onToggle, color = "var(--accent-teal)", hint }) => (
     <div
@@ -11856,99 +11814,6 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Tab header row: what this tab IS on the left, how to change how it runs
-          on the right. The simulation mechanics used to be scattered through
-          Profile (path count was a constant, the sampling window didn't exist,
-          the guardrails sat in the spending card) — one control here, opening
-          one dialog, is the single point of control for all of them. */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-          <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>Monte Carlo simulation</span>
-          {" — "}
-          {(() => {
-            const paths = Math.max(MC_PATH_MIN, Math.min(MC_PATH_MAX, Math.round(Number(params?.mcPaths) || MC_PATHS)));
-            const r = resolveSampleRange(params);
-            const yrs = r ? `${SAMPLE_START_YEAR + r.start}–${SAMPLE_START_YEAR + r.start + r.count - 1}` : `${SAMPLE_START_YEAR}–${SAMPLE_END_YEAR}`;
-            return `${paths.toLocaleString()} paths · sampling ${yrs}`;
-          })()}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          <SimMethodModal
-            params={params}
-            withdrawalStrategy={withdrawalStrategy}
-            trigger={<span aria-label="How this simulation works" style={{ color: "#60a5fa", cursor: "pointer", fontSize: 10.5, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px dashed rgba(96,165,250,0.45)", display: "inline-flex", alignItems: "center", gap: 4 }}><InfoIcon size={12} /> How this works</span>}
-          />
-          <MCAdvancedSettings p={params} onAssumptionChange={onAssumptionChange} />
-        </div>
-      </div>
-
-      {/* The picture first: the hero above already gave the number. */}
-      {chart}
-
-
-      {/* The answer, first.
-          The results grid used to render last, under five collapsed
-          twisties. Collapsing them shrank the wall but didn't promote the
-          summary — the number the user came for still sat below every
-          panel that explains it. Grid first, then the panels that interpret
-          it, then the panels it was built from. */}
-      {/* Results panel */}
-      {!mc && <div style={{ textAlign: "center", padding: "20px", color: "var(--text-faint)", fontSize: 13 }}>{running ? `Running ${MC_PATHS_LABEL} paths...` : "Run Monte Carlo from the sidebar to see results here."}</div>}
-      {mc && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
-          {/* The success rate itself is the hero number above every tab and is not
-              repeated here. This card keeps what the hero does not say: how the
-              plan holds up in a bad stretch, and the confidence band. */}
-          <div style={{ background: `${withAlpha(rateColor(mc.rate), "12")}`, border: `1.5px solid ${withAlpha(rateColor(mc.rate), "44")}`, borderRadius: 10, padding: 18 }}>
-            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
-              <div className="section-label">STRESS TEST (2000–2012)</div>
-              {(() => {
-                const [icon, label] =
-                  mc.rate >= MC_BAND_LOW_RISK ? ["🏆", "HIGH CONFIDENCE"]
-                  : mc.rate >= MC_BAND_MODERATE ? ["✅", "SOLID"]
-                  : mc.rate >= MC_BAND_ELEVATED ? ["⚠️", "NEEDS ATTENTION"]
-                  : ["🚨", "AT RISK"];
-                return (
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: withAlpha(rateColor(mc.rate), "1a"), border: `1px solid ${withAlpha(rateColor(mc.rate), "44")}`, borderRadius: 20, padding: "4px 10px 4px 8px", flexShrink: 0 }}>
-                    <span role="img" aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>{icon}</span>
-                    <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.06em", color: rateColor(mc.rate), whiteSpace: "nowrap" }}>{label}</span>
-                  </div>
-                );
-              })()}
-            </div>
-            <div style={{ fontSize: 42, fontWeight: 900, color: rateColor(stress?.rate || 0), fontFamily: "'JetBrains Mono',monospace", lineHeight: 1, marginBottom: 10 }}>{stress ? fmtPct(stress.rate) : "—"}</div>
-            <div style={{ fontSize: 12, color: rateColor(mc.rate), lineHeight: 1.5 }}>{riskLabel(mc.rate)}</div>
-          </div>
-          <div style={{ background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 18 }}>
-            <div className="section-label" style={{ marginBottom: 8, display: "inline-flex", alignItems: "center", gap: 6 }}>MEDIAN FINAL BALANCE
-              <InfoModal title="Median Final Balance" accent={INFO_ACCENT.money} trigger={<span role="img" aria-label="What Median Final Balance means" style={{ color: INFO_ACCENT.method, cursor: "pointer", display: "inline-flex" }}><InfoIcon size={13} /></span>}>
-                <ModalLede>The typical leftover — not a floor, and not a guarantee.</ModalLede>
-                <ModalP>The <Em color={INFO_ACCENT.money}>50th-percentile</Em> portfolio value remaining at age {params.endAge}: half of all simulations finish <Em>above</Em> this line, half <Em>below</Em>.</ModalP>
-                <ModalNote accent={INFO_ACCENT.money}>The <Em color={INFO_ACCENT.money}>10th–90th percentile</Em> spread beneath shows how wide the range of outcomes really is — that spread matters more than this single midpoint.</ModalNote>
-              </InfoModal>
-            </div>
-            <div style={{ fontSize: 42, fontWeight: 900, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1, marginBottom: 6 }}>{fmtDollar(termAt("p50"))}</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>50th percentile at age {params.endAge} · {dollarBasis}</div>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 14 }}>Half of all simulations end above this. A higher balance cushions against sequence-of-returns risk.</div>
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 10 }}>
-              {[{ l: "10th (near-worst)", v: termAt("p10"), c: "#f87171" }, { l: "25th (cautious)", v: termAt("p25"), c: "var(--accent-gold)" }, { l: "75th (good case)", v: termAt("p75"), c: "#34d399" }, { l: "90th (best 10%)", v: termAt("p90"), c: "var(--accent-teal)" }].map(({ l, v, c }) => (
-                <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 11 }}>
-                  <span style={{ color: "var(--text-faint)" }}>{l}</span><span style={{ color: c, fontFamily: "'JetBrains Mono',monospace", fontWeight: 600 }}>{fmtDollar(v)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          </div>
-      )}
-
-      {/* The ReadyAimRetire-style analysis card row was dismantled per Vincent:
-          the Plan Analysis narrative moved INTO the "Why your score" panel
-          below (its natural home — plain-language summary of the score);
-          Key Metrics was cut (duplicated the MEDIAN FINAL BALANCE grid card);
-          Retirement Timeline was cut too (retire age / years / plan end are
-          already in the sidebar D-Day card and Profile) rather than left as a
-          lone orphan card. Easy to restore any of these if wanted. */}
-
       {/* What the forecast leaves out: one line that still says WHAT is missing
           and WHICH WAY it errs (so the honesty survives without a click), with
           the detail and the "what to do" in the standard info pop-up. It was a
@@ -12006,90 +11871,61 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         </InfoModal>
       </>)}
 
-      {/* Why, and what to do: the reasons behind the number, then what the model leaves out. */}
-      <GroupHeading
-        label="Why, and what to do"
-        sub="What is driving your result, and what this model leaves out"
-        accent="var(--accent-teal)"
-      />
-      {/* Why this score.
-          Every engine bug found here was invisible on screen: the user saw
-          a percentage and nothing else, so nobody could sanity-check it. A
-          number that can't explain itself can't be questioned, which is how
-          four bugs survived. */}
+      {/* The picture first: the hero above already gave the number. */}
+      {chart}
+      {!mc && <div style={{ textAlign: "center", padding: "20px", color: "var(--text-faint)", fontSize: 13 }}>{running ? `Running ${MC_PATHS_LABEL} paths...` : "Run Monte Carlo from the sidebar to see results here."}</div>}
+      {/* The ending balance as one percentile row. It replaces the stress-test
+          card (now a cell in the verdict strip) and the median card. */}
+      {mc && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 18px", padding: "0 2px", fontSize: 12, color: "var(--text-muted)" }}>
+          <span>Balance at age {params.endAge} · {dollarBasis}</span>
+          {[["10th", "p10", "10th"], ["25th", "p25", "25th"], ["Median", "p50", "Median"], ["75th", "p75", "75th"], ["90th", "p90", "90th"]].map(([l, k, c]) => (
+            <span key={k}>{l} <strong style={{ color: FAN_COLORS[c], fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(termAt(k))}</strong></span>
+          ))}
+        </div>
+      )}
+
+
+      {/* What's driving this. One line per driver; a driver flagged as the
+          biggest risk opens by itself, the rest open on click. Every engine
+          bug found here was invisible on screen: a number that can't explain
+          itself can't be questioned. */}
       {mc && (() => {
-        const ex = explainScore(params, mc);
+        // Third argument: the verdict strip's withdrawal rate, so the driver
+        // and the strip show one figure.
+        const ex = explainScore(params, mc, computeInitialWR(params));
         if (!ex.drivers.length) return null;
         const tone = {
-          risk:  { bg: "rgba(239,68,68,0.07)",  bd: "rgba(239,68,68,0.3)",  fg: "#f87171", tag: "Biggest risk" },
-          watch: { bg: "rgba(251,146,60,0.07)", bd: "rgba(251,146,60,0.28)", fg: "#fdba74", tag: "Worth knowing" },
-          good:  { bg: "rgba(16,185,129,0.06)", bd: "rgba(16,185,129,0.25)", fg: "#34d399", tag: "Working for you" },
+          risk:  { fg: "#f87171", tag: "Biggest risk" },
+          watch: { fg: "#fdba74", tag: "Worth knowing" },
+          good:  { fg: "#34d399", tag: "Working for you" },
         };
-        // Shut, this panel still has to say whether there's anything
-        // alarming inside it — so the header takes the color of the
-        // top-ranked driver and counts the ones flagged as risk. A red
-        // twisty reading "2 flagged as risk" is the click prompt; a teal
-        // one saying "3 drivers" isn't.
-        const riskCount = ex.drivers.filter((d) => d.severity === "risk").length;
-        const whyOpen = showWhy ?? riskCount > 0;
-        // Plain-language summary of the score (moved here from the removed
-        // "Plan Analysis" card). Keyed to the SAME MC_BAND_* thresholds as
-        // rateColor/riskLabel — and it can say uncomfortable things; the
-        // competitor's always-cheerful version can't. Always visible above the
-        // collapsible driver detail.
-        const narrative =
-          mc.rate >= MC_BAND_LOW_RISK
-            ? { head: "Excellent news — your plan shows exceptional resilience.", body: `With a ${fmtPct(mc.rate)} success rate across ${pathsLabel} simulated markets, your plan withstands even historically challenging conditions.` }
-            : mc.rate >= MC_BAND_MODERATE
-            ? { head: "Your plan is on solid ground, with room to strengthen it.", body: `${fmtPct(mc.rate)} of simulated markets fund the plan to age ${params.endAge}. Small adjustments — spending guardrails or conversion timing — often close the remaining gap.` }
-            : mc.rate >= MC_BAND_ELEVATED
-            ? { head: "Your plan works in most scenarios, but shortfalls are common enough to plan around.", body: `${fmtPct(1 - mc.rate)} of simulated runs deplete before age ${params.endAge}${mc.medianExhaustAge ? ` (median failure at ${mc.medianExhaustAge})` : ""}. The drivers below show what moves this number most.` }
-            : { head: "Heads up — this plan runs out of money in more scenarios than it survives.", body: `Only ${fmtPct(mc.rate)} of simulated markets fund the plan to ${params.endAge}. The biggest levers are spending, retirement timing, and withdrawal order — all adjustable on the left.` };
         return (
-          <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16 }}>
-            <SectionHeader
-              label={`Why your score is ${fmtPct(mc.rate)}`}
-              open={whyOpen}
-              onToggle={() => setShowWhy(!whyOpen)}
-              color={rateColor(mc.rate)}
-              hint={`${ex.drivers.length} driver${ex.drivers.length === 1 ? "" : "s"}${riskCount ? ` · ${riskCount} flagged as risk` : ""}`}
-            />
-            {/* Plain-language verdict (from the old Plan Analysis card), always
-                shown; the driver breakdown below is the expandable detail. */}
-            <div style={{ borderLeft: `3px solid ${rateColor(mc.rate)}`, paddingLeft: 12, margin: "12px 0 4px" }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.4, marginBottom: 5 }}>{narrative.head}</div>
-              <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.55 }}>{narrative.body}</div>
-            </div>
-            {whyOpen && (<>
-            <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
-              {ex.headline} Ranked by how much each one moves the outcome.
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {ex.drivers.map((d) => {
-                const t = tone[d.severity];
-                return (
-                  <div key={d.id} style={{ background: t.bg, border: `1px solid ${t.bd}`, borderRadius: 9, padding: "11px 13px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 600, color: "#e2e8f0" }}>{d.label}</span>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: t.fg, fontFamily: "'JetBrains Mono',monospace" }}>{d.value}</span>
-                    </div>
-                    <div style={{ fontSize: 9, color: t.fg, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 }}>{t.tag}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.55, marginTop: 6 }}>{d.detail}</div>
-                    <div style={{ fontSize: 11.5, color: "#cbd5e1", lineHeight: 1.55, marginTop: 5 }}>
-                      <strong style={{ color: t.fg }}>What moves it: </strong>{d.lever}
-                    </div>
+          <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>What's driving this</div>
+            {ex.drivers.map((d, i) => {
+              const t = tone[d.severity];
+              return (
+                <details key={d.id} open={i === 0 && d.severity === "risk"} style={{ borderTop: i ? "1px solid var(--divider)" : "none" }}>
+                  <summary style={{ cursor: "pointer", padding: "8px 0", fontSize: 12.5 }}>
+                    <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "baseline", gap: "2px 10px", width: "calc(100% - 20px)", verticalAlign: "top" }}>
+                      <span style={{ flex: "1 1 180px", minWidth: 0, fontWeight: 600, color: "#e2e8f0" }}>{d.label}</span>
+                      <span style={{ fontSize: 9, color: t.fg, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>{t.tag}</span>
+                      <span style={{ fontWeight: 700, color: t.fg, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>{d.value}</span>
+                    </span>
+                  </summary>
+                  <div style={{ fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.55, paddingBottom: 10 }}>
+                    {d.detail}{" "}
+                    <strong style={{ color: t.fg }}>What moves it: </strong><span style={{ color: "#cbd5e1" }}>{d.lever}</span>
                   </div>
-                );
-              })}
-            </div>
-            </>)}
+                </details>
+              );
+            })}
           </div>
         );
       })()}
 
 
-      {/* Year by year */}
-      {bandTable}
 
       {/* Guardrails MOVED to its own sub-tab of the Monte Carlo tab
           (2026-09-24, Vincent's ask: "one is called simulation and the other
@@ -12098,15 +11934,6 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
           of the Monte Carlo tab — a copy left here would appear under BOTH
           sub-tabs and stop being a tab at all. The card chrome went with it. */}
 
-      {/* Group 2: assumptions — panels the result was built from */}
-      {/* Method explanation lives in the Success Rate card's ⓘ (SimMethodModal)
-          — the single entry point per design-authority (2026-09-24). This group
-          is now just the per-run input audit trail (Rule 5). */}
-      <GroupHeading
-        label="What this is based on"
-        sub="Every input this result was built from"
-        accent="var(--text-muted)"
-      />
 
       {/* Inputs collapsible — source of record for every model assumption. */}
       <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16, scrollMarginTop: 16 }}>
@@ -12219,12 +12046,6 @@ function MCTab({ params, mc, stress, running, onRun, checkpoints, onUpdateCheckp
         )}
       </div>
 
-      {/* Tracking is history, not explanation: it comes last, under its own heading. */}
-      <GroupHeading
-        label="Track against reality"
-        sub="Record real balances and compare them with the forecast"
-        accent="var(--text-muted)"
-      />
       {/* The panel is DeepSeek's src/forecast/CheckpointsPanel.jsx (WP-G): labelled
           row actions, a confirm before "set baseline", and a reason when Save
           cannot proceed. It owns its own collapse header. */}
@@ -18728,11 +18549,12 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         the survivor-extended plan horizon when one is
                         modeled, which isn't always endAge, so reading it
                         directly could show a different age than the one
-                        printed right next to it. real:false on purpose:
-                        this row states its own basis inline ("(future $)")
-                        rather than following the global toggle silently. */}
-                    <span title="Median projected portfolio value left at your plan age, across all simulated paths. Shown in future (nominal) dollars — not adjusted to today's purchasing power.">
-                      <strong style={{ color: "var(--text-secondary)" }}>{mc ? fmtDollar(selectPortfolioAtAge(mc, endAge, { retireAge: retAge, real: false }) ?? 0) : "—"}</strong> at age {endAge} <span style={{ fontSize: 12, opacity: 0.75 }}>(future $)</span>
+                        printed right next to it. Follows the Real-$ toggle
+                        and names its basis with the same label as the
+                        percentile row on the Forecast tab, so the two medians
+                        are the same figure. */}
+                    <span title="Median projected portfolio value left at your plan age, across all simulated paths.">
+                      <strong style={{ color: "var(--text-secondary)" }}>{mc ? fmtDollar(selectPortfolioAtAge(mc, endAge, { retireAge: retAge, real, inf }) ?? 0) : "—"}</strong> at age {endAge} <span style={{ fontSize: 12, opacity: 0.75 }}>({dollarBasisLabel(real, retirementBasisYear(params.currentAge, retAge, CURRENT_YEAR)).toLowerCase()})</span>
                     </span>
                     {sep}
                     {/* This is params.sp — the spending target the user
@@ -18777,6 +18599,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               currentAge={params.currentAge}
               retireAge={params.retireAge}
               swr={swr}
+              stress={stress}
               swrBenchmark={params.safeWithdrawalRate}
             />
 
@@ -18813,7 +18636,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         Subordinate to the top-level bar by SIZE (12.5px vs 13px)
                         and by FILL (the top bar tints its active tab; this one
                         does not), so the levels still read as levels. */}
-                    <div role="tablist" aria-label="Monte Carlo views" style={{ display: "flex", gap: 2, borderBottom: "1px solid var(--divider)", marginBottom: 12, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap", borderBottom: "1px solid var(--divider)", marginBottom: 12 }}>
+                    <div role="tablist" aria-label="Monte Carlo views" style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
                       {[["simulation", "Simulation"], ["guardrails", "Guardrails"]].map(([k, label]) => {
                         const on = mcView === k;
                         return (
@@ -18843,13 +18667,31 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         );
                       })}
                     </div>
+                      {/* Run details share the sub-tab row: path count, sampling
+                          window, the method pop-up and Advanced Settings. */}
+                      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "4px 14px", flexWrap: "wrap", padding: "4px 0", fontSize: 11.5, color: "var(--text-muted)" }}>
+                        <span>
+                          {(() => {
+                            const paths = Math.max(MC_PATH_MIN, Math.min(MC_PATH_MAX, Math.round(Number(params?.mcPaths) || MC_PATHS)));
+                            const r = resolveSampleRange(params);
+                            const yrs = r ? `${SAMPLE_START_YEAR + r.start}–${SAMPLE_START_YEAR + r.start + r.count - 1}` : `${SAMPLE_START_YEAR}–${SAMPLE_END_YEAR}`;
+                            return `${paths.toLocaleString()} paths · sampling ${yrs}`;
+                          })()}
+                        </span>
+                        <SimMethodModal
+                          params={params}
+                          withdrawalStrategy={assumptions.withdrawalStrategy}
+                          trigger={<span aria-label="How this simulation works" style={{ color: "#60a5fa", cursor: "pointer", fontSize: 10.5, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px dashed rgba(96,165,250,0.45)", display: "inline-flex", alignItems: "center", gap: 4 }}><InfoIcon size={12} /> How this works</span>}
+                        />
+                        <MCAdvancedSettings p={params} onAssumptionChange={updateAssumption} />
+                      </div>
+                    </div>
 
                     {mcView === "simulation" ? (
                     <>
                     <MCTab
                       params={params}
                       mc={mc}
-                      stress={stress}
                       running={running}
                       onRun={runSimulation}
                       checkpoints={assumptions.checkpoints}
@@ -18894,7 +18736,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         rmdAge={rmdAge}
                         inf={inf}
                         useReal={real}
-                        title={`Forecast Portfolio · Plan age ${endAge} · ${mc.N.toLocaleString()} scenarios`}
                         checkpoints={assumptions.checkpoints}
                         earlyRetireTarget={assumptions.earlyRetireTarget}
                         dob={assumptions.dob}
@@ -18909,10 +18750,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         hhProfile={params}
                         preRetireEq={params.preRetireEq ?? 91}
                         hoveredAge={hoveredAge}
-                      />
-                      )}
-                      bandTable={mc && (
+                        // The age-by-age table is the chart card's "Table" view.
+                        table={(
                       <MCBandTable
+                        embedded
                         // eslint-disable-next-line no-restricted-properties -- FanChart deflates the whole array itself; see noRawMcAccess.test.js.
                         pcts={mc.pcts}
                         inf={inf}
@@ -18936,6 +18777,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         // clamp the engines use (an already-retired user's phase
                         // flips at today, not at a stale entered age).
                         retireAge={effectiveRetireAge(params.retireAge, params.currentAge)}
+                      />
+                        )}
                       />
                       )}
                     />
