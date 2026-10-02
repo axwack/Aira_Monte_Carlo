@@ -118,3 +118,28 @@ The owner's local copy failed the build on four `no-restricted-properties` error
 - Any other machine holding the real file (red-dragon, t14) needs the same edit or `npm run deploy` aborts at the build gate.
 
 For you: sync with `cd /home/nono/Projects/aira-ds && git merge ux/configure-and-countdown`. Nothing in your lane changed.
+
+
+## Update 2026-10-02: Forecast tab reorganised; three work packages for you
+
+Branch is now `ux/plan-inputs-launcher` (the old `ux/configure-and-countdown` is merged to `main`). `check-scope.sh` now diffs against it and your lane is widened for the files below. **Sync first, after I tell the owner my work is committed:** `cd /home/nono/Projects/aira-ds && git merge ux/plan-inputs-launcher && bash docs/ds/check-scope.sh`.
+
+What I changed in `src/App.jsx` (yours to read, not edit):
+- Layout rule the owner approved: **Plan inputs records what is; the sidebar asks what if.** Facts are edited only in Plan inputs, levers only in the sidebar sliders, view settings beside what they affect.
+- Forecast tab (`MCTab`) order is now: run line -> fan chart -> result cards -> "Why, and what to do" (drivers, then the "does not cover" warning) -> age-by-age table -> "What this is based on" -> "Track against reality" (checkpoints). `FanChart` and `MCBandTable` are passed into `MCTab` as the `chart` and `bandTable` props.
+- Headings follow one rule: the title names the thing; method, units and scope go on a quiet line beneath (`.ct-sub`).
+
+### WP-F: one dollar-basis label (you own `src/engine/mcSelectors.js` for this, plus a new `src/dollarBasisLabel.test.js`)
+`dollarBasisLabel(useReal)` returns "Today's Dollars", but its own comment says the real basis is the retirement year, and `VerdictHeader` already prints "Amounts in {basisYear} dollars". The Forecast tab therefore shows "2041 dollars", "Today's Dollars" and "future $" for the same figures. Make the label truthful and single: accept the basis year (callers already pass an age/year in places and it is ignored), return e.g. "2041 dollars" / "Future dollars". Do not change `deflate` or any number. List every call site in `App.jsx` that needs a new argument as numbered items in `APP_JSX_REQUESTS.md`; I apply them. `verdictHeader.test.js` already forbids "today's dollars" in the strip - keep it green.
+
+### WP-G: `src/forecast/CheckpointsPanel.jsx` + `src/checkpointsPanel.test.js`
+Rebuild the "Portfolio checkpoints (actual vs. forecast)" panel from `MCTab` as its own component: same behaviour, props in / callbacks out, no import from `App.jsx` (copy the small `SectionHeader` look or take it as a prop). Fix while you are there: the three emoji-only row buttons get text labels and `aria-label`s; the "set baseline" action (it rescales every account balance) needs a confirm step; "Save" must say why it did nothing when a field is empty; show how many checkpoints exist when only the latest 6 are listed. Give me the exact JSX line to mount.
+
+### WP-H: stale strings list (docs only, `APP_JSX_REQUESTS.md`)
+Numbered requests with file:line, old text, new text:
+- hard-coded "99yr S&P 500 (1928-2026)" and "2000-2024 actual CPI" in the inputs panel vs. the run line's computed range;
+- `MC_PATHS_LABEL` used where the user-set path count (`mc.N`) should print;
+- "Retirement Age {endAge}" in the fan chart title (it is the plan-end age);
+- tab names in prose that no longer exist ("Scenarios -> Withdrawal Plan", "Monte Carlo tab", "Run Monte Carlo from the sidebar" on a tab called Forecast);
+- "Check-in" vs "Checkpoint": propose one name per feature.
+Grep the whole file; these are the ones I saw, not a complete list.
