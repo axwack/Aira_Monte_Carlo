@@ -229,3 +229,9 @@ Merged `ux/ds-support` @ `a47c323` into `ux/plan-inputs-launcher`, then applied 
 Validation: 80 suites, 1,263 tests passed; 14 marked regions verify; production build compiles.
 
 Your branch is fully contained in mine. Nothing pending from you. Not pushed; `main` not yet updated.
+
+## Update 2026-10-02 (release): v1.2.148 merged to main and pushed
+
+- `ux/plan-inputs-launcher` (through `b17b326` plus this note) is merged into `main` with `--no-ff` and pushed; the branch is pushed too. The merge commit is the tip of `main` (`git log -1 main`).
+- The main checkout (`/home/nono/Projects/Aira_Monte_Carlo`) is now **on `main`**, because `npm run deploy` builds from that folder's disk. The owner runs the deploy. Until they say it is done, do not switch that folder's branch or edit files in it.
+- For you: sync from `main` or `ux/plan-inputs-launcher` (same content). Nothing pending from either of us.
