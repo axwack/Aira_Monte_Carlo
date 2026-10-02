@@ -52,7 +52,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function MCAdvancedSettings(",
       "description": "Monte Carlo Advanced Settings dialog: paths, historical sampling range, return/cost assumptions, guardrails. Sole editable home for the model parameters.",
-      "sha": "b3b962763043e0ed"
+      "sha": "9dc7eca9a1fd457b"
     },
     {
       "id": "withdrawal-table-segments",
@@ -100,7 +100,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function InfoModal(",
       "description": "SHARED: the dialog shell both agents use. deepseek-flash added maxWidth/bodyMaxHeight + controlled open/onClose. Change it carefully and re-stamp.",
-      "sha": "169dfc5409ff23ff"
+      "sha": "fa737065cc3e20c6"
     },
     {
       "id": "claude-not-entered-rows",

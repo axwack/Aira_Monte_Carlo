@@ -182,3 +182,56 @@ Validation at `1507385`: 78 suites, 1,243 tests passed; all 14 marked regions ve
 
 ### Yours now
 WP-F, WP-G, WP-H in the section above. Sync first: `cd /home/nono/Projects/aira-ds && git merge ux/plan-inputs-launcher && bash docs/ds/check-scope.sh`.
+
+## Update 2026-10-02 (later): merged to main and pushed
+
+- `ux/plan-inputs-launcher` merged into `main` with `--no-ff` at `98d6a71`; `main` and the branch are pushed to `origin`. Production build compiled before the merge.
+- **Not deployed.** Production still serves v1.2.147 as built earlier; the owner runs `npm run deploy`. `APP_VERSION` was not bumped.
+- For you: nothing changes. Still sync with `git merge ux/plan-inputs-launcher` and work WP-F/G/H on `ux/ds-support`. `ux/ds-support` itself is not on `origin` yet; push it when you have commits.
+
+## Update 2026-10-02 (evening): your round close received
+
+- Fast-forwarded my branch to your `8489d5b` (status only, nothing to apply).
+- Correction accepted: `ux/ds-support` is on `origin`. My line saying otherwise was stale.
+- Order WP-H -> WP-F -> WP-G is fine. Nothing pending from me for you.
+
+## Update 2026-10-02 (night): accessibility, empty cards, Help, "We assumed", compact warning — COMMITTED, safe to merge
+
+You are on WP-F/G/H; none of this touches the checkpoints block, `dollarBasisLabel` or the strings on your list. Quote text from the committed tree (`612a579`), and I will reconcile when I apply your requests.
+
+Changed (one commit on `ux/plan-inputs-launcher`):
+- `InfoModal`: trigger is `role="button"` + Enter/Space (`.info-trig`); panel has `role="dialog"`, `aria-modal`, takes focus, closes on Escape, returns focus. `info-modal-shell` mark re-stamped. **For WP-G:** use `InfoModal` as is; do not build your own dialog.
+- `Toggle`: the switch is a `<button role="switch" aria-checked>`; `.tok` is a `<span>`.
+- Sidebar section titles are keyboard-openable (`twisty()` helper).
+- Net Worth: "Mortgage-free" and "Real estate equity" cards render only when entered; one line under the row says what is missing.
+- Help: `CollapsibleAboutCard` takes optional `open` / `onToggle`; Help keeps one topic open at a time (search results still all open). No change to `about.js`.
+- First-run "We assumed" card in the sidebar (`fromLanding` state, `.assume-row`); new export `PROFILE_STEP_MONEY_IN = 2`, covered in `navPointers.test.js`.
+- Forecast: the "does not cover" block is now a one-line `.gap-row` under the result cards opening an `InfoModal` titled "What this forecast leaves out". Its copy now says "Reduce spending with age" instead of "Smile spending" — **drop that string from WP-H if you listed it.**
+- Roth page: "Lifetime RMDs — Without Conversions".
+
+Validation: 78 suites, 1,243 tests passed; 14 marked regions verify.
+
+Also in this commit, by the owner's decision: entering from the landing now sets the retire age to the age the landing showed (`landingEarliestAge`), so the two screens describe the same plan.
+
+Not pushed; `main` untouched.
+
+## Update 2026-10-02 (late): your WP-F/G/H applied and mounted; v1.2.148
+
+Merged `ux/ds-support` @ `a47c323` into `ux/plan-inputs-launcher`, then applied your requests.
+
+- **#11 applied**, items 1–5. Item 6 (folding `VerdictHeader` / `MCOverviewCards` onto `retirementBasisYear`) not done; still open. The stale `eslint-disable` is deleted. In the browser the Net Worth card, chart subtitle, bands title and median card all read "2040 dollars" on the default first-run plan.
+- **#12 applied:** 12.1 (all four, derived from `SAMPLE_YEARS` / `SAMPLE_START_YEAR` / `SAMPLE_END_YEAR`; bonds now read "{N}yr bond history", the "Bloomberg" source name is dropped because I could not verify it); 12.2 at the narrative, "Applied to", "Simulations" and the sidebar run button (new `pathsLabel` in `MCTab`); 12.3 (`Forecast Portfolio · Plan age N · {mc.N} scenarios`); 12.4 the two prose lines; 12.5 the three year-end modal strings. Your corrections in 12.6 accepted: "Run Monte Carlo" stays.
+  - **Not applied:** 12.2 at the two stress-scenario lines (`{MC_PATHS_LABEL}-path result`, `✓ {MC_PATHS_LABEL} paths`) and the comment-only items in 12.4.
+  - 12.4's second line is inside your `mc-advanced-settings` region; I changed it at your request and re-stamped the mark.
+- **#13 applied:** `CheckpointsPanel` mounted under "Track against reality"; the old block, `showCheckpoints`, the add/edit state and `startEdit` / `cancelEdit` / `handleSaveCheckpoint` are deleted. Opens and shows "+ Add checkpoint" in the browser; I did not exercise save, edit, delete or set-baseline by hand (your 9 tests cover them).
+- **Version:** `APP_VERSION` 1.2.148 with a new `BUILD_TAG`.
+
+Validation: 80 suites, 1,263 tests passed; 14 marked regions verify; production build compiles.
+
+Your branch is fully contained in mine. Nothing pending from you. Not pushed; `main` not yet updated.
+
+## Update 2026-10-02 (release): v1.2.148 merged to main and pushed
+
+- `ux/plan-inputs-launcher` (through `b17b326` plus this note) is merged into `main` with `--no-ff` and pushed; the branch is pushed too. The merge commit is the tip of `main` (`git log -1 main`).
+- The main checkout (`/home/nono/Projects/Aira_Monte_Carlo`) is now **on `main`**, because `npm run deploy` builds from that folder's disk. The owner runs the deploy. Until they say it is done, do not switch that folder's branch or edit files in it.
+- For you: sync from `main` or `ux/plan-inputs-launcher` (same content). Nothing pending from either of us.
