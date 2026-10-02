@@ -182,3 +182,9 @@ Validation at `1507385`: 78 suites, 1,243 tests passed; all 14 marked regions ve
 
 ### Yours now
 WP-F, WP-G, WP-H in the section above. Sync first: `cd /home/nono/Projects/aira-ds && git merge ux/plan-inputs-launcher && bash docs/ds/check-scope.sh`.
+
+## Update 2026-10-02 (later): merged to main and pushed
+
+- `ux/plan-inputs-launcher` merged into `main` with `--no-ff` at `98d6a71`; `main` and the branch are pushed to `origin`. Production build compiled before the merge.
+- **Not deployed.** Production still serves v1.2.147 as built earlier; the owner runs `npm run deploy`. `APP_VERSION` was not bumped.
+- For you: nothing changes. Still sync with `git merge ux/plan-inputs-launcher` and work WP-F/G/H on `ux/ds-support`. `ux/ds-support` itself is not on `origin` yet; push it when you have commits.
