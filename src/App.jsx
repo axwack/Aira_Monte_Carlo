@@ -59,7 +59,7 @@ The "spending smiles," guardrails, or projections provided by Aira may not be su
 consult your fiduciary, CPA or tax accountant. 
 
  * ============================================================ */
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo, useContext } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo, useContext, createContext } from "react";
 import ReactDOM from "react-dom";
 import { ABOUT_ME, ABOUT_THANKS, ABOUT_PRODUCT, ABOUT_FEATURES } from "./about.js";
 import {
@@ -3259,7 +3259,7 @@ export const ACCOUNT_CATEGORIES = [
 // which Recharts 3.8 renders as an EMPTY path — conic-gradient has no such
 // degenerate case, needs no chart lib mounted in an 84px box, and the
 // radial mask punches the hole so it reads as a ring over any background.
-function AllocationDonut({ accounts }) {
+function AllocationDonut({ accounts, onEdit }) {
   const data = ACCOUNT_CATEGORIES
     .map((c) => ({ ...c, value: (accounts || []).filter((a) => a.category === c.key).reduce((s, a) => s + (a.balance || 0), 0) }))
     .filter((d) => d.value > 0);
@@ -3273,20 +3273,28 @@ function AllocationDonut({ accounts }) {
     return `${d.color} ${start}deg ${end}deg`;
   }).join(", ");
   const ringMask = "radial-gradient(circle, transparent 33px, #000 34px)";
+  const Ring = onEdit ? "button" : "div";
   return (
     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
       <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
         Tax Treatment
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div
-          style={{
-            width: 84, height: 84, borderRadius: "50%", flexShrink: 0,
-            background: `conic-gradient(${stops})`,
-            WebkitMask: ringMask, mask: ringMask,
-          }}
+        {/* The ring is the thing a new user reaches for to change the split,
+            so with onEdit it IS the control. The mask lives on the inner span
+            so it can't clip the button's focus outline. */}
+        <Ring
+          {...(onEdit ? { type: "button", className: "donut-btn", onClick: onEdit, "aria-label": "Edit account split" } : { style: { flexShrink: 0 } })}
           title={data.map((d) => `${d.label}: ${fmtDollar(d.value)} (${((d.value / total) * 100).toFixed(0)}%)`).join("\n")}
-        />
+        >
+          <span
+            style={{
+              display: "block", width: 84, height: 84, borderRadius: "50%",
+              background: `conic-gradient(${stops})`,
+              WebkitMask: ringMask, mask: ringMask,
+            }}
+          />
+        </Ring>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
           {data.map((d) => (
             <div key={d.key} title={`${d.label}: ${fmtDollar(d.value)}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11 }}>
@@ -4055,7 +4063,12 @@ const CSS = `
   .gk-bar { background:rgba(14,165,233,0.07); border:1px solid rgba(14,165,233,0.2); border-radius:9px; padding:11px 15px; font-size:12px; color:#bae6fd; }
   .cfg-btn { display:block; width:100%; margin:0 0 12px; padding:9px 12px; border:0; border-radius:8px; background:var(--accent-teal); color:#04201c; font-size:13px; font-weight:800; letter-spacing:0.02em; cursor:pointer; text-align:center; }
   .cfg-btn:hover { filter:brightness(1.08); }
-  .cfg-btn:focus-visible, .sb-edit:focus-visible { outline:2px solid var(--accent-teal); outline-offset:2px; }
+  .cfg-btn:focus-visible, .sb-edit:focus-visible, .donut-btn:focus-visible { outline:2px solid var(--accent-teal); outline-offset:2px; }
+  .cfg-launch { margin:0; min-height:44px; flex-shrink:0; }
+  .cfg-launch:active { transform:translateY(1px); }
+  .cfg-launch[aria-current] { background:transparent; color:var(--accent-teal); box-shadow:inset 0 0 0 1.5px var(--accent-teal); }
+  .donut-btn { padding:0; border:0; background:none; border-radius:50%; cursor:pointer; flex-shrink:0; }
+  .donut-btn:hover { filter:brightness(1.2); }
   .sb-edit { background:none; border:0; padding:0; color:var(--accent-teal); font-size:10px; font-weight:600; text-decoration:underline; cursor:pointer; }
   .progress-bar { height:5px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden; margin-top:6px; }
   .progress-fill { height:100%; background:linear-gradient(90deg,#0ea5e9,#38bdf8); border-radius:3px; transition:width 1s; }
@@ -4900,7 +4913,7 @@ function ThInfo({ children, tip, style, accent = "#93c5fd", modalTitle, ...rest 
   );
 }
 
-function Slider({ label, value, min, max, step, stepNudge, format, onChange, quickPills, accent, titleHint, valueWidth }) {
+function Slider({ label, value, min, max, step, stepNudge, format, onChange, quickPills, accent, titleHint, valueWidth, dataLever }) {
   const clamped = Math.max(min, Math.min(max, value));
   const pct = max > min ? ((clamped - min) / (max - min)) * 100 : 0;
   const trackRef = useRef(null);
@@ -4909,13 +4922,13 @@ function Slider({ label, value, min, max, step, stepNudge, format, onChange, qui
   const nudge = stepNudge || step;
   const handleDec = useCallback((e) => {
     e?.stopPropagation();
-    const next = Math.max(min, Number((value - nudge).toFixed(4)));
+    const next = Math.min(value, Math.max(min, Number((value - nudge).toFixed(4)))); // a typed value past the track must not snap back
     onChange(next);
   }, [value, min, nudge, onChange]);
 
   const handleInc = useCallback((e) => {
     e?.stopPropagation();
-    const next = Math.min(max, Number((value + nudge).toFixed(4)));
+    const next = Math.max(value, Math.min(max, Number((value + nudge).toFixed(4))));
     onChange(next);
   }, [value, max, nudge, onChange]);
 
@@ -5034,7 +5047,7 @@ const [draft, setDraft] = useState(null);
   }
 
   return (
-    <div className="sl-row">
+    <div className="sl-row" data-lever={dataLever}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <span className="sl-label" title={titleHint || undefined} style={titleHint ? { cursor: "help", textDecoration: "underline dotted", textUnderlineOffset: 2 } : undefined}>{label}</span>
@@ -14442,6 +14455,22 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
    Defined outside panel components so the reference never changes between
    renders — prevents React from unmounting/remounting inputs on each keystroke.
 */
+// Facts vs levers: Plan inputs records what is, the sidebar asks what if.
+// Retire age, plan-to age, US spend and SS claim age are levers — the sidebar
+// sliders are their ONE editor (Single Point of Control), so here they are
+// read-outs with a way to reach the slider. Outside the app shell (isolated
+// renders) there is no sidebar, so only the value shows.
+const LeverContext = createContext(null);
+function LeverValue({ lever, children }) {
+  const focusLever = useContext(LeverContext);
+  return (
+    <div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{children}</div>
+      {focusLever && <button type="button" className="sb-edit" style={{ fontSize: 11 }} onClick={() => focusLever(lever)}>Adjust in sidebar</button>}
+    </div>
+  );
+}
+
 function WFieldRow({ label, helper, children }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
@@ -14846,10 +14875,10 @@ function AboutYouPanel({ values, onChange }) {
       </ACard>
       <ACard title="Retirement Timeline" accent="var(--accent-teal)" desc="When you stop working and how long the plan must last.">
         <WFieldRow label="Retirement Age" helper="Age at which you plan to retire (D‑Day).">
-          <ANumInput value={values.retireAge} onSet={(v) => onChange("retireAge", v)} min={AGE_LIMITS.retire.min} max={AGE_LIMITS.retire.max} step={1} />
+          <LeverValue lever="retireAge">Age {values.retireAge}</LeverValue>
         </WFieldRow>
         <WFieldRow label="Planning Horizon" helper="Age through which you want the plan to last.">
-          <ANumInput value={values.endAge} onSet={(v) => onChange("endAge", v)} min={40} max={100} step={1} />
+          <LeverValue lever="endAge">Age {values.endAge}</LeverValue>
         </WFieldRow>
         <WFieldRow label="Sex" helper="Used for SSA mortality overlay on the fan chart (male/female life expectancy tables, or blended average).">
           <select
@@ -15739,7 +15768,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={10_000} step={50} suffix="/mo" />
         </WFieldRow>
         <WFieldRow label="SS Start Age" helper="Age you plan to claim Social Security.">
-          <ANumInput value={values.ssAge || 67} onSet={(v) => onChange("ssAge", v)} min={AGE_LIMITS.ss.min} max={AGE_LIMITS.ss.max} step={1} suffix=" yrs"/>
+          <LeverValue lever="ssAge">Age {values.ssAge || 67}</LeverValue>
         </WFieldRow>
 
         {/* Spouse Social Security.
@@ -16632,7 +16661,7 @@ function ExpensesPanel({ values, onChange }) {
           </div>
         </div>
         <WFieldRow label="US Spending (annual)" helper="Domestic household spending in today's dollars, after tax. Subject to state income tax when residing in-state.">
-          <ANumInput value={values.sp || 0} onSet={(v) => onChange("sp", v)} min={0} max={MAX_MONEY_INPUT} step={1000} suffix="/yr" />
+          <LeverValue lever="sp">{fmtDollar(values.sp || 0)}/yr</LeverValue>
         </WFieldRow>
         <WFieldRow label="Out-of-Country Spending (annual)" helper="Spending that occurs abroad in today's dollars, after tax. Always drawn from the portfolio but never subject to US state tax.">
           <ANumInput value={values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={MAX_MONEY_INPUT} step={1000} suffix="/yr" />
@@ -17346,6 +17375,29 @@ export default function AiRAForecaster() {
     if (profileStep != null) setProfileJump({ step: profileStep, n: Date.now() });
     setTab(tab);
   }, []);
+  // Sidebar launchers switch the tab AND bring the editor into view. On a
+  // phone the tab bar sits below the fold, so a bare tab switch changed
+  // nothing on screen and the button read as dead.
+  const focusLever = useCallback((key) => {
+    setSbCoreOpen(true);
+    setTimeout(() => { // after the card has opened
+      const el = document.querySelector(`[data-lever="${key}"]`), sb = el?.closest(".sidebar");
+      if (!el) return;
+      if (sb.getBoundingClientRect().top < 0) window.scrollTo({ top: 0 }); // phone: sidebar sits above the editor
+      sb.scrollTop += el.getBoundingClientRect().top - sb.getBoundingClientRect().top - 60;
+      el.querySelector("input")?.focus({ preventScroll: true });
+    }, 0);
+  }, []);
+  const tabsRef = useRef(null);
+  const openPlanInputs = useCallback((step = null) => {
+    navigateToTab("assumptions", null, step);
+    const tabs = tabsRef.current, main = tabs?.parentElement;
+    if (!tabs) return;
+    // Desktop: only the main column scrolls. scrollIntoView would also drag
+    // the page up under the sticky header and clip the sidebar.
+    if (main.scrollHeight > main.clientHeight) main.scrollTop += tabs.getBoundingClientRect().top - main.getBoundingClientRect().top;
+    else tabs.scrollIntoView({ block: "start" });
+  }, [navigateToTab]);
   // The visitor landing is the homepage for anyone without a saved profile
   // — not a one-time splash. It used to also be gated on a
   // `aira_welcomed_v1` flag, so the moment a visitor clicked through (or
@@ -18003,7 +18055,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   }
 
   return (
-    <NavContext.Provider value={navigateToTab}>
+    <NavContext.Provider value={navigateToTab}><LeverContext.Provider value={focusLever}>
     <>
       <style>{CSS}</style>
       <div className="app">
@@ -18408,17 +18460,22 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
 
         <div className="layout">
           <div className="sidebar">
+            {/* The launcher stands alone above the cards: inside the countdown
+                card it read as that card's action, not as the way into every
+                input. It also says when you are already there, instead of
+                staying a loud call to action that appears to do nothing. */}
+            <button type="button" className="cfg-btn cfg-launch" onClick={() => openPlanInputs()}
+              aria-current={activeTab === "assumptions" ? "page" : undefined}>
+              {activeTab === "assumptions" ? "Editing plan inputs" : `${profileSavedBefore ? "Adjust values" : "Configure your plan"} →`}
+            </button>
             <div className="sb-card">
-              <button type="button" className="cfg-btn" onClick={() => navigateToTab("assumptions")}>
-                {profileSavedBefore ? "Adjust values" : "Configure your plan"} →
-              </button>
               <CountdownCard
                 dob={assumptions.dob}
                 retireAge={retAge}
                 dobIsEstimate={!!assumptions.dobIsEstimate}
                 employerStartDate={assumptions.employerStartDate}
                 name={assumptions.name}
-                onConfigure={() => navigateToTab("assumptions", null, 0)}
+                onConfigure={() => openPlanInputs(0)}
               />
               <div
                 style={{
@@ -18431,7 +18488,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 }}
               >
                 <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Liquid Portfolio{" "}
-                  <button type="button" className="sb-edit" onClick={() => navigateToTab("assumptions", null, PROFILE_STEP_SAVINGS)} aria-label="Edit accounts and balances">Edit accounts</button>
+                  <button type="button" className="sb-edit" onClick={() => openPlanInputs(PROFILE_STEP_SAVINGS)} aria-label="Edit accounts and balances">Edit accounts</button>
                 </span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", letterSpacing: "-0.5px" }}>
                   {fmtDollar(port)}
@@ -18452,9 +18509,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   </div>
                 );
               })()}
-              <AllocationDonut accounts={assumptions.accounts} />
+              <AllocationDonut accounts={assumptions.accounts} onEdit={() => openPlanInputs(PROFILE_STEP_SAVINGS)} />
               <div style={{ textAlign: "right", marginTop: 4 }}>
-                <button type="button" className="sb-edit" onClick={() => navigateToTab("assumptions", null, PROFILE_STEP_SAVINGS)} aria-label="Edit account split">Edit split</button>
+                <button type="button" className="sb-edit" onClick={() => openPlanInputs(PROFILE_STEP_SAVINGS)} aria-label="Edit account split">Edit split</button>
               </div>
               {yearEndInfo.show && (
                 <YearEndStrip room={yearEndInfo.room} days={yearEndInfo.days} year={yearEndInfo.year} />
@@ -18545,6 +18602,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               </div>
               {sbCoreOpen && (<>
               <Slider
+                dataLever="retireAge"
                 label="Retire age"
                 value={retAge}
                 min={AGE_LIMITS.retire.min}
@@ -18555,6 +18613,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 onChange={setRetAge}
               />
               <Slider
+                dataLever="endAge"
                 label="Plan to age"
                 value={endAge}
                 min={AGE_LIMITS.end.min}
@@ -18565,6 +18624,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 onChange={setEndAge}
               />
               <Slider
+                dataLever="sp"
                 label="US annual spend"
                 value={sp}
                 min={0}
@@ -18574,18 +18634,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 format={(v) => fmtDollar(v) + "/yr"}
                 onChange={setSp}
               />
-              {assumptions.twoHousehold && (
-                <Slider
-                  label="Out-of-country"
-                  value={assumptions.spOutOfCountry ?? 0}
-                  min={0}
-                  max={150000}
-                  step={1000}
-                  stepNudge={2500}
-                  format={(v) => fmtDollar(v) + "/yr"}
-                  onChange={(v) => updateAssumption("spOutOfCountry", v)}
-                />
-              )}
               <Slider
                 label="Annual savings"
                 value={contrib}
@@ -18598,6 +18646,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               />
               <Slider
                 key={`ssAge-${assumptions.ssAge}`}
+                dataLever="ssAge"
                 label="SS claim age"
                 value={assumptions.ssAge}
                 min={AGE_LIMITS.ss.min}
@@ -18938,7 +18987,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               swrBenchmark={params.safeWithdrawalRate}
             />
 
-            <div className="tabs">
+            <div className="tabs" ref={tabsRef}>
               {TABS.map(([k, l]) => (
                 <button key={k} className={`tab ${activeTab === k ? "on" : ""}`} onClick={() => setTab(k)}>
                   {l}
@@ -19474,7 +19523,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
         </div>
       )}
     </>
-    </NavContext.Provider>
+    </LeverContext.Provider></NavContext.Provider>
   );
 }
 
