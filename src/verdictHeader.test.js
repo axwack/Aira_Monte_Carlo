@@ -66,8 +66,8 @@ test("renders all four headline cards from one mc object", () => {
   expect(text).toContain("Withdrawal rate");
   expect(text).not.toContain("Funded to age");
   expect(text).toContain("Money outlives you");
-  expect(text).toContain(`Worst case (10th) at ${P.endAge}`);
-  expect(text).toContain("Runs out (median)");
+  expect(text).toContain(`Worst case at ${P.endAge}`);
+  expect(text).toContain("Runs out");
   // The withdrawal rate is passed in as the already-formatted swr string.
   expect(text).toContain(`${base.swr}%`);
   if (MC.mwRate != null) expect(text).toContain(`${(MC.mwRate * 100).toFixed(1)}%`);
@@ -123,7 +123,7 @@ test("'Never' is shown when no path failed — not a fake age", () => {
   const neverFails = { ...MC, medianExhaustAge: null };
   const text = renderToText(<VerdictHeader mc={neverFails} {...base} real={false} />);
   expect(text).toContain("Never");
-  expect(text).not.toMatch(/Runs out \(median\)Age/);
+  expect(text).not.toMatch(/Runs outAge/);
 });
 
 test("before a run it says so plainly instead of rendering zeros", () => {

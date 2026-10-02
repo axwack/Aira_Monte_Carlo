@@ -186,7 +186,7 @@ export const METRIC_CARDS = [
     formula: "Standard amortisation payment from your balance, rate and remaining term" },
 
   // ── Net worth tab ────────────────────────────────────────────────────────
-  { id: "nw-peak-liquid", label: "Peak liquid (median)*", kind: "point-in-time", at: "peakAge",
+  { id: "nw-peak-liquid", label: "Peak portfolio*", kind: "point-in-time", at: "peakAge",
     source: "max(mc.pcts[].p50)",
     formula: "The highest median (50th percentile) portfolio value across the whole simulation horizon" },
   { id: "nw-at-plan-age", label: "Net worth at age {planAge}", kind: "point-in-time", at: "p.endAge",

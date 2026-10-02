@@ -80,21 +80,21 @@ export const ABOUT_FEATURES = [
     group: "Getting Started",
     icon:  "🧾",
     title: "Spending numbers are AFTER tax",
-    body:  "When you enter a spending target, that is money to actually spend — groceries, travel, insurance. It is not a pre-tax figure you then pay tax out of. The engine works out the tax bill on your withdrawals and pulls that amount from the portfolio ON TOP of your target, so the full target still reaches you. If you plan to spend $90,000 and the tax on the year's withdrawals is $11,000, the portfolio gives up $101,000 and you spend $90,000. Two consequences worth knowing. First, when you compare AiRA to a calculator that treats spending as pre-tax, AiRA will look like it needs a bigger portfolio — it is answering a harder, more useful question. Second, the withdrawal order matters enormously precisely because the tax is a real, separate cost: drawing the same money in a smarter order shrinks that extra draw, year after year.",
+    body:  "<p class='help-lede'>When you enter a spending target, that is money to actually spend — groceries, travel, insurance. It is not a pre-tax figure you then pay tax out of.</p><p class='help-p'>The engine works out the tax bill on your withdrawals and pulls that amount from the portfolio ON TOP of your target, so the full target still reaches you. If you plan to spend $90,000 and the tax on the year's withdrawals is $11,000, the portfolio gives up $101,000 and you spend $90,000.</p><p class='help-p'>Two consequences worth knowing. First, when you compare AiRA to a calculator that treats spending as pre-tax, AiRA will look like it needs a bigger portfolio — it is answering a harder, more useful question. Second, the withdrawal order matters enormously precisely because the tax is a real, separate cost: drawing the same money in a smarter order shrinks that extra draw, year after year.</p>",
   },
   {
     id:    "solo-mode",
     group: "Getting Started",
     icon:  "🌴",
     title: "Solo Mode",
-    body:  "Switches the simulation to your out-of-state spending budget and removes state income tax. Toggle OFF = primary spending + state tax. Toggle ON = out-of-state spending + no state tax. The portfolio withdrawal math (GK guardrails, Fixed %, etc.) is identical either way — only the spending target and whether state tax is applied changes. Set your out-of-state budget in Profile → Spending. If left at $0 it falls back to your primary spending.",
+    body:  "<p class='help-lede'>Switches the simulation to your out-of-state spending budget and removes state income tax.</p><p class='help-p'>Toggle OFF = primary spending + state tax. Toggle ON = out-of-state spending + no state tax.</p><p class='help-p'>The portfolio withdrawal math (GK guardrails, Fixed %, etc.) is identical either way — only the spending target and whether state tax is applied changes. Set your out-of-state budget in Profile → Spending. If left at $0 it falls back to your primary spending.</p>",
   },
   {
     id:    "ss-storage",
     group: "Getting Started",
     icon:  "🧾",
     title: "Social Security Input",
-    body:  "SS is stored as an annual amount internally. The input field shows and accepts monthly dollars — enter your expected monthly benefit and the app stores it as annual (×12). If your exported JSON shows a low number like 2742 but you expected $2,742/month, correct it in Profile → Retirement Plan by entering 2742 in the monthly field.",
+    body:  "<p class='help-lede'>SS is stored as an annual amount internally.</p><p class='help-p'>The input field shows and accepts monthly dollars — enter your expected monthly benefit and the app stores it as annual (×12).</p><div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div>If your exported JSON shows a low number like 2742 but you expected $2,742/month, correct it in Profile → Retirement Plan by entering 2742 in the monthly field.</div></div>",
   },
 
   // ── Withdrawal Strategies ─────────────────────────────────
@@ -103,21 +103,21 @@ export const ABOUT_FEATURES = [
     group: "Withdrawal Strategies",
     icon:  "📌",
     title: "Fixed % Withdrawal",
-    body:  "Withdraws a constant percentage of the portfolio each year (default 4%). Portfolio draw = rate × portfolio. Social Security and rental income are additive on top — they do NOT reduce the draw. This differs from GK, Vanguard, and all other strategies where guaranteed income offsets how much you pull from the portfolio.",
+    body:  "<p class='help-lede'>Withdraws a constant percentage of the portfolio each year (default 4%).</p><p class='help-p'>Portfolio draw = rate × portfolio. Social Security and rental income are additive on top — they do NOT reduce the draw.</p><div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div>This differs from GK, Vanguard, and all other strategies where guaranteed income offsets how much you pull from the portfolio.</div></div>",
   },
   {
     id:    "gk-strategy",
     group: "Withdrawal Strategies",
     icon:  "🛡",
     title: "Guyton-Klinger Guardrails",
-    body:  "Your spending adapts based on portfolio performance. If the withdrawal rate climbs above 120% of the initial rate, spending cuts 10% (never below the floor). If it falls below 80%, spending rises 10% (never above the ceiling). Floor = 65% and ceiling = 135% of your target spending. Protects against sequence-of-returns risk while letting you spend more in good markets.",
+    body:  "<p class='help-lede'>Your spending adapts based on portfolio performance.</p><p class='help-p'>If the withdrawal rate climbs above 120% of the initial rate, spending cuts 10% (never below the floor). If it falls below 80%, spending rises 10% (never above the ceiling). Floor = 65% and ceiling = 135% of your target spending.</p><p class='help-p'>Protects against sequence-of-returns risk while letting you spend more in good markets.</p>",
   },
   {
     id:    "sourcing-vs-schedule-gap",
     group: "Withdrawal Strategies",
     icon:  "⚖️",
     title: "Why do the Sourcing and Schedule tables show different Portfolio End?",
-    body:  "The Withdrawal Plan tab has two tables. \"Where does each year's spending come from?\" (Sourcing) tracks your real accounts individually — cash, taxable, pre-tax, Roth — and models real Roth conversions. \"How does my chosen strategy pace spending?\" (Schedule) is a simpler view for any strategy other than Smart Waterfall: it tracks your whole portfolio as one number, with one blended growth rate, and doesn't model conversions at all (its Roth Conv. column always reads $0). Spending and tax figures are shared between the two, so those always agree. Portfolio End can still differ — one blended rate for everything vs. a different rate per account (with bucket investing active, Bucket 1's low-return cash sleeve widens the gap further). Click the small delta under Portfolio End on the Schedule table for the exact numbers behind that year's gap. Treat the Sourcing table as your real plan; the Schedule table as an approximate illustration of the pacing.",
+    body:  "<p class='help-lede'>The Withdrawal Plan tab has two tables.</p><p class='help-p'>\"Where does each year's spending come from?\" (Sourcing) tracks your real accounts individually — cash, taxable, pre-tax, Roth — and models real Roth conversions. \"How does my chosen strategy pace spending?\" (Schedule) is a simpler view for any strategy other than Smart Waterfall: it tracks your whole portfolio as one number, with one blended growth rate, and doesn't model conversions at all (its Roth Conv. column always reads $0).</p><p class='help-p'>Spending and tax figures are shared between the two, so those always agree. Portfolio End can still differ — one blended rate for everything vs. a different rate per account (with bucket investing active, Bucket 1's low-return cash sleeve widens the gap further).</p><div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div>Click the small delta under Portfolio End on the Schedule table for the exact numbers behind that year's gap. Treat the Sourcing table as your real plan; the Schedule table as an approximate illustration of the pacing.</div></div>",
   },
 
   // ── Risk & Returns ────────────────────────────────────────
@@ -126,7 +126,7 @@ export const ABOUT_FEATURES = [
     group: "Risk & Returns",
     icon:  "📈",
     title: "Equity % — the two numbers that set your returns",
-    body:  "AiRA doesn't ask you to guess a return. You set a stock/bond mix and it derives the return from real history — 98 years (1928-2025) of both S&P 500 and bond results, the same length for each. You give it two weights: PRE-RETIREMENT (default 91%) applies while you're still saving, and POST-RETIREMENT (default 70%) applies once you retire. The switch happens at YOUR retirement age. Higher equity while working makes sense because volatility doesn't hurt when you aren't withdrawing; lowering it in retirement is protection against sequence-of-returns risk, where a crash in your first few years does permanent damage because you're selling into it. The key thing to understand: equity % sets your volatility as well as your average return. Raise the retirement weight and the median outcome improves while the success rate can FALL, because the bad paths get worse faster than the good paths get better. If you want to see that, set post-retirement to 90% and watch the two numbers move in opposite directions.",
+    body:  "<p class='help-lede'>AiRA doesn't ask you to guess a return. You set a stock/bond mix and it derives the return from real history — 98 years (1928-2025) of both S&P 500 and bond results, the same length for each.</p><p class='help-p'>You give it two weights: PRE-RETIREMENT (default 91%) applies while you're still saving, and POST-RETIREMENT (default 70%) applies once you retire. The switch happens at YOUR retirement age. Higher equity while working makes sense because volatility doesn't hurt when you aren't withdrawing; lowering it in retirement is protection against sequence-of-returns risk, where a crash in your first few years does permanent damage because you're selling into it.</p><p class='help-p'>The key thing to understand: equity % sets your volatility as well as your average return. Raise the retirement weight and the median outcome improves while the success rate can FALL, because the bad paths get worse faster than the good paths get better.</p><div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div>If you want to see that, set post-retirement to 90% and watch the two numbers move in opposite directions.</div></div>",
   },
 
   {
@@ -134,7 +134,7 @@ export const ABOUT_FEATURES = [
     group: "Risk & Returns",
     icon:  "🎲",
     title: "Where the return numbers actually come from",
-    body:  "The data is Aswath Damodaran's \"Historical Returns on Stocks, Bonds and Bills\" dataset (NYU Stern, updated annually) — the same source Bengen, Kitces, and Pfau cite for retirement-planning research. It's real annual returns, year by year: S&P 500 with dividends reinvested, and 10-year US Treasury bonds. No made-up numbers, no smoothing. Two different things read it. In the Monte Carlo, each simulated year draws one real historical year at random and blends its S&P return and its bond return by your equity weight — so a 70% weight means 70% of that year's return comes from a real S&P year and 30% from the SAME year's real bond return, not two unrelated random years. Keeping stock and bond returns paired to the same real year is what lets things like 2008's stock crash and bond rally show up together, the way they actually happened. Everywhere that isn't random — the year-by-year withdrawal schedule, the Smart Waterfall, the Roth explorer, the accumulation ramp — uses the plain average of that same 98 years, so the deterministic and probabilistic views can't drift apart. One thing worth knowing: nothing is clamped or trimmed. Extreme years — 1931's -43.8%, 2008's -36.6% — are left in at full strength, on purpose, because trimming them would understate exactly the bad-case risk a retirement simulator exists to catch.",
+    body:  "<p class='help-lede'>The data is Aswath Damodaran's \"Historical Returns on Stocks, Bonds and Bills\" dataset (NYU Stern, updated annually) — the same source Bengen, Kitces, and Pfau cite for retirement-planning research.</p><p class='help-p'>It's real annual returns, year by year: S&P 500 with dividends reinvested, and 10-year US Treasury bonds. No made-up numbers, no smoothing.</p><p class='help-p'>Two different things read it. In the Monte Carlo, each simulated year draws one real historical year at random and blends its S&P return and its bond return by your equity weight — so a 70% weight means 70% of that year's return comes from a real S&P year and 30% from the SAME year's real bond return, not two unrelated random years. Keeping stock and bond returns paired to the same real year is what lets things like 2008's stock crash and bond rally show up together, the way they actually happened.</p><p class='help-p'>Everywhere that isn't random — the year-by-year withdrawal schedule, the Smart Waterfall, the Roth explorer, the accumulation ramp — uses the plain average of that same 98 years, so the deterministic and probabilistic views can't drift apart.</p><div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div>One thing worth knowing: nothing is clamped or trimmed. Extreme years — 1931's -43.8%, 2008's -36.6% — are left in at full strength, on purpose, because trimming them would understate exactly the bad-case risk a retirement simulator exists to catch.</div></div>",
   },
 
   // ── Your Spending ─────────────────────────────────────────
@@ -143,7 +143,7 @@ export const ABOUT_FEATURES = [
     group: "Your Spending",
     icon:  "🙂",
     title: "What the Spending Smile actually does",
-    body:  "Most calculators assume you spend the same amount every year, adjusted for inflation, until you die. Real retirees don't. David Blanchett's research (\"Exploring the Retirement Consumption Puzzle\", 2014) found that real spending falls roughly 1% a year through most of retirement, then rises again late in life as healthcare and care costs take over. Plotted, that's a shallow U — the smile: GO-GO years of travel and projects, SLOW-GO years as travel tapers, and NO-GO years where medical costs replace lifestyle costs. AiRA models this as a compounding real rate rather than fixed age bands, because bands imply an unrealistic spending cliff on a single birthday. Starting from 1.00 at retirement, spending drifts to about 86% of base by age 80, bottoms near 85% around 85, then climbs back toward 95% by 95 — all in REAL terms, so the dollar figures in your table still rise with inflation. Toggle it off in the sidebar to assume flat real spending, which is the more conservative assumption.",
+    body:  "<p class='help-lede'>Most calculators assume you spend the same amount every year, adjusted for inflation, until you die. Real retirees don't.</p><p class='help-p'>David Blanchett's research (\"Exploring the Retirement Consumption Puzzle\", 2014) found that real spending falls roughly 1% a year through most of retirement, then rises again late in life as healthcare and care costs take over. Plotted, that's a shallow U — the smile: GO-GO years of travel and projects, SLOW-GO years as travel tapers, and NO-GO years where medical costs replace lifestyle costs.</p><p class='help-p'>AiRA models this as a compounding real rate rather than fixed age bands, because bands imply an unrealistic spending cliff on a single birthday. Starting from 1.00 at retirement, spending drifts to about 86% of base by age 80, bottoms near 85% around 85, then climbs back toward 95% by 95 — all in REAL terms, so the dollar figures in your table still rise with inflation.</p><div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div>Toggle it off in the sidebar to assume flat real spending, which is the more conservative assumption.</div></div>",
   },
 
   // ── Your Income ───────────────────────────────────────────
@@ -152,7 +152,7 @@ export const ABOUT_FEATURES = [
     group: "Your Income",
     icon:  "🏦",
     title: "Pensions — pick the right type",
-    body:  "AiRA models three kinds of pension, and the type matters because they behave completely differently in the engine. MONTHLY / ANNUAL is a recurring stream: it reduces what you withdraw each year, and can grow either by a percentage (a COLA) or by a flat dollar amount per year. LUMP SUM is a single payment at a chosen age — it is deposited into an account and compounds from that year forward. CASH BALANCE is an account balance you will roll over, so it defaults to your pre-tax bucket, where it later drives RMDs. Do NOT enter a lump-sum or cash-balance pension as an ordinary account balance: that puts the money in your plan starting TODAY rather than in the year you actually receive it, overstating years of compounding. Use the type selector on each pension and AiRA routes it correctly.",
+    body:  "<p class='help-lede'>AiRA models three kinds of pension, and the type matters because they behave completely differently in the engine.</p><p class='help-p'>MONTHLY / ANNUAL is a recurring stream: it reduces what you withdraw each year, and can grow either by a percentage (a COLA) or by a flat dollar amount per year. LUMP SUM is a single payment at a chosen age — it is deposited into an account and compounds from that year forward. CASH BALANCE is an account balance you will roll over, so it defaults to your pre-tax bucket, where it later drives RMDs.</p><div class='help-note help-note--risk'><span class='help-note-icon' aria-hidden='true'>!</span><div>Do NOT enter a lump-sum or cash-balance pension as an ordinary account balance: that puts the money in your plan starting TODAY rather than in the year you actually receive it, overstating years of compounding. Use the type selector on each pension and AiRA routes it correctly.</div></div>",
   },
 
   {
@@ -160,7 +160,7 @@ export const ABOUT_FEATURES = [
     group: "Your Income",
     icon:  "💰",
     title: "Inheritances & other one-off windfalls",
-    body:  "A future inheritance, home sale or business exit goes in the ONE-OFF INCOME & WINDFALLS card on the Income step — not under Other Income. Other Income is a recurring stream that offsets each year's spending, so anything beyond one year's spending gap would be silently discarded: a $1M inheritance against an $80k gap would lose $920k. A windfall is instead DEPOSITED into the account you choose (cash, brokerage, pre-tax or Roth) in the year it arrives, whether that year is before or after you retire, and it compounds from there. Most inheritances are not ordinary income, so leave the taxable box unchecked unless the money arrives as a taxable distribution. Windfalls are income, not spending — they never appear under Planned One-Off Expenses.",
+    body:  "<p class='help-lede'>A future inheritance, home sale or business exit goes in the ONE-OFF INCOME &amp; WINDFALLS card on the Income step — not under Other Income.</p><p class='help-p'>Other Income is a recurring stream that offsets each year's spending, so anything beyond one year's spending gap would be silently discarded: a $1M inheritance against an $80k gap would lose $920k.</p><p class='help-p'>A windfall is instead DEPOSITED into the account you choose (cash, brokerage, pre-tax or Roth) in the year it arrives, whether that year is before or after you retire, and it compounds from there. Most inheritances are not ordinary income, so leave the taxable box unchecked unless the money arrives as a taxable distribution.</p><div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div>Windfalls are income, not spending — they never appear under Planned One-Off Expenses.</div></div>",
   },
 
   {
@@ -168,7 +168,7 @@ export const ABOUT_FEATURES = [
     group: "Your Income",
     icon:  "🕊️",
     title: "Two Social Security benefits, and what happens when one of you dies",
-    body:  `AiRA models both benefits, not one. Enter each person's expected monthly benefit, each person's claim age, and each person's amount at full retirement age — SSA quotes all of these. The FRA amounts are needed for one reason: the <strong>spousal top-up</strong> is 50% of the HIGHER earner's FRA amount, not 50% of the check they actually receive, and delaying past FRA never increases it. So if your spouse's own benefit is below half of your FRA amount, Social Security tops theirs up to that level, and AiRA includes it automatically.<br/><br/>
+    body:  `<p class='help-lede'>AiRA models both benefits, not one.</p><p class='help-p'>Enter each person's expected monthly benefit, each person's claim age, and each person's amount at full retirement age — SSA quotes all of these. The FRA amounts are needed for one reason: the <strong>spousal top-up</strong> is 50% of the HIGHER earner's FRA amount, not 50% of the check they actually receive, and delaying past FRA never increases it. So if your spouse's own benefit is below half of your FRA amount, Social Security tops theirs up to that level, and AiRA includes it automatically.<br/><br/>
 
 <strong>Enter your spouse's date of birth.</strong> It is not decoration. Every projection walks one age, so without a birthday for your spouse the app cannot tell when THEIR benefit starts — a spouse ten years younger would be credited with a check a decade before it arrives. Their birthday also drives when they reach Medicare at 65, their own age-65 standard-deduction add-on, and their own RMD age.<br/><br/>
 
@@ -183,7 +183,7 @@ Set "Model the first death" in Profile → Retirement Plan and the Stress Test t
 
 Claiming a survivor benefit before <em>survivor</em> full retirement age (66–67, on a different schedule from retirement FRA) reduces it permanently — 71.5% at 60, rising to 100% at survivor FRA. Permanently means exactly that: reaching FRA later does not restore the full amount. And unlike your own benefit, a survivor benefit earns nothing by waiting past its FRA, so there is never a reason to delay it beyond that point. One genuinely useful asymmetry: any delayed retirement credits the deceased earned DO pass through to the survivor benefit, which is why delaying the higher earner's claim protects the survivor for life.<br/><br/>
 
-<strong>What AiRA does not model here:</strong> the earnings test. If a survivor claims before full retirement age while still working, SSA withholds $1 of benefits for every $2 earned above an annual limit ($24,480 in 2026). AiRA models no wage income, so it cannot apply this — if you plan to keep working, treat an early claim as worth less than the app shows. Get both benefit figures from SSA and have a fee-only advisor check the sequence before anyone files; this is among the highest-stakes claiming decisions there is.`,
+<strong>What AiRA does not model here:</strong> the earnings test. If a survivor claims before full retirement age while still working, SSA withholds $1 of benefits for every $2 earned above an annual limit ($24,480 in 2026). AiRA models no wage income, so it cannot apply this — if you plan to keep working, treat an early claim as worth less than the app shows. Get both benefit figures from SSA and have a fee-only advisor check the sequence before anyone files; this is among the highest-stakes claiming decisions there is.</p>`,
   },
 
   {
@@ -191,7 +191,7 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
     group: "Your Income",
     icon:  "🛡️",
     title: "How pensions interact with guardrails",
-    body:  "A pension is stable income, so it lowers the share of spending that must come from your portfolio. AiRA subtracts it from your target spending before measuring your withdrawal rate, which means a strong pension supports a higher rate on what is left — while the Guyton-Klinger guardrails still protect you in downturns. Critically, that target is RECALCULATED each year against your current income, so a pension rising on schedule is not mistaken for investment outperformance. An earlier version compared against a target frozen at retirement, which made a growing pension trigger repeated automatic spending increases; fixed in v1.2.21.",
+    body:  "<p class='help-lede'>A pension is stable income, so it lowers the share of spending that must come from your portfolio.</p><p class='help-p'>AiRA subtracts it from your target spending before measuring your withdrawal rate, which means a strong pension supports a higher rate on what is left — while the Guyton-Klinger guardrails still protect you in downturns. Critically, that target is RECALCULATED each year against your current income, so a pension rising on schedule is not mistaken for investment outperformance.</p><div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div>An earlier version compared against a target frozen at retirement, which made a growing pension trigger repeated automatic spending increases; fixed in v1.2.21.</div></div>",
   },
 
   // ── Your Properties ───────────────────────────────────────
@@ -200,7 +200,7 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
     group: "Your Properties",
     icon:  "🏠",
     title: "Property Rental Income",
-    body:  "Income entered in each property's Income field flows automatically into all simulations. It grows at your Rental Growth Rate and is always included regardless of the Rental Income toggle (which controls separately-entered Airbnb / short-term income). The Rental column in the withdrawal table shows both sources combined.",
+    body:  "<p class='help-lede'>Income entered in each property's Income field flows automatically into all simulations.</p><p class='help-p'>It grows at your Rental Growth Rate and is always included regardless of the Rental Income toggle (which controls separately-entered Airbnb / short-term income). The Rental column in the withdrawal table shows both sources combined.</p>",
   },
 
   // ── Reading the Charts ────────────────────────────────────
@@ -209,7 +209,7 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
     group: "Reading the Charts",
     icon:  "💵",
     title: "Today's dollars vs. future dollars",
-    body:  `<p style="margin:0 0 14px">The same pile of money can be written two ways, and the difference is inflation. Neither number is wrong — they answer different questions.</p>
+    body:  `<p class='help-lede'>The same pile of money can be written two ways, and the difference is inflation. Neither number is wrong — they answer different questions.</p>
 
 <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
   <div style="background:rgba(96,165,250,0.07);border:1px solid rgba(96,165,250,0.2);border-radius:9px;padding:12px 14px">
@@ -222,41 +222,37 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
   </div>
 </div>
 
-<div style="background:rgba(251,191,36,0.08);border-left:3px solid #fbbf24;border-radius:0 8px 8px 0;padding:10px 13px;margin-bottom:14px;font-size:11px;color:#e2e8f0;line-height:1.6">
-  <strong>Example:</strong> a plan showing $3M at 85 might be worth about $1.4M in today's purchasing power at 2.5% inflation over 30 years.
-</div>
+<div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div><strong>Example:</strong> a plan showing $3M at 85 might be worth about $1.4M in today's purchasing power at 2.5% inflation over 30 years.</div></div>
 
-<p style="margin:0 0 12px;font-size:12px;color:var(--text-secondary);line-height:1.65"><strong style="color:#e2e8f0">Where to switch:</strong> the "Show in today's dollars" toggle above the charts. AiRA uses these plain terms instead of "real"/"nominal" — every chart and table states which one it's showing so you never have to guess.</p>
+<p class='help-p'><strong>Where to switch:</strong> the "Show in today's dollars" toggle above the charts. AiRA uses these plain terms instead of "real"/"nominal" — every chart and table states which one it's showing so you never have to guess.</p>
 
-<div style="background:rgba(148,163,184,0.08);border-left:3px solid #64748b;border-radius:0 8px 8px 0;padding:10px 13px;font-size:12px;color:var(--text-secondary);line-height:1.6">
-  <strong style="color:#94a3b8">One limit:</strong> the charts begin at your retirement year, so "today's dollars" means retirement-year purchasing power — inflation between now and the day you retire is not stripped out. If you're already retired, the two are the same.
-</div>`,
+<div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div><strong>One limit:</strong> the charts begin at your retirement year, so "today's dollars" means retirement-year purchasing power — inflation between now and the day you retire is not stripped out. If you're already retired, the two are the same.</div></div>`,
   },
   {
     id:    "reassess-trigger",
     group: "Reading the Charts",
     icon:  "🎯",
     title: "Reassess & Trigger Lines",
-    body:  "Two milestone lines on the MC fan chart. Reassess (amber) is your minimum viable number — when the median path crosses it, the plan works mathematically. Trigger (purple) is your early-exit permission slip — a pre-set number where you retire immediately regardless of your original timeline. Set Trigger higher than Reassess. Toggle them off to declutter the chart.",
+    body:  "<p class='help-lede'>Two milestone lines on the MC fan chart.</p><p class='help-p'>Reassess (amber) is your minimum viable number — when the median path crosses it, the plan works mathematically. Trigger (purple) is your early-exit permission slip — a pre-set number where you retire immediately regardless of your original timeline.</p><div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div>Set Trigger higher than Reassess. Toggle them off to declutter the chart.</div></div>",
   },
     {
     id:    "checkpoints",
     group: "Reading the Charts",
     icon:  "🎯",
     title: "What are Checkpoints?",
-    body:  `Checkpoints let you compare your actual portfolio against AiRA's Monte Carlo projections over time. Add a date and portfolio value, and the app instantly shows whether you're ahead, on track, or behind relative to thousands of simulated paths.<br/><br/>
+    body:  `<p class='help-lede'>Checkpoints let you compare your actual portfolio against AiRA's Monte Carlo projections over time.</p><p class='help-p'>Add a date and portfolio value, and the app instantly shows whether you're ahead, on track, or behind relative to thousands of simulated paths.<br/><br/>
           Each checkpoint is color‑coded:<br/>
           • <span style="color:#10b981;">Green</span> – at or above the median forecast<br/>
           • <span style="color:#fbbf24;">Yellow</span> – between the 25th and 50th percentile<br/>
           • <span style="color:#ef4444;">Red</span> – below the 25th percentile<br/><br/>
-          This isn't just a status check. It's the foundation of adaptive distribution planning, a framework championed by financial planner Michael Kitces. Instead of blindly following a withdrawal plan made years ago, you adjust based on how your portfolio is actually performing. If you're in the green, you might spend a little more. In the red, you tighten up. Over time, checkpoints build a living history of your financial journey, turning a static retirement plan into a responsive roadmap. You're not guessing whether you're still on track—you're measuring it, one checkpoint at a time.`,
+          This isn't just a status check. It's the foundation of adaptive distribution planning, a framework championed by financial planner Michael Kitces. Instead of blindly following a withdrawal plan made years ago, you adjust based on how your portfolio is actually performing. If you're in the green, you might spend a little more. In the red, you tighten up. Over time, checkpoints build a living history of your financial journey, turning a static retirement plan into a responsive roadmap. You're not guessing whether you're still on track—you're measuring it, one checkpoint at a time.</p>`,
      },
     {
     id:    "still-funded-percent",
     group: "Reading the Charts",
     icon:  "🎯",
     title: "What does “Still Funded %” actually mean?",
-    body:  `The <strong>Still Funded</strong> column in the Age-by-Age Projection Bands table (Forecast tab, under the fan chart) answers one question per age: <em>in what share of the simulated futures did your accounts still have money at this age?</em><br/><br/>
+    body:  `<p class='help-lede'>The <strong>Still Funded</strong> column in the Age-by-Age Projection Bands table (Forecast tab, under the fan chart) answers one question per age: <em>in what share of the simulated futures did your accounts still have money at this age?</em></p><p class='help-p'>
           The Monte Carlo replays your exact plan through thousands of alternate market histories — same accounts, same spending rule, same taxes; only the year-by-year sequence of returns and inflation differs, each drawn from roughly a century of real S&amp;P 500, bond, and CPI data. If the table says <strong>96.5% at age 85</strong>, then in 96.5% of those simulated histories your portfolio was still positive at 85. The other <strong>3.5%</strong> are the histories where the portfolio hit zero at some age <em>at or before</em> 85 — the engine marks a path as failed in the first year its four buckets (cash, taxable, pre-tax, Roth) can't cover that year's spending plus taxes. Nearly all failures are <em>sequence-of-returns</em> cases: a 2000-style or 1970s-style stretch of bad markets in your first retirement years, when withdrawals from a shrinking portfolio do permanent damage.<br/><br/>
           <strong style="color:#5eead4;">Two things the failure percentage does NOT mean</strong><br/>
           • <strong>It is not a chance of having zero income.</strong> Social Security, rental, and pension income keep paying in every simulated path — they can't run out in the model. A "failed" path means living on those guaranteed streams alone from the failure age onward, with no portfolio to top them up. Whether that's a catastrophe or a survivable floor depends on how big your guaranteed income is relative to your spending.<br/>
@@ -266,14 +262,14 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
           <strong style="color:#94a3b8;">Why it differs from the headline success rate</strong><br/>
           The big success number on the Forecast tab is measured at your full plan age (say 90). "Still funded at 85" will always be equal or higher — paths that run out between 85 and 90 count against the headline but not against age 85's row. Watching where the column starts to sag tells you <em>when</em> the risk concentrates, not just whether it exists.<br/><br/>
           <strong style="color:#a78bfa;">◐ "Chance your money outlives you" — the mortality-weighted companion</strong><br/>
-          The headline rate assumes you're guaranteed to be alive at your plan age — a deliberately conservative planning stance. But a path that runs dry at 88 only fails <em>you</em> if you're alive at 88, and the SSA odds of that are well below 100%. The purple companion figure under the success rate weights each failed path by the SSA life-table probability (using your sex setting in Profile) of being alive at its failure age — the actuarial "chance the money outlives you" championed by researchers like David Blanchett and Michael Kitces. It's always equal to or higher than the headline. Read them together: the headline is the number to <em>plan</em> with (you can't average yourself with the version of you who died early); the weighted one is the honest answer to "how worried should I actually be?"`,
+          The headline rate assumes you're guaranteed to be alive at your plan age — a deliberately conservative planning stance. But a path that runs dry at 88 only fails <em>you</em> if you're alive at 88, and the SSA odds of that are well below 100%. The purple companion figure under the success rate weights each failed path by the SSA life-table probability (using your sex setting in Profile) of being alive at its failure age — the actuarial "chance the money outlives you" championed by researchers like David Blanchett and Michael Kitces. It's always equal to or higher than the headline. Read them together: the headline is the number to <em>plan</em> with (you can't average yourself with the version of you who died early); the weighted one is the honest answer to "how worried should I actually be?"</p>`,
      },
     {
     id:    "gk-longevity-paradox",
     group: "Reading the Charts",
     icon:  "🧠",
     title: "Why Smart Waterfall switches strategies at year 15 (the GK paradox)",
-    body:  `<strong>Short version:</strong> the original Guyton-Klinger (2006) safe-withdrawal rule has a clause that disables its safety brake when 15 or fewer years remain. That clause is great for 75-year-olds with 10 years left — but it does something weird when your <em>entire</em> retirement is 15 years or shorter: the safety brake is never armed at all. AiRA's <strong>Smart Waterfall</strong> strategy fixes that by switching to the Bengen 4% Rule whenever <code>yearsRemaining ≤ 15</code>. The pure "Guyton-Klinger" strategy remains faithful to the published paper, longevity clause and all — pick it explicitly if you want the original behavior.<br/><br/>
+    body:  `<p class='help-lede'><strong>Short version:</strong> the original Guyton-Klinger (2006) safe-withdrawal rule has a clause that disables its safety brake when 15 or fewer years remain.</p><p class='help-p'> That clause is great for 75-year-olds with 10 years left — but it does something weird when your <em>entire</em> retirement is 15 years or shorter: the safety brake is never armed at all. AiRA's <strong>Smart Waterfall</strong> strategy fixes that by switching to the Bengen 4% Rule whenever <code>yearsRemaining ≤ 15</code>. The pure "Guyton-Klinger" strategy remains faithful to the published paper, longevity clause and all — pick it explicitly if you want the original behavior.<br/><br/>
           <strong style="color:#a78bfa;">What the GK paper actually says</strong><br/>
           GK's Capital Preservation Rule cuts spending 10% whenever the current withdrawal rate climbs more than 20% above the initial rate. This is the "safety brake" — markets crash, your portfolio drops, your withdrawal rate spikes, GK trims spending until the rate stabilizes.<br/><br/>
           The companion <em>Longevity Rule</em> says: skip the cut when 15 or fewer years remain. Jonathan Guyton's logic was reasonable — a 75-year-old shouldn't needlessly tighten the belt when actuarial life expectancy puts them close to the finish line. Better to spend it and enjoy the last years.<br/><br/>
@@ -288,20 +284,20 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
           <strong style="color:#94a3b8;">If you want pure GK</strong><br/>
           Pick "Guyton-Klinger (Dynamic)" in Profile → Withdrawal. That strategy is faithful to the 2006 paper — longevity clause and all. Useful if you're comparing AiRA's output to other planners that implement the original rule literally, or if you want to test the paradox yourself.<br/><br/>
           <strong style="color:#475569;">Is the paradox widely known?</strong><br/>
-          The longevity clause is well-documented in the SWR research community (Pfau, Kitces, Big ERN, Bengen). The <em>short-horizon paradox that follows from it</em> is less discussed — most safe-withdrawal research assumes 25-30-year horizons, and FIRE/bridge-period planning rarely uses full GK simulation. We surfaced it independently by running edge cases on the Plan-to-Age slider. If you've seen it written up elsewhere, let us know — until then we'll treat it as an under-discussed corner of an otherwise well-studied rule.`,
+          The longevity clause is well-documented in the SWR research community (Pfau, Kitces, Big ERN, Bengen). The <em>short-horizon paradox that follows from it</em> is less discussed — most safe-withdrawal research assumes 25-30-year horizons, and FIRE/bridge-period planning rarely uses full GK simulation. We surfaced it independently by running edge cases on the Plan-to-Age slider. If you've seen it written up elsewhere, let us know — until then we'll treat it as an under-discussed corner of an otherwise well-studied rule.</p>`,
      },
     {
     id:    "withdrawal-plan-two-questions",
     group: "Reading the Charts",
     icon:  "💸",
     title: "Withdrawal Plan — the two questions",
-    body:  `The <strong>💸 Withdrawal Plan</strong> tab is one tab with two collapsible sections. They show the same underlying data through two different lenses — use them together, not as alternatives. The tax math is shared: both schedules use the same source-aware engine, so per-year fed/state tax agree.<br/><br/>
+    body:  `<p class='help-lede'>The <strong>💸 Withdrawal Plan</strong> tab is one tab with two collapsible sections.</p><p class='help-p'>They show the same underlying data through two different lenses — use them together, not as alternatives. The tax math is shared: both schedules use the same source-aware engine, so per-year fed/state tax agree.<br/><br/>
           <strong style="color:#5eead4;">Section 1 — “Where does each year's spending come from?”</strong><br/>
           Account-by-account sourcing. The engine walks the optimal order — cash → taxable brokerage → pre-tax (capped at your chosen bracket ceiling) → Roth last — and applies tax only where it's actually owed. Taxable-brokerage draws realize long-term capital gains on the growth portion (tracked with average-cost basis from your "Taxable cost basis %" profile setting), taxed at the 0/15/20% LTCG rates plus NIIT where applicable — not as ordinary income. Pre-tax draws stop at your bracket ceiling so you don't cross into a higher tier. Includes a Smart vs Naive (pretax-first) comparison showing how much tax the optimal ordering saves you, and flags landmines per year: ⚡ SS torpedo, 💊 IRMAA triggered, 📋 RMDs active.<br/><br/>
           <strong style="color:#fbbf24;">Section 2 — “How does my chosen strategy pace spending year by year?”</strong><br/>
           Shows the trajectory of the <em>one</em> withdrawal strategy you've picked in Profile → Withdrawal. AiRA supports ten strategies (Guyton-Klinger, Fixed %, Vanguard Dynamic, VPW, CAPE, Kitces Ratcheting, Endowment, 1/N, 95% Rule, Risk-Based), but this view runs only the one selected. To compare two strategies, swap the selection in Profile and revisit this view — the schedule recomputes live.<br/><br/>
           <strong style="color:#94a3b8;">In short:</strong> Section 1 answers <em>where</em> the money comes from. Section 2 answers <em>how fast</em> you spend it. Both update live as you edit balances in Profile → Savings — there's no refresh button because there's no cache.<br/><br/>
-          <strong style="color:#475569;">Note on capital gains:</strong> the engine tracks your taxable account's cost basis (set "Taxable cost basis %" in Profile — read it off your brokerage statement) and realizes gains on every taxable draw: 0/15/20% federal LTCG stacked on top of ordinary income, 3.8% NIIT above $250,000 MAGI (MFJ), gains taxed as ordinary income at the state level, and gains counted in IRMAA MAGI and Social Security provisional income. Growth after today increases the gain portion over time, exactly as it would in your real account. Remaining simplification: average-cost basis, not per-lot — no tax-loss-harvesting modeling.`,
+          <strong style="color:#475569;">Note on capital gains:</strong> the engine tracks your taxable account's cost basis (set "Taxable cost basis %" in Profile — read it off your brokerage statement) and realizes gains on every taxable draw: 0/15/20% federal LTCG stacked on top of ordinary income, 3.8% NIIT above $250,000 MAGI (MFJ), gains taxed as ordinary income at the state level, and gains counted in IRMAA MAGI and Social Security provisional income. Growth after today increases the gain portion over time, exactly as it would in your real account. Remaining simplification: average-cost basis, not per-lot — no tax-loss-harvesting modeling.</p>`,
      },
   // ── Tax Modeling ──────────────────────────────────────────
   {
@@ -335,7 +331,7 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
 .ttm-flag{background:rgba(239,159,39,0.08);border-left:3px solid #EF9F27;border-radius:0 7px 7px 0;padding:9px 13px;margin-bottom:8px;font-size:11px;color:#e2e8f0;line-height:1.6}
 .ttm-warn{background:rgba(226,75,74,0.08);border-left:3px solid #E24B4A;border-radius:0 7px 7px 0;padding:9px 13px;margin-bottom:8px;font-size:11px;color:#e2e8f0;line-height:1.6}
 </style>
-<p class="ttm-sub">How the IRS treats each dollar depending on where it lives — federal rules. State treatment varies; check your domicile.</p>
+<p class='help-lede'>How the IRS treats each dollar depending on where it lives — federal rules. State treatment varies; check your domicile.</p>
 
 <p class="ttm-label">The four buckets</p>
 <div class="ttm-acct-grid">
@@ -460,17 +456,17 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
 </table>
 </div>
 
-<div class="ttm-warn"><strong>The "taxable first" rule only applies if you have a taxable brokerage.</strong> If your portfolio is entirely pre-tax (traditional IRA/401k), Roth, and HSA, there are no long-term gains to harvest at preferential rates. Pre-tax withdrawals are always ordinary income — the account wrapper, not the underlying holding, determines the tax rate.</div>
-<div class="ttm-flag"><strong>State domicile changes the math significantly.</strong> States that tax capital gains as ordinary income eliminate the federal 0% LTCG advantage for taxable accounts. States with no income tax (such as FL, TX, or WA on most income) make taxable gains meaningfully cheaper. Your domicile decision before retirement is one of the highest-leverage tax moves available.</div>
-<div class="ttm-flag"><strong>The pre-tax trap.</strong> Large traditional IRA / 401k balances generate forced ordinary income at RMD age, stacking with Social Security taxation and IRMAA surcharges. A Roth conversion ladder in the years before RMDs begin is the primary tool for reducing this exposure.</div>
-<div class="ttm-flag"><strong>The optimal withdrawal order:</strong> Roth last (preserve tax-free compounding), HSA for medical (0% always), taxable next (LTCG rates), pre-tax bracketed to avoid crossing into a higher tier. This order minimizes lifetime taxes across all states.</div>`,
+<div class='help-note help-note--risk'><span class='help-note-icon' aria-hidden='true'>!</span><div><strong>The "taxable first" rule only applies if you have a taxable brokerage.</strong> If your portfolio is entirely pre-tax (traditional IRA/401k), Roth, and HSA, there are no long-term gains to harvest at preferential rates. Pre-tax withdrawals are always ordinary income — the account wrapper, not the underlying holding, determines the tax rate.</div></div>
+<div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div><strong>State domicile changes the math significantly.</strong> States that tax capital gains as ordinary income eliminate the federal 0% LTCG advantage for taxable accounts. States with no income tax (such as FL, TX, or WA on most income) make taxable gains meaningfully cheaper. Your domicile decision before retirement is one of the highest-leverage tax moves available.</div></div>
+<div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div><strong>The pre-tax trap.</strong> Large traditional IRA / 401k balances generate forced ordinary income at RMD age, stacking with Social Security taxation and IRMAA surcharges. A Roth conversion ladder in the years before RMDs begin is the primary tool for reducing this exposure.</div></div>
+<div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div><strong>The optimal withdrawal order:</strong> Roth last (preserve tax-free compounding), HSA for medical (0% always), taxable next (LTCG rates), pre-tax bracketed to avoid crossing into a higher tier. This order minimizes lifetime taxes across all states.</div></div>`,
   },
   {
     id:    "tax-drag",
     group: "Tax Modeling",
     icon:  "🏛",
     title: "Tax Drag Adjustment",
-    body:  `<strong style="color:#e2e8f0;">What is tax drag?</strong> Every dollar you withdraw from a pre-tax account is taxed as ordinary income before you can spend it. "Tax drag" is the gross-up factor AiRA applies so the after-tax cash you keep matches your stated annual spending. If your spend target is $80,000 and your effective drag is 10%, the engine pulls $88,000 from the portfolio so $80,000 lands in your pocket.<br/><br/>
+    body:  `<p class='help-lede'><strong>What is tax drag?</strong> Every dollar you withdraw from a pre-tax account is taxed as ordinary income before you can spend it.</p><p class='help-p'> "Tax drag" is the gross-up factor AiRA applies so the after-tax cash you keep matches your stated annual spending. If your spend target is $80,000 and your effective drag is 10%, the engine pulls $88,000 from the portfolio so $80,000 lands in your pocket.<br/><br/>
             <strong style="color:#e2e8f0;">Why it varies by year:</strong> Tax exposure isn't flat across retirement. The drag percentage rises in three stages:<br/>
             • <strong>Before Social Security claims</strong> — lowest drag. You're living off taxable / Roth draws with no SS income on the return.<br/>
             • <strong>SS started, before RMDs</strong> — moderate drag. SS becomes partially taxable; provisional-income math starts to bite.<br/>
@@ -478,14 +474,14 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
             <strong style="color:#e2e8f0;">Filing status matters:</strong> Single filers see higher drag than MFJ at every stage — halved brackets and a halved standard deduction mean the same dollar of income hits a higher marginal rate sooner.<br/><br/>
             <strong style="color:#e2e8f0;">Toggle ON (default):</strong> Realistic mode. Withdrawals are grossed up so the spend number you entered is the after-tax amount you actually get to use. This is what you should leave on for any plan you intend to act on.<br/><br/>
             <strong style="color:#e2e8f0;">Toggle OFF:</strong> Pre-tax view. Useful for sanity-checking the underlying portfolio dynamics without tax noise, but it overstates how long your money lasts because Uncle Sam still takes his cut in real life.<br/><br/>
-            <strong style="color:#e2e8f0;">Note:</strong> This is the engine's <em>simplified</em> drag model for the high-level success-rate view. The detailed year-by-year withdrawal schedule (and the Roth conversion explorer) compute exact federal + state + IRMAA tax using full progressive brackets — not the drag approximation.`,
+            <strong style="color:#e2e8f0;">Note:</strong> This is the engine's <em>simplified</em> drag model for the high-level success-rate view. The detailed year-by-year withdrawal schedule (and the Roth conversion explorer) compute exact federal + state + IRMAA tax using full progressive brackets — not the drag approximation.</p>`,
   },
      {
     id:    "Tax ",
     group: "Roth Conversions",
     icon:  "🎯",
     title: "Using Tax Room",
-    body:  `Tax Room is the amount of taxable income you can add in a given year without pushing yourself into a higher tax bracket.
+    body:  `<p class='help-lede'>Tax Room is the amount of taxable income you can add in a given year without pushing yourself into a higher tax bracket.</p><p class='help-p'>
     AiRA's Roth conversion tool uses this concept to optimize how much of your traditional assets to convert each year,
     aiming to fill up your current tax bracket without spilling into the next one.
     By strategically using your Tax Room, you can minimize the total taxes paid over time
@@ -496,7 +492,7 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
       using your Tax Room to your advantage while keeping an eye on the overall tax picture. Once you understand how to
       use Tax Room effectively, you can make informed decisions about your Roth conversions and optimize your retirement income strategy. Save
       the amount and it will automatically be factored in the Roth Conversion forecast for the year you selected. This allows Aira to
-      create a better RMD and Roth conversion schedule for the years after, since it knows how much of your tax bracket you used in the year you made the conversion.`,
+      create a better RMD and Roth conversion schedule for the years after, since it knows how much of your tax bracket you used in the year you made the conversion.</p>`,
      },
 
   // ── 3-Bucket Strategy ────────────────────────────────────
@@ -505,7 +501,7 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
     group: "3-Bucket Strategy",
     icon:  "🧺",
     title: "What Are the 3 Buckets?",
-    body:  `The 3-bucket strategy organizes your retirement assets by <em>when</em> you need them, not just what they are. Each bucket has a specific job and a rule about when it can be touched.<br/><br/>
+    body:  `<p class='help-lede'>The 3-bucket strategy organizes your retirement assets by <em>when</em> you need them, not just what they are. Each bucket has a specific job and a rule about when it can be touched.</p><p class='help-p'><br/><br/>
 <strong style="color:#0ea5e9;">Bucket 1 — Cash (0–3 years)</strong><br/>
 Your checking account for retirement. This is the money that pays your bills right now — HYSA, money market, SGOV, short-term T-bills. It should hold 3 years of spending so a market crash never forces you to sell stocks at the worst moment. Target return: 2–4%. <em>Never invest this bucket in anything that can lose value.</em><br/><br/>
 <strong style="color:#a78bfa;">Bucket 2 — Income &amp; Stability (3–10 years)</strong><br/>
@@ -514,14 +510,14 @@ The bridge bucket. Bonds, balanced funds, dividend-paying stocks, REITs — cons
 The engine room. Stocks, ETFs, growth funds, international equity — assets that can drop 40% and you don't care, because you don't need this money for a decade or more. Target return: 6–8%. This is where your Roth IRA lives. Let it compound. In AiRA, Roth and HSA accounts default to Bucket 3.<br/><br/>
 <strong style="color:#e2e8f0;">Why it works:</strong> Sequence-of-returns risk — a crash in your first few years of retirement — is the biggest threat to a retirement plan. Buckets address it by ensuring you always have 1–2 years of cash on hand. You never sell stocks when they're down 40%. You wait, draw from cash, and refill when the market recovers.<br/><br/>
 <strong style="color:#fbbf24;">What AiRA simulates, and what it leaves to you:</strong> Turning on <strong>Bucket investing</strong> (Withdrawal Plan → Account draw order) makes the simulation invest each bucket according to its tag — B1 grows at your cash rate, safe from a crash — and pass Bucket 2's yield across to Bucket 1 each year until Bucket 1 hits its target. The <em>refill protocol</em> — selling Bucket 3 to top up Bucket 1 after a good year, and holding off after a bad one — is guidance the 🧺 Buckets tab gives you to act on, not something the simulation performs. Your draw order is unchanged by the setting.<br/><br/>
-<strong style="color:#e2e8f0;">An honest note on the numbers:</strong> Research by Michael Kitces (2014) found that a bucket strategy which avoids selling low but never <em>buys</em> low performs about the same as simply rebalancing a total-return portfolio every year — the discipline captures half the benefit, not both halves. Expect buckets to make a crash easier to live through rather than to produce a materially higher success rate. That behavioral value is real, and it is the honest reason to use them.`,
+<strong style="color:#e2e8f0;">An honest note on the numbers:</strong> Research by Michael Kitces (2014) found that a bucket strategy which avoids selling low but never <em>buys</em> low performs about the same as simply rebalancing a total-return portfolio every year — the discipline captures half the benefit, not both halves. Expect buckets to make a crash easier to live through rather than to produce a materially higher success rate. That behavioral value is real, and it is the honest reason to use them.</p>`,
   },
   {
     id:    "bucket-setup",
     group: "3-Bucket Strategy",
     icon:  "⚙",
     title: "Setting Up Your Buckets",
-    body:  `AiRA assigns each account to a bucket automatically based on account type, but you can override any assignment.<br/><br/>
+    body:  `<p class='help-lede'>AiRA assigns each account to a bucket automatically based on account type, but you can override any assignment.</p><p class='help-p'><br/><br/>
 <strong style="color:#e2e8f0;">Default assignments:</strong><br/>
 • <strong style="color:#94a3b8;">Cash / Savings</strong> → Bucket 1 (your spending runway)<br/>
 • <strong style="color:#fbbf24;">Taxable Brokerage</strong> → Bucket 2 (sell here first when B1 runs low)<br/>
@@ -533,14 +529,14 @@ The engine room. Stocks, ETFs, growth funds, international equity — assets tha
 • You hold bonds <em>inside</em> your Roth → reassign that Roth account to B2<br/>
 • You have a Solo 401(k) you want to keep as long-term growth → reassign to B3<br/>
 • You have a money market inside a taxable account → reassign to B1<br/><br/>
-Once your accounts are assigned, the <strong>🧺 Buckets tab</strong> automatically shows your live balances, progress toward floor/target for each bucket, and a monthly directive telling you exactly what to do.`,
+Once your accounts are assigned, the <strong>🧺 Buckets tab</strong> automatically shows your live balances, progress toward floor/target for each bucket, and a monthly directive telling you exactly what to do.</p>`,
   },
   {
     id:    "bucket-directive",
     group: "3-Bucket Strategy",
     icon:  "📋",
     title: "Reading the Monthly Directive",
-    body:  `The <strong>📋 Monthly Directive</strong> at the top of the Buckets tab is the operational heart of the bucket system. It checks your actual account balances against your floor and target thresholds and gives you a specific instruction.<br/><br/>
+    body:  `<p class='help-lede'>The <strong>📋 Monthly Directive</strong> at the top of the Buckets tab is the operational heart of the bucket system.</p><p class='help-p'> It checks your actual account balances against your floor and target thresholds and gives you a specific instruction.<br/><br/>
 <strong style="color:#34d399;">✅ All buckets healthy — no action needed</strong><br/>
 Everything is within range. The directive shows how many months until Bucket 1 approaches its floor so you know when to check back.<br/><br/>
 <strong style="color:#fbbf24;">🟡 Bucket 1 below target — consider topping up</strong><br/>
@@ -556,7 +552,7 @@ Act on this. The directive shows step-by-step which account to sell from, how mu
 • B2 Floor = 5 years of spending (default)<br/>
 • B2 Target = max(your chosen years, SS-gap years) × annual spend<br/><br/>
 <strong style="color:#e2e8f0;">AiRA uses threshold-based replenishment, not sequential depletion.</strong> Some bucket calculators deplete B1 completely before touching B2. AiRA instead refills B1 from B2 before it runs dry — this is more tax-optimal because it lets you control the timing and tax bracket of each draw.<br/><br/>
-<strong style="color:#e2e8f0;">Tax guidance is live:</strong> The tax estimate in each step comes from AiRA's waterfall simulation — it uses your actual projected income in the first year of retirement to determine your marginal bracket and whether you're in the 0% LTCG zone.`,
+<strong style="color:#e2e8f0;">Tax guidance is live:</strong> The tax estimate in each step comes from AiRA's waterfall simulation — it uses your actual projected income in the first year of retirement to determine your marginal bracket and whether you're in the 0% LTCG zone.</p>`,
   },
 
   // ── AI Action Plan ────────────────────────────────────────
@@ -565,18 +561,18 @@ Act on this. The directive shows step-by-step which account to sell from, how mu
     group: "AI Action Plan",
     icon:  "🤖",
     title: "AI Analysis — What the Badges Mean",
-    body:  `After you click <strong style="color:#e2e8f0;">Run AI</strong> on the Action Plan tab, AiRA sends your profile and Monte Carlo results to Gemini and asks it to review every card on your plan. Two indicators appear on each card once that review is complete:<br/><br/>
+    body:  `<p class='help-lede'>After you click <strong>Run AI</strong> on the Action Plan tab, AiRA sends your profile and Monte Carlo results to Gemini and asks it to review every card on your plan.</p><p class='help-p'>Two indicators appear on each card once that review is complete:<br/><br/>
 <strong style="color:#818cf8;">🤖 AI insight</strong> — Gemini found something specific and quantitative to add for this card. The insight appears directly on the card face and in full detail when you open the card. Examples: the exact dollar amount you'd save by claiming SS at 70 vs 62 given your balance, the specific IRMAA threshold your projected MAGI is approaching, or the Roth conversion amount that fills your 12% bracket this year.<br/><br/>
 <strong style="color:#64748b;">🤖 AI reviewed</strong> — Gemini reviewed this card and agreed it is already comprehensive — there was nothing specific to add beyond what the rules engine already flagged. This confirms the card was not skipped.<br/><br/>
 Cards with no badge have not yet been reviewed by AI. Run AI again at any time to refresh — insights update based on your current profile and latest Monte Carlo run.<br/><br/>
-<strong style="color:#e2e8f0;">Note:</strong> AI analysis uses AiRA credits (powered by Google Gemini). Each run costs approximately 5 credits. Credits are deducted only after a successful response.`,
+<strong style="color:#e2e8f0;">Note:</strong> AI analysis uses AiRA credits (powered by Google Gemini). Each run costs approximately 5 credits. Credits are deducted only after a successful response.</p>`,
   },
   {
     id:    "live-search",
     group: "AI Action Plan",
     icon:  "🌐",
     title: "Live Search — Real-Time Market & Tax Data",
-    body:  `The <strong style="color:#22d3ee;">🌐 Live Updates</strong> button on the Action Plan tab triggers a separate AI call that uses <strong style="color:#e2e8f0;">Google Search grounding</strong> — Gemini searches the web in real time before generating cards. This is different from the standard AI analysis, which works entirely from your profile data.<br/><br/>
+    body:  `<p class='help-lede'>The <strong style="color:#22d3ee;">🌐 Live Updates</strong> button on the Action Plan tab triggers a separate AI call that uses <strong>Google Search grounding</strong> — Gemini searches the web in real time before generating cards.</p><p class='help-p'>This is different from the standard AI analysis, which works entirely from your profile data.<br/><br/>
 <strong style="color:#e2e8f0;">What it searches for:</strong><br/>
 • Current IRS contribution limits (401k, IRA, HSA) and catch-up amounts<br/>
 • Federal tax bracket and standard deduction updates for the current year<br/>
@@ -588,6 +584,6 @@ Cards with no badge have not yet been reviewed by AI. Run AI again at any time t
 • State-specific retirement income tax rules (based on your domicile)<br/>
 • SECURE 2.0 provisions taking effect this year<br/><br/>
 <strong style="color:#e2e8f0;">How to read Live cards:</strong> Each card carries a <strong style="color:#22d3ee;">🌐 LIVE</strong> badge and a source field showing which website or publication the data came from. Only cards with specific current numbers are created — if a search returns only general knowledge, no card is generated for that topic.<br/><br/>
-<strong style="color:#e2e8f0;">When to use it:</strong> Run Live Updates at the start of each year (after IRS announcements in November/December) or any time you suspect a tax law or benefit change may affect your plan. The standard AI analysis does not search the web — these two features complement each other.`,
+<strong style="color:#e2e8f0;">When to use it:</strong> Run Live Updates at the start of each year (after IRS announcements in November/December) or any time you suspect a tax law or benefit change may affect your plan. The standard AI analysis does not search the web — these two features complement each other.</p>`,
   },
 ]

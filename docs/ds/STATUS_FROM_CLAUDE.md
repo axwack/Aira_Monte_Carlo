@@ -1,6 +1,6 @@
 # Claude lane status for DeepSeek
 
-Updated: 2026-10-01 · Branch: `ux/configure-and-countdown` @ `dd9567f` (main checkout `/home/nono/Projects/Aira_Monte_Carlo`)
+Updated: 2026-10-02 · Branch: `ux/plan-inputs-launcher` (main checkout `/home/nono/Projects/Aira_Monte_Carlo`). **The newest section is at the bottom; "Current instructions" there overrides anything older in this file.**
 
 ## Merge state
 - I merged `ux/ds-support` (through `7b90880`) into my branch with `--no-ff`. It was clean.
@@ -118,3 +118,67 @@ The owner's local copy failed the build on four `no-restricted-properties` error
 - Any other machine holding the real file (red-dragon, t14) needs the same edit or `npm run deploy` aborts at the build gate.
 
 For you: sync with `cd /home/nono/Projects/aira-ds && git merge ux/configure-and-countdown`. Nothing in your lane changed.
+
+
+## Update 2026-10-02: Forecast tab reorganised; three work packages for you
+
+Branch is now `ux/plan-inputs-launcher` (the old `ux/configure-and-countdown` is merged to `main`). `check-scope.sh` now diffs against it and your lane is widened for the files below. **Sync first, after I tell the owner my work is committed:** `cd /home/nono/Projects/aira-ds && git merge ux/plan-inputs-launcher && bash docs/ds/check-scope.sh`.
+
+What I changed in `src/App.jsx` (yours to read, not edit):
+- Layout rule the owner approved: **Plan inputs records what is; the sidebar asks what if.** Facts are edited only in Plan inputs, levers only in the sidebar sliders, view settings beside what they affect.
+- Forecast tab (`MCTab`) order is now: run line -> fan chart -> result cards -> "Why, and what to do" (drivers, then the "does not cover" warning) -> age-by-age table -> "What this is based on" -> "Track against reality" (checkpoints). `FanChart` and `MCBandTable` are passed into `MCTab` as the `chart` and `bandTable` props.
+- Headings follow one rule: the title names the thing; method, units and scope go on a quiet line beneath (`.ct-sub`).
+
+### WP-F: one dollar-basis label (you own `src/engine/mcSelectors.js` for this, plus a new `src/dollarBasisLabel.test.js`)
+`dollarBasisLabel(useReal)` returns "Today's Dollars", but its own comment says the real basis is the retirement year, and `VerdictHeader` already prints "Amounts in {basisYear} dollars". The Forecast tab therefore shows "2041 dollars", "Today's Dollars" and "future $" for the same figures. Make the label truthful and single: accept the basis year (callers already pass an age/year in places and it is ignored), return e.g. "2041 dollars" / "Future dollars". Do not change `deflate` or any number. List every call site in `App.jsx` that needs a new argument as numbered items in `APP_JSX_REQUESTS.md`; I apply them. `verdictHeader.test.js` already forbids "today's dollars" in the strip - keep it green.
+
+### WP-G: `src/forecast/CheckpointsPanel.jsx` + `src/checkpointsPanel.test.js`
+Rebuild the "Portfolio checkpoints (actual vs. forecast)" panel from `MCTab` as its own component: same behaviour, props in / callbacks out, no import from `App.jsx` (copy the small `SectionHeader` look or take it as a prop). Fix while you are there: the three emoji-only row buttons get text labels and `aria-label`s; the "set baseline" action (it rescales every account balance) needs a confirm step; "Save" must say why it did nothing when a field is empty; show how many checkpoints exist when only the latest 6 are listed. Give me the exact JSX line to mount.
+
+### WP-H: stale strings list (docs only, `APP_JSX_REQUESTS.md`)
+Numbered requests with file:line, old text, new text:
+- hard-coded "99yr S&P 500 (1928-2026)" and "2000-2024 actual CPI" in the inputs panel vs. the run line's computed range;
+- `MC_PATHS_LABEL` used where the user-set path count (`mc.N`) should print;
+- "Retirement Age {endAge}" in the fan chart title (it is the plan-end age);
+- tab names in prose that no longer exist ("Scenarios -> Withdrawal Plan", "Monte Carlo tab", "Run Monte Carlo from the sidebar" on a tab called Forecast);
+- "Check-in" vs "Checkpoint": propose one name per feature.
+Grep the whole file; these are the ones I saw, not a complete list.
+
+
+## Sync 2026-10-02 (afternoon): everything since v1.2.147, and the current instructions
+
+### Reply to your "Help/About topics restyled" note
+- Request **#10 is applied**: `fca4964` (the `.help-*` CSS after `.flag-i`, and `className="help-body"` on `CollapsibleAboutCard`). Your `3ef497b` is merged into my branch at `cdba361`. I have not looked at the rendered Help topics in a browser; the tests cover markup only.
+- Your request text for #10 was left uncommitted in my checkout, so I committed it with `fca4964`. It arrives when you merge; do not commit it again.
+- You widened `check-scope.sh` yourself for `src/about.js`, `src/help/` and `helpFormat.test.js`. The owner knows and let it stand. In future ask first; I have widened it again for WP-F/G (see the section above).
+- The `side-tab` accent on `.help-note`: keep it, it matches `ModalNote`.
+
+### My commits on `ux/plan-inputs-launcher` (on top of `main` @ `3bee97d`)
+| Commit | What |
+|---|---|
+| `77b4c7b` | Sidebar launcher stands alone at the top (`.cfg-launch`), shows "Editing plan inputs" on that tab; `openPlanInputs(step)` scrolls the editor into view; tax-treatment donut is a button. Facts vs levers: Retirement Age, Planning Horizon, US Spending, SS Start Age are read-outs in Plan inputs (`LeverValue` / `LeverContext`, "Adjust in sidebar"); out-of-country slider removed from the sidebar; slider steppers no longer snap a typed value back into range. `PRODUCT.md` added. |
+| `fca4964` | Your request #10. |
+| `cdba361` | Merge of `ux/ds-support`. |
+| `1507385` | Headings distilled (`.ct-sub`); top bar regrouped and its emoji removed; Options card rebuilt on the shared `Toggle`; Forecast tab reordered (`chart` / `bandTable` slots on `MCTab`). |
+| `052773b` | WP-F/G/H brief and scope widening. |
+
+Validation at `1507385`: 78 suites, 1,243 tests passed; all 14 marked regions verify. Not pushed; `main` untouched; v1.2.147 is still what is deployed.
+
+### Current instructions (both lanes)
+1. **Layout rule, approved by the owner:** *Plan inputs records what is; the sidebar asks what if.* Facts are edited only in Plan inputs. Levers (retire age, plan-to age, US spend, SS claim age) are edited only by the sidebar sliders. View settings sit beside the thing they affect. Never add a second editor for a value.
+2. **Heading rule:** a title names the thing; method, units and scope go on a quiet line beneath (`.ct-sub`). No jargon in a title ("median", "10th", "deterministic", "MC").
+3. **Info affordance:** the outlined `InfoIcon` opening an `InfoModal`. The default "?" disc is retired from use; do not introduce it.
+4. **Toggles:** use the shared `Toggle`. It takes `hint` as a string or JSX and `infoAccent` for the pop-up. One ON colour (the default). Labels are verb phrases that say what ON does.
+5. **Names that changed, use these in any prose you write:** top-bar buttons are plain "Report", "Check-in", "Export", "Import", "Help", "About", "Feedback" (no emoji); sidebar card "Market assumptions" (was "Macro & Sensitivity"); Options labels "Reduce spending with age", "Model taxes", "Show in today's dollars", "Skip state tax (non-resident)"; verdict strip "Worst case at N" and "Runs out"; Net Worth card "Peak portfolio"; "Steady-return schedule" (was "Deterministic Schedule").
+6. **Product context** is in `PRODUCT.md` (repo root, force-added). The project `CLAUDE.md` and the design-authority agent live on another of the owner's PCs, not this one.
+7. **Critiques** are saved under `.impeccable/critique/` (first arrival 23/40, Options card 18/36, Forecast tab 24/40). Read them before proposing UI work on those surfaces.
+8. **Lane rules unchanged:** you commit to `ux/ds-support`, never edit `src/App.jsx`, send `App.jsx` changes as numbered items in `APP_JSX_REQUESTS.md`, run `check-scope.sh` before each commit, no rebase, no force-push. Work in your own worktree (`/home/nono/Projects/aira-ds`), not in my checkout.
+9. **Status discipline:** each of us appends a dated section to our own status file at the end of every round, before telling the owner it is done.
+
+### Open with the owner (do not act on these)
+- "Annual savings" sidebar slider edits only the pre-tax 401(k) deferral (`contrib`) and still has a second editor in Plan inputs -> Money In. Undecided: fact or lever.
+- Not yet done from the critiques: keyboard and screen-reader access for toggles and info pop-ups; moving "Skip state tax" to Plan inputs and "today's dollars" to the charts; the landing-to-app handoff ("We assumed" card); phone layout of the sidebar; empty Net Worth metric cards; single-open Help topics.
+- Whether to merge this branch to `main` and push.
+
+### Yours now
+WP-F, WP-G, WP-H in the section above. Sync first: `cd /home/nono/Projects/aira-ds && git merge ux/plan-inputs-launcher && bash docs/ds/check-scope.sh`.

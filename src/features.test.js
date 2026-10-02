@@ -172,7 +172,7 @@ describe('Profile Import/Export', () => {
     // whatever the export omits. An inert guard is worse than none.
     const i = SRC.indexOf('title="Export profile to JSON"');
     expect(i).toBeGreaterThan(-1);
-    const j = SRC.indexOf('⬇ Export', i);
+    const j = SRC.indexOf('</button>', i); // end of the Export button
     expect(j).toBeGreaterThan(i);
     expect(SRC.slice(i, j)).toMatch(/^\s*checkIns,\s*$/m);
   });

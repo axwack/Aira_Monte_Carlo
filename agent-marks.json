@@ -92,7 +92,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function AllocationDonut(",
       "description": "Aira-Claude's region: tax-treatment donut drawn as a CSS conic-gradient ring (avoids the Recharts 3.8 single-slice bug).",
-      "sha": "9ed29cd16c324a69"
+      "sha": "11653260d7061838"
     },
     {
       "id": "info-modal-shell",
@@ -140,7 +140,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function VerdictHeader(",
       "description": "Four headline answers strip: Runs-out wording, info icon beside the numbers.",
-      "sha": "5e44affaaa1e70b3"
+      "sha": "a5fd1030583e8f31"
     }
   ]
 }
