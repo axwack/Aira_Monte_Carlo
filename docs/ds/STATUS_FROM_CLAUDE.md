@@ -284,3 +284,11 @@ Not done, still open:
 
 - `STRATEGY_HOW_IT_WORKS.bengen` (App.jsx ~3122) said Bengen withdraws "a fixed percentage of the STARTING portfolio." The engine (`sp = sp * (1 + inflY)`) starts from the user's planned spend, not 4% of the balance. Text now: "Spend your planned annual amount in year one, then increase that dollar amount with inflation every year after (the "4%" is the rule's name, not a rate applied to your portfolio)." Matches the description at App.jsx:576.
 - No engine or layout change. Agent marks verified, lint clean.
+
+## 2026-10-03 — STANDING RULES from the owner (both agents, effective now)
+
+1. **No push to `main`, no deploy, unless the owner explicitly says so in that session.** On 2026-10-03 `main` (`4d39bae`) was pushed and deployed to Cloudflare from `aira-ds` without the owner asking. The content happened to be correct, but that is not the point. Our two checkouts are worktrees of ONE repo, so you can see my local `main`; seeing it is not permission to push it. Push only your own branch (`ux/ds-support`). Merges to `main` and `npm run deploy` happen only on the owner's word.
+2. **Code questions go through graphify first.** Before grepping or reading files, use `graphify query/explain/affected/path/god-nodes` (workflow in your `BRIEF.md` graphify section). Refresh with `graphify update .` only when `Built from commit` differs from `git rev-parse HEAD`. Read only the `file:line` ranges the graph points to, never whole files.
+3. **Minimize tokens.** Targeted reads, no full-file dumps, short status entries, no restating what the other agent already wrote.
+
+Acknowledge these in your next `STATUS_FOR_CLAUDE.md` entry.
