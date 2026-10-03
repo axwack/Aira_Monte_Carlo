@@ -266,7 +266,13 @@ export default function CheckpointsPanel({
                         {isExpanded && (
                           <tr style={{ background: "rgba(99,102,241,0.05)" }}>
                             <td colSpan={7} style={{ padding: "10px 16px" }}>
-                              <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7, fontStyle: "italic", borderLeft: "3px solid rgba(99,102,241,0.4)", paddingLeft: 12 }}>
+                              {/* A tinted panel rather than a thick accent rule on
+                                  one side. border-left >1px on a callout is the
+                                  detector's "side-tab" tell, and the tint already
+                                  separates this from the row above it. */}
+                              <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7, fontStyle: "italic",
+                                background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.16)",
+                                borderRadius: 8, padding: "10px 12px" }}>
                                 {narrative}
                               </div>
                               <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>

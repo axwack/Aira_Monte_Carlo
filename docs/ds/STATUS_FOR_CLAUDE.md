@@ -281,3 +281,58 @@ It owns its own collapse header (a real `<button>` with `aria-expanded`), so `sh
 1. **`dollarBasisLabel`'s fallback is visible.** Until #11 lands, the two sites that pass an age say "Retirement-year dollars" rather than a year. That is deliberate — better an honest non-answer than "50 dollars" — but it is a temporary state only you can finish.
 2. **The `side-tab` detector warning still stands** on `.help-note`, kept because it matches `ModalNote`. Unchanged from last round.
 
+## [DeepSeek] #14 superseded — owner says remove the mortality chart — 2026-10-03
+
+**Owner:** DeepSeek  
+**Branch:** `ux/ds-support`
+
+After v1.2.148 went live the owner toggled Mortality on the **Stress test** chart and reported no curve. I diagnosed it (below) and filed #14 with three options. **The owner then decided to drop the feature outright:** *"drop the mortality chart. It's overhead and gimmicky."*
+
+### The diagnosis, for the record
+
+The stress `FanChart` mount (App.jsx:11313) passes neither `currentAge` nor `currentPort`, so `computeSurvivalCurve` returned `[]` and every `survival` value was `null`. The legend was gated on `medianDeathAge` (so it correctly hid) while the chart was gated only on the toggle — which is why it appeared as a hollow chart with axes and no curve, looking like a new broken graph rather than a toggle that did nothing.
+
+### Now: request #15, not #14
+
+**#14 is marked SUPERSEDED. Do not apply Fix 1 or Fix 2.** #15 is a full removal spec: the `showMortality` state, the five derived memos, the curve generator, the Toggle, the legend strip, the second chart, the two `dataWithMortality` references rewired to `data`, and the now-unused `sex` prop dropped from the signature and both mounts.
+
+**The important line in #15:** `survivalToAge` and the SSA tables must survive. They feed **`mwRate`** — the "Money outlives you" headline in `VerdictHeader` and `MCOverviewCards`. This removes a chart, not the metric, and `verdictHeader.test.js` / `mcOverviewCards.test.js` are the net that proves it.
+
+### Why it is a good cut
+
+It takes one `Toggle` and a 140px chart out of a card the Forecast critique measured at **845px, 32.7% of a 3.46-screenful tab** — and deletes a `sex` prop and a ~15-line generator with it. No test covers the overlay itself, so nothing should go red.
+
+I have applied none of it. `src/App.jsx` is yours.
+
+## [DeepSeek] Owner decisions to relay + a visibility note — 2026-10-03
+
+**Owner:** DeepSeek  
+**Branch:** `ux/ds-support`
+
+### Read this only after you merge `ux/ds-support`
+
+**You cannot see this section, or requests #14/#15, in your checkout yet.** Yours ends at request #13 on `ux/plan-inputs-launcher`. Everything below is two commits ahead of you on `ux/ds-support`. **Merge that branch first** — then #14, #15 and this note are all there. The owner was told this, so expect a "merge `ux/ds-support`" instruction rather than a copy-paste.
+
+### Owner decisions
+
+1. **Forecast slim-down: APPROVED.** Go ahead with the proposal in your 24/40 critique (3.46 → ~1.7 screenfuls). This unblocks the `[P0]` contradictory-figures item — two withdrawal rates, "100% of scenarios succeed" under a 99.7% title, and the hero's future-dollar balance against the median card's retirement-year basis — plus both `[P1]`s on density.
+2. **Mortality chart: REMOVE IT.** Owner's words: *"It's overhead and gimmicky."* Apply **#15**. **#14 is SUPERSEDED — do not apply Fix 1 or Fix 2.** #15 also shrinks the 845px Forecast card by a toggle and a 140px chart, so it pairs naturally with the slim-down.
+
+### Still outstanding from #11/#12 (you marked these "not applied")
+
+- #11 item 6 — fold `VerdictHeader` / `MCOverviewCards` onto `retirementBasisYear` (dedupe only, no visible change).
+- #12.2 — the two stress-scenario lines still print `MC_PATHS_LABEL` (the default) where the run's own count belongs: `{MC_PATHS_LABEL}-path result` and `✓ {MC_PATHS_LABEL} paths`.
+- #12.4 — comment-only tab-name strings.
+
+Not urgent; worth sweeping into the same pass if convenient.
+
+### My round: `CheckpointsPanel` detector finding cleared
+
+The Impeccable detector's `side-tab` finding on **my** file (`CheckpointsPanel.jsx`, the expansion narrative) is fixed. It carried a `border-left: 3px solid rgba(99,102,241,0.4)` inherited verbatim from the old inline block; that is the detector's most reliable "AI slop" tell. Replaced with a tinted panel (`background` + 1px border + radius), which separates the narrative from the row above without the thick rule.
+
+- Detector on `src/forecast/CheckpointsPanel.jsx`: **0 findings** (was 1).
+- `src/checkpointsPanel.test.js`: **9 passed**.
+- No `App.jsx` involvement, so nothing needed from you for this one.
+
+Note for the Forecast work: your critique's detector pass reported **2 in-scope `side-tab` findings — `App.jsx:12156` and `CheckpointsPanel.jsx:269`**. Mine is now clear, so the remaining one at `App.jsx:12156` is yours.
+
