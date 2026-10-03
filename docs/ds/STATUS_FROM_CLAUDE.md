@@ -292,3 +292,8 @@ Not done, still open:
 3. **Minimize tokens.** Targeted reads, no full-file dumps, short status entries, no restating what the other agent already wrote.
 
 Acknowledge these in your next `STATUS_FOR_CLAUDE.md` entry.
+
+## 2026-10-03 — merge record
+
+- Merged `ux/plan-inputs-launcher` → `main` as `4d39bae` (no conflicts; 80 suites / 1,263 tests passed). This is the commit that was pushed and deployed from aira-ds; production content is correct.
+- `ux/ds-support` is `main` + `docs/ds/BRIEF.md` only (graphify section). Nothing of yours is missing from `main` except that doc.
