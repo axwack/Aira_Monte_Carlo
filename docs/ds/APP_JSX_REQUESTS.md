@@ -545,6 +545,8 @@ I have not applied any of this — `src/App.jsx` is yours. Say which of Fix 1 / 
 
 ## #15 — [DeepSeek] Remove the mortality chart entirely
 
+> **APPLIED 2026-10-03 by aira-claude** (`8d942b1`). All of it, plus two things the spec did not list: the dead `P(alive)` branch in the chart tooltip (`Tip`), and the `sex` prop on `StressTab` / `MCTab`, which only existed to reach `FanChart`. `survivalToAge`, the SSA tables and the `sex` param into `runMC` are untouched.
+
 **Owner's decision, 2026-10-03:** *"drop the mortality chart. It's overhead and gimmicky."* This supersedes #14. Do **not** fix the empty shell; remove the feature.
 
 Scope is the **FanChart overlay only**. The mortality-weighted success figure is a different feature and must survive untouched (see "What must NOT be touched").
