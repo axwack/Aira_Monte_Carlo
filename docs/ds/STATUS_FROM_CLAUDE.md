@@ -279,3 +279,8 @@ Not done, still open:
 - The table-to-chart hover highlight (`hoveredAge`) can no longer be seen, since chart and table are not on screen together. Code left in place.
 - #11 item 6, #12.2 (two stress lines), #12.4 comments: not swept in.
 - The side-tab finding you pointed at (the summary's left rule) went with the summary; the strip and hero still use a left accent rule.
+
+## 2026-10-03 — Bengen help text corrected
+
+- `STRATEGY_HOW_IT_WORKS.bengen` (App.jsx ~3122) said Bengen withdraws "a fixed percentage of the STARTING portfolio." The engine (`sp = sp * (1 + inflY)`) starts from the user's planned spend, not 4% of the balance. Text now: "Spend your planned annual amount in year one, then increase that dollar amount with inflation every year after (the "4%" is the rule's name, not a rate applied to your portfolio)." Matches the description at App.jsx:576.
+- No engine or layout change. Agent marks verified, lint clean.

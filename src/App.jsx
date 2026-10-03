@@ -3119,7 +3119,7 @@ const STRATEGY_HOW_IT_WORKS = {
   fixed: "Fixed Percentage — You withdraw a constant percentage of the current portfolio each year, automatically adjusting with market value.",
   vpw: "Variable Percentage Withdrawal (VPW) — Spending is recalculated annually as the portfolio amortized over your remaining years, so the plan is designed to spend down to roughly zero by your plan-to age.",
   ninety_five_rule: "95% Rule — Spending can drop to 95% of last year's amount during downturns, otherwise tracks inflation.",
-  bengen: "Bengen 4% Rule — Withdraw a fixed percentage of the STARTING portfolio value in year one, then increase that dollar amount with inflation every year after. Spending never reacts to portfolio performance, for better or worse — an honest model of late-stage risk for fixed-budget retirees.",
+  bengen: "Bengen 4% Rule — Spend your planned annual amount in year one, then increase that dollar amount with inflation every year after (the \"4%\" is the rule's name, not a rate applied to your portfolio). Spending never reacts to portfolio performance, for better or worse — an honest model of late-stage risk for fixed-budget retirees.",
   smart: "Smart Waterfall (hybrid) — Guyton‑Klinger guardrails while more than 15 years remain in the plan, then switches to the Bengen 4% Rule for the final 15 years — the split matches GK's own longevity-safety-brake threshold, so the switch happens exactly where GK's brake would otherwise be disabled."
 };
 
