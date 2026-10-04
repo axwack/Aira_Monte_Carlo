@@ -598,8 +598,13 @@ describe("Monte Carlo sampling window and path count reach runMC", () => {
     const full   = rate({ mcRangeStart: SAMPLE_START_YEAR, mcRangeEnd: SAMPLE_END_YEAR });
     const modern = rate({ mcRangeStart: 1980, mcRangeEnd: SAMPLE_END_YEAR });
     const older  = rate({ mcRangeStart: SAMPLE_START_YEAR, mcRangeEnd: 1979 });
-    // Direction is a market fact, not a law, so assert movement, not sign.
-    expect(modern.rate !== full.rate || older.rate !== full.rate).toBe(true);
+    // Assert movement, not sign (direction is a market fact, not a law), and
+    // assert it on the MEDIAN TERMINAL balance, not the success rate: a
+    // well-funded BASE saturates at rate === 1 for every window (income covers
+    // the whole outlay after the v1.2.149 `need` fix), so the rate can no longer
+    // reveal that the window reached the engine. term.p50 does — it stays
+    // sensitive to which historical returns were sampled even at 100% success.
+    expect(modern.term.p50 !== full.term.p50 || older.term.p50 !== full.term.p50).toBe(true);
   });
 
   test("mcPaths changes the sample size the engine reports back", () => {

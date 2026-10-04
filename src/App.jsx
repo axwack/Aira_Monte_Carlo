@@ -203,8 +203,12 @@ import { IRMAA_2026 } from './data/irmaa2026.js';
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.148";
-export const BUILD_TAG = `[main] v1.2.148 - Clearer first run and Forecast: facts live in Plan inputs, what-if sliders in the sidebar; plain headings; keyboard access
+const APP_VERSION = "1.2.149";
+export const BUILD_TAG = `[main] v1.2.149 - runMC audit fixes: income nets against total outlay; dead code removed
+- FIXED: retirement 'need' now nets SS + rental + other income against base spend AND fixed costs together (max(0, spend+fixedCosts-income)). The old form offset income against base spend only, so a household whose income exceeded base spend still sold assets to cover housing/carveouts/events/healthcare — biasing the success rate DOWN. need / incomeSurplus / remaining-draw now net the same quantity.
+- REMOVED dead code in runMC: unused gg/sg/ng growth draws and the unused initWR calibration block (GK uses gkReferenceWR, not initWR). Dropping gg/sg/ng removes 6 rand() draws/path, so headline numbers re-baseline by RNG shift (not a logic change).
+- NEXT (audit backlog, not yet done): (1) per-path RNG seed so changing spend by \$1 doesn't re-roll later paths / stabilize property tests [mulberry32(seed + i*0x9E3779B1)]; (2) || vs ?? zero-input bug (p.inf=0, abGrowth=0, mortRate=0 fall back to defaults); (3) cash return label-vs-math (cashRealReturn applied nominally; cash earns equity return in accumulation); (4) cost inflation uses deterministic p.inf while spend tracks path inflY; (5) consider block/stationary bootstrap vs current single-year i.i.d. sampling; (6) verify ninety_five_rule y===1 reset, mwRate single-life for couples, RMD_DIV ||15 fallback.
+- PRIOR (v1.2.148): Clearer first run and Forecast: facts live in Plan inputs, what-if sliders in the sidebar; plain headings; keyboard access
 - Standalone Configure / Adjust values launcher; Retirement Age, Planning Horizon, US Spending and SS Start Age are edited by the sidebar sliders only
 - After the quick estimate, a "We assumed" card lists what was filled in, and the app opens on the retire age the estimate showed
 - Forecast tab reordered: chart first, then why and what to do, the age table, assumptions, and checkpoints; the "not covered" warning is one line with details on click
@@ -238,7 +242,7 @@ export const BUILD_TAG = `[main] v1.2.148 - Clearer first run and Forecast: fact
 - runMC now returns mc.gkStats (cutRate / raiseRate / avgCutsPerPath / spend range) counted per path, for the cross-scenario summary
 - Added an agent attribution + tamper-evidence registry (agent-marks.json + src/agentMarks.js + scripts/agent-marks.mjs), enforced by src/agentMarks.test.js, so an edit to another agent's region fails the build instead of sliding in
 - Added a render smoke test for the guardrails chart (guardrailsChartRender.test.js) - the RothLadder-class gap that engine tests can't catch`;
-export const BUILD_TIME = "2026-09-25T12:00:00Z";
+export const BUILD_TIME = "2026-10-04T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   window.__AIRA_BUILD_LOGGED__ = true;
   // eslint-disable-next-line no-console
@@ -1557,10 +1561,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     const portAtRetire = Math.round(totalPort);
 
-    const gg = clip(normalDraw(0.03, 0.005, rand), 0.005, 0.08);
-    const sg = clip(normalDraw(0.015, 0.005, rand), 0.002, 0.05);
-    const ng = clip(normalDraw(0.025, 0.005, rand), 0.005, 0.08);
-
     const path = [portAtRetire];
     let survived = true, exhaustAge = null;
     // How many years this path had to exceed the bracket target to stay
@@ -1579,31 +1579,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     let pathConstrained = 0;
     let sp = p.sp;
     let lastReturn = 0;
-
-    // Baseline initWR = net portfolio need at retirement / portfolio, no tax
-    // (matches the ratio the GK call tracks each year: netNeed = gross spend
-    // minus SS/rental/otherIncome, plus housing/carveouts — see the Step 1
-    // block inside the retirement loop below). ab0 includes propIncome to
-    // match the yearly `totalRental` term. calYear0/otherInc0/housing0/
-    // carveout0 mirror the exact formulas the retirement loop applies for
-    // age === p.retireAge (y === 0), so this engine's own year-0 netNeed is
-    // what initWR is calibrated against.
-    const ss0 = computeHouseholdSS(p, retAgeMC);
-    const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
-    const calYear0 = CURRENT_YEAR + (retAgeMC - p.currentAge);
-    const { total: otherInc0 } = computeOtherIncome(p.otherIncomes, calYear0);
-    const housingType0 = p.housingType || "own";
-    let housing0 = 0;
-    if (housingType0 === "own") {
-      housing0 = mortByYear.get(calYear0) || 0;
-    } else if (housingType0 === "rent") {
-      housing0 = Math.round(p.annualRent || 0);
-    }
-    const carveout0 = (p.carveouts || []).reduce((sum, c) => {
-      return sum + (calYear0 <= (c.endYear || 9999) ? Math.round(c.annual || 0) : 0);
-    }, 0);
-    const initNeed0 = Math.max(0, p.sp - ss0 - ab0 - otherInc0) + housing0 + carveout0;
-    const initWR = portAtRetire > 0 ? initNeed0 / portAtRetire : 0.04;
 
     // IRMAA 2-year lookback history for this path — rolled forward at the
     // end of each retirement year below. Pre-retirement wage income isn't
@@ -1869,7 +1844,16 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // the smile year over year and corrupt GK's own inflation logic. This
       // is an overlay on what the strategy decided, not a change to the strategy.
       const spSmiled = sp * spendingSmileFactor(age, retAgeMC, p.smile !== false);
-      const need = Math.max(0, spSmiled - ss - effectiveAb - otherIncTotal) + housingCost + carveoutCost + eventCost + hcShock;
+      // Income nets against the WHOLE outlay (base spend + every fixed cost),
+      // not base spend alone. The old form — max(0, spend - income) + fixedCosts
+      // — floored the income offset at base spend and then added fixed costs
+      // raw, so a household whose SS + rental + other income EXCEEDED base spend
+      // still sold assets to cover housing/carveouts/events/healthcare. That
+      // biased the success rate DOWN whenever income > base spend. Folding the
+      // fixed costs inside the max lets surplus income offset them, and leaves
+      // `incomeSurplus` (below) + the remaining draw (further below) netting the
+      // same quantity, so all three agree.
+      const need = Math.max(0, (spSmiled + housingCost + carveoutCost + eventCost + hcShock) - ss - effectiveAb - otherIncTotal);
       // Income above spending used to get discarded by the max(0, ...) above
       // while the tax on it still got charged to the portfolio, so received
       // money vanished and assets were sold to pay its bill. Now surplus
