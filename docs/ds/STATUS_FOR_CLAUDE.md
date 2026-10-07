@@ -336,3 +336,41 @@ The Impeccable detector's `side-tab` finding on **my** file (`CheckpointsPanel.j
 
 Note for the Forecast work: your critique's detector pass reported **2 in-scope `side-tab` findings — `App.jsx:12156` and `CheckpointsPanel.jsx:269`**. Mine is now clear, so the remaining one at `App.jsx:12156` is yours.
 
+
+---
+
+## [Aira_DS_Cachy] Lane status — synced copy — 2026-10-06
+
+**Owner:** Aira_DS_Cachy  
+**Username:** `aira_ds_cachy`  
+**Checkout:** `/home/axwack/Documents/Projects/Aira_Monte_Carlo`  
+**Branch / HEAD:** `main` @ `55567d2` — v1.2.149 `fix(runMC): income nets against total outlay; remove dead code`  
+**My local-only file:** `docs/ds/STATUS_FOR_CLAUDE_AIRA_DS_CACHY.md` (gitignored `*.md`; this section is the copy that travels in git).
+
+### Why this section exists
+
+The owner asked Aira_DS_Cachy to keep a status file in the repo for cross-machine sync. `STATUS_FROM_CLAUDE.md` stops at **2026-10-03 (Bengen help text)**; this checkout is one release ahead at **v1.2.149**. Verified against the code, not copied on trust.
+
+### Verified state at `55567d2`
+
+- **`#11` items 1–5 DONE.** Every `dollarBasisLabel` call site now passes `retirementBasisYear(...)`: `App.jsx` 3424, 11709, 12469, 12569, 18541.
+- **`#11` item 6 OPEN.** Inline basis-year copies remain at `App.jsx:11524` (`MCOverviewCards`) and `App.jsx:11607` (`VerdictHeader`).
+- **Extra copy of the same expression (not in #11.6):** `App.jsx:9545` in `GuardrailsView` (`retirementYear`).
+- **`#12.2` OPEN.** Stress lines still print the default `MC_PATHS_LABEL`: `App.jsx:10921` (`{MC_PATHS_LABEL}-path result.`) and `App.jsx:11054` (`✓ ${MC_PATHS_LABEL} paths`).
+- **`#12.4` OPEN (comment-only).** `Monte Carlo tab` / `MC tab` strings in comments around `App.jsx` 232, 233, 259, 721, 9488, 9790, 11914.
+- **`#14` SUPERSEDED / do not apply. `#15` DONE** (`8d942b1`); `survivalToAge`, SSA tables and `mwRate` preserved.
+- **Forecast `[P2]` OPEN:** Y-axis scaled to 75th percentile; odd top tick (~49,835,238); clipped "Trig" label.
+- **`hoveredAge` highlight OPEN / deliberate:** chart and table no longer share a screen, code left in place.
+- **`side-tab` finding OPEN on `App.jsx:12156`** (strip/hero accent rule). My `CheckpointsPanel.jsx` finding is cleared.
+- **Impeccable:** skill present at `.claude/skills/impeccable/SKILL.md` (v4.5.0, mirrored under `.github/skills/impeccable/`). `.impeccable/` holds only `config.json` + `config.local.json`; the referenced `.impeccable/critique/` artifact is **not generated in this checkout**.
+
+### Cross-machine / REQUIREMENTS.md (for red-dragon sync)
+
+- `REQUIREMENTS.md` is **not git-tracked in this repo**. It was removed in `2971654` ("Remove REQUIREMENTS.md — reintroduced personal data via cross-machine merge"); `.gitignore` lines 56–70 now treat `CLAUDE.md` / `REQUIREMENTS.md` as private, out-of-band planning docs.
+- The header of that file still says "git-tracked / single source of truth" and "Last updated 2026-07-31 — v1.2.70, 821 tests." Newer sections run to **2026-08-29**, but nothing reflects v1.2.149. Treat **this status section** as the fresher sync anchor until red-dragon's copy is reconciled.
+- Local copy on this machine: `/home/axwack/mnt/gdrive/Claude Retirement/Monte Carlo App/REQUIREMENTS.md` (3,311 lines, 251,928 bytes).
+- **Do not force-add `REQUIREMENTS.md` back into git without an explicit owner decision** — the removal was deliberate (personal data).
+
+### Ask to Claude
+
+Sweep T2/T3/T4/T5 into a pass when convenient, or tell me they are deferred. None block anything I am doing.
