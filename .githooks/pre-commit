@@ -29,6 +29,18 @@
 
 set -e
 
+# App.jsx ownership guard. Only Aira-Claude edits src/App.jsx (see AGENTS.md); other agents'
+# write permission in their tools does not override that. Aira-Claude commits with
+# AIRA_AGENT=Aira-Claude; anyone else touching App.jsx is stopped here.
+if git diff --cached --name-only -- src/App.jsx | grep -q . && [ "${AIRA_AGENT:-}" != "Aira-Claude" ]; then
+  echo ""
+  echo "❌  pre-commit: src/App.jsx is owned by Aira-Claude (AGENTS.md)"
+  echo "  Unstage it: git restore --staged src/App.jsx"
+  echo "  Then file a numbered request in docs/ds/APP_JSX_REQUESTS.md."
+  echo "  Owner override: AIRA_AGENT=Aira-Claude git commit …  (or --no-verify in an emergency)"
+  exit 1
+fi
+
 # Only inspect ADDED lines in staged text changes. Deletions are fine;
 # an existing leak the commit is REMOVING should not trip the guard.
 # The hook itself is excluded: its DENY_PATTERNS list literally contains

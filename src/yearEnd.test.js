@@ -87,4 +87,12 @@ describe("yearEndTaxRoom", () => {
     const rows = [{ yr: 2026, taxableIncome: 150_000, magi: 180_000, conversionAmount: 40_000 }];
     expect(yearEndTaxRoom(rows, { year: 2026, ...deps }).alreadyConverted).toBe(40_000);
   });
+
+  test("uses IRMAA when target is higher than any bracket, so bracket room is Infinity", () => {
+    const rows = [{ yr: 2026, taxableIncome: 150_000, magi: 180_000 }];
+    const r = yearEndTaxRoom(rows, { year: 2026, ...deps, target: "37" });
+    expect(r.bracketRoom).toBe(Infinity);
+    expect(r.conversionRoom).toBe(r.irmaaRoom);
+    expect(r.bindingConstraint).toBe("irmaa");
+  });
 });
