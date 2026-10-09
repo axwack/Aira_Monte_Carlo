@@ -36,10 +36,21 @@ if git diff --cached --name-only -- src/App.jsx | grep -q . && [ "${AIRA_AGENT:-
   echo ""
   echo "❌  pre-commit: src/App.jsx is owned by Aira-Claude (AGENTS.md)"
   echo "  Unstage it: git restore --staged src/App.jsx"
-  echo "  Then file a numbered request in docs/ds/APP_JSX_REQUESTS.md."
+  echo "  Then file a numbered request in .agents/ds/APP_JSX_REQUESTS.md."
   echo "  Owner override: AIRA_AGENT=Aira-Claude git commit …  (or --no-verify in an emergency)"
   exit 1
 fi
+
+# Encryption guard. .agents/ must reach GitHub encrypted (git-crypt, .gitattributes). A clone without
+# git-crypt set up would stage plaintext, so check each staged blob starts with git-crypt's header.
+for f in $(git diff --cached --name-only --diff-filter=ACMR -- .agents/); do
+  if [ "$(git cat-file -p ":$f" | head -c 10 | tr -d '\0')" != "GITCRYPT" ]; then
+    echo ""
+    echo "❌  pre-commit: $f would be committed UNENCRYPTED"
+    echo "  Set up git-crypt on this machine first: git-crypt unlock <keyfile>"
+    exit 1
+  fi
+done
 
 # Only inspect ADDED lines in staged text changes. Deletions are fine;
 # an existing leak the commit is REMOVING should not trip the guard.

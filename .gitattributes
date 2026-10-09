@@ -1,0 +1,3 @@
+# git-crypt: agent coordination files are encrypted on GitHub; readable only with the key.
+.agents/** filter=git-crypt diff=git-crypt
+.gitattributes !filter !diff
