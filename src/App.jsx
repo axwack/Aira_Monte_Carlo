@@ -105,7 +105,7 @@ import { AdminPanel, useOwnerVerified } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
 import { AGE_LIMITS } from './data/ageLimits.js';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,RadarChart,PolarGrid,PolarAngleAxis,PolarRadiusAxis,Radar,PieChart,Pie,Cell,} from "recharts";
-import { JOINT_RMD_TABLE } from './data/jointRmdTable.js';
+import { jointRmdDivisor } from './data/jointRmdTable.js';
 import { STATE_BRACKETS } from './data/stateBrackets.js';
 import { IRMAA_2026 } from './data/irmaa2026.js';
 
@@ -1865,12 +1865,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // RMD calculation
       let rmd = 0;
       if (age >= rmdStartAge && pretax > 0) {
-        let divisor;
-        if (useJointTableAt(age) && JOINT_RMD_TABLE[age]) {
-          divisor = JOINT_RMD_TABLE[age];
-        } else {
-          divisor = UNIFORM_TABLE[age] || 15.0;
-        }
+        // Table II needs both ages and only applies when the spouse is more than 10 years
+        // younger; jointRmdDivisor returns null otherwise, which falls back to Uniform.
+        const jointDiv = useJointTableAt(age) ? jointRmdDivisor(age, spouseAgeAt(p, age)) : null;
+        const divisor = jointDiv ?? (UNIFORM_TABLE[age] || 15.0);
         rmd = Math.round(pretax / divisor);
       }
       // Tax + withdrawal sizing (source-aware, fixed-point).
@@ -2838,7 +2836,7 @@ const FED_BRACKETS_2026_SINGLE = [
 
 // IRS Pub 590-B Table III (Uniform Lifetime) divisors, 2022+ table.
 // Default table for owners whose sole-beneficiary spouse is NOT >10 years younger.
-// (The >10-years-younger Joint & Last Survivor case uses JOINT_RMD_TABLE above.)
+// (The >10-years-younger Joint & Last Survivor case uses jointRmdDivisor from src/data/jointRmdTable.js.)
 const RMD_DIV = {
   72: 27.4,
   73: 26.5,
