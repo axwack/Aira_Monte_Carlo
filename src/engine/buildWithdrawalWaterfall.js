@@ -573,7 +573,10 @@ export function buildWithdrawalWaterfall(params = {}) {
   // runMC/simulateDeterministicWithStrategy's mortByYear map.
   let mortByYear = new Map();
   if (mortBalance > 0) {
-    const ms = mortgageSchedule(mortBalance, mortRate || 6.5, mortStart || "2020-01", mortTerm || 30, mortExtra || 0);
+    // 0 is a legitimate rate (a 0% family/employer loan): `mortRate || 6.5`
+    // treated it as "missing" and silently priced the loan at 6.5%. Only an
+    // absent value may take the default, hence `??`.
+    const ms = mortgageSchedule(mortBalance, mortRate ?? 6.5, mortStart || "2020-01", mortTerm || 30, mortExtra || 0);
     mortByYear = mortgageAnnualPayments(ms);
   }
 
@@ -805,7 +808,10 @@ export function buildWithdrawalWaterfall(params = {}) {
       // expected-value haircut in a single deterministic path would invent a
       // fourth model. simulateDeterministicWithStrategy likewise shows full
       // planned rental.
-      const abGrowthFactor = Math.pow(1 + (abGrowth || 3) / 100, Math.min(Math.max(0, age - retireAge), 20));
+      // `??`, not `||`: abGrowth 0 means "this income never grows", and the
+      // old `abGrowth || 3` silently grew it at 3%/yr anyway. The destructure
+      // above still supplies 3.0 when the field is absent.
+      const abGrowthFactor = Math.pow(1 + (abGrowth ?? 3) / 100, Math.min(Math.max(0, age - retireAge), 20));
       // Falsy abEndYear (0, null, undefined) means "no cutoff" — must match
       // App.jsx's `p.abEndYear && calYear > p.abEndYear` gate (runMC's
       // rentalForGK/effectiveAb and simulateDeterministicWithStrategy's `ab`)

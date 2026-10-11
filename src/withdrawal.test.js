@@ -570,6 +570,48 @@ describe("buildWithdrawalWaterfall — useJointRmdTable gated by filingStatus (B
   });
 });
 
+// ─── Zero-valued inputs are honored (audit backlog item 2: `||` vs `??`) ───────
+// `x || default` treats an explicit 0 as "missing". 0% is a legitimate answer
+// for inflation, other-income growth, and a mortgage rate, so a user's 0 has to
+// reach the math; only an absent field may take the default.
+
+describe("buildWithdrawalWaterfall — explicit zero inputs are honored, not defaulted", () => {
+  test("abGrowth 0 freezes other income (old `abGrowth || 3` grew it 3%/yr)", () => {
+    const frozen = buildWithdrawalWaterfall({ ...BASE, ab: 50_000, abGrowth: 0, inf: 0 })
+      .smart.rows.find(r => r.age === 75);
+    expect(frozen.annuityRental).toBe(50_000);   // 3%/yr for 10 years would be ~67,196
+    // An absent abGrowth must still take the 3.0 default — honoring 0 must not
+    // remove the fallback itself.
+    const grown = buildWithdrawalWaterfall({ ...BASE, ab: 50_000, inf: 0 })
+      .smart.rows.find(r => r.age === 75);
+    expect(grown.annuityRental).toBeGreaterThan(50_000);
+  });
+
+  test("mortRate 0 is a 0% loan (old `mortRate || 6.5` priced it at 6.5%)", () => {
+    const loan = { mortBalance: 300_000, mortStart: "2020-01", mortTerm: 30, mortExtra: 0 };
+    const at0 = buildWithdrawalWaterfall({ ...BASE, ...loan, mortRate: 0 })
+      .smart.rows.find(r => r.age === 65);
+    const at65 = buildWithdrawalWaterfall({ ...BASE, ...loan, mortRate: 6.5 })
+      .smart.rows.find(r => r.age === 65);
+    expect(at0.housingCost).toBeGreaterThan(0);
+    expect(at0.housingCost).toBeLessThan(at65.housingCost);
+    // A missing mortRate still defaults to 6.5.
+    const absent = buildWithdrawalWaterfall({ ...BASE, ...loan })
+      .smart.rows.find(r => r.age === 65);
+    expect(absent.housingCost).toBe(at65.housingCost);
+  });
+
+  test("inf 0 freezes spending instead of falling back to 2.5%/yr", () => {
+    // Same window as the Bengen-phase test above, with inflation at 0: every
+    // year-over-year spend ratio must be exactly 1 (2.5%/yr would be ~1.025).
+    const rows = buildWithdrawalWaterfall({ ...BASE, inf: 0, smile: false }).smart.rows;
+    const late = rows.filter(r => r.age >= 77 && r.age <= 89);
+    for (let i = 1; i < late.length; i++) {
+      expect(late[i].spending).toBe(late[i - 1].spending);
+    }
+  });
+});
+
 // ─── Guyton-Klinger 6% inflation pass-through cap (B4 regression) ──────────────
 // Must match App.jsx's GK_INFLATION_CAP = 0.06 exactly — the historical
 // bootstrapped inflation array used by runMC/deterministic engines can exceed
