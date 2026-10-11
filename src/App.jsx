@@ -525,7 +525,7 @@ function computeInitialWR(p) {
   const yrsToRetire = Math.max(0, retireAge - currentAge);
   const eqPct = p.preRetireEq ?? 91;
   const nominalRate = expectedReturn(eqPct) / 100;
-  const inflRate = (p.inf || 2.5) / 100;
+  const inflRate = (p.inf ?? 2.5) / 100;
   const accumRate = nominalRate - inflRate;
   const hsaAnnual = p.hsaContrib != null ? p.hsaContrib : (p.hsaMonthly || 0) * 12;
   const annualAdds = (p.contrib || 0) + (p.employerContrib || 0) + hsaAnnual
@@ -545,7 +545,7 @@ function computeInitialWR(p) {
   const housingType = p.housingType || "own";
   let housingAtRetire = 0;
   if (housingType === "own" && p.mortBalance > 0) {
-    const ms = mortgageSchedule(p.mortBalance, p.mortRate || 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
+    const ms = mortgageSchedule(p.mortBalance, p.mortRate ?? 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
     housingAtRetire = mortgageAnnualPayments(ms).get(retireCalYear) || 0;
   } else if (housingType === "rent") {
     housingAtRetire = p.annualRent || 0;
@@ -1475,7 +1475,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   if (p.mortBalance > 0) {
     const ms = mortgageSchedule(
       p.mortBalance,
-      p.mortRate || 6.5,
+      p.mortRate ?? 6.5,
       p.mortStart || "2020-01",
       p.mortTerm || 30,
       p.mortExtra || 0
@@ -1622,7 +1622,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         inflY = bundle.inflY;
       }
 
-      const cumInfl = Math.pow(1 + (p.inf || 2.5) / 100, y);
+      const cumInfl = Math.pow(1 + (p.inf ?? 2.5) / 100, y);
       const adjFloor = gkFloor * cumInfl;
       const adjCeiling = gkCeiling * cumInfl;
 
@@ -1634,7 +1634,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // (right after `lastReturn = r`) — only these deterministic values
       // moved earlier.
       const ss = computeHouseholdSS(p, age);
-      const growthFactor = Math.pow(1 + (p.abGrowth || 3) / 100, Math.min(y, 20));
+      const growthFactor = Math.pow(1 + (p.abGrowth ?? 3) / 100, Math.min(y, 20));
       const totalRental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * growthFactor);
       // Deterministic expected rental (abEndYear cutoff applied, but not the
       // abReliability coin-flip below) — used only to offset GK's netNeed.
@@ -1710,7 +1710,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         // A detailed year-by-year budget is the spending plan — it overrides
         // the distribution strategy's spend rule. Values are nominal for each
         // listed year; beyond the last year the last value carries forward, inflated.
-        sp = scheduleSpendForYear(p.spSchedule, calYear, p.inf || 2.5);
+        sp = scheduleSpendForYear(p.spSchedule, calYear, p.inf ?? 2.5);
       } else if (y === 0) {
         // First year: use target spend (p.sp)
       } else {
@@ -2428,7 +2428,7 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   // buildWithdrawalWaterfall/runMC.
   let mortByYear = new Map();
   if (p.mortBalance > 0) {
-    const ms = mortgageSchedule(p.mortBalance, p.mortRate || 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
+    const ms = mortgageSchedule(p.mortBalance, p.mortRate ?? 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
     mortByYear = mortgageAnnualPayments(ms);
   }
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
@@ -2527,7 +2527,7 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     // COLA compounds from the claiming age (p.ssAge), not the retirement-year
     // loop counter `y` — see runMC's identical fix above.
     const ss = computeHouseholdSS(p, age);
-    const growthFactor = Math.pow(1 + (p.abGrowth || 3)/100, Math.min(y, 20));
+    const growthFactor = Math.pow(1 + (p.abGrowth ?? 3)/100, Math.min(y, 20));
     const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
     const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
@@ -2577,7 +2577,7 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     // Apply withdrawal strategy (deterministic version)
     if (p.spSchedule && p.spSchedule.length) {
       // Detailed budget overrides the distribution strategy (see runMC note).
-      sp = scheduleSpendForYear(p.spSchedule, yr, p.inf || 2.5);
+      sp = scheduleSpendForYear(p.spSchedule, yr, p.inf ?? 2.5);
     } else if (y === 0) {
       // first year: use target spend
     } else {
@@ -5848,7 +5848,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
 // are matched by keyword in their label so users can drive these categories
 // just by naming a carveout "Medical" or "Long-Term Care".
 function categorizeCarveouts(carveouts, yr, inf) {
-  const iF = Math.pow(1 + (inf || 2.5) / 100, yr - new Date().getFullYear());
+  const iF = Math.pow(1 + (inf ?? 2.5) / 100, yr - new Date().getFullYear());
   let medical = 0, ltc = 0, other = 0;
   for (const c of carveouts || []) {
     if (yr > (c.endYear || 9999)) continue;
@@ -6604,7 +6604,7 @@ const modeDescs = {
       )}
       {view === "thisyear" && (() => {
         const isMFJ   = (params?.filingStatus || "mfj") !== "single";
-        const infRate = (params?.inf || 2.5) / 100;
+        const infRate = (params?.inf ?? 2.5) / 100;
         const f       = Math.pow(1 + infRate, cyYear - CURRENT_YEAR);
         const fedBase = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
         const fB      = idxB(fedBase, f);
@@ -10107,7 +10107,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
   // Net draw: gross spend + mortgage P&I − rental/property income
   const mortAnnualPI = (() => {
     if (!params.mortBalance || params.mortBalance <= 0) return 0;
-    const ms = mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0);
+    const ms = mortgageSchedule(params.mortBalance, params.mortRate ?? 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0);
     return ms.pmt * 12;
   })();
   const propIncome  = params.propIncome || 0;
@@ -11708,7 +11708,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
   // The run's own path count where a RESULT is described; the default only before a run.
   const pathsLabel = mc?.N ? mc.N.toLocaleString() : MC_PATHS_LABEL;
   const mortSched = params.mortBalance > 0
-    ? mortgageSchedule(params.mortBalance, params.mortRate || 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0)
+    ? mortgageSchedule(params.mortBalance, params.mortRate ?? 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0)
     : null;
   const mortAnnual = mortSched ? mortSched.pmt * 12 : 0;
   const mortPayoffAge = mortSched
@@ -12076,7 +12076,7 @@ function McTabDisclaimer() {
 
 function MortgageTab({ values, onChange }) {
   const bal   = values.mortBalance || 0;
-  const rate  = values.mortRate    || 6.5;
+  const rate  = values.mortRate    ?? 6.5;
   const extra = values.mortExtra   || 0;
   const start = values.mortStart   || "2020-01";
   const term  = values.mortTerm    || 30;
@@ -13652,7 +13652,7 @@ function RealEstateStep({ values, onChange }) {
           <DualInput label="Balance" value={values.mortBalance||0} min={0} max={1_500_000} step={1_000}
             format={v=>fmtDollar(v)}
             onChange={v=>{ onChange("mortBalance",v); updateProp(properties[0]?.id,"mortgage",v); }}/>
-          <DualInput label="Rate %" value={values.mortRate||6.5} min={0} max={12} step={0.125}
+          <DualInput label="Rate %" value={values.mortRate??6.5} min={0} max={12} step={0.125}
             format={v=>v.toFixed(3)+"%"} onChange={v=>onChange("mortRate",v)}/>
           <DualInput label="Original term (yrs)" value={values.mortTerm||30} min={10} max={30} step={1}
             format={v=>v+" yrs"} onChange={v=>onChange("mortTerm",v)}/>
@@ -15649,7 +15649,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           <ANumInput value={values.ab || 0} onSet={(v) => onChange("ab", v)} min={0} max={MAX_MONEY_INPUT} step={1000} suffix="/yr" />
         </WFieldRow>
         <WFieldRow label="Rental Growth Rate" helper="Annual growth rate for rental income (default 3%).">
-          <ANumInput value={values.abGrowth || 3} onSet={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} suffix="%" />
+          <ANumInput value={values.abGrowth ?? 3} onSet={(v) => onChange("abGrowth", v)} min={0} max={10} step={0.5} suffix="%" />
         </WFieldRow>
         <WFieldRow label="Rental Reliability" helper="Probability rental income is received each year (default 80%).">
           <ANumInput value={values.abReliability || 80} onSet={(v) => onChange("abReliability", v)} min={0} max={100} step={5} suffix="%" />
@@ -17338,7 +17338,7 @@ export default function AiRAForecaster() {
       stateOfResidence: assumptions.stateOfResidence,
       twoHousehold: assumptions.twoHousehold,
       mortBalance: assumptions.mortBalance || 0,
-      mortRate: assumptions.mortRate || 6.5,
+      mortRate: assumptions.mortRate ?? 6.5,
       mortStart: assumptions.mortStart || "2020-01",
       mortTerm: assumptions.mortTerm || 30,
       mortExtra: assumptions.mortExtra || 0,
@@ -17419,7 +17419,7 @@ export default function AiRAForecaster() {
     () =>
       mortgageSchedule(
         assumptions.mortBalance || 0,
-        assumptions.mortRate || 6.5,
+        assumptions.mortRate ?? 6.5,
         assumptions.mortStart || "2020-01",
         assumptions.mortTerm || 30,
         assumptions.mortExtra || 0
