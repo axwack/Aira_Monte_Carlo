@@ -519,11 +519,12 @@ describe("buildWithdrawalWaterfall — full bracket-target coverage (v1.1.0.30)"
   });
 });
 
-// ─── useJointRmdTable gated by filingStatus (B2 regression) ────────────────────
-// The joint RMD table must only apply when actually filing jointly. A stale
-// useJointRmdTable=true left over from switching filingStatus to "single"
-// must fall back to the standard Uniform Lifetime table — matching runMC's
-// `(p.useJointRmdTable ?? false) && p.filingStatus !== "single"` gate.
+// ─── useJointRmdTable gated by filing status AND the spouse's age ──────────────
+// The joint (Table II) RMD table must only apply when actually filing jointly
+// AND the spouse is more than 10 years younger (IRS Pub 590-B). A stale
+// useJointRmdTable=true left over from switching filingStatus to "single", or
+// with no qualifying younger spouse on the profile, must fall back to the
+// standard Uniform Lifetime table — matching runMC's gate.
 
 describe("buildWithdrawalWaterfall — useJointRmdTable gated by filingStatus (B2 regression)", () => {
   test("filingStatus 'single' + useJointRmdTable=true falls back to Uniform table (matches false)", () => {
@@ -536,11 +537,36 @@ describe("buildWithdrawalWaterfall — useJointRmdTable gated by filingStatus (B
   });
 
   test("filingStatus 'mfj' + useJointRmdTable=true actually uses the Joint table (differs from Uniform)", () => {
+    // Table II is keyed by BOTH ages now, so the profile needs a spouse more
+    // than 10 years younger for the joint lookup to return anything. Two dobs
+    // keep the 15-year gap constant however the calendar year moves.
+    const couple = { ...BASE, dob: "1961-01-01", spouse: { enabled: true, dob: "1976-01-01" } };
+    const mfjJoint = buildWithdrawalWaterfall({ ...couple, filingStatus: "mfj", useJointRmdTable: true });
+    const mfjUniform = buildWithdrawalWaterfall({ ...couple, filingStatus: "mfj", useJointRmdTable: false });
+    const rowJoint = mfjJoint.smart.rows.find(r => r.age === 75);
+    const rowUniform = mfjUniform.smart.rows.find(r => r.age === 75);
+    expect(rowJoint.rmd).not.toBe(rowUniform.rmd);
+  });
+
+  test("'mfj' + useJointRmdTable=true with a spouse only 5 years younger falls back to Uniform", () => {
+    // The >10-years-younger rule is IRS Pub 590-B's, and jointRmdDivisor
+    // enforces it itself — callers only pass the ages.
+    const near = { ...BASE, dob: "1961-01-01", spouse: { enabled: true, dob: "1966-01-01" } };
+    const mfjJoint = buildWithdrawalWaterfall({ ...near, filingStatus: "mfj", useJointRmdTable: true });
+    const mfjUniform = buildWithdrawalWaterfall({ ...near, filingStatus: "mfj", useJointRmdTable: false });
+    const rowJoint = mfjJoint.smart.rows.find(r => r.age === 75);
+    const rowUniform = mfjUniform.smart.rows.find(r => r.age === 75);
+    expect(rowJoint.rmd).toBe(rowUniform.rmd);
+  });
+
+  test("'mfj' with no qualifying younger spouse + useJointRmdTable=true falls back to Uniform", () => {
+    // BASE has no spouse at all, so the spouse's age is unknown and Table II
+    // cannot be applied — the toggle alone must not switch tables.
     const mfjJoint = buildWithdrawalWaterfall({ ...BASE, filingStatus: "mfj", useJointRmdTable: true });
     const mfjUniform = buildWithdrawalWaterfall({ ...BASE, filingStatus: "mfj", useJointRmdTable: false });
     const rowJoint = mfjJoint.smart.rows.find(r => r.age === 75);
     const rowUniform = mfjUniform.smart.rows.find(r => r.age === 75);
-    expect(rowJoint.rmd).not.toBe(rowUniform.rmd);
+    expect(rowJoint.rmd).toBe(rowUniform.rmd);
   });
 });
 

@@ -19,7 +19,11 @@
 // buildRothExplorer.js only imports expectedReturn.js, so pulling from it here
 // can't create a cycle back through App.jsx. Same RMD symbols the sim engines
 // use, so the Action Plan cards can never quote a different RMD age or divisor.
-import { getRmdStartAge, RMD_DIV, JOINT_RMD_DIV } from "./buildRothExplorer.js";
+import { getRmdStartAge, RMD_DIV } from "./buildRothExplorer.js";
+import { filesJointlyAt, spouseAgeAt } from "./ages.js";
+// Table II (joint) divisors come from the shared src/data table, keyed by BOTH
+// ages and gated on the IRS ">10 years younger" rule inside jointRmdDivisor.
+import { jointRmdDivisor } from "../data/jointRmdTable.js";
 import { selectPortfolioAtAge } from "./mcSelectors.js";
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
@@ -68,18 +72,20 @@ function resolveRmdAge(params) {
 }
 
 /**
- * Uniform Lifetime divisor at a given age, same joint-table gate the engines use.
+ * RMD divisor at a given age — Table II (joint) or the Uniform Lifetime table.
  * Used to be a hardcoded 24.0 that didn't match any age in either IRS table.
  *
- * The joint table only makes sense with a much-younger spouse, so "single"
- * filing status overrides a stale leftover toggle — same guard the waterfall
+ * The joint table needs BOTH ages (owner and spouse) and the IRS rule that the
+ * spouse be more than 10 years younger, so this delegates to the shared
+ * jointRmdDivisor; the guard is filesJointlyAt, which covers a "single" filing
+ * status and a spouse who has already died — the same gate the waterfall
  * engine uses.
  */
 function rmdDivisorAt(params, age) {
-  const useJoint = (params.useJointRmdTable ?? false) && params.filingStatus !== "single";
-  const table = useJoint ? JOINT_RMD_DIV : RMD_DIV;
+  const useJoint = (params.useJointRmdTable ?? false) && filesJointlyAt(params, age);
+  const joint = useJoint ? jointRmdDivisor(age, spouseAgeAt(params, age)) : null;
   // Tables run to 105+; fall back to the oldest defined entry rather than NaN.
-  return table[age] || RMD_DIV[age] || RMD_DIV[105] || 2.0;
+  return joint ?? RMD_DIV[age] ?? RMD_DIV[105] ?? 2.0;
 }
 
 function yearsToRMD(params) {

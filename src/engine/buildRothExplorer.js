@@ -305,14 +305,6 @@ const RMD_DIV = {
   105: 4.6,
 };
 
-// IRS Pub 590-B Table II (Joint & Last Survivor) — owner with sole beneficiary spouse >10 yrs younger
-const JOINT_RMD_DIV = {
-  73: 25.3, 74: 24.6, 75: 24.0, 76: 23.4, 77: 22.8,
-  78: 22.3, 79: 21.8, 80: 21.3, 81: 20.9, 82: 20.5,
-  83: 20.1, 84: 19.7, 85: 19.3, 86: 19.0, 87: 18.7,
-  88: 18.4, 89: 18.1, 90: 17.8,
-};
-
 function progTax(ti, br) {
   let t = 0;
   for (const b of br) {
@@ -608,5 +600,5 @@ export {
   OBBBA_SENIOR_PER_PERSON, OBBBA_SENIOR_PHASEOUT_START_MFJ,
   OBBBA_SENIOR_PHASEOUT_START_SINGLE, OBBBA_SENIOR_PHASEOUT_RATE,
   OBBBA_SENIOR_FIRST_YEAR, OBBBA_SENIOR_LAST_YEAR,
-  STATE_BRACKETS, RMD_DIV, JOINT_RMD_DIV,
+  STATE_BRACKETS, RMD_DIV,
 };

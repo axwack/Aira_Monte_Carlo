@@ -12,7 +12,8 @@
  */
 
 import { evaluateRules } from "./engine/rulesEngine.js";
-import { getRmdStartAge, RMD_DIV, JOINT_RMD_DIV } from "./engine/buildRothExplorer.js";
+import { getRmdStartAge, RMD_DIV } from "./engine/buildRothExplorer.js";
+import { jointRmdDivisor } from "./data/jointRmdTable.js";
 
 // A profile whose pre-tax balance is large enough to fire rmd-bracket-creep
 // (projected RMD > $50,000) while still being years short of the RMD age.
@@ -76,11 +77,35 @@ describe("rulesEngine — projected RMD uses an IRS divisor, not a hardcoded 24.
   });
 
   test("the joint table is used when gated on, and it differs from Uniform", () => {
-    const params = { ...BASE_PARAMS, dob: "1965-03-14", useJointRmdTable: true, filingStatus: "mfj" };
-    // JOINT_RMD_DIV[75] and RMD_DIV[75] are different numbers, so this actually
-    // discriminates between the two tables rather than passing trivially.
-    expect(JOINT_RMD_DIV[75]).not.toBe(RMD_DIV[75]);
-    const expected = Math.round(2_000_000 / JOINT_RMD_DIV[75]);
+    // dob 1980 makes the spouse 15 years younger — more than the IRS 10-year
+    // gap — so Table II governs at the primary's RMD age of 75, where the
+    // spouse is 60. jointRmdDivisor(75, 60) = 28.3, RMD_DIV[75] = 24.6.
+    const params = {
+      ...BASE_PARAMS,
+      dob: "1965-03-14",
+      useJointRmdTable: true,
+      filingStatus: "mfj",
+      spouse: { enabled: true, dob: "1980-03-14" },
+    };
+    const joint = jointRmdDivisor(75, 60);
+    expect(joint).toBe(28.3);
+    expect(joint).not.toBe(RMD_DIV[75]);
+    const expected = Math.round(2_000_000 / joint);
+    expect(creepCard(params).reason).toContain(expected.toLocaleString("en-US"));
+  });
+
+  test("a spouse not more than 10 years younger falls back to Uniform", () => {
+    // Same profile, spouse only 5 years younger (dob 1970): the joint toggle is
+    // on, but Table II does not apply — Uniform 24.6 at 75 must.
+    const params = {
+      ...BASE_PARAMS,
+      dob: "1965-03-14",
+      useJointRmdTable: true,
+      filingStatus: "mfj",
+      spouse: { enabled: true, dob: "1970-03-14" },
+    };
+    expect(jointRmdDivisor(75, 70)).toBeNull();
+    const expected = Math.round(2_000_000 / RMD_DIV[75]);
     expect(creepCard(params).reason).toContain(expected.toLocaleString("en-US"));
   });
 

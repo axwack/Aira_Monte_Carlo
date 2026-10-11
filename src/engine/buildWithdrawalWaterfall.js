@@ -38,8 +38,10 @@ import {
   NIIT_RATE,
   getSeniorBonusDeduction,
   RMD_DIV,
-  JOINT_RMD_DIV,
 } from "./buildRothExplorer.js";
+// Table II (joint) divisors, keyed by BOTH ages — see jointRmdDivisor's
+// IRS ">10 years younger" gate.
+import { jointRmdDivisor } from "../data/jointRmdTable.js";
 import { mortgageSchedule, mortgageAnnualPayments, computeOtherIncome, computeCashFlowEvents, spendingSmileFactor, expectedHealthcareShock } from "./expenses.js";
 import { jobContributionsForYear } from "./contributions.js";
 import { spouseAgeAt, personsAtLeastAge, spouseDeathOnPrimaryClock, filesJointlyAt, planEndAgeOnPrimaryClock, survivorAgeOnPrimaryClock, survivorIsPrimary, spouseAgeOffset } from "./ages.js";
@@ -933,12 +935,19 @@ export function buildWithdrawalWaterfall(params = {}) {
       // Step 2: RMD (forced).
       let rmd = 0;
       if (age >= rmdAgeAt(age) && pretax > 0) {
-        // Joint table only applies when actually filing jointly — a stale
-        // useJointRmdTable=true left over from switching filingStatus to
-        // "single" (e.g. modeling widowhood) has to fall back to the standard
-        // Uniform Lifetime table, matching runMC's `useJointTable` gate.
-        const tbl     = (useJointRmdTable && mfjAt(age)) ? JOINT_RMD_DIV : RMD_DIV;
-        const divisor = tbl[age] || 15.0;
+        // Table II (Joint & Last Survivor) needs the spouse's age and applies
+        // only while a spouse MORE than 10 years younger is alive and the
+        // return is filed jointly — misapplying it to a spouse 5 years younger,
+        // or to a stale useJointRmdTable=true after switching to "single", is
+        // what jointRmdDivisor/filesJointlyAt guard against. The old one-age
+        // joint map also stopped at 90, and `tbl[age] || 15.0` then used 15.0
+        // at 91+ (Uniform is 8.9 at 95 — an RMD about 40% too small). Any
+        // null from the joint lookup now falls through to the Uniform table,
+        // which covers every modeled age.
+        const jointDivisor = (useJointRmdTable && mfjAt(age))
+          ? jointRmdDivisor(age, spouseAgeAt(params, age))
+          : null;
+        const divisor = jointDivisor ?? RMD_DIV[age] ?? 15.0;
         rmd = Math.round(pretax / divisor);
         pretax -= rmd;
       }
