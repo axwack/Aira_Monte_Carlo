@@ -6,7 +6,7 @@
  * Source of truth: .agents/ds/irs-table2-joint.json (IRS Pub 590-B Table II).
  */
 
-import { JOINT_RMD_TABLE_II, jointRmdDivisor, JOINT_RMD_TABLE } from "./data/jointRmdTable.js";
+import { JOINT_RMD_TABLE_II, jointRmdDivisor } from "./data/jointRmdTable.js";
 
 describe("JOINT_RMD_TABLE_II — full two-dimensional matrix", () => {
   test("includes owner ages 72 through 120", () => {
@@ -84,17 +84,5 @@ describe("jointRmdDivisor() — IRS Variant 1 gate", () => {
 
   test("deep table: 110 / 99 → 3.7", () => {
     expect(jointRmdDivisor(110, 99)).toBe(3.7);
-  });
-});
-
-describe("JOINT_RMD_TABLE — backward compat", () => {
-  test("preserves deprecated 1D slice at age 85 → 19.3", () => {
-    expect(JOINT_RMD_TABLE[85]).toBe(19.3);
-  });
-
-  test("covers ages 73 through 90", () => {
-    for (let age = 73; age <= 90; age++) {
-      expect(JOINT_RMD_TABLE[age]).toBeDefined();
-    }
   });
 });
