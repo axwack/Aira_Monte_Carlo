@@ -1373,6 +1373,13 @@ function getBracketCeiling(target, filingStatus, inflFactor) {
   return base === Infinity ? Infinity : Math.round(base * inflFactor);
 }
 
+// Optional flat pre-retirement return from Assumptions (percent, nominal). Blank/NaN
+// means "not set": callers fall back to the historical draw / expected return.
+function flatPreRetReturn(p) {
+  const v = p.preRetireReturn;
+  return v === "" || v == null || !Number.isFinite(Number(v)) ? null : Number(v) / 100;
+}
+
 // seqOverride: optional array of equity returns (decimals) prescribed for the
 // first N retirement years — used by the Stress Test to force the 2000-2012
 // sequence at retirement. When supplied, year y's equity component is
@@ -1502,6 +1509,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // see the numbers not move at all. Accumulation year y is calendar year
   // CURRENT_YEAR + y; the retirement loop starts at CURRENT_YEAR + accYrs, so
   // an event fires in exactly one phase.
+  const preRetFlat = flatPreRetReturn(p);
   const accInflowByYear = [];
   for (let y = 0; y < accYrs; y++) {
     accInflowByYear.push(computeCashFlowEvents(p.cashFlowEvents, CURRENT_YEAR + y, p.inf ?? 2.5, CURRENT_YEAR));
@@ -1532,7 +1540,8 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     // Accumulation phase
     for (let y = 0; y < accYrs; y++) {
-      const ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
+      // Optional flat pre-retirement return (nominal %). Blank keeps the historical draw.
+      const ret = preRetFlat ?? portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
       pretax   = Math.max(0, pretax   * (1 + ret));
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
@@ -2396,6 +2405,7 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   // hardcode 62 in its retirement loop).
   const glideSwitchAgeDet = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeDet });
   const accYrs = Math.max(0, retAgeDet - p.currentAge);
+  const preRetFlat = flatPreRetReturn(p);
   // Same horizon rule as runMC.
   const planEndDet = planEndAgeOnPrimaryClock(p, p.endAge);
   const retYrs = planEndDet - retAgeDet;
@@ -2415,7 +2425,7 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
 
   // Accumulation using median returns
   for (let y = 0; y < accYrs; y++) {
-    const ret = expectedReturn(glidepathEqPct(p.currentAge + y, p.preRetireEq, p.postRetireEq, glideSwitchAgeDet)) / 100;
+    const ret = preRetFlat ?? expectedReturn(glidepathEqPct(p.currentAge + y, p.preRetireEq, p.postRetireEq, glideSwitchAgeDet)) / 100;
     // Aggregate portfolio here (no per-bucket split in this engine), but the
     // total needs to include every contribution stream runMC applies or the
     // two engines report different portfolio-at-retirement figures.
@@ -11312,6 +11322,26 @@ function ScenariosTab({
  * Every control writes through `onAssumptionChange`, so this dialog and the
  * engine read one value — there is no second copy of these settings anywhere.
  */
+// Blank keeps the historical draw; a number grows every account by exactly that
+// (nominal) % per year until retirement. Lives beside, not inside, the
+// DeepSeek-owned MCAdvancedSettings region.
+function PreRetireReturnField({ value, onChange }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)" }}>
+        Growth until retirement (%/yr)
+        <input type="number" step={0.5} placeholder="historical" value={value ?? ""}
+               onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
+               onFocus={selectAllOnFocus}
+               style={{ width: 90, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "3px 6px", fontSize: 12 }} />
+      </label>
+      <div style={{ fontSize: 10.5, color: "var(--text-faint)", lineHeight: 1.45, marginTop: 4 }}>
+        Blank: balances grow with real market draws until you retire. 0 = no growth, only contributions. Re-run to apply.
+      </div>
+    </div>
+  );
+}
+
 function MCAdvancedSettings({ p, onAssumptionChange }) {
   const range = resolveSampleRange(p);
   const startYr = Number.isFinite(Number(p?.mcRangeStart)) ? Math.round(Number(p.mcRangeStart)) : SAMPLE_START_YEAR;
@@ -17391,6 +17421,7 @@ export default function AiRAForecaster() {
       cssEndYear: assumptions.cssEndYear || null,
       conversionOverrides: assumptions.conversionOverrides || [],
       preRetireEq: assumptions.preRetireEq,
+      preRetireReturn: assumptions.preRetireReturn ?? null,
       postRetireEq: assumptions.postRetireEq,
       // Has to be forwarded — the engines read `params`, not `assumptions`.
       // null keeps the default (switch at retireAge).
@@ -18344,6 +18375,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(1)}% → {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(1)}%
                 </span>
               </div>
+              <PreRetireReturnField value={assumptions.preRetireReturn} onChange={(v) => updateAssumption("preRetireReturn", v)} />
               <MCAdvancedSettings p={assumptions} onAssumptionChange={updateAssumption} />
               </>)}
             </div>
