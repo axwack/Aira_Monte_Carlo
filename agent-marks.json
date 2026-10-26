@@ -108,7 +108,7 @@
       "file": "src/App.jsx",
       "startAnchor": "export function notEnteredKeys(",
       "description": "Expense rows that were never entered show a dash instead of $0 (UX round 2).",
-      "sha": "009164d455d80bbe"
+      "sha": "845a27cd7ee45651"
     },
     {
       "id": "claude-reset-profile",
@@ -132,7 +132,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function IncomeExpenseStack(",
       "description": "Income/expense legend panel: dash for never-entered rows, provenance footnotes.",
-      "sha": "c0bbf3c8134d010a"
+      "sha": "ddc735e763444e95"
     },
     {
       "id": "claude-verdict-header",

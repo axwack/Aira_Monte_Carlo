@@ -515,11 +515,15 @@ const SEQ_2000_2012 = [
  * the retirement calendar year but left un-inflated (today's-dollars mortgage
  * map value / raw carveout annual amounts), to stay consistent with the rest
  * of this helper's today's-dollars framing.
- * Returns { initWRpct, projectedPort, initDrawEst, baseSpend, ssAtRetire, rentalAtRetire,
+ * initDrawEst also carries one-off expenses planned for the retirement year (a
+ * renovation): that is what year one really draws. steadyWRpct leaves them out;
+ * it is the plan's ongoing rate, the one guardrails and headlines should judge.
+ * Returns { initWRpct, steadyWRpct, projectedPort, initDrawEst, steadyDraw, oneOffAtRetire,
+ * baseSpend, ssAtRetire, rentalAtRetire, otherIncAtRetire, housingAtRetire, carveoutAtRetire,
  * annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } so callers can show the math.
  * Accepts either a profile shape (values from RetirementPanel) or the assembled params shape.
  */
-function computeInitialWR(p) {
+export function computeInitialWR(p) {
   const currentAge = p.currentAge || 35;
   const retireAge = p.retireAge || 65;
   const yrsToRetire = Math.max(0, retireAge - currentAge);
@@ -553,10 +557,17 @@ function computeInitialWR(p) {
   const carveoutAtRetire = (p.carveouts || []).reduce((sum, c) => {
     return sum + (retireCalYear <= (c.endYear || 9999) ? (c.annual || 0) : 0);
   }, 0);
-  const initDrawEst = Math.max(0, baseSpend - ssAtRetire - rentalAtRetire - otherIncAtRetire) + housingAtRetire + carveoutAtRetire;
-  const initWRpct = projectedPort > 0 ? (initDrawEst / projectedPort) * 100 : 0;
-  return { initWRpct, projectedPort, initDrawEst, baseSpend, ssAtRetire, rentalAtRetire,
-    annualAdds, accumRate, nominalRate, inflRate, yrsToRetire };
+  // Nominal for the retirement year, then deflated to today's dollars like projectedPort.
+  // Doing it this way also handles events entered in future dollars (inflate: false).
+  const oneOffAtRetire = computeCashFlowEvents(p.cashFlowEvents, retireCalYear, inflRate * 100, CURRENT_YEAR).total
+    / Math.pow(1 + inflRate, Math.max(0, retireCalYear - CURRENT_YEAR));
+  const steadyDraw = Math.max(0, baseSpend - ssAtRetire - rentalAtRetire - otherIncAtRetire) + housingAtRetire + carveoutAtRetire;
+  const initDrawEst = steadyDraw + oneOffAtRetire;
+  const pctOf = (draw) => projectedPort > 0 ? (draw / projectedPort) * 100 : 0;
+  const initWRpct = pctOf(initDrawEst);
+  const steadyWRpct = pctOf(steadyDraw);
+  return { initWRpct, steadyWRpct, projectedPort, initDrawEst, steadyDraw, oneOffAtRetire, baseSpend, ssAtRetire, rentalAtRetire,
+    otherIncAtRetire, housingAtRetire, carveoutAtRetire, annualAdds, accumRate, nominalRate, inflRate, yrsToRetire };
 }
 
 
@@ -5900,6 +5911,8 @@ const EXPENSE_CATS = [
   ["Other Expenses", "var(--text-secondary)"],
   ["Income Tax", "#f87171"],
   ["Capital Gains Tax", "var(--text-muted)"],
+  ["Moved to Roth", "#f59e0b"],
+  ["Saved to Accounts", "#ec4899cc"],
 ];
 
 // "Income & Expenses" — a Boldin-style pair of stacked-bar charts sourced from
@@ -5907,28 +5920,48 @@ const EXPENSE_CATS = [
 // conversions, mortgage payoff, and carveouts) match the Withdrawal Plan tab
 // by construction. Hovering a year updates the side panel from "Lifetime"
 // totals to that year's breakdown.
+
+// Everything a waterfall row spends out of the accounts. The engine keeps the
+// forced RMD out of fromPretax, so leaving it off made the bar collapse at RMD
+// age while the accounts were still full; the reinvested surplus never left.
+// Conversion tax counts only where it was paid from an account rather than
+// withheld from the conversion itself (that part is inside the conversion bar).
+export function savingsDrawdownOf(r) {
+  const convTaxPaid = (r.convTaxFromCash || 0) + (r.convTaxFromTaxable || 0) + (r.convTaxFromPretax || 0);
+  const convTaxWithheld = (r.conversionAmount || 0) - (r.convToRoth ?? r.conversionAmount ?? 0);
+  return r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth + (r.rmd || 0) - (r.rmdSurplus || 0)
+    + convTaxPaid - convTaxWithheld;
+}
+
+// One chart row per waterfall year: the income stack and the expense stack.
+export function incomeExpenseRow(r, carveouts, inf) {
+  const { medical, ltc, other } = categorizeCarveouts(carveouts, r.yr, inf);
+  return {
+    yr: r.yr, age: r.age,
+    "Social Security": r.ss,
+    "Annuity/Rental": r.annuityRental,
+    "Pension/Other": r.otherIncome,
+    [INCOME_LABELS.savingsDrawdown]: savingsDrawdownOf(r),
+    "One-Off Income": r.eventInflow || 0,
+    "Roth Conversion": r.conversionAmount,
+    "General/Living": r.spending,
+    "Mortgage/Housing": r.housingCost,
+    "Medical": medical,
+    "Long-Term Care": ltc,
+    "Other Expenses": other + (r.eventCost || 0),
+    // The 10% early-withdrawal penalty is an IRS charge the draws pay, so it belongs here.
+    "Income Tax": r.fedTax + r.stateTax + r.irmaa + (r.earlyPenalty || 0),
+    "Capital Gains Tax": 0,
+    // Money that stays in the plan: the two stacks only balance if it shows.
+    "Moved to Roth": r.convToRoth ?? r.conversionAmount ?? 0,
+    "Saved to Accounts": (r.eventInflow || 0) + (r.surplusToTaxable || 0),
+  };
+}
+
 function IncomeExpensesChart({ p, inf }) {
   const rows = useMemo(() => waterfallForActiveStrategy(p)?.smart?.rows ?? [], [p]);
 
-  const data = useMemo(() => rows.map((r) => {
-    const { medical, ltc, other } = categorizeCarveouts(p.carveouts, r.yr, inf);
-    return {
-      yr: r.yr, age: r.age,
-      "Social Security": r.ss,
-      "Annuity/Rental": r.annuityRental,
-      "Pension/Other": r.otherIncome,
-      [INCOME_LABELS.savingsDrawdown]: r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth,
-      "One-Off Income": r.eventInflow || 0,
-      "Roth Conversion": r.conversionAmount,
-      "General/Living": r.spending,
-      "Mortgage/Housing": r.housingCost,
-      "Medical": medical,
-      "Long-Term Care": ltc,
-      "Other Expenses": other,
-      "Income Tax": r.fedTax + r.stateTax + r.irmaa,
-      "Capital Gains Tax": 0,
-    };
-  }), [rows, p.carveouts, inf]);
+  const data = useMemo(() => rows.map((r) => incomeExpenseRow(r, p.carveouts, inf)), [rows, p.carveouts, inf]);
 
   const [hoverYr, setHoverYr] = useState(null);
   const hoverRow = hoverYr != null ? data.find((d) => d.yr === hoverYr) : null;
@@ -5962,7 +5995,7 @@ function IncomeExpensesChart({ p, inf }) {
         dashKeys={notEnteredKeys(p)}
         zeroNotes={{ "Mortgage/Housing": housingRowNote(p, data.reduce((a, d) => a + (d["Mortgage/Housing"] || 0), 0)) }}
         reconcile
-        footnote="A dash means nothing was entered for that row, which is not the same as zero cost: Medical, Long-Term Care and Other Expenses appear only if you add carveouts (or Planned One-Off Expenses), and Mortgage/Housing says why when it is empty (nothing entered, housing already inside your spending, or the loan is paid off before these years begin). Only the primary property's mortgage is charged as a payment. Capital Gains Tax is not yet separately modeled (shown as —) — realized gains on taxable-account draws are folded into Income Tax. Roth conversion tax and IRMAA surcharges are funded directly from the pre-tax bucket, so totals here may differ slightly from the Income side."
+        footnote="A dash means nothing was entered for that row, which is not the same as zero cost: Medical, Long-Term Care and Other Expenses appear only if you add carveouts (or Planned One-Off Expenses), and Mortgage/Housing says why when it is empty (nothing entered, housing already inside your spending, or the loan is paid off before these years begin). Only the primary property's mortgage is charged as a payment. Capital Gains Tax is not yet separately modeled (shown as —) — realized gains on taxable-account draws are folded into Income Tax. Moved to Roth is this year's conversion after any tax withheld from it; Saved to Accounts is one-off income and income beyond what you spend, both deposited back into your accounts. Each year's total matches the Income chart."
       />
       {p.ssAge > p.retireAge && (
         <div className="flag-w" style={{ fontSize: 11 }}>
@@ -5994,7 +6027,8 @@ function ReconLine({ label, value, color }) {
 /** Expense rows that are 0 only because nothing was entered, so they show "—" instead of a confident $0. */
 export function notEnteredKeys(p) {
   const keys = ["Capital Gains Tax"];
-  if (!(p.carveouts || []).length) keys.push("Medical", "Long-Term Care", "Other Expenses");
+  const oneOffOut = (p.cashFlowEvents || []).some((e) => e.direction !== "in");
+  if (!(p.carveouts || []).length) keys.push("Medical", "Long-Term Care", ...(oneOffOut ? [] : ["Other Expenses"]));
   if (!(p.mortBalance > 0)) keys.push("Mortgage/Housing");
   return keys;
 }
@@ -6016,20 +6050,18 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
   }));
   const total = rows.reduce((s, r) => s + r.value, 0);
 
-  // Portfolio-draw reconciliation (expense panel only). Pulls the same
-  // figures the engine produces so the numbers match the green "Savings
-  // Drawdown" income bar exactly. The draw covers spending + housing +
-  // carveouts net of guaranteed income; taxes are funded separately from
-  // the pre-tax bucket (see footnote).
+  // Portfolio-draw reconciliation (expense panel only): everything going out,
+  // minus every other source of money, equals the green drawdown bar exactly.
   const sumKey = (k) => hoverRow ? (hoverRow[k] || 0) : data.reduce((s, d) => s + (d[k] || 0), 0);
   const recon = reconcile ? (() => {
-    const guaranteed   = sumKey("Social Security") + sumKey("Annuity/Rental") + sumKey("Pension/Other");
-    const draw         = sumKey(INCOME_LABELS.savingsDrawdown);                 // true portfolio draw
-    const coreSpend    = sumKey("General/Living");
-    const housingCarve = sumKey("Mortgage/Housing") + sumKey("Medical") + sumKey("Long-Term Care") + sumKey("Other Expenses");
+    const otherIncome  = sumKey("Social Security") + sumKey("Annuity/Rental") + sumKey("Pension/Other")
+      + sumKey("One-Off Income") + sumKey("Roth Conversion");
+    const draw         = sumKey(INCOME_LABELS.savingsDrawdown);
+    const spendNeed    = sumKey("General/Living") + sumKey("Mortgage/Housing") + sumKey("Medical")
+      + sumKey("Long-Term Care") + sumKey("Other Expenses");
     const taxes        = sumKey("Income Tax") + sumKey("Capital Gains Tax");
-    const spendNeed    = coreSpend + housingCarve;                   // before income offset
-    return { guaranteed, draw, coreSpend, housingCarve, taxes, spendNeed };
+    const kept         = sumKey("Moved to Roth") + sumKey("Saved to Accounts");
+    return { otherIncome, draw, spendNeed, taxes, kept };
   })() : null;
 
   return (
@@ -6074,15 +6106,16 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
               <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
                 What your portfolio must cover
               </div>
-              <ReconLine label="Spending + housing + carveouts" value={recon.spendNeed} color="#cbd5e1" />
-              <ReconLine label="− Covered by income (SS / rental / other)" value={-Math.min(recon.guaranteed, recon.spendNeed)} color="#7c3aed" />
+              <ReconLine label="Spending, housing, carveouts, one-offs" value={recon.spendNeed} color="#cbd5e1" />
+              <ReconLine label="+ Taxes" value={recon.taxes} color="#f87171" />
+              <ReconLine label="+ Moved to Roth / saved to accounts" value={recon.kept} color="#f59e0b" />
+              <ReconLine label="− Other income (SS, rental, pension, one-off, conversion)" value={-recon.otherIncome} color="#7c3aed" />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 6, paddingTop: 6, fontWeight: 700 }}>
                 <div style={{ color: "#a9d1ac" }}>= Drawn from savings</div>
                 <div style={{ color: "#a9d1ac", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(recon.draw)}</div>
               </div>
-              <ReconLine label="Taxes (paid from pre-tax accounts)" value={recon.taxes} color="#f87171" />
               <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
-                “Drawn from savings” is the green <strong style={{ color: "#a9d1ac" }}>Savings &amp; 401(k)/IRA Drawdown</strong> bar above — your spending plus housing &amp; carveouts, minus the income you already receive. Taxes are the <em>extra</em> the plan must produce on top, funded from your pre-tax accounts.
+                “Drawn from savings” is the green <strong style={{ color: "#a9d1ac" }}>Savings &amp; 401(k)/IRA Drawdown</strong> bar above, including RMDs and the tax the draws themselves cause. These lines add up exactly, so the two charts have the same total every year.
               </div>
             </div>
           )}
@@ -16384,11 +16417,12 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
   // Initial WR diagnostic — pass combined sp so the helper, the GK card, the metrics WR
   // badge, and the gk-bar strategy strap all show the same number.
   const wr = computeInitialWR({ ...values, sp: combinedSp });
-  const { initWRpct, projectedPort, initDrawEst, ssAtRetire, rentalAtRetire,
-    annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } = wr;
+  // The guardrail band judges the ongoing rate; a one-off is shown as a separate year-one line.
+  const { steadyWRpct, initWRpct, projectedPort, steadyDraw, initDrawEst, oneOffAtRetire, ssAtRetire, rentalAtRetire,
+    otherIncAtRetire, housingAtRetire, carveoutAtRetire, annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } = wr;
   const retireAge = values.retireAge || 65;
-  const inSafeBand = initWRpct >= 5.0 && initWRpct <= 5.5;
-  const wrColor = inSafeBand ? "#34d399" : (initWRpct > 5.5 ? "#f87171" : "var(--accent-gold)");
+  const inSafeBand = steadyWRpct >= 5.0 && steadyWRpct <= 5.5;
+  const wrColor = inSafeBand ? "#34d399" : (steadyWRpct > 5.5 ? "#f87171" : "var(--accent-gold)");
 
   const activeScenario = twoHousehold
     ? "🌴 Claiming non-residency — no state income tax"
@@ -16525,16 +16559,17 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-secondary)" }}>Initial portfolio draw rate</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: wrColor, fontFamily: "'JetBrains Mono',monospace" }}>{initWRpct.toFixed(1)}%</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: wrColor, fontFamily: "'JetBrains Mono',monospace" }}>{steadyWRpct.toFixed(1)}%</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto", fontStyle: "italic" }}>
-                  {inSafeBand ? "in 5–5.5% safe band" : initWRpct > 5.5 ? "above safe band — consider lower spend or later retirement" : "below safe band — room to spend more or retire earlier"}
+                  {inSafeBand ? "in 5–5.5% safe band" : steadyWRpct > 5.5 ? "above safe band — consider lower spend or later retirement" : "below safe band — room to spend more or retire earlier"}
                 </div>
               </div>
               <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.5 }}>
-                spend {fmtDollar(baseSpend)} − SS {fmtDollar(ssAtRetire)} − rental {fmtDollar(rentalAtRetire)} = portfolio draw {fmtDollar(initDrawEst)}<br/>
+                spend {fmtDollar(wr.baseSpend)} − SS {fmtDollar(ssAtRetire)} − rental {fmtDollar(rentalAtRetire)} − other income {fmtDollar(otherIncAtRetire)} (floored at $0) + housing {fmtDollar(housingAtRetire)} + carveouts {fmtDollar(carveoutAtRetire)} = portfolio draw {fmtDollar(steadyDraw)}<br/>
                 projected portfolio at age {retireAge} (today's dollars): {fmtDollar(projectedPort)}<br/>
                 = current {fmtDollar(values.port || 0)} grown {yrsToRetire}yr @ {(accumRate * 100).toFixed(1)}% real ({(nominalRate * 100).toFixed(1)}% nominal − {(inflRate * 100).toFixed(1)}% infl) + {fmtDollar(annualAdds)}/yr contrib<br/>
-                ⇒ {fmtDollar(initDrawEst)} ÷ {fmtDollar(projectedPort)} = <strong style={{ color: wrColor }}>{initWRpct.toFixed(1)}%</strong>
+                ⇒ {fmtDollar(steadyDraw)} ÷ {fmtDollar(projectedPort)} = <strong style={{ color: wrColor }}>{steadyWRpct.toFixed(1)}%</strong>
+                {oneOffAtRetire > 0 && <><br/>year one also pays one-off expenses of {fmtDollar(oneOffAtRetire)}: {fmtDollar(initDrawEst)} ÷ {fmtDollar(projectedPort)} = {initWRpct.toFixed(1)}% that year only</>}
               </div>
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 16 }}>
@@ -17556,7 +17591,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     return isYearEndWindow() && !yearEndAcked(new Date().getFullYear());
   });
 
- const swr = computeInitialWR(params).initWRpct.toFixed(1);
+ const swr = computeInitialWR(params).steadyWRpct.toFixed(1);   // one-offs would make one year read as the plan's rate
  const analogue = mc ? getAnalogue(mc.rate) : null;
 
   const TABS = [
