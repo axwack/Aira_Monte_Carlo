@@ -11169,7 +11169,7 @@ function FailedPathPanel({ failures, n }) {
   const picks = [["worst", "Worst case"], ["typical", "Typical failure"], ["closest", "Closest call"]];
   const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)}%`);
   const th = { textAlign: "right", padding: "3px 8px", fontWeight: 600, color: "var(--text-faint)", whiteSpace: "nowrap" };
-  const td = { textAlign: "right", padding: "3px 8px", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" };
+  const td = { textAlign: "right", padding: "3px 8px", fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
   return (
     <div className="chart-card" style={box}>
       <div className="ct" style={{ marginBottom: 4 }}>🔍 Why plans failed</div>
@@ -11212,6 +11212,10 @@ function FailedPathPanel({ failures, n }) {
 }
 
 const SEQ_PICKS = [1929, 1966, 1973, 2000, 2007];
+// A sequence this long is a sequence-risk test; past ~10 years it is just a market forecast.
+const SEQ_DEFAULT_YEARS = 5;
+const SEQ_HISTORY_LENGTHS = [5, 10, 15];
+const SEQ_MAX_CUSTOM_YEARS = 10;
 const SEQ_INPUT_STYLE = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12 };
 
 // Replay a real historical start year (stocks, bonds and inflation paired) or a
@@ -11221,7 +11225,7 @@ const SEQ_INPUT_STYLE = { background: "#0d1b2a", border: "1px solid #1e3a5f", co
 function SequenceBuilder({ p, onResult }) {
   const [mode, setMode] = useState("history");
   const [startYear, setStartYear] = useState(2000);
-  const [years, setYears] = useState(13);
+  const [years, setYears] = useState(SEQ_DEFAULT_YEARS);
   const [custom, setCustom] = useState(["-30", "-20", "-10", "0", "10"]);
   const [today, setToday] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -11268,30 +11272,44 @@ function SequenceBuilder({ p, onResult }) {
       </div>
 
       {mode === "history" ? (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
-          <span style={lab}>Start year</span>
-          <select value={startYear} onChange={(e) => setStartYear(Number(e.target.value))} style={SEQ_INPUT_STYLE}>
-            {Array.from({ length: SAMPLE_END_YEAR - SAMPLE_START_YEAR + 1 }, (_, i) => SAMPLE_START_YEAR + i).map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <span style={lab}>for</span>
-          <select value={years} onChange={(e) => setYears(Number(e.target.value))} style={SEQ_INPUT_STYLE}>
-            {[3, 5, 8, 10, 13, 15, 20].map((n) => <option key={n} value={n}>{n} yrs</option>)}
-          </select>
-          {SEQ_PICKS.map((y) => <button key={y} type="button" style={pill(startYear === y)} onClick={() => setStartYear(y)}>{y}</button>)}
+        <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={lab}>Start year</span>
+            <select value={startYear} onChange={(e) => setStartYear(Number(e.target.value))} style={SEQ_INPUT_STYLE} aria-label="Start year">
+              {Array.from({ length: SAMPLE_END_YEAR - SAMPLE_START_YEAR + 1 }, (_, i) => SAMPLE_START_YEAR + i).map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <span style={{ ...lab, marginLeft: 6 }}>Famous starts</span>
+            {SEQ_PICKS.map((y) => <button key={y} type="button" style={pill(startYear === y)} onClick={() => setStartYear(y)}>{y}</button>)}
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={lab}>Length</span>
+            {SEQ_HISTORY_LENGTHS.map((n) => <button key={n} type="button" style={pill(years === n)} aria-pressed={years === n} onClick={() => setYears(n)}>{n} years</button>)}
+          </div>
         </div>
       ) : (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
-          <span style={lab}>Stocks %, year by year</span>
-          {custom.map((v, i) => (
-            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-              <input type="number" value={v} placeholder={`Yr ${i + 1}`} aria-label={`Year ${i + 1} stock return %`}
-                     onChange={(e) => setCustom((c) => c.map((x, j) => (j === i ? e.target.value : x)))}
-                     onFocus={selectAllOnFocus} style={{ ...SEQ_INPUT_STYLE, width: 64 }} />
-              <button type="button" aria-label={`Remove year ${i + 1}`} onClick={() => setCustom((c) => c.filter((_, j) => j !== i))}
-                      style={{ background: "transparent", border: "none", color: "var(--text-faint)", cursor: "pointer" }}>×</button>
-            </span>
-          ))}
-          {custom.length < 15 && <button type="button" style={pill(false)} onClick={() => setCustom((c) => [...c, "0"])}>+ year</button>}
+        <div style={{ marginBottom: 10 }}>
+          <div style={lab}>Stock return for each year, in %</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "flex-end", marginTop: 4 }}>
+            {custom.map((v, i) => (
+              <div key={i} style={{ position: "relative", width: 62 }}>
+                <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 2 }}>Year {i + 1}</div>
+                <input type="number" inputMode="decimal" value={v} aria-label={`Year ${i + 1} stock return %`}
+                       onChange={(e) => setCustom((c) => c.map((x, j) => (j === i ? e.target.value : x)))}
+                       onFocus={selectAllOnFocus}
+                       style={{ ...SEQ_INPUT_STYLE, width: "100%", boxSizing: "border-box", padding: "4px 18px 4px 6px", fontFamily: "'JetBrains Mono',monospace",
+                         fontVariantNumeric: "tabular-nums", color: Number(v) < 0 ? "#f87171" : SEQ_INPUT_STYLE.color }} />
+                <button type="button" aria-label={`Remove year ${i + 1}`} onClick={() => setCustom((c) => c.filter((_, j) => j !== i))}
+                        style={{ position: "absolute", right: 2, bottom: 3, width: 16, height: 22, padding: 0, background: "transparent", border: "none",
+                          color: "var(--text-muted)", cursor: "pointer", fontSize: 13, lineHeight: 1 }}>×</button>
+              </div>
+            ))}
+            {custom.length < SEQ_MAX_CUSTOM_YEARS && (
+              <button type="button" style={{ ...pill(false), height: 28 }} onClick={() => setCustom((c) => [...c, "0"])}>+ Add year</button>
+            )}
+          </div>
+          {custom.length >= SEQ_MAX_CUSTOM_YEARS && (
+            <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 4 }}>Up to {SEQ_MAX_CUSTOM_YEARS} years. After that, returns go back to random history.</div>
+          )}
         </div>
       )}
 
