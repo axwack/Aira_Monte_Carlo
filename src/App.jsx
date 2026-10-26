@@ -1380,6 +1380,27 @@ function flatPreRetReturn(p) {
   return v === "" || v == null || !Number.isFinite(Number(v)) ? null : Number(v) / 100;
 }
 
+// One prescribed sequence year. `entry` is a bare equity return, or
+// {stock, bond?, infl?} (a real historical year with all three paired).
+// Bond/inflation are always drawn so the rand() stream is identical either way;
+// a paired value then overrides the draw.
+function seqYear(entry, eqW, rand) {
+  const stock = typeof entry === "number" ? entry : entry.stock;
+  const bondDraw = bootstrapDraw(BONDS, rand);
+  const inflDraw = bootstrapDraw(INFL, rand);
+  const bond = entry?.bond ?? bondDraw;
+  return { stock, bond, infl: entry?.infl ?? inflDraw, r: eqW * stock + (1 - eqW) * bond };
+}
+
+// Real calendar years `startYear...` as paired {stock, bond, infl, year} entries
+// (1928-2025), for seqOverride. Stops at the end of the dataset.
+export function historicalSequence(startYear, years = 13) {
+  const i0 = startYear - SAMPLE_START_YEAR;
+  return Array.from({ length: years }, (_, k) => i0 + k)
+    .filter((i) => i >= 0 && i < SP500.length)
+    .map((i) => ({ year: SAMPLE_START_YEAR + i, stock: SP500[i], bond: BONDS[i], infl: INFL[i] }));
+}
+
 // seqOverride: optional array of equity returns (decimals) prescribed for the
 // first N retirement years — used by the Stress Test to force the 2000-2012
 // sequence at retirement. When supplied, year y's equity component is
@@ -1388,7 +1409,7 @@ function flatPreRetReturn(p) {
 // fall back to the normal bootstrap. Everything else — tax (calcYearTax,
 // including the non-resident/state toggle), RMDs, bucket sourcing, strategy —
 // is identical to a normal run, so the stress pivot can never diverge from the MC.
-function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = null) {
+function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = null, seqToday = false) {
   const rand = mulberry32(seed);
   // "Tax drag" master toggle. Off (p.tax === false) zeroes all tax — federal,
   // state, IRMAA, and Roth-conversion cost — for a pure pre-tax view of
@@ -1510,6 +1531,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // CURRENT_YEAR + y; the retirement loop starts at CURRENT_YEAR + accYrs, so
   // an event fires in exactly one phase.
   const preRetFlat = flatPreRetReturn(p);
+  const seqOffset = seqToday ? accYrs : 0; // retirement years continue after the accumulation years
   const accInflowByYear = [];
   for (let y = 0; y < accYrs; y++) {
     accInflowByYear.push(computeCashFlowEvents(p.cashFlowEvents, CURRENT_YEAR + y, p.inf ?? 2.5, CURRENT_YEAR));
@@ -1541,7 +1563,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // Accumulation phase
     for (let y = 0; y < accYrs; y++) {
       // Optional flat pre-retirement return (nominal %). Blank keeps the historical draw.
-      const ret = preRetFlat ?? portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
+      // seqToday: the prescribed sequence starts now, so it covers these years first.
+      const ret = (seqToday && seqOverride && y < seqOverride.length)
+        ? seqYear(seqOverride[y], glidepathEquityWeight(p.currentAge + y, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC), rand).r
+        : preRetFlat ?? portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
       pretax   = Math.max(0, pretax   * (1 + ret));
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
@@ -1625,17 +1650,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       let r, inflY;
       // The seqOverride branch below builds `r` from these two directly.
       let stockReturnMC, bondReturnMC;
-      if (seqOverride && y < seqOverride.length) {
+      if (seqOverride && y + seqOffset < seqOverride.length) {
         // Same weight portReturn would have used at this age. This line used
         // to hardcode 62 while portReturn switched at the retirement age, so
         // every Stress Test scenario modeled a different investor than the
         // headline run: a 67 retiree got de-risked five years early, a 60
         // retiree stayed aggressive two years too long.
         const eqW = glidepathEquityWeight(age, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
-        stockReturnMC = seqOverride[y];
-        bondReturnMC = bootstrapDraw(BONDS, rand);
-        r = eqW * stockReturnMC + (1 - eqW) * bondReturnMC;
-        inflY = bootstrapDraw(INFL, rand);
+        ({ stock: stockReturnMC, bond: bondReturnMC, infl: inflY, r } = seqYear(seqOverride[y + seqOffset], eqW, rand));
       } else {
         const bundle = drawYearBundle(age, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
         r = bundle.ret;
@@ -11113,6 +11135,104 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
   );
 }
 
+const SEQ_PICKS = [1929, 1966, 1973, 2000, 2007];
+const SEQ_INPUT_STYLE = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12 };
+
+// Replay a real historical start year (stocks, bonds and inflation paired) or a
+// hand-typed run of equity returns, from retirement or from today, through the
+// same runMC the rest of the app uses. Lifts the result to ScenariosTab, which
+// shows it in the stress-test slot below.
+function SequenceBuilder({ p, onResult }) {
+  const [mode, setMode] = useState("history");
+  const [startYear, setStartYear] = useState(2000);
+  const [years, setYears] = useState(13);
+  const [custom, setCustom] = useState(["-30", "-20", "-10", "0", "10"]);
+  const [today, setToday] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const endAge = p.endAge || 90;
+
+  const run = () => {
+    const hist = mode === "history";
+    const seq = hist
+      ? historicalSequence(startYear, years)
+      : custom.filter((v) => v !== "" && Number.isFinite(Number(v))).map((v) => Number(v) / 100);
+    if (!seq.length) return;
+    setBusy(true);
+    setTimeout(() => {
+      const r = runMC(p, endAge, STRESS_PATHS, 99, true, seq, today, true);
+      const when = today ? "starting today" : "at retirement";
+      onResult({
+        rate: r.rate, pcts: r.pcts, failures: r.failures ?? null,
+        title: hist
+          ? `Stress test: ${seq[0].year}–${seq[seq.length - 1].year} actual market sequence ${when}`
+          : `Stress test: custom sequence (${custom.filter((v) => v !== "").join(", ")}%) ${when}`,
+        chips: seq.map((e, i) => ({ label: hist ? String(e.year) : `Yr ${i + 1}`, r: hist ? e.stock : e })),
+      });
+      setBusy(false);
+    }, 30);
+  };
+
+  const pill = (on) => ({
+    fontSize: 11, padding: "3px 10px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+    border: `1px solid ${on ? "var(--accent-teal)" : "var(--card-border)"}`,
+    background: on ? "rgba(20,184,166,0.15)" : "transparent", color: on ? "var(--accent-teal)" : "var(--text-secondary)",
+  });
+  const lab = { fontSize: 11, color: "var(--text-muted)", marginRight: 6 };
+
+  return (
+    <div className="chart-card" style={{ marginBottom: 12 }}>
+      <div className="ct" style={{ marginBottom: 4 }}>🧪 Build a market sequence</div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 10 }}>
+        Test the plan against one specific run of markets. After your sequence ends, returns go back to
+        random history. Bonds and inflation come from the same real years when you replay history.
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        <button type="button" style={pill(mode === "history")} onClick={() => setMode("history")}>Real history</button>
+        <button type="button" style={pill(mode === "custom")} onClick={() => setMode("custom")}>My own numbers</button>
+      </div>
+
+      {mode === "history" ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+          <span style={lab}>Start year</span>
+          <select value={startYear} onChange={(e) => setStartYear(Number(e.target.value))} style={SEQ_INPUT_STYLE}>
+            {Array.from({ length: SAMPLE_END_YEAR - SAMPLE_START_YEAR + 1 }, (_, i) => SAMPLE_START_YEAR + i).map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <span style={lab}>for</span>
+          <select value={years} onChange={(e) => setYears(Number(e.target.value))} style={SEQ_INPUT_STYLE}>
+            {[3, 5, 8, 10, 13, 15, 20].map((n) => <option key={n} value={n}>{n} yrs</option>)}
+          </select>
+          {SEQ_PICKS.map((y) => <button key={y} type="button" style={pill(startYear === y)} onClick={() => setStartYear(y)}>{y}</button>)}
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+          <span style={lab}>Stocks %, year by year</span>
+          {custom.map((v, i) => (
+            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+              <input type="number" value={v} placeholder={`Yr ${i + 1}`} aria-label={`Year ${i + 1} stock return %`}
+                     onChange={(e) => setCustom((c) => c.map((x, j) => (j === i ? e.target.value : x)))}
+                     onFocus={selectAllOnFocus} style={{ ...SEQ_INPUT_STYLE, width: 64 }} />
+              <button type="button" aria-label={`Remove year ${i + 1}`} onClick={() => setCustom((c) => c.filter((_, j) => j !== i))}
+                      style={{ background: "transparent", border: "none", color: "var(--text-faint)", cursor: "pointer" }}>×</button>
+            </span>
+          ))}
+          {custom.length < 15 && <button type="button" style={pill(false)} onClick={() => setCustom((c) => [...c, "0"])}>+ year</button>}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={lab}>Starts</span>
+        <button type="button" style={pill(!today)} onClick={() => setToday(false)}>at retirement</button>
+        <button type="button" style={pill(today)} onClick={() => setToday(true)}>today</button>
+        <button type="button" className="mbtn" onClick={run} disabled={busy}
+                style={{ fontSize: 12, padding: "6px 14px", fontWeight: 700, marginLeft: "auto", opacity: busy ? 0.6 : 1 }}>
+          {busy ? "Running…" : "Run scenario"}
+        </button>
+        <button type="button" className="mbtn" onClick={() => onResult(null)} style={{ fontSize: 11, padding: "4px 10px" }}>Reset</button>
+      </div>
+    </div>
+  );
+}
+
 function ScenariosTab({
   initialSubTab,
   onSubTabConsumed,
@@ -11147,6 +11267,16 @@ function ScenariosTab({
 
   const [scenarioSubTab, setScenarioSubTab] = useState(initialSubTab || "roth");
   const [showSeq, setShowSeq] = useState(false);
+  // A run from the sequence builder replaces the fixed 2000–2012 view below it.
+  const [seqRun, setSeqRun] = useState(null);
+  // Destructured, not read as stress.pcts: the array goes whole to FanChart,
+  // which deflates it itself (see noRawMcAccess.test.js).
+  const { pcts: stressPcts } = stress ?? {};
+  const view = seqRun ?? (stress ? {
+    rate: stress.rate, pcts: stressPcts,
+    title: "Stress test: 2000–2012 actual S&P sequence at retirement",
+    chips: SEQ_2000_2012.map((r, i) => ({ label: String(2000 + i), r })),
+  } : null);
 
   // Consume a pending cross-tab navigation request once, on arrival — a
   // pointer elsewhere in the app (e.g. RetirementPanel's Withdrawal Strategy
@@ -11187,7 +11317,8 @@ function ScenariosTab({
       {scenarioSubTab === "stress" && (
         <div>
           <StressScenarioGrid p={baseParams} baseRate={mc?.rate ?? null} fmtPct={fmtPct} />
-          {stress && (
+          <SequenceBuilder p={baseParams} onResult={setSeqRun} />
+          {view && (
             <>
           {/* Moved up from below the fan chart — these two headline numbers
               are the reason to open this sub-tab at all, so they sit right
@@ -11204,9 +11335,9 @@ function ScenariosTab({
               <div className="ml">Stress success</div>
               <div
                 className="mv"
-                style={{ color: stress.rate >= 0.85 ? "var(--positive)" : "#f4d35e" }}
+                style={{ color: view.rate >= 0.85 ? "var(--positive)" : "#f4d35e" }}
               >
-                {fmtPct(stress.rate)}
+                {fmtPct(view.rate)}
               </div>
               <div className="ms">{formulaFor("stress-success")}</div>
             </div>
@@ -11215,23 +11346,23 @@ function ScenariosTab({
               <div
                 className="mv"
                 style={{
-                  color: mc && stress.rate >= mc.rate ? "var(--positive)" : "var(--negative)",
+                  color: mc && view.rate >= mc.rate ? "var(--positive)" : "var(--negative)",
                 }}
               >
-                {mc ? `${((stress.rate - mc.rate) * 100).toFixed(1)}%` : "—"}
+                {mc ? `${((view.rate - mc.rate) * 100).toFixed(1)}%` : "—"}
               </div>
               <div className="ms">{formulaFor("stress-delta")}</div>
             </div>
           </div>
           <FanChart
             // eslint-disable-next-line no-restricted-properties -- FanChart deflates the whole array itself; see noRawMcAccess.test.js.
-            pcts={stress.pcts}
+            pcts={view.pcts}
             retireAge={retireAge}
             ssAge={ssAge}
             rmdAge={rmdAge}
             inf={inf}
             useReal={real}
-            title="Stress test: 2000–2012 actual S&P sequence at retirement"
+            title={view.title}
             checkpoints={checkpoints}
             portfolioGoal={portfolioGoal}
             earlyRetireTarget={earlyRetireTarget}
@@ -11255,7 +11386,7 @@ function ScenariosTab({
             <div
               style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}
             >
-              {SEQ_2000_2012.map((r, i) => (
+              {view.chips.map(({ label, r }, i) => (
                 <span
                   key={i}
                   style={{
@@ -11271,7 +11402,7 @@ function ScenariosTab({
                     }`,
                   }}
                 >
-                  {2000 + i}: {r > 0 ? "+" : ""}
+                  {label}: {r > 0 ? "+" : ""}
                   {(r * 100).toFixed(1)}%
                 </span>
               ))}
