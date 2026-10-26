@@ -51,10 +51,11 @@ describe("Income and Expense charts balance every year", () => {
     expect(gaps(plan(o))).toEqual([]);
   });
 
-  // Engine bug, handed to the engine lane: when income covers core spending,
-  // buildWithdrawalWaterfall still draws housing and carveouts in full, so the
-  // draw exceeds every outgoing. Unskip once baseNeed nets income against total outlay.
-  test.skip("income above core spending", () => {
+  // Was an engine bug (fixed by the engine lane, ds41platform): when income
+  // covered core spending, buildWithdrawalWaterfall still drew housing and
+  // carveouts in full, so the draw exceeded every outgoing. baseNeed now nets
+  // income against the total outlay, so this balances like the rest.
+  test("income above core spending", () => {
     expect(gaps(plan({ sp: 40_000, gkFloor: 30_000, gkCeiling: 60_000, ssb: 60_000, rothConversionTarget: "off" }))).toEqual([]);
   });
 });

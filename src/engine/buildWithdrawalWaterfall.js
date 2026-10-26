@@ -974,7 +974,17 @@ export function buildWithdrawalWaterfall(params = {}) {
       const spSmiled = sp * smileFactor;
       // hcRisk isn't in this sum — see its declaration above. Every term here
       // is a cash obligation the user actually pays this year.
-      const baseNeed = Math.max(0, spSmiled - fixedIncome - otherIncTotal) + housingCost + carveoutCost + ev.total;
+      //
+      // Income nets against the TOTAL outlay, not just core spending. Floored
+      // per term (the old `Math.max(0, sp - income) + housing + carveouts`)
+      // let income that covered core spending still draw housing and
+      // carveouts in full: a household with $92k of Social Security and
+      // pension and $70k of outlay had $30k/yr drawn from savings and spent on
+      // nothing, and the Income chart showed a draw with no expense behind it.
+      // Floored once, at the end, the same income pays whatever the outlay is,
+      // and `incomeSurplus` below picks up only what is genuinely left over —
+      // the two can no longer both be positive, so nothing is counted twice.
+      const baseNeed = Math.max(0, spSmiled + housingCost + carveoutCost + ev.total - fixedIncome - otherIncTotal);
 
       // Income surplus.
       // The `Math.max(0, …)` above discards every dollar of income beyond
