@@ -1409,7 +1409,7 @@ export function historicalSequence(startYear, years = 13) {
 // fall back to the normal bootstrap. Everything else — tax (calcYearTax,
 // including the non-resident/state toggle), RMDs, bucket sourcing, strategy —
 // is identical to a normal run, so the stress pivot can never diverge from the MC.
-function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = null, seqToday = false) {
+function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = null, seqToday = false, keepFailures = false) {
   const rand = mulberry32(seed);
   // "Tax drag" master toggle. Off (p.tax === false) zeroes all tax — federal,
   // state, IRMAA, and Roth-conversion cost — for a pure pre-tax view of
@@ -1532,6 +1532,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   // an event fires in exactly one phase.
   const preRetFlat = flatPreRetReturn(p);
   const seqOffset = seqToday ? accYrs : 0; // retirement years continue after the accumulation years
+  const failedRuns = [];
   const accInflowByYear = [];
   for (let y = 0; y < accYrs; y++) {
     accInflowByYear.push(computeCashFlowEvents(p.cashFlowEvents, CURRENT_YEAR + y, p.inf ?? 2.5, CURRENT_YEAR));
@@ -1633,7 +1634,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // approximation) via the `y >= 2` gate below.
     let magiOneYearAgo = null, magiTwoYearsAgo = null;
 
+    // Opt-in per-year detail for the "why plans failed" view (null = off, zero cost).
+    const rows = keepFailures ? [] : null;
     for (let y = 0; y < retYrs; y++) {
+      const startBal = totalPort;
       const age = retAgeMC + y;
       const calYear = CURRENT_YEAR + (age - p.currentAge);
       // Stress sequence override: prescribe the equity leg for the first
@@ -1662,6 +1666,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const bundle = drawYearBundle(age, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
         r = bundle.ret;
         inflY = bundle.inflY;
+        stockReturnMC = SP500[bundle.i];
       }
 
       const cumInfl = Math.pow(1 + (p.inf ?? 2.5) / 100, y);
@@ -2008,6 +2013,13 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       let totalTax = 0;
       let fromCash = 0, fromTaxable = 0, fromPretax = 0, fromRoth = 0;
       let shortfall = 0;
+      // Nominal dollars. `spend` is the year's total outlay before income; `income` is SS + other.
+      const rowOf = (end, short = 0) => ({
+        age, year: calYear, stock: stockReturnMC, ret: r, infl: inflY,
+        spend: Math.round(spSmiled + housingCost + carveoutCost + eventCost + hcShock),
+        income: Math.round(ss + effectiveAb + otherIncTotal), tax: Math.round(totalTax),
+        start: Math.round(startBal), end: Math.round(end), short: Math.round(short),
+      });
       let earlyPenMC = { penalty: 0, exemptAmount: 0, reason: "" };
       // 12 passes, not 4 — the tax/draw fixed point converges geometrically
       // at roughly the marginal rate (about 0.3x/pass); 4 passes came out
@@ -2099,6 +2111,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       if (shortfall > 0.01) {
         survived = false;
         exhaustAge = age;
+        if (rows) rows.push(rowOf(0, shortfall));
         break;
       }
 
@@ -2237,6 +2250,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
       totalPort = pretax + roth + taxable + cash;
       path.push(Math.round(totalPort));
+      if (rows) rows.push(rowOf(totalPort));
 
       if (totalPort <= 0 && survived) {
         survived = false;
@@ -2268,6 +2282,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     // gkCeilingPct moves a visible number in the direction it should.
     if (pathConstrained > 0) gkStats.pathsWithConstrained++;
     results.push({ path, survived, exhaustAge, portAtRetire, bracketOverrideYears, rothReserveBrokenYears });
+    if (rows && !survived) failedRuns.push({ rows, exhaustAge, portAtRetire, path: i });
   }
 
   // Aggregate results
@@ -2359,6 +2374,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     } : null,
     pcts,
     medR,
+    // Only with keepFailures. Three representative failed paths with per-year rows.
+    failures: failedRuns.length ? (() => {
+      const s = [...failedRuns].sort((a, b) => a.exhaustAge - b.exhaustAge);
+      return { count: s.length, worst: s[0], typical: s[s.length >> 1], closest: s[s.length - 1] };
+    })() : null,
     term: { p10: qt(0.1), p25: qt(0.25), p50: qt(0.5), p75: qt(0.75), p90: qt(0.9), mean: termMean },
     N,
   };
@@ -11135,6 +11155,62 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
   );
 }
 
+// Year-by-year look at three representative simulated plans that ran out of
+// money: the earliest failure, the median one, and the latest (closest call).
+// Dollars are nominal. Rows come from runMC(..., keepFailures).
+function FailedPathPanel({ failures, n }) {
+  const [which, setWhich] = useState("worst");
+  const box = { marginTop: 12 };
+  if (!failures) {
+    return <div className="chart-card" style={box}><div className="ct">🔍 Why plans failed</div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>No simulated path ran out of money in this scenario.</div></div>;
+  }
+  const f = failures[which];
+  const picks = [["worst", "Worst case"], ["typical", "Typical failure"], ["closest", "Closest call"]];
+  const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)}%`);
+  const th = { textAlign: "right", padding: "3px 8px", fontWeight: 600, color: "var(--text-faint)", whiteSpace: "nowrap" };
+  const td = { textAlign: "right", padding: "3px 8px", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" };
+  return (
+    <div className="chart-card" style={box}>
+      <div className="ct" style={{ marginBottom: 4 }}>🔍 Why plans failed</div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
+        {failures.count.toLocaleString()}{n ? ` of ${n.toLocaleString()}` : ""} simulated paths ran out of money. Pick one to see what happened each year (nominal dollars).
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+        {picks.map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setWhich(k)}
+                  style={{ fontSize: 11, padding: "3px 10px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+                    border: `1px solid ${which === k ? "var(--accent-teal)" : "var(--card-border)"}`,
+                    background: which === k ? "rgba(20,184,166,0.15)" : "transparent",
+                    color: which === k ? "var(--accent-teal)" : "var(--text-secondary)" }}>
+            {label} · out at {failures[k].exhaustAge}
+          </button>
+        ))}
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 11, width: "100%" }}>
+          <thead><tr>{["Age", "Stocks", "Portfolio", "Inflation", "Spend", "Income", "Tax", "Start", "End"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {f.rows.map((r) => (
+              <tr key={r.age} style={r.short > 0 ? { background: "rgba(239,68,68,0.12)" } : undefined}>
+                <td style={td}>{r.age}</td>
+                <td style={{ ...td, color: r.stock < 0 ? "#f87171" : "#34d399" }}>{pct(r.stock)}</td>
+                <td style={td}>{pct(r.ret)}</td>
+                <td style={td}>{pct(r.infl)}</td>
+                <td style={td}>{fmtDollar(r.spend)}</td>
+                <td style={td}>{fmtDollar(r.income)}</td>
+                <td style={td}>{fmtDollar(r.tax)}</td>
+                <td style={td}>{fmtDollar(r.start)}</td>
+                <td style={td}>{r.short > 0 ? `short ${fmtDollar(r.short)}` : fmtDollar(r.end)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 const SEQ_PICKS = [1929, 1966, 1973, 2000, 2007];
 const SEQ_INPUT_STYLE = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12 };
 
@@ -11162,7 +11238,7 @@ function SequenceBuilder({ p, onResult }) {
       const r = runMC(p, endAge, STRESS_PATHS, 99, true, seq, today, true);
       const when = today ? "starting today" : "at retirement";
       onResult({
-        rate: r.rate, pcts: r.pcts, failures: r.failures ?? null,
+        rate: r.rate, pcts: r.pcts, failures: r.failures ?? null, n: r.N,
         title: hist
           ? `Stress test: ${seq[0].year}–${seq[seq.length - 1].year} actual market sequence ${when}`
           : `Stress test: custom sequence (${custom.filter((v) => v !== "").join(", ")}%) ${when}`,
@@ -11408,6 +11484,7 @@ function ScenariosTab({
               ))}
             </div>
           )}
+          {view.failures !== undefined && <FailedPathPanel failures={view.failures} n={view.n} />}
             </>
           )}
         </div>
