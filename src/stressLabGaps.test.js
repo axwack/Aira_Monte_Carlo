@@ -205,6 +205,16 @@ describe("Stress Lab panels render", () => {
     act(() => root.unmount());
   });
 
+  test("SequenceBuilder disables Run and says why when no valid year is left; paste fills the boxes", () => {
+    const { host, root } = mount(<SequenceBuilder p={P} onResult={() => {}} />);
+    const btn = (re) => [...host.querySelectorAll("button")].find((b) => re.test(b.textContent) || re.test(b.getAttribute("aria-label") || ""));
+    act(() => btn(/My own numbers/).click());
+    for (let i = 0; i < 5; i++) act(() => btn(/Remove year/).click());
+    expect(btn(/Run scenario/).disabled).toBe(true);
+    expect(host.querySelector('[role="alert"]').textContent).toMatch(/at least one year/);
+    root.unmount();
+  });
+
   test("FailedPathPanel shows the no-failure message for null and a table for failures", () => {
     const a = mount(<FailedPathPanel failures={null} n={100} />);
     expect(a.host.textContent).toMatch(/No simulated path ran out/);

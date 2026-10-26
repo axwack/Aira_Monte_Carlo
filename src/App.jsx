@@ -11160,53 +11160,71 @@ function StressScenarioGrid({ p, baseRate, fmtPct }) {
 // Dollars are nominal. Rows come from runMC(..., keepFailures).
 function FailedPathPanel({ failures, n }) {
   const [which, setWhich] = useState("worst");
+  const [allCols, setAllCols] = useState(false);
   const box = { marginTop: 12 };
   if (!failures) {
-    return <div className="chart-card" style={box}><div className="ct">🔍 Why plans failed</div>
+    return <div className="chart-card" style={box}><div className="ct">Why plans failed</div>
       <div style={{ fontSize: 12, color: "var(--text-muted)" }}>No simulated path ran out of money in this scenario.</div></div>;
   }
   const f = failures[which];
   const picks = [["worst", "Worst case"], ["typical", "Typical failure"], ["closest", "Closest call"]];
+  const WHICH_BLURB = {
+    worst: "Worst case: the plan that ran out earliest.",
+    typical: "Typical failure: the middle one, half ran out sooner and half later.",
+    closest: "Closest call: the plan that ran out latest.",
+  };
+  const cols = [["Age", "age", true], ["Stocks", "stock", true], ["Portfolio return", "ret"], ["Inflation", "infl"], ["Spend", "spend"], ["Income", "income"], ["Tax", "tax"], ["Start", "start"], ["End", "end", true]]
+    .filter((c) => allCols || c[2]);
   const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)}%`);
   const th = { textAlign: "right", padding: "3px 8px", fontWeight: 600, color: "var(--text-faint)", whiteSpace: "nowrap" };
   const td = { textAlign: "right", padding: "3px 8px", fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
   return (
     <div className="chart-card" style={box}>
-      <div className="ct" style={{ marginBottom: 4 }}>🔍 Why plans failed</div>
+      <div className="ct" style={{ marginBottom: 4 }}>Why plans failed</div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
-        {failures.count.toLocaleString()}{n ? ` of ${n.toLocaleString()}` : ""} simulated paths ran out of money. Pick one to see what happened each year (nominal dollars).
+        {failures.count.toLocaleString()}{n ? ` of ${n.toLocaleString()}${` (${((failures.count / n) * 100).toFixed(0)}%)`}` : ""} simulated paths ran out of money. Pick one to see what happened each year (nominal dollars).
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-primary)", marginBottom: 8 }}>
+        {WHICH_BLURB[which]} Stocks {pct(f.rows[0]?.stock)} in year 1; money ran out at {f.exhaustAge}.
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
         {picks.map(([k, label]) => (
           <button key={k} type="button" onClick={() => setWhich(k)}
                   style={{ fontSize: 11, padding: "3px 10px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
-                    border: `1px solid ${which === k ? "var(--accent-teal)" : "var(--card-border)"}`,
-                    background: which === k ? "rgba(20,184,166,0.15)" : "transparent",
-                    color: which === k ? "var(--accent-teal)" : "var(--text-secondary)" }}>
+                    minHeight: 28, border: `1px solid ${which === k ? "var(--accent-teal)" : "var(--card-border)"}`,
+                    background: which === k ? "var(--bg-success)" : "transparent",
+                    color: which === k ? "var(--accent-teal)" : "var(--text-secondary)" }}
+                  aria-pressed={which === k}>
             {label} · out at {failures[k].exhaustAge}
           </button>
         ))}
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: 11, width: "100%" }}>
-          <thead><tr>{["Age", "Stocks", "Portfolio", "Inflation", "Spend", "Income", "Tax", "Start", "End"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Year-by-year path for the {picks.find((x) => x[0] === which)[1].toLowerCase()}</caption>
+          <thead><tr>{cols.map(([h, k]) => <th key={k} scope="col" style={k === "age" ? { ...th, position: "sticky", left: 0, background: "var(--bg-base)", textAlign: "left" } : th}>{h}</th>)}</tr></thead>
           <tbody>
-            {f.rows.map((r) => (
-              <tr key={r.age} style={r.short > 0 ? { background: "rgba(239,68,68,0.12)" } : undefined}>
-                <td style={td}>{r.age}</td>
-                <td style={{ ...td, color: r.stock < 0 ? "#f87171" : "#34d399" }}>{pct(r.stock)}</td>
-                <td style={td}>{pct(r.ret)}</td>
-                <td style={td}>{pct(r.infl)}</td>
-                <td style={td}>{fmtDollar(r.spend)}</td>
-                <td style={td}>{fmtDollar(r.income)}</td>
-                <td style={td}>{fmtDollar(r.tax)}</td>
-                <td style={td}>{fmtDollar(r.start)}</td>
-                <td style={td}>{r.short > 0 ? `short ${fmtDollar(r.short)}` : fmtDollar(r.end)}</td>
-              </tr>
-            ))}
+            {f.rows.map((r) => {
+              const cell = {
+                age: <td key="age" style={{ ...td, textAlign: "left", position: "sticky", left: 0, background: r.short > 0 ? "var(--bg-danger)" : "var(--bg-base)" }}>{r.age}</td>,
+                stock: <td key="stock" style={{ ...td, color: r.stock < 0 ? "var(--negative)" : "var(--positive)" }}>{pct(r.stock)}</td>,
+                ret: <td key="ret" style={td}>{pct(r.ret)}</td>,
+                infl: <td key="infl" style={td}>{pct(r.infl)}</td>,
+                spend: <td key="spend" style={td}>{fmtDollar(r.spend)}</td>,
+                income: <td key="income" style={td}>{fmtDollar(r.income)}</td>,
+                tax: <td key="tax" style={td}>{fmtDollar(r.tax)}</td>,
+                start: <td key="start" style={td}>{fmtDollar(r.start)}</td>,
+                end: <td key="end" style={td}>{r.short > 0 ? `short ${fmtDollar(r.short)}` : fmtDollar(r.end)}</td>,
+              };
+              return <tr key={r.age} style={r.short > 0 ? { background: "var(--bg-danger)" } : undefined}>{cols.map(([, k]) => cell[k])}</tr>;
+            })}
           </tbody>
         </table>
       </div>
+      <button type="button" onClick={() => setAllCols((v) => !v)} aria-expanded={allCols}
+              style={{ marginTop: 8, background: "transparent", border: "none", color: "var(--accent-teal)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", padding: "4px 0", minHeight: 28 }}>
+        {allCols ? "Show fewer columns ▴" : "Show all columns: returns, spending, income, tax ▾"}
+      </button>
     </div>
   );
 }
@@ -11216,7 +11234,10 @@ const SEQ_PICKS = [1929, 1966, 1973, 2000, 2007];
 const SEQ_DEFAULT_YEARS = 5;
 const SEQ_HISTORY_LENGTHS = [5, 10, 15];
 const SEQ_MAX_CUSTOM_YEARS = 10;
-const SEQ_INPUT_STYLE = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 12 };
+const SEQ_INPUT_STYLE = { background: "var(--card-bg-raised)", border: "1px solid var(--card-border)", color: "var(--text-primary)", borderRadius: 6, padding: "5px 8px", fontSize: 12, minHeight: 28 };
+// A year outside this range is almost certainly a typo, not a market.
+const SEQ_RETURN_MIN = -90, SEQ_RETURN_MAX = 200;
+const parseSeqText = (t) => t.split(/[\s,;]+/).filter((x) => x !== "").slice(0, SEQ_MAX_CUSTOM_YEARS);
 
 // Replay a real historical start year (stocks, bonds and inflation paired) or a
 // hand-typed run of equity returns, from retirement or from today, through the
@@ -11229,13 +11250,26 @@ function SequenceBuilder({ p, onResult }) {
   const [custom, setCustom] = useState(["-30", "-20", "-10", "0", "10"]);
   const [today, setToday] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
   const endAge = p.endAge || 90;
 
+  // Custom years that will actually run, plus why a year was left out.
+  const typed = custom.map((v) => v.trim()).filter((v) => v !== "");
+  const valid = typed.filter((v) => Number.isFinite(Number(v)));
+  const outOfRange = valid.filter((v) => Number(v) < SEQ_RETURN_MIN || Number(v) > SEQ_RETURN_MAX);
+  const hist = mode === "history";
+  let problem = "";
+  if (!hist) {
+    if (!valid.length) problem = "Enter at least one year to run.";
+    else if (valid.length < typed.length) problem = `${typed.length - valid.length} entry isn't a number and will be skipped.`;
+    else if (outOfRange.length) problem = `${outOfRange.join(", ")}% looks like a typo. Returns outside ${SEQ_RETURN_MIN}% to +${SEQ_RETURN_MAX}% are not realistic.`;
+  }
+  const canRun = !busy && (hist || valid.length > 0);
+
   const run = () => {
-    const hist = mode === "history";
     const seq = hist
       ? historicalSequence(startYear, years)
-      : custom.filter((v) => v !== "" && Number.isFinite(Number(v))).map((v) => Number(v) / 100);
+      : valid.map((v) => Number(v) / 100);
     if (!seq.length) return;
     setBusy(true);
     setTimeout(() => {
@@ -11245,33 +11279,37 @@ function SequenceBuilder({ p, onResult }) {
         rate: r.rate, pcts: r.pcts, failures: r.failures ?? null, n: r.N,
         title: hist
           ? `Stress test: ${seq[0].year}–${seq[seq.length - 1].year} actual market sequence ${when}`
-          : `Stress test: custom sequence (${custom.filter((v) => v !== "").join(", ")}%) ${when}`,
+          : `Stress test: custom sequence (${valid.join(", ")}%) ${when}`,
         chips: seq.map((e, i) => ({ label: hist ? String(e.year) : `Yr ${i + 1}`, r: hist ? e.stock : e })),
       });
       setBusy(false);
+      setStatus(`Done: ${seq.length} ${hist ? "historical" : "custom"} years ${when}. Results are below.`);
+      // The result renders further down the page; bring it to the Run button's user.
+      if (typeof document !== "undefined") document.getElementById("stress-result")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     }, 30);
   };
 
   const pill = (on) => ({
-    fontSize: 11, padding: "3px 10px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+    fontSize: 11, padding: "5px 12px", minHeight: 28, borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
     border: `1px solid ${on ? "var(--accent-teal)" : "var(--card-border)"}`,
-    background: on ? "rgba(20,184,166,0.15)" : "transparent", color: on ? "var(--accent-teal)" : "var(--text-secondary)",
+    background: on ? "var(--bg-success)" : "transparent", color: on ? "var(--accent-teal)" : "var(--text-secondary)",
   });
   const lab = { fontSize: 11, color: "var(--text-muted)", marginRight: 6 };
 
   return (
     <div className="chart-card" style={{ marginBottom: 12 }}>
-      <div className="ct" style={{ marginBottom: 4 }}>🧪 Build a market sequence</div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 10 }}>
-        Test the plan against one specific run of markets. After your sequence ends, returns go back to
-        random history. Bonds and inflation come from the same real years when you replay history.
+      <div className="ct" style={{ marginBottom: 4 }}>Build a market sequence</div>
+      <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 10 }}>
+        Test the plan against one specific run of markets. These numbers change stock returns only: bonds and inflation
+        stay random, except in real history, where they come from the same years. When your sequence ends, returns go
+        back to random history.
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-        <button type="button" style={pill(mode === "history")} onClick={() => setMode("history")}>Real history</button>
-        <button type="button" style={pill(mode === "custom")} onClick={() => setMode("custom")}>My own numbers</button>
+        <button type="button" style={pill(mode === "history")} aria-pressed={mode === "history"} onClick={() => setMode("history")}>Real history</button>
+        <button type="button" style={pill(mode === "custom")} aria-pressed={mode === "custom"} onClick={() => setMode("custom")}>My own numbers</button>
       </div>
 
-      {mode === "history" ? (
+      {hist ? (
         <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <span style={lab}>Start year</span>
@@ -11279,7 +11317,7 @@ function SequenceBuilder({ p, onResult }) {
               {Array.from({ length: SAMPLE_END_YEAR - SAMPLE_START_YEAR + 1 }, (_, i) => SAMPLE_START_YEAR + i).map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
             <span style={{ ...lab, marginLeft: 6 }}>Famous starts</span>
-            {SEQ_PICKS.map((y) => <button key={y} type="button" style={pill(startYear === y)} onClick={() => setStartYear(y)}>{y}</button>)}
+            {SEQ_PICKS.map((y) => <button key={y} type="button" style={pill(startYear === y)} aria-pressed={startYear === y} onClick={() => setStartYear(y)}>{y}</button>)}
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <span style={lab}>Length</span>
@@ -11291,37 +11329,53 @@ function SequenceBuilder({ p, onResult }) {
           <div style={lab}>Stock return for each year, in %</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "flex-end", marginTop: 4 }}>
             {custom.map((v, i) => (
-              <div key={i} style={{ position: "relative", width: 62 }}>
-                <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 2 }}>Year {i + 1}</div>
+              <div key={i} style={{ position: "relative", width: 66 }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 2 }}>Year {i + 1}</div>
                 <input type="number" inputMode="decimal" value={v} aria-label={`Year ${i + 1} stock return %`}
                        onChange={(e) => setCustom((c) => c.map((x, j) => (j === i ? e.target.value : x)))}
                        onFocus={selectAllOnFocus}
-                       style={{ ...SEQ_INPUT_STYLE, width: "100%", boxSizing: "border-box", padding: "4px 18px 4px 6px", fontFamily: "'JetBrains Mono',monospace",
-                         fontVariantNumeric: "tabular-nums", color: Number(v) < 0 ? "#f87171" : SEQ_INPUT_STYLE.color }} />
-                <button type="button" aria-label={`Remove year ${i + 1}`} onClick={() => setCustom((c) => c.filter((_, j) => j !== i))}
-                        style={{ position: "absolute", right: 2, bottom: 3, width: 16, height: 22, padding: 0, background: "transparent", border: "none",
-                          color: "var(--text-muted)", cursor: "pointer", fontSize: 13, lineHeight: 1 }}>×</button>
+                       style={{ ...SEQ_INPUT_STYLE, width: "100%", boxSizing: "border-box", padding: "4px 6px", fontFamily: "'JetBrains Mono',monospace",
+                         fontVariantNumeric: "tabular-nums", color: Number(v) < 0 ? "var(--negative)" : SEQ_INPUT_STYLE.color }} />
               </div>
             ))}
             {custom.length < SEQ_MAX_CUSTOM_YEARS && (
-              <button type="button" style={{ ...pill(false), height: 28 }} onClick={() => setCustom((c) => [...c, "0"])}>+ Add year</button>
+              <button type="button" style={pill(false)} onClick={() => setCustom((c) => [...c, "0"])}>+ Add year</button>
+            )}
+            {custom.length > 0 && (
+              <button type="button" style={pill(false)} aria-label={`Remove year ${custom.length}`} onClick={() => setCustom((c) => c.slice(0, -1))}>− Remove last</button>
             )}
           </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+            <label style={lab} htmlFor="seq-paste">Or paste a list</label>
+            <input id="seq-paste" type="text" placeholder="-30, -20, -10, 0, 10" autoComplete="off"
+                   onChange={(e) => { const t = parseSeqText(e.target.value); if (t.length) setCustom(t); }}
+                   style={{ ...SEQ_INPUT_STYLE, width: 220, fontFamily: "'JetBrains Mono',monospace" }} />
+          </div>
           {custom.length >= SEQ_MAX_CUSTOM_YEARS && (
-            <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 4 }}>Up to {SEQ_MAX_CUSTOM_YEARS} years. After that, returns go back to random history.</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Up to {SEQ_MAX_CUSTOM_YEARS} years. After that, returns go back to random history.</div>
           )}
+          {problem && <div role="alert" style={{ fontSize: 12, color: "var(--accent-gold)", marginTop: 6 }}>{problem}</div>}
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <span style={lab}>Starts</span>
-        <button type="button" style={pill(!today)} onClick={() => setToday(false)}>at retirement</button>
-        <button type="button" style={pill(today)} onClick={() => setToday(true)}>today</button>
-        <button type="button" className="mbtn" onClick={run} disabled={busy}
-                style={{ fontSize: 12, padding: "6px 14px", fontWeight: 700, marginLeft: "auto", opacity: busy ? 0.6 : 1 }}>
+        <button type="button" style={pill(!today)} aria-pressed={!today} onClick={() => setToday(false)}>At retirement</button>
+        <button type="button" style={pill(today)} aria-pressed={today} onClick={() => setToday(true)}>Today</button>
+      </div>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <button type="button" className="mbtn" onClick={run} disabled={!canRun}
+                style={{ fontSize: 13, padding: "8px 18px", minHeight: 36, fontWeight: 700, opacity: canRun ? 1 : 0.5 }}>
           {busy ? "Running…" : "Run scenario"}
         </button>
-        <button type="button" className="mbtn" onClick={() => onResult(null)} style={{ fontSize: 11, padding: "4px 10px" }}>Reset</button>
+        <button type="button" onClick={() => { onResult(null); setStatus(""); }}
+                style={{ background: "transparent", border: "none", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", padding: "4px 0", minHeight: 28 }}>
+          Clear result
+        </button>
+        <span role="status" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          {status || (hist ? `${years} years from ${startYear}` : valid.length ? `${valid.length} ${valid.length === 1 ? "year" : "years"} will run` : "")}
+        </span>
       </div>
     </div>
   );
@@ -11363,6 +11417,7 @@ function ScenariosTab({
   const [showSeq, setShowSeq] = useState(false);
   // A run from the sequence builder replaces the fixed 2000–2012 view below it.
   const [seqRun, setSeqRun] = useState(null);
+  const [seqOpen, setSeqOpen] = useState(false);
   // Destructured, not read as stress.pcts: the array goes whole to FanChart,
   // which deflates it itself (see noRawMcAccess.test.js).
   const { pcts: stressPcts } = stress ?? {};
@@ -11411,9 +11466,19 @@ function ScenariosTab({
       {scenarioSubTab === "stress" && (
         <div>
           <StressScenarioGrid p={baseParams} baseRate={mc?.rate ?? null} fmtPct={fmtPct} />
-          <SequenceBuilder p={baseParams} onResult={setSeqRun} />
+          {/* Collapsed by default: most visitors only want the four cards. Sits right
+              under the grid because it refines the "Market crashes early" card. */}
+          <div style={{ margin: "8px 0 12px" }}>
+            <button type="button" onClick={() => setSeqOpen((v) => !v)} aria-expanded={seqOpen} aria-controls="seq-builder"
+                    style={{ background: "transparent", border: "none", color: "var(--accent-teal)", fontSize: 12, cursor: "pointer",
+                      fontFamily: "inherit", padding: "6px 0", minHeight: 28 }}>
+              {seqOpen ? "▾" : "▸"} Customize the crash: replay a real market, or enter your own years
+            </button>
+            {seqOpen && <div id="seq-builder" style={{ marginTop: 6 }}><SequenceBuilder p={baseParams} onResult={setSeqRun} /></div>}
+          </div>
           {view && (
             <>
+          <div id="stress-result" style={{ scrollMarginTop: 12 }} />
           {/* Moved up from below the fan chart — these two headline numbers
               are the reason to open this sub-tab at all, so they sit right
               under the scenario grid instead of buried under the chart. */}
