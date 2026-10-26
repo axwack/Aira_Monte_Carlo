@@ -11425,7 +11425,7 @@ function SequenceBuilder({ p, onResult }) {
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
         <button type="button" className="mbtn" onClick={run} disabled={!canRun}
                 style={{ fontSize: 14, padding: "10px 24px", minHeight: 42, fontWeight: 700, opacity: canRun ? 1 : 0.5,
-                  background: canRun ? "linear-gradient(135deg,#b45309,#d97706)" : undefined, color: canRun ? "#fff" : undefined }}>
+                  background: canRun ? "linear-gradient(135deg,#3d6fe0,#6c9bff)" : undefined, color: canRun ? "#fff" : undefined }}>
           {busy ? "Running…" : "Run scenario"}
         </button>
         <button type="button" onClick={() => { onResult(null); setStatus(""); }}
