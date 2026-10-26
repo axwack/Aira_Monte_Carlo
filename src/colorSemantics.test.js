@@ -17,6 +17,6 @@ test("bucket cards read the shared table", () => {
   expect(bucketColor(1)).toBe(BUCKET_COLORS.b1);
 });
 test("dark-theme muted text tokens meet contrast targets", () => {
-  expect(SRC).toContain("--text-muted: #7f8b9c");
-  expect(SRC).toContain("--text-faint: #778395");
+  expect(SRC).toContain("--text-muted: #94a6d0");
+  expect(SRC).toContain("--text-faint: #8798c4");
 });

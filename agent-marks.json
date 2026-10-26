@@ -100,7 +100,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function InfoModal(",
       "description": "SHARED: the dialog shell both agents use. deepseek-flash added maxWidth/bodyMaxHeight + controlled open/onClose. Change it carefully and re-stamp.",
-      "sha": "fa737065cc3e20c6"
+      "sha": "1244b05697eee56b"
     },
     {
       "id": "claude-not-entered-rows",
@@ -132,7 +132,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function IncomeExpenseStack(",
       "description": "Income/expense legend panel: dash for never-entered rows, provenance footnotes.",
-      "sha": "ddc735e763444e95"
+      "sha": "8f87b7cbe4d52876"
     },
     {
       "id": "claude-verdict-header",
