@@ -196,6 +196,11 @@ export function accumulateToRetirement(params = {}) {
     // silently dropped from every projection — a user testing a $1M future
     // inheritance saw their numbers not move at all.
     cashFlowEvents = [], inf = 2.5,
+    // Optional flat pre-retirement return, percent per year (Assumptions tab /
+    // Stress Lab "Return until retirement"). Not destructured anywhere else on
+    // purpose — read through the one parser below so a blank field cannot be
+    // silently read as 0%.
+    preRetireReturn,
   } = params;
   // This function only models the pre-retirement accumulation phase, so
   // preRetireEq normally drives the growth rate here. The one exception is
@@ -209,6 +214,18 @@ export function accumulateToRetirement(params = {}) {
   // used to be a hardcoded 0.045 that silently ignored the user's setting, so
   // the profile field changed the Monte Carlo but never this engine.
   const cashGr = (cashRealReturn ?? 3.0) / 100;
+  // Flat pre-retirement return, as a rate, or null when the field is not set.
+  // Blank, missing and unparseable all mean "not set" (today's behavior).
+  // The explicit `=== ""` test matters: Number("") is 0, so without it an
+  // empty box would read as "0% growth" and freeze every balance at today's.
+  // Mirrors App.jsx's flatPreRetReturn() — the two must agree, or the
+  // Withdrawal Plan tab and the Monte Carlo beside it disagree about the
+  // same plan (this is the field that exists to make them agree).
+  const flatPreRetGr = (() => {
+    const v = preRetireReturn;
+    if (v === "" || v == null || !Number.isFinite(Number(v))) return null;
+    return Number(v) / 100;
+  })();
 
   let pretax0 = 0, roth0 = 0, taxable0 = 0, cash0 = 0, hsa0 = 0;
   for (const a of accounts) {
@@ -230,12 +247,17 @@ export function accumulateToRetirement(params = {}) {
 
   const accYrs = Math.max(0, (retireAge ?? 0) - (currentAge ?? 0));
   for (let y = 0; y < accYrs; y++) {
-    const gr = grFor((currentAge ?? 0) + y);
+    const gr = flatPreRetGr ?? grFor((currentAge ?? 0) + y);
+    // When the flat rate is set it replaces the cash rate too: runMC applies
+    // one `ret` to all four of its buckets in these years (cash included), and
+    // "*0 with no contributions == today's balance*" is only true if it does.
+    // Unset keeps cash on the profile's own cash return, i.e. today exactly.
+    const cGr = flatPreRetGr ?? cashGr;
     pretax0  *= (1 + gr);
     roth0    *= (1 + gr);
     taxable0 *= (1 + gr);
     hsa0     *= (1 + gr);
-    cash0    *= (1 + cashGr);
+    cash0    *= (1 + cGr);
     // Same bucket routing as runMC's accumulation loop — grow first, then add
     // the year's contributions, so a contribution doesn't earn a return in the
     // year it was made.
