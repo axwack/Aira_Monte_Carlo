@@ -281,13 +281,15 @@ describe("§24.1 — jobContributionsForYear / householdAnnualContribution", () 
 import { totalRetirementIncome } from "./engine/contributions.js";
 
 describe("totalRetirementIncome — annual figures stay annual", () => {
+  // ssb and ssPia differ on purpose: the sum must read the benefit at claim age
+  // (ssb), so a copy that still read ssPia would land on 54,000, not 60,000.
   test("adds the spouse's annual benefit once, with no month-to-year conversion", () => {
-    const p = { ssb: 24_000, spouse: { enabled: true, ssb: 36_000, ssAge: 67, ssPia: 36_000 } };
+    const p = { ssb: 24_000, spouse: { enabled: true, ssb: 36_000, ssAge: 67, ssPia: 30_000 } };
     expect(totalRetirementIncome(p)).toBe(60_000);
   });
 
   test("a disabled spouse contributes nothing", () => {
-    const p = { ssb: 24_000, spouse: { enabled: false, ssb: 36_000, ssAge: 67, ssPia: 36_000 } };
+    const p = { ssb: 24_000, spouse: { enabled: false, ssb: 36_000, ssAge: 67, ssPia: 30_000 } };
     expect(totalRetirementIncome(p)).toBe(24_000);
   });
 });
