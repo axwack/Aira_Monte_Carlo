@@ -131,3 +131,27 @@ describe("rulesEngine — projected RMD uses an IRS divisor, not a hardcoded 24.
     expect(reason).toContain("larger if the account keeps growing");
   });
 });
+
+/**
+ * irmaa-guard-off — "within 5 years of retirement".
+ *
+ * The condition used to test `currentYear - params.currentAge >= -5`, which
+ * subtracts an age from a year: 2026 − 55 = 1971, never below -5. The clause
+ * was always true, so the card fired the moment pretax passed $200,000 at any
+ * age past 55 and its own "Before age 63" deadline never bit. Proximity has to
+ * be measured in years to retirement, like every other rule does.
+ */
+describe("irmaa-guard-off — proximity is years to retirement, not year minus age", () => {
+  // BASE_PARAMS already holds $2,000,000 of pretax and no irmaaGuard, so the
+  // balance and guard tests pass and only the proximity test decides.
+  const at = (currentAge, retireAge) => cardsFor({ ...BASE_PARAMS, currentAge, retireAge });
+  const ids = (cards) => cards.map(c => c.id);
+
+  test("a 55-year-old ten years from retirement does not get the card", () => {
+    expect(ids(at(55, 65))).not.toContain("irmaa-guard-off");
+  });
+
+  test("a 61-year-old four years from retirement gets the card", () => {
+    expect(ids(at(61, 65))).toContain("irmaa-guard-off");
+  });
+});

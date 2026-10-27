@@ -436,10 +436,10 @@ export const RULES = [
     id: "irmaa-guard-off",
     category: "Medicare / IRMAA",
     priority: "yellow",
-    condition: ({ params, currentYear }) =>
+    condition: ({ params }) =>
       preTaxTotal(params) > 200_000 &&
       !params.irmaaGuard &&
-      (currentYear - params.currentAge) >= -5 && // within 5 years of retirement or past
+      params.retireAge - params.currentAge <= 5 && // five years out, or already retired
       params.currentAge >= 55,
     action: "Enable IRMAA guard in Withdrawal Order settings",
     reason: ({ params }) =>
