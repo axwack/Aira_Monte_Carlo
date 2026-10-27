@@ -267,3 +267,27 @@ describe("§24.1 — jobContributionsForYear / householdAnnualContribution", () 
     expect(householdAnnualContribution(p, 56)).toBe(10_000 + 4_000);
   });
 });
+
+/**
+ * totalRetirementIncome — the "what comes in" figure on the Plan inputs step.
+ *
+ * Both Social Security fields are stored ANNUAL: `ssb` is the benefit at the
+ * claim age, `ssPia` the FRA amount, and the UI divides by 12 only to show a
+ * per-month box (App.jsx 15472/15475). So this sum must add annual to annual.
+ * It used to multiply the spouse's figure by 12 — a couple with $36,000/yr of
+ * spousal benefit saw $432,000/yr — while the primary's line was left alone,
+ * which is why a single-person profile never showed it.
+ */
+import { totalRetirementIncome } from "./engine/contributions.js";
+
+describe("totalRetirementIncome — annual figures stay annual", () => {
+  test("adds the spouse's annual benefit once, with no month-to-year conversion", () => {
+    const p = { ssb: 24_000, spouse: { enabled: true, ssb: 36_000, ssAge: 67, ssPia: 36_000 } };
+    expect(totalRetirementIncome(p)).toBe(60_000);
+  });
+
+  test("a disabled spouse contributes nothing", () => {
+    const p = { ssb: 24_000, spouse: { enabled: false, ssb: 36_000, ssAge: 67, ssPia: 36_000 } };
+    expect(totalRetirementIncome(p)).toBe(24_000);
+  });
+});

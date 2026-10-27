@@ -75,7 +75,8 @@ export function householdAnnualContribution(p = {}, primaryAge) {
  * Rough annualized retirement income for display (Profile "Money In" subtitle).
  *
  * Sums the recurring streams that show up while retired: Social Security
- * (primary + spouse FRA when enabled), blanket rental, and every entry under
+ * (primary's and, when enabled, the spouse's benefit at claim age — both stored
+ * annual), blanket rental, and every entry under
  * Other Incomes (both pension and non-pension streams store `.annual`).
  * Skips one-off cashFlowEvents on purpose (an inheritance isn't a per-year
  * figure) and skips reliability discounts / growth / start-year gating — the
@@ -85,7 +86,7 @@ export function householdAnnualContribution(p = {}, primaryAge) {
 export function totalRetirementIncome(p = {}) {
   const ss = Number(p.ssb) || 0;
   const spouseSs = p.spouse && p.spouse.enabled
-    ? (Number(p.spouse.ssPia) || 0) * 12
+    ? Number(p.spouse.ssb) || 0
     : 0;
   const rental = Number(p.ab) || 0;
   const otherIncomes = (p.otherIncomes || []).reduce(
