@@ -51,15 +51,6 @@ const FED_BRACKETS_2026_SINGLE = [
   { lo: 640600, hi: Infinity, rate: 0.37 },
 ];
 
-// Each row's `m` is the FLOOR of its own tier, paired with THAT tier's own
-// surcharge (irmaaCost walks the array from the end, returning the first
-// row whose floor the MAGI clears). The array previously paired each floor
-// with the PRECEDING tier's charge (218000 tier carried $0 rather than
-// $2,160; 750000 carried $8,300's neighbor $11,130 rather than the true
-// top-tier $12,700) — a whole-table off-by-one, not just a missing top row.
-// Verified against aira-forecaster-agents/knowledge/TAX_REFERENCE.md's
-// "IRMAA Thresholds (MFJ 2026)" list, tier by tier.
-
 // 2026 LTCG/qualified-dividend taxable-income breakpoints (IRS Rev. Proc. 2025-32),
 // inflation-indexed forward in calcYearTax / buildWithdrawalWaterfall via idxB(),
 // exactly like the ordinary federal brackets above. Single source of truth for
@@ -204,13 +195,10 @@ function idxB(br, f) {
  * status; the surcharge is per beneficiary, so an age-gapped couple pays one
  * surcharge against the MFJ threshold until the younger reaches 65.
  *
- * This is the only implementation of the surcharge. The waterfall and the app's
- * `calcYearTax` both come through here, so the two cannot drift apart.
+ * App.jsx keeps its own copy until request #19.
  */
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
-  // A blank inflation field arrives as NaN if a caller forwards a raw input;
-  // treat it as the 2.5% default rather than letting a NaN rate poison the
-  // surcharge and the year's tax total with it.
+  // A blank inflation field arrives as NaN; use the 2.5% default rather than propagate it.
   const rate = isNaN(infR) ? 0.025 : infR;
   // Anchored to ROTH_BASE_YEAR (today), not a hardcoded 2026, so this stays
   // consistent with the rest of the file as real time passes.

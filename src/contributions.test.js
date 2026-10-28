@@ -17,7 +17,7 @@
  */
 
 import { contribStopOnPrimaryClock } from "./engine/ages.js";
-import { jobContributionsForYear, householdAnnualContribution } from "./engine/contributions.js";
+import { jobContributionsForYear, householdAnnualContribution, totalRetirementIncome } from "./engine/contributions.js";
 import { accumulateToRetirement } from "./engine/buildWithdrawalWaterfall.js";
 import { runMC, simulateDeterministicWithStrategy } from "./App";
 
@@ -268,18 +268,7 @@ describe("§24.1 — jobContributionsForYear / householdAnnualContribution", () 
   });
 });
 
-/**
- * totalRetirementIncome — the "what comes in" figure on the Plan inputs step.
- *
- * Both Social Security fields are stored ANNUAL: `ssb` is the benefit at the
- * claim age, `ssPia` the FRA amount, and the UI divides by 12 only to show a
- * per-month box (App.jsx 15472/15475). So this sum must add annual to annual.
- * It used to multiply the spouse's figure by 12 — a couple with $36,000/yr of
- * spousal benefit saw $432,000/yr — while the primary's line was left alone,
- * which is why a single-person profile never showed it.
- */
-import { totalRetirementIncome } from "./engine/contributions.js";
-
+// Both SS fields are annual; ssb and ssPia differ here so the test proves which one is read.
 describe("totalRetirementIncome — annual figures stay annual", () => {
   // ssb and ssPia differ on purpose: the sum must read the benefit at claim age
   // (ssb), so a copy that still read ssPia would land on 54,000, not 60,000.

@@ -439,7 +439,9 @@ export const RULES = [
     condition: ({ params }) =>
       preTaxTotal(params) > 200_000 &&
       !params.irmaaGuard &&
-      params.retireAge - params.currentAge <= 5 && // five years out, or already retired
+      // Five years out, or already retired. A profile imported from JSON can
+      // lack retireAge; treat that as retired now so the card still shows.
+      (params.retireAge ?? params.currentAge) - params.currentAge <= 5 &&
       params.currentAge >= 55,
     action: "Enable IRMAA guard in Withdrawal Order settings",
     reason: ({ params }) =>
