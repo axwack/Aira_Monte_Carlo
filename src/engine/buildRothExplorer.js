@@ -45,8 +45,8 @@ const FED_BRACKETS_2026_SINGLE = [
   { lo: 0,      hi: 12400,  rate: 0.10 },
   { lo: 12400,  hi: 50400,  rate: 0.12 },
   { lo: 50400,  hi: 105700, rate: 0.22 },
-  { lo: 105700, hi: 201800, rate: 0.24 },
-  { lo: 201800, hi: 256225, rate: 0.32 },
+  { lo: 105700, hi: 201775, rate: 0.24 },
+  { lo: 201775, hi: 256225, rate: 0.32 },
   { lo: 256225, hi: 640600, rate: 0.35 },
   { lo: 640600, hi: Infinity, rate: 0.37 },
 ];
@@ -60,10 +60,11 @@ const LTCG_BRACKETS_2026_MFJ = [
   { lo: 98_900,  hi: 613_700, rate: 0.15 },
   { lo: 613_700, hi: Infinity, rate: 0.20 },
 ];
+// "All Other Individuals" row of §.03: single filers, not married-filing-separately.
 const LTCG_BRACKETS_2026_SINGLE = [
-  { lo: 0,       hi: 49_350,  rate: 0.00 },
-  { lo: 49_350,  hi: 566_700, rate: 0.15 },
-  { lo: 566_700, hi: Infinity, rate: 0.20 },
+  { lo: 0,       hi: 49_450,  rate: 0.00 },
+  { lo: 49_450,  hi: 545_500, rate: 0.15 },
+  { lo: 545_500, hi: Infinity, rate: 0.20 },
 ];
 
 // Net Investment Income Tax (IRC §1411) — 3.8% surtax on the lesser of net

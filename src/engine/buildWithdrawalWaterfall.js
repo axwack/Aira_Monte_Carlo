@@ -56,8 +56,9 @@ const BASE_YEAR = new Date().getFullYear();
 // 2026 MFJ standard deduction base + age-65 bonus
 const STD_DED_MFJ    = 32_200;
 const STD_DED_SINGLE = 16_100;
-const AGE_BONUS_MFJ    = 3_300;
-const AGE_BONUS_SINGLE = 1_650;
+const AGE_BONUS_MFJ    = 3_300;          // two filers over 65
+const AGE_BONUS_SINGLE = 1_650;          // per filer, married
+const AGE_BONUS_UNMARRIED = 2_050;       // Rev. Proc. 2025-32 §.14(3): unmarried, not a surviving spouse
 
 // 2026 IRMAA Tier-1 MAGI ceiling, inflation-adjusted in engine
 const IRMAA_TIER1_2026_MFJ    = 218_000;
@@ -70,7 +71,7 @@ const GK_INFLATION_CAP = 0.06;
 
 // Bracket ceilings as taxable income (post std-deduction), 2026, inflation-indexed
 const BRACKET_CEILINGS_MFJ    = { "10": 24_800, "12": 100_800, "22": 211_400, "24": 403_550, "32": 512_450, "35": 768_700, "37": Infinity, "irmaa": 218_000 };
-const BRACKET_CEILINGS_SINGLE = { "10": 12_400, "12": 50_400,  "22": 105_700, "24": 201_800, "32": 256_225, "35": 640_600, "37": Infinity, "irmaa": 109_000 };
+const BRACKET_CEILINGS_SINGLE = { "10": 12_400, "12": 50_400,  "22": 105_700, "24": 201_775, "32": 256_225, "35": 640_600, "37": Infinity, "irmaa": 109_000 };
 
 /**
  * `spouseAge` (null when unknown) gives the age-65 add-on per filer, matching
@@ -80,9 +81,9 @@ const BRACKET_CEILINGS_SINGLE = { "10": 12_400, "12": 50_400,  "22": 105_700, "2
  * null reproduces that old behavior exactly, for profiles with no spouse
  * birthdate.
  */
-function stdDed(age, isMFJ, inflFactor, spouseAge = null) {
+export function stdDed(age, isMFJ, inflFactor, spouseAge = null) {
   const base    = isMFJ ? STD_DED_MFJ : STD_DED_SINGLE;
-  const perHead = AGE_BONUS_SINGLE;                       // AGE_BONUS_MFJ === 2 × this
+  const perHead = isMFJ ? AGE_BONUS_SINGLE : AGE_BONUS_UNMARRIED;
   const seniors = personsAtLeastAge(age, spouseAge, isMFJ, 65);
   return Math.round((base + seniors * perHead) * inflFactor);
 }
