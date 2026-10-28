@@ -383,7 +383,7 @@ async function handleTimeSensitive(apiKey, values, mcResults, usageBucket) {
 
 async function deductD1Credits(db, customerId, rawTokens) {
   const creditCost = Math.ceil(rawTokens / RAW_TOKENS_PER_CREDIT);
-  if (creditCost <= 0) return { creditsUsed: 0, creditsRemaining: null, txnId: null };
+  if (creditCost <= 0) return { creditsUsed: 0, creditsRemaining: null, txnId: null, deducted: false };
 
   // Audit fix C4: atomic conditional UPDATE. The WHERE clause guarantees we
   // only deduct when balance covers the cost. meta.changes === 0 means a
@@ -422,6 +422,7 @@ async function deductD1Credits(db, customerId, rawTokens) {
     creditsUsed: creditCost,
     creditsRemaining: row?.credits ?? null,
     txnId: ins.meta?.last_row_id ?? null,
+    deducted,
   };
 }
 
@@ -493,12 +494,14 @@ export async function onRequestPost({ request, env }) {
   }
 
   // ── API key: billing uses server key, BYOK uses request/env key ───────────
-  const apiKey = customerId
-    ? env.GEMINI_API_KEY
-    : (body.apiKey || env.GEMINI_API_KEY);
+  // Never fall back to env.GEMINI_API_KEY without a verified customer: that would
+  // let any anonymous caller spend the operator's key for free.
+  const apiKey = customerId ? env.GEMINI_API_KEY : body.apiKey;
 
   if (!apiKey) {
-    return json({ error: "No API key — add your Gemini API key in Profile → Assumptions" }, 500);
+    return json({ error: customerId
+      ? "Server AI key not configured"
+      : "No API key — add your Gemini API key in Profile → Assumptions" }, customerId ? 500 : 401);
   }
 
   // ── Pre-call balance check (billing mode only) ─────────────────────────
@@ -545,10 +548,11 @@ export async function onRequestPost({ request, env }) {
   let creditsUsed = 0;
   let creditsRemaining = null;
   let deductTxnId = null;
+  let wasDeducted = false;
   if (customerId && env.DB && usageBucket.length > 0) {
     const rawTokens = usageBucket.reduce((sum, u) => sum + (u.totalTokenCount || 0), 0);
     try {
-      ({ creditsUsed, creditsRemaining, txnId: deductTxnId } = await deductD1Credits(env.DB, customerId, rawTokens));
+      ({ creditsUsed, creditsRemaining, txnId: deductTxnId, deducted: wasDeducted } = await deductD1Credits(env.DB, customerId, rawTokens));
     } catch (e) {
       console.error("[analyze] D1 deduction failed:", e.message);
     }
@@ -556,7 +560,7 @@ export async function onRequestPost({ request, env }) {
 
   // ── AI-2: Refund if result is empty/unusable ──────────────────────────
   let refunded = false;
-  if (customerId && env.DB && creditsUsed > 0 && deductTxnId && isEmptyResult(type, result)) {
+  if (customerId && env.DB && creditsUsed > 0 && wasDeducted && deductTxnId && isEmptyResult(type, result)) {
     try {
       await refundD1Credits(env.DB, customerId, creditsUsed, deductTxnId);
       creditsRemaining = (creditsRemaining ?? 0) + creditsUsed;

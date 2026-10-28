@@ -69,6 +69,18 @@ export async function onRequestPost({ request, env }) {
     }
   }
 
+  const res = await dispatch(event, env);
+
+  // A 5xx makes Stripe retry this event.id. Forget it, or the retry would hit the
+  // dedup row above and be ignored, leaving a paid purchase never credited.
+  if (res.status >= 500 && event.id) {
+    await env.DB.prepare("DELETE FROM webhook_events WHERE event_id = ?").bind(event.id).run()
+      .catch(e => console.warn("[webhook] could not clear dedup row:", e.message));
+  }
+  return res;
+}
+
+function dispatch(event, env) {
   switch (event.type) {
     case "checkout.session.completed":
       return handleCheckoutCompleted(event, env);
