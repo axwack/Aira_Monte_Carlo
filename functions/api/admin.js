@@ -95,56 +95,9 @@ function writeAudit(db, action, actorIp, result, details) {
 }
 
 export async function onRequestPost({ request, env, waitUntil }) {
-  // ── Auth ──────────────────────────────────────────────────────────────────
   if (!env.ADMIN_SECRET) {
     return json({ ok: false, error: "ADMIN_SECRET not configured on this deployment" }, 503);
   }
-  const authHeader = request.headers.get("Authorization") || "";
-  const presented  = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  // A missing ADMIN_SECRET used to fall through to the same 401 as a wrong one,
-  // because constantTimeEqual(x, undefined) simply compares against the string
-  // "undefined". That cost real debugging time: "Unauthorized" gave no hint that the
-  // env var was never set on this deployment. Leaks nothing — it describes server
-  // config, not the secret.
-  if (!env.ADMIN_SECRET) {
-    return json({ ok: false, error: "ADMIN_SECRET is not configured on this deployment." }, 500);
-  }
-  if (!presented || !constantTimeEqual(presented, env.ADMIN_SECRET)) {
-    // Brief constant-ish randomized delay to mask any residual timing signal.
-    await new Promise(r => setTimeout(r, 80 + Math.floor(Math.random() * 40)));
-    // ── Shape-only diagnostics ───────────────────────────────────────────────
-    // "Unauthorized" alone cannot distinguish the cases that actually occur:
-    //   • the value you typed is wrong
-    //   • the deployment predates your secret upload (Pages binds at build time)
-    //   • the stored value is not what you think (a masked prompt captured a
-    //     password, or a paste artifact came with it)
-    //   • you set Production but this deployment reads Preview
-    // Debugging that blind is an unbounded loop — it cost most of an evening.
-    //
-    // Deliberately SHAPE ONLY: lengths and character-class, never the values and
-    // never a hash. A hash prefix would be offline-attackable if the stored
-    // secret were weak, which is exactly the case we are trying to detect. A
-    // length leak on a rate-limited endpoint (10/IP/min) is a fair trade for
-    // making a self-inflicted misconfiguration visible to its owner.
-    const shape = (v) => ({
-      length: v.length,
-      isLowerHex: /^[0-9a-f]+$/.test(v),
-      hasNonAscii: [...v].some(c => c.charCodeAt(0) > 0x7e || c.charCodeAt(0) < 0x21),
-    });
-    return json({
-      ok: false,
-      error: "Unauthorized",
-      // Compare these two rows. Same length + both isLowerHex true, yet still
-      // unauthorized ⇒ two different 64-char secrets (e.g. local vs production).
-      // Different lengths ⇒ the stored value is not the one you are pasting.
-      diagnostic: {
-        youSent: presented ? shape(presented) : { length: 0 },
-        serverExpects: shape(env.ADMIN_SECRET),
-        hint: "Shapes only, no values. If lengths differ, the stored secret is not the string you are pasting — set it again and redeploy (Pages binds secrets at build time). If both look identical, you have two different secrets of the same shape: production vs .dev.vars.",
-      },
-    }, 401);
-  }
-
   // ── H4: Extract caller IP ─────────────────────────────────────────────────
   const actorIp = request.headers.get("CF-Connecting-IP")
                || request.headers.get("X-Real-IP")
@@ -169,6 +122,20 @@ export async function onRequestPost({ request, env, waitUntil }) {
         }, 429);
       }
     } catch { /* non-fatal: skip if admin_audit table not yet migrated */ }
+  }
+
+  const authHeader = request.headers.get("Authorization") || "";
+  const presented  = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!presented || !constantTimeEqual(presented, env.ADMIN_SECRET)) {
+    // Counted by the rate limiter above: wrong guesses used to be free and unlimited.
+    if (env.DB) await writeAudit(env.DB, "auth", actorIp, "auth_failed", null);
+    // Brief constant-ish randomized delay to mask any residual timing signal.
+    await new Promise(r => setTimeout(r, 80 + Math.floor(Math.random() * 40)));
+    // Deliberately says nothing about the stored secret (not its length either):
+    // this reply goes to anyone, and the 80ms delay is the only other brake.
+    // Debugging a mismatch: compare `wrangler pages secret list` and the deploy time
+    // (Pages binds secrets at build time) instead of asking the endpoint.
+    return json({ ok: false, error: "Unauthorized" }, 401);
   }
 
   let body;

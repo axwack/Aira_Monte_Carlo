@@ -88,3 +88,23 @@ describe("/api/webhook", () => {
     delete global.fetch;
   });
 });
+
+describe("/api/admin", () => {
+  const { onRequestPost: admin } = require("../../functions/api/admin.js");
+  const call = (db, auth = "Bearer wrong") => admin({
+    request: new Request("https://x/api/admin", { method: "POST", headers: { Authorization: auth, "CF-Connecting-IP": "1.2.3.4" }, body: "{}" }),
+    env: { ADMIN_SECRET: "a".repeat(64), DB: db },
+  });
+
+  test("4. wrong guesses are recorded, rate-limited, and never reveal the secret's length", async () => {
+    const db = fakeDb();
+    const res = await call(db);
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(await res.json())).not.toMatch(/length|serverExpects/);
+    expect(db.log.some((s) => s.startsWith("INSERT INTO admin_audit"))).toBe(true);
+
+    // Ten recent rows from this IP: the next wrong guess is refused before the secret is even checked.
+    const busy = fakeDb({ "COUNT(*)": { first: { cnt: 10 } } });
+    expect((await call(busy)).status).toBe(429);
+  });
+});
