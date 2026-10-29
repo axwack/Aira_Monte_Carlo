@@ -440,26 +440,6 @@ function readCssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-// Theme persistence. `aira_theme` is purely a display preference — it lives
-// in localStorage only, never in `profile.json` or `params`, and no engine
-// function ever reads it. The theme should never touch the financial
-// computation path, full stop.
-export const THEME_STORAGE_KEY = 'aira_theme';
-export function resolveInitialTheme() {
-  if (typeof window === 'undefined') return 'dark';
-  try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === 'dark' || stored === 'light') return stored;
-  } catch { /* localStorage blocked (private window / etc.) — fall through */ }
-  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
-  return 'dark';
-}
-export function applyTheme(theme) {
-  if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-theme', theme);
-  }
-  try { window.localStorage.setItem(THEME_STORAGE_KEY, theme); } catch {}
-}
 
 // SP500 / BONDS live in engine/expectedReturn.js now, one source of truth for
 // the historical bootstrap. Both arrays are Damodaran's year-aligned
@@ -3803,11 +3783,8 @@ const CSS = `
      both CSS rules and inline styles (style={{ color: "var(--text-muted)" }}).
      Added semantic-status tokens, a spacing scale, a --accent-ai alias
      (purple, promoted from an ambient chart color into a named AI-branding
-     role), and a --divider token. Also added the [data-theme="light"]
-     override block right below — the theme system flips only these token
-     values, so once every inline color literal gets converted to var(--x)
-     the whole app follows the theme. Spacing and radius tokens don't change
-     with theme. */
+     role), and a --divider token. Dark theme only; the light override block was removed (see git history).
+  */
   :root {
     /* Deep neutral ink (less blue-cast), one indigo trust anchor,
        teal/gold/violet held to strict semantic roles. */
@@ -3877,63 +3854,6 @@ const CSS = `
     --radius-btn: 8px;
     --radius-pill: 999px;
   }
-  /* Light-mode overrides. Redefines every color token, leaves spacing alone.
-     Toggle by setting data-theme="light" on <html>. See applyStoredTheme()
-     below (in JS) for the mount-time selector. Accents shifted from the dark
-     palette because #5ad1f0 teal and #38bdf8 sky both fail WCAG AA on
-     white — the deeper #0d9488 / #0284c7 meet contrast. */
-  html[data-theme="light"] :root,
-  :root[data-theme="light"] {
-    /* Retuned after "cards blend into the page" feedback. The old light
-       palette inverted the dark-mode surface logic: dark mode makes cards
-       lighter than the base (adds white tint), but light mode made them
-       darker than a near-white base (5% ink on #f7f8fa). Cards ended up
-       barely one tick off the page. Now matched to the standard "grouped
-       iOS" pattern: soft grey page with white cards, so the demarcation
-       comes from a real tone step, not just a faint border.
-         - Page base darkened #f7f8fa -> #eef1f5 (softer, less glaring, less
-           bright per user feedback).
-         - Cards flipped to translucent white, matching how dark mode adds
-           white tint (dark mode adds white to a dark base; light mode adds
-           white to a grey base — same direction). Cards now visually sit
-           above the page in both themes.
-         - Borders softened slightly (0.14 -> 0.09) because the white-on-grey
-           tone step does most of the demarcation work now; a heavier border
-           would fight it. */
-    --bg-base: #f2f5f9;
-    --bg-hdr: rgba(242,245,249,0.94);
-    --card-bg: #ffffff;
-    --card-bg-raised: #ffffff;
-    /* Borders and dividers pushed noticeably darker — user reported the old
-       0.09 outline as "too dull." Now 0.22 for card frames, 0.14 for inner
-       dividers. Still tinted with the text-primary hue so it matches the
-       palette instead of looking like flat pen ink. */
-    --card-border: #d5dde8;
-    --divider: #e1e7ef;
-    --card-shadow: none;
-    --text-primary: #14192b;
-    --text-secondary: #38425a;
-    /* Muted / faint text also pushed darker — the old #64748b / #94a3b8
-       pair sat right at the WCAG floor and read as "dull" against a page
-       this bright. Both moved one step darker (#475569 / #64748b) so the
-       ramp still reads as three distinct tiers of muting but every tier
-       stays clearly legible on the white card fill. */
-    --text-muted: #56627a;
-    --text-faint: #5f6b82;
-    --accent: #1d5fa8;
-    --accent-teal: #1d5fa8;
-    --accent-purple: #4a5260;
-    --accent-ai: #4a5260;
-    --accent-gold: #7a6200;
-    --positive: #137a4a;
-    --negative: #b3261e;
-    --bg-info:     rgba(29,95,168,0.08);
-    --bg-success:  rgba(19,122,74,0.10);
-    --bg-warning:  rgba(122,98,0,0.12);
-    --bg-danger:   rgba(196,40,58,0.10);
-    --row-highlight: rgba(29,95,168,0.05);
-    --chart-band: rgba(29,95,168,0.12);
-  }
   * { box-sizing:border-box; }
   /* Reusable surfaces / labels — prefer these over retyping the card and
      uppercase-label inline style objects. */
@@ -3943,8 +3863,8 @@ const CSS = `
     font-variant-numeric: tabular-nums; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility; }
   .app { min-height:100vh; background:var(--bg-base); }
   .hdr { background:var(--bg-hdr); border-bottom:1px solid var(--divider); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(16px); }
-  .logo { font-size:25px; font-weight:800; letter-spacing:-0.03em; color:var(--text-primary); }
-  .logo-sub { color:var(--accent); font-weight:400; font-size:16px; margin-left:6px; }
+  .logo { font-size:25px; font-weight:800; letter-spacing:-0.03em; color:#eaf1ff; }
+  .logo-sub { color:#6c9bff; font-weight:400; font-size:16px; margin-left:6px; }
   .mbtn { padding:5px 13px; border-radius:7px; border:1px solid var(--card-border); cursor:pointer; font-size:11px; font-family:var(--font-sans); font-weight:500; transition:all 0.2s; background:transparent; color:var(--text-secondary); }
   .mbtn:hover { color:var(--text-primary); border-color:var(--divider); }
   .mbtn.on { background:var(--accent); border-color:transparent; color:var(--bg-base); }
@@ -17405,17 +17325,6 @@ export default function AiRAForecaster() {
   // matching age column on the fan chart above (FanChart + MCBandTable are siblings).
   const [hoveredAge, setHoveredAge] = useState(null);
 
-  // Theme state. Display preference only — never forwarded into `params`,
-  // never read by any engine. See applyTheme / resolveInitialTheme at module top.
-  //
-  // Temporarily forced to 'dark' — light-mode palette contrast is still a
-  // work in progress after review found "cards blend into the page" /
-  // "font and outline still too dull." Rather than ship a broken light
-  // mode, the toggle button is hidden below and initial state is hardcoded to dark.
-  // TO RE-ENABLE: swap the initializer back to `resolveInitialTheme` and
-  // uncomment the toggle button in the header (search for THEME_TOGGLE).
-  const [theme, setTheme] = useState('dark');
-  useEffect(() => { applyTheme(theme); }, [theme]);
 
   // Progress check-ins: a journal of plan snapshots (see LS_CHECKINS_KEY).
   // Requires a completed MC run so the snapshot carries a real success rate.
@@ -18056,23 +17965,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </div>
           </div>
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-            {/* Theme toggle — hidden pending light-mode contrast
-                completion. Re-enable by removing the `false &&` guard. See
-                the theme useState above for the paired forced-dark change. */}
-            {false && (
-              <>
-                <button
-                  className="mbtn"
-                  title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                  aria-label="Toggle color theme"
-                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                  style={{ fontSize: 14, lineHeight: 1, padding: "5px 9px" }}
-                >
-                  {theme === 'dark' ? '☀' : '☾'}
-                </button>
-                <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
-              </>
-            )}
             <button
               className="mbtn"
               disabled={!mc}
