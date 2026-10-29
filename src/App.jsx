@@ -3830,32 +3830,32 @@ const CSS = `
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono',
                  'Cascadia Mono', 'Segoe UI Mono', Consolas, 'Liberation Mono',
                  Menlo, monospace;
-    --bg-base: #0a1330;
-    --bg-hdr: rgba(10,19,48,0.96);
-    --card-bg: rgba(88,128,255,0.08);
-    --card-bg-raised: rgba(88,128,255,0.14);
-    --card-border: rgba(120,160,255,0.22);
-    --divider: rgba(120,160,255,0.14);
-    --card-shadow: 0 1px 2px rgba(4,10,25,0.5), 0 8px 20px rgba(4,10,25,0.28);
-    --text-primary: #eaf1ff;
-    --text-secondary: #b3c3ea;
-    --text-muted: #94a6d0;  /* 5.3:1 on card (was 3.5) */
-    --text-faint: #8798c4;  /* 4.8:1 on card (was 1.95) */
-    --accent: #6c9bff;
-    --accent-teal: #5ad1f0;
-    --accent-purple: #9a9cff;
-    --accent-ai: #9a9cff;
+    --bg-base: #0e1218;
+    --bg-hdr: rgba(14,18,24,0.96);
+    --card-bg: #151b24;
+    --card-bg-raised: #1b222d;
+    --card-border: #2a3646;
+    --divider: #243040;
+    --card-shadow: none;
+    --text-primary: #e8edf5;
+    --text-secondary: #c0c9d6;
+    --text-muted: #9aa6ba;  /* 5.3:1 on card (was 3.5) */
+    --text-faint: #8793a7;  /* 4.8:1 on card (was 1.95) */
+    --accent: #7ab8f5;
+    --accent-teal: #7ab8f5;
+    --accent-purple: #b4bac4;
+    --accent-ai: #b4bac4;
     --accent-gold: #f4d35e;
     --positive: #4fd88f;
-    --negative: #ff6f7a;
+    --negative: #ff7b72;
     /* Semantic status backgrounds — accent hue at 8-10% alpha, recomputed off
        the palette so a theme flip re-tints them correctly. */
-    --bg-info:     rgba(108,155,255,0.14);
+    --bg-info:     rgba(122,184,245,0.12);
     --bg-success:  rgba(79,216,143,0.12);
     --bg-warning:  rgba(244,211,94,0.13);
     --bg-danger:   rgba(255,111,122,0.13);
-    --row-highlight: rgba(120,160,255,0.09);
-    --chart-band: rgba(120,160,255,0.18);
+    --row-highlight: rgba(122,184,245,0.06);
+    --chart-band: rgba(122,184,245,0.14);
     /* Spacing scale — dense numeric-table app; loosening broadly costs
        rows-per-screen. xs and 2xl added for badges/pills and hero breaks
        that were hardcoded ad hoc. */
@@ -3873,7 +3873,7 @@ const CSS = `
     --fs-body: 13px;
     --fs-small: 11px;
     --fs-mono: 13px;
-    --radius-card: 14px;
+    --radius-card: 8px;
     --radius-btn: 8px;
     --radius-pill: 999px;
   }
@@ -3900,39 +3900,39 @@ const CSS = `
          - Borders softened slightly (0.14 -> 0.09) because the white-on-grey
            tone step does most of the demarcation work now; a heavier border
            would fight it. */
-    --bg-base: #e4edff;
-    --bg-hdr: rgba(228,237,255,0.94);
-    --card-bg: rgba(255,255,255,0.92);
+    --bg-base: #f2f5f9;
+    --bg-hdr: rgba(242,245,249,0.94);
+    --card-bg: #ffffff;
     --card-bg-raised: #ffffff;
     /* Borders and dividers pushed noticeably darker — user reported the old
        0.09 outline as "too dull." Now 0.22 for card frames, 0.14 for inner
        dividers. Still tinted with the text-primary hue so it matches the
        palette instead of looking like flat pen ink. */
-    --card-border: rgba(39,87,214,0.26);
-    --divider: rgba(39,87,214,0.16);
-    --card-shadow: 0 1px 2px rgba(30,60,120,0.07), 0 4px 12px rgba(30,60,120,0.10);
-    --text-primary: #0b1a3d;
-    --text-secondary: #2f4274;
+    --card-border: #d5dde8;
+    --divider: #e1e7ef;
+    --card-shadow: none;
+    --text-primary: #14192b;
+    --text-secondary: #38425a;
     /* Muted / faint text also pushed darker — the old #64748b / #94a3b8
        pair sat right at the WCAG floor and read as "dull" against a page
        this bright. Both moved one step darker (#475569 / #64748b) so the
        ramp still reads as three distinct tiers of muting but every tier
        stays clearly legible on the white card fill. */
-    --text-muted: #455a8c;
-    --text-faint: #566ba0;
-    --accent: #2757d6;
-    --accent-teal: #0e72ae;
-    --accent-purple: #4b49d0;
-    --accent-ai: #4b49d0;
+    --text-muted: #56627a;
+    --text-faint: #5f6b82;
+    --accent: #1d5fa8;
+    --accent-teal: #1d5fa8;
+    --accent-purple: #4a5260;
+    --accent-ai: #4a5260;
     --accent-gold: #7a6200;
     --positive: #137a4a;
-    --negative: #c4283a;
-    --bg-info:     rgba(39,87,214,0.10);
+    --negative: #b3261e;
+    --bg-info:     rgba(29,95,168,0.08);
     --bg-success:  rgba(19,122,74,0.10);
     --bg-warning:  rgba(122,98,0,0.12);
     --bg-danger:   rgba(196,40,58,0.10);
-    --row-highlight: rgba(39,87,214,0.06);
-    --chart-band: rgba(60,100,190,0.14);
+    --row-highlight: rgba(29,95,168,0.05);
+    --chart-band: rgba(29,95,168,0.12);
   }
   * { box-sizing:border-box; }
   /* Reusable surfaces / labels — prefer these over retyping the card and
@@ -3947,13 +3947,13 @@ const CSS = `
   .logo-sub { color:var(--accent); font-weight:400; font-size:16px; margin-left:6px; }
   .mbtn { padding:5px 13px; border-radius:7px; border:1px solid var(--card-border); cursor:pointer; font-size:11px; font-family:var(--font-sans); font-weight:500; transition:all 0.2s; background:transparent; color:var(--text-secondary); }
   .mbtn:hover { color:var(--text-primary); border-color:var(--divider); }
-  .mbtn.on { background:linear-gradient(135deg,#3d6fe0,#6c9bff); border-color:transparent; color:white; box-shadow:0 4px 14px rgba(61,111,224,0.35); }
+  .mbtn.on { background:var(--accent); border-color:transparent; color:var(--bg-base); }
   .mbtn:disabled { opacity:0.4; cursor:not-allowed; }
   /* Thin divider separating the utility buttons from the support CTA. */
   .hdiv { width:1px; height:20px; background:var(--divider); margin:0 3px; flex-shrink:0; }
   /* Buy-me-a-coffee — the one prominent, filled support CTA in the header. */
-  .coffee-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 15px; border-radius:8px; border:none; background:linear-gradient(135deg,#f4d35e,#fbbf24); color:#231603; font-size:12px; font-weight:800; font-family:var(--font-sans); letter-spacing:-0.01em; text-decoration:none; cursor:pointer; white-space:nowrap; box-shadow:0 3px 12px rgba(244,211,94,0.35); transition:transform 0.15s, box-shadow 0.15s, filter 0.15s; }
-  .coffee-btn:hover { filter:brightness(1.07); transform:translateY(-1px); box-shadow:0 5px 16px rgba(244,211,94,0.5); }
+  .coffee-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 15px; border-radius:8px; border:none; background:#ffdd00; color:#1a1a1a; font-size:12px; font-weight:800; font-family:var(--font-sans); letter-spacing:-0.01em; text-decoration:none; cursor:pointer; white-space:nowrap; transition:filter 0.15s; }
+  .coffee-btn:hover { filter:brightness(1.06); }
   /* ── Visitor landing (first-screen hero) ── */
   .landing { min-height:100vh; background:var(--bg-base); display:flex; flex-direction:column; align-items:center; padding:clamp(26px,6vw,60px) 20px 60px; overflow-y:auto; }
   .lp-wrap { width:100%; max-width:760px; }
@@ -4006,8 +4006,8 @@ const CSS = `
   .tog-label { font-size:12px; line-height:18px; color:#cbd5e1; font-weight:500; flex:1; min-width:0; }
   .tog { width:34px; height:18px; border:0; padding:0; border-radius:9px; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
   .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.4); }
-  .run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#0ea5e9,#38bdf8); border:none; border-radius:9px; color:white; font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-sans); transition:all 0.2s; letter-spacing:-0.01em; box-shadow:0 4px 14px rgba(14,165,233,0.25); flex-shrink:0; }
-  .run-btn:hover { opacity:0.9; box-shadow:0 6px 20px rgba(14,165,233,0.35); }
+  .run-btn { width:100%; padding:10px; background:var(--accent); border:none; border-radius:6px; color:var(--bg-base); font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-sans); transition:all 0.2s; letter-spacing:-0.01em; flex-shrink:0; }
+  .run-btn:hover { opacity:0.9; }
   .run-btn:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
   .main { padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; min-height:0; min-width:0; }
   /* min-width:0 alongside flex-shrink:0: shrink is about the column axis
@@ -4163,7 +4163,7 @@ const CSS = `
   .donut-btn:hover { filter:brightness(1.2); }
   .sb-edit { background:none; border:0; padding:0; color:var(--accent-teal); font-size:10px; font-weight:600; text-decoration:underline; cursor:pointer; }
   .progress-bar { height:5px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden; margin-top:6px; }
-  .progress-fill { height:100%; background:linear-gradient(90deg,#0ea5e9,#38bdf8); border-radius:3px; transition:width 1s; }
+  .progress-fill { height:100%; background:var(--accent); border-radius:3px; transition:width 1s; }
   .nw-table { width:100%; border-collapse:collapse; font-size:12px; }
   .nw-table th { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; border-bottom:1px solid rgba(255,255,255,0.09); text-align:right; font-weight:700; }
   .nw-table th:first-child { text-align:left; }
