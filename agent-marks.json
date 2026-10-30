@@ -52,7 +52,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function MCAdvancedSettings(",
       "description": "Monte Carlo Advanced Settings dialog: paths, historical sampling range, return/cost assumptions, guardrails. Sole editable home for the model parameters.",
-      "sha": "fefaa7b710c48388"
+      "sha": "6a97d30e71b3b851"
     },
     {
       "id": "withdrawal-table-segments",

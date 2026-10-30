@@ -3462,7 +3462,7 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
     <div className={embedded ? undefined : "chart-card"}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: show || showExplainer ? 8 : 0, flexWrap: "wrap", gap: 6 }}>
         <div className="ct" style={{ marginBottom: 0 }}>
-          📊 Age-by-Age Projection Bands · {dollarBasisLabel(useReal, retirementBasisYear(currentAge, retireAge, CURRENT_YEAR))}
+          Age-by-Age Projection Bands · {dollarBasisLabel(useReal, retirementBasisYear(currentAge, retireAge, CURRENT_YEAR))}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button
@@ -3730,7 +3730,7 @@ function SectorBadge({ age }) {
             cursor: "pointer",
           }}
         >
-          ⚡ {cur.n} <InfoIcon size={11} />
+          {cur.n} <InfoIcon size={11} />
         </span>
       }
     >
@@ -3758,7 +3758,7 @@ function SectorBadge({ age }) {
                     real pill (not an em-dash text suffix that dropped to its own
                     line and read as a floating dash). */}
                 <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, minWidth: 0, flex: "1 1 auto" }}>
-                  <span style={{ fontSize: "var(--fs-label)", fontWeight: 800, color: s.color }}>⚡ {s.n}</span>
+                  <span style={{ fontSize: "var(--fs-label)", fontWeight: 800, color: s.color }}>{s.n}</span>
                   {isCur && (
                     <span style={{ fontSize: "var(--fs-small)", fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
                       color: s.color, background: withAlpha(s.color, "22"), border: `1px solid ${withAlpha(s.color, "55")}`,
@@ -5945,7 +5945,7 @@ function IncomeExpensesChart({ p, inf }) {
   return (
     <>
       <IncomeExpenseStack
-        title="📊 Estimated Income, Drawdowns & Roth Conversions"
+        title="Estimated Income, Drawdowns & Roth Conversions"
         /* The horizon is stated explicitly because leaving it out reads as a
            dropped entry. A user who enters a windfall for a pre-retirement
            year finds no trace of it here and concludes the chart is broken
@@ -6411,9 +6411,9 @@ const modeDescs = {
           size="sm"
           options={[
             ["thisyear", "💰 Tax Room"],
-            ["optimized", "📊 Conversion Plan"],
+            ["optimized", "Conversion Plan"],
             ["taxes", "⚖️ Taxes"],
-            ["table", "📋 Year-by-Year"],
+            ["table", "Year-by-Year"],
             ["scenarios", "🗺️ 3-Scenario"],
           ]}
           value={view}
@@ -6567,7 +6567,7 @@ const modeDescs = {
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
             <div style={{ fontSize: "var(--fs-label)", fontWeight: 600, color: "var(--accent-teal)" }}>
-              ✅ Recommended Conversion — Year 1: {fmtDollar(conversionPlan.recommendedSchedule[0]?.amount || 0)}
+              Recommended Conversion — Year 1: {fmtDollar(conversionPlan.recommendedSchedule[0]?.amount || 0)}
             </div>
             <div style={{ color: "var(--text-muted)" }}>
               Matches the "Roth Conv" figure for {conversionPlan.recommendedSchedule[0]?.year ?? "year 1"} on the Withdrawal Schedule tab
@@ -6838,7 +6838,7 @@ const modeDescs = {
 
             {/* ── Recommendation ── */}
             <div className="chart-card" style={{ border: "1px solid rgba(244,211,94,0.4)", background: "rgba(244,211,94,0.05)" }}>
-              <div className="ct" style={{ color: "var(--accent-gold)" }}>✅ Recommended Conversion — {cyYear}</div>
+              <div className="ct" style={{ color: "var(--accent-gold)" }}>Recommended Conversion — {cyYear}</div>
               {(() => {
                 const cyTaxFunding = params?.taxFunding || "from_taxable";
                 const cyNetRoth = cyTaxFunding === "from_conv"
@@ -6872,7 +6872,7 @@ const modeDescs = {
                       </div>
                     </div>
                     <div style={{ background: "rgba(244,211,94,0.1)", border: "1px solid rgba(244,211,94,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: "var(--fs-label)", color: "var(--accent-gold)", fontWeight: 600 }}>
-                      📋 Give this to your CPA: Convert {fmtN(recConv)} from pretax to Roth in {cyYear}. {cyCpaTax}
+                      Give this to your CPA: Convert {fmtN(recConv)} from pretax to Roth in {cyYear}. {cyCpaTax}
                     </div>
                   </>
                 );
@@ -6928,7 +6928,7 @@ const modeDescs = {
                 for the year and get the exact conversion amount to hand your CPA. It reflects what you
                 can actually do right now, not a forecast.
                 <br /><br />
-                <strong style={{ color: "var(--text-secondary)" }}>Lifetime Ladder (📊 Conversion Plan tab)</strong> projects conversions over every future year.
+                <strong style={{ color: "var(--text-secondary)" }}>Lifetime Ladder (Conversion Plan tab)</strong> projects conversions over every future year.
                 For years where you have not saved a real number, it uses the bracket-fill optimizer —
                 which does not know about your working income, Cash or Taxable/Brokerage balance, or IRMAA timing.
                 <br /><br />
@@ -8291,7 +8291,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
               fontFamily: "var(--font-sans)",
             }}
           >
-            <option value="smart">📋 Smart Waterfall (Tax-Optimal · GK→Bengen at 15yr)</option>
+            <option value="smart">Smart Waterfall (Tax-Optimal · GK→Bengen at 15yr)</option>
             <option value="gk">Guyton‑Klinger (Dynamic)</option>
             <option value="bengen">Bengen 4% Rule (fixed, inflation-adjusted)</option>
             <option value="fixed">Fixed % of Portfolio</option>
@@ -8921,7 +8921,7 @@ function WaterfallPlanView({ p, result }) {
       {/* Toggle */}
       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
         <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginRight: 4 }}>View:</span>
-        <button style={btnStyle(mode === "smart")} onClick={() => setMode("smart")}>📋 Your plan</button>
+        <button style={btnStyle(mode === "smart")} onClick={() => setMode("smart")}>Your plan</button>
         <button style={btnStyle(mode === "naive")} onClick={() => setMode("naive")}>No plan (pretax first, uncapped)</button>
         {mode === "naive" && (
           <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginLeft: 8 }}>
@@ -11655,7 +11655,7 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
           style={{ padding: "5px 12px", fontSize: "var(--fs-small)", borderRadius: 7, cursor: "pointer",
             border: "1px solid var(--card-border)", background: "transparent", color: "var(--text-secondary)",
             fontWeight: 600, whiteSpace: "nowrap" }}>
-          ⚙ Advanced Settings
+          Advanced Settings
         </button>
       }
     >
@@ -13439,7 +13439,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   if (!params || !mc) {
     return (
       <div className="chart-card" style={{ textAlign: "center", padding: "40px 20px" }}>
-        <div style={{ fontSize: "var(--fs-body)", color: "var(--text-secondary)", marginBottom: 8 }}>🎲 Monte Carlo not run yet</div>
+        <div style={{ fontSize: "var(--fs-body)", color: "var(--text-secondary)", marginBottom: 8 }}>Monte Carlo not run yet</div>
         <div style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)" }}>Press ▶ Run Monte Carlo to generate your personalized action plan.</div>
       </div>
     );
@@ -15262,7 +15262,7 @@ function AssumptionsPanel({ values, onChange }) {
           After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
         </div>
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", lineHeight: 1.5, marginBottom: 12 }}>
-          The bracket-fill target is set on <strong style={{ color: "var(--accent-purple)" }}>Scenarios → 📊 Conversion Plan</strong>,
+          The bracket-fill target is set on <strong style={{ color: "var(--accent-purple)" }}>Scenarios → Conversion Plan</strong>,
           right above the ladder it shapes — it's saved here in your profile so the Withdrawal Plan
           and Monte Carlo runs use the same setting.
         </div>
@@ -16899,7 +16899,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
         )}
         {strategy === "fixed" && (
           <>
-            <div style={{ fontSize: "var(--fs-body)", color: "#e2e8f0", marginBottom: 12 }}>📊 Fixed Percentage Withdrawal</div>
+            <div style={{ fontSize: "var(--fs-body)", color: "#e2e8f0", marginBottom: 12 }}>Fixed Percentage Withdrawal</div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 16 }}>Each year, withdraw a fixed percentage of the current portfolio balance.</div>
             <div style={{ textAlign: "center", marginBottom: 14 }}><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>Withdrawal Rate</div><div style={{ fontSize: "var(--fs-display)", fontWeight: 700, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace" }}>{values.fixedWithdrawalRate || 4.0}%</div><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>of portfolio balance each year</div></div>
             <div style={{ display: "flex", justifyContent: "center" }}>
@@ -17874,11 +17874,11 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
  const analogue = mc ? getAnalogue(mc.rate) : null;
 
   const TABS = [
-    ["networth", "📊 Net Worth"],
-    ["montecarlo", "🎲 Forecast"],
-    ["scenarios", "📋 Analysis"],
-    ["actionplan", "✅ Action Plan"],
-    ["assumptions", "⚙️ Plan inputs"],
+    ["networth", "Net Worth"],
+    ["montecarlo", "Forecast"],
+    ["scenarios", "Analysis"],
+    ["actionplan", "Action Plan"],
+    ["assumptions", "Plan inputs"],
   ];
 
   const needsMC = ["montecarlo", "networth"];
@@ -18331,7 +18331,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               className="coffee-btn"
               title="Support the app — buy me a coffee"
             >
-              ☕ Buy me a coffee
+              Buy me a coffee
             </a>
           </div>
           {/* Header day-counter removed — the same figure lives inside
