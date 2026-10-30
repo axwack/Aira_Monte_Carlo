@@ -6416,11 +6416,11 @@ const modeDescs = {
           ariaLabel="Roth conversion view"
           size="sm"
           options={[
-            ["thisyear", "💰 Tax Room"],
+            ["thisyear", "Tax Room"],
             ["optimized", "Conversion Plan"],
-            ["taxes", "⚖️ Taxes"],
+            ["taxes", "Taxes"],
             ["table", "Year-by-Year"],
-            ["scenarios", "🗺️ 3-Scenario"],
+            ["scenarios", "3-Scenario"],
           ]}
           value={view}
           onChange={setView}
@@ -11417,13 +11417,13 @@ function ScenariosTab({
   }, [initialSubTab]); // onSubTabConsumed intentionally omitted — see comment above
 
   const SCENARIO_SUBTABS = [
-    ["roth",        "🔄 ROTH CONVERSIONS"],
-    ["withdrawals", "💸 WITHDRAWAL PLAN"],
-    ["stress",      "🔶 STRESS TEST"],
-    ["buckets",     "🧺 BUCKETS"], // was 🪣 (Unicode 2020) — missing glyph on some systems; 🧺 is Unicode 2016, near-universal
-    ["income",      "💵 INCOME"],
-    ["realestate",  "🏠 REAL ESTATE"],
-    ["progress",    "📈 PROGRESS"],
+    ["roth",        "Roth conversions"],
+    ["withdrawals", "Withdrawal plan"],
+    ["stress",      "Stress test"],
+    ["buckets",     "Buckets"],
+    ["income",      "Income"],
+    ["realestate",  "Real estate"],
+    ["progress",    "Progress"],
   ];
 
   return (
