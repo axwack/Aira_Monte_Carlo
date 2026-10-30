@@ -44,7 +44,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function TaxDetailsModal(",
       "description": "Click-open Tax Calculation Details modal. Reads the waterfall row only (rule 8) — no second tax computation.",
-      "sha": "46350a4b71dd6f58"
+      "sha": "552aa4a75d7983dd"
     },
     {
       "id": "mc-advanced-settings",
@@ -52,7 +52,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function MCAdvancedSettings(",
       "description": "Monte Carlo Advanced Settings dialog: paths, historical sampling range, return/cost assumptions, guardrails. Sole editable home for the model parameters.",
-      "sha": "0a93b7aa8fbc7bbe"
+      "sha": "75f016e712c66b8f"
     },
     {
       "id": "withdrawal-table-segments",
@@ -92,7 +92,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function AllocationDonut(",
       "description": "Aira-Claude's region: tax-treatment donut drawn as a CSS conic-gradient ring (avoids the Recharts 3.8 single-slice bug).",
-      "sha": "4a8582452519fa82"
+      "sha": "3cecbb8819741f8a"
     },
     {
       "id": "info-modal-shell",
@@ -100,7 +100,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function InfoModal(",
       "description": "SHARED: the dialog shell both agents use. deepseek-flash added maxWidth/bodyMaxHeight + controlled open/onClose. Change it carefully and re-stamp.",
-      "sha": "a8f0b9bb6b24fa15"
+      "sha": "1e4027e7157173e7"
     },
     {
       "id": "claude-not-entered-rows",
@@ -132,7 +132,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function IncomeExpenseStack(",
       "description": "Income/expense legend panel: dash for never-entered rows, provenance footnotes.",
-      "sha": "419be9ddc67b8f75"
+      "sha": "8420a288199764e6"
     },
     {
       "id": "claude-verdict-header",

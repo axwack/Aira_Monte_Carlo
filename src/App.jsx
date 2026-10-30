@@ -3312,7 +3312,7 @@ function AllocationDonut({ accounts, onEdit }) {
   const ringMask = "radial-gradient(circle, transparent 33px, #000 34px)";
   const Ring = onEdit ? "button" : "div";
   return (
-    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--tint-white-06)" }}>
       <h2 style={{ margin: "0 0 6px", fontWeight: 400, fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>
         Tax Treatment
       </h2>
@@ -3485,7 +3485,7 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
         </div>
       </div>
       {showExplainer && (
-        <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.6, background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+        <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.6, background: "var(--card-bg)", border: "1px solid var(--tint-white-08)", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
           <strong style={{ color: "var(--text-secondary)" }}>Still Funded</strong> is the share of simulated retirement
           histories where your accounts still had money at that age — not a literal forecast, and not a
           chance of zero income. Social Security, rental, and pension income keep paying even in "failed"
@@ -3545,7 +3545,7 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
                         background: isHovered
                           ? "rgba(56,189,248,0.14)"
                           : isSS || isRMD
-                          ? "rgba(90,209,240,0.06)"
+                          ? "var(--tint-sky-06)"
                           : undefined,
                         boxShadow: isHovered ? "inset 3px 0 0 #38bdf8" : undefined,
                         cursor: onHoverAge ? "pointer" : undefined,
@@ -3836,6 +3836,42 @@ const CSS = `
     --bg-success:  rgba(79,216,143,0.12);
     --bg-warning:  rgba(244,211,94,0.13);
     --bg-danger:   rgba(255,111,122,0.13);
+    /* Neutral and status tints, one token per base colour and alpha. */
+    --tint-amber-07: rgba(251,191,36,0.07);
+    --tint-amber-08: rgba(251,191,36,0.08);
+    --tint-amber-35: rgba(251,191,36,0.35);
+    --tint-black-40: rgba(0,0,0,0.4);
+    --tint-black-50: rgba(0,0,0,0.5);
+    --tint-black-60: rgba(0,0,0,0.6);
+    --tint-black-70: rgba(0,0,0,0.7);
+    --tint-black-80: rgba(0,0,0,0.8);
+    --tint-green-05: rgba(52,211,153,0.05);
+    --tint-green-07: rgba(52,211,153,0.07);
+    --tint-red-05: rgba(255,111,122,0.05);
+    --tint-red-07: rgba(255,111,122,0.07);
+    --tint-red-08: rgba(255,111,122,0.08);
+    --tint-red-15: rgba(255,111,122,0.15);
+    --tint-red-20: rgba(255,111,122,0.2);
+    --tint-red-25: rgba(255,111,122,0.25);
+    --tint-red-30: rgba(255,111,122,0.3);
+    --tint-sky-06: rgba(90,209,240,0.06);
+    --tint-sky-07: rgba(90,209,240,0.07);
+    --tint-sky-20: rgba(90,209,240,0.2);
+    --tint-sky-25: rgba(90,209,240,0.25);
+    --tint-sky-30: rgba(90,209,240,0.3);
+    --tint-sky-45: rgba(90,209,240,0.45);
+    --tint-white-02: rgba(255,255,255,0.02);
+    --tint-white-03: rgba(255,255,255,0.03);
+    --tint-white-04: rgba(255,255,255,0.04);
+    --tint-white-05: rgba(255,255,255,0.05);
+    --tint-white-06: rgba(255,255,255,0.06);
+    --tint-white-07: rgba(255,255,255,0.07);
+    --tint-white-08: rgba(255,255,255,0.08);
+    --tint-white-09: rgba(255,255,255,0.09);
+    --tint-white-10: rgba(255,255,255,0.1);
+    --tint-white-12: rgba(255,255,255,0.12);
+    --tint-white-14: rgba(255,255,255,0.14);
+    --tint-white-15: rgba(255,255,255,0.15);
     --row-highlight: rgba(122,184,245,0.06);
     --chart-band: rgba(122,184,245,0.14);
     /* Spacing scale — dense numeric-table app; loosening broadly costs
@@ -3915,25 +3951,25 @@ const CSS = `
      it. minmax(0,1fr) removes that content-based floor so .main is held to
      the track's actual size and its own overflow rules (below) take over. */
   .layout { display:grid; grid-template-columns:340px minmax(0, 1fr); height:calc(100vh - 56px); overflow:hidden; }
-  .sidebar { border-right:1px solid rgba(255, 255, 255, 0.08); padding:14px 12px; overflow-y:auto; background:rgba(10,15,30,0.78); display:flex; flex-direction:column; gap:12px; min-height:0; min-width:0; }
+  .sidebar { border-right:1px solid var(--tint-white-08); padding:14px 12px; overflow-y:auto; background:rgba(10,15,30,0.78); display:flex; flex-direction:column; gap:12px; min-height:0; min-width:0; }
   .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-card); padding:13px 12px; }
   .sb-title { font-size:var(--fs-label); font-weight:600; color:var(--text-muted); margin:0 0 10px; }
   .sl-row { display:flex; flex-direction:column; gap:6px; margin-bottom:13px; }
-  .sl-nudge-btn { width:24px; height:24px; border-radius:5px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.06); color:var(--text-secondary); cursor:pointer; font-size:14px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; padding:0; transition:all 0.15s; flex-shrink:0; line-height:1; user-select:none; }
+  .sl-nudge-btn { width:24px; height:24px; border-radius:5px; border:1px solid var(--tint-white-12); background:var(--tint-white-06); color:var(--text-secondary); cursor:pointer; font-size:14px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; padding:0; transition:all 0.15s; flex-shrink:0; line-height:1; user-select:none; }
   .sl-nudge-btn:hover:not(:disabled) { background:rgba(255,255,255,0.18); color:#ffffff; border-color:rgba(255,255,255,0.28); transform:scale(1.06); }
   .sl-nudge-btn:active:not(:disabled) { transform:scale(0.94); }
   .sl-nudge-btn:disabled { opacity:0.22; cursor:not-allowed; }
   /* The value cell is now an editable input (typed entry can exceed the slider max). */
-  .sl-val-input { width:auto; min-width:70px; max-width:120px; text-align:center; background:rgba(15,23,42,0.65); border:1px solid rgba(255,255,255,0.12); border-radius:5px; padding:2px 6px; cursor:text; }
-  .sl-val-input:hover { border-color:rgba(255,255,255,0.22); background:rgba(255,255,255,0.08); }
-  .sl-val-input:focus { outline:none; border-color:var(--positive); background:rgba(90,209,240,0.12); color:var(--text-primary); box-shadow:0 0 0 2px rgba(90,209,240,0.25); }
+  .sl-val-input { width:auto; min-width:70px; max-width:120px; text-align:center; background:rgba(15,23,42,0.65); border:1px solid var(--tint-white-12); border-radius:5px; padding:2px 6px; cursor:text; }
+  .sl-val-input:hover { border-color:rgba(255,255,255,0.22); background:var(--tint-white-08); }
+  .sl-val-input:focus { outline:none; border-color:var(--positive); background:rgba(90,209,240,0.12); color:var(--text-primary); box-shadow:0 0 0 2px var(--tint-sky-25); }
   .sl-label { font-size:12px; color:var(--text-secondary); font-weight:600; }
   .sl-val { font-size:12px; font-weight:700; text-align:right; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
   .tog-row { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; gap:8px; flex-wrap:nowrap; }
   .sb-card > .tog-row:last-child { margin-bottom:0; }
   .tog-label { font-size:12px; line-height:18px; color:var(--text-secondary); font-weight:500; flex:1; min-width:0; }
   .tog { width:34px; height:18px; border:0; padding:0; border-radius:9px; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
-  .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.4); }
+  .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; box-shadow:0 1px 3px var(--tint-black-40); }
   .run-btn { width:100%; padding:10px; background:var(--accent); border:none; border-radius:6px; color:var(--bg-base); font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-sans); transition:all 0.2s; letter-spacing:-0.01em; flex-shrink:0; }
   .run-btn:hover { opacity:0.9; }
   .run-btn:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
@@ -3974,19 +4010,19 @@ const CSS = `
   .help-body em { font-style:italic; }
   .help-body ul { margin:0 0 10px; padding-left:20px; }
   .help-body li { margin-bottom:4px; }
-  .help-body code { font-family:var(--font-mono); font-size:12px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); border-radius:4px; padding:1px 5px; }
+  .help-body code { font-family:var(--font-mono); font-size:12px; background:var(--tint-white-06); border:1px solid var(--tint-white-08); border-radius:4px; padding:1px 5px; }
   /* The ModalNote look. Accent comes from --note-accent so a risk-toned note
      is a modifier, not a second rule that can fall out of step. */
   .help-note { --note-accent: var(--accent-gold); display:flex; gap:9px;
     background:rgba(245,166,35,0.07); border:1px solid rgba(245,166,35,0.2);
     border-left:3px solid var(--note-accent); border-radius:8px; padding:10px 12px;
     margin:0 0 10px; font-size:12.5px; color:var(--text-secondary); line-height:1.6; }
-  .help-note--risk { --note-accent: var(--negative); background:rgba(255,111,122,0.07);
-    border-top-color:rgba(255,111,122,0.2); border-right-color:rgba(255,111,122,0.2);
-    border-bottom-color:rgba(255,111,122,0.2); border-left:3px solid var(--note-accent); }
-  .help-note--method { --note-accent: var(--accent-teal); background:rgba(90,209,240,0.07);
-    border-top-color:rgba(90,209,240,0.2); border-right-color:rgba(90,209,240,0.2);
-    border-bottom-color:rgba(90,209,240,0.2); border-left:3px solid var(--note-accent); }
+  .help-note--risk { --note-accent: var(--negative); background:var(--tint-red-07);
+    border-top-color:var(--tint-red-20); border-right-color:var(--tint-red-20);
+    border-bottom-color:var(--tint-red-20); border-left:3px solid var(--note-accent); }
+  .help-note--method { --note-accent: var(--accent-teal); background:var(--tint-sky-07);
+    border-top-color:var(--tint-sky-20); border-right-color:var(--tint-sky-20);
+    border-bottom-color:var(--tint-sky-20); border-left:3px solid var(--note-accent); }
   .help-note-icon { color:var(--note-accent); font-weight:800; flex-shrink:0; line-height:1.6; }
   /* auto-fit (not a fixed 4-column count) so a row with fewer cards than
      the column count STRETCHES to fill the width instead of leaving empty
@@ -3995,18 +4031,18 @@ const CSS = `
      same problem again at a different number. minmax(160px,1fr) keeps cards
      from getting too narrow to read before wrapping. */
   .metrics { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:9px; }
-  .met { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:10px; padding:13px 15px; }
+  .met { background:var(--tint-white-04); border:1px solid var(--tint-white-09); border-radius:10px; padding:13px 15px; }
   .ml { font-size:var(--fs-small); color:var(--text-muted); margin-bottom:7px; font-weight:600; }
   .mv { font-size:22px; font-weight:800; font-family:'JetBrains Mono',monospace; line-height:1; }
   .ms { font-size:12px; color:var(--text-muted); margin-top:5px; }
-  .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:var(--text-secondary); font-style:italic; }
+  .analogue { background:var(--tint-white-03); border:1px solid var(--tint-white-08); border-radius:10px; padding:12px 16px; font-size:13px; color:var(--text-secondary); font-style:italic; }
   .analogue-fade { animation: analogueFade 0.6s ease; }
   @keyframes analogueFade { from { opacity: 0; } to { opacity: 1; } }
   .recomputing { animation: recomputePulse 1.15s ease-in-out infinite; }
   @keyframes recomputePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
-  .tabs { display:flex; gap:2px; border-bottom:1px solid rgba(255,255,255,0.10); flex-wrap:wrap; }
+  .tabs { display:flex; gap:2px; border-bottom:1px solid var(--tint-white-10); flex-wrap:wrap; }
   .tab { flex:1; min-width:72px; padding:10px 6px; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; background:transparent; cursor:pointer; font-size:13px; font-family:var(--font-sans); color:var(--text-muted); transition:color 0.15s, border-color 0.15s, background 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; border-radius:7px 7px 0 0; position:relative; overflow:hidden; }
-  .tab:hover { color:var(--text-muted); background:rgba(255,255,255,0.03); }
+  .tab:hover { color:var(--text-muted); background:var(--tint-white-03); }
   /* The active tab's teal underline used to stop at that button's own width, so
      the "you are here" marker read as a short dash floating under one label
      while the grey rule carried on past it either side. This strip spans the
@@ -4022,7 +4058,7 @@ const CSS = `
      the same accent so the tab and its panel look like one surface. */
   .tab.on { color:var(--accent-teal); border-bottom-color:var(--accent-teal); font-weight:600; background:color-mix(in srgb, var(--accent-teal) 12%, transparent); }
   .tab.on::after { transform:scaleX(1); }
-  .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:15px 17px; }
+  .chart-card { background:var(--tint-white-03); border:1px solid var(--tint-white-08); border-radius:11px; padding:15px 17px; }
   .ct { font-size:18px; color:var(--text-muted); margin-bottom:12px; font-weight:500; }
   .ct-sub { font-size:11.5px; color:var(--text-muted); line-height:1.5; margin:-8px 0 10px; }
   .leg { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
@@ -4067,11 +4103,11 @@ const CSS = `
   .wf-tbl[data-view="bal"] [data-cg="draw"],
   .wf-tbl[data-view="bal"] [data-cg="conv"],
   .wf-tbl[data-view="bal"] [data-cg="tax"],
-  .wf-tbl[data-view="bal"] [data-cg="risk"] { display:none; }  .roth-tbl th { font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.09); }
+  .wf-tbl[data-view="bal"] [data-cg="risk"] { display:none; }  .roth-tbl th { font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; text-align:right; border-bottom:1px solid var(--tint-white-09); }
   .roth-tbl th:first-child { text-align:left; }
-  .roth-tbl td { padding:9px 8px; border-bottom:1px solid rgba(255,255,255,0.05); text-align:right; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-primary); }
+  .roth-tbl td { padding:9px 8px; border-bottom:1px solid var(--tint-white-05); text-align:right; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-primary); }
   .roth-tbl td:first-child { text-align:left; font-family:var(--font-sans); color:var(--text-primary); }
-  .gold { background:rgba(251,191,36,0.07); }
+  .gold { background:var(--tint-amber-07); }
   .gk-bar { background:rgba(14,165,233,0.07); border:1px solid rgba(14,165,233,0.2); border-radius:9px; padding:11px 15px; font-size:12px; color:#bae6fd; }
   .cfg-btn { display:block; width:100%; margin:0 0 12px; padding:9px 12px; border:0; border-radius:8px; background:var(--accent-teal); color:#04201c; font-size:13px; font-weight:800; letter-spacing:0.02em; cursor:pointer; text-align:center; }
   .cfg-btn:hover { filter:brightness(1.08); }
@@ -4079,10 +4115,10 @@ const CSS = `
   .cfg-launch { margin:0; min-height:44px; flex-shrink:0; }
   .cfg-launch:active { transform:translateY(1px); }
   .cfg-launch[aria-current] { background:transparent; color:var(--accent-teal); box-shadow:inset 0 0 0 1.5px var(--accent-teal); }
-  .assume-row { display:flex; justify-content:space-between; align-items:baseline; gap:10px; width:100%; padding:7px 0; border:0; border-top:1px solid rgba(255,255,255,0.06); background:none; color:var(--text-primary); font:inherit; font-size:12px; text-align:left; cursor:pointer; }
+  .assume-row { display:flex; justify-content:space-between; align-items:baseline; gap:10px; width:100%; padding:7px 0; border:0; border-top:1px solid var(--tint-white-06); background:none; color:var(--text-primary); font:inherit; font-size:12px; text-align:left; cursor:pointer; }
   .assume-row span:last-child { color:var(--accent-teal); font-size:11px; font-weight:600; text-decoration:underline; flex-shrink:0; }
   .assume-row:focus-visible { outline:2px solid var(--accent-teal); outline-offset:2px; }
-  .gap-row { display:flex; align-items:baseline; gap:9px; width:100%; padding:9px 13px; border:1px solid rgba(251,191,36,0.32); border-radius:9px; background:rgba(251,191,36,0.07); color:var(--text-secondary); font:inherit; font-size:12.5px; line-height:1.5; text-align:left; cursor:pointer; }
+  .gap-row { display:flex; align-items:baseline; gap:9px; width:100%; padding:9px 13px; border:1px solid rgba(251,191,36,0.32); border-radius:9px; background:var(--tint-amber-07); color:var(--text-secondary); font:inherit; font-size:12.5px; line-height:1.5; text-align:left; cursor:pointer; }
   .gap-row > span:first-child, .gap-row strong { color:var(--accent-gold); }
   .gap-row:hover { background:rgba(251,191,36,0.11); }
   .gap-row:focus-visible { outline:2px solid var(--accent-gold); outline-offset:2px; }
@@ -4090,20 +4126,20 @@ const CSS = `
   .donut-btn { padding:0; border:0; background:none; border-radius:50%; cursor:pointer; flex-shrink:0; }
   .donut-btn:hover { filter:brightness(1.2); }
   .sb-edit { background:none; border:0; padding:0; color:var(--accent-teal); font-size:10px; font-weight:600; text-decoration:underline; cursor:pointer; }
-  .progress-bar { height:5px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden; margin-top:6px; }
+  .progress-bar { height:5px; background:var(--tint-white-08); border-radius:3px; overflow:hidden; margin-top:6px; }
   .progress-fill { height:100%; background:var(--accent); border-radius:3px; transition:width 1s; }
   .nw-table { width:100%; border-collapse:collapse; font-size:12px; }
-  .nw-table th { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; border-bottom:1px solid rgba(255,255,255,0.09); text-align:right; font-weight:700; }
+  .nw-table th { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; border-bottom:1px solid var(--tint-white-09); text-align:right; font-weight:700; }
   .nw-table th:first-child { text-align:left; }
-  .nw-table td { padding:8px 8px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right; font-family:'JetBrains Mono',monospace; color:var(--text-primary); }
+  .nw-table td { padding:8px 8px; border-bottom:1px solid var(--tint-white-04); text-align:right; font-family:'JetBrains Mono',monospace; color:var(--text-primary); }
   .nw-table td:first-child { text-align:left; font-family:var(--font-sans); color:var(--text-primary); }
   .wizard-mobile-steps { display:none; }
-  .ap-col { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px; }
+  .ap-col { background:var(--tint-white-03); border:1px solid var(--tint-white-08); border-radius:10px; padding:14px; }
   .ap-hdr { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:11px; }
-  .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); color:var(--text-secondary); }
+  .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid var(--tint-white-05); color:var(--text-secondary); }
   .ms-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; margin-top:2px; }
-  .ms-line { width:2px; background:rgba(255,255,255,0.08); margin:0 4px; }
-  .tip-box { background:rgba(10,15,30,0.98); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:9px 12px; font-size:14px; color:var(--text-primary); }
+  .ms-line { width:2px; background:var(--tint-white-08); margin:0 4px; }
+  .tip-box { background:rgba(10,15,30,0.98); border:1px solid var(--tint-white-12); border-radius:8px; padding:9px 12px; font-size:14px; color:var(--text-primary); }
   /* Scrollbars.
      These used to be 3px wide at 12% opacity — invisible on every platform,
      and worse on macOS, where the OS uses overlay scrollbars that stay
@@ -4116,7 +4152,7 @@ const CSS = `
      actually visible once it is. Firefox uses the standard properties. */
   ::-webkit-scrollbar { width:10px; height:10px; }
   ::-webkit-scrollbar-track {
-    background:rgba(255,255,255,0.04);
+    background:var(--tint-white-04);
     border-radius:5px;
   }
   ::-webkit-scrollbar-thumb {
@@ -4151,7 +4187,7 @@ const CSS = `
     .logo-sub { display:none; }
     .mbtn { padding:4px 9px; font-size:10px; }
     .layout { grid-template-columns:1fr; height:auto; overflow:visible; }
-    .sidebar { border-right:none; border-bottom:1px solid rgba(255,255,255,0.06); max-height:220px; overflow-y:auto; min-height:unset; padding:10px; flex-direction:row; flex-wrap:wrap; gap:8px; }
+    .sidebar { border-right:none; border-bottom:1px solid var(--tint-white-06); max-height:220px; overflow-y:auto; min-height:unset; padding:10px; flex-direction:row; flex-wrap:wrap; gap:8px; }
     .sb-card { padding:10px; }
     .main { padding:10px; overflow-y:visible; min-height:unset; }
     .main > * { flex-shrink:0; }
@@ -4295,7 +4331,7 @@ const TaxYearTip = ({ active, payload, label }) => {
   const hasIrmaa = oI > 0 || cI > 0;
   const N = v => `$${Math.round(v).toLocaleString()}`;
   const tipRow = (swatch, lbl, optV, curV, note) => (
-    <tr key={lbl} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+    <tr key={lbl} style={{ borderBottom: "1px solid var(--tint-white-04)" }}>
       <td style={{ padding: "4px 0" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 8, height: 8, borderRadius: 2, background: swatch, display: "inline-block", flexShrink: 0 }} />
@@ -4311,8 +4347,8 @@ const TaxYearTip = ({ active, payload, label }) => {
     </tr>
   );
   return (
-    <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "10px 14px", minWidth: 280, boxShadow: "0 4px 20px rgba(0,0,0,0.6)" }}>
-      <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--text-primary)", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+    <div style={{ background: "#0f172a", border: "1px solid var(--tint-white-12)", borderRadius: 8, padding: "10px 14px", minWidth: 280, boxShadow: "0 4px 20px var(--tint-black-60)" }}>
+      <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--text-primary)", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid var(--tint-white-08)" }}>
         Age {label} — Tax Breakdown
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -4331,7 +4367,7 @@ const TaxYearTip = ({ active, payload, label }) => {
           {tipRow("#334155", "Capital Gains Tax", 0, 0, "not modeled here")}
         </tbody>
         <tfoot>
-          <tr style={{ borderTop: "2px solid rgba(255,255,255,0.1)" }}>
+          <tr style={{ borderTop: "2px solid var(--tint-white-10)" }}>
             <td style={{ paddingTop: 5, fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-primary)" }}>Total</td>
             <td style={{ paddingTop: 5, textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, paddingLeft: 12, color: delta > 0 ? "#fb923c" : delta < 0 ? "var(--positive)" : "var(--text-secondary)" }}>{N(oTotal)}</td>
             <td style={{ paddingTop: 5, textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, paddingLeft: 8, color: "var(--text-secondary)" }}>{N(cTotal)}</td>
@@ -4349,7 +4385,7 @@ const IncYearTip = ({ active, payload, label }) => {
   const oTotal = oSS + oAb + oRmd + oConv + oPxs, cTotal = cSS + cAb + cRmd + cPxs;
   const N = v => `$${Math.round(v).toLocaleString()}`;
   const tipRow = (swatch, lbl, optV, curV) => (optV > 0 || curV > 0) ? (
-    <tr key={lbl} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+    <tr key={lbl} style={{ borderBottom: "1px solid var(--tint-white-04)" }}>
       <td style={{ padding: "4px 0" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 8, height: 8, borderRadius: 2, background: swatch, display: "inline-block", flexShrink: 0 }} />
@@ -4361,8 +4397,8 @@ const IncYearTip = ({ active, payload, label }) => {
     </tr>
   ) : null;
   return (
-    <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "10px 14px", minWidth: 280, boxShadow: "0 4px 20px rgba(0,0,0,0.6)" }}>
-      <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--text-primary)", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+    <div style={{ background: "#0f172a", border: "1px solid var(--tint-white-12)", borderRadius: 8, padding: "10px 14px", minWidth: 280, boxShadow: "0 4px 20px var(--tint-black-60)" }}>
+      <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--text-primary)", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid var(--tint-white-08)" }}>
         Age {label} — Taxable Income Sources
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -4381,7 +4417,7 @@ const IncYearTip = ({ active, payload, label }) => {
           {tipRow("var(--positive)", "Roth Conversion", oConv, 0)}
         </tbody>
         <tfoot>
-          <tr style={{ borderTop: "2px solid rgba(255,255,255,0.1)" }}>
+          <tr style={{ borderTop: "2px solid var(--tint-white-10)" }}>
             <td style={{ paddingTop: 5, fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-primary)" }}>Total Taxable</td>
             <td style={{ paddingTop: 5, textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--accent-teal)", paddingLeft: 12 }}>{N(oTotal)}</td>
             <td style={{ paddingTop: 5, textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--text-secondary)", paddingLeft: 8 }}>{N(cTotal)}</td>
@@ -4431,7 +4467,7 @@ function Toggle({ val, onChange, label, accent = "var(--positive)", hint, infoTi
         aria-label={typeof label === "string" ? label : undefined}
         className="tog"
         onClick={() => onChange(!val)}
-        style={{ background: val ? accent : "rgba(255,255,255,0.1)" }}
+        style={{ background: val ? accent : "var(--tint-white-10)" }}
       >
         <span className="tok" style={{ left: val ? 18 : 2 }} />
       </button>
@@ -4452,7 +4488,7 @@ function CollapsibleAboutCard({ entry, defaultOpen = false, open: controlled, on
   React.useEffect(() => { if (controlled) ref.current?.scrollIntoView?.({ block: "nearest" }); }, [controlled]);
   return (
     <div ref={ref} style={{ background:"var(--card-bg)",
-      border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, overflow:"hidden" }}>
+      border:"1px solid var(--tint-white-07)", borderRadius:10, overflow:"hidden" }}>
       <button
         type="button"
         onClick={onToggle || (() => setSelfOpen(o => !o))}
@@ -4492,7 +4528,7 @@ function AboutButton() {
   const overlay = open ? ReactDOM.createPortal(
     <div
       onClick={() => setOpen(false)}
-      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.70)", zIndex:99999,
+      style={{ position:"fixed", inset:0, background:"var(--tint-black-70)", zIndex:99999,
         display:"flex", alignItems:"flex-start", justifyContent:"center",
         padding:"40px 16px 60px", overflowY:"auto" }}
     >
@@ -4500,7 +4536,7 @@ function AboutButton() {
         onClick={e => e.stopPropagation()}
         style={{ background:"#0f1729", border:"1px solid rgba(96,165,250,0.2)",
           borderRadius:14, padding:"24px 28px 28px", maxWidth:600, width:"100%",
-          boxShadow:"0 24px 60px rgba(0,0,0,0.8)" }}
+          boxShadow:"0 24px 60px var(--tint-black-80)" }}
       >
         {/* Header */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:18 }}>
@@ -4516,7 +4552,7 @@ function AboutButton() {
         </div>
 
         {/* Tab bar */}
-        <div style={{ display:"flex", borderBottom:"1px solid rgba(255,255,255,0.08)", marginBottom:22 }}>
+        <div style={{ display:"flex", borderBottom:"1px solid var(--tint-white-08)", marginBottom:22 }}>
           {TABS.map((t, i) => (
             <button key={i} style={tabBtn(i)} onClick={() => setTab(i)}>{t}</button>
           ))}
@@ -4536,7 +4572,7 @@ function AboutButton() {
               {ABOUT_ME.links.filter(l => l.url).map(l => (
                 <a key={l.label} href={l.url} target={l.url.startsWith("mailto:") ? "_self" : "_blank"} rel="noreferrer"
                   style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
-                    background:"var(--row-highlight)", border:"1px solid rgba(255,255,255,0.08)",
+                    background:"var(--row-highlight)", border:"1px solid var(--tint-white-08)",
                     borderRadius:9, color:"var(--text-primary)", fontSize: "var(--fs-body)", fontWeight:600,
                     textDecoration:"none", transition:"background 0.15s" }}
                   onMouseEnter={e => e.currentTarget.style.background="rgba(96,165,250,0.12)"}
@@ -4555,7 +4591,7 @@ function AboutButton() {
                 only payment on offer. Content lives in about.js (ABOUT_THANKS)
                 so adding someone needs no JSX. */}
             {ABOUT_THANKS?.people?.length > 0 && (
-              <div style={{ marginTop: 26, paddingTop: 20, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ marginTop: 26, paddingTop: 20, borderTop: "1px solid var(--tint-white-08)" }}>
                 <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-gold)", marginBottom: 8 }}>
                   ⭐ Special thanks
                 </div>
@@ -4635,7 +4671,7 @@ function HelpButton() {
   const overlay = open ? ReactDOM.createPortal(
     <div
       onClick={() => setOpen(false)}
-      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.70)", zIndex:99999,
+      style={{ position:"fixed", inset:0, background:"var(--tint-black-70)", zIndex:99999,
         display:"flex", alignItems:"flex-start", justifyContent:"center",
         padding:"40px 16px 60px", overflowY:"auto" }}
     >
@@ -4643,7 +4679,7 @@ function HelpButton() {
         onClick={e => e.stopPropagation()}
         style={{ background:"#0f1729", border:"1px solid rgba(96,165,250,0.2)",
           borderRadius:14, padding:"24px 28px 28px", maxWidth:600, width:"100%",
-          boxShadow:"0 24px 60px rgba(0,0,0,0.8)" }}
+          boxShadow:"0 24px 60px var(--tint-black-80)" }}
       >
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
           <div style={{ fontSize: "var(--fs-h2)", fontWeight:800, color:"var(--text-primary)", letterSpacing:"-0.3px" }}>
@@ -4661,7 +4697,7 @@ function HelpButton() {
           onChange={e => setQuery(e.target.value)}
           placeholder="Search help topics… e.g. IRMAA, Roth, buckets, spending smile"
           style={{ width:"100%", boxSizing:"border-box", padding:"10px 14px", marginBottom:16,
-            background:"var(--row-highlight)", border:"1px solid rgba(255,255,255,0.12)",
+            background:"var(--row-highlight)", border:"1px solid var(--tint-white-12)",
             borderRadius:9, color:"var(--text-primary)", fontSize: "var(--fs-body)", fontFamily:"inherit" }}
         />
 
@@ -4769,7 +4805,7 @@ function Hint({ text, width = 240 }) {
             position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
             width, background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 8,
             padding: "9px 11px", fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55, fontWeight: 400,
-            textAlign: "left", zIndex: 100001, boxShadow: "0 10px 30px rgba(0,0,0,0.6)", pointerEvents: "none",
+            textAlign: "left", zIndex: 100001, boxShadow: "0 10px 30px var(--tint-black-60)", pointerEvents: "none",
           }}
         >
           {text}
@@ -4836,7 +4872,7 @@ function InfoModal({ title, children, accent = "#6c9bff", trigger, maxWidth = 48
   const overlay = open ? ReactDOM.createPortal(
     <div
       onClick={() => setOpen(false)}
-      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:99999,
+      style={{ position:"fixed", inset:0, background:"var(--tint-black-60)", zIndex:99999,
         display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}
     >
       <div
@@ -4846,7 +4882,7 @@ function InfoModal({ title, children, accent = "#6c9bff", trigger, maxWidth = 48
         onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } }}
         onClick={e => e.stopPropagation()}
         style={{ outline:"none", background:"#0f1729", border:`1px solid ${withAlpha(accent, "44")}`, borderRadius:12,
-          padding:28, maxWidth, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.6)",
+          padding:28, maxWidth, width:"100%", boxShadow:"0 24px 60px var(--tint-black-60)",
           maxHeight: "calc(100vh - 48px)", display: "flex", flexDirection: "column" }}
       >
         {/* Uniform header for EVERY info modal: an accent icon badge + the
@@ -5050,7 +5086,7 @@ const [draft, setDraft] = useState(null);
               right: 0,
               height: 6,
               borderRadius: 3,
-              background: "rgba(255,255,255,0.12)",
+              background: "var(--tint-white-12)",
             }}
           />
           <div
@@ -5074,7 +5110,7 @@ const [draft, setDraft] = useState(null);
               borderRadius: "50%",
               background: "var(--positive, #10b981)",
               border: "2.5px solid var(--positive)",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.5)",
+              boxShadow: "0 1px 4px var(--tint-black-50)",
               cursor: "grab",
               zIndex: 2,
               transition: "transform 0.1s",
@@ -5169,7 +5205,7 @@ const [draft, setDraft] = useState(null);
             right: 0,
             height: 6,
             borderRadius: 3,
-            background: "rgba(255,255,255,0.12)",
+            background: "var(--tint-white-12)",
           }}
         />
         <div
@@ -5180,7 +5216,7 @@ const [draft, setDraft] = useState(null);
             height: 6,
             borderRadius: 3,
             background: accent || "linear-gradient(90deg,#0d9488,var(--positive))",
-            boxShadow: "0 0 10px rgba(90,209,240,0.3)",
+            boxShadow: "0 0 10px var(--tint-sky-30)",
           }}
         />
         <div
@@ -5194,7 +5230,7 @@ const [draft, setDraft] = useState(null);
             borderRadius: "50%",
             background: "#ffffff",
             border: "2.5px solid var(--positive)",
-            boxShadow: "0 2px 6px rgba(0,0,0,0.6)",
+            boxShadow: "0 2px 6px var(--tint-black-60)",
             cursor: "grab",
             zIndex: 2,
             transition: "transform 0.12s, box-shadow 0.12s",
@@ -5205,7 +5241,7 @@ const [draft, setDraft] = useState(null);
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = "scale(1)";
-            e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.6)";
+            e.currentTarget.style.boxShadow = "0 2px 6px var(--tint-black-60)";
           }}
         />
       </div>
@@ -5221,8 +5257,8 @@ const [draft, setDraft] = useState(null);
                 type="button"
                 onClick={() => onChange(pill.val)}
                 style={{
-                  background: isActive ? "rgba(90,209,240,0.22)" : "rgba(255,255,255,0.04)",
-                  border: isActive ? "1px solid var(--positive)" : "1px solid rgba(255,255,255,0.08)",
+                  background: isActive ? "rgba(90,209,240,0.22)" : "var(--tint-white-04)",
+                  border: isActive ? "1px solid var(--positive)" : "1px solid var(--tint-white-08)",
                   color: isActive ? "#5ad1f0" : "var(--text-muted)",
                   borderRadius: 4,
                   padding: "2px 6px",
@@ -6058,7 +6094,7 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
             ))}
           </BarChart>
         </ResponsiveContainer>
-        <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 12, fontSize: "var(--fs-label)", alignSelf: "start" }}>
+        <div style={{ background: "var(--tint-white-02)", border: "1px solid var(--tint-white-06)", borderRadius: 8, padding: 12, fontSize: "var(--fs-label)", alignSelf: "start" }}>
           <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 8 }}>
             {hoverYr != null ? `Year ${hoverYr}` : "Lifetime"}
           </div>
@@ -6074,13 +6110,13 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
               <div style={{ color: "var(--text-primary)", fontFamily: "'JetBrains Mono',monospace" }}>{value === 0 && (zeroNotes[key] || dashKeys.includes(key)) ? "—" : fmtDollar(value)}</div>
             </div>
           ))}
-          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 8, paddingTop: 6, fontWeight: 700 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--tint-white-08)", marginTop: 8, paddingTop: 6, fontWeight: 700 }}>
             <div style={{ color: "var(--text-primary)" }}>Total</div>
             <div style={{ color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(total)}</div>
           </div>
 
           {recon && (
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed rgba(255,255,255,0.12)" }}>
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--tint-white-12)" }}>
               <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 6 }}>
                 What your portfolio must cover
               </div>
@@ -6088,7 +6124,7 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
               <ReconLine label="+ Taxes" value={recon.taxes} color="#ff6f7a" />
               <ReconLine label="+ Moved to Roth / saved to accounts" value={recon.kept} color="var(--accent-gold)" />
               <ReconLine label="− Other income (SS, rental, pension, one-off, conversion)" value={-recon.otherIncome} color="#7c3aed" />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 6, paddingTop: 6, fontWeight: 700 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--tint-white-08)", marginTop: 6, paddingTop: 6, fontWeight: 700 }}>
                 <div style={{ color: "#a9d1ac" }}>= Drawn from savings</div>
                 <div style={{ color: "#a9d1ac", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(recon.draw)}</div>
               </div>
@@ -6245,8 +6281,8 @@ const modeDescs = {
   const InputsPanel = () => (
     <div
       style={{
-        background: "rgba(255,255,255,0.02)",
-        border: "1px solid rgba(255,255,255,0.08)",
+        background: "var(--tint-white-02)",
+        border: "1px solid var(--tint-white-08)",
         borderRadius: 8,
         padding: showInputs ? "12px" : "0",
         maxHeight: showInputs ? "600px" : "0",
@@ -6342,7 +6378,7 @@ const modeDescs = {
                 display: "flex",
                 justifyContent: "space-between",
                 padding: "3px 0",
-                borderBottom: "1px solid rgba(255,255,255,0.04)",
+                borderBottom: "1px solid var(--tint-white-04)",
               }}
             >
               <span style={{ color: "var(--text-muted)" }}>{k}</span>
@@ -6432,7 +6468,7 @@ const modeDescs = {
           style={{
             padding: "3px 8px",
             borderRadius: 5,
-            border: "1px solid rgba(255,255,255,0.1)",
+            border: "1px solid var(--tint-white-10)",
             cursor: "pointer",
             fontSize: "var(--fs-small)",
             fontFamily: "inherit",
@@ -6562,8 +6598,8 @@ const modeDescs = {
       {conversionPlan.totalTraditional > 0 && (
         <div
           style={{
-            background: "rgba(90,209,240,0.06)",
-            border: "1px solid rgba(90,209,240,0.25)",
+            background: "var(--tint-sky-06)",
+            border: "1px solid var(--tint-sky-25)",
             borderRadius: 8,
             padding: "10px 12px",
             marginTop: 8,
@@ -6715,7 +6751,7 @@ const modeDescs = {
           color: "var(--text-primary)", borderRadius: 6, padding: "5px 8px", fontSize: "var(--fs-label)",
           fontFamily: "'JetBrains Mono',monospace", textAlign: "right",
         };
-        const rowSep = { borderBottom: "1px solid rgba(255,255,255,0.04)", padding: "5px 0" };
+        const rowSep = { borderBottom: "1px solid var(--tint-white-04)", padding: "5px 0" };
         const fmtN = (n) => n === 0 ? "$0" : `$${Math.round(n).toLocaleString()}`;
 
         return (
@@ -6865,12 +6901,12 @@ const modeDescs = {
                         <div className="mv" style={{ color: "var(--accent-gold)", fontSize: "var(--fs-h1)" }}>{fmtN(recConv)}</div>
                         <div className="ms">pretax → Roth</div>
                       </div>
-                      <div className="met" style={{ border: "1px solid rgba(255,111,122,0.3)" }}>
+                      <div className="met" style={{ border: "1px solid var(--tint-red-30)" }}>
                         <div className="ml">Total Tax Cost</div>
                         <div className="mv" style={{ color: "#ff6f7a", fontSize: "var(--fs-h1)" }}>{fmtN(recTax.total)}</div>
                         <div className="ms">fed {fmtN(recTax.fedInc)} + state {fmtN(recTax.stInc)}</div>
                       </div>
-                      <div className="met" style={{ border: "1px solid rgba(90,209,240,0.3)" }}>
+                      <div className="met" style={{ border: "1px solid var(--tint-sky-30)" }}>
                         <div className="ml">Net → Roth</div>
                         <div className="mv" style={{ color: "var(--accent-teal)", fontSize: "var(--fs-h1)" }}>{fmtN(cyNetRoth)}</div>
                         <div className="ms">{cyFundLabel}</div>
@@ -6897,7 +6933,7 @@ const modeDescs = {
                         {onRemoveConversionOverride && (
                           <button
                             onClick={() => onRemoveConversionOverride(cyYear)}
-                            style={{ background: "rgba(255,111,122,0.15)", border: "1px solid rgba(255,111,122,0.3)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "3px 10px", fontFamily: "inherit" }}
+                            style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "3px 10px", fontFamily: "inherit" }}
                           >× Remove pin</button>
                         )}
                       </div>
@@ -6924,7 +6960,7 @@ const modeDescs = {
             </div>
 
             {/* ── How this works ── */}
-            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: "12px 14px" }}>
+            <div style={{ background: "var(--tint-white-02)", border: "1px solid var(--tint-white-06)", borderRadius: 8, padding: "12px 14px" }}>
               <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 8 }}>
                 ℹ️ How Tax Room and the Lifetime Ladder work together
               </div>
@@ -7049,7 +7085,7 @@ const modeDescs = {
                         {onRemoveConversionOverride && (
                           <button
                             onClick={() => onRemoveConversionOverride(r.yr)}
-                            style={{ background: "rgba(255,111,122,0.15)", border: "1px solid rgba(255,111,122,0.3)", color: "#ff6f7a", borderRadius: 4, cursor: "pointer", fontSize: "var(--fs-small)", padding: "1px 5px", fontFamily: "inherit", lineHeight: 1.4 }}
+                            style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 4, cursor: "pointer", fontSize: "var(--fs-small)", padding: "1px 5px", fontFamily: "inherit", lineHeight: 1.4 }}
                           >×</button>
                         )}
                       </span>
@@ -7119,7 +7155,7 @@ const modeDescs = {
                   </tr>
                   );
                 })}
-                <tr style={{ borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+                <tr style={{ borderTop: "1px solid var(--tint-white-12)" }}>
                   <td style={{ fontWeight: 700 }} colSpan={4}>
                     Total
                   </td>
@@ -7164,7 +7200,7 @@ const modeDescs = {
               );
               if (!orphaned.length) return null;
               return (
-                <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(255,111,122,0.07)", border: "1px solid rgba(255,111,122,0.25)", borderRadius: 8 }}>
+                <div style={{ marginTop: 14, padding: "10px 14px", background: "var(--tint-red-07)", border: "1px solid var(--tint-red-25)", borderRadius: 8 }}>
                   <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#ff6f7a", marginBottom: 6 }}>
                     ⚠️ Stale Pins — producing $0 conversion
                   </div>
@@ -7179,7 +7215,7 @@ const modeDescs = {
                       {onRemoveConversionOverride && (
                         <button
                           onClick={() => onRemoveConversionOverride(o.year)}
-                          style={{ background: "rgba(255,111,122,0.15)", border: "1px solid rgba(255,111,122,0.3)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-small)", padding: "2px 10px", fontFamily: "inherit" }}
+                          style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-small)", padding: "2px 10px", fontFamily: "inherit" }}
                         >× Remove</button>
                       )}
                     </div>
@@ -7388,11 +7424,11 @@ const modeDescs = {
             };
           });
 
-        const tblBox  = { flex: "0 0 250px", background: "var(--card-bg)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.07)", overflow: "hidden" };
-        const tblHead = { padding: "7px 10px", borderBottom: "1px solid rgba(255,255,255,0.07)", fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--text-secondary)", display: "flex", justifyContent: "space-between" };
+        const tblBox  = { flex: "0 0 250px", background: "var(--card-bg)", borderRadius: 8, border: "1px solid var(--tint-white-07)", overflow: "hidden" };
+        const tblHead = { padding: "7px 10px", borderBottom: "1px solid var(--tint-white-07)", fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--text-secondary)", display: "flex", justifyContent: "space-between" };
 
         const ltRow = (color, label, optVal, curVal) => (
-          <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <tr style={{ borderBottom: "1px solid var(--tint-white-04)" }}>
             <td style={{ padding: "5px 8px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: "inline-block", flexShrink: 0 }} />
@@ -7424,7 +7460,7 @@ const modeDescs = {
                       <Bar dataKey="opt_irmaa" stackId="opt" fill="#ff6f7a"                name="OPT IRMAA"  radius={[2,2,0,0]} />
                       <Bar dataKey="cur_fed"   stackId="cur" fill="rgba(99,102,241,0.3)"   name="CUR Federal" />
                       <Bar dataKey="cur_st"    stackId="cur" fill="rgba(251,146,60,0.3)"   name="CUR State" />
-                      <Bar dataKey="cur_irmaa" stackId="cur" fill="rgba(255,111,122,0.3)"  name="CUR IRMAA"  radius={[2,2,0,0]} />
+                      <Bar dataKey="cur_irmaa" stackId="cur" fill="var(--tint-red-30)"  name="CUR IRMAA"  radius={[2,2,0,0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -7441,7 +7477,7 @@ const modeDescs = {
                       {ltRow("#6366f1", "Federal Income Tax", optFedTotal, curFedTotal)}
                       {!isNoTaxState && ltRow("#fb923c", "State Income Tax", optStTotal, curStTotal)}
                       {ltRow("#ff6f7a", "IRMAA Surcharges", opt.cIrmaa || 0, cur.cIrmaa || 0)}
-                      <tr style={{ borderTop: "2px solid rgba(255,255,255,0.1)", background: "var(--card-bg)" }}>
+                      <tr style={{ borderTop: "2px solid var(--tint-white-10)", background: "var(--card-bg)" }}>
                         <td style={{ padding: "6px 8px", fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-primary)" }}>Total</td>
                         <td style={{ padding: "6px 8px", textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, color: taxD > 0 ? "#fb923c" : "var(--positive)" }}>{fmtDollar(opt.cTax)}</td>
                         <td style={{ padding: "6px 8px", textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--text-secondary)" }}>{fmtDollar(cur.cTax)}</td>
@@ -7470,7 +7506,7 @@ const modeDescs = {
                       <Bar dataKey="opt_rmd"  stackId="opt" fill="var(--accent-purple)"                  name="OPT RMD" />
                       <Bar dataKey="opt_pxs"  stackId="opt" fill="#6c9bff"                  name="OPT Pretax Draw" />
                       <Bar dataKey="opt_conv" stackId="opt" fill="var(--positive)"                  name="OPT Conversion"  radius={[2,2,0,0]} />
-                      <Bar dataKey="cur_ss"   stackId="cur" fill="rgba(90,209,240,0.3)"     name="CUR Social Sec." />
+                      <Bar dataKey="cur_ss"   stackId="cur" fill="var(--tint-sky-30)"     name="CUR Social Sec." />
                       <Bar dataKey="cur_ab"   stackId="cur" fill="rgba(251,191,36,0.3)"     name="CUR Annuity" />
                       <Bar dataKey="cur_rmd"  stackId="cur" fill="rgba(167,139,250,0.3)"    name="CUR RMD" />
                       <Bar dataKey="cur_pxs"  stackId="cur" fill="rgba(96,165,250,0.3)"     name="CUR Pretax Draw" radius={[2,2,0,0]} />
@@ -7492,7 +7528,7 @@ const modeDescs = {
                       {ltRow("var(--accent-purple)", "Required Min. Dist.", opt.cRmd || 0, cur.cRmd || 0)}
                       {(optPxsTotal > 0 || curPxsTotal > 0) && ltRow("#6c9bff", "Pretax Withdrawals", optPxsTotal, curPxsTotal)}
                       {(opt.cConv || 0) > 0 && ltRow("var(--positive)", "Roth Conversions", opt.cConv || 0, 0)}
-                      <tr style={{ borderTop: "2px solid rgba(255,255,255,0.1)", background: "var(--card-bg)" }}>
+                      <tr style={{ borderTop: "2px solid var(--tint-white-10)", background: "var(--card-bg)" }}>
                         <td style={{ padding: "6px 8px", fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-primary)" }}>Total Taxable Inc.</td>
                         <td style={{ padding: "6px 8px", textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--accent-teal)" }}>{fmtDollar(optTotInc)}</td>
                         <td style={{ padding: "6px 8px", textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--text-secondary)" }}>{fmtDollar(curTotInc)}</td>
@@ -7529,7 +7565,7 @@ const modeDescs = {
       {view === "table" && (
         <div className="chart-card" style={{ overflowX: "auto" }}>
           <div className="ct">Year-by-Year Comparison Table</div>
-          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "var(--card-bg)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "var(--card-bg)", borderRadius: 6, border: "1px solid var(--tint-white-06)" }}>
             <strong style={{ color: "var(--text-primary)" }}>OPT</strong> = With Roth conversion ladder &nbsp;|&nbsp; <strong style={{ color: "var(--text-primary)" }}>CUR</strong> = Without conversions &nbsp;|&nbsp; <span style={{ color: "#ff6f7a" }}>Red numbers</span> = you're paying more tax that year by choice to pay less at {rmdAge}
           </div>
           <table className="roth-tbl">
@@ -7557,25 +7593,25 @@ const modeDescs = {
                       <td style={{ color: "var(--text-secondary)" }}>{r.age}</td>
                       <td style={{ borderLeft: "2px solid rgba(99,102,241,0.2)", background: "rgba(99,102,241,0.05)" }}>{(r.effR * 100).toFixed(0)}%</td>
                       <td style={{ background: "rgba(99,102,241,0.05)" }}>{c ? (c.effR * 100).toFixed(0) : "0"}%</td>
-                      <td style={{ color: "#ff6f7a", borderLeft: "2px solid rgba(255,111,122,0.2)", background: "rgba(255,111,122,0.05)" }}>{fmtDollar(r.totT)}</td>
-                      <td style={{ color: "var(--text-secondary)", background: "rgba(255,111,122,0.05)" }}>
+                      <td style={{ color: "#ff6f7a", borderLeft: "2px solid var(--tint-red-20)", background: "var(--tint-red-05)" }}>{fmtDollar(r.totT)}</td>
+                      <td style={{ color: "var(--text-secondary)", background: "var(--tint-red-05)" }}>
                         {c ? fmtDollar(c.totT) : "$0"}
                       </td>
-                      <td style={{ color: "var(--positive)", borderLeft: "2px solid rgba(52,211,153,0.2)", background: "rgba(52,211,153,0.05)" }}>
+                      <td style={{ color: "var(--positive)", borderLeft: "2px solid rgba(52,211,153,0.2)", background: "var(--tint-green-05)" }}>
                         {r.rmd > 0 ? fmtDollar(r.rmd) : "-"}
                       </td>
-                      <td style={{ color: "#ff6f7a", background: "rgba(52,211,153,0.05)" }}>
+                      <td style={{ color: "#ff6f7a", background: "var(--tint-green-05)" }}>
                         {c && c.rmd > 0 ? fmtDollar(c.rmd) : "-"}
                       </td>
                     </tr>
                   );
                 })}
-              <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)", background: "var(--card-bg)" }}>
+              <tr style={{ borderTop: "2px solid var(--tint-white-15)", background: "var(--card-bg)" }}>
                 <td colSpan={2} style={{ fontWeight: 700, color: "var(--text-primary)", textAlign: "left" }}>Lifetime Totals</td>
                 <td colSpan={2} style={{ borderLeft: "2px solid rgba(99,102,241,0.2)", background: "rgba(99,102,241,0.05)" }} />
-                <td style={{ color: "#ff6f7a", fontWeight: 700, borderLeft: "2px solid rgba(255,111,122,0.2)", background: "rgba(255,111,122,0.05)" }}>{fmtDollar(opt.cTax)}</td>
-                <td style={{ color: "var(--text-secondary)", fontWeight: 700, background: "rgba(255,111,122,0.05)" }}>{fmtDollar(cur.cTax)}</td>
-                <td colSpan={2} style={{ color: cur.cTax - opt.cTax > 0 ? "var(--positive)" : "#ff6f7a", fontWeight: 700, textAlign: "left", borderLeft: "2px solid rgba(52,211,153,0.2)", background: "rgba(52,211,153,0.05)" }}>
+                <td style={{ color: "#ff6f7a", fontWeight: 700, borderLeft: "2px solid var(--tint-red-20)", background: "var(--tint-red-05)" }}>{fmtDollar(opt.cTax)}</td>
+                <td style={{ color: "var(--text-secondary)", fontWeight: 700, background: "var(--tint-red-05)" }}>{fmtDollar(cur.cTax)}</td>
+                <td colSpan={2} style={{ color: cur.cTax - opt.cTax > 0 ? "var(--positive)" : "#ff6f7a", fontWeight: 700, textAlign: "left", borderLeft: "2px solid rgba(52,211,153,0.2)", background: "var(--tint-green-05)" }}>
                   {cur.cTax - opt.cTax > 0 ? `✅ Saves ${fmtDollar(cur.cTax - opt.cTax)}` : `⚠️ Costs ${fmtDollar(opt.cTax - cur.cTax)} more`}
                 </td>
               </tr>
@@ -7594,7 +7630,7 @@ const modeDescs = {
         return (
           <div className="chart-card" style={{ overflowX: "auto" }}>
             <div className="ct">Three scenarios compared</div>
-            <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "var(--card-bg)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "var(--card-bg)", borderRadius: 6, border: "1px solid var(--tint-white-06)" }}>
               <strong style={{ color: "#ff6f7a" }}>No Conversion</strong> = stay put, do nothing &nbsp;|&nbsp;
               <strong style={{ color: "var(--accent-teal)" }}>{userState} + Convert</strong> = stay put, execute Roth ladder &nbsp;|&nbsp;
               <strong style={{ color: "var(--positive)" }}>No-Tax State + Convert</strong> = move to a no-income-tax state, execute Roth ladder
@@ -7605,10 +7641,10 @@ const modeDescs = {
                 <tr>
                   <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Year</th>
                   <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Age</th>
-                  <th colSpan={3} style={{ color: "#ff6f7a", background: "rgba(255,111,122,0.13)", textAlign: "center", borderBottom: "2px solid rgba(255,111,122,0.45)", borderLeft: "2px solid rgba(255,111,122,0.45)", paddingBottom: 5, fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.04em" }}>
+                  <th colSpan={3} style={{ color: "#ff6f7a", background: "var(--bg-danger)", textAlign: "center", borderBottom: "2px solid rgba(255,111,122,0.45)", borderLeft: "2px solid rgba(255,111,122,0.45)", paddingBottom: 5, fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.04em" }}>
                     No Conversion
                   </th>
-                  <th colSpan={3} style={{ color: "var(--accent-teal)", background: "rgba(90,209,240,0.13)", textAlign: "center", borderBottom: "2px solid rgba(90,209,240,0.45)", borderLeft: "2px solid rgba(90,209,240,0.45)", paddingBottom: 5, fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.04em" }}>
+                  <th colSpan={3} style={{ color: "var(--accent-teal)", background: "rgba(90,209,240,0.13)", textAlign: "center", borderBottom: "2px solid var(--tint-sky-45)", borderLeft: "2px solid var(--tint-sky-45)", paddingBottom: 5, fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.04em" }}>
                     {userState} + Convert
                   </th>
                   <th colSpan={3} style={{ color: "var(--positive)", background: "rgba(52,211,153,0.13)", textAlign: "center", borderBottom: "2px solid rgba(52,211,153,0.45)", borderLeft: "2px solid rgba(52,211,153,0.45)", paddingBottom: 5, fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.04em" }}>
@@ -7617,15 +7653,15 @@ const modeDescs = {
                 </tr>
                 {/* Row 2: measure sub-headers */}
                 <tr>
-                  <th style={{ color: "#ff6f7a", background: "rgba(255,111,122,0.07)", borderLeft: "2px solid rgba(255,111,122,0.35)" }}>Roth $</th>
-                  <ThInfo style={{ color: "#ff6f7a", background: "rgba(255,111,122,0.07)", cursor: "help" }} tip={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax</ThInfo>
-                  <th style={{ color: "var(--text-secondary)", background: "rgba(255,111,122,0.07)" }}>IRA Bal</th>
-                  <th style={{ color: "var(--accent-teal)", background: "rgba(90,209,240,0.07)", borderLeft: "2px solid rgba(90,209,240,0.35)" }}>Roth $</th>
-                  <ThInfo style={{ color: "var(--accent-teal)", background: "rgba(90,209,240,0.07)", cursor: "help" }} tip={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax</ThInfo>
-                  <th style={{ color: "var(--text-secondary)", background: "rgba(90,209,240,0.07)" }}>IRA Bal</th>
-                  <th style={{ color: "var(--positive)", background: "rgba(52,211,153,0.07)", borderLeft: "2px solid rgba(52,211,153,0.35)" }}>Roth $</th>
-                  <ThInfo style={{ color: "var(--positive)", background: "rgba(52,211,153,0.07)", cursor: "help" }} tip={"Federal income tax only — no state income tax applies in this scenario (no-tax state). Hover any data cell to confirm the $0 state split."}>Total Tax</ThInfo>
-                  <th style={{ color: "var(--text-secondary)", background: "rgba(52,211,153,0.07)" }}>IRA Bal</th>
+                  <th style={{ color: "#ff6f7a", background: "var(--tint-red-07)", borderLeft: "2px solid rgba(255,111,122,0.35)" }}>Roth $</th>
+                  <ThInfo style={{ color: "#ff6f7a", background: "var(--tint-red-07)", cursor: "help" }} tip={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax</ThInfo>
+                  <th style={{ color: "var(--text-secondary)", background: "var(--tint-red-07)" }}>IRA Bal</th>
+                  <th style={{ color: "var(--accent-teal)", background: "var(--tint-sky-07)", borderLeft: "2px solid rgba(90,209,240,0.35)" }}>Roth $</th>
+                  <ThInfo style={{ color: "var(--accent-teal)", background: "var(--tint-sky-07)", cursor: "help" }} tip={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax</ThInfo>
+                  <th style={{ color: "var(--text-secondary)", background: "var(--tint-sky-07)" }}>IRA Bal</th>
+                  <th style={{ color: "var(--positive)", background: "var(--tint-green-07)", borderLeft: "2px solid rgba(52,211,153,0.35)" }}>Roth $</th>
+                  <ThInfo style={{ color: "var(--positive)", background: "var(--tint-green-07)", cursor: "help" }} tip={"Federal income tax only — no state income tax applies in this scenario (no-tax state). Hover any data cell to confirm the $0 state split."}>Total Tax</ThInfo>
+                  <th style={{ color: "var(--text-secondary)", background: "var(--tint-green-07)" }}>IRA Bal</th>
                 </tr>
               </thead>
               <tbody>
@@ -7639,31 +7675,31 @@ const modeDescs = {
                       <td>{r.yr}</td>
                       <td style={{ color: "var(--text-secondary)" }}>{r.age}</td>
                       {/* No Conversion columns */}
-                      <td style={{ color: "#ff6f7a", background: "rgba(255,111,122,0.07)", borderLeft: "2px solid rgba(255,111,122,0.25)" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "—"}</td>
-                      <td style={{ color: "#ff6f7a", background: "rgba(255,111,122,0.07)", cursor: "help" }} title={`Fed: ${fmtDollar(nc.fedT || 0)} | State: ${fmtDollar(nc.stT || 0)}`}>{fmtDollar(nc.totT || 0)}</td>
-                      <td style={{ color: "var(--text-secondary)", background: "rgba(255,111,122,0.07)" }}>{fmtDollar(nc.pT || 0)}</td>
+                      <td style={{ color: "#ff6f7a", background: "var(--tint-red-07)", borderLeft: "2px solid var(--tint-red-25)" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "—"}</td>
+                      <td style={{ color: "#ff6f7a", background: "var(--tint-red-07)", cursor: "help" }} title={`Fed: ${fmtDollar(nc.fedT || 0)} | State: ${fmtDollar(nc.stT || 0)}`}>{fmtDollar(nc.totT || 0)}</td>
+                      <td style={{ color: "var(--text-secondary)", background: "var(--tint-red-07)" }}>{fmtDollar(nc.pT || 0)}</td>
                       {/* {userState} + Convert columns */}
-                      <td style={{ color: "var(--accent-teal)", fontWeight: bo.conv > 0 ? 600 : 400, background: "rgba(90,209,240,0.07)", borderLeft: "2px solid rgba(90,209,240,0.25)" }}>{bo.conv > 0 ? fmtDollar(bo.conv) : "—"}</td>
-                      <td style={{ color: "var(--accent-teal)", background: "rgba(90,209,240,0.07)", cursor: "help" }} title={`Fed: ${fmtDollar(bo.fedT || 0)} | State: ${fmtDollar(bo.stT || 0)}`}>{fmtDollar(bo.totT || 0)}</td>
-                      <td style={{ color: "var(--text-secondary)", background: "rgba(90,209,240,0.07)" }}>{fmtDollar(bo.pT || 0)}</td>
+                      <td style={{ color: "var(--accent-teal)", fontWeight: bo.conv > 0 ? 600 : 400, background: "var(--tint-sky-07)", borderLeft: "2px solid var(--tint-sky-25)" }}>{bo.conv > 0 ? fmtDollar(bo.conv) : "—"}</td>
+                      <td style={{ color: "var(--accent-teal)", background: "var(--tint-sky-07)", cursor: "help" }} title={`Fed: ${fmtDollar(bo.fedT || 0)} | State: ${fmtDollar(bo.stT || 0)}`}>{fmtDollar(bo.totT || 0)}</td>
+                      <td style={{ color: "var(--text-secondary)", background: "var(--tint-sky-07)" }}>{fmtDollar(bo.pT || 0)}</td>
                       {/* No-Tax State + Convert columns */}
-                      <td style={{ color: "var(--positive)", fontWeight: nt.conv > 0 ? 600 : 400, background: "rgba(52,211,153,0.07)", borderLeft: "2px solid rgba(52,211,153,0.25)" }}>{nt.conv > 0 ? fmtDollar(nt.conv) : "—"}</td>
-                      <td style={{ color: "var(--positive)", background: "rgba(52,211,153,0.07)", cursor: "help" }} title={`Fed: ${fmtDollar(nt.fedT || 0)} | State: $0 (no-tax state)`}>{fmtDollar(nt.totT || 0)}</td>
-                      <td style={{ color: "var(--text-secondary)", background: "rgba(52,211,153,0.07)" }}>{fmtDollar(nt.pT || 0)}</td>
+                      <td style={{ color: "var(--positive)", fontWeight: nt.conv > 0 ? 600 : 400, background: "var(--tint-green-07)", borderLeft: "2px solid rgba(52,211,153,0.25)" }}>{nt.conv > 0 ? fmtDollar(nt.conv) : "—"}</td>
+                      <td style={{ color: "var(--positive)", background: "var(--tint-green-07)", cursor: "help" }} title={`Fed: ${fmtDollar(nt.fedT || 0)} | State: $0 (no-tax state)`}>{fmtDollar(nt.totT || 0)}</td>
+                      <td style={{ color: "var(--text-secondary)", background: "var(--tint-green-07)" }}>{fmtDollar(nt.pT || 0)}</td>
                     </tr>
                   );
                 })}
-                <tr style={{ borderTop: "2px solid rgba(255,255,255,0.15)", background: "var(--row-highlight)", fontWeight: 700 }}>
+                <tr style={{ borderTop: "2px solid var(--tint-white-15)", background: "var(--row-highlight)", fontWeight: 700 }}>
                   <td colSpan={2} style={{ color: "var(--text-primary)" }}>Lifetime Totals</td>
-                  <td style={{ color: "#ff6f7a", background: "rgba(255,111,122,0.07)", borderLeft: "2px solid rgba(255,111,122,0.25)" }}>—</td>
-                  <td style={{ color: "#ff6f7a", background: "rgba(255,111,122,0.07)" }}>{fmtDollar(baseCur.cTax)}</td>
-                  <td style={{ color: "var(--text-secondary)", background: "rgba(255,111,122,0.07)" }}>{fmtDollar(baseCur.rows[baseCur.rows.length-1]?.pT || 0)}</td>
-                  <td style={{ color: "var(--accent-teal)", background: "rgba(90,209,240,0.07)", borderLeft: "2px solid rgba(90,209,240,0.25)" }}>{fmtDollar(baseOpt.cConv)}</td>
-                  <td style={{ color: stSave > 0 ? "var(--positive)" : "#ff6f7a", background: "rgba(90,209,240,0.07)" }}>{fmtDollar(baseOpt.cTax)} {stSave > 0 ? `(saves ${fmtDollar(stSave)})` : `(costs ${fmtDollar(-stSave)} more)`}</td>
-                  <td style={{ color: "var(--text-secondary)", background: "rgba(90,209,240,0.07)" }}>{fmtDollar(baseOpt.rows[baseOpt.rows.length-1]?.pT || 0)}</td>
-                  <td style={{ color: "var(--positive)", background: "rgba(52,211,153,0.07)", borderLeft: "2px solid rgba(52,211,153,0.25)" }}>{fmtDollar(noTaxOpt.cConv)}</td>
-                  <td style={{ color: ntSave > 0 ? "var(--positive)" : "#ff6f7a", background: "rgba(52,211,153,0.07)" }}>{fmtDollar(noTaxOpt.cTax)} {ntSave > 0 ? `(saves ${fmtDollar(ntSave)})` : `(costs ${fmtDollar(-ntSave)} more)`}</td>
-                  <td style={{ color: "var(--text-secondary)", background: "rgba(52,211,153,0.07)" }}>{fmtDollar(noTaxOpt.rows[noTaxOpt.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "#ff6f7a", background: "var(--tint-red-07)", borderLeft: "2px solid var(--tint-red-25)" }}>—</td>
+                  <td style={{ color: "#ff6f7a", background: "var(--tint-red-07)" }}>{fmtDollar(baseCur.cTax)}</td>
+                  <td style={{ color: "var(--text-secondary)", background: "var(--tint-red-07)" }}>{fmtDollar(baseCur.rows[baseCur.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "var(--accent-teal)", background: "var(--tint-sky-07)", borderLeft: "2px solid var(--tint-sky-25)" }}>{fmtDollar(baseOpt.cConv)}</td>
+                  <td style={{ color: stSave > 0 ? "var(--positive)" : "#ff6f7a", background: "var(--tint-sky-07)" }}>{fmtDollar(baseOpt.cTax)} {stSave > 0 ? `(saves ${fmtDollar(stSave)})` : `(costs ${fmtDollar(-stSave)} more)`}</td>
+                  <td style={{ color: "var(--text-secondary)", background: "var(--tint-sky-07)" }}>{fmtDollar(baseOpt.rows[baseOpt.rows.length-1]?.pT || 0)}</td>
+                  <td style={{ color: "var(--positive)", background: "var(--tint-green-07)", borderLeft: "2px solid rgba(52,211,153,0.25)" }}>{fmtDollar(noTaxOpt.cConv)}</td>
+                  <td style={{ color: ntSave > 0 ? "var(--positive)" : "#ff6f7a", background: "var(--tint-green-07)" }}>{fmtDollar(noTaxOpt.cTax)} {ntSave > 0 ? `(saves ${fmtDollar(ntSave)})` : `(costs ${fmtDollar(-ntSave)} more)`}</td>
+                  <td style={{ color: "var(--text-secondary)", background: "var(--tint-green-07)" }}>{fmtDollar(noTaxOpt.rows[noTaxOpt.rows.length-1]?.pT || 0)}</td>
                 </tr>
               </tbody>
             </table>
@@ -7763,7 +7799,7 @@ function YearEndStrip({ room, days, year }) {
   return (
     <div style={{
       marginTop: 8, padding: "6px 8px", borderRadius: 6,
-      background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.25)",
+      background: "var(--tint-amber-08)", border: "1px solid rgba(251,191,36,0.25)",
     }}>
       <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-gold)", marginBottom: 3 }}>
         Year-end check
@@ -7788,9 +7824,9 @@ function YearEndModal({ room, days, year, onClose, onSaveCheckIn, canCheckIn }) 
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#0f172a", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 12,
+          background: "#0f172a", border: "1px solid var(--tint-amber-35)", borderRadius: 12,
           padding: "18px 20px", maxWidth: 480, width: "100%", maxHeight: "85vh", overflowY: "auto",
-          boxShadow: "0 10px 40px rgba(0,0,0,0.8)",
+          boxShadow: "0 10px 40px var(--tint-black-80)",
         }}
       >
         <div style={{ fontSize: "var(--fs-h2)", fontWeight: 700, color: "var(--accent-gold)", marginBottom: 4 }}>
@@ -7907,9 +7943,9 @@ function LandmineTip({ emoji, label, detail, color }) {
         <div style={{
           position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom,
           background: "#0f172a",
-          border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8,
+          border: "1px solid var(--tint-white-12)", borderRadius: 8,
           padding: "9px 13px", width: LANDMINE_TIP_W, maxWidth: "calc(100vw - 16px)",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.7)", zIndex: 9999, pointerEvents: "none",
+          boxShadow: "0 4px 20px var(--tint-black-70)", zIndex: 9999, pointerEvents: "none",
           whiteSpace: "normal", textAlign: "left",
           maxHeight: "70vh", overflowY: "auto",
         }}>
@@ -8062,7 +8098,7 @@ function SourcingGuardrails({ p, onAssumptionChange, summary }) {
         return (
           <div style={{
             width: "100%", marginTop: 6, padding: "8px 10px", borderRadius: 8,
-            background: "rgba(255,111,122,0.08)", border: "1px solid rgba(255,111,122,0.25)",
+            background: "var(--tint-red-08)", border: "1px solid var(--tint-red-25)",
           }}>
             <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "#fca5a5", marginBottom: 4 }}>
               Retiring at {p.retireAge} — before 59.5
@@ -8222,8 +8258,8 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           whether the numbers moved. Dismissing clears the stamp for good. */}
       {migrated && (
         <div style={{
-          background: migrated.fidelity === "changed" ? "rgba(251,191,36,0.08)" : "rgba(13,148,136,0.08)",
-          border: `1px solid ${migrated.fidelity === "changed" ? "rgba(251,191,36,0.35)" : "rgba(13,148,136,0.35)"}`,
+          background: migrated.fidelity === "changed" ? "var(--tint-amber-08)" : "rgba(13,148,136,0.08)",
+          border: `1px solid ${migrated.fidelity === "changed" ? "var(--tint-amber-35)" : "rgba(13,148,136,0.35)"}`,
           borderRadius: 8, padding: "12px 14px", fontSize: "var(--fs-label)",
           color: "var(--text-secondary)", lineHeight: 1.6,
         }}>
@@ -8349,7 +8385,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
                     padding: "7px 16px", fontSize: "var(--fs-label)", fontWeight: 800, borderRadius: 6,
                     border: "none", background: "var(--accent-gold)", color: "#0d1b2a",
                     cursor: "pointer", whiteSpace: "nowrap",
-                    boxShadow: "0 2px 10px rgba(251,191,36,0.35)",
+                    boxShadow: "0 2px 10px var(--tint-amber-35)",
                   }}
                   title="Save this strategy to your plan. This re-runs the Monte Carlo simulation and updates every tab, including the Net Worth summary card."
                 >
@@ -8487,10 +8523,10 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
   // SS inclusion, straight off the row's own two figures.
   const ssPct = (Number(r.ss) || 0) > 0 ? Math.round((Number(r.taxSS) || 0) / Number(r.ss) * 100) : 0;
 
-  const section = { background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 9, padding: 14, marginBottom: 12 };
+  const section = { background: "var(--row-highlight)", border: "1px solid var(--tint-white-08)", borderRadius: 9, padding: 14, marginBottom: 12 };
   const secHead = { fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 10 };
   const tbl = { width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-label)" };
-  const thC = { textAlign: "right", color: "var(--text-faint)", fontWeight: 600, fontSize: "var(--fs-small)", padding: "4px 6px", borderBottom: "1px solid rgba(255,255,255,0.1)" };
+  const thC = { textAlign: "right", color: "var(--text-faint)", fontWeight: 600, fontSize: "var(--fs-small)", padding: "4px 6px", borderBottom: "1px solid var(--tint-white-10)" };
   const tdL = { textAlign: "left", color: "var(--text-secondary)", padding: "5px 6px" };
   const tdR = { textAlign: "right", fontFamily: "'JetBrains Mono',monospace", color: "var(--text-primary)", padding: "5px 6px", whiteSpace: "nowrap" };
   const balCell = { flex: 1, textAlign: "center", padding: "8px 4px" };
@@ -8556,10 +8592,10 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
         <div style={secHead}>Portfolio Balances (end of {r.yr})</div>
         <div style={{ display: "flex", gap: 6 }}>
           <div style={balCell}><div style={balLbl}>Pre-Tax</div><div style={balVal}>{money(r.pretaxEnd)}</div></div>
-          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={balLbl}>Roth</div><div style={{ ...balVal, color: "var(--accent-purple)" }}>{money(r.rothEnd)}</div></div>
-          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={balLbl}>Taxable</div><div style={{ ...balVal, color: "var(--accent-gold)" }}>{money(r.taxableEnd)}</div></div>
-          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.07)" }}><div style={balLbl}>Cash</div><div style={{ ...balVal, color: "#22d3ee" }}>{money(r.cashEnd)}</div></div>
-          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.1)" }}><div style={balLbl}>Total</div><div style={balVal}>{money(r.totalPort)}</div></div>
+          <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-07)" }}><div style={balLbl}>Roth</div><div style={{ ...balVal, color: "var(--accent-purple)" }}>{money(r.rothEnd)}</div></div>
+          <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-07)" }}><div style={balLbl}>Taxable</div><div style={{ ...balVal, color: "var(--accent-gold)" }}>{money(r.taxableEnd)}</div></div>
+          <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-07)" }}><div style={balLbl}>Cash</div><div style={{ ...balVal, color: "#22d3ee" }}>{money(r.cashEnd)}</div></div>
+          <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-10)" }}><div style={balLbl}>Total</div><div style={balVal}>{money(r.totalPort)}</div></div>
         </div>
       </div>
 
@@ -8578,10 +8614,10 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
               </tr>
             ))}
             <tr>
-              <td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>Total gross income</td>
-              <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid rgba(255,255,255,0.12)" }}>{money(grossIncome)}</td>
-              <td style={{ ...tdR, color: "var(--text-muted)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>{monthly(grossIncome)}</td>
-              <td style={{ ...tdL, fontSize: "var(--fs-small)", color: "var(--text-faint)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>Received this year{r.conversionAmount > 0 ? " (excl. Roth conversion transfer)" : ""}</td>
+              <td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid var(--tint-white-12)" }}>Total gross income</td>
+              <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid var(--tint-white-12)" }}>{money(grossIncome)}</td>
+              <td style={{ ...tdR, color: "var(--text-muted)", borderTop: "1px solid var(--tint-white-12)" }}>{monthly(grossIncome)}</td>
+              <td style={{ ...tdL, fontSize: "var(--fs-small)", color: "var(--text-faint)", borderTop: "1px solid var(--tint-white-12)" }}>Received this year{r.conversionAmount > 0 ? " (excl. Roth conversion transfer)" : ""}</td>
             </tr>
           </tbody>
         </table>
@@ -8601,7 +8637,7 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
             {r.stdDedYr != null && (
               <tr><td style={tdL}>− Deductions applied in {r.yr} (standard + senior bonus)</td><td style={tdR}>−{money(r.stdDedYr)}</td></tr>
             )}
-            <tr><td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>= Taxable income</td><td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid rgba(255,255,255,0.12)" }}>{money(r.taxableIncome)}</td></tr>
+            <tr><td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid var(--tint-white-12)" }}>= Taxable income</td><td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid var(--tint-white-12)" }}>{money(r.taxableIncome)}</td></tr>
           </tbody>
         </table>
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.6, marginTop: 8 }}>
@@ -8628,8 +8664,8 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
               <tr><td style={{ ...tdL, color: "#f87171" }}>⛔ Early-withdrawal penalty (IRC §72(t), 10%) — a separate additional tax</td><td style={{ ...tdR, color: "#f87171" }}>{money(penalty)}</td></tr>
             )}
             <tr>
-              <td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>= Total tax{r.earlyPenalty > 0 ? " (incl. penalty)" : ""}</td>
-              <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid rgba(255,255,255,0.12)" }}>{money(totalLoaded)}</td>
+              <td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid var(--tint-white-12)" }}>= Total tax{r.earlyPenalty > 0 ? " (incl. penalty)" : ""}</td>
+              <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid var(--tint-white-12)" }}>{money(totalLoaded)}</td>
             </tr>
             <tr>
               <td style={{ ...tdL, color: "var(--text-muted)" }}>Effective rate on {money(magi)} of income <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>(federal + state, excl. IRMAA &amp; penalty)</span></td>
@@ -8648,7 +8684,7 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
           <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.55, marginBottom: 10 }}>
             Income ranges are inflation-adjusted to {r.yr}. Compare your <strong>taxable</strong> income ({money(ti)}) against them — the IRS widens brackets each year, so this year's ranges sit above today's published figures.
           </div>
-          <div style={{ display: "flex", height: 26, borderRadius: 6, overflow: "hidden", marginBottom: 6, background: "rgba(255,255,255,0.05)" }}>
+          <div style={{ display: "flex", height: 26, borderRadius: 6, overflow: "hidden", marginBottom: 6, background: "var(--tint-white-05)" }}>
             {bracketFill.map((f) => (
               <div key={f.rate} title={`${Math.round(f.rate * 100)}% bracket — ${money(f.amt)} taxed here`} style={{ width: `${(f.amt / ti) * 100}%`, background: bracketColor(f.rate), display: "flex", alignItems: "center", justifyContent: "center", fontSize: "var(--fs-small)", fontWeight: 800, color: "#04120a", minWidth: 24 }}>
                 {Math.round(f.rate * 100)}%
@@ -8668,10 +8704,10 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
                 </tr>
               ))}
               <tr>
-                <td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>Total</td>
-                <td style={{ ...tdL, color: "var(--text-muted)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>{bracketFill.length} bracket{bracketFill.length === 1 ? "" : "s"} filled</td>
-                <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid rgba(255,255,255,0.12)" }}>{money(ti)}</td>
-                <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid rgba(255,255,255,0.12)" }}>{money(fedOrdinary)}</td>
+                <td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid var(--tint-white-12)" }}>Total</td>
+                <td style={{ ...tdL, color: "var(--text-muted)", borderTop: "1px solid var(--tint-white-12)" }}>{bracketFill.length} bracket{bracketFill.length === 1 ? "" : "s"} filled</td>
+                <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid var(--tint-white-12)" }}>{money(ti)}</td>
+                <td style={{ ...tdR, fontWeight: 700, borderTop: "1px solid var(--tint-white-12)" }}>{money(fedOrdinary)}</td>
               </tr>
             </tbody>
           </table>
@@ -8697,12 +8733,12 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
             <div style={balVal}>{monthly(grossIncome)}</div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginTop: 2 }}>{money(grossIncome)}/yr</div>
           </div>
-          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.07)" }}>
+          <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-07)" }}>
             <div style={balLbl}>Tax</div>
             <div style={{ ...balVal, color: "#f87171" }}>−{monthly(totalLoaded)}</div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginTop: 2 }}>−{money(totalLoaded)}/yr</div>
           </div>
-          <div style={{ ...balCell, borderLeft: "1px solid rgba(255,255,255,0.1)" }}>
+          <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-10)" }}>
             <div style={balLbl}>After-Tax</div>
             <div style={{ ...balVal, color: "var(--positive)" }}>{monthly(afterTax)}</div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginTop: 2 }}>{money(afterTax)}/yr</div>
@@ -8711,7 +8747,7 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
       </div>
 
       {/* Disclosures — every total above shows what it was built from */}
-      <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.65, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10 }}>
+      <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.65, borderTop: "1px solid var(--tint-white-08)", paddingTop: 10 }}>
         <div style={{ marginBottom: 6 }}>
           <strong style={{ color: "var(--text-secondary)" }}>What's inside these numbers.</strong>{" "}
           {Number(r.ss) > 0
@@ -9119,7 +9155,7 @@ function WaterfallPlanView({ p, result }) {
                 return blocks.length > 1 ? `${blocks.join("\n\n")}\n\nTotal B1 End = ${fmtDollar(b1End)}` : blocks[0];
               })() : null;
               return (
-              <tr key={r.age} style={{ background: anyLandmine(r) ? "rgba(255,111,122,0.07)" : undefined }}>
+              <tr key={r.age} style={{ background: anyLandmine(r) ? "var(--tint-red-07)" : undefined }}>
                 <td data-cg="time">{r.age}</td>
                 <td data-cg="spend" style={{ textAlign: "right" }}
                     title={`Spending ${fmtDollar(r.spending)}`
@@ -9628,7 +9664,7 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                   const monthly = (v) => fmtDollar(Math.round((v || 0) / 12));
                   const ev = row.gkEvent;
                   return (
-                    <div style={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, padding: "9px 12px", fontSize: "var(--fs-small)", lineHeight: 1.6 }}>
+                    <div style={{ background: "#0f1729", border: "1px solid var(--tint-white-14)", borderRadius: 8, padding: "9px 12px", fontSize: "var(--fs-small)", lineHeight: 1.6 }}>
                       <div style={{ fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Age {label}</div>
                       <div style={{ color: "var(--text-secondary)" }}>Prior spend <strong style={{ fontFamily: "var(--font-mono)" }}>{fmtDollar(row["Prior spend (real)"])}</strong> <span style={{ color: "var(--text-faint)" }}>({monthly(row["Prior spend (real)"])}/mo)</span></div>
                       <div style={{ color: "var(--text-secondary)" }}>After guardrail <strong style={{ fontFamily: "var(--font-mono)" }}>{fmtDollar(row["Actual spend (real)"])}</strong> <span style={{ color: "var(--text-faint)" }}>({monthly(row["Actual spend (real)"])}/mo)</span></div>
@@ -9647,7 +9683,7 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                   );
                 }}
               />
-              <Area yAxisId="spend" type="monotone" dataKey="Ceiling (real)" stroke="none" fill="rgba(52,211,153,0.07)" />
+              <Area yAxisId="spend" type="monotone" dataKey="Ceiling (real)" stroke="none" fill="var(--tint-green-07)" />
               <Line yAxisId="spend" type="monotone" dataKey="Floor (real)" stroke="#f5a623" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
               <Line yAxisId="spend" type="monotone" dataKey="Ceiling (real)" stroke="var(--positive)" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
               <Line yAxisId="spend" type="monotone" dataKey="Prior spend (real)" stroke="var(--text-faint)" strokeWidth={1.2} strokeDasharray="2 3" dot={false} />
@@ -10017,7 +10053,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
   const barClr = status === "below" ? "#ff6f7a" : status === "full" ? "var(--positive)" : color;
   const runway = monthly > 0 && num === 1 ? (actual / monthly).toFixed(1) : null;
   return (
-    <div style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${withAlpha(color, "33")}`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1, position: "relative" }}>
+    <div style={{ background: "var(--tint-white-02)", border: `1px solid ${withAlpha(color, "33")}`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1, position: "relative" }}>
       {(role || holdings) && (
         <div
           onMouseEnter={openTip}
@@ -10030,7 +10066,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
             <div
               onMouseEnter={openTip}
               onMouseLeave={closeTipSoon}
-              style={{ position: "absolute", top: "100%", right: 0, background: "rgba(15,23,42,0.98)", border: `1px solid ${withAlpha(color, "66")}`, borderRadius: 6, padding: 10, fontSize: "var(--fs-small)", color: "var(--text-secondary)", zIndex: 20, width: 240, lineHeight: 1.5, boxShadow: "0 6px 16px rgba(0,0,0,0.5)", cursor: "default" }}
+              style={{ position: "absolute", top: "100%", right: 0, background: "rgba(15,23,42,0.98)", border: `1px solid ${withAlpha(color, "66")}`, borderRadius: 6, padding: 10, fontSize: "var(--fs-small)", color: "var(--text-secondary)", zIndex: 20, width: 240, lineHeight: 1.5, boxShadow: "0 6px 16px var(--tint-black-50)", cursor: "default" }}
             >
               {role && (
                 <>
@@ -10070,7 +10106,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
         </>
       )}
       {acctList.length > 0 && (
-        <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
+        <div style={{ marginTop: 8, borderTop: "1px solid var(--tint-white-06)", paddingTop: 6 }}>
           {acctList.map(a => (
             <div key={a.id} style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 2 }}>
               <span>{a.name}</span>
@@ -10274,7 +10310,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
         )}
 
         {directive.marketWarning && (
-          <div style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: "var(--fs-small)", color: "var(--accent-gold)", lineHeight: 1.5 }}>
+          <div style={{ background: "var(--tint-amber-08)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: "var(--fs-small)", color: "var(--accent-gold)", lineHeight: 1.5 }}>
             ⚠ <strong>Market condition check required:</strong> Only move money from Bucket 3 into Bucket 2 when markets are <em>up or neutral</em>. If stocks are down significantly (&gt;15%), wait — let Bucket 2 cover you until markets recover. Selling growth assets in a downturn defeats the purpose of the bucket strategy.
           </div>
         )}
@@ -10291,7 +10327,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
                 : `Transfer ${fmtDollar(directive.needed)} from Bucket 2 → into your Bucket 1 cash account:`}
             </div>
             {directive.steps.map((step, i) => (
-              <div key={i} style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "10px 14px", marginBottom: 8 }}>
+              <div key={i} style={{ background: "var(--card-bg)", border: "1px solid var(--tint-white-07)", borderRadius: 8, padding: "10px 14px", marginBottom: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                   <span style={{ fontSize: "var(--fs-label)", fontWeight: 600, color: "var(--text-primary)" }}>Step {i + 1} — {step.label}</span>
                   <span style={{ fontSize: "var(--fs-body)", fontWeight: 700, color: "var(--positive)", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(step.amount)}</span>
@@ -10357,9 +10393,9 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
           return (
           <div key={key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>{label}:</span>
-            <button onClick={() => setYears(Math.max(min, val - 1))} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-secondary)", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: "var(--fs-body)", lineHeight: 1, padding: 0 }}>−</button>
+            <button onClick={() => setYears(Math.max(min, val - 1))} style={{ background: "var(--tint-white-06)", border: "1px solid var(--tint-white-10)", color: "var(--text-secondary)", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: "var(--fs-body)", lineHeight: 1, padding: 0 }}>−</button>
             <span style={{ fontSize: "var(--fs-body)", fontWeight: 700, color: "var(--text-primary)", minWidth: 14, textAlign: "center" }}>{val}</span>
-            <button onClick={() => setYears(Math.min(max, val + 1))} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-secondary)", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: "var(--fs-body)", lineHeight: 1, padding: 0 }}>+</button>
+            <button onClick={() => setYears(Math.min(max, val + 1))} style={{ background: "var(--tint-white-06)", border: "1px solid var(--tint-white-10)", color: "var(--text-secondary)", borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: "var(--fs-body)", lineHeight: 1, padding: 0 }}>+</button>
             <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>{hint}</span>
           </div>
           );
@@ -10380,7 +10416,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
                 onClick={() => saveBCfg({ drawMode: opt.val })}
                 style={{
                   background: active ? "rgba(14,165,233,0.18)" : "var(--row-highlight)",
-                  border: `1px solid ${active ? "#0ea5e9" : "rgba(255,255,255,0.1)"}`,
+                  border: `1px solid ${active ? "#0ea5e9" : "var(--tint-white-10)"}`,
                   color: active ? "#0ea5e9" : "var(--text-secondary)",
                   borderRadius: 4, padding: "2px 8px", fontSize: "var(--fs-small)", cursor: "pointer", fontWeight: active ? 600 : 400,
                 }}
@@ -10506,7 +10542,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
 
   if (!checkIns || checkIns.length === 0) {
     return (
-      <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "48px 24px", textAlign: "center" }}>
+      <div style={{ background: "var(--card-bg)", border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: "48px 24px", textAlign: "center" }}>
         <div style={{ fontSize: 34, marginBottom: 12 }}>📈</div>
         <div style={{ fontSize: "var(--fs-h2)", fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Start your journey</div>
         <div style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.6, maxWidth: 460, margin: "0 auto 14px" }}>
@@ -10572,7 +10608,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
       </div>
 
       {/* ── Plan shape over time (radar) ── */}
-      <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
+      <div style={{ background: "var(--card-bg)", border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
         <div className="ct">Plan shape over time</div>
         <div style={{
           fontSize: "var(--fs-label)", lineHeight: 1.5, padding: "8px 12px", borderRadius: 8, marginBottom: 10,
@@ -10588,7 +10624,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
           <div style={{ flex: "1 1 300px", minWidth: 260 }}>
             <ResponsiveContainer width="100%" height={280}>
               <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
-                <PolarGrid stroke="rgba(255,255,255,0.12)" />
+                <PolarGrid stroke="var(--tint-white-12)" />
                 <PolarAngleAxis dataKey="axis" tick={{ fill: "var(--text-primary)", fontSize: 11 }} />
                 <PolarRadiusAxis domain={[0, 100]} tick={{ fill: "var(--text-secondary)", fontSize: 9 }} tickCount={5} angle={90} />
                 {hasTwo && (
@@ -10623,7 +10659,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
       </div>
 
       {sorted.length >= 2 ? (
-        <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
           <div className="ct">Plan trend</div>
           {/* Success rate (%) and Portfolio ($) are unrelated scales — two
               single-axis charts sharing the same date x-axis instead of one
@@ -10635,7 +10671,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
                 <XAxis dataKey="date" tick={CHECKIN_TICK} />
                 <YAxis domain={[0, 100]} tick={CHECKIN_TICK} tickFormatter={(v) => `${v}%`} width={42} />
                 <Tooltip
-                  contentStyle={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, fontSize: "var(--fs-label)" }}
+                  contentStyle={{ background: "#0f1729", border: "1px solid var(--tint-white-15)", borderRadius: 8, fontSize: "var(--fs-label)" }}
                   formatter={(value, name) => [`${value}%`, name]}
                 />
                 <Line type="monotone" dataKey="successPct" name="Success rate" stroke="var(--accent-teal)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
@@ -10647,7 +10683,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
                 <XAxis dataKey="date" tick={CHECKIN_TICK} />
                 <YAxis tick={CHECKIN_TICK} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
                 <Tooltip
-                  contentStyle={{ background: "#0f1729", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, fontSize: "var(--fs-label)" }}
+                  contentStyle={{ background: "#0f1729", border: "1px solid var(--tint-white-15)", borderRadius: 8, fontSize: "var(--fs-label)" }}
                   formatter={(value, name) => [fmtDollar(value), name]}
                 />
                 <Line type="monotone" dataKey="port" name="Portfolio" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} connectNulls />
@@ -10668,7 +10704,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
       {/* ── Check-in history (cards) ── */}
       <div style={{
       background: "var(--card-bg)",
-      border: "1px solid rgba(255,255,255,0.08)",
+      border: "1px solid var(--tint-white-08)",
       borderRadius: 12, padding: 16,
     }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
@@ -10690,7 +10726,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
           {[...sorted].reverse().map((c) => (
-            <div key={c.id} style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 14px" }}>
+            <div key={c.id} style={{ background: "var(--card-bg)", border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: "12px 14px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
                   {fmtDate(c.ts)}{isToday(c.ts) ? " · TODAY" : ""}
@@ -10719,7 +10755,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
                   ["LEGACY",       c.medianTerminal != null ? fmtDollar(c.medianTerminal) : "—", "#818cf8"],
                   ["RETIRE / PLAN TO", c.retireAge != null ? `${c.retireAge} / ${c.endAge ?? "—"}` : "—", "var(--text-primary)"],
                 ].map(([label, value, color]) => (
-                  <div key={label} style={{ background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "6px 10px", minWidth: 86 }}>
+                  <div key={label} style={{ background: "var(--row-highlight)", border: "1px solid var(--tint-white-09)", borderRadius: 8, padding: "6px 10px", minWidth: 86 }}>
                     <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", letterSpacing: "0.08em" }}>{label}</div>
                     <div style={{ fontSize: "var(--fs-body)", fontWeight: 700, color, fontFamily: "'JetBrains Mono',monospace" }}>{value}</div>
                   </div>
@@ -11534,10 +11570,10 @@ function ScenariosTab({
                     fontSize: "var(--fs-small)",
                     fontFamily: "'JetBrains Mono',monospace",
                     background:
-                      r < 0 ? "rgba(255,111,122,0.15)" : "rgba(79,216,143,0.12)",
+                      r < 0 ? "var(--tint-red-15)" : "var(--bg-success)",
                     color: r < 0 ? "#ff6f7a" : "var(--positive)",
                     border: `1px solid ${
-                      r < 0 ? "rgba(255,111,122,0.3)" : "rgba(79,216,143,0.25)"
+                      r < 0 ? "var(--tint-red-30)" : "rgba(79,216,143,0.25)"
                     }`,
                   }}
                 >
@@ -11650,7 +11686,7 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
     else set("mcRangeEnd", Math.min(SAMPLE_END_YEAR, Math.max(v, startYr + 1)));
   };
 
-  const sec = { background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 9, padding: 14, marginBottom: 12 };
+  const sec = { background: "var(--row-highlight)", border: "1px solid var(--tint-white-08)", borderRadius: 9, padding: 14, marginBottom: 12 };
   const secHead = { fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 10 };
   const row = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" };
   const lbl = { fontSize: "var(--fs-label)", color: "var(--text-secondary)", fontWeight: 600 };
@@ -11703,7 +11739,7 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
           or a later window to test only the modern era.
           {!isDefaultRange ? " Re-run Monte Carlo to apply." : ""}
         </div>
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10 }}>
+        <div style={{ borderTop: "1px solid var(--tint-white-08)", paddingTop: 10 }}>
           <div style={{ ...kv, fontWeight: 700, color: "var(--text-secondary)" }}>
             <span>{isDefaultRange ? "Sampling full history" : "Sampling a narrowed window"}</span>
             <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{stat.years} · {stat.n} yrs</span>
@@ -11752,7 +11788,7 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
         <div style={help}>
           Annual Social Security cost-of-living adjustment. Applies from your claim age, not from retirement.
         </div>
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10, marginTop: 4 }}>
+        <div style={{ borderTop: "1px solid var(--tint-white-08)", paddingTop: 10, marginTop: 4 }}>
           <div style={{ ...row, marginBottom: 6 }}>
             <span style={lbl}>Equity glide</span>
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -11802,7 +11838,7 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
         </div>
         {/* Read-only: the published method, cited from the engine's own constants
             so the sentence cannot drift from the arithmetic. */}
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10, fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.6 }}>
+        <div style={{ borderTop: "1px solid var(--tint-white-08)", paddingTop: 10, fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.6 }}>
           <div style={{ fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>Guyton-Klinger rules in force (fixed by the method)</div>
           <div>Withdrawal rate {Math.round(GK_BAND_PCT * 100)}% above the initial rate → cut spending {Math.round(GK_ADJUST_PCT * 100)}%.</div>
           <div>Withdrawal rate {Math.round(GK_BAND_PCT * 100)}% below the initial rate → raise spending {Math.round(GK_ADJUST_PCT * 100)}%.</div>
@@ -12089,7 +12125,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
       aria-expanded={open}
       onClick={onToggle}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
-      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, cursor: "pointer", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.07)", marginBottom: open ? 14 : 0 }}
+      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, cursor: "pointer", padding: "10px 0", borderBottom: "1px solid var(--tint-white-07)", marginBottom: open ? 14 : 0 }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
         <span style={{ fontSize: "var(--fs-small)", color, display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform 120ms ease" }}>▶</span>
@@ -12101,7 +12137,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
   );
 
   const InputCard = ({ title, rows }) => (
-    <div style={{ background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 9, padding: 14 }}>
+    <div style={{ background: "var(--row-highlight)", border: "1px solid var(--tint-white-08)", borderRadius: 9, padding: 14 }}>
       <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--text-faint)", marginBottom: 10 }}>{title}</div>
       {/* Index in the key: rows are now generated per cash-flow event, and two
           events can legitimately produce the same label ("↳ into taxable"). */}
@@ -12216,7 +12252,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
           good:  { fg: "var(--positive)", tag: "Working for you" },
         };
         return (
-          <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 16px" }}>
+          <div style={{ background: "var(--card-bg)", border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: "12px 16px" }}>
             <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>What's driving this</div>
             {ex.drivers.map((d, i) => {
               const t = tone[d.severity];
@@ -12251,7 +12287,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
 
 
       {/* Inputs collapsible — source of record for every model assumption. */}
-      <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 16, scrollMarginTop: 16 }}>
+      <div style={{ background: "var(--card-bg)", border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: 16, scrollMarginTop: 16 }}>
         <SectionHeader label="Simulation inputs & assumptions" open={showInputs} onToggle={() => setShowInputs(!showInputs)}
           hint={[
             getStrategyLabel(resolveStrategy(withdrawalStrategy)),
@@ -12631,7 +12667,7 @@ function NetWorthTip({ active, payload, label, p }) {
       {re > 0 && line("Real Estate", re, "var(--accent-gold)")}
       {mort !== 0 && line("Mortgage Debt", mort, "var(--negative)", { muted: true })}
       {Number.isFinite(nw) && (
-        <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid rgba(255,255,255,0.14)", display: "flex", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid var(--tint-white-14)", display: "flex", justifyContent: "space-between", gap: 10 }}>
           <span style={{ color: "var(--text-secondary)", fontWeight: 700 }}>Total Net Worth</span>
           <span style={{ color: "var(--text-primary)", fontWeight: 700 }}>{fmtDollar(nw)}</span>
         </div>
@@ -13013,7 +13049,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
 
 // Priority colors
 const PRIORITY_COLOR = {
-  red:    { border: "var(--negative)", bg: "rgba(255,111,122,0.07)",  label: "#ff6f7a", dot: "🔴" },
+  red:    { border: "var(--negative)", bg: "var(--tint-red-07)",  label: "#ff6f7a", dot: "🔴" },
   yellow: { border: "var(--accent-gold)", bg: "rgba(244,211,94,0.07)", label: "var(--accent-gold)", dot: "🟡" },
   green:  { border: "var(--positive)", bg: "rgba(79,216,143,0.07)", label: "var(--positive)", dot: "🟢" },
 };
@@ -13224,14 +13260,14 @@ function ActionPlanRow({ card, isSelected, onClick }) {
         gap:          12,
         padding:      "10px 14px",
         borderRadius: 8,
-        background:   isSelected ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)",
-        border:       `1px solid ${isSelected ? "rgba(99,102,241,0.4)" : "rgba(255,255,255,0.06)"}`,
+        background:   isSelected ? "rgba(99,102,241,0.1)" : "var(--tint-white-02)",
+        border:       `1px solid ${isSelected ? "rgba(99,102,241,0.4)" : "var(--tint-white-06)"}`,
         cursor:       "pointer",
         transition:   "all 0.12s",
         marginBottom: 4,
       }}
       onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--row-highlight)"; }}
-      onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
+      onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "var(--tint-white-02)"; }}
     >
       <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.border, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -13287,7 +13323,7 @@ function CardDetailPanel({ card, onClose }) {
               borderRadius: 4, padding: "2px 8px", fontSize: "var(--fs-small)", fontWeight: 700,
             }}>{label}</span>
             <span style={{
-              background: "rgba(255,255,255,0.06)", color: "var(--text-secondary)",
+              background: "var(--tint-white-06)", color: "var(--text-secondary)",
               borderRadius: 4, padding: "2px 8px", fontSize: "var(--fs-small)", fontWeight: 600,
             }}>{card.category}</span>
             {card.isLiveData  && <span style={{ background: "rgba(6,182,212,0.1)", color: "#22d3ee", borderRadius: 4, padding: "2px 8px", fontSize: "var(--fs-small)", fontWeight: 700 }}>🌐 LIVE</span>}
@@ -13350,7 +13386,7 @@ function CardDetailPanel({ card, onClose }) {
       )}
 
       {/* Deadline */}
-      <div style={{ fontSize: "var(--fs-label)", color: "var(--text-faint)", display: "flex", alignItems: "center", gap: 6, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ fontSize: "var(--fs-label)", color: "var(--text-faint)", display: "flex", alignItems: "center", gap: 6, paddingTop: 8, borderTop: "1px solid var(--tint-white-06)" }}>
         ⏱ <span style={{ color: "var(--text-muted)" }}>{card.deadline}</span>
       </div>
     </div>
@@ -13483,7 +13519,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
     : "Run AI analysis on your plan";
 
   const COLORS = {
-    red:    { bg: "rgba(255,111,122,0.08)",   border: "rgba(255,111,122,0.25)",   label: "#ff6f7a", badge: "🔴 Critical" },
+    red:    { bg: "var(--tint-red-08)",   border: "var(--tint-red-25)",   label: "#ff6f7a", badge: "🔴 Critical" },
     yellow: { bg: "rgba(244,211,94,0.08)",  border: "rgba(244,211,94,0.25)",  label: "var(--accent-gold)", badge: "🟡 Important" },
     green:  { bg: "rgba(79,216,143,0.08)",  border: "rgba(79,216,143,0.25)",  label: "var(--positive)", badge: "🟢 On Track" },
   };
@@ -13542,7 +13578,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
             alignItems:   "center",
             gap:          16,
             background:   creditBalance < LOW_BALANCE_WARN_AT ? "rgba(255,111,122,0.06)" : "rgba(124,58,237,0.06)",
-            border:       `1px solid ${creditBalance < LOW_BALANCE_WARN_AT ? "rgba(255,111,122,0.25)" : "rgba(124,58,237,0.2)"}`,
+            border:       `1px solid ${creditBalance < LOW_BALANCE_WARN_AT ? "var(--tint-red-25)" : "rgba(124,58,237,0.2)"}`,
             borderRadius: 10,
             padding:      "10px 16px",
             flexShrink:   0,
@@ -13581,7 +13617,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                     onClick={() => setShowRestore(true)}
                     style={{
                       marginTop: 6, background: "rgba(13,148,136,0.18)",
-                      border: "1px solid rgba(90,209,240,0.45)", color: "var(--accent-teal)",
+                      border: "1px solid var(--tint-sky-45)", color: "var(--accent-teal)",
                       borderRadius: 6, padding: "5px 12px", fontSize: "var(--fs-label)",
                       fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
                     }}
@@ -13667,8 +13703,8 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
 
       {aiError && (
         <div style={{
-          background: "rgba(255,111,122,0.08)",
-          border: "1px solid rgba(255,111,122,0.25)",
+          background: "var(--tint-red-08)",
+          border: "1px solid var(--tint-red-25)",
           borderRadius: 8,
           padding: "10px 14px",
           fontSize: "var(--fs-label)",
@@ -13704,7 +13740,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-label)" }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <tr style={{ borderBottom: "1px solid var(--tint-white-06)" }}>
                   <th style={{ textAlign: "left", color: "var(--text-faint)", fontWeight: 600, paddingBottom: 4 }}>Scenario</th>
                   <th style={{ textAlign: "center", color: "var(--text-faint)", fontWeight: 600, paddingBottom: 4 }}>Return</th>
                   <th style={{ textAlign: "right", color: "var(--text-faint)", fontWeight: 600, paddingBottom: 4 }}>Hits {fmtDollar(target)}</th>
@@ -13716,7 +13752,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                   const diff = r.crossoverAge != null ? r.crossoverAge - retireAge : null;
                   const color = rowColor(r.crossoverAge);
                   return (
-                    <tr key={r.label} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                    <tr key={r.label} style={{ borderBottom: "1px solid var(--tint-white-04)" }}>
                       <td style={{ color: "var(--text-secondary)", padding: "4px 0" }}>{r.label}</td>
                       <td style={{ textAlign: "center", color: "var(--text-secondary)", fontFamily: "'JetBrains Mono',monospace" }}>{(r.rate * 100).toFixed(1)}%</td>
                       <td style={{ textAlign: "right", color, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" }}>
@@ -13762,7 +13798,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                   onClick={() => { setFilter(f.key); setSelectedCard(null); }}
                   style={{
                     background:   filterPriority === f.key ? "var(--card-border)" : "transparent",
-                    border:       `1px solid ${filterPriority === f.key ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.07)"}`,
+                    border:       `1px solid ${filterPriority === f.key ? "rgba(255,255,255,0.2)" : "var(--tint-white-07)"}`,
                     color:        filterPriority === f.key ? (f.key === "all" ? "var(--text-primary)" : f.active) : f.color,
                     borderRadius: 6, padding: "4px 12px",
                     fontSize: "var(--fs-label)", fontWeight: 600, cursor: "pointer",
@@ -13912,7 +13948,7 @@ function RealEstateStep({ values, onChange }) {
                 onChange={e => updateProp(prop.id, "label", e.target.value)}
                 style={{ fontSize: "var(--fs-body)", fontWeight:600, color:"var(--text-primary)",
                   background:"transparent", border:"none", outline:"none",
-                  borderBottom:"1px solid rgba(255,255,255,0.12)",
+                  borderBottom:"1px solid var(--tint-white-12)",
                   padding:"2px 0", width:180, fontFamily:"'DM Sans',sans-serif" }}/>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                 {isFirst && (
@@ -14131,15 +14167,15 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
       style={{
         display: "grid",
         gridTemplateColumns: "280px 1fr",
-        background: "rgba(255,255,255,0.02)",
-        border: "1px solid rgba(255,255,255,0.08)",
+        background: "var(--tint-white-02)",
+        border: "1px solid var(--tint-white-08)",
         borderRadius: 12,
         alignItems: "start",
         flexShrink: 0,
       }}
     >
       {/* LEFT SIDEBAR – unchanged */}
-      <div className="wizard-sidebar" style={{ borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}>
+      <div className="wizard-sidebar" style={{ borderRight: "1px solid var(--tint-white-06)", padding: 16 }}>
         {STEPS.map((s, i) => (
           <React.Fragment key={i}>
           {/* Visual separation for the global-settings surface. Position
@@ -14148,7 +14184,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
           {s.isSettings && (
             <div style={{
               marginTop: 14, marginBottom: 6, paddingTop: 10,
-              borderTop: "1px solid rgba(255,255,255,0.08)",
+              borderTop: "1px solid var(--tint-white-08)",
               fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-faint)",
             }}>
               App Settings
@@ -14177,11 +14213,11 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
                 borderRadius: s.isSettings ? 3 : "50%",
                 flexShrink: 0,
                 background: s.isSettings
-                  ? (i === step ? "rgba(148,163,184,0.35)" : "rgba(255,255,255,0.07)")
-                  : (i < step ? "var(--positive)" : i === step ? "var(--accent-teal)" : "rgba(255,255,255,0.1)"),
+                  ? (i === step ? "rgba(148,163,184,0.35)" : "var(--tint-white-07)")
+                  : (i < step ? "var(--positive)" : i === step ? "var(--accent-teal)" : "var(--tint-white-10)"),
                 border: s.isSettings
                   ? "2px solid rgba(148,163,184,0.4)"
-                  : `2px solid ${i <= step ? "var(--positive)" : "rgba(255,255,255,0.15)"}`,
+                  : `2px solid ${i <= step ? "var(--positive)" : "var(--tint-white-15)"}`,
                 boxShadow: (!s.isSettings && i === step) ? "0 0 8px #0d948866" : "none",
               }}
             />
@@ -14234,7 +14270,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
               style={{
                 padding: "6px 12px",
                 borderRadius: 7,
-                border: "1px solid rgba(255,255,255,0.15)",
+                border: "1px solid var(--tint-white-15)",
                 background: "transparent",
                 color: savedMeta ? "var(--text-secondary)" : "#334155",
                 cursor: savedMeta ? "pointer" : "not-allowed",
@@ -14305,7 +14341,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
             alignItems: "center",
             marginTop: 24,
             paddingTop: 16,
-            borderTop: "1px solid rgba(255,255,255,0.06)",
+            borderTop: "1px solid var(--tint-white-06)",
           }}
         >
           <button
@@ -14415,8 +14451,8 @@ function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
                 disabled={disabled}
                 title={disabled ? "Bucket 1 (cash cushion) can only be assigned to Cash accounts" : `Bucket ${b}`}
                 style={{
-                  background: s.bucket === b ? color + "33" : "transparent",
-                  border: `1px solid ${s.bucket === b ? color : "rgba(255,255,255,0.1)"}`,
+                  background: s.bucket === b ? withAlpha(color, "33") : "transparent",
+                  border: `1px solid ${s.bucket === b ? color : "var(--tint-white-10)"}`,
                   color: disabled ? "#1e293b" : s.bucket === b ? color : "#334155",
                   borderRadius: 4, padding: "2px 6px", fontSize: "var(--fs-small)", fontWeight: 700,
                   cursor: disabled ? "not-allowed" : "pointer", lineHeight: 1.4,
@@ -14427,7 +14463,7 @@ function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
           <input
             type="number" min={0} max={100} value={s.pct}
             onChange={e => update(i, { pct: clampPct(e.target.value) })}
-            style={{ width: 52, fontSize: "var(--fs-small)", color: "var(--text-primary)", background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "2px 6px", textAlign: "right", outline: "none", fontFamily: "'JetBrains Mono',monospace" }}
+            style={{ width: 52, fontSize: "var(--fs-small)", color: "var(--text-primary)", background: "transparent", border: "1px solid var(--tint-white-10)", borderRadius: 4, padding: "2px 6px", textAlign: "right", outline: "none", fontFamily: "'JetBrains Mono',monospace" }}
                 onFocus={selectAllOnFocus}
               />
           <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>%</span>
@@ -14526,7 +14562,7 @@ function SavingsPanel({ values, onChange }) {
       {CATEGORIES.map(cat => {
         const catAccounts = accounts.filter(a => a.category === cat.key);
         return (
-          <div key={cat.key} style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, borderLeft: `3px solid ${cat.color}`, padding: "8px 12px" }}>
+          <div key={cat.key} style={{ background: "var(--tint-white-02)", borderRadius: 8, borderLeft: `3px solid ${cat.color}`, padding: "8px 12px" }}>
             <div style={{ fontSize: "var(--fs-small)", color: cat.color, fontWeight: 600, marginBottom: 8 }}>{cat.label}</div>
             {catAccounts.map(acct => {
               const hasSplits = Array.isArray(acct.splits) && acct.splits.length > 0;
@@ -14538,9 +14574,9 @@ function SavingsPanel({ values, onChange }) {
                     type="text"
                     value={acct.name}
                     onChange={e => handleName(acct.id, e.target.value)}
-                    style={{ width: 100, fontSize: "var(--fs-small)", color: "var(--text-primary)", background: "transparent", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 4, padding: "2px 6px", fontFamily: "'DM Sans',sans-serif", outline: "none" }}
-                    onFocus={e => e.target.style.borderColor = cat.color + "66"}
-                    onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.06)"}
+                    style={{ width: 100, fontSize: "var(--fs-small)", color: "var(--text-primary)", background: "transparent", border: "1px solid var(--tint-white-06)", borderRadius: 4, padding: "2px 6px", fontFamily: "'DM Sans',sans-serif", outline: "none" }}
+                    onFocus={e => e.target.style.borderColor = withAlpha(cat.color, "66")}
+                    onBlur={e => e.target.style.borderColor = "var(--tint-white-06)"}
                   />
                   <div style={{ flex: 1 }}>
                     <ANumInput value={acct.balance || 0} onSet={(v) => handleBalance(acct.id, v)} min={0} max={999_000_000_000} step={5000} />
@@ -14564,8 +14600,8 @@ function SavingsPanel({ values, onChange }) {
                           disabled={disabled}
                           title={disabled ? "Bucket 1 (cash cushion) can only be assigned to Cash accounts — it has to be spendable without triggering tax or an early-withdrawal penalty" : `Assign to Bucket ${b}`}
                           style={{
-                            background: active ? cat.color + "33" : "transparent",
-                            border: `1px solid ${active ? cat.color : "rgba(255,255,255,0.1)"}`,
+                            background: active ? withAlpha(cat.color, "33") : "transparent",
+                            border: `1px solid ${active ? cat.color : "var(--tint-white-10)"}`,
                             color: disabled ? "var(--text-faint)" : active ? cat.color : "var(--text-muted)",
                             borderRadius: 4, padding: "2px 6px", fontSize: "var(--fs-small)", fontWeight: 700,
                             cursor: disabled ? "not-allowed" : "pointer", lineHeight: 1.4,
@@ -14578,13 +14614,13 @@ function SavingsPanel({ values, onChange }) {
                     <BucketResetButton account={acct} onReset={(id, b) => setBucket(id, b)} />
                   )}
                   <button onClick={() => toggleSplit(acct.id)} title="Split this account across buckets" style={{
-                    background: (hasSplits || editing) ? cat.color + "33" : cat.color + "14",
-                    border: `1px solid ${(hasSplits || editing) ? cat.color : cat.color + "55"}`,
+                    background: (hasSplits || editing) ? withAlpha(cat.color, "33") : withAlpha(cat.color, "14"),
+                    border: `1px solid ${(hasSplits || editing) ? cat.color : withAlpha(cat.color, "55")}`,
                     borderRadius: 4, padding: "2px 7px", fontSize: "var(--fs-body)", cursor: "pointer", lineHeight: 1.4,
                     filter: (hasSplits || editing) ? "none" : "opacity(0.85)",
                   }}
-                    onMouseEnter={e => { if (!(hasSplits || editing)) { e.currentTarget.style.background = cat.color + "33"; e.currentTarget.style.filter = "none"; } }}
-                    onMouseLeave={e => { if (!(hasSplits || editing)) { e.currentTarget.style.background = cat.color + "14"; e.currentTarget.style.filter = "opacity(0.85)"; } }}
+                    onMouseEnter={e => { if (!(hasSplits || editing)) { e.currentTarget.style.background = withAlpha(cat.color, "33"); e.currentTarget.style.filter = "none"; } }}
+                    onMouseLeave={e => { if (!(hasSplits || editing)) { e.currentTarget.style.background = withAlpha(cat.color, "14"); e.currentTarget.style.filter = "opacity(0.85)"; } }}
                   >🔀</button>
                   <button
                     onClick={() => removeAccount(acct.id)}
@@ -14615,7 +14651,7 @@ function SavingsPanel({ values, onChange }) {
               + Add
             </button>
             {cat.key === "taxable" && catAccounts.length > 0 && (
-              <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--tint-white-06)" }}>
                 <button
                   onClick={() => setShowTaxAssumptions(v => !v)}
                   style={{ background: "transparent", border: "none", color: cat.color, fontSize: "var(--fs-small)", fontWeight: 600, cursor: "pointer", padding: 0 }}
@@ -14665,7 +14701,7 @@ function SavingsPanel({ values, onChange }) {
             <span style={{ fontSize: "var(--fs-label)", color: "var(--text-primary)" }}>Progress</span>
             <span style={{ fontSize: "var(--fs-body)", fontWeight: 700, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace" }}>{percentToGoal.toFixed(1)}%</span>
           </div>
-          <div style={{ height: 10, background: "rgba(255,255,255,0.1)", borderRadius: 5, overflow: "hidden" }}>
+          <div style={{ height: 10, background: "var(--tint-white-10)", borderRadius: 5, overflow: "hidden" }}>
             <div style={{ width: `${percentToGoal}%`, height: "100%", background: "linear-gradient(90deg,#0d9488,var(--positive))", borderRadius: 5 }} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6, marginTop: 12 }}>
@@ -14819,7 +14855,7 @@ function AboutYouPanel({ values, onChange }) {
 */
 function ARow({ label, desc, children }) {
   return (
-    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid var(--tint-white-06)" }}>
       <div>
         <div style={{ fontSize: "var(--fs-label)", color:"var(--text-primary)", fontWeight:500 }}>{label}</div>
         {desc && <div style={{ fontSize: "var(--fs-label)", color:"var(--text-secondary)", marginTop:2 }}>{desc}</div>}
@@ -15093,10 +15129,10 @@ function ACard({ title, accent, desc, children, collapsible = false, defaultOpen
   return (
     <div style={{
       background: "var(--card-bg)",
-      border: "1px solid rgba(255,255,255,0.08)",
+      border: "1px solid var(--tint-white-08)",
       // `accent` is a thin left edge, not a tinted title — it keeps the
       // color coding while every card's heading stays the same legible near-white.
-      borderLeft: accent ? `3px solid ${accent}` : "1px solid rgba(255,255,255,0.08)",
+      borderLeft: accent ? `3px solid ${accent}` : "1px solid var(--tint-white-08)",
       borderRadius: 12, padding: 16,
     }}>
       {collapsible ? (
@@ -15253,7 +15289,7 @@ function AssumptionsPanel({ values, onChange }) {
               />
               <button
                 onClick={() => onChange("carveouts", (values.carveouts || []).filter((_, i) => i !== idx))}
-                style={{ background: "rgba(255,111,122,0.15)", border: "1px solid rgba(255,111,122,0.3)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 6px" }}
+                style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 6px" }}
               >×</button>
             </div>
           ))}
@@ -15357,7 +15393,7 @@ function AssumptionsPanel({ values, onChange }) {
       <div
         style={{
           background: "var(--card-bg)",
-          border: "1px solid rgba(255,255,255,0.08)",
+          border: "1px solid var(--tint-white-08)",
           borderRadius: 10,
           padding: 16,
         }}
@@ -15579,7 +15615,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
             so the field that earns this section is "Their retirement
             age": it's the only input here that moves a dollar. */}
         {spouseOn && (
-          <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--tint-white-08)" }}>
             <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--accent-purple)", marginBottom: 4 }}>
               Your spouse
             </div>
@@ -15636,7 +15672,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         )}
 
         {/* Total belongs WITH the contributions that make it up (logical flow). */}
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--tint-white-08)" }}>
           <span style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)" }}>Total annual savings <span style={{ color: "var(--text-faint)" }}>
             {spouseTotal > 0
               ? `(you ${fmtDollar(annual401k + employerContrib + rothContrib)} + spouse ${fmtDollar(spouseTotal)} + HSA ${fmtDollar(hsaAnnual)} + brokerage ${fmtDollar(taxableContrib)})`
@@ -15651,7 +15687,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           timing distinction. */}
       <div style={{
         marginTop: 4, marginBottom: 2, paddingTop: 12,
-        borderTop: "1px solid rgba(255,255,255,0.10)",
+        borderTop: "1px solid var(--tint-white-10)",
         fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-faint)",
       }}>
         In Retirement
@@ -15775,7 +15811,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
                 <div style={{
                   margin: "2px 0 14px", padding: "9px 12px", borderRadius: 8, fontSize: "var(--fs-small)", lineHeight: 1.55,
                   background: topUp > 0 ? "rgba(90,209,240,0.09)" : "rgba(148,163,184,0.08)",
-                  border: `1px solid ${topUp > 0 ? "rgba(90,209,240,0.3)" : "rgba(148,163,184,0.22)"}`,
+                  border: `1px solid ${topUp > 0 ? "var(--tint-sky-30)" : "rgba(148,163,184,0.22)"}`,
                   color: topUp > 0 ? "var(--accent-teal)" : "var(--text-secondary)",
                 }}>
                   {topUp > 0 ? (
@@ -16089,10 +16125,10 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         {(values.cashFlowEvents || []).filter(e => e.direction === "in" && e.source !== "pension").map((ev) => {
           const upd = (patch) => onChange("cashFlowEvents", (values.cashFlowEvents || []).map(x => x.id === ev.id ? { ...x, ...patch } : x));
           return (
-            <div key={ev.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 12, marginBottom: 10, background: "rgba(255,255,255,0.02)", position: "relative" }}>
+            <div key={ev.id} style={{ border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: 12, marginBottom: 10, background: "var(--tint-white-02)", position: "relative" }}>
               <button onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter(x => x.id !== ev.id))}
                 title="Remove this windfall"
-                style={{ position: "absolute", top: 8, right: 8, background: "rgba(255,111,122,0.15)", border: "1px solid rgba(255,111,122,0.3)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "2px 8px" }}>×</button>
+                style={{ position: "absolute", top: 8, right: 8, background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "2px 8px" }}>×</button>
               <LumpPensionFields ev={ev} upd={upd} placeholder="Inheritance"
                 taxHint="(most inheritances are NOT ordinary income — leave unchecked unless it's an inherited pre-tax IRA distribution or similar)" />
             </div>
@@ -16165,7 +16201,7 @@ function convertPension(values, onChange, entry, fromType, toType) {
 /** Wraps one pension with its embedded type selector. */
 function PensionEntry({ type, onTypeChange, onRemove, children }) {
   return (
-    <div style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 12, marginBottom: 10, background: "rgba(255,255,255,0.02)" }}>
+    <div style={{ border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: 12, marginBottom: 10, background: "var(--tint-white-02)" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         {PENSION_TYPES.map(t => {
           const on = t.id === type;
@@ -16173,7 +16209,7 @@ function PensionEntry({ type, onTypeChange, onRemove, children }) {
             <button key={t.id} onClick={() => onTypeChange(t.id)} title={t.desc}
               style={{
                 background: on ? "rgba(14,165,233,0.22)" : "transparent",
-                border: `1px solid ${on ? "rgba(56,189,248,0.55)" : "rgba(255,255,255,0.10)"}`,
+                border: `1px solid ${on ? "rgba(56,189,248,0.55)" : "var(--tint-white-10)"}`,
                 color: on ? "#e0f2fe" : "var(--text-muted)",
                 borderRadius: 6, padding: "4px 10px", fontSize: "var(--fs-small)",
                 fontWeight: on ? 700 : 500, cursor: "pointer", fontFamily: "inherit",
@@ -16181,7 +16217,7 @@ function PensionEntry({ type, onTypeChange, onRemove, children }) {
           );
         })}
         <button onClick={onRemove} title="Remove this pension"
-          style={{ marginLeft: "auto", background: "rgba(255,111,122,0.15)", border: "1px solid rgba(255,111,122,0.3)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "2px 8px" }}>×</button>
+          style={{ marginLeft: "auto", background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "2px 8px" }}>×</button>
       </div>
       {children}
     </div>
@@ -16243,8 +16279,8 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
       onFocus={onFocusCard}
       onBlur={onBlurCard}
       style={{
-        background: focused ? "rgba(14,165,233,0.05)" : "rgba(255,255,255,0.02)",
-        border: `1px solid ${focused ? "rgba(14,165,233,0.4)" : "rgba(255,255,255,0.07)"}`,
+        background: focused ? "rgba(14,165,233,0.05)" : "var(--tint-white-02)",
+        border: `1px solid ${focused ? "rgba(14,165,233,0.4)" : "var(--tint-white-07)"}`,
         borderRadius: 8,
         padding: "8px 12px",
         marginBottom: 8,
@@ -16266,7 +16302,7 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
             color: "var(--text-primary)",
             background: "transparent",
             border: "none",
-            borderBottom: `1px solid ${focused ? "rgba(14,165,233,0.4)" : "rgba(255,255,255,0.1)"}`,
+            borderBottom: `1px solid ${focused ? "rgba(14,165,233,0.4)" : "var(--tint-white-10)"}`,
             outline: "none",
             padding: "2px 0",
             fontFamily: "'DM Sans',sans-serif",
@@ -16473,13 +16509,13 @@ function ExpenseImport({ values, onChange }) {
       </div>
 
       {error && (
-        <div style={{ marginTop: 8, fontSize: "var(--fs-small)", color: "#fca5a5", background: "rgba(255,111,122,0.1)", border: "1px solid rgba(255,111,122,0.3)", borderRadius: 6, padding: "6px 10px" }}>
+        <div style={{ marginTop: 8, fontSize: "var(--fs-small)", color: "#fca5a5", background: "rgba(255,111,122,0.1)", border: "1px solid var(--tint-red-30)", borderRadius: 6, padding: "6px 10px" }}>
           ⚠ {error}
         </div>
       )}
 
       {meta && (
-        <div style={{ marginTop: 10, fontSize: "var(--fs-small)", color: "var(--text-secondary)", background: "rgba(90,209,240,0.06)", border: "1px solid rgba(90,209,240,0.2)", borderRadius: 6, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div style={{ marginTop: 10, fontSize: "var(--fs-small)", color: "var(--text-secondary)", background: "var(--tint-sky-06)", border: "1px solid var(--tint-sky-20)", borderRadius: 6, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <div style={{ lineHeight: 1.5 }}>
             {meta.mode === "multi" ? (
               <>
@@ -16503,7 +16539,7 @@ function ExpenseImport({ values, onChange }) {
           </div>
           <button
             onClick={clearImport}
-            style={{ flexShrink: 0, fontSize: "var(--fs-small)", background: "rgba(255,111,122,0.12)", border: "1px solid rgba(255,111,122,0.3)", color: "#ff6f7a", borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}
+            style={{ flexShrink: 0, fontSize: "var(--fs-small)", background: "rgba(255,111,122,0.12)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}
           >Clear</button>
         </div>
       )}
@@ -16544,7 +16580,7 @@ function ExpensesPanel({ values, onChange }) {
             exist on touch. */}
         <div style={{
           marginBottom: 16, padding: "9px 12px", borderRadius: 8,
-          background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.28)",
+          background: "var(--tint-amber-07)", border: "1px solid rgba(251,191,36,0.28)",
           fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.55,
         }}>
           <strong style={{ color: "var(--accent-gold)" }}>Enter what you want to spend — after tax.</strong>{" "}
@@ -16565,7 +16601,7 @@ function ExpensesPanel({ values, onChange }) {
         <WFieldRow label="Out-of-Country Spending (annual)" helper="Spending that occurs abroad in today's dollars, after tax. Always drawn from the portfolio but never subject to US state tax.">
           <ANumInput value={values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0)} onSet={(v) => onChange("spOutOfCountry", v)} min={0} max={MAX_MONEY_INPUT} step={1000} suffix="/yr" />
         </WFieldRow>
-        <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(90,209,240,0.06)", border: "1px solid rgba(90,209,240,0.2)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ marginTop: 10, padding: "8px 12px", background: "var(--tint-sky-06)", border: "1px solid var(--tint-sky-20)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span>Total combined annual spending, after tax (used for portfolio draw)</span>
           <strong style={{ color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--fs-body)" }}>{fmtDollar(combinedSp)}/yr</strong>
         </div>
@@ -16664,7 +16700,7 @@ function ExpensesPanel({ values, onChange }) {
               />
                 <button
                   onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter(x => x.id !== ev.id))}
-                  style={{ background: "rgba(255,111,122,0.15)", border: "1px solid rgba(255,111,122,0.3)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 6px" }}
+                  style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 6px" }}
                 >×</button>
               </div>
               {/* Committed vs deferrable decides whether the guardrails may trim
@@ -16769,7 +16805,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
           number visible here (the WR diagnostic and guardrails below are
           calibrated to it). */}
       <ACard title="Spending" accent="var(--accent-teal)">
-        <div style={{ padding: "10px 12px", background: "rgba(90,209,240,0.06)", border: "1px solid rgba(90,209,240,0.2)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ padding: "10px 12px", background: "var(--tint-sky-06)", border: "1px solid var(--tint-sky-20)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <span>
             Combined annual spending <span style={{ color: "var(--accent-gold)" }}>(after tax)</span>{values.spImportMeta ? (
               <> · <strong style={{ color: "#c4b5fd" }}>{values.spImportMeta.mode === "multi" ? "multi-year budget active" : "budget-driven"}</strong></>
@@ -16848,7 +16884,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             <div style={{
               marginBottom: 14,
               padding: "10px 12px",
-              background: inSafeBand ? "rgba(52,211,153,0.08)" : "rgba(251,191,36,0.08)",
+              background: inSafeBand ? "rgba(52,211,153,0.08)" : "var(--tint-amber-08)",
               border: `1px solid ${withAlpha(wrColor, "40")}`,
               borderRadius: 8,
             }}>
@@ -16874,7 +16910,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
               <div style={{ textAlign: "center" }}><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 4 }}>Floor</div><div style={{ fontSize: 28, fontWeight: 700, color: "var(--accent-gold)", fontFamily: "'JetBrains Mono',monospace" }}>{guardFromImport ? fmtDollar(floor) : `${floorPct}%`}</div><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>{guardFromImport ? "essentials / yr" : `${fmtDollar(floor)} / yr`}</div></div>
-              <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ width: 1, height: 30, background: "var(--tint-white-10)" }} />
               <div style={{ textAlign: "center" }}><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "var(--positive)", fontFamily: "'JetBrains Mono',monospace" }}>{guardFromImport ? fmtDollar(ceiling) : `${ceilingPct}%`}</div><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>{guardFromImport ? "full budget / yr" : `${fmtDollar(ceiling)} / yr`}</div></div>
             </div>
             {/* The Floor/Ceiling inputs used to live here AND nowhere else. They
@@ -16922,7 +16958,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 16 }}>Each year, the portfolio is amortized over the years remaining to your plan-to age — so the plan is designed to spend down to roughly zero, not to leave an estate.</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
               <div style={{ textAlign: "center" }}><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>Assumed real return</div><div style={{ fontSize: 28, fontWeight: 700, color: "var(--accent-gold)", fontFamily: "'JetBrains Mono',monospace" }}>{(((values.vpwRealReturn ?? 0.0376)) * 100).toFixed(2)}%</div></div>
-              <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ width: 1, height: 30, background: "var(--tint-white-10)" }} />
               <div style={{ textAlign: "center" }}><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>Amortized to age</div><div style={{ fontSize: 28, fontWeight: 700, color: "var(--positive)", fontFamily: "'JetBrains Mono',monospace" }}>{values.vpwEndAge ?? values.endAge ?? 100}</div></div>
             </div>
           </>
@@ -17181,7 +17217,7 @@ function RetirementLanding({ onEnter }) {
             <span style={{ fontSize: 38, fontWeight: 800, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{Math.round(conf * 100)}</span>
             <span style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", fontWeight: 600 }}>% confident<br />at that age</span>
           </div>
-          <div style={{ flex: 1, minWidth: 200, height: 10, borderRadius: 100, background: "rgba(255,255,255,0.06)", position: "relative", overflow: "hidden" }}>
+          <div style={{ flex: 1, minWidth: 200, height: 10, borderRadius: 100, background: "var(--tint-white-06)", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: -3, bottom: -3, left: "85%", width: 2, background: "var(--text-faint)" }} />
             <div style={{ height: "100%", borderRadius: 100, width: `${Math.min(100, Math.round(conf * 100))}%`, background: "linear-gradient(90deg,#0d9488,#5ad1f0)", transition: "width 0.35s" }} />
           </div>
@@ -18194,7 +18230,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             </button>
             {/* Two groups, one divider: what acts on YOUR PLAN (read it, record it,
                 save it, load it), then what is about THE APP. */}
-            <div aria-hidden="true" style={{ width: 1, height: 20, background: "rgba(255,255,255,0.14)", margin: "0 5px" }} />
+            <div aria-hidden="true" style={{ width: 1, height: 20, background: "var(--tint-white-14)", margin: "0 5px" }} />
             <HelpButton />
             <AboutButton />
             <div style={{ position: "relative", display: "inline-flex" }}>
@@ -18218,7 +18254,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     padding: 14,
                     width: 300,
                     zIndex: 999,
-                    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                    boxShadow: "0 8px 32px var(--tint-black-50)",
                   }}
                 >
                   <div style={{ fontSize: "var(--fs-label)", color: "var(--text-primary)", fontWeight: 600, marginBottom: 10 }}>
@@ -18239,7 +18275,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                           padding: "6px 4px",
                           borderRadius: 6,
                           cursor: "pointer",
-                          border: feedbackType === fb.type ? "1px solid #9a9cff" : "1px solid rgba(255,255,255,0.08)",
+                          border: feedbackType === fb.type ? "1px solid #9a9cff" : "1px solid var(--tint-white-08)",
                           background: feedbackType === fb.type ? "rgba(167,139,250,0.15)" : "var(--card-bg)",
                           transition: "all 0.15s",
                         }}
@@ -18401,7 +18437,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 style={{
                   marginTop: 10,
                   paddingTop: 10,
-                  borderTop: "1px solid rgba(255,255,255,0.06)",
+                  borderTop: "1px solid var(--tint-white-06)",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "baseline",
@@ -18808,7 +18844,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                           {/* Odds analogy second, fully interactive — click cycles
                               through every analogy in the same probability band. */}
                           {analogue && (
-                            <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 12 }}>
+                            <div style={{ borderTop: "1px solid var(--tint-white-08)", paddingTop: 12 }}>
                               <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 6 }}>Put another way</div>
                               <RotatingAnalogue rate={mc.rate} endAge={endAge} />
                             </div>
@@ -19253,7 +19289,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               : "rgba(79,216,143,0.95)",
           color: "white",
           borderRadius: 8, padding: "10px 20px", fontSize: "var(--fs-body)", fontWeight: 600,
-          boxShadow: "0 4px 16px rgba(0,0,0,0.4)", zIndex: 99999,
+          boxShadow: "0 4px 16px var(--tint-black-40)", zIndex: 99999,
           // Clickable when it carries an email address to act on; the success
           // and error toasts stay click-through as before.
           pointerEvents: stripeToast.tone === "warn" ? "auto" : "none",
@@ -19437,7 +19473,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
           position: "fixed", top: 10, left: "50%", transform: "translateX(-50%)",
           zIndex: 20001, background: "rgba(124,58,237,0.95)", color: "#fff",
           borderRadius: 999, padding: "5px 16px", fontSize: "var(--fs-label)", fontWeight: 700,
-          boxShadow: "0 4px 16px rgba(0,0,0,0.4)", pointerEvents: "none",
+          boxShadow: "0 4px 16px var(--tint-black-40)", pointerEvents: "none",
           whiteSpace: "nowrap",
         }}>
           🔧 Owner preview — purchase prompt suppressed (admin secret verified)
