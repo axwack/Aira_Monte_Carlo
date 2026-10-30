@@ -215,6 +215,26 @@ describe("Stress Lab panels render", () => {
     root.unmount();
   });
 
+  test("SequenceBuilder blocks Run on an out-of-range year and says so", () => {
+    const calls = [];
+    const { host, root } = mount(<SequenceBuilder p={P} onResult={(x) => calls.push(x)} />);
+    const btn = (re) => [...host.querySelectorAll("button")].find((b) => re.test(b.textContent));
+    act(() => btn(/My own numbers/).click());
+    const type = (i, v) => {
+      const input = host.querySelectorAll('input[type="number"]')[i];
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, v);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    type(0, "500");
+    expect(btn(/Run scenario/).disabled).toBe(true);
+    expect(host.querySelector('[role="alert"]').textContent).toMatch(/will not run/);
+    act(() => btn(/Run scenario/).click());
+    expect(calls).toEqual([]);
+    act(() => root.unmount());
+  });
+
   test("FailedPathPanel shows the no-failure message for null and a table for failures", () => {
     const a = mount(<FailedPathPanel failures={null} n={100} />);
     expect(a.host.textContent).toMatch(/No simulated path ran out/);

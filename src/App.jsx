@@ -11048,9 +11048,9 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
                         style={{
                           flex: 1, padding: "3px 0", fontSize: "var(--fs-small)", borderRadius: 5, cursor: "pointer",
                           fontFamily: "'JetBrains Mono',monospace", fontWeight: 700,
-                          border: `1px solid ${severity === v ? "#ff6f7a" : "rgba(255,255,255,0.12)"}`,
-                          background: severity === v ? "rgba(255,111,122,0.15)" : "transparent",
-                          color: severity === v ? "#ff6f7a" : "var(--text-muted)",
+                          border: `1px solid ${severity === v ? SEQ_CRASH : "var(--card-border)"}`,
+                          background: severity === v ? "var(--bg-danger)" : "transparent",
+                          color: severity === v ? SEQ_CRASH : "var(--text-muted)",
                         }}>
                         {Math.round(v * 100)}%
                       </button>
@@ -11067,7 +11067,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
               {s.id === "crash" && crashOpen && <SequenceBuilder p={p} onResult={onSeqResult} />}
 
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
-                <span style={{ fontSize: "var(--fs-small)", color: measured ? "#4fd88f" : "var(--text-faint)", fontWeight: 600 }}>
+                <span style={{ fontSize: "var(--fs-small)", color: measured ? "var(--positive)" : "var(--text-faint)", fontWeight: 600 }}>
                   {measured ? `✓ ${MC_PATHS_LABEL} paths` : est ? (estStale ? "previous inputs" : "fast estimate") : "not run yet"}
                 </span>
                 <button onClick={() => runFull(s)} disabled={isRunning || !est} className="mbtn"
@@ -11198,7 +11198,7 @@ function SeqBars({ items, big }) {
                 ...(r < 0 ? { top: half, height: h, background: SEQ_CRASH } : { bottom: half, height: h, background: "var(--positive)" }) }} />
               <div style={{ position: "absolute", left: 0, right: 0, top: half, height: 1, background: "var(--divider)" }} />
             </div>
-            <div style={{ fontSize: big ? 13 : 10, fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: "tabular-nums", color: r < 0 ? "var(--negative)" : "var(--positive)", fontWeight: 700 }}>
+            <div style={{ fontSize: big ? "var(--fs-label)" : "var(--fs-small)", fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: "tabular-nums", color: r < 0 ? "var(--negative)" : "var(--positive)", fontWeight: 700 }}>
               {r > 0 ? "+" : ""}{(r * 100).toFixed(0)}%
             </div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>{it.label}</div>
@@ -11228,10 +11228,10 @@ function SequenceBuilder({ p, onResult }) {
   let problem = "";
   if (!hist) {
     if (!valid.length) problem = "Enter at least one year to run.";
+    else if (outOfRange.length) problem = `${outOfRange.join(", ")}% looks like a typo. Returns outside ${SEQ_RETURN_MIN}% to +${SEQ_RETURN_MAX}% are not realistic, so the scenario will not run.`;
     else if (valid.length < typed.length) problem = `${typed.length - valid.length} entry isn't a number and will be skipped.`;
-    else if (outOfRange.length) problem = `${outOfRange.join(", ")}% looks like a typo. Returns outside ${SEQ_RETURN_MIN}% to +${SEQ_RETURN_MAX}% are not realistic.`;
   }
-  const canRun = !busy && (hist || valid.length > 0);
+  const canRun = !busy && (hist || (valid.length > 0 && !outOfRange.length));
 
   const run = () => {
     const seq = hist ? histSeq : valid.map((v) => Number(v) / 100);
