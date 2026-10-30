@@ -3221,7 +3221,7 @@ function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRAT
               ["Avg inflation", `${pool.inflAvg.toFixed(1)}%`, "var(--accent-gold)"],
             ].map(([l, v, c]) => (
               <div key={l} style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)", borderRadius: 6, padding: "8px 10px" }}>
-                <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>{l}</div>
+                <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 3 }}>{l}</div>
                 <div style={{ fontSize: "var(--fs-h2)", fontWeight: 700, color: c, fontFamily: "var(--font-mono)" }}>{v}</div>
               </div>
             ))}
@@ -3308,9 +3308,9 @@ function AllocationDonut({ accounts, onEdit }) {
   const Ring = onEdit ? "button" : "div";
   return (
     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-      <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+      <h2 style={{ margin: "0 0 6px", fontWeight: 400, fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>
         Tax Treatment
-      </div>
+      </h2>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         {/* The ring is the thing a new user reaches for to change the split,
             so with onEdit it IS the control. The mask lives on the inner span
@@ -3760,7 +3760,7 @@ function SectorBadge({ age }) {
                 <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, minWidth: 0, flex: "1 1 auto" }}>
                   <span style={{ fontSize: "var(--fs-label)", fontWeight: 800, color: s.color }}>{s.n}</span>
                   {isCur && (
-                    <span style={{ fontSize: "var(--fs-small)", fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
+                    <span style={{ fontSize: "var(--fs-small)", fontWeight: 800, letterSpacing: 0.4,
                       color: s.color, background: withAlpha(s.color, "22"), border: `1px solid ${withAlpha(s.color, "55")}`,
                       borderRadius: 999, padding: "1px 7px", lineHeight: 1.55, whiteSpace: "nowrap" }}>You are here</span>
                   )}
@@ -3859,11 +3859,13 @@ const CSS = `
   /* Reusable surfaces / labels — prefer these over retyping the card and
      uppercase-label inline style objects. */
   .card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-card); padding:13px; }
-  .section-label { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; }
+  .section-label { font-size:var(--fs-small); font-weight:700; color:var(--text-muted); }
   body { margin:0; font-family:var(--font-sans); background:var(--bg-base); color:var(--text-primary); font-size:13px; line-height:1.5;
     font-variant-numeric: tabular-nums; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility; }
   .app { min-height:100vh; background:var(--bg-base); }
   .hdr { background:var(--bg-hdr); border-bottom:1px solid var(--divider); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; backdrop-filter:blur(16px); }
+  h1.logo { margin:0; }
+  .sr-only { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
   .logo { font-size:25px; font-weight:800; letter-spacing:-0.03em; color:#eaf1ff; }
   .logo-sub { color:#6c9bff; font-weight:400; font-size:16px; margin-left:6px; }
   .mbtn { padding:5px 13px; border-radius:7px; border:1px solid var(--card-border); cursor:pointer; font-size:11px; font-family:var(--font-sans); font-weight:500; transition:all 0.2s; background:transparent; color:var(--text-secondary); }
@@ -3910,7 +3912,7 @@ const CSS = `
   .layout { display:grid; grid-template-columns:340px minmax(0, 1fr); height:calc(100vh - 56px); overflow:hidden; }
   .sidebar { border-right:1px solid rgba(255, 255, 255, 0.08); padding:14px 12px; overflow-y:auto; background:rgba(10,15,30,0.78); display:flex; flex-direction:column; gap:12px; min-height:0; min-width:0; }
   .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-card); padding:13px 12px; }
-  .sb-title { font-size:11.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:10px; }
+  .sb-title { font-size:var(--fs-label); font-weight:600; color:var(--text-muted); margin:0 0 10px; }
   .sl-row { display:flex; flex-direction:column; gap:6px; margin-bottom:13px; }
   .sl-nudge-btn { width:24px; height:24px; border-radius:5px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.06); color:#cbd5e1; cursor:pointer; font-size:14px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; padding:0; transition:all 0.15s; flex-shrink:0; line-height:1; user-select:none; }
   .sl-nudge-btn:hover:not(:disabled) { background:rgba(255,255,255,0.18); color:#ffffff; border-color:rgba(255,255,255,0.28); transform:scale(1.06); }
@@ -3989,7 +3991,7 @@ const CSS = `
      from getting too narrow to read before wrapping. */
   .metrics { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:9px; }
   .met { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:10px; padding:13px 15px; }
-  .ml { font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.09em; margin-bottom:7px; font-weight:600; }
+  .ml { font-size:var(--fs-small); color:#94a3b8; margin-bottom:7px; font-weight:600; }
   .mv { font-size:22px; font-weight:800; font-family:'JetBrains Mono',monospace; line-height:1; }
   .ms { font-size:12px; color:#64748b; margin-top:5px; }
   .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:#cbd5e1; font-style:italic; }
@@ -4549,7 +4551,7 @@ function AboutButton() {
                 so adding someone needs no JSX. */}
             {ABOUT_THANKS?.people?.length > 0 && (
               <div style={{ marginTop: 26, paddingTop: 20, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+                <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-gold)", marginBottom: 8 }}>
                   ⭐ Special thanks
                 </div>
                 <p style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
@@ -4580,7 +4582,7 @@ function AboutButton() {
             <p style={{ fontSize: "var(--fs-body)", color:"var(--text-secondary)", lineHeight:1.75, margin:"0 0 18px" }}>
               {ABOUT_PRODUCT.description}
             </p>
-            <div style={{ fontSize: "var(--fs-label)", fontWeight:700, color:"#cbd5e1", marginBottom:10, letterSpacing:"0.5px", textTransform:"uppercase" }}>
+            <div style={{ fontSize: "var(--fs-label)", fontWeight:700, color:"#cbd5e1", marginBottom:10, letterSpacing:"0.5px" }}>
               Key Capabilities
             </div>
             <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:8 }}>
@@ -4695,8 +4697,7 @@ function HelpButton() {
             <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
               {groups.map(g => (
                 <div key={g}>
-                  <div style={{ fontSize: "var(--fs-small)", fontWeight:700, color:"var(--text-faint)", letterSpacing:"1px",
-                    textTransform:"uppercase", marginBottom:9 }}>{g}</div>
+                  <div style={{ fontSize: "var(--fs-small)", fontWeight:700, color:"var(--text-faint)", letterSpacing:"1px", marginBottom:9 }}>{g}</div>
                   <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
                     {filtered.filter(e => e.group === g).map(e => (
                       <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} {...(q ? {} : { open: openId === e.id, onToggle: () => setOpenId((id) => (id === e.id ? null : e.id)) })} />
@@ -6053,7 +6054,7 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
           </BarChart>
         </ResponsiveContainer>
         <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 12, fontSize: "var(--fs-label)", alignSelf: "start" }}>
-          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 8 }}>
             {hoverYr != null ? `Year ${hoverYr}` : "Lifetime"}
           </div>
           {rows.map(({ key, color, value }) => (
@@ -6075,7 +6076,7 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
 
           {recon && (
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed rgba(255,255,255,0.12)" }}>
-              <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+              <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 6 }}>
                 What your portfolio must cover
               </div>
               <ReconLine label="Spending, housing, carveouts, one-offs" value={recon.spendNeed} color="#cbd5e1" />
@@ -6443,7 +6444,6 @@ const modeDescs = {
           style={{
             fontSize: "var(--fs-small)",
             color: "var(--text-faint)",
-            textTransform: "uppercase",
             letterSpacing: "0.08em",
           }}
         >
@@ -6724,7 +6724,7 @@ const modeDescs = {
                   </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 20px", fontSize: "var(--fs-label)" }}>
                 <div>
-                  <div style={{ color: "var(--text-secondary)", marginBottom: 6, fontSize: "var(--fs-small)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Tax Year & Income</div>
+                  <div style={{ color: "var(--text-secondary)", marginBottom: 6, fontSize: "var(--fs-small)" }}>Tax Year & Income</div>
                   {[
                     ["Tax Year",          cyYear,   setCyYear,   false, 2026, 2060],
                     ["W-2 / SE Income",   cyW2,     setCyW2,     true],
@@ -6745,7 +6745,7 @@ const modeDescs = {
                   ))}
                 </div>
                 <div>
-                  <div style={{ color: "var(--text-secondary)", marginBottom: 6, fontSize: "var(--fs-small)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cash Available for Taxes</div>
+                  <div style={{ color: "var(--text-secondary)", marginBottom: 6, fontSize: "var(--fs-small)" }}>Cash Available for Taxes</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 8, alignItems: "center", ...rowSep }}>
                     <span style={{ color: "var(--accent-gold)" }}>Cash/Treasury/Short Term cash for Taxes</span>
                     <input
@@ -6920,7 +6920,7 @@ const modeDescs = {
 
             {/* ── How this works ── */}
             <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: "12px 14px" }}>
-              <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+              <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 8 }}>
                 ℹ️ How Tax Room and the Lifetime Ladder work together
               </div>
               <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.7 }}>
@@ -7160,7 +7160,7 @@ const modeDescs = {
               if (!orphaned.length) return null;
               return (
                 <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(255,111,122,0.07)", border: "1px solid rgba(255,111,122,0.25)", borderRadius: 8 }}>
-                  <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#ff6f7a", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#ff6f7a", marginBottom: 6 }}>
                     ⚠️ Stale Pins — producing $0 conversion
                   </div>
                   <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.6 }}>
@@ -7973,7 +7973,7 @@ function AccountDrawOrder({ p, onAssumptionChange }) {
       borderRadius: 8, padding: "10px 14px", margin: "10px 0",
     }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
-        <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent)" }}>
           Account draw order
         </span>
         {MODES.map(([val, name, rec]) => (
@@ -8021,7 +8021,7 @@ function SourcingGuardrails({ p, onAssumptionChange, summary }) {
       background: "rgba(90,209,240,0.05)", border: "1px solid rgba(90,209,240,0.18)",
       borderRadius: 8, padding: "10px 14px", margin: "10px 0",
     }}>
-      <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-teal)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+      <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-teal)" }}>
         Sourcing guardrails
       </span>
       <label style={lbl} title="Stop pre-tax (IRA/401k) draws when ordinary income would hit this tax bracket. Roth covers the rest. 'Off' = naive (pretax first, no ceiling).">
@@ -8483,13 +8483,13 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
   const ssPct = (Number(r.ss) || 0) > 0 ? Math.round((Number(r.taxSS) || 0) / Number(r.ss) * 100) : 0;
 
   const section = { background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 9, padding: 14, marginBottom: 12 };
-  const secHead = { fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 };
+  const secHead = { fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 10 };
   const tbl = { width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-label)" };
-  const thC = { textAlign: "right", color: "var(--text-faint)", fontWeight: 600, fontSize: "var(--fs-small)", textTransform: "uppercase", letterSpacing: "0.06em", padding: "4px 6px", borderBottom: "1px solid rgba(255,255,255,0.1)" };
+  const thC = { textAlign: "right", color: "var(--text-faint)", fontWeight: 600, fontSize: "var(--fs-small)", padding: "4px 6px", borderBottom: "1px solid rgba(255,255,255,0.1)" };
   const tdL = { textAlign: "left", color: "var(--text-secondary)", padding: "5px 6px" };
   const tdR = { textAlign: "right", fontFamily: "'JetBrains Mono',monospace", color: "var(--text-primary)", padding: "5px 6px", whiteSpace: "nowrap" };
   const balCell = { flex: 1, textAlign: "center", padding: "8px 4px" };
-  const balLbl = { fontSize: "var(--fs-small)", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.06em" };
+  const balLbl = { fontSize: "var(--fs-small)", color: "var(--text-faint)" };
   const balVal = { fontSize: "var(--fs-body)", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "var(--text-primary)", marginTop: 3 };
 
   // Income-source rows, assembled only from row fields. A source with no
@@ -8542,7 +8542,7 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
         </div>
         <div style={{ border: "1px solid var(--positive)", borderRadius: 8, padding: "6px 12px", textAlign: "right", background: "rgba(16,185,129,0.07)" }}>
           <div style={{ fontSize: "var(--fs-h2)", fontWeight: 800, color: "var(--positive)", fontFamily: "'JetBrains Mono',monospace" }}>{money(afterTax)}</div>
-          <div style={{ fontSize: "var(--fs-small)", color: "var(--positive)", textTransform: "uppercase", letterSpacing: "0.08em" }}>After tax</div>
+          <div style={{ fontSize: "var(--fs-small)", color: "var(--positive)" }}>After tax</div>
         </div>
       </div>
 
@@ -8671,7 +8671,7 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
             </tbody>
           </table>
           <div style={{ marginTop: 10, background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", borderRadius: 8, padding: "10px 12px" }}>
-            <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-purple)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>◇ Key Insights</div>
+            <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-purple)", marginBottom: 6 }}>◇ Key Insights</div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.8 }}>
               Marginal tax rate (top bracket reached): <strong style={{ color: "var(--text-primary)" }}>{marginalPct}%</strong><br />
               Effective rate on taxable income: <strong style={{ color: "var(--text-primary)" }}>{effOnTaxable.toFixed(1)}%</strong>
@@ -9745,7 +9745,7 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                 ]] : []),
               ].map(([l, v, c, sub]) => (
                 <div key={l} style={{ background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, padding: "12px 14px" }}>
-                  <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{l}</div>
+                  <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 4 }}>{l}</div>
                   <div style={{ fontSize: "var(--fs-h1)", fontWeight: 800, color: c, fontFamily: "var(--font-mono)" }}>{v}</div>
                   <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginTop: 3, lineHeight: 1.4 }}>{sub}</div>
                 </div>
@@ -10029,13 +10029,13 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
             >
               {role && (
                 <>
-                  <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: "var(--fs-small)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Role</div>
+                  <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: "var(--fs-small)" }}>Role</div>
                   <div style={{ marginBottom: holdings ? 8 : 0 }}>{role}</div>
                 </>
               )}
               {holdings && (
                 <>
-                  <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: "var(--fs-small)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Recommended holdings</div>
+                  <div style={{ color, fontWeight: 600, marginBottom: 3, fontSize: "var(--fs-small)" }}>Recommended holdings</div>
                   <div>{holdings}</div>
                 </>
               )}
@@ -10046,7 +10046,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
         <div>
           <div style={{ fontSize: "var(--fs-body)", fontWeight: 700, color }}>{label}</div>
-          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{horizon}</div>
+          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>{horizon}</div>
         </div>
         <div style={{ textAlign: "right", paddingRight: role || holdings ? 16 : 0 }}>
           <div style={{ fontSize: "var(--fs-h2)", fontWeight: 700, color: barClr, fontFamily: "'JetBrains Mono',monospace" }}>{actual > 0 ? fmtDollar(actual) : "—"}</div>
@@ -10318,7 +10318,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
           `runway` useMemo above for what "depleted" means here. */}
       {runway && (
         <div className="chart-card" style={{ borderLeft: `3px solid ${runway.depleted ? "var(--accent-gold)" : "#4fd88f"}` }}>
-          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-muted)", marginBottom: 6 }}>
             🧭 Bucket 1 Runway
           </div>
           {runway.depleted ? (
@@ -10341,7 +10341,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
 
       {/* Buffer + draw-mode controls */}
       <div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Buffer targets:</span>
+        <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>Buffer targets:</span>
         {[
           { label: "B1 years", key: "b1Years", val: b1Years, min: 1, max: 7, hint: "2–3 recommended" },
           { label: "B2 years", key: "b2Years", val: b2Years, min: 3, max: 12, hint: "5–10 recommended" },
@@ -11016,7 +11016,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
               <div style={{ display: "flex", gap: 12 }}>
                 <ScenarioGauge pct={rate == null ? null : rate * 100} color={color} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-secondary)", textTransform: "uppercase" }}>
+                  <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)" }}>
                     {s.emoji} {s.label}
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 4, margin: "3px 0 1px" }}>
@@ -11034,7 +11034,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
 
               {s.id === "crash" && (
                 <div style={{ marginTop: 9 }}>
-                  <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-faint)", textTransform: "uppercase", marginBottom: 5 }}>
+                  <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 5 }}>
                     Crash severity
                   </div>
                   <div style={{ display: "flex", gap: 5 }}>
@@ -11255,7 +11255,7 @@ function SequenceBuilder({ p, onResult }) {
     background: on ? "rgba(248,113,113,0.14)" : "transparent", color: on ? SEQ_CRASH : "var(--text-secondary)",
   });
   const lab = { fontSize: "var(--fs-label)", color: "var(--text-muted)", marginRight: 8 };
-  const head = { fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-faint)", textTransform: "uppercase", marginBottom: 8 };
+  const head = { fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 8 };
 
   return (
     <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--divider)" }}>
@@ -11640,7 +11640,7 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
   };
 
   const sec = { background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 9, padding: 14, marginBottom: 12 };
-  const secHead = { fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 };
+  const secHead = { fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 10 };
   const row = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" };
   const lbl = { fontSize: "var(--fs-label)", color: "var(--text-secondary)", fontWeight: 600 };
   const help = { fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.55, marginTop: -4, marginBottom: 10 };
@@ -11931,7 +11931,7 @@ function VerdictHeader({ mc, stress, real = false, inf = 0, endAge, currentAge, 
   const exhaust = mc.medianExhaustAge;
 
   const fact = { display: "flex", flexDirection: "column", gap: 1, minWidth: 0 };
-  const k = { fontSize: "var(--fs-small)", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" };
+  const k = { fontSize: "var(--fs-small)", color: "var(--text-faint)", whiteSpace: "nowrap" };
   const v = { fontSize: "var(--fs-h2)", fontWeight: 800, fontFamily: "var(--font-mono)", lineHeight: 1.1, whiteSpace: "nowrap" };
   const sep = { width: 1, alignSelf: "stretch", background: "var(--divider)", flexShrink: 0 };
 
@@ -12082,7 +12082,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
         <span style={{ fontSize: "var(--fs-small)", color, display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform 120ms ease" }}>▶</span>
-        <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>
+        <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color }}>{label}</div>
         {hint && <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>{hint}</span>}
       </div>
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>{open ? "Hide" : "Show"}</div>
@@ -12091,7 +12091,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
 
   const InputCard = ({ title, rows }) => (
     <div style={{ background: "var(--row-highlight)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 9, padding: 14 }}>
-      <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>{title}</div>
+      <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--text-faint)", marginBottom: 10 }}>{title}</div>
       {/* Index in the key: rows are now generated per cash-flow event, and two
           events can legitimately produce the same label ("↳ into taxable"). */}
       {rows.map(([label, val], i) => (
@@ -12206,7 +12206,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
         };
         return (
           <div style={{ background: "var(--card-bg)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 16px" }}>
-            <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>What's driving this</div>
+            <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>What's driving this</div>
             {ex.drivers.map((d, i) => {
               const t = tone[d.severity];
               return (
@@ -12214,7 +12214,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
                   <summary style={{ cursor: "pointer", padding: "8px 0", fontSize: "var(--fs-label)" }}>
                     <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "baseline", gap: "2px 10px", width: "calc(100% - 20px)", verticalAlign: "top" }}>
                       <span style={{ flex: "1 1 180px", minWidth: 0, fontWeight: 600, color: "#e2e8f0" }}>{d.label}</span>
-                      <span style={{ fontSize: "var(--fs-small)", color: t.fg, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>{t.tag}</span>
+                      <span style={{ fontSize: "var(--fs-small)", color: t.fg, whiteSpace: "nowrap" }}>{t.tag}</span>
                       <span style={{ fontWeight: 700, color: t.fg, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>{d.value}</span>
                     </span>
                   </summary>
@@ -13104,7 +13104,7 @@ function MilestonesSection({ params, rmdAge }) {
         }}
       >
         <span style={{ fontSize: "var(--fs-small)", color: "#6366f1", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
-        <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6366f1" }}>
+        <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#6366f1" }}>
           📅 Age Milestones
         </span>
         <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginLeft: 4 }}>({milestones.length} milestones)</span>
@@ -13224,7 +13224,7 @@ function ActionPlanRow({ card, isSelected, onClick }) {
     >
       <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.border, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.label, marginBottom: 1, display: "flex", alignItems: "center", gap: 5 }}>
+        <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: C.label, marginBottom: 1, display: "flex", alignItems: "center", gap: 5 }}>
           {card.category}
           {card.isLiveData  && <span style={{ color: "#22d3ee",  fontSize: "var(--fs-small)" }}>🌐 LIVE</span>}
           {card.aiGenerated && !card.isLiveData && <span style={{ color: "var(--accent-purple)", fontSize: "var(--fs-small)" }}>✦ AI</span>}
@@ -13234,7 +13234,6 @@ function ActionPlanRow({ card, isSelected, onClick }) {
               color:      card.aiNote ? "#818cf8"                : "var(--text-muted)",
               border:     `1px solid ${card.aiNote ? "rgba(99,102,241,0.3)" : "rgba(71,85,105,0.3)"}`,
               borderRadius: 4, padding: "1px 5px", fontSize: "var(--fs-small)", fontWeight: 700,
-              letterSpacing: "0.04em", textTransform: "uppercase",
             }}>
               🤖 {card.aiNote ? "AI insight" : "AI reviewed"}
             </span>
@@ -13291,7 +13290,7 @@ function CardDetailPanel({ card, onClose }) {
       {/* Details */}
       {card.reason && (
         <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--text-faint)", marginBottom: 6 }}>DETAILS</div>
+          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 6 }}>DETAILS</div>
           <div style={{ fontSize: "var(--fs-body)", color: "var(--text-secondary)", lineHeight: 1.65 }}>{card.reason}</div>
         </div>
       )}
@@ -13299,7 +13298,7 @@ function CardDetailPanel({ card, onClose }) {
       {/* What to do */}
       {steps.length > 0 && (
         <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--text-faint)", marginBottom: 8 }}>WHAT TO DO</div>
+          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 8 }}>WHAT TO DO</div>
           {steps.map((step, i) => (
             <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
               <div style={{
@@ -13320,7 +13319,7 @@ function CardDetailPanel({ card, onClose }) {
           background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)",
           borderRadius: 8, padding: "10px 14px", marginBottom: 14,
         }}>
-          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#818cf8", marginBottom: 4 }}>🤖 AI INSIGHT</div>
+          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#818cf8", marginBottom: 4 }}>🤖 AI INSIGHT</div>
           <div style={{ fontSize: "var(--fs-label)", color: "var(--accent-purple)", lineHeight: 1.55 }}>{card.aiNote}</div>
         </div>
       ) : card.aiChecked ? (
@@ -13538,7 +13537,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
             flexShrink:   0,
           }}>
             <div>
-              <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-purple)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+              <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-purple)", marginBottom: 2 }}>
                 AiRA Credits
               </div>
               {/* "You have 0 credits" and "this browser has no session" are
@@ -13629,7 +13628,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
           >
             <div style={{ fontSize: "var(--fs-h1)", lineHeight: 1 }}>🚧</div>
             <div>
-              <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-gold)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+              <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-gold)", marginBottom: 2 }}>
                 AiRA Credits
               </div>
               <div style={{ fontSize: "var(--fs-body)", fontWeight: 700, color: "#fde68a", lineHeight: 1.15 }}>
@@ -13681,7 +13680,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
         };
         return (
           <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 9, padding: "12px 15px", marginBottom: 4 }}>
-            <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#818cf8", marginBottom: 8 }}>
+            <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#818cf8", marginBottom: 8 }}>
               🎯 Retirement Date Solver — Target {fmtDollar(target)}
             </div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 8 }}>
@@ -13816,7 +13815,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                 {/* Live cards — separated with a label */}
                 {filtered.some(c => c.isLiveData) && (
                   <>
-                    <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#22d3ee", margin: "12px 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#22d3ee", margin: "12px 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
                       🌐 Live Updates
                     </div>
                     {filtered.filter(c => c.isLiveData).map((card, i) => (
@@ -14139,8 +14138,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
             <div style={{
               marginTop: 14, marginBottom: 6, paddingTop: 10,
               borderTop: "1px solid rgba(255,255,255,0.08)",
-              fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em",
-              textTransform: "uppercase", color: "var(--text-faint)",
+              fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-faint)",
             }}>
               App Settings
             </div>
@@ -15358,7 +15356,6 @@ function AssumptionsPanel({ values, onChange }) {
             fontSize: "var(--fs-small)",
             fontWeight: 700,
             color: "#4fd88f",
-            textTransform: "uppercase",
             letterSpacing: "0.1em",
             marginBottom: 12,
           }}
@@ -15517,8 +15514,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           this is a grouping label, not a nested chrome. */}
       <div style={{
         marginBottom: 2,
-        fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em",
-        textTransform: "uppercase", color: "var(--text-faint)",
+        fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-faint)",
       }}>
         While Working
       </div>
@@ -15573,7 +15569,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
             age": it's the only input here that moves a dollar. */}
         {spouseOn && (
           <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-            <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--accent-purple)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
+            <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--accent-purple)", marginBottom: 4 }}>
               Your spouse
             </div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 14, lineHeight: 1.5 }}>
@@ -15645,8 +15641,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
       <div style={{
         marginTop: 4, marginBottom: 2, paddingTop: 12,
         borderTop: "1px solid rgba(255,255,255,0.10)",
-        fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em",
-        textTransform: "uppercase", color: "var(--text-faint)",
+        fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-faint)",
       }}>
         In Retirement
       </div>
@@ -16847,7 +16842,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
               borderRadius: 8,
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-secondary)" }}>Initial portfolio draw rate</div>
+                <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)" }}>Initial portfolio draw rate</div>
                 <div style={{ fontSize: "var(--fs-h2)", fontWeight: 700, color: wrColor, fontFamily: "'JetBrains Mono',monospace" }}>{steadyWRpct.toFixed(1)}%</div>
                 <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginLeft: "auto", fontStyle: "italic" }}>
                   {inSafeBand ? "in 5–5.5% safe band" : steadyWRpct > 5.5 ? "above safe band — consider lower spend or later retirement" : "below safe band — room to spend more or retire earlier"}
@@ -17182,7 +17177,7 @@ function RetirementLanding({ onEnter }) {
         </div>
 
         <div style={{ marginTop: 26 }}>
-          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700 }}>Median portfolio path</div>
+          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 6, fontWeight: 700 }}>Median portfolio path</div>
           <canvas ref={canvasRef} style={{ width: "100%", height: 120, display: "block" }} />
         </div>
 
@@ -17958,9 +17953,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       <div className="app">
         <div className="hdr">
           <div>
-            <div className="logo">
+            <h1 className="logo">
               AiRA <span className="logo-sub">Freedom Financial</span>
-            </div>
+            </h1>
             <div style={{ fontSize: "var(--fs-label)", color: "#6e8099" }}>
               A DIY retirement forecaster · v{APP_VERSION}
             </div>
@@ -18689,7 +18684,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             )}
           </div>
 
-          <div className="main">
+          <main className="main">
 
             {stale && (
               <div
@@ -18858,7 +18853,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   {/* Sector / life-phase badge — lower far right, aligned under the toggle. */}
                   {analogue && (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, marginTop: 10 }}>
-                      <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-muted)", textTransform: "uppercase" }}>Current life phase</span>
+                      <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-muted)" }}>Current life phase</span>
                       <SectorBadge age={currentAge} />
                     </div>
                   )}
@@ -18883,13 +18878,14 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               swrBenchmark={params.safeWithdrawalRate}
             />
 
-            <div className="tabs" ref={tabsRef}>
+            <nav className="tabs" aria-label="Sections" ref={tabsRef}>
               {TABS.map(([k, l]) => (
                 <button key={k} className={`tab ${activeTab === k ? "on" : ""}`} onClick={() => setTab(k)}>
                   {l}
                 </button>
               ))}
-            </div>
+            </nav>
+            <h2 className="sr-only">{TABS.find(([k]) => k === activeTab)?.[1]}</h2>
 
             {needsMC.includes(activeTab) && !hasMC ? (
               <div
@@ -19217,7 +19213,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 Terms of Service &amp; Disclaimer
               </button>
             </div>
-          </div>
+          </main>
         </div>
       </div>
 

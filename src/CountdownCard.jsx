@@ -30,7 +30,7 @@ export default function CountdownCard({ dob, retireAge, dobIsEstimate, employerS
   if (!showCountdown) {
     return (
       <div data-testid="countdown-card">
-        <div className="sb-title">Retirement Countdown</div>
+        <h2 className="sb-title">Retirement Countdown</h2>
         <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
           Add your date of birth to see a meaningful retirement countdown.
         </div>
@@ -46,7 +46,7 @@ export default function CountdownCard({ dob, retireAge, dobIsEstimate, employerS
 
   return (
     <div data-testid="countdown-card">
-      <div className="sb-title">Retirement Countdown</div>
+      <h2 className="sb-title">Retirement Countdown</h2>
       <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-secondary)" }}>
         <div style={{ color: "var(--accent-teal)", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>
           {d.heading}
