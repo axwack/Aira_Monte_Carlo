@@ -203,8 +203,13 @@ import { IRMAA_2026 } from './data/irmaa2026.js';
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.149";
-export const BUILD_TAG = `[main] v1.2.149 - runMC audit fixes: income nets against total outlay; dead code removed
+const APP_VERSION = "1.2.150";
+export const BUILD_TAG = `[main] v1.2.150 - design pass: colors and sizes come from theme tokens, status dots, Stress Lab fixes
+- CHANGED: type sizes use --fs-* tokens; about 750 hard-coded colors now use theme tokens (--chart-N, --tint-*, --text-*), so a theme change is one edit. Eight low-contrast text colors now pass 4.5:1.
+- CHANGED: emoji removed from headings, buttons and sub-tabs; status marks are a small colored dot or plain words; labels are sentence case; main and nav landmarks added.
+- STRESS LAB: Run is blocked and explained for out-of-range years; a severity change says it cleared the precise result; a pasted list longer than 10 years says it was cut; deltas show in pp.
+- ENGINE: a $0-spend plan no longer draws the Guyton-Klinger floor every year.
+- PRIOR (v1.2.149): runMC audit fixes: income nets against total outlay; dead code removed
 - FIXED: retirement 'need' now nets SS + rental + other income against base spend AND fixed costs together (max(0, spend+fixedCosts-income)). The old form offset income against base spend only, so a household whose income exceeded base spend still sold assets to cover housing/carveouts/events/healthcare — biasing the success rate DOWN. need / incomeSurplus / remaining-draw now net the same quantity.
 - REMOVED dead code in runMC: unused gg/sg/ng growth draws and the unused initWR calibration block (GK uses gkReferenceWR, not initWR). Dropping gg/sg/ng removes 6 rand() draws/path, so headline numbers re-baseline by RNG shift (not a logic change).
 - NEXT (audit backlog, not yet done): (1) per-path RNG seed so changing spend by \$1 doesn't re-roll later paths / stabilize property tests [mulberry32(seed + i*0x9E3779B1)]; (2) || vs ?? zero-input bug (p.inf=0, abGrowth=0, mortRate=0 fall back to defaults); (3) cash return label-vs-math (cashRealReturn applied nominally; cash earns equity return in accumulation); (4) cost inflation uses deterministic p.inf while spend tracks path inflY; (5) consider block/stationary bootstrap vs current single-year i.i.d. sampling; (6) verify ninety_five_rule y===1 reset, mwRate single-life for couples, RMD_DIV ||15 fallback.
