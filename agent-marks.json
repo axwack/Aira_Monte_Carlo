@@ -132,7 +132,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function IncomeExpenseStack(",
       "description": "Income/expense legend panel: dash for never-entered rows, provenance footnotes.",
-      "sha": "d31c916c249d09c8"
+      "sha": "419be9ddc67b8f75"
     },
     {
       "id": "claude-verdict-header",

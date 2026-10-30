@@ -3919,7 +3919,7 @@ const CSS = `
   .sb-card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-card); padding:13px 12px; }
   .sb-title { font-size:var(--fs-label); font-weight:600; color:var(--text-muted); margin:0 0 10px; }
   .sl-row { display:flex; flex-direction:column; gap:6px; margin-bottom:13px; }
-  .sl-nudge-btn { width:24px; height:24px; border-radius:5px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.06); color:#cbd5e1; cursor:pointer; font-size:14px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; padding:0; transition:all 0.15s; flex-shrink:0; line-height:1; user-select:none; }
+  .sl-nudge-btn { width:24px; height:24px; border-radius:5px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.06); color:var(--text-secondary); cursor:pointer; font-size:14px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; padding:0; transition:all 0.15s; flex-shrink:0; line-height:1; user-select:none; }
   .sl-nudge-btn:hover:not(:disabled) { background:rgba(255,255,255,0.18); color:#ffffff; border-color:rgba(255,255,255,0.28); transform:scale(1.06); }
   .sl-nudge-btn:active:not(:disabled) { transform:scale(0.94); }
   .sl-nudge-btn:disabled { opacity:0.22; cursor:not-allowed; }
@@ -3927,11 +3927,11 @@ const CSS = `
   .sl-val-input { width:auto; min-width:70px; max-width:120px; text-align:center; background:rgba(15,23,42,0.65); border:1px solid rgba(255,255,255,0.12); border-radius:5px; padding:2px 6px; cursor:text; }
   .sl-val-input:hover { border-color:rgba(255,255,255,0.22); background:rgba(255,255,255,0.08); }
   .sl-val-input:focus { outline:none; border-color:var(--positive); background:rgba(90,209,240,0.12); color:var(--text-primary); box-shadow:0 0 0 2px rgba(90,209,240,0.25); }
-  .sl-label { font-size:12px; color:#cbd5e1; font-weight:600; }
+  .sl-label { font-size:12px; color:var(--text-secondary); font-weight:600; }
   .sl-val { font-size:12px; font-weight:700; text-align:right; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
   .tog-row { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; gap:8px; flex-wrap:nowrap; }
   .sb-card > .tog-row:last-child { margin-bottom:0; }
-  .tog-label { font-size:12px; line-height:18px; color:#cbd5e1; font-weight:500; flex:1; min-width:0; }
+  .tog-label { font-size:12px; line-height:18px; color:var(--text-secondary); font-weight:500; flex:1; min-width:0; }
   .tog { width:34px; height:18px; border:0; padding:0; border-radius:9px; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
   .tok { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.4); }
   .run-btn { width:100%; padding:10px; background:var(--accent); border:none; border-radius:6px; color:var(--bg-base); font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-sans); transition:all 0.2s; letter-spacing:-0.01em; flex-shrink:0; }
@@ -3996,17 +3996,17 @@ const CSS = `
      from getting too narrow to read before wrapping. */
   .metrics { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:9px; }
   .met { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:10px; padding:13px 15px; }
-  .ml { font-size:var(--fs-small); color:#94a3b8; margin-bottom:7px; font-weight:600; }
+  .ml { font-size:var(--fs-small); color:var(--text-muted); margin-bottom:7px; font-weight:600; }
   .mv { font-size:22px; font-weight:800; font-family:'JetBrains Mono',monospace; line-height:1; }
   .ms { font-size:12px; color:var(--text-muted); margin-top:5px; }
-  .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:#cbd5e1; font-style:italic; }
+  .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:var(--text-secondary); font-style:italic; }
   .analogue-fade { animation: analogueFade 0.6s ease; }
   @keyframes analogueFade { from { opacity: 0; } to { opacity: 1; } }
   .recomputing { animation: recomputePulse 1.15s ease-in-out infinite; }
   @keyframes recomputePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
   .tabs { display:flex; gap:2px; border-bottom:1px solid rgba(255,255,255,0.10); flex-wrap:wrap; }
   .tab { flex:1; min-width:72px; padding:10px 6px; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; background:transparent; cursor:pointer; font-size:13px; font-family:var(--font-sans); color:var(--text-muted); transition:color 0.15s, border-color 0.15s, background 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; border-radius:7px 7px 0 0; position:relative; overflow:hidden; }
-  .tab:hover { color:#94a3b8; background:rgba(255,255,255,0.03); }
+  .tab:hover { color:var(--text-muted); background:rgba(255,255,255,0.03); }
   /* The active tab's teal underline used to stop at that button's own width, so
      the "you are here" marker read as a short dash floating under one label
      while the grey rule carried on past it either side. This strip spans the
@@ -4023,7 +4023,7 @@ const CSS = `
   .tab.on { color:var(--accent-teal); border-bottom-color:var(--accent-teal); font-weight:600; background:color-mix(in srgb, var(--accent-teal) 12%, transparent); }
   .tab.on::after { transform:scaleX(1); }
   .chart-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:11px; padding:15px 17px; }
-  .ct { font-size:18px; color:#94a3b8; margin-bottom:12px; font-weight:500; }
+  .ct { font-size:18px; color:var(--text-muted); margin-bottom:12px; font-weight:500; }
   .ct-sub { font-size:11.5px; color:var(--text-muted); line-height:1.5; margin:-8px 0 10px; }
   .leg { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
   .li { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-muted); }
@@ -4082,7 +4082,7 @@ const CSS = `
   .assume-row { display:flex; justify-content:space-between; align-items:baseline; gap:10px; width:100%; padding:7px 0; border:0; border-top:1px solid rgba(255,255,255,0.06); background:none; color:var(--text-primary); font:inherit; font-size:12px; text-align:left; cursor:pointer; }
   .assume-row span:last-child { color:var(--accent-teal); font-size:11px; font-weight:600; text-decoration:underline; flex-shrink:0; }
   .assume-row:focus-visible { outline:2px solid var(--accent-teal); outline-offset:2px; }
-  .gap-row { display:flex; align-items:baseline; gap:9px; width:100%; padding:9px 13px; border:1px solid rgba(251,191,36,0.32); border-radius:9px; background:rgba(251,191,36,0.07); color:#cbd5e1; font:inherit; font-size:12.5px; line-height:1.5; text-align:left; cursor:pointer; }
+  .gap-row { display:flex; align-items:baseline; gap:9px; width:100%; padding:9px 13px; border:1px solid rgba(251,191,36,0.32); border-radius:9px; background:rgba(251,191,36,0.07); color:var(--text-secondary); font:inherit; font-size:12.5px; line-height:1.5; text-align:left; cursor:pointer; }
   .gap-row > span:first-child, .gap-row strong { color:var(--accent-gold); }
   .gap-row:hover { background:rgba(251,191,36,0.11); }
   .gap-row:focus-visible { outline:2px solid var(--accent-gold); outline-offset:2px; }
@@ -4100,7 +4100,7 @@ const CSS = `
   .wizard-mobile-steps { display:none; }
   .ap-col { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px; }
   .ap-hdr { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:11px; }
-  .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); color:#cbd5e1; }
+  .ap-item { font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); color:var(--text-secondary); }
   .ms-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; margin-top:2px; }
   .ms-line { width:2px; background:rgba(255,255,255,0.08); margin:0 4px; }
   .tip-box { background:rgba(10,15,30,0.98); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:9px 12px; font-size:14px; color:var(--text-primary); }
@@ -4254,7 +4254,7 @@ const Tip = ({ active, payload, label }) => {
 
   return (
     <div className="tip-box">
-      <div style={{ color: "#4d5c72", marginBottom: 3 }}>{tipHeading(uniquePayload, label)}</div>
+      <div style={{ color: "var(--text-muted)", marginBottom: 3 }}>{tipHeading(uniquePayload, label)}</div>
       {uniquePayload
         .filter((p) => p.value > 0)
         .map((p, i) => {
@@ -4587,7 +4587,7 @@ function AboutButton() {
             <p style={{ fontSize: "var(--fs-body)", color:"var(--text-secondary)", lineHeight:1.75, margin:"0 0 18px" }}>
               {ABOUT_PRODUCT.description}
             </p>
-            <div style={{ fontSize: "var(--fs-label)", fontWeight:700, color:"#cbd5e1", marginBottom:10, letterSpacing:"0.5px" }}>
+            <div style={{ fontSize: "var(--fs-label)", fontWeight:700, color:"var(--text-secondary)", marginBottom:10, letterSpacing:"0.5px" }}>
               Key Capabilities
             </div>
             <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:8 }}>
@@ -4768,7 +4768,7 @@ function Hint({ text, width = 240 }) {
           style={{
             position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
             width, background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 8,
-            padding: "9px 11px", fontSize: "var(--fs-small)", color: "#cbd5e1", lineHeight: 1.55, fontWeight: 400,
+            padding: "9px 11px", fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55, fontWeight: 400,
             textAlign: "left", zIndex: 100001, boxShadow: "0 10px 30px rgba(0,0,0,0.6)", pointerEvents: "none",
           }}
         >
@@ -5223,7 +5223,7 @@ const [draft, setDraft] = useState(null);
                 style={{
                   background: isActive ? "rgba(90,209,240,0.22)" : "rgba(255,255,255,0.04)",
                   border: isActive ? "1px solid var(--positive)" : "1px solid rgba(255,255,255,0.08)",
-                  color: isActive ? "#5ad1f0" : "#94a3b8",
+                  color: isActive ? "#5ad1f0" : "var(--text-muted)",
                   borderRadius: 4,
                   padding: "2px 6px",
                   fontSize: "var(--fs-small)",
@@ -5995,7 +5995,7 @@ function ReconLine({ label, value, color }) {
         <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: "inline-block", flexShrink: 0 }} />
         {label}
       </div>
-      <div style={{ color: "#cbd5e1", fontFamily: "'JetBrains Mono',monospace" }}>
+      <div style={{ color: "var(--text-secondary)", fontFamily: "'JetBrains Mono',monospace" }}>
         {value < 0 ? `−${fmtDollar(Math.abs(value))}` : fmtDollar(value)}
       </div>
     </div>
@@ -6064,7 +6064,7 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
           </div>
           {rows.map(({ key, color, value }) => (
             <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#cbd5e1" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-secondary)" }}>
                 <span style={{ width: 9, height: 9, borderRadius: 2, background: color, display: "inline-block" }} />
                 <span>
                   {key}
@@ -6084,7 +6084,7 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
               <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 6 }}>
                 What your portfolio must cover
               </div>
-              <ReconLine label="Spending, housing, carveouts, one-offs" value={recon.spendNeed} color="#cbd5e1" />
+              <ReconLine label="Spending, housing, carveouts, one-offs" value={recon.spendNeed} color="var(--text-secondary)" />
               <ReconLine label="+ Taxes" value={recon.taxes} color="#ff6f7a" />
               <ReconLine label="+ Moved to Roth / saved to accounts" value={recon.kept} color="var(--accent-gold)" />
               <ReconLine label="− Other income (SS, rental, pension, one-off, conversion)" value={-recon.otherIncome} color="#7c3aed" />
@@ -7323,7 +7323,7 @@ const modeDescs = {
               <div
                 style={{
                   fontSize: "var(--fs-small)",
-                  color: "#7c3aed",
+                  color: "var(--accent)",
                   background: "rgba(124,58,237,0.08)",
                   borderRadius: 7,
                   padding: "7px 11px",
@@ -7969,7 +7969,7 @@ function AccountDrawOrder({ p, onAssumptionChange }) {
     ["custom",       "Custom",       false],
     ["pretax_first", "Pre-tax first", false],
   ];
-  const radioLbl = { fontSize: "var(--fs-label)", color: "#cbd5e1", display: "flex", alignItems: "center", gap: 5, cursor: "pointer", whiteSpace: "nowrap" };
+  const radioLbl = { fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 5, cursor: "pointer", whiteSpace: "nowrap" };
   const arrow = (dis) => ({ background: dis ? "transparent" : "#0a1628", border: "1px solid #1e3a5f", color: dis ? "#334155" : "var(--accent-teal)", borderRadius: 4, width: 20, height: 18, cursor: dis ? "default" : "pointer", fontSize: "var(--fs-small)", lineHeight: 1, padding: 0 });
 
   return (
@@ -8225,7 +8225,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           background: migrated.fidelity === "changed" ? "rgba(251,191,36,0.08)" : "rgba(13,148,136,0.08)",
           border: `1px solid ${migrated.fidelity === "changed" ? "rgba(251,191,36,0.35)" : "rgba(13,148,136,0.35)"}`,
           borderRadius: 8, padding: "12px 14px", fontSize: "var(--fs-label)",
-          color: "#cbd5e1", lineHeight: 1.6,
+          color: "var(--text-secondary)", lineHeight: 1.6,
         }}>
           <div style={{ fontWeight: 700, color: migrated.fidelity === "changed" ? "var(--accent-gold)" : "var(--accent-teal)", marginBottom: 4 }}>
             {migrated.fidelity === "changed" ? "⚠" : "✓"} Your saved strategy “{migrated.fromLabel}” was retired — this plan now uses{" "}
@@ -10030,7 +10030,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
             <div
               onMouseEnter={openTip}
               onMouseLeave={closeTipSoon}
-              style={{ position: "absolute", top: "100%", right: 0, background: "rgba(15,23,42,0.98)", border: `1px solid ${withAlpha(color, "66")}`, borderRadius: 6, padding: 10, fontSize: "var(--fs-small)", color: "#cbd5e1", zIndex: 20, width: 240, lineHeight: 1.5, boxShadow: "0 6px 16px rgba(0,0,0,0.5)", cursor: "default" }}
+              style={{ position: "absolute", top: "100%", right: 0, background: "rgba(15,23,42,0.98)", border: `1px solid ${withAlpha(color, "66")}`, borderRadius: 6, padding: 10, fontSize: "var(--fs-small)", color: "var(--text-secondary)", zIndex: 20, width: 240, lineHeight: 1.5, boxShadow: "0 6px 16px rgba(0,0,0,0.5)", cursor: "default" }}
             >
               {role && (
                 <>
@@ -12231,7 +12231,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
                   </summary>
                   <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55, paddingBottom: 10 }}>
                     {d.detail}{" "}
-                    <strong style={{ color: t.fg }}>What moves it: </strong><span style={{ color: "#cbd5e1" }}>{d.lever}</span>
+                    <strong style={{ color: t.fg }}>What moves it: </strong><span style={{ color: "var(--text-secondary)" }}>{d.lever}</span>
                   </div>
                 </details>
               );
@@ -12579,7 +12579,7 @@ function NetWorthTip({ active, payload, label, p }) {
     { name: "Pre-Tax",     color: "#0ea5e9", value: sumOf(["pretax"]) },
     { name: "Tax-Free",    color: "var(--positive)", value: sumOf(["roth", "hsa"]) },
     { name: "Taxable",     color: "var(--accent-gold)", value: sumOf(["taxable"]) },
-    { name: "Cash",        color: "#94a3b8", value: sumOf(["cash"]) },
+    { name: "Cash",        color: "var(--text-muted)", value: sumOf(["cash"]) },
   ].filter((g) => g.value > 0);
   const groupTotal = groups.reduce((s, g) => s + g.value, 0);
   // These are TODAY'S entered balances. The chart line is a projection, so at
@@ -12608,7 +12608,7 @@ function NetWorthTip({ active, payload, label, p }) {
 
   return (
     <div className="tip-box">
-      <div style={{ color: "#4d5c72", marginBottom: 4 }}>
+      <div style={{ color: "var(--text-muted)", marginBottom: 4 }}>
         Age {label}{yr ? ` · ${yr}` : ""}
       </div>
       {line("Liquid Portfolio", liquid ?? 0, "#0ea5e9")}
@@ -13114,8 +13114,8 @@ function MilestonesSection({ params, rmdAge }) {
           marginBottom: open ? 12 : 0,
         }}
       >
-        <span style={{ fontSize: "var(--fs-small)", color: "#6366f1", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
-        <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#6366f1" }}>
+        <span style={{ fontSize: "var(--fs-small)", color: "var(--accent)", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+        <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent)" }}>
           Age Milestones
         </span>
         <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginLeft: 4 }}>({milestones.length} milestones)</span>
@@ -13149,7 +13149,7 @@ function MilestonesSection({ params, rmdAge }) {
               </div>
               {m.items.map((item, j) => (
                 <div key={j} style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 3, display: "flex", gap: 6 }}>
-                  <span style={{ color: "#6366f1", flexShrink: 0 }}>•</span>
+                  <span style={{ color: "var(--accent)", flexShrink: 0 }}>•</span>
                   <span>{item}</span>
                 </div>
               ))}
@@ -13318,7 +13318,7 @@ function CardDetailPanel({ card, onClose }) {
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: "var(--fs-small)", fontWeight: 700, color: "#818cf8",
               }}>{i + 1}</div>
-              <div style={{ fontSize: "var(--fs-body)", color: "#cbd5e1", lineHeight: 1.55, paddingTop: 2 }}>{step}</div>
+              <div style={{ fontSize: "var(--fs-body)", color: "var(--text-secondary)", lineHeight: 1.55, paddingTop: 2 }}>{step}</div>
             </div>
           ))}
         </div>
@@ -13717,7 +13717,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                   const color = rowColor(r.crossoverAge);
                   return (
                     <tr key={r.label} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                      <td style={{ color: "#cbd5e1", padding: "4px 0" }}>{r.label}</td>
+                      <td style={{ color: "var(--text-secondary)", padding: "4px 0" }}>{r.label}</td>
                       <td style={{ textAlign: "center", color: "var(--text-secondary)", fontFamily: "'JetBrains Mono',monospace" }}>{(r.rate * 100).toFixed(1)}%</td>
                       <td style={{ textAlign: "right", color, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" }}>
                         {r.crossoverAge != null ? `Age ${r.crossoverAge}` : "> 80"}
@@ -14189,7 +14189,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
               <div style={{ fontSize: "var(--fs-h2)", fontWeight: 600, color: i === step ? "var(--text-primary)" : "var(--text-muted)" }}>
                 {s.icon} {s.label}
               </div>
-              <div style={{ fontSize: "var(--fs-body)", color: "#4174bd" }}>{s.sub}</div>
+              <div style={{ fontSize: "var(--fs-body)", color: "var(--text-muted)" }}>{s.sub}</div>
             </div>
           </div>
           </React.Fragment>
@@ -14762,7 +14762,7 @@ function AboutYouPanel({ values, onChange }) {
             The Social Security and Contributions cards now point at this
             control rather than duplicating it — one flag, one switch. */}
         <ARow label="Include a spouse or partner" desc="Model two people instead of one. Turns on your spouse's own Social Security (their benefit, their claim age, survivor benefits) and lets their retirement contributions stop on their own retirement date. Off leaves your plan exactly as it is today.">
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "var(--fs-label)", color: "#cbd5e1" }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "var(--fs-label)", color: "var(--text-secondary)" }}>
             <input
               type="checkbox"
               checked={!!values.spouse?.enabled}
@@ -16444,10 +16444,10 @@ function ExpenseImport({ values, onChange }) {
     <div style={{ marginTop: 14, padding: "12px 14px", background: "rgba(168,85,247,0.06)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: 8 }}>
       <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "#c4b5fd", marginBottom: 4 }}>Import detailed expenses (CSV)</div>
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 8 }}>
-        Replace the typed spend above with a line-item budget. <strong style={{ color: "#cbd5e1" }}>Exclude</strong> mortgage/rent,
+        Replace the typed spend above with a line-item budget. <strong style={{ color: "var(--text-secondary)" }}>Exclude</strong> mortgage/rent,
         debt, medical, long-term care, and income tax — those are modeled separately (Expense Model, carveouts, tax engine).
-        Upload <strong style={{ color: "#cbd5e1" }}>one year</strong> (summed and inflated forward) or
-        <strong style={{ color: "#cbd5e1" }}> multiple years</strong> (one column or row per year — used as the spend plan for those years).
+        Upload <strong style={{ color: "var(--text-secondary)" }}>one year</strong> (summed and inflated forward) or
+        <strong style={{ color: "var(--text-secondary)" }}> multiple years</strong> (one column or row per year — used as the spend plan for those years).
       </div>
 
       <input
@@ -16479,7 +16479,7 @@ function ExpenseImport({ values, onChange }) {
       )}
 
       {meta && (
-        <div style={{ marginTop: 10, fontSize: "var(--fs-small)", color: "#cbd5e1", background: "rgba(90,209,240,0.06)", border: "1px solid rgba(90,209,240,0.2)", borderRadius: 6, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div style={{ marginTop: 10, fontSize: "var(--fs-small)", color: "var(--text-secondary)", background: "rgba(90,209,240,0.06)", border: "1px solid rgba(90,209,240,0.2)", borderRadius: 6, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <div style={{ lineHeight: 1.5 }}>
             {meta.mode === "multi" ? (
               <>
@@ -16545,7 +16545,7 @@ function ExpensesPanel({ values, onChange }) {
         <div style={{
           marginBottom: 16, padding: "9px 12px", borderRadius: 8,
           background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.28)",
-          fontSize: "var(--fs-label)", color: "#cbd5e1", lineHeight: 1.55,
+          fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.55,
         }}>
           <strong style={{ color: "var(--accent-gold)" }}>Enter what you want to spend — after tax.</strong>{" "}
           This is money that reaches your household. AiRA withdraws extra from the portfolio
@@ -16580,12 +16580,12 @@ function ExpensesPanel({ values, onChange }) {
               <span style={{ color: "var(--accent-purple)" }}>Spending curve is ON</span> — this target is re-scaled
               per year (down through the active years, up again in late retirement), so year-by-year
               spending will not equal the figure above. The Withdrawal Plan table shows the exact
-              percentage each year. Turn it off under <strong style={{ color: "#cbd5e1" }}>Options → Spending curve</strong> in the sidebar.
+              percentage each year. Turn it off under <strong style={{ color: "var(--text-secondary)" }}>Options → Spending curve</strong> in the sidebar.
             </>
           ) : (
             <>
               <span style={{ color: "var(--text-muted)" }}>Spending curve is OFF</span> — this target stays flat
-              in real terms for every year of the plan. Enable it under <strong style={{ color: "#cbd5e1" }}>Options → Spending curve</strong> in the sidebar.
+              in real terms for every year of the plan. Enable it under <strong style={{ color: "var(--text-secondary)" }}>Options → Spending curve</strong> in the sidebar.
             </>
           )}
         </div>
@@ -16594,9 +16594,9 @@ function ExpensesPanel({ values, onChange }) {
       <ACard title="Detailed Expense Budget" accent="#c4b5fd" desc="Optional. Type or upload a real line-item budget instead of one number." collapsible defaultOpen={(values.budgetLines || []).length > 0}>
         <div style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
           Instead of typing a single spending number above, upload your real line-item budget.
-          A <strong style={{ color: "#cbd5e1" }}>one-year</strong> budget is summed into the US Spending field
+          A <strong style={{ color: "var(--text-secondary)" }}>one-year</strong> budget is summed into the US Spending field
           above and inflated forward like a typed number.
-          A <strong style={{ color: "#cbd5e1" }}>multi-year</strong> budget becomes an explicit per-year spending
+          A <strong style={{ color: "var(--text-secondary)" }}>multi-year</strong> budget becomes an explicit per-year spending
           plan that overrides your withdrawal strategy's spend rule for those years — the Monte Carlo,
           Withdrawal Plan, and deterministic schedule all follow it.
         </div>
@@ -16869,7 +16869,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             </div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 16 }}>
               {guardFromImport
-                ? <>Floor = <strong style={{ color: "#cbd5e1" }}>Must Spend</strong> · Ceiling = <strong style={{ color: "#cbd5e1" }}>Like to Spend</strong> (from your imported budget — the slider %s below are ignored)</>
+                ? <>Floor = <strong style={{ color: "var(--text-secondary)" }}>Must Spend</strong> · Ceiling = <strong style={{ color: "var(--text-secondary)" }}>Like to Spend</strong> (from your imported budget — the slider %s below are ignored)</>
                 : <>Floor = {floorPct}% of core spend · Ceiling = {ceilingPct}% of core spend</>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
@@ -17967,7 +17967,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             <h1 className="logo">
               AiRA <span className="logo-sub">Freedom Financial</span>
             </h1>
-            <div style={{ fontSize: "var(--fs-label)", color: "#6e8099" }}>
+            <div style={{ fontSize: "var(--fs-label)", color: "var(--text-faint)" }}>
               A DIY retirement forecaster · v{APP_VERSION}
             </div>
           </div>
