@@ -84,7 +84,7 @@
       "file": "src/engine/buildWithdrawalWaterfall.js",
       "startAnchor": "export function buildWithdrawalWaterfall(",
       "description": "Aira-Claude's region: emits fedBrackets / deduction / fedOrdinary on each row for the Tax Details bracket analysis. Do not edit without re-stamping.",
-      "sha": "7ccbec6bbf99bf32"
+      "sha": "f988877fc4ec41aa"
     },
     {
       "id": "allocation-donut",
