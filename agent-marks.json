@@ -84,7 +84,7 @@
       "file": "src/engine/buildWithdrawalWaterfall.js",
       "startAnchor": "export function buildWithdrawalWaterfall(",
       "description": "Aira-Claude's region: emits fedBrackets / deduction / fedOrdinary on each row for the Tax Details bracket analysis. Do not edit without re-stamping.",
-      "sha": "f988877fc4ec41aa"
+      "sha": "7ccbec6bbf99bf32"
     },
     {
       "id": "allocation-donut",
@@ -124,7 +124,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function ADateInput(",
       "description": "Date field wrapper using DateField so half-typed years never reach the profile.",
-      "sha": "08adc5744103ff39"
+      "sha": "94d069413da1cc69"
     },
     {
       "id": "claude-income-expense-stack",
@@ -132,7 +132,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function IncomeExpenseStack(",
       "description": "Income/expense legend panel: dash for never-entered rows, provenance footnotes.",
-      "sha": "a260fa90d44dd338"
+      "sha": "d31c916c249d09c8"
     },
     {
       "id": "claude-verdict-header",
