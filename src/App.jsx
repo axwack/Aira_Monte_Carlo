@@ -11474,7 +11474,7 @@ function ScenariosTab({
               <div className="ml">Stress success</div>
               <div
                 className="mv"
-                style={{ color: view.rate >= 0.85 ? "var(--positive)" : "#f4d35e" }}
+                style={{ color: view.rate >= 0.85 ? "var(--positive)" : "var(--accent-gold)" }}
               >
                 {fmtPct(view.rate)}
               </div>
@@ -11488,7 +11488,7 @@ function ScenariosTab({
                   color: mc && view.rate >= mc.rate ? "var(--positive)" : "var(--negative)",
                 }}
               >
-                {mc ? `${((view.rate - mc.rate) * 100).toFixed(1)}%` : "—"}
+                {mc ? `${((view.rate - mc.rate) * 100).toFixed(1)} pp` : "—"}
               </div>
               <div className="ms">{formulaFor("stress-delta")}</div>
             </div>
