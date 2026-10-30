@@ -10795,12 +10795,12 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
 
   const scenarios = useMemo(() => [
     {
-      id: "crash", emoji: "📉", label: "MARKET CRASHES EARLY",
+      id: "crash", label: "Market crashes early",
       sub: `One-year ${Math.round(severity * 100)}% equity shock right at retirement`,
       run: (N, seed) => runMC(p, endAge, N, seed, true, [severity]),
     },
     {
-      id: "ltc", emoji: "🏥", label: "LONG-TERM CARE EVENT",
+      id: "ltc", label: "Long-term care event",
       sub: `${LTC_YEARS} years of memory care ≈ ${fmtDollar(LTC_ANNUAL_COST)}/yr`,
       run: (N, seed) => runMC(
         { ...p, carveouts: [...(p.carveouts || []), {
@@ -10814,13 +10814,12 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
         endAge, N, seed, true),
     },
     {
-      id: "live100", emoji: "🎂", label: "LIVE TO 100",
+      id: "live100", label: "Live to 100",
       sub: `${Math.max(0, 100 - endAge)} extra years of withdrawals`,
       run: (N, seed) => runMC(p, 100, N, seed, true),
     },
     {
       id: "survivor",
-      emoji: "🕊️",
       // This scenario used to be a second death model: it forced
       // filingStatus "single" from day one of retirement, applied its own
       // SS haircut, ignored spouse.deathAge entirely (by setting enabled:
@@ -10839,7 +10838,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
       // bad?" — instead of re-answering "what if there were a death at
       // all," which the base plan already covers and the widow's-penalty
       // card above reports.
-      label: authoredDeath ? `FIRST DEATH ${STRESS_DEATH_SOONER_YEARS} YEARS SOONER` : "SPOUSE PASSES EARLY",
+      label: authoredDeath ? `First death ${STRESS_DEATH_SOONER_YEARS} years sooner` : "Spouse passes early",
       sub: authoredDeath
         ? `Your modelled first death at ${soonerDeathAge} instead of ${p.spouse.deathAge} — same survivor rules, worse timing`
         : "Survivor keeps the larger SS check AND files Single, from day one — a worst-case bound, not a forecast",
@@ -10921,22 +10920,21 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
 
   return (
     <div className="chart-card" style={{ marginBottom: 12 }}>
-      <div className="ct" style={{ marginBottom: 4 }}>🔶 Stress scenarios against your plan</div>
+      <div className="ct" style={{ marginBottom: 4 }}>Stress scenarios against your plan</div>
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 12, lineHeight: 1.5 }}>
-        Each card re-runs the full engine with one thing gone wrong. The number is the share of
-        simulated plans still funded; <b style={{ color: "var(--text-secondary)" }}>%</b> is the drop vs your
-        baseline. <b style={{ color: "var(--text-secondary)" }}>Run scenarios</b> gives every card a fast
-        estimate; <b style={{ color: "var(--text-secondary)" }}>Run full</b> gives one card the precise
+        Each card re-runs your plan with one thing gone wrong. The big number is how many points the share
+        of funded plans falls versus your baseline; <b style={{ color: "var(--text-secondary)" }}>drops to</b> is
+        the share still funded. <b style={{ color: "var(--text-secondary)" }}>Quick check</b> gives every card a fast
+        estimate; <b style={{ color: "var(--text-secondary)" }}>Precise run</b> gives one card the full
         {" "}{MC_PATHS_LABEL}-path result.
         {/* The success rate is widely read as "the chance my retirement
             works." It's narrower than that, and saying so changes how the
             number should be read. */}
-        <div style={{ marginTop: 6, color: "var(--text-faint)" }}>
+        <div style={{ marginTop: 6, color: "var(--text-muted)" }}>
           What the simulation varies: <b style={{ color: "var(--text-secondary)" }}>market returns, inflation,
           rental reliability and healthcare shocks</b>. Your spending, claim ages, retirement age and
           any modelled death are held at what you entered — so this measures how much
           <em> market</em> risk the plan absorbs, not the overall odds your retirement works out.
-          Those assumptions are the scenarios; that is what these cards are for.
         </div>
       </div>
 
@@ -10944,22 +10942,17 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
         <button
           onClick={runEstimates}
           disabled={estRunning}
-          className="mbtn"
-          style={{
-            fontSize: "var(--fs-label)", padding: "6px 14px", fontWeight: 700,
-            background: estStale || !est ? "linear-gradient(135deg,#3d6fe0,#6c9bff)" : undefined,
-            color: estStale || !est ? "#fff" : undefined,
-            opacity: estRunning ? 0.6 : 1,
-          }}
+          className={estStale || !est ? "mbtn on" : "mbtn"}
+          style={{ fontSize: "var(--fs-label)", padding: "6px 14px", fontWeight: 700, opacity: estRunning ? 0.6 : 1 }}
         >
           {estRunning
             ? `Running ${STRESS_QUICK_PATHS_LABEL} paths…`
-            : est ? "↻ Re-run scenarios" : "▶ Run scenarios"}
+            : est ? "Re-run quick check" : "Quick check"}
         </button>
         <span style={{ fontSize: "var(--fs-small)", color: estStale ? "var(--accent-gold)" : "var(--text-faint)" }}>
           {estRunning ? "Testing your plan against each scenario…"
-            : !est ? "Nothing has been run yet — press Run scenarios to test your plan."
-            : estStale ? "⚠ Your plan changed — these results are from the previous inputs."
+            : !est ? "Nothing has been run yet — press Quick check to test your plan."
+            : estStale ? "Your plan changed. These results are from the previous inputs."
             : "Up to date with your current plan."}
         </span>
       </div>
@@ -10975,7 +10968,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
         const withDeath = est.base;
         const without   = est.noDeath;
         const pp        = (withDeath - without) * 100;      // negative = it costs you
-        const col       = pp <= -10 ? "var(--negative)" : pp <= -3 ? "#f4d35e" : "var(--positive)";
+        const col       = pp <= -10 ? "var(--negative)" : pp <= -3 ? "var(--accent-gold)" : "var(--positive)";
         const whoDies   = p.spouse?.firstToDie === "primary" ? "your" : "your spouse's";
         return (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 10, marginBottom: 12 }}>
@@ -11022,13 +11015,13 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
                 <ScenarioGauge pct={rate == null ? null : rate * 100} color={color} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-secondary)" }}>
-                    {s.emoji} {s.label}
+                    {s.label}
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 4, margin: "3px 0 1px" }}>
-                    <span style={{ fontSize: 26, fontWeight: 800, color, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>
+                    <span style={{ fontSize: "var(--fs-h1)", fontWeight: 800, color, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>
                       {deltaPP == null ? "—" : `${deltaPP > 0 ? "+" : ""}${deltaPP.toFixed(0)}`}
                     </span>
-                    <span style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", fontWeight: 600 }}>%</span>
+                    <span style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", fontWeight: 600 }}>pp</span>
                   </div>
                   <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)" }}>
                     drops to <b style={{ color, fontFamily: "'JetBrains Mono',monospace" }}>{rate == null ? "—" : fmtPct(rate)}</b>
@@ -11046,7 +11039,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
                     {[-0.10, -0.25, -0.40].map((v) => (
                       <button key={v} onClick={() => setSev(v)}
                         style={{
-                          flex: 1, padding: "3px 0", fontSize: "var(--fs-small)", borderRadius: 5, cursor: "pointer",
+                          flex: 1, padding: "3px 0", minHeight: 28, fontSize: "var(--fs-small)", borderRadius: 5, cursor: "pointer",
                           fontFamily: "'JetBrains Mono',monospace", fontWeight: 700,
                           border: `1px solid ${severity === v ? SEQ_CRASH : "var(--card-border)"}`,
                           background: severity === v ? "var(--bg-danger)" : "transparent",
@@ -11060,7 +11053,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
                     style={{ marginTop: 8, width: "100%", padding: "7px 0", minHeight: 32, borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
                       fontSize: "var(--fs-label)", fontWeight: 600, color: SEQ_CRASH, background: crashOpen ? "var(--bg-danger)" : "transparent",
                       border: `1px solid ${SEQ_CRASH}` }}>
-                    {crashOpen ? "▴ Close crash editor" : "▾ Edit the crash: real history or your own years"}
+                    {crashOpen ? "Close crash editor" : "Edit the crash: real history or your own years"}
                   </button>
                 </div>
               )}
@@ -11068,11 +11061,11 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
 
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
                 <span style={{ fontSize: "var(--fs-small)", color: measured ? "var(--positive)" : "var(--text-faint)", fontWeight: 600 }}>
-                  {measured ? `✓ ${MC_PATHS_LABEL} paths` : est ? (estStale ? "previous inputs" : "fast estimate") : "not run yet"}
+                  {measured ? `Precise, ${MC_PATHS_LABEL} paths` : est ? (estStale ? "previous inputs" : "fast estimate") : "run the quick check first"}
                 </span>
-                <button onClick={() => runFull(s)} disabled={isRunning || !est} className="mbtn"
-                  style={{ fontSize: "var(--fs-small)", padding: "3px 10px", opacity: isRunning || !est ? 0.5 : 1 }}>
-                  {isRunning ? "Running…" : measured ? "Re-run" : "Run full"}
+                <button onClick={() => runFull(s)} disabled={isRunning || !est} className="mbtn" title={est ? undefined : "Run the quick check first"}
+                  style={{ fontSize: "var(--fs-small)", padding: "3px 10px", minHeight: 28, opacity: isRunning || !est ? 0.5 : 1 }}>
+                  {isRunning ? "Running…" : measured ? "Re-run" : "Precise run"}
                 </button>
               </div>
             </div>
@@ -11080,8 +11073,8 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
         })}
       </div>
 
-      <div style={{ fontSize: "var(--fs-label)", color: "var(--text-faint)", fontStyle: "italic", marginTop: 12 }}>
-        {worst == null ? "Run the scenarios to see your worst case."
+      <div style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", marginTop: 12 }}>
+        {worst == null ? "Run the quick check to see your worst case."
           : worst >= 0.70
           ? "Even the worst case here stays in the recoverable range."
           : "At least one scenario pushes the plan into fragile territory — worth a mitigation."}
@@ -11349,9 +11342,8 @@ function SequenceBuilder({ p, onResult }) {
       </div>
 
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
-        <button type="button" className="mbtn" onClick={run} disabled={!canRun}
-                style={{ fontSize: "var(--fs-body)", padding: "10px 24px", minHeight: 42, fontWeight: 700, opacity: canRun ? 1 : 0.5,
-                  background: canRun ? "linear-gradient(135deg,#3d6fe0,#6c9bff)" : undefined, color: canRun ? "#fff" : undefined }}>
+        <button type="button" className={canRun ? "mbtn on" : "mbtn"} onClick={run} disabled={!canRun}
+                style={{ fontSize: "var(--fs-body)", padding: "10px 24px", minHeight: 42, fontWeight: 700, opacity: canRun ? 1 : 0.5 }}>
           {busy ? "Running…" : "Run scenario"}
         </button>
         <button type="button" onClick={() => { onResult(null); setStatus(""); }}
