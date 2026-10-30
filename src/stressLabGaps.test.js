@@ -235,6 +235,19 @@ describe("Stress Lab panels render", () => {
     act(() => root.unmount());
   });
 
+  test("SequenceBuilder pasting more years than fit says how many were kept", () => {
+    const { host, root } = mount(<SequenceBuilder p={P} onResult={() => {}} />);
+    act(() => [...host.querySelectorAll("button")].find((b) => /My own numbers/.test(b.textContent)).click());
+    const paste = host.querySelector("#seq-paste");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(paste, "1,2,3,4,5,6,7,8,9,10,11,12");
+      paste.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(host.querySelectorAll('input[type="number"]').length).toBe(10);
+    expect(host.textContent).toMatch(/Kept the first 10 of 12 years/);
+    act(() => root.unmount());
+  });
+
   test("FailedPathPanel shows the no-failure message for null and a table for failures", () => {
     const a = mount(<FailedPathPanel failures={null} n={100} />);
     expect(a.host.textContent).toMatch(/No simulated path ran out/);

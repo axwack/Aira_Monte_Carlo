@@ -10777,6 +10777,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
   const [est, setEst] = useState(null);        // { base, [id]: rate } low-path
   const [full, setFull] = useState({});        // { [id]: rate } full-path
   const [running, setRunning] = useState(null);
+  const [sevNote, setSevNote] = useState("");   // why a precise crash result disappeared
   const endAge = p.endAge || 90;
 
   /* Has the user authored a first death in their Profile? If so the stress
@@ -10905,6 +10906,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
     setTimeout(() => {
       const rate = s.run(MC_PATHS, 43).rate;
       setFull((f) => ({ ...f, [s.id]: rate }));
+      if (s.id === "crash") setSevNote("");
       setRunning(null);
     }, 30);
   };
@@ -10912,6 +10914,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
   const setSev = (v) => {
     setSeverity(v);
     setFull((f) => { const n = { ...f }; delete n.crash; return n; }); // crash result now stale
+    setSevNote(full.crash != null ? "Severity changed, so the precise result was cleared. Run it again." : "");
   };
 
   const worst = est
@@ -11049,6 +11052,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
                       </button>
                     ))}
                   </div>
+                  {sevNote && <div role="status" style={{ fontSize: "var(--fs-small)", color: "var(--accent-gold)", marginTop: 5 }}>{sevNote}</div>}
                   <button type="button" onClick={() => setCrashOpen((o) => !o)} aria-expanded={crashOpen}
                     style={{ marginTop: 8, width: "100%", padding: "7px 0", minHeight: 32, borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
                       fontSize: "var(--fs-label)", fontWeight: 600, color: SEQ_CRASH, background: crashOpen ? "var(--bg-danger)" : "transparent",
@@ -11210,6 +11214,7 @@ function SequenceBuilder({ p, onResult }) {
   const [today, setToday] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  const [pasteNote, setPasteNote] = useState("");
   const endAge = p.endAge || 90;
 
   // Custom years that will actually run, plus why a year was left out.
@@ -11319,9 +11324,16 @@ function SequenceBuilder({ p, onResult }) {
             )}
             <label style={{ ...lab, marginLeft: 10 }} htmlFor="seq-paste">Or paste a list</label>
             <input id="seq-paste" type="text" placeholder="-30, -20, -10, 0, 10" autoComplete="off"
-                   onChange={(e) => { const t = parseSeqText(e.target.value); if (t.length) setCustom(t); }}
+                   onChange={(e) => {
+                     const t = parseSeqText(e.target.value);
+                     if (!t.length) return;
+                     const total = e.target.value.split(/[\s,;]+/).filter((x) => x !== "").length;
+                     setCustom(t);
+                     setPasteNote(total > t.length ? `Kept the first ${t.length} of ${total} years.` : `Replaced your years with ${t.length} from the list.`);
+                   }}
                    style={{ ...SEQ_INPUT_STYLE, width: 220, fontFamily: "'JetBrains Mono',monospace" }} />
           </div>
+          {pasteNote && <div role="status" style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", marginTop: 6 }}>{pasteNote}</div>}
           {custom.length >= SEQ_MAX_CUSTOM_YEARS && (
             <div style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", marginTop: 6 }}>Up to {SEQ_MAX_CUSTOM_YEARS} years. After that, returns go back to random history.</div>
           )}
