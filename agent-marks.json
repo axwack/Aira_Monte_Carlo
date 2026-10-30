@@ -44,7 +44,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function TaxDetailsModal(",
       "description": "Click-open Tax Calculation Details modal. Reads the waterfall row only (rule 8) — no second tax computation.",
-      "sha": "5d66347a50196ece"
+      "sha": "75635a65277a0f80"
     },
     {
       "id": "mc-advanced-settings",
@@ -100,7 +100,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function InfoModal(",
       "description": "SHARED: the dialog shell both agents use. deepseek-flash added maxWidth/bodyMaxHeight + controlled open/onClose. Change it carefully and re-stamp.",
-      "sha": "a092f657bce084ef"
+      "sha": "ac25dbc217cd5627"
     },
     {
       "id": "claude-not-entered-rows",

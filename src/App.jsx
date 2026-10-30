@@ -3262,6 +3262,9 @@ const MAX_MONEY_INPUT = 1_000_000_000;
 const MONEY_AXIS_WIDTH = 78;
 const fmtPct = (v) => `${(v * 100).toFixed(1)}%`;
 
+// Status dot: colour comes from a token and the words beside it carry the meaning.
+const Dot = ({ tone = "info" }) => <span className={`dot dot-${tone}`} aria-hidden="true" />;
+
 // Appending hex alpha to a color (`${c}44`) only works when `c` is a hex
 // literal. The design-token migration turned many color sources into CSS
 // tokens, and "var(--positive)44" isn't a color — the browser drops the
@@ -4095,6 +4098,8 @@ const CSS = `
   .li { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-muted); }
   .ll { width:18px; height:2px; border-radius:1px; }
   .ppl-grid { display:flex; flex-wrap:wrap; gap:4px; margin:8px 0; }
+  .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  .dot-ok { background:var(--positive); } .dot-warn { background:var(--accent-gold); } .dot-bad { background:var(--negative); } .dot-info { background:var(--accent); }
   .ppl-dot { width:18px; height:18px; border-radius:50%; }
   .roth-tbl { width:100%; border-collapse:collapse; font-size:12px; }
   /* ── Withdrawal table: grouped column views ───────────────────────────────
@@ -4578,7 +4583,7 @@ function AboutButton() {
           </div>
           <button onClick={() => setOpen(false)}
             style={{ background:"transparent", border:"none", color:"var(--text-muted)",
-              cursor:"pointer", fontSize: "var(--fs-h1)", lineHeight:1, padding:"0 2px" }}>✕</button>
+              cursor:"pointer", fontSize: "var(--fs-h1)", lineHeight:1, padding:"0 2px" }}>×</button>
         </div>
 
         {/* Tab bar */}
@@ -4659,7 +4664,7 @@ function AboutButton() {
             <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:8 }}>
               {ABOUT_PRODUCT.bullets.map((b, i) => (
                 <li key={i} style={{ display:"flex", gap:10, fontSize: "var(--fs-body)", color:"var(--text-secondary)" }}>
-                  <span style={{ color:"var(--chart-2)", fontWeight:700, flexShrink:0 }}>✓</span>
+                  <Dot tone="ok" />
                   <span>{b}</span>
                 </li>
               ))}
@@ -4717,7 +4722,7 @@ function HelpButton() {
           </div>
           <button onClick={() => setOpen(false)}
             style={{ background:"transparent", border:"none", color:"var(--text-muted)",
-              cursor:"pointer", fontSize: "var(--fs-h1)", lineHeight:1, padding:"0 2px" }}>✕</button>
+              cursor:"pointer", fontSize: "var(--fs-h1)", lineHeight:1, padding:"0 2px" }}>×</button>
         </div>
 
         <input
@@ -4930,7 +4935,7 @@ function InfoModal({ title, children, accent = "var(--chart-2)", trigger, maxWid
           </div>
           <button onClick={() => setOpen(false)} aria-label="Close"
             style={{ background:"transparent", border:"none", color:"var(--text-muted)",
-              cursor:"pointer", fontSize: "var(--fs-h2)", lineHeight:1, marginTop:2, flexShrink:0 }}>✕</button>
+              cursor:"pointer", fontSize: "var(--fs-h2)", lineHeight:1, marginTop:2, flexShrink:0 }}>×</button>
         </div>
         <div style={{ fontSize: "var(--fs-body)", color:"var(--text-secondary)", lineHeight:1.7,
           ...(bodyMaxHeight ? { maxHeight: bodyMaxHeight, overflowY: "auto", paddingRight: 6 } : {}) }}>{children}</div>
@@ -6043,7 +6048,7 @@ function IncomeExpensesChart({ p, inf }) {
       />
       {p.ssAge > p.retireAge && (
         <div className="flag-w" style={{ fontSize: "var(--fs-small)" }}>
-          ⚠ Social Security gap, ages {p.retireAge}–{p.ssAge - 1} — with no SS yet, your
+          Social Security gap, ages {p.retireAge}–{p.ssAge - 1} — with no SS yet, your
           portfolio carries the full spending need (the green Savings & 401(k)/IRA Drawdown above is
           largest here). This is the highest sequence-of-returns risk window.
         </div>
@@ -6301,8 +6306,8 @@ const modeDescs = {
     fill_10: "Ultra‑conservative — stay in 10% bracket. Minimal tax, slowest conversion.",
     fill_12: "Conservative — stay in 12% bracket. Low tax, slower conversion.",
     fill_22: "Moderate — fill to top of 22%. IRMAA‑safe. AiRA default.",
-    fill_24: "Aggressive — fill to 24%. ⚠️ IRMAA risk at 65 (2‑yr lookback).",
-    fill_32: "Very aggressive — fill to 32%. 🚨 IRMAA and NIIT implications.",
+    fill_24: "Aggressive — fill to 24%. IRMAA risk at 65 (2‑yr lookback).",
+    fill_32: "Very aggressive — fill to 32%. IRMAA and NIIT implications.",
     fill_35: "High income — fill to 35%. Only for large conversions.",
     fill_37: "Maximum — fill to 37%. Rarely optimal; consult CPA.",
     irmaa_safe: "Dynamic — fills 22% normally, auto‑throttles near IRMAA threshold.",
@@ -6647,7 +6652,7 @@ const modeDescs = {
           {conversionPlan.needs_schedule ? (
             <>
               <div style={{ color: "var(--accent-gold)", marginTop: 6 }}>
-                ⚠️ A multi-year conversion schedule is recommended because:
+                A multi-year conversion schedule is recommended because:
               </div>
               <ul style={{ margin: "4px 0 6px 18px", padding: 0, color: "var(--text-secondary)" }}>
                 {conversionPlan.reasons.headroomTooSmall && (
@@ -6767,7 +6772,7 @@ const modeDescs = {
         } else if (cySGOV <= 0) {
           recConv = recRoom; recTax = recRoomTax; recNote = "Enter Cash/Treasury/Short Term cash balance to check cash constraint";
         } else if (recRoomTax.total <= cySGOV) {
-          recConv = recRoom; recTax = recRoomTax; recNote = `Cash/Treasury/Short Term cash covers full ${targetLabel} fill ✅`;
+          recConv = recRoom; recTax = recRoomTax; recNote = `Cash/Treasury/Short Term cash covers full ${targetLabel} fill`;
         } else {
           // Scale down proportionally — linear approx within bracket
           const ratio = cySGOV / recRoomTax.total;
@@ -6972,7 +6977,7 @@ const modeDescs = {
                       <button
                         onClick={() => {
                           onSaveConversionOverride(cyYear, recConv, { w2: cyW2, ss: cySS, rental: cyRental, other: cyOther, sgov: cySGOV });
-                          alert(`✅ Saved: Convert ${fmtN(recConv)} in ${cyYear} to your Lifetime Projection ladder.`);
+                          alert(`Saved: Convert ${fmtN(recConv)} in ${cyYear} to your Lifetime Projection ladder.`);
                         }}
                         style={{
                           marginTop: 8, width: "100%", padding: "10px 0",
@@ -7232,7 +7237,7 @@ const modeDescs = {
               return (
                 <div style={{ marginTop: 14, padding: "10px 14px", background: "var(--tint-red-07)", border: "1px solid var(--tint-red-25)", borderRadius: 8 }}>
                   <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--chart-1)", marginBottom: 6 }}>
-                    ⚠️ Stale Pins — producing $0 conversion
+                    Stale Pins — producing $0 conversion
                   </div>
                   <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.6 }}>
                     The pins below exist in your plan but result in <strong style={{ color: "var(--text-primary)" }}>$0 converted</strong> — the pre-tax balance was likely exhausted before that year, or your income already exceeds the bracket ceiling. They have no effect and can be safely removed.
@@ -7642,7 +7647,7 @@ const modeDescs = {
                 <td style={{ color: "var(--chart-1)", fontWeight: 700, borderLeft: "2px solid var(--tint-red-20)", background: "var(--tint-red-05)" }}>{fmtDollar(opt.cTax)}</td>
                 <td style={{ color: "var(--text-secondary)", fontWeight: 700, background: "var(--tint-red-05)" }}>{fmtDollar(cur.cTax)}</td>
                 <td colSpan={2} style={{ color: cur.cTax - opt.cTax > 0 ? "var(--positive)" : "var(--chart-1)", fontWeight: 700, textAlign: "left", borderLeft: "2px solid rgba(52,211,153,0.2)", background: "var(--tint-green-05)" }}>
-                  {cur.cTax - opt.cTax > 0 ? `✅ Saves ${fmtDollar(cur.cTax - opt.cTax)}` : `⚠️ Costs ${fmtDollar(opt.cTax - cur.cTax)} more`}
+                  {cur.cTax - opt.cTax > 0 ? `Saves ${fmtDollar(cur.cTax - opt.cTax)}` : `Costs ${fmtDollar(opt.cTax - cur.cTax)} more`}
                 </td>
               </tr>
             </tbody>
@@ -8276,7 +8281,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         color: "var(--positive)",
       }}
     >
-      {"✓ Saved: " + getStrategyLabel(withdrawalStrategy)}
+      {"Saved: " + getStrategyLabel(withdrawalStrategy)}
     </span>
   );
 
@@ -8294,7 +8299,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           color: "var(--text-secondary)", lineHeight: 1.6,
         }}>
           <div style={{ fontWeight: 700, color: migrated.fidelity === "changed" ? "var(--accent-gold)" : "var(--accent-teal)", marginBottom: 4 }}>
-            {migrated.fidelity === "changed" ? "⚠" : "✓"} Your saved strategy “{migrated.fromLabel}” was retired — this plan now uses{" "}
+            <Dot tone={migrated.fidelity === "changed" ? "warn" : "ok"} />Your saved strategy “{migrated.fromLabel}” was retired — this plan now uses{" "}
             {migrated.toLabel}.
           </div>
           <div>{migrated.basis}</div>
@@ -8376,7 +8381,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 24 }}>
             {previewIsDefault ? (
               <span style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "inline-flex", alignItems: "center", gap: 5 }}>
-                ✓ Previewing your saved default — the whole app (including Monte Carlo) uses this strategy.
+                Previewing your saved default — the whole app (including Monte Carlo) uses this strategy.
                 <InfoModal
                   title="How this works"
                   accent="var(--positive)"
@@ -8691,7 +8696,7 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
               <td style={tdR}>{money(irmaa)}</td>
             </tr>
             {penalty > 0 && (
-              <tr><td style={{ ...tdL, color: "#f87171" }}>⛔ Early-withdrawal penalty (IRC §72(t), 10%) — a separate additional tax</td><td style={{ ...tdR, color: "#f87171" }}>{money(penalty)}</td></tr>
+              <tr><td style={{ ...tdL, color: "#f87171" }}>Early-withdrawal penalty (IRC §72(t), 10%) — a separate additional tax</td><td style={{ ...tdR, color: "#f87171" }}>{money(penalty)}</td></tr>
             )}
             <tr>
               <td style={{ ...tdL, fontWeight: 700, color: "var(--text-primary)", borderTop: "1px solid var(--tint-white-12)" }}>= Total tax{r.earlyPenalty > 0 ? " (incl. penalty)" : ""}</td>
@@ -9392,7 +9397,7 @@ function WaterfallPlanView({ p, result }) {
                           t += `\nFull ${fmtDollar(r.convToRoth)} reaches the Roth.`;
                         }
                         if (r.convTaxFromPretax > 0 && r.convToRoth >= r.conversionAmount) {
-                          t += `\n\n⚠ Part of the tax came from Pre-Tax — that draw is itself`
+                          t += `\n\nPart of the tax came from Pre-Tax — that draw is itself`
                             + ` ordinary income. Taxable or Cash is the cheaper source.`;
                         }
                         // The reconciliation. A user compared this row's
@@ -9444,7 +9449,7 @@ function WaterfallPlanView({ p, result }) {
                     title={
                       b1End == null
                         ? "No account is tagged Bucket 1"
-                        : [b1End === 0 ? "⚠ Bucket 1 is depleted." : null, b1Breakdown]
+                        : [b1End === 0 ? "Bucket 1 is depleted." : null, b1Breakdown]
                             .filter(Boolean).join("\n\n") || fmtDollar(b1End)
                     }>
                   {b1End == null ? "—" : fmtDollar(b1End)}
@@ -9532,7 +9537,7 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
                       />
                     );
                   })()}
-                  {!anyLandmine(r) && <span style={{ color: "var(--positive)", fontSize: "var(--fs-small)" }}>✓</span>}
+                  {!anyLandmine(r) && <Dot tone="ok" />}
                 </td>
                 <td data-cg="bal" style={{ textAlign: "right", color: "var(--text-secondary)" }} title={fmtDollar(r.totalPort)}>{fmtDollar(r.totalPort)}</td>
               </tr>
@@ -9903,7 +9908,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
             border: "1px solid rgba(251,191,36,0.22)", borderRadius: 6, padding: "8px 10px",
             marginBottom: 10, lineHeight: 1.5,
           }}>
-            <strong style={{ color: "#fbbf24" }}>⚠ Simplified schedule.</strong> This "{strategyLabel}" view uses
+            <strong style={{ color: "#fbbf24" }}>Simplified schedule.</strong> This "{strategyLabel}" view uses
             one blended growth rate for your whole portfolio, not the real per-account draws the
             Sourcing section above uses — and it never models a Roth conversion (Roth Conv. always
             reads $0 here). Its Fed/State Tax figures ARE borrowed from the Sourcing section's real
@@ -10270,7 +10275,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
       if (rem > 0 && rothPool.length > 0) {
         const rothAvail = rothPool.reduce((s, a) => s + (a.balance || 0), 0);
         const amt = Math.min(rem, rothAvail);
-        steps.push({ label: `⚠ Emergency — draw from ${acctLabel(rothPool, "Roth accounts")} (B3)`, accounts: rothPool, amount: amt, tax: "Tax-free", note: "Last resort — Roth grows tax-free, avoid if possible" });
+        steps.push({ label: `Emergency — draw from ${acctLabel(rothPool, "Roth accounts")} (B3)`, accounts: rothPool, amount: amt, tax: "Tax-free", note: "Last resort — Roth grows tax-free, avoid if possible" });
       }
       return steps;
     }
@@ -10311,7 +10316,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
 
   // Styles
   const DC = { critical: "var(--chart-1)", warning: "var(--accent-gold)", ok: "var(--positive)", setup: "var(--text-faint)" };
-  const DI = { critical: "🔴", warning: "🟡", ok: "✅", setup: "⚙" };
+const DI_TONE = { critical: "bad", warning: "warn", ok: "ok" };
   const now = new Date();
   const monthName = now.toLocaleString("default", { month: "long" });
 
@@ -10325,7 +10330,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
           <div>
             <div style={{ fontSize: "var(--fs-body)", fontWeight: 700, color: "var(--text-primary)" }}>{monthName} {now.getFullYear()} — Retirement Directive</div>
             <div style={{ fontSize: "var(--fs-label)", color: DC[directive.type], fontWeight: 600, marginTop: 3 }}>
-              {DI[directive.type]} {directive.title}
+              {DI_TONE[directive.type] && <Dot tone={DI_TONE[directive.type]} />}{directive.title}
             </div>
           </div>
         </div>
@@ -10341,7 +10346,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
 
         {directive.marketWarning && (
           <div style={{ background: "var(--tint-amber-08)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: "var(--fs-small)", color: "var(--accent-gold)", lineHeight: 1.5 }}>
-            ⚠ <strong>Market condition check required:</strong> Only move money from Bucket 3 into Bucket 2 when markets are <em>up or neutral</em>. If stocks are down significantly (&gt;15%), wait — let Bucket 2 cover you until markets recover. Selling growth assets in a downturn defeats the purpose of the bucket strategy.
+            <strong>Market condition check required:</strong> Only move money from Bucket 3 into Bucket 2 when markets are <em>up or neutral</em>. If stocks are down significantly (&gt;15%), wait — let Bucket 2 cover you until markets recover. Selling growth assets in a downturn defeats the purpose of the bucket strategy.
           </div>
         )}
         {directive.b1Empty && (
@@ -10369,7 +10374,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
                 ))}
                 <div style={{ fontSize: "var(--fs-small)", marginTop: 5, display: "flex", gap: 12, flexWrap: "wrap" }}>
                   <span style={{ color: "var(--text-secondary)" }}>Tax: {step.tax}</span>
-                  {step.note && <span style={{ color: step.note.startsWith("⚠") ? "var(--accent-gold)" : "var(--text-faint)" }}>{step.note}</span>}
+                  {step.note && <span style={{ color: "var(--text-faint)" }}>{step.note}</span>}
                 </div>
               </div>
             ))}
@@ -12202,7 +12207,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
           hover-only pop-up never opens on a phone. */}
       {(longHorizon || preMedicare > 0) && (<>
         <button type="button" className="gap-row" onClick={() => setShowGaps(true)} aria-haspopup="dialog">
-          <span aria-hidden="true">⚠</span>
+          <Dot tone="warn" />
           <span style={{ flex: 1, minWidth: 0 }}>
             {preMedicare > 0 && longHorizon
               ? <><strong>Not in this forecast:</strong> {preMedicare} years of health insurance before Medicare, plus 2 long-retirement caveats. The plan looks better than it is.</>
@@ -13079,9 +13084,9 @@ export function NetWorthTab({ p, mc, inf, real }) {
 
 // Priority colors
 const PRIORITY_COLOR = {
-  red:    { border: "var(--negative)", bg: "var(--tint-red-07)",  label: "var(--chart-1)", dot: "🔴" },
-  yellow: { border: "var(--accent-gold)", bg: "rgba(244,211,94,0.07)", label: "var(--accent-gold)", dot: "🟡" },
-  green:  { border: "var(--positive)", bg: "rgba(79,216,143,0.07)", label: "var(--positive)", dot: "🟢" },
+  red:    { border: "var(--negative)", bg: "var(--tint-red-07)",  label: "var(--chart-1)" },
+  yellow: { border: "var(--accent-gold)", bg: "rgba(244,211,94,0.07)", label: "var(--accent-gold)" },
+  green:  { border: "var(--positive)", bg: "rgba(79,216,143,0.07)", label: "var(--positive)" },
 };
 
 // Milestone timeline
@@ -13405,7 +13410,7 @@ function CardDetailPanel({ card, onClose }) {
           borderRadius: 8, padding: "8px 14px", marginBottom: 14,
           display: "flex", alignItems: "center", gap: 6,
         }}>
-          <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>✓</span>
+          <Dot tone="ok" />
           <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>AI reviewed — this card is already comprehensive, nothing to add.</span>
         </div>
       ) : null}
@@ -13549,9 +13554,9 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
     : "Run AI analysis on your plan";
 
   const COLORS = {
-    red:    { bg: "var(--tint-red-08)",   border: "var(--tint-red-25)",   label: "var(--chart-1)", badge: "🔴 Critical" },
-    yellow: { bg: "rgba(244,211,94,0.08)",  border: "rgba(244,211,94,0.25)",  label: "var(--accent-gold)", badge: "🟡 Important" },
-    green:  { bg: "rgba(79,216,143,0.08)",  border: "rgba(79,216,143,0.25)",  label: "var(--positive)", badge: "🟢 On Track" },
+    red:    { bg: "var(--tint-red-08)",   border: "var(--tint-red-25)",   label: "var(--chart-1)", badge: "Critical" },
+    yellow: { bg: "rgba(244,211,94,0.08)",  border: "rgba(244,211,94,0.25)",  label: "var(--accent-gold)", badge: "Important" },
+    green:  { bg: "rgba(79,216,143,0.08)",  border: "rgba(79,216,143,0.25)",  label: "var(--positive)", badge: "On Track" },
   };
 
   return (
@@ -13740,7 +13745,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
           fontSize: "var(--fs-label)",
           color: "var(--chart-1)",
         }}>
-          ⚠ AI unavailable: {aiError}
+          AI unavailable: {aiError}
         </div>
       )}
 
@@ -13855,11 +13860,11 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
               </button>
             </div>
 
-            {liveError && <div style={{ fontSize: "var(--fs-small)", color: "var(--chart-1)", marginBottom: 8 }}>⚠ {liveError}</div>}
+            {liveError && <div style={{ fontSize: "var(--fs-small)", color: "var(--chart-1)", marginBottom: 8 }}>{liveError}</div>}
 
             {!liveError && liveCards && liveCards.length === 0 && (
               <div style={{ fontSize: "var(--fs-small)", color: "var(--positive)", marginBottom: 8 }}>
-                ✓ Live search complete — no new time-sensitive updates found. Your plan figures look current.
+                Live search complete — no new time-sensitive updates found. Your plan figures look current.
               </div>
             )}
             {!liveError && liveCards && liveCards.length > 0 && (
@@ -13994,7 +13999,7 @@ function RealEstateStep({ values, onChange }) {
                       cursor:"pointer", fontSize: "var(--fs-body)", padding:"2px 4px", transition:"color 0.15s" }}
                     onMouseEnter={e=>e.currentTarget.style.color="var(--chart-1)"}
                     onMouseLeave={e=>e.currentTarget.style.color="var(--text-faint)"}>
-                    ✕
+                    ×
                   </button>
                 )}
               </div>
@@ -14087,7 +14092,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
 
   const handleSave = () => {
     const ok = saveProfileToLocal(values);
-    flashStatus(ok ? "✓ Saved to this browser" : "✗ Save failed (localStorage blocked)");
+    flashStatus(ok ? "Saved to this browser" : "Save failed (localStorage blocked)");
   };
 
   const handleReload = () => {
@@ -14101,7 +14106,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
       if (k === "savedAt" || k === "buildTag") return;
       onChange(k, v);
     });
-    flashStatus("✓ Restored saved profile");
+    flashStatus("Restored saved profile");
   };
 
   const savedMeta = (() => {
@@ -14499,14 +14504,14 @@ function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
           <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>%</span>
           <span style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", fontFamily: "'JetBrains Mono',monospace", minWidth: 78, textAlign: "right" }}>{fmtDollar(bal * (Number(s.pct) || 0) / 100)}</span>
           <button onClick={() => onChangeSplits(splits.filter((_, j) => j !== i))} title="Remove this slice"
-            style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--fs-body)", opacity: 0.6 }}>✕</button>
+            style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--fs-body)", opacity: 0.6 }}>×</button>
         </div>
       ))}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
         <button onClick={() => onChangeSplits([...splits, { bucket: 2, pct: Math.max(0, remaining) }])}
           style={{ background: "transparent", border: `1px dashed ${withAlpha(color, "55")}`, borderRadius: 4, color, fontSize: "var(--fs-small)", padding: "2px 8px", cursor: "pointer" }}>+ Add slice</button>
         <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: total === 100 ? "var(--positive)" : "var(--accent-gold)" }}>
-          {total === 100 ? "100% assigned ✓" : `${total}% assigned · ${remaining > 0 ? remaining + "% left" : Math.abs(remaining) + "% over"}`}
+          {total === 100 ? "100% assigned" : `${total}% assigned · ${remaining > 0 ? remaining + "% left" : Math.abs(remaining) + "% over"}`}
         </span>
         <button onClick={() => { onChangeSplits([]); onClose(); }}
           style={{ marginLeft: "auto", background: "transparent", border: "none", color: "var(--text-muted)", fontSize: "var(--fs-small)", cursor: "pointer", textDecoration: "underline" }}>↩ use one bucket</button>
@@ -14658,7 +14663,7 @@ function SavingsPanel({ values, onChange }) {
                     onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "var(--chart-1)"; }}
                     onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "var(--text-muted)"; }}
                   >
-                    ✕
+                    ×
                   </button>
                 </div>
                 {editing && (
@@ -15598,7 +15603,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
 
       {/* ── Income card 1: Annual Contributions (inputs + savings total together) ── */}
       <ACard title="Annual Contributions" desc="Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.">
-        <div style={{ fontSize: "var(--fs-small)", color: "var(--accent-gold)", marginBottom: 10, lineHeight: 1.4 }}>⚠ Employer Contribution and Brokerage/After-Tax Savings aren't capped by the tool — the IRS doesn't set a hard per-field limit on either, but real-world amounts are still bounded by your actual plan and income. 401(k), HSA, and Roth IRA below stay capped at their real legal limits.</div>
+        <div style={{ fontSize: "var(--fs-small)", color: "var(--accent-gold)", marginBottom: 10, lineHeight: 1.4 }}>Employer Contribution and Brokerage/After-Tax Savings aren't capped by the tool — the IRS doesn't set a hard per-field limit on either, but real-world amounts are still bounded by your actual plan and income. 401(k), HSA, and Roth IRA below stay capped at their real legal limits.</div>
         <WFieldRow label="401(k) / 403(b) / 457(b) — pre-tax only" helper="Your PRE-TAX employee deferral. Roth 401(k)/403(b) money does NOT belong here — this field is taxed as ordinary income on withdrawal and drives your future RMDs. Put Roth deferrals in the Roth line below until a dedicated Roth 401(k) field exists (REQUIREMENTS §22.1).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={250_000} step={500} suffix="/yr" />
         </WFieldRow>
@@ -16356,7 +16361,7 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
           style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 4px", opacity: 0.5 }}
           onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "var(--chart-1)"; }}
           onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "var(--text-muted)"; }}
-        >✕</button>
+        >×</button>
       </div>
       {focused && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 72px 108px 60px auto", gap: 6, alignItems: "center" }}>
@@ -16540,7 +16545,7 @@ function ExpenseImport({ values, onChange }) {
 
       {error && (
         <div style={{ marginTop: 8, fontSize: "var(--fs-small)", color: "#fca5a5", background: "var(--tint-red-08)", border: "1px solid var(--tint-red-30)", borderRadius: 6, padding: "6px 10px" }}>
-          ⚠ {error}
+          {error}
         </div>
       )}
 
@@ -16549,7 +16554,7 @@ function ExpenseImport({ values, onChange }) {
           <div style={{ lineHeight: 1.5 }}>
             {meta.mode === "multi" ? (
               <>
-                <strong style={{ color: "var(--accent-teal)" }}>✓ Multi-year budget loaded</strong> — {meta.years} years
+                <strong style={{ color: "var(--accent-teal)" }}>Multi-year budget loaded</strong> — {meta.years} years
                 ({meta.firstYear}–{meta.lastYear}) from <em>{meta.fileName}</em>.
                 <div style={{ color: "var(--accent-gold)", fontSize: "var(--fs-small)", marginTop: 2 }}>
                   This overrides the withdrawal-strategy spend rule. After the last year, the final amount inflates forward.
@@ -16557,7 +16562,7 @@ function ExpenseImport({ values, onChange }) {
               </>
             ) : (
               <>
-                <strong style={{ color: "var(--accent-teal)" }}>✓ One-year budget loaded</strong> — {fmtDollar(meta.total)}/yr
+                <strong style={{ color: "var(--accent-teal)" }}>One-year budget loaded</strong> — {fmtDollar(meta.total)}/yr
                 from {meta.lineCount} line item(s) in <em>{meta.fileName}</em>.
                 {meta.essentialTotal != null && (
                   <div style={{ color: "var(--text-secondary)", fontSize: "var(--fs-small)", marginTop: 2 }}>
@@ -17500,19 +17505,19 @@ export default function AiRAForecaster() {
           // seeing "unlocked" beside a greyed-out button concludes they
           // paid for nothing — and the only existing hint is a title= on a
           // disabled button, which most browsers never render.
-          ? "✓ Report unlocked — it's yours permanently. Press ▶ Run Monte Carlo, then Report."
+          ? "Report unlocked — it's yours permanently. Press ▶ Run Monte Carlo, then Report."
           : `Payment received — your report is taking longer than usual to unlock. Reload this page in a minute. If it is still locked, email ${FEEDBACK_EMAIL} with your Stripe receipt and we will open it straight away.`)
-      : `✓ ${(stripeReturn.credits || 0).toLocaleString()} credits added to your account`;
+      : `${(stripeReturn.credits || 0).toLocaleString()} credits added to your account`;
     const t = stripeReturn.success
       ? setToastTimed(setStripeToast, { msg: okMsg, tone: stalled ? "warn" : "ok" }, stalled ? 20000 : 5000)
-      : setToastTimed(setStripeToast, { msg: `⚠ ${stripeReturn.error}`, tone: "err" }, 15000);
+      : setToastTimed(setStripeToast, { msg: `${stripeReturn.error}`, tone: "err" }, 15000);
     return () => clearTimeout(t);
   }, [stripeReturn]);
   useEffect(() => {
     if (!restoreReturn) return;
     const t = restoreReturn.success
-      ? setToastTimed(setStripeToast, { msg: `✓ Account restored — ${restoreReturn.credits.toLocaleString()} credits available`, tone: "ok" }, 6000)
-      : setToastTimed(setStripeToast, { msg: `⚠ ${restoreReturn.error}`, tone: "err" }, 15000);
+      ? setToastTimed(setStripeToast, { msg: `Account restored — ${restoreReturn.credits.toLocaleString()} credits available`, tone: "ok" }, 6000)
+      : setToastTimed(setStripeToast, { msg: `${restoreReturn.error}`, tone: "err" }, 15000);
     return () => clearTimeout(t);
   }, [restoreReturn]);
   // Signature of the inputs the last run used; null until the first run is
@@ -18055,7 +18060,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               disabled={!mc}
               style={!mc ? { opacity: 0.45, cursor: "default" } : checkInFlash ? { color: "var(--accent-teal)" } : undefined}
             >
-              {checkInFlash ? "✓ Saved!" : "Check-in"}
+              {checkInFlash ? "Saved!" : "Check-in"}
             </button>
             <button
               className="mbtn"
@@ -18252,7 +18257,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   setStale(true);
                   dismissWelcome();
                   setTab("networth");
-                  alert(`✅ Profile loaded${data.name ? ` for ${data.name}` : ""}. Press ▶ Run Monte Carlo to update.`);
+                  alert(`Profile loaded${data.name ? ` for ${data.name}` : ""}. Press ▶ Run Monte Carlo to update.`);
                 })
               }
             >
@@ -18752,7 +18757,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 background: stale ? "linear-gradient(135deg,#3d6fe0,var(--chart-2))" : undefined,
               }}
             >
-              {running ? `Running ${Math.round(Number(params?.mcPaths) || MC_PATHS).toLocaleString()} paths...` : stale ? "⚠ Inputs changed — Re-run" : "▶ Run Monte Carlo"}
+              {running ? `Running ${Math.round(Number(params?.mcPaths) || MC_PATHS).toLocaleString()} paths...` : stale ? "Inputs changed — Re-run" : "▶ Run Monte Carlo"}
             </button>
             {lastRunAt && !running && (
               <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", textAlign: "center", marginTop: 5 }}>
@@ -18774,7 +18779,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   color: "var(--accent-gold)",
                 }}
               >
-                ⚠ Inputs changed — success rates below are stale. Press Re-run to update.
+                Inputs changed — success rates below are stale. Press Re-run to update.
               </div>
             )}
 
