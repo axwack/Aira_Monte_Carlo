@@ -284,7 +284,7 @@ export const MC_BAND_HIGH      = 0.60;
 // good score", which is the drift the MC_BAND_* constants were introduced to
 // stop (see the comment above them). One definition, two consumers.
 const rateColor = (r) =>
-  r >= MC_BAND_LOW_RISK ? "var(--positive)" : r >= MC_BAND_MODERATE ? "var(--positive)" : r >= MC_BAND_ELEVATED ? "var(--accent-gold)" : r >= MC_BAND_HIGH ? "#f97316" : "var(--negative)";
+  r >= MC_BAND_LOW_RISK ? "var(--positive)" : r >= MC_BAND_MODERATE ? "var(--positive)" : r >= MC_BAND_ELEVATED ? "var(--accent-gold)" : r >= MC_BAND_HIGH ? "var(--chart-7)" : "var(--negative)";
 // Short form of the band, for a per-row badge where `riskLabel`'s sentence
 // would not fit. Keys off the same constants, so a badge and the headline it
 // summarises can never disagree about which band a rate is in.
@@ -303,7 +303,7 @@ export const MC_SOLID_PLAN_RATE = 0.85;
 // withAlpha(), so a var() token never gets string-concatenated into bad CSS.
 export const INFO_ACCENT = {
   method:   "var(--accent-teal)",    // how it works / neutral explanation
-  money:    "#6c9bff",               // balances, portfolio values, percentiles
+  money:    "var(--chart-2)",               // balances, portfolio values, percentiles
   tax:      "var(--accent-purple)",  // tax, IRMAA, brackets, Roth conversions
   positive: "var(--positive)",       // success, probability, "good" outcomes
   risk:     "var(--accent-gold)",    // warnings, landmines, caution
@@ -901,42 +901,42 @@ const ANALOGUES = [
     text: "Odds a new business survives its first two years",
     stat: "≈70%",
     emoji: "🏢",
-    color: "#f97316",
+    color: "var(--chart-7)",
   },
   {
     min: 70,
     text: "Not flipping two heads in a row",
     stat: "75%",
     emoji: "🪙",
-    color: "#f97316",
+    color: "var(--chart-7)",
   },
   {
     min: 60,
     text: "Graduating college within six years of starting",
     stat: "≈64%",
     emoji: "🎓",
-    color: "#fb923c",
+    color: "var(--chart-3)",
   },
   {
     min: 60,
     text: "Rolling 3 or higher on a single die",
     stat: "≈67%",
     emoji: "🎲",
-    color: "#fb923c",
+    color: "var(--chart-3)",
   },
   {
     min: 50,
     text: "A literal coin flip — retirement shouldn't be one",
     stat: "50%",
     emoji: "🪙",
-    color: "#ff6f7a",
+    color: "var(--chart-1)",
   },
   {
     min: 50,
     text: "Guessing a card's color correctly",
     stat: "50%",
     emoji: "🎴",
-    color: "#ff6f7a",
+    color: "var(--chart-1)",
   },
   {
     min: 0,
@@ -3117,7 +3117,7 @@ function InfoDot({ title, heading = "What this means", size = 14, color = "var(-
           style={{
             display: "inline-flex", alignItems: "center", justifyContent: "center",
             width: size + 6, height: size + 6, borderRadius: "50%",
-            background: hover ? "rgba(255,255,255,0.16)" : "var(--card-border)",
+            background: hover ? "var(--tint-white-15)" : "var(--card-border)",
             color: hover ? hoverColor : color,
             cursor: "pointer", transition: "background 0.15s, color 0.15s",
           }}
@@ -3200,7 +3200,7 @@ function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRAT
             <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>3. {getStrategyLabel(strat)} {strat === "gk" ? "guardrails" : "strategy"}</div>{strategyHowItWorks[strat] || strategyHowItWorks.gk}</div>
             <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>4. Survival check</div>Balance above $0 through age {params.endAge} = success. The fan chart shows the 10th–90th percentile spread.</div>
           </div>
-          <div style={{ marginTop: 14, background: "rgba(13,148,136,0.08)", border: "1px solid rgba(13,148,136,0.25)", borderRadius: 8, padding: "12px 14px" }}>
+          <div style={{ marginTop: 14, background: "var(--tint-teal-600-08)", border: "1px solid var(--tint-teal-600-25)", borderRadius: 8, padding: "12px 14px" }}>
             <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--accent-teal)", marginBottom: 6 }}>Why this beats a single projection</div>
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.7 }}>
               <li>Built on real historical market performance, not a guessed average</li>
@@ -3222,7 +3222,7 @@ function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRAT
             {[
               ["Avg stock year", `${pool.eqAvg >= 0 ? "+" : ""}${pool.eqAvg.toFixed(1)}%`, "var(--accent-teal)"],
               ["Best / worst", `+${pool.eqBest.toFixed(0)}% / ${pool.eqWorst.toFixed(0)}%`, "var(--text-secondary)"],
-              ["Down years", `${pool.downPct}% of ${pool.years}`, "#ff6f7a"],
+              ["Down years", `${pool.downPct}% of ${pool.years}`, "var(--chart-1)"],
               ["Avg inflation", `${pool.inflAvg.toFixed(1)}%`, "var(--accent-gold)"],
             ].map(([l, v, c]) => (
               <div key={l} style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)", borderRadius: 6, padding: "8px 10px" }}>
@@ -3576,7 +3576,7 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
                       <td style={{ textAlign: "left", color: "var(--text-muted)", whiteSpace: "nowrap", fontSize: "var(--fs-small)" }}>
                         {retireAge != null && d.age != null ? (d.age < retireAge ? "Pre-Retirement" : "Retirement") : "—"}
                       </td>
-                      <td style={{ color: "#ff6f7a" }}>{fmtDollar(d.p10)}</td>
+                      <td style={{ color: "var(--chart-1)" }}>{fmtDollar(d.p10)}</td>
                       <td style={{ color: "var(--accent-gold)" }}>{fmtDollar(d.p25)}</td>
                       <td style={{ color: "var(--accent-teal)", fontWeight: 700 }}>{fmtDollar(d.p50)}</td>
                       <td style={{ color: "var(--text-secondary)" }}>{fmtDollar(d.p75)}</td>
@@ -3677,14 +3677,14 @@ const SECTORS = [
   },
   {
     n: "Sector 4: The Torpedo",
-    color: "#f97316",
+    color: "var(--chart-7)",
     range: "Age 73 – 80",
     active: (age) => age >= 73 && age < 80,
     desc: (
       <>
         <ModalLede>The tax torpedo: Required Minimum Distributions begin whether you need the money or not.</ModalLede>
         <ModalP>
-          <Em color="#f97316">RMDs</Em> start at age 73 (SECURE 2.0), forcing taxable withdrawals
+          <Em color="var(--chart-7)">RMDs</Em> start at age 73 (SECURE 2.0), forcing taxable withdrawals
           from tax-deferred accounts on the IRS schedule. Those forced distributions can push you
           into a higher bracket and a higher <Em color="var(--accent-purple)">IRMAA tier</Em> —
           the "torpedo" that a large un-converted balance sets off.
@@ -3860,6 +3860,36 @@ const CSS = `
     --tint-sky-25: rgba(90,209,240,0.25);
     --tint-sky-30: rgba(90,209,240,0.3);
     --tint-sky-45: rgba(90,209,240,0.45);
+    /* Data palette: one name per chart and category colour. */
+    --chart-1: #ff6f7a;
+    --chart-2: #6c9bff;
+    --chart-3: #fb923c;
+    --chart-4: #818cf8;
+    --chart-5: #22d3ee;
+    --chart-6: #f5a623;
+    --chart-7: #f97316;
+    --chart-8: #6366f1;
+    --chart-9: #8b5cf6;
+    --chart-10: #3b82f6;
+    --chart-11: #a9d1ac;
+    --tint-indigo-05: rgba(99,102,241,0.05);
+    --tint-indigo-15: rgba(99,102,241,0.15);
+    --tint-indigo-20: rgba(99,102,241,0.2);
+    --tint-indigo-30: rgba(99,102,241,0.3);
+    --tint-indigo-40: rgba(99,102,241,0.4);
+    --tint-orange-10: rgba(251,146,60,0.1);
+    --tint-orange-25: rgba(251,146,60,0.25);
+    --tint-orange-35: rgba(251,146,60,0.35);
+    --tint-sky-500-10: rgba(14,165,233,0.1);
+    --tint-sky-500-18: rgba(14,165,233,0.18);
+    --tint-sky-500-25: rgba(14,165,233,0.25);
+    --tint-sky-500-45: rgba(14,165,233,0.45);
+    --tint-slate-400-15: rgba(148,163,184,0.15);
+    --tint-teal-600-06: rgba(13,148,136,0.06);
+    --tint-teal-600-08: rgba(13,148,136,0.08);
+    --tint-teal-600-25: rgba(13,148,136,0.25);
+    --tint-violet-400-30: rgba(167,139,250,0.3);
+    --tint-violet-600-08: rgba(124,58,237,0.08);
     --tint-white-02: rgba(255,255,255,0.02);
     --tint-white-03: rgba(255,255,255,0.03);
     --tint-white-04: rgba(255,255,255,0.04);
@@ -3908,7 +3938,7 @@ const CSS = `
   h1.logo { margin:0; }
   .sr-only { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
   .logo { font-size:25px; font-weight:800; letter-spacing:-0.03em; color:#eaf1ff; }
-  .logo-sub { color:#6c9bff; font-weight:400; font-size:16px; margin-left:6px; }
+  .logo-sub { color:var(--chart-2); font-weight:400; font-size:16px; margin-left:6px; }
   .mbtn { padding:5px 13px; border-radius:7px; border:1px solid var(--card-border); cursor:pointer; font-size:11px; font-family:var(--font-sans); font-weight:500; transition:all 0.2s; background:transparent; color:var(--text-secondary); }
   .mbtn:hover { color:var(--text-primary); border-color:var(--divider); }
   .mbtn.on { background:var(--accent); border-color:transparent; color:var(--bg-base); }
@@ -3956,7 +3986,7 @@ const CSS = `
   .sb-title { font-size:var(--fs-label); font-weight:600; color:var(--text-muted); margin:0 0 10px; }
   .sl-row { display:flex; flex-direction:column; gap:6px; margin-bottom:13px; }
   .sl-nudge-btn { width:24px; height:24px; border-radius:5px; border:1px solid var(--tint-white-12); background:var(--tint-white-06); color:var(--text-secondary); cursor:pointer; font-size:14px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; padding:0; transition:all 0.15s; flex-shrink:0; line-height:1; user-select:none; }
-  .sl-nudge-btn:hover:not(:disabled) { background:rgba(255,255,255,0.18); color:#ffffff; border-color:rgba(255,255,255,0.28); transform:scale(1.06); }
+  .sl-nudge-btn:hover:not(:disabled) { background:var(--tint-white-15); color:#ffffff; border-color:rgba(255,255,255,0.28); transform:scale(1.06); }
   .sl-nudge-btn:active:not(:disabled) { transform:scale(0.94); }
   .sl-nudge-btn:disabled { opacity:0.22; cursor:not-allowed; }
   /* The value cell is now an editable input (typed entry can exceed the slider max). */
@@ -3993,7 +4023,7 @@ const CSS = `
      so this changes nothing for ordinary block boxes — it only removes the
      content-based floor for the specific flex/grid items that have one. */
   .main * { min-width:0; }
-  .flag-w { border-left:3px solid var(--accent-gold); background:rgba(244,211,94,0.1); padding:7px 12px; font-size:12px; color:#fde68a; border-radius:0 8px 8px 0; margin-bottom:4px; font-weight:500; }
+  .flag-w { border-left:3px solid var(--accent-gold); background:var(--bg-warning); padding:7px 12px; font-size:12px; color:#fde68a; border-radius:0 8px 8px 0; margin-bottom:4px; font-weight:500; }
   .flag-i { border-left:3px solid #38bdf8; background:rgba(56,189,248,0.08); color:#bae6fd; border-radius:0 8px 8px 0; padding:7px 12px; font-size:12px; margin-bottom:4px; font-weight:500; }
   /* ── Help / About body — the info-modal kit's rhythm, authored in HTML ──
      The ❓ Help modal and its cards render authored HTML from about.js via
@@ -4088,7 +4118,7 @@ const CSS = `
   .wf-grp-s { color:var(--accent-gold); }
   .wf-grp-i { color:var(--positive); }
   .wf-grp-d { color:var(--accent-teal); }
-  .wf-grp-t { color:#fb923c; }
+  .wf-grp-t { color:var(--chart-3); }
   .wf-grp-b { color:var(--accent-purple); }
   .wf-tbl[data-view="flows"] [data-cg="tax"],
   .wf-tbl[data-view="flows"] [data-cg="risk"],
@@ -4118,9 +4148,9 @@ const CSS = `
   .assume-row { display:flex; justify-content:space-between; align-items:baseline; gap:10px; width:100%; padding:7px 0; border:0; border-top:1px solid var(--tint-white-06); background:none; color:var(--text-primary); font:inherit; font-size:12px; text-align:left; cursor:pointer; }
   .assume-row span:last-child { color:var(--accent-teal); font-size:11px; font-weight:600; text-decoration:underline; flex-shrink:0; }
   .assume-row:focus-visible { outline:2px solid var(--accent-teal); outline-offset:2px; }
-  .gap-row { display:flex; align-items:baseline; gap:9px; width:100%; padding:9px 13px; border:1px solid rgba(251,191,36,0.32); border-radius:9px; background:var(--tint-amber-07); color:var(--text-secondary); font:inherit; font-size:12.5px; line-height:1.5; text-align:left; cursor:pointer; }
+  .gap-row { display:flex; align-items:baseline; gap:9px; width:100%; padding:9px 13px; border:1px solid var(--tint-amber-35); border-radius:9px; background:var(--tint-amber-07); color:var(--text-secondary); font:inherit; font-size:12.5px; line-height:1.5; text-align:left; cursor:pointer; }
   .gap-row > span:first-child, .gap-row strong { color:var(--accent-gold); }
-  .gap-row:hover { background:rgba(251,191,36,0.11); }
+  .gap-row:hover { background:var(--tint-amber-08); }
   .gap-row:focus-visible { outline:2px solid var(--accent-gold); outline-offset:2px; }
   .gap-more { color:var(--accent-gold); font-weight:700; white-space:nowrap; text-decoration:underline; text-underline-offset:3px; }
   .donut-btn { padding:0; border:0; background:none; border-radius:50%; cursor:pointer; flex-shrink:0; }
@@ -4221,11 +4251,11 @@ const CSS = `
 // The Tip has to resolve by series name — Recharts hands Area series their
 // fill (a gradient url) as `p.color`, which would otherwise render as a broken swatch.
 const FAN_COLORS = {
-  "90th":   "#818cf8", // indigo
-  "75th":   "#22d3ee", // cyan
+  "90th":   "var(--chart-4)", // indigo
+  "75th":   "var(--chart-5)", // cyan
   "Median": "var(--accent-teal)", // teal (bold anchor line)
   "25th":   "var(--accent-gold)", // amber
-  "10th":   "#ff6f7a", // red
+  "10th":   "var(--chart-1)", // red
 };
 
 /**
@@ -4355,21 +4385,21 @@ const TaxYearTip = ({ active, payload, label }) => {
         <thead>
           <tr>
             <th style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", textAlign: "left", paddingBottom: 4, fontWeight: 500 }}>Type</th>
-            <th style={{ fontSize: "var(--fs-small)", color: "#6366f1", textAlign: "right", paddingBottom: 4, fontWeight: 500, paddingLeft: 12 }}>With Conv</th>
+            <th style={{ fontSize: "var(--fs-small)", color: "var(--chart-4)", textAlign: "right", paddingBottom: 4, fontWeight: 500, paddingLeft: 12 }}>With Conv</th>
             <th style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", textAlign: "right", paddingBottom: 4, fontWeight: 500, paddingLeft: 8 }}>Without</th>
           </tr>
         </thead>
         <tbody>
-          {tipRow("#6366f1", "Federal Income Tax", oF, cF)}
-          {hasState && tipRow("#fb923c", "State Income Tax", oS, cS)}
-          {hasIrmaa && tipRow("#ff6f7a", "IRMAA Surcharge", oI, cI)}
+          {tipRow("var(--chart-8)", "Federal Income Tax", oF, cF)}
+          {hasState && tipRow("var(--chart-3)", "State Income Tax", oS, cS)}
+          {hasIrmaa && tipRow("var(--chart-1)", "IRMAA Surcharge", oI, cI)}
           {tipRow("#334155", "FICA (payroll tax)", 0, 0, "not applicable — retired")}
           {tipRow("#334155", "Capital Gains Tax", 0, 0, "not modeled here")}
         </tbody>
         <tfoot>
           <tr style={{ borderTop: "2px solid var(--tint-white-10)" }}>
             <td style={{ paddingTop: 5, fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-primary)" }}>Total</td>
-            <td style={{ paddingTop: 5, textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, paddingLeft: 12, color: delta > 0 ? "#fb923c" : delta < 0 ? "var(--positive)" : "var(--text-secondary)" }}>{N(oTotal)}</td>
+            <td style={{ paddingTop: 5, textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, paddingLeft: 12, color: delta > 0 ? "var(--chart-3)" : delta < 0 ? "var(--positive)" : "var(--text-secondary)" }}>{N(oTotal)}</td>
             <td style={{ paddingTop: 5, textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, paddingLeft: 8, color: "var(--text-secondary)" }}>{N(cTotal)}</td>
           </tr>
         </tfoot>
@@ -4413,7 +4443,7 @@ const IncYearTip = ({ active, payload, label }) => {
           {tipRow("var(--accent-teal)", "Social Security (85%)", oSS, cSS)}
           {tipRow("var(--accent-gold)", "Annuity / Benefit", oAb, cAb)}
           {tipRow("var(--accent-purple)", "Required Min. Dist.", oRmd, cRmd)}
-          {tipRow("#6c9bff", "Pretax Withdrawal", oPxs, cPxs)}
+          {tipRow("var(--chart-2)", "Pretax Withdrawal", oPxs, cPxs)}
           {tipRow("var(--positive)", "Roth Conversion", oConv, 0)}
         </tbody>
         <tfoot>
@@ -4520,8 +4550,8 @@ function AboutButton() {
   const tabBtn = (i) => ({
     flex:1, padding:"7px 4px", fontSize: "var(--fs-small)", fontWeight: tab===i ? 700 : 500,
     background: tab===i ? "rgba(96,165,250,0.18)" : "transparent",
-    color: tab===i ? "#6c9bff" : "var(--text-muted)",
-    border:"none", borderBottom: tab===i ? "2px solid #6c9bff" : "2px solid transparent",
+    color: tab===i ? "var(--chart-2)" : "var(--text-muted)",
+    border:"none", borderBottom: tab===i ? "2px solid var(--chart-2)" : "2px solid transparent",
     cursor:"pointer", transition:"all 0.15s",
   });
 
@@ -4562,7 +4592,7 @@ function AboutButton() {
         {tab === 0 && (
           <div>
             <div style={{ fontSize: "var(--fs-h2)", fontWeight:700, color:"var(--text-primary)" }}>{ABOUT_ME.name}</div>
-            <div style={{ fontSize: "var(--fs-small)", color:"#6c9bff", marginTop:3, marginBottom:14, letterSpacing:"0.5px" }}>
+            <div style={{ fontSize: "var(--fs-small)", color:"var(--chart-2)", marginTop:3, marginBottom:14, letterSpacing:"0.5px" }}>
               {ABOUT_ME.tagline}
             </div>
             <p style={{ fontSize: "var(--fs-body)", color:"var(--text-secondary)", lineHeight:1.75, margin:"0 0 20px" }}>
@@ -4617,7 +4647,7 @@ function AboutButton() {
         {/* Tab 1 — The App */}
         {tab === 1 && (
           <div>
-            <div style={{ fontSize: "var(--fs-body)", color:"#6c9bff", fontWeight:600, marginBottom:10 }}>
+            <div style={{ fontSize: "var(--fs-body)", color:"var(--chart-2)", fontWeight:600, marginBottom:10 }}>
               {ABOUT_PRODUCT.tagline}
             </div>
             <p style={{ fontSize: "var(--fs-body)", color:"var(--text-secondary)", lineHeight:1.75, margin:"0 0 18px" }}>
@@ -4629,7 +4659,7 @@ function AboutButton() {
             <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:8 }}>
               {ABOUT_PRODUCT.bullets.map((b, i) => (
                 <li key={i} style={{ display:"flex", gap:10, fontSize: "var(--fs-body)", color:"var(--text-secondary)" }}>
-                  <span style={{ color:"#6c9bff", fontWeight:700, flexShrink:0 }}>✓</span>
+                  <span style={{ color:"var(--chart-2)", fontWeight:700, flexShrink:0 }}>✓</span>
                   <span>{b}</span>
                 </li>
               ))}
@@ -4640,7 +4670,7 @@ function AboutButton() {
         <button onClick={() => setOpen(false)}
           style={{ marginTop:22, width:"100%", background:"rgba(96,165,250,0.08)",
             border:"1px solid rgba(96,165,250,0.25)", borderRadius:8, padding:"9px 0",
-            color:"#6c9bff", fontSize: "var(--fs-body)", fontWeight:600, cursor:"pointer" }}>
+            color:"var(--chart-2)", fontSize: "var(--fs-body)", fontWeight:600, cursor:"pointer" }}>
           Close
         </button>
       </div>
@@ -4756,7 +4786,7 @@ function HelpButton() {
         <button onClick={() => setOpen(false)}
           style={{ marginTop:22, width:"100%", background:"rgba(96,165,250,0.08)",
             border:"1px solid rgba(96,165,250,0.25)", borderRadius:8, padding:"9px 0",
-            color:"#6c9bff", fontSize: "var(--fs-body)", fontWeight:600, cursor:"pointer" }}>
+            color:"var(--chart-2)", fontSize: "var(--fs-body)", fontWeight:600, cursor:"pointer" }}>
           Close
         </button>
       </div>
@@ -4793,7 +4823,7 @@ function Hint({ text, width = 240 }) {
         style={{
           display: "inline-flex", alignItems: "center", justifyContent: "center",
           width: 15, height: 15, borderRadius: "50%", background: "rgba(96,165,250,0.15)",
-          color: "#6c9bff", fontSize: "var(--fs-small)", fontWeight: 700, fontStyle: "normal", lineHeight: 1,
+          color: "var(--chart-2)", fontSize: "var(--fs-small)", fontWeight: 700, fontStyle: "normal", lineHeight: 1,
           cursor: "help", border: "1px solid rgba(96,165,250,0.4)",
         }}
       >
@@ -4852,7 +4882,7 @@ function ModalNote({ children, accent = "var(--accent-gold)", icon = "→" }) {
   );
 }
 
-function InfoModal({ title, children, accent = "#6c9bff", trigger, maxWidth = 480, bodyMaxHeight = null, open: controlledOpen, onClose }) {
+function InfoModal({ title, children, accent = "var(--chart-2)", trigger, maxWidth = 480, bodyMaxHeight = null, open: controlledOpen, onClose }) {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : uncontrolledOpen;
@@ -5257,7 +5287,7 @@ const [draft, setDraft] = useState(null);
                 type="button"
                 onClick={() => onChange(pill.val)}
                 style={{
-                  background: isActive ? "rgba(90,209,240,0.22)" : "var(--tint-white-04)",
+                  background: isActive ? "var(--tint-sky-20)" : "var(--tint-white-04)",
                   border: isActive ? "1px solid var(--positive)" : "1px solid var(--tint-white-08)",
                   color: isActive ? "#5ad1f0" : "var(--text-muted)",
                   borderRadius: 4,
@@ -5629,7 +5659,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             };
             return (
               <div style={{ display: "flex", gap: "2px 18px", flexWrap: "wrap", fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                {goalLine("🚀", "Trigger", earlyRetireTarget, "#8b5cf6")}
+                {goalLine("🚀", "Trigger", earlyRetireTarget, "var(--chart-9)")}
                 {goalLine("🎯", "Reassess", portfolioGoal, "var(--accent-gold)")}
               </div>
             );
@@ -5654,12 +5684,12 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
         >
           <defs>
             <linearGradient id="g90v5" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#818cf8" stopOpacity={0.15} />
-              <stop offset="100%" stopColor="#818cf8" stopOpacity={0.02} />
+              <stop offset="0%" stopColor="var(--chart-4)" stopOpacity={0.15} />
+              <stop offset="100%" stopColor="var(--chart-4)" stopOpacity={0.02} />
             </linearGradient>
             <linearGradient id="g75v5" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.22} />
-              <stop offset="100%" stopColor="#22d3ee" stopOpacity={0.03} />
+              <stop offset="0%" stopColor="var(--chart-5)" stopOpacity={0.22} />
+              <stop offset="100%" stopColor="var(--chart-5)" stopOpacity={0.03} />
             </linearGradient>
           </defs>
           <CartesianGrid
@@ -5719,7 +5749,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
 
           {/* Deterministic accumulation path (pre-retirement) */}
           {showTargets && accumData.length > 0 && (
-            <Line yAxisId="port" type="monotone" dataKey="accum" stroke="#6c9bff" strokeWidth={2}
+            <Line yAxisId="port" type="monotone" dataKey="accum" stroke="var(--chart-2)" strokeWidth={2}
               strokeDasharray="6 3" dot={false} name="Expected path" connectNulls={false} />
           )}
 
@@ -5728,8 +5758,8 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             <ReferenceDot
               yAxisId="port"
               x={currentAge} y={currentPort} r={7}
-              fill="#6c9bff" stroke="#0f1729" strokeWidth={2}
-              label={{ value: nowPct ? `▶ Now · ${nowPct} %ile` : "▶ Now", fill: "#6c9bff", fontSize: 10, position: "top" }}
+              fill="var(--chart-2)" stroke="#0f1729" strokeWidth={2}
+              label={{ value: nowPct ? `▶ Now · ${nowPct} %ile` : "▶ Now", fill: "var(--chart-2)", fontSize: 10, position: "top" }}
             />
           )}
 
@@ -5808,7 +5838,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           {showTargets && <ReferenceLine
             yAxisId="port"
             y={earlyRetireTarget}
-            stroke="#8b5cf6"
+            stroke="var(--chart-9)"
             strokeWidth={2.5}
             strokeDasharray="0"
             label={{
@@ -5817,7 +5847,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
               fontSize: "var(--fs-label)",
               fontWeight: 700,
               position: "right",
-              style: { background: "#8b5cf6", padding: "4px 8px", borderRadius: 4, boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }
+              style: { background: "var(--chart-9)", padding: "4px 8px", borderRadius: 4, boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }
             }}
           />}
           {showTargets && (() => {
@@ -5838,8 +5868,8 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
                   <ReferenceDot
                     yAxisId="port"
                     x={triggerCross.age} y={earlyRetireTarget}
-                    r={6} fill="#8b5cf6" stroke="var(--bg-base)" strokeWidth={2}
-                    label={{ value: `Age ${triggerCross.age}`, fill: "#8b5cf6", fontSize: 9, position: "top" }}
+                    r={6} fill="var(--chart-9)" stroke="var(--bg-base)" strokeWidth={2}
+                    label={{ value: `Age ${triggerCross.age}`, fill: "var(--chart-9)", fontSize: 9, position: "top" }}
                   />
                 )}
               </>
@@ -5852,7 +5882,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
       {/* Legend: the two goal lines are named in the status line above. */}
       <div className="leg">
         {[
-          ...(showTargets && accumData.length > 0 ? [{ c: "#6c9bff", l: "Expected path" }] : []),
+          ...(showTargets && accumData.length > 0 ? [{ c: "var(--chart-2)", l: "Expected path" }] : []),
           { c: FAN_COLORS["Median"], l: "Median" },
           { c: `linear-gradient(90deg, ${FAN_COLORS["75th"]} 50%, ${FAN_COLORS["25th"]} 50%)`, l: "75th / 25th %ile" },
           { c: `linear-gradient(90deg, ${FAN_COLORS["90th"]} 50%, ${FAN_COLORS["10th"]} 50%)`, l: "90th / 10th %ile" },
@@ -5910,23 +5940,23 @@ function categorizeCarveouts(carveouts, yr, inf) {
  * two are independent money-in figures. */
 const INCOME_CATS = [
   [INCOME_LABELS.savingsDrawdown, "var(--accent-teal)"],
-  ["Social Security", "#7c3aedcc"],
-  ["Annuity/Rental", "#295ff1cc"],
-  ["Pension/Other", "#eab308cc"],
-  ["One-Off Income", "#ec4899cc"],
+  ["Social Security", withAlpha("#7c3aed", "cc")],
+  ["Annuity/Rental", withAlpha("#295ff1", "cc")],
+  ["Pension/Other", withAlpha("#eab308", "cc")],
+  ["One-Off Income", withAlpha("#ec4899", "cc")],
   ["Roth Conversion", "var(--accent-gold)"],
 ];
 
 const EXPENSE_CATS = [
   ["General/Living", "var(--accent)"],
-  ["Mortgage/Housing", "#fb923c"],
+  ["Mortgage/Housing", "var(--chart-3)"],
   ["Medical", "var(--positive)"],
   ["Long-Term Care", "var(--accent-purple)"],
   ["Other Expenses", "var(--text-secondary)"],
-  ["Income Tax", "#ff6f7a"],
+  ["Income Tax", "var(--chart-1)"],
   ["Capital Gains Tax", "var(--text-muted)"],
   ["Moved to Roth", "var(--accent-gold)"],
-  ["Saved to Accounts", "#ec4899cc"],
+  ["Saved to Accounts", withAlpha("#ec4899", "cc")],
 ];
 
 // "Income & Expenses" — a Boldin-style pair of stacked-bar charts sourced from
@@ -6121,15 +6151,15 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
                 What your portfolio must cover
               </div>
               <ReconLine label="Spending, housing, carveouts, one-offs" value={recon.spendNeed} color="var(--text-secondary)" />
-              <ReconLine label="+ Taxes" value={recon.taxes} color="#ff6f7a" />
+              <ReconLine label="+ Taxes" value={recon.taxes} color="var(--chart-1)" />
               <ReconLine label="+ Moved to Roth / saved to accounts" value={recon.kept} color="var(--accent-gold)" />
               <ReconLine label="− Other income (SS, rental, pension, one-off, conversion)" value={-recon.otherIncome} color="#7c3aed" />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--tint-white-08)", marginTop: 6, paddingTop: 6, fontWeight: 700 }}>
-                <div style={{ color: "#a9d1ac" }}>= Drawn from savings</div>
-                <div style={{ color: "#a9d1ac", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(recon.draw)}</div>
+                <div style={{ color: "var(--chart-11)" }}>= Drawn from savings</div>
+                <div style={{ color: "var(--chart-11)", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(recon.draw)}</div>
               </div>
               <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
-                “Drawn from savings” is the green <strong style={{ color: "#a9d1ac" }}>Savings &amp; 401(k)/IRA Drawdown</strong> bar above, including RMDs and the tax the draws themselves cause. These lines add up exactly, so the two charts have the same total every year.
+                “Drawn from savings” is the green <strong style={{ color: "var(--chart-11)" }}>Savings &amp; 401(k)/IRA Drawdown</strong> bar above, including RMDs and the tax the draws themselves cause. These lines add up exactly, so the two charts have the same total every year.
               </div>
             </div>
           )}
@@ -6252,7 +6282,7 @@ const state = params.stateOfResidence || "NJ";   // fallback to your actual stat
 const domLabel = isNoTaxState
   ? "No Tax State Move or Out of Country"
   : `${state} Domicile (with tax)`;
-  const domColor = isNoTaxState ? "var(--positive)" : "#fb923c";
+  const domColor = isNoTaxState ? "var(--positive)" : "var(--chart-3)";
   
   const modeLabels = {
       no_convert: "Off",
@@ -6571,7 +6601,7 @@ const modeDescs = {
           <div className="ml">Lifetime Tax Delta</div>
           <div
             className="mv"
-            style={{ color: taxD > 0 ? "#fb923c" : "var(--positive)", fontSize: "var(--fs-h2)" }}
+            style={{ color: taxD > 0 ? "var(--chart-3)" : "var(--positive)", fontSize: "var(--fs-h2)" }}
           >
             {taxD > 0 ? "+" : ""}
             {fmtDollar(Math.abs(taxD))}
@@ -6825,7 +6855,7 @@ const modeDescs = {
                     ["Rental / Airbnb net",   fmtN(cyRental),   "var(--text-primary)"],
                     ["Other income",          fmtN(cyOther),    "var(--text-primary)"],
                     ["Gross income",          fmtN(grossInc),   "var(--accent-teal)"],
-                    ["Standard deduction",    `(${fmtN(stdD)})`, "#ff6f7a"],
+                    ["Standard deduction",    `(${fmtN(stdD)})`, "var(--chart-1)"],
                     ["Taxable income before conversion", fmtN(taxableBC), "var(--accent-gold)"],
                   ].map(([lbl, val, col]) => (
                     <tr key={lbl}>
@@ -6861,13 +6891,13 @@ const modeDescs = {
                     ...( ["35%","37%"].includes(targetLabel) ? [["35%", b35t, room35, tax35]] : []),
                     ...( ["37%"].includes(targetLabel) ? [["37%", b37t, room37, tax37]] : []),
                   ].map(([bracket, top, room, tax]) => (
-                    <tr key={bracket} style={{ background: bracket === targetLabel ? "rgba(13,148,136,0.08)" : undefined }}>
+                    <tr key={bracket} style={{ background: bracket === targetLabel ? "var(--tint-teal-600-08)" : undefined }}>
                       <td style={{ color: bracket === targetLabel ? "var(--accent-teal)" : "var(--text-secondary)", fontWeight: bracket === targetLabel ? 700 : 400 }}>{bracket}</td>
                       <td style={{ fontFamily: "'JetBrains Mono',monospace" }}>{fmtN(top)}</td>
                       <td style={{ color: room > 0 ? "var(--text-primary)" : "var(--text-faint)", fontFamily: "'JetBrains Mono',monospace" }}>{fmtN(room)}</td>
-                      <td style={{ color: "#ff6f7a", fontFamily: "'JetBrains Mono',monospace" }}>{fmtN(tax.fedInc)}</td>
-                      <td style={{ color: stateBr ? "#fb923c" : "var(--positive)", fontFamily: "'JetBrains Mono',monospace" }}>{fmtN(tax.stInc)}</td>
-                      <td style={{ color: "#ff6f7a", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{fmtN(tax.total)}</td>
+                      <td style={{ color: "var(--chart-1)", fontFamily: "'JetBrains Mono',monospace" }}>{fmtN(tax.fedInc)}</td>
+                      <td style={{ color: stateBr ? "var(--chart-3)" : "var(--positive)", fontFamily: "'JetBrains Mono',monospace" }}>{fmtN(tax.stInc)}</td>
+                      <td style={{ color: "var(--chart-1)", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{fmtN(tax.total)}</td>
                       <td style={{ color: "var(--text-secondary)", fontFamily: "'JetBrains Mono',monospace" }}>
                         {room > 0 ? ((tax.total / room) * 100).toFixed(1) + "%" : "—"}
                       </td>
@@ -6903,7 +6933,7 @@ const modeDescs = {
                       </div>
                       <div className="met" style={{ border: "1px solid var(--tint-red-30)" }}>
                         <div className="ml">Total Tax Cost</div>
-                        <div className="mv" style={{ color: "#ff6f7a", fontSize: "var(--fs-h1)" }}>{fmtN(recTax.total)}</div>
+                        <div className="mv" style={{ color: "var(--chart-1)", fontSize: "var(--fs-h1)" }}>{fmtN(recTax.total)}</div>
                         <div className="ms">fed {fmtN(recTax.fedInc)} + state {fmtN(recTax.stInc)}</div>
                       </div>
                       <div className="met" style={{ border: "1px solid var(--tint-sky-30)" }}>
@@ -6912,7 +6942,7 @@ const modeDescs = {
                         <div className="ms">{cyFundLabel}</div>
                       </div>
                     </div>
-                    <div style={{ background: "rgba(244,211,94,0.1)", border: "1px solid rgba(244,211,94,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: "var(--fs-label)", color: "var(--accent-gold)", fontWeight: 600 }}>
+                    <div style={{ background: "var(--bg-warning)", border: "1px solid rgba(244,211,94,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: "var(--fs-label)", color: "var(--accent-gold)", fontWeight: 600 }}>
                       Give this to your CPA: Convert {fmtN(recConv)} from pretax to Roth in {cyYear}. {cyCpaTax}
                     </div>
                   </>
@@ -6926,14 +6956,14 @@ const modeDescs = {
                 return (
                   <>
                     {cyPin && (
-                      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, background: "rgba(167,139,250,0.08)", border: "1px solid rgba(167,139,250,0.3)", borderRadius: 8, padding: "8px 12px" }}>
+                      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, background: "rgba(167,139,250,0.08)", border: "1px solid var(--tint-violet-400-30)", borderRadius: 8, padding: "8px 12px" }}>
                         <span style={{ fontSize: "var(--fs-label)", color: "var(--accent-purple)", fontWeight: 600, flex: 1 }}>
                           📌 Pinned for {cyYear}: {fmtN(cyPin.amount)}
                         </span>
                         {onRemoveConversionOverride && (
                           <button
                             onClick={() => onRemoveConversionOverride(cyYear)}
-                            style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "3px 10px", fontFamily: "inherit" }}
+                            style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "var(--chart-1)", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "3px 10px", fontFamily: "inherit" }}
                           >× Remove pin</button>
                         )}
                       </div>
@@ -7016,7 +7046,7 @@ const modeDescs = {
                 <Bar dataKey="12%" stackId="br" fill="#0ea5e9" name="12%" />
                 <Bar dataKey="22%" stackId="br" fill="var(--accent-teal)" name="22%" />
                 <Bar dataKey="24%" stackId="br" fill="var(--accent-gold)" name="24%" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="32%" stackId="br" fill="#f97316" name="32%" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="32%" stackId="br" fill="var(--chart-7)" name="32%" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="35%" stackId="br" fill="var(--negative)" name="35%" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="37%" stackId="br" fill="#991b1b" name="37%" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -7028,7 +7058,7 @@ const modeDescs = {
               <span style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
                 Net→Roth basis:{" "}
                 {params?.taxFunding === "from_conv"
-                  ? <span style={{ color: "#ff6f7a" }}>From conversion (Conv − total tax)</span>
+                  ? <span style={{ color: "var(--chart-1)" }}>From conversion (Conv − total tax)</span>
                   : params?.taxFunding === "outside_cash"
                   ? <span style={{ color: "var(--positive)" }}>Outside cash (full conversion)</span>
                   : <span style={{ color: "var(--accent-teal)" }}>From taxable bucket (full conversion)</span>}
@@ -7057,7 +7087,7 @@ const modeDescs = {
                   const isPast   = r.yr < new Date().getFullYear();
                   const isPinned = !isPast && r.capReason?.startsWith("manual");
                   const rowBg = isPast
-                    ? "rgba(255,255,255,0.01)"
+                    ? "var(--tint-white-02)"
                     : isPinned
                     ? "rgba(244,211,94,0.07)"
                     : undefined;
@@ -7080,12 +7110,12 @@ const modeDescs = {
                             setView("thisyear");
                           }}
                           title={`Edit pin for ${r.yr} in calculator`}
-                          style={{ background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "var(--accent-purple)", borderRadius: 4, cursor: "pointer", fontSize: "var(--fs-small)", padding: "1px 5px", fontFamily: "inherit", lineHeight: 1.4 }}
+                          style={{ background: "rgba(167,139,250,0.15)", border: "1px solid var(--tint-violet-400-30)", color: "var(--accent-purple)", borderRadius: 4, cursor: "pointer", fontSize: "var(--fs-small)", padding: "1px 5px", fontFamily: "inherit", lineHeight: 1.4 }}
                         >✏</button>
                         {onRemoveConversionOverride && (
                           <button
                             onClick={() => onRemoveConversionOverride(r.yr)}
-                            style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 4, cursor: "pointer", fontSize: "var(--fs-small)", padding: "1px 5px", fontFamily: "inherit", lineHeight: 1.4 }}
+                            style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "var(--chart-1)", borderRadius: 4, cursor: "pointer", fontSize: "var(--fs-small)", padding: "1px 5px", fontFamily: "inherit", lineHeight: 1.4 }}
                           >×</button>
                         )}
                       </span>
@@ -7109,8 +7139,8 @@ const modeDescs = {
                     <td>{sourceLabel}</td>
                     <td style={{ color: isPast ? "#334155" : "var(--text-muted)" }}>{fmtDollar(r.pTStart || 0)}</td>
                     <td style={{ color: isPast ? "#334155" : isPinned ? "var(--accent-gold)" : "var(--text-primary)", fontWeight: isPinned ? 700 : 400 }}>{fmtDollar(r.conv)}</td>
-                    <td style={{ color: isPast ? "#334155" : "#ff6f7a" }}>{fmtDollar(r.fedT)}</td>
-                    <td style={{ color: isPast ? "#334155" : isNoTaxState ? "var(--positive)" : "#fb923c" }}>
+                    <td style={{ color: isPast ? "#334155" : "var(--chart-1)" }}>{fmtDollar(r.fedT)}</td>
+                    <td style={{ color: isPast ? "#334155" : isNoTaxState ? "var(--positive)" : "var(--chart-3)" }}>
                       {isNoTaxState ? "$0" : fmtDollar(r.stT)}
                     </td>
                     <td
@@ -7161,12 +7191,12 @@ const modeDescs = {
                   </td>
                   <td>—</td>
                   <td style={{ fontWeight: 700 }}>{fmtDollar(convRows.reduce((s, r) => s + r.conv, 0))}</td>
-                  <td style={{ color: "#ff6f7a", fontWeight: 700 }}>
+                  <td style={{ color: "var(--chart-1)", fontWeight: 700 }}>
                     {fmtDollar(convRows.reduce((s, r) => s + r.fedT, 0))}
                   </td>
                   <td
                     style={{
-                      color: isNoTaxState ? "var(--positive)" : "#fb923c",
+                      color: isNoTaxState ? "var(--positive)" : "var(--chart-3)",
                       fontWeight: 700,
                     }}
                   >
@@ -7201,7 +7231,7 @@ const modeDescs = {
               if (!orphaned.length) return null;
               return (
                 <div style={{ marginTop: 14, padding: "10px 14px", background: "var(--tint-red-07)", border: "1px solid var(--tint-red-25)", borderRadius: 8 }}>
-                  <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#ff6f7a", marginBottom: 6 }}>
+                  <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--chart-1)", marginBottom: 6 }}>
                     ⚠️ Stale Pins — producing $0 conversion
                   </div>
                   <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.6 }}>
@@ -7215,7 +7245,7 @@ const modeDescs = {
                       {onRemoveConversionOverride && (
                         <button
                           onClick={() => onRemoveConversionOverride(o.year)}
-                          style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-small)", padding: "2px 10px", fontFamily: "inherit" }}
+                          style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "var(--chart-1)", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-small)", padding: "2px 10px", fontFamily: "inherit" }}
                         >× Remove</button>
                       )}
                     </div>
@@ -7301,7 +7331,7 @@ const modeDescs = {
                   <div className="ml">Lifetime RMDs — Without Conversions</div>
                   <div
                     className="mv"
-                    style={{ color: "#ff6f7a", fontSize: "var(--fs-h2)" }}
+                    style={{ color: "var(--chart-1)", fontSize: "var(--fs-h2)" }}
                   >
                     {fmtDollar(cur.cRmd)}
                   </div>
@@ -7360,7 +7390,7 @@ const modeDescs = {
                 style={{
                   fontSize: "var(--fs-small)",
                   color: "var(--accent)",
-                  background: "rgba(124,58,237,0.08)",
+                  background: "var(--tint-violet-600-08)",
                   borderRadius: 7,
                   padding: "7px 11px",
                   border: "1px solid rgba(124,58,237,0.2)",
@@ -7455,10 +7485,10 @@ const modeDescs = {
                       <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 9 }} />
                       <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 9 }} tickFormatter={v => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
                       <Tooltip content={<TaxYearTip />} />
-                      <Bar dataKey="opt_fed"   stackId="opt" fill="#6366f1"                name="OPT Federal" />
-                      <Bar dataKey="opt_st"    stackId="opt" fill="#fb923c"                name="OPT State" />
-                      <Bar dataKey="opt_irmaa" stackId="opt" fill="#ff6f7a"                name="OPT IRMAA"  radius={[2,2,0,0]} />
-                      <Bar dataKey="cur_fed"   stackId="cur" fill="rgba(99,102,241,0.3)"   name="CUR Federal" />
+                      <Bar dataKey="opt_fed"   stackId="opt" fill="var(--chart-8)"                name="OPT Federal" />
+                      <Bar dataKey="opt_st"    stackId="opt" fill="var(--chart-3)"                name="OPT State" />
+                      <Bar dataKey="opt_irmaa" stackId="opt" fill="var(--chart-1)"                name="OPT IRMAA"  radius={[2,2,0,0]} />
+                      <Bar dataKey="cur_fed"   stackId="cur" fill="var(--tint-indigo-30)"   name="CUR Federal" />
                       <Bar dataKey="cur_st"    stackId="cur" fill="rgba(251,146,60,0.3)"   name="CUR State" />
                       <Bar dataKey="cur_irmaa" stackId="cur" fill="var(--tint-red-30)"  name="CUR IRMAA"  radius={[2,2,0,0]} />
                     </BarChart>
@@ -7468,18 +7498,18 @@ const modeDescs = {
                   <div style={tblHead}>
                     <span>Lifetime</span>
                     <div style={{ display: "flex", gap: 12 }}>
-                      <span style={{ color: "#6366f1" }}>With Conv</span>
+                      <span style={{ color: "var(--chart-4)" }}>With Conv</span>
                       <span style={{ color: "var(--text-faint)" }}>Without</span>
                     </div>
                   </div>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <tbody>
-                      {ltRow("#6366f1", "Federal Income Tax", optFedTotal, curFedTotal)}
-                      {!isNoTaxState && ltRow("#fb923c", "State Income Tax", optStTotal, curStTotal)}
-                      {ltRow("#ff6f7a", "IRMAA Surcharges", opt.cIrmaa || 0, cur.cIrmaa || 0)}
+                      {ltRow("var(--chart-8)", "Federal Income Tax", optFedTotal, curFedTotal)}
+                      {!isNoTaxState && ltRow("var(--chart-3)", "State Income Tax", optStTotal, curStTotal)}
+                      {ltRow("var(--chart-1)", "IRMAA Surcharges", opt.cIrmaa || 0, cur.cIrmaa || 0)}
                       <tr style={{ borderTop: "2px solid var(--tint-white-10)", background: "var(--card-bg)" }}>
                         <td style={{ padding: "6px 8px", fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-primary)" }}>Total</td>
-                        <td style={{ padding: "6px 8px", textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, color: taxD > 0 ? "#fb923c" : "var(--positive)" }}>{fmtDollar(opt.cTax)}</td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, color: taxD > 0 ? "var(--chart-3)" : "var(--positive)" }}>{fmtDollar(opt.cTax)}</td>
                         <td style={{ padding: "6px 8px", textAlign: "right", fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--text-secondary)" }}>{fmtDollar(cur.cTax)}</td>
                       </tr>
                     </tbody>
@@ -7504,11 +7534,11 @@ const modeDescs = {
                       <Bar dataKey="opt_ss"   stackId="opt" fill="var(--accent-teal)"                  name="OPT Social Sec." />
                       <Bar dataKey="opt_ab"   stackId="opt" fill="var(--accent-gold)"                  name="OPT Annuity" />
                       <Bar dataKey="opt_rmd"  stackId="opt" fill="var(--accent-purple)"                  name="OPT RMD" />
-                      <Bar dataKey="opt_pxs"  stackId="opt" fill="#6c9bff"                  name="OPT Pretax Draw" />
+                      <Bar dataKey="opt_pxs"  stackId="opt" fill="var(--chart-2)"                  name="OPT Pretax Draw" />
                       <Bar dataKey="opt_conv" stackId="opt" fill="var(--positive)"                  name="OPT Conversion"  radius={[2,2,0,0]} />
                       <Bar dataKey="cur_ss"   stackId="cur" fill="var(--tint-sky-30)"     name="CUR Social Sec." />
                       <Bar dataKey="cur_ab"   stackId="cur" fill="rgba(251,191,36,0.3)"     name="CUR Annuity" />
-                      <Bar dataKey="cur_rmd"  stackId="cur" fill="rgba(167,139,250,0.3)"    name="CUR RMD" />
+                      <Bar dataKey="cur_rmd"  stackId="cur" fill="var(--tint-violet-400-30)"    name="CUR RMD" />
                       <Bar dataKey="cur_pxs"  stackId="cur" fill="rgba(96,165,250,0.3)"     name="CUR Pretax Draw" radius={[2,2,0,0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -7526,7 +7556,7 @@ const modeDescs = {
                       {ltRow("var(--accent-teal)", "Social Security (85%)", optSSTotal, curSSTotal)}
                       {(optAbTotal > 0 || curAbTotal > 0) && ltRow("var(--accent-gold)", "Annuity / Benefit", optAbTotal, curAbTotal)}
                       {ltRow("var(--accent-purple)", "Required Min. Dist.", opt.cRmd || 0, cur.cRmd || 0)}
-                      {(optPxsTotal > 0 || curPxsTotal > 0) && ltRow("#6c9bff", "Pretax Withdrawals", optPxsTotal, curPxsTotal)}
+                      {(optPxsTotal > 0 || curPxsTotal > 0) && ltRow("var(--chart-2)", "Pretax Withdrawals", optPxsTotal, curPxsTotal)}
                       {(opt.cConv || 0) > 0 && ltRow("var(--positive)", "Roth Conversions", opt.cConv || 0, 0)}
                       <tr style={{ borderTop: "2px solid var(--tint-white-10)", background: "var(--card-bg)" }}>
                         <td style={{ padding: "6px 8px", fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-primary)" }}>Total Taxable Inc.</td>
@@ -7555,7 +7585,7 @@ const modeDescs = {
                   <Tooltip content={<RateTip />} />
                   <Legend wrapperStyle={{ fontSize: 10 }} />
                   <Line type="monotone" dataKey="OPT Rate" stroke="var(--positive)" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="CUR Rate" stroke="#ff6f7a" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+                  <Line type="monotone" dataKey="CUR Rate" stroke="var(--chart-1)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -7566,16 +7596,16 @@ const modeDescs = {
         <div className="chart-card" style={{ overflowX: "auto" }}>
           <div className="ct">Year-by-Year Comparison Table</div>
           <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "var(--card-bg)", borderRadius: 6, border: "1px solid var(--tint-white-06)" }}>
-            <strong style={{ color: "var(--text-primary)" }}>OPT</strong> = With Roth conversion ladder &nbsp;|&nbsp; <strong style={{ color: "var(--text-primary)" }}>CUR</strong> = Without conversions &nbsp;|&nbsp; <span style={{ color: "#ff6f7a" }}>Red numbers</span> = you're paying more tax that year by choice to pay less at {rmdAge}
+            <strong style={{ color: "var(--text-primary)" }}>OPT</strong> = With Roth conversion ladder &nbsp;|&nbsp; <strong style={{ color: "var(--text-primary)" }}>CUR</strong> = Without conversions &nbsp;|&nbsp; <span style={{ color: "var(--chart-1)" }}>Red numbers</span> = you're paying more tax that year by choice to pay less at {rmdAge}
           </div>
           <table className="roth-tbl">
             <thead>
               <tr>
                 <th>Year</th>
                 <th>Age</th>
-                <th style={{ borderLeft: "2px solid rgba(99,102,241,0.4)", color: "#a5b4fc" }}>OPT Rate</th>
+                <th style={{ borderLeft: "2px solid var(--tint-indigo-40)", color: "#a5b4fc" }}>OPT Rate</th>
                 <th style={{ color: "var(--text-secondary)" }}>CUR Rate</th>
-                <th style={{ borderLeft: "2px solid rgba(255,111,122,0.4)", color: "#ff6f7a" }}>OPT Tax</th>
+                <th style={{ borderLeft: "2px solid rgba(255,111,122,0.4)", color: "var(--chart-1)" }}>OPT Tax</th>
                 <th style={{ color: "var(--text-secondary)" }}>CUR Tax</th>
                 <th style={{ borderLeft: "2px solid rgba(52,211,153,0.4)", color: "var(--positive)" }}>OPT RMD</th>
                 <th style={{ color: "var(--text-secondary)" }}>CUR RMD</th>
@@ -7591,16 +7621,16 @@ const modeDescs = {
                     <tr key={r.yr} className={r.conv > 0 ? "gold" : ""}>
                       <td>{r.yr}</td>
                       <td style={{ color: "var(--text-secondary)" }}>{r.age}</td>
-                      <td style={{ borderLeft: "2px solid rgba(99,102,241,0.2)", background: "rgba(99,102,241,0.05)" }}>{(r.effR * 100).toFixed(0)}%</td>
-                      <td style={{ background: "rgba(99,102,241,0.05)" }}>{c ? (c.effR * 100).toFixed(0) : "0"}%</td>
-                      <td style={{ color: "#ff6f7a", borderLeft: "2px solid var(--tint-red-20)", background: "var(--tint-red-05)" }}>{fmtDollar(r.totT)}</td>
+                      <td style={{ borderLeft: "2px solid var(--tint-indigo-20)", background: "var(--tint-indigo-05)" }}>{(r.effR * 100).toFixed(0)}%</td>
+                      <td style={{ background: "var(--tint-indigo-05)" }}>{c ? (c.effR * 100).toFixed(0) : "0"}%</td>
+                      <td style={{ color: "var(--chart-1)", borderLeft: "2px solid var(--tint-red-20)", background: "var(--tint-red-05)" }}>{fmtDollar(r.totT)}</td>
                       <td style={{ color: "var(--text-secondary)", background: "var(--tint-red-05)" }}>
                         {c ? fmtDollar(c.totT) : "$0"}
                       </td>
                       <td style={{ color: "var(--positive)", borderLeft: "2px solid rgba(52,211,153,0.2)", background: "var(--tint-green-05)" }}>
                         {r.rmd > 0 ? fmtDollar(r.rmd) : "-"}
                       </td>
-                      <td style={{ color: "#ff6f7a", background: "var(--tint-green-05)" }}>
+                      <td style={{ color: "var(--chart-1)", background: "var(--tint-green-05)" }}>
                         {c && c.rmd > 0 ? fmtDollar(c.rmd) : "-"}
                       </td>
                     </tr>
@@ -7608,10 +7638,10 @@ const modeDescs = {
                 })}
               <tr style={{ borderTop: "2px solid var(--tint-white-15)", background: "var(--card-bg)" }}>
                 <td colSpan={2} style={{ fontWeight: 700, color: "var(--text-primary)", textAlign: "left" }}>Lifetime Totals</td>
-                <td colSpan={2} style={{ borderLeft: "2px solid rgba(99,102,241,0.2)", background: "rgba(99,102,241,0.05)" }} />
-                <td style={{ color: "#ff6f7a", fontWeight: 700, borderLeft: "2px solid var(--tint-red-20)", background: "var(--tint-red-05)" }}>{fmtDollar(opt.cTax)}</td>
+                <td colSpan={2} style={{ borderLeft: "2px solid var(--tint-indigo-20)", background: "var(--tint-indigo-05)" }} />
+                <td style={{ color: "var(--chart-1)", fontWeight: 700, borderLeft: "2px solid var(--tint-red-20)", background: "var(--tint-red-05)" }}>{fmtDollar(opt.cTax)}</td>
                 <td style={{ color: "var(--text-secondary)", fontWeight: 700, background: "var(--tint-red-05)" }}>{fmtDollar(cur.cTax)}</td>
-                <td colSpan={2} style={{ color: cur.cTax - opt.cTax > 0 ? "var(--positive)" : "#ff6f7a", fontWeight: 700, textAlign: "left", borderLeft: "2px solid rgba(52,211,153,0.2)", background: "var(--tint-green-05)" }}>
+                <td colSpan={2} style={{ color: cur.cTax - opt.cTax > 0 ? "var(--positive)" : "var(--chart-1)", fontWeight: 700, textAlign: "left", borderLeft: "2px solid rgba(52,211,153,0.2)", background: "var(--tint-green-05)" }}>
                   {cur.cTax - opt.cTax > 0 ? `✅ Saves ${fmtDollar(cur.cTax - opt.cTax)}` : `⚠️ Costs ${fmtDollar(opt.cTax - cur.cTax)} more`}
                 </td>
               </tr>
@@ -7631,7 +7661,7 @@ const modeDescs = {
           <div className="chart-card" style={{ overflowX: "auto" }}>
             <div className="ct">Three scenarios compared</div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.5, padding: "6px 8px", background: "var(--card-bg)", borderRadius: 6, border: "1px solid var(--tint-white-06)" }}>
-              <strong style={{ color: "#ff6f7a" }}>No Conversion</strong> = stay put, do nothing &nbsp;|&nbsp;
+              <strong style={{ color: "var(--chart-1)" }}>No Conversion</strong> = stay put, do nothing &nbsp;|&nbsp;
               <strong style={{ color: "var(--accent-teal)" }}>{userState} + Convert</strong> = stay put, execute Roth ladder &nbsp;|&nbsp;
               <strong style={{ color: "var(--positive)" }}>No-Tax State + Convert</strong> = move to a no-income-tax state, execute Roth ladder
             </div>
@@ -7641,7 +7671,7 @@ const modeDescs = {
                 <tr>
                   <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Year</th>
                   <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Age</th>
-                  <th colSpan={3} style={{ color: "#ff6f7a", background: "var(--bg-danger)", textAlign: "center", borderBottom: "2px solid rgba(255,111,122,0.45)", borderLeft: "2px solid rgba(255,111,122,0.45)", paddingBottom: 5, fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.04em" }}>
+                  <th colSpan={3} style={{ color: "var(--chart-1)", background: "var(--bg-danger)", textAlign: "center", borderBottom: "2px solid rgba(255,111,122,0.45)", borderLeft: "2px solid rgba(255,111,122,0.45)", paddingBottom: 5, fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.04em" }}>
                     No Conversion
                   </th>
                   <th colSpan={3} style={{ color: "var(--accent-teal)", background: "rgba(90,209,240,0.13)", textAlign: "center", borderBottom: "2px solid var(--tint-sky-45)", borderLeft: "2px solid var(--tint-sky-45)", paddingBottom: 5, fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.04em" }}>
@@ -7653,8 +7683,8 @@ const modeDescs = {
                 </tr>
                 {/* Row 2: measure sub-headers */}
                 <tr>
-                  <th style={{ color: "#ff6f7a", background: "var(--tint-red-07)", borderLeft: "2px solid rgba(255,111,122,0.35)" }}>Roth $</th>
-                  <ThInfo style={{ color: "#ff6f7a", background: "var(--tint-red-07)", cursor: "help" }} tip={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax</ThInfo>
+                  <th style={{ color: "var(--chart-1)", background: "var(--tint-red-07)", borderLeft: "2px solid rgba(255,111,122,0.35)" }}>Roth $</th>
+                  <ThInfo style={{ color: "var(--chart-1)", background: "var(--tint-red-07)", cursor: "help" }} tip={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax</ThInfo>
                   <th style={{ color: "var(--text-secondary)", background: "var(--tint-red-07)" }}>IRA Bal</th>
                   <th style={{ color: "var(--accent-teal)", background: "var(--tint-sky-07)", borderLeft: "2px solid rgba(90,209,240,0.35)" }}>Roth $</th>
                   <ThInfo style={{ color: "var(--accent-teal)", background: "var(--tint-sky-07)", cursor: "help" }} tip={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax</ThInfo>
@@ -7671,12 +7701,12 @@ const modeDescs = {
                   const nt = noTaxOpt.rows.find(x => x.yr === r.yr) || {};
                   const hasConv = bo.conv > 0 || nt.conv > 0;
                   return (
-                    <tr key={r.yr} style={{ background: hasConv ? "rgba(13,148,136,0.06)" : undefined }}>
+                    <tr key={r.yr} style={{ background: hasConv ? "var(--tint-teal-600-06)" : undefined }}>
                       <td>{r.yr}</td>
                       <td style={{ color: "var(--text-secondary)" }}>{r.age}</td>
                       {/* No Conversion columns */}
-                      <td style={{ color: "#ff6f7a", background: "var(--tint-red-07)", borderLeft: "2px solid var(--tint-red-25)" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "—"}</td>
-                      <td style={{ color: "#ff6f7a", background: "var(--tint-red-07)", cursor: "help" }} title={`Fed: ${fmtDollar(nc.fedT || 0)} | State: ${fmtDollar(nc.stT || 0)}`}>{fmtDollar(nc.totT || 0)}</td>
+                      <td style={{ color: "var(--chart-1)", background: "var(--tint-red-07)", borderLeft: "2px solid var(--tint-red-25)" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "—"}</td>
+                      <td style={{ color: "var(--chart-1)", background: "var(--tint-red-07)", cursor: "help" }} title={`Fed: ${fmtDollar(nc.fedT || 0)} | State: ${fmtDollar(nc.stT || 0)}`}>{fmtDollar(nc.totT || 0)}</td>
                       <td style={{ color: "var(--text-secondary)", background: "var(--tint-red-07)" }}>{fmtDollar(nc.pT || 0)}</td>
                       {/* {userState} + Convert columns */}
                       <td style={{ color: "var(--accent-teal)", fontWeight: bo.conv > 0 ? 600 : 400, background: "var(--tint-sky-07)", borderLeft: "2px solid var(--tint-sky-25)" }}>{bo.conv > 0 ? fmtDollar(bo.conv) : "—"}</td>
@@ -7691,14 +7721,14 @@ const modeDescs = {
                 })}
                 <tr style={{ borderTop: "2px solid var(--tint-white-15)", background: "var(--row-highlight)", fontWeight: 700 }}>
                   <td colSpan={2} style={{ color: "var(--text-primary)" }}>Lifetime Totals</td>
-                  <td style={{ color: "#ff6f7a", background: "var(--tint-red-07)", borderLeft: "2px solid var(--tint-red-25)" }}>—</td>
-                  <td style={{ color: "#ff6f7a", background: "var(--tint-red-07)" }}>{fmtDollar(baseCur.cTax)}</td>
+                  <td style={{ color: "var(--chart-1)", background: "var(--tint-red-07)", borderLeft: "2px solid var(--tint-red-25)" }}>—</td>
+                  <td style={{ color: "var(--chart-1)", background: "var(--tint-red-07)" }}>{fmtDollar(baseCur.cTax)}</td>
                   <td style={{ color: "var(--text-secondary)", background: "var(--tint-red-07)" }}>{fmtDollar(baseCur.rows[baseCur.rows.length-1]?.pT || 0)}</td>
                   <td style={{ color: "var(--accent-teal)", background: "var(--tint-sky-07)", borderLeft: "2px solid var(--tint-sky-25)" }}>{fmtDollar(baseOpt.cConv)}</td>
-                  <td style={{ color: stSave > 0 ? "var(--positive)" : "#ff6f7a", background: "var(--tint-sky-07)" }}>{fmtDollar(baseOpt.cTax)} {stSave > 0 ? `(saves ${fmtDollar(stSave)})` : `(costs ${fmtDollar(-stSave)} more)`}</td>
+                  <td style={{ color: stSave > 0 ? "var(--positive)" : "var(--chart-1)", background: "var(--tint-sky-07)" }}>{fmtDollar(baseOpt.cTax)} {stSave > 0 ? `(saves ${fmtDollar(stSave)})` : `(costs ${fmtDollar(-stSave)} more)`}</td>
                   <td style={{ color: "var(--text-secondary)", background: "var(--tint-sky-07)" }}>{fmtDollar(baseOpt.rows[baseOpt.rows.length-1]?.pT || 0)}</td>
                   <td style={{ color: "var(--positive)", background: "var(--tint-green-07)", borderLeft: "2px solid rgba(52,211,153,0.25)" }}>{fmtDollar(noTaxOpt.cConv)}</td>
-                  <td style={{ color: ntSave > 0 ? "var(--positive)" : "#ff6f7a", background: "var(--tint-green-07)" }}>{fmtDollar(noTaxOpt.cTax)} {ntSave > 0 ? `(saves ${fmtDollar(ntSave)})` : `(costs ${fmtDollar(-ntSave)} more)`}</td>
+                  <td style={{ color: ntSave > 0 ? "var(--positive)" : "var(--chart-1)", background: "var(--tint-green-07)" }}>{fmtDollar(noTaxOpt.cTax)} {ntSave > 0 ? `(saves ${fmtDollar(ntSave)})` : `(costs ${fmtDollar(-ntSave)} more)`}</td>
                   <td style={{ color: "var(--text-secondary)", background: "var(--tint-green-07)" }}>{fmtDollar(noTaxOpt.rows[noTaxOpt.rows.length-1]?.pT || 0)}</td>
                 </tr>
               </tbody>
@@ -7753,7 +7783,7 @@ function YearEndBody({ room, days, year, compact }) {
   return (
     <div style={{ fontSize: compact ? 10 : 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>
       <div style={{ marginBottom: compact ? 4 : 8 }}>
-        <strong style={{ color: days <= 10 ? "#ff6f7a" : "var(--accent-gold)", fontSize: compact ? 11 : 13 }}>
+        <strong style={{ color: days <= 10 ? "var(--chart-1)" : "var(--accent-gold)", fontSize: compact ? 11 : 13 }}>
           {days} day{days === 1 ? "" : "s"} left
         </strong>{" "}
         to act in {year}. Conversions must <strong>settle</strong> by Dec 31 — not just be requested.
@@ -7770,7 +7800,7 @@ function YearEndBody({ room, days, year, compact }) {
           </div>
           <div style={{
             display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4,
-            paddingTop: 4, borderTop: "1px solid rgba(148,163,184,0.15)",
+            paddingTop: 4, borderTop: "1px solid var(--tint-slate-400-15)",
           }}>
             <span style={{ color: "var(--text-primary)" }}>
               Convertible now{" "}
@@ -8059,7 +8089,7 @@ function SourcingGuardrails({ p, onAssumptionChange, summary }) {
   return (
     <div style={{
       display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16,
-      background: "rgba(90,209,240,0.05)", border: "1px solid rgba(90,209,240,0.18)",
+      background: "var(--tint-sky-06)", border: "1px solid var(--tint-sky-20)",
       borderRadius: 8, padding: "10px 14px", margin: "10px 0",
     }}>
       <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-teal)" }}>
@@ -8153,7 +8183,7 @@ function SourcingGuardrails({ p, onAssumptionChange, summary }) {
         style={{
           marginLeft: "auto", fontSize: "var(--fs-small)", fontWeight: 700,
           color: saved > 0 ? "var(--positive)" : "var(--text-secondary)",
-          background: saved > 0 ? "rgba(52,211,153,0.10)" : "transparent",
+          background: saved > 0 ? "var(--tint-green-07)" : "transparent",
           borderRadius: 6, padding: "3px 9px", whiteSpace: "nowrap",
         }}
         title="Estimated lifetime tax saved by this sourcing plan vs. drawing pre-tax first with no guardrails. Updates as you change the controls."
@@ -8172,7 +8202,7 @@ function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle, ba
       onClick={onToggle}
       style={{
         width: "100%",
-        background: "rgba(255,255,255,0.025)",
+        background: "var(--tint-white-03)",
         border: `1px solid ${withAlpha(color, "44")}`,
         borderLeft: `4px solid ${color}`,
         borderRadius: 8,
@@ -8242,7 +8272,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         padding: "3px 9px", borderRadius: 5, fontSize: "var(--fs-small)", fontWeight: 700,
         letterSpacing: ".03em", whiteSpace: "nowrap",
         border: "1px solid rgba(52,211,153,0.35)",
-        background: "rgba(52,211,153,0.08)",
+        background: "var(--tint-green-07)",
         color: "var(--positive)",
       }}
     >
@@ -8258,7 +8288,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           whether the numbers moved. Dismissing clears the stamp for good. */}
       {migrated && (
         <div style={{
-          background: migrated.fidelity === "changed" ? "var(--tint-amber-08)" : "rgba(13,148,136,0.08)",
+          background: migrated.fidelity === "changed" ? "var(--tint-amber-08)" : "var(--tint-teal-600-08)",
           border: `1px solid ${migrated.fidelity === "changed" ? "var(--tint-amber-35)" : "rgba(13,148,136,0.35)"}`,
           borderRadius: 8, padding: "12px 14px", fontSize: "var(--fs-label)",
           color: "var(--text-secondary)", lineHeight: 1.6,
@@ -8283,7 +8313,7 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
 
       {/* Orientation card — explains the two-question framing */}
       <div style={{
-        background: "rgba(13,148,136,0.06)",
+        background: "var(--tint-teal-600-06)",
         border: "1px solid rgba(13,148,136,0.18)",
         borderRadius: 8,
         padding: "10px 14px",
@@ -8594,7 +8624,7 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
           <div style={balCell}><div style={balLbl}>Pre-Tax</div><div style={balVal}>{money(r.pretaxEnd)}</div></div>
           <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-07)" }}><div style={balLbl}>Roth</div><div style={{ ...balVal, color: "var(--accent-purple)" }}>{money(r.rothEnd)}</div></div>
           <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-07)" }}><div style={balLbl}>Taxable</div><div style={{ ...balVal, color: "var(--accent-gold)" }}>{money(r.taxableEnd)}</div></div>
-          <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-07)" }}><div style={balLbl}>Cash</div><div style={{ ...balVal, color: "#22d3ee" }}>{money(r.cashEnd)}</div></div>
+          <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-07)" }}><div style={balLbl}>Cash</div><div style={{ ...balVal, color: "var(--chart-5)" }}>{money(r.cashEnd)}</div></div>
           <div style={{ ...balCell, borderLeft: "1px solid var(--tint-white-10)" }}><div style={balLbl}>Total</div><div style={balVal}>{money(r.totalPort)}</div></div>
         </div>
       </div>
@@ -8827,7 +8857,7 @@ function WaterfallPlanView({ p, result }) {
   const btnStyle = (active) => ({
     padding: "5px 14px", fontSize: "var(--fs-label)", borderRadius: 6, border: "none",
     cursor: "pointer",
-    background: active ? "rgba(13,148,136,0.25)" : "transparent",
+    background: active ? "var(--tint-teal-600-25)" : "transparent",
     color: active ? "var(--accent-teal)" : "var(--text-faint)",
   });
 
@@ -8897,7 +8927,7 @@ function WaterfallPlanView({ p, result }) {
   const rowWRColor = (i) => {
     const wr = wrAt(i);
     if (wr == null) return "var(--text-secondary)";
-    return wr > initialWR * 1.2 ? "#ff6f7a" : wr < initialWR * 0.8 ? "var(--accent-gold)" : "var(--positive)";
+    return wr > initialWR * 1.2 ? "var(--chart-1)" : wr < initialWR * 0.8 ? "var(--accent-gold)" : "var(--positive)";
   };
 
   // "Average retirement withdrawal rate" / "Out of money date" — Boldin-style
@@ -8926,7 +8956,7 @@ function WaterfallPlanView({ p, result }) {
         </div>
         <div className="met">
           <div className="ml">Tax Savings vs No Plan</div>
-          <div className="mv" style={{ color: summary.taxSavings > 0 ? "var(--positive)" : "#ff6f7a", fontSize: "var(--fs-h2)" }}>
+          <div className="mv" style={{ color: summary.taxSavings > 0 ? "var(--positive)" : "var(--chart-1)", fontSize: "var(--fs-h2)" }}>
             {summary.taxSavings >= 0 ? "+" : ""}{fmtDollar(summary.taxSavings)}
           </div>
           <div className="ms">vs draining pre-tax first, no plan</div>
@@ -8938,21 +8968,21 @@ function WaterfallPlanView({ p, result }) {
         </div>
         <div className="met">
           <div className="ml">IRMAA Years Triggered</div>
-          <div className="mv" style={{ color: summary.irmaaYearsTriggered > 0 ? "#fb923c" : "var(--positive)", fontSize: "var(--fs-h2)" }}>
+          <div className="mv" style={{ color: summary.irmaaYearsTriggered > 0 ? "var(--chart-3)" : "var(--positive)", fontSize: "var(--fs-h2)" }}>
             {summary.irmaaYearsTriggered}
           </div>
           <div className="ms">{summary.ssTorpedoYears} SS torpedo yrs</div>
         </div>
         <div className="met">
           <div className="ml">Avg. Withdrawal Rate</div>
-          <div className="mv" style={{ color: avgWithdrawalRate > initialWR * 1.2 ? "#ff6f7a" : "var(--accent-teal)", fontSize: "var(--fs-h2)" }}>
+          <div className="mv" style={{ color: avgWithdrawalRate > initialWR * 1.2 ? "var(--chart-1)" : "var(--accent-teal)", fontSize: "var(--fs-h2)" }}>
             {(avgWithdrawalRate * 100).toFixed(1)}%
           </div>
           <div className="ms">total withdrawal ÷ prior-year portfolio</div>
         </div>
         <div className="met">
           <div className="ml">Portfolio Depletion</div>
-          <div className="mv" style={{ color: depletionRow ? "#ff6f7a" : "var(--positive)", fontSize: "var(--fs-h2)" }}>
+          <div className="mv" style={{ color: depletionRow ? "var(--chart-1)" : "var(--positive)", fontSize: "var(--fs-h2)" }}>
             {depletionRow ? `Age ${depletionRow.age}` : "Never"}
           </div>
           <div className="ms">{depletionRow ? `(${depletionRow.yr})` : `lasts to age ${p.endAge || 90}`}</div>
@@ -8986,7 +9016,7 @@ function WaterfallPlanView({ p, result }) {
             <Tooltip content={<Tip />} />
             <Legend wrapperStyle={{ fontSize: 10 }} />
             <Bar dataKey="Cash"     stackId="a" fill="var(--text-muted)" />
-            <Bar dataKey="Taxable"  stackId="a" fill="#3b82f6" />
+            <Bar dataKey="Taxable"  stackId="a" fill="var(--chart-10)" />
             <Bar dataKey="Pre-Tax"  stackId="a" fill="var(--accent-gold)" />
             <Bar dataKey="Roth"     stackId="a" fill="var(--positive)" />
             <Bar dataKey="Fed Tax"   stackId="a" fill="var(--negative)" />
@@ -9080,14 +9110,14 @@ function WaterfallPlanView({ p, result }) {
               {anyConversion && (
                 <ThInfo data-cg="conv" tip={"Roth conversion this year (pinned in Conversion Plan, or bracket-fill if set in Withdrawal Order). Stacks on top of this year's spending withdrawal as ordinary income — Fed/State/IRMAA columns reflect the combined total."}>Roth Conv</ThInfo>
               )}
-              <ThInfo data-cg="bal" style={{ borderLeft: "1px solid rgba(148,163,184,0.15)" }} tip={"Bucket 1 is the safe cash reserve — the slice of your accounts tagged for near-term spending, tracked separately from Bucket 2 (income bridge) and Bucket 3 (long-term growth).\n\nThis column is Bucket 1's true dollar share of the portfolio at the end of each year, summed across every account/category it's tagged in — not one category's whole balance. A taxable account split 40% Bucket 1 / 60% Bucket 2 only contributes its 40% share here.\n\n\"—\" means no account is tagged Bucket 1 at all. \"$0\" means Bucket 1 has actually depleted. Hover any row's value for that year's exact calculation."}>B1 End</ThInfo>
+              <ThInfo data-cg="bal" style={{ borderLeft: "1px solid var(--tint-slate-400-15)" }} tip={"Bucket 1 is the safe cash reserve — the slice of your accounts tagged for near-term spending, tracked separately from Bucket 2 (income bridge) and Bucket 3 (long-term growth).\n\nThis column is Bucket 1's true dollar share of the portfolio at the end of each year, summed across every account/category it's tagged in — not one category's whole balance. A taxable account split 40% Bucket 1 / 60% Bucket 2 only contributes its 40% share here.\n\n\"—\" means no account is tagged Bucket 1 at all. \"$0\" means Bucket 1 has actually depleted. Hover any row's value for that year's exact calculation."}>B1 End</ThInfo>
               <th data-cg="tax">Fed Tax</th><th data-cg="tax">State Tax</th><th data-cg="tax">IRMAA</th><th data-cg="tax">Eff %</th>
               <ThInfo data-cg="risk" tip={"What share of the portfolio this year's DRAW represents: Total Draw ÷ the portfolio at the START of the year.\n\nNot your spending rate. If income covers most of your spending, this stays low even when spending is high — which is the point of the column.\n\nGreen means within ±20% of your first-year rate, the Guyton-Klinger guardrail band. Amber = well below it, red = well above."}>WR <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>(of draw)</span></ThInfo>
               <th data-cg="risk">
                 <LandmineTip
                   emoji="💣"
                   label="Tax Landmines"
-                  color="#ff6f7a"
+                  color="var(--chart-1)"
                   detail="Hidden tax traps that quietly increase your bill. ⚡ SS Torpedo — too much income makes 85% of Social Security taxable. 💊 IRMAA — income above ~$218,000 MFJ triggers Medicare premium surcharges. 📋 RMD — forced pretax distributions create mandatory taxable income you cannot defer. Hover each row icon for year-specific details."
                 />
                 {" "}Landmines
@@ -9274,7 +9304,7 @@ function WaterfallPlanView({ p, result }) {
                   )}
                 </td>
                 <td data-cg="draw" style={opTdStyle}>+</td>
-                <td data-cg="draw" style={{ textAlign: "right", color: "#3b82f6" }} title={fmtDollar(r.fromTaxable)}>
+                <td data-cg="draw" style={{ textAlign: "right", color: "var(--chart-10)" }} title={fmtDollar(r.fromTaxable)}>
                   {r.fromTaxable > 0 ? fmtDollar(r.fromTaxable) : "—"}
                   {r.convTaxFromTaxable > 0 && (
                     <span style={{ color: "var(--accent-purple)", fontSize: "var(--fs-small)", marginLeft: 3, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}
@@ -9410,7 +9440,7 @@ function WaterfallPlanView({ p, result }) {
                     )}
                   </td>
                 )}
-                <td data-cg="bal" style={{ textAlign: "right", color: b1End === 0 || (b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0) ? "#ff6f7a" : "#22d3ee", fontSize: "var(--fs-small)", borderLeft: "1px solid rgba(148,163,184,0.15)" }}
+                <td data-cg="bal" style={{ textAlign: "right", color: b1End === 0 || (b1End < (p.bucket1Floor || 0) && (p.bucket1Floor || 0) > 0) ? "var(--chart-1)" : "var(--chart-5)", fontSize: "var(--fs-small)", borderLeft: "1px solid var(--tint-slate-400-15)" }}
                     title={
                       b1End == null
                         ? "No account is tagged Bucket 1"
@@ -9424,7 +9454,7 @@ function WaterfallPlanView({ p, result }) {
                     TaxDetailsModal (one instance, above), so these cells carry
                     one shared "Tax details" affordance instead of three
                     tooltips that touch users could never open. */}
-                <td data-cg="tax" style={{ textAlign: "right", color: "#ff6f7a" }}>
+                <td data-cg="tax" style={{ textAlign: "right", color: "var(--chart-1)" }}>
                   {fmtDollar(r.fedTax)}
                   {(r.ltcgTax > 0 || r.niit > 0) && (
                     <span style={{ color: "#fca5a5", fontSize: "var(--fs-small)", marginLeft: 2 }}
@@ -9443,10 +9473,10 @@ function WaterfallPlanView({ p, result }) {
                     </button>
                   </div>
                 </td>
-                <td data-cg="tax" style={{ textAlign: "right", color: r.stateTax > 0 ? "#fb923c" : "var(--text-faint)" }}>
+                <td data-cg="tax" style={{ textAlign: "right", color: r.stateTax > 0 ? "var(--chart-3)" : "var(--text-faint)" }}>
                   {r.stateTax > 0 ? fmtDollar(r.stateTax) : "—"}
                 </td>
-                <td data-cg="tax" style={{ textAlign: "right", color: r.irmaa > 0 ? "#fb923c" : "var(--text-faint)" }}>
+                <td data-cg="tax" style={{ textAlign: "right", color: r.irmaa > 0 ? "var(--chart-3)" : "var(--text-faint)" }}>
                   {r.irmaa > 0 ? fmtDollar(r.irmaa) : "—"}
                 </td>
                 <td data-cg="tax" style={{ textAlign: "right" }}>{(r.effectiveRate * 100).toFixed(1)}%</td>
@@ -9479,7 +9509,7 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
                       <LandmineTip
                         emoji="💊"
                         label="IRMAA Surcharge"
-                        color="#fb923c"
+                        color="var(--chart-3)"
                         detail={`This year's ${fmtDollar(r.irmaa)} surcharge is based on your ${r.yr - 2} income (IRMAA uses a 2-year lookback — the current Tier-1 threshold ~$218,000 MFJ was checked against that year's MAGI, not this year's). Income this year affects premiums in ${r.yr + 2}. Enable IRMAA Guard in Plan inputs → Settings → Withdrawal Order to cap pretax draws before this threshold.`}
                       />
                     );
@@ -9488,7 +9518,7 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
                     <LandmineTip
                       emoji="⛔"
                       label="Early Withdrawal Penalty"
-                      color="#ff6f7a"
+                      color="var(--chart-1)"
                       detail={`IRC 72(t): at age ${r.age} you are under 59.5, so the ${fmtDollar(r.fromPretax + r.rmd)} taken from pre-tax owes a 10% additional tax of ${fmtDollar(r.earlyPenalty)} ON TOP of income tax. Reason: ${r.earlyPenaltyReason}.${r.earlyPenaltyExempt > 0 ? ` ${fmtDollar(r.earlyPenaltyExempt)} was exempt.` : ""}\n\nWays out: fund spending from taxable / cash / Roth basis until 59.5; keep a former-employer 401k UNROLLED and use the Rule of 55; or start a 72(t) SEPP, which must then run to the LATER of 5 years or age 59.5.`}
                     />
                   )}
@@ -9606,7 +9636,7 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
       {g && (
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "6px 18px", padding: "8px 12px", marginBottom: 12, background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)" }}>
           <span style={{ fontWeight: 700, color: "var(--text-primary)" }}>Across {g.paths.toLocaleString()} simulated scenarios:</span>
-          <span>guardrails <strong style={{ color: "#ff6f7a" }}>cut spending in {pctS(g.cutRate)}</strong> of scenarios</span>
+          <span>guardrails <strong style={{ color: "var(--chart-1)" }}>cut spending in {pctS(g.cutRate)}</strong> of scenarios</span>
           <span><strong style={{ color: "var(--positive)" }}>raised it in {pctS(g.raiseRate)}</strong></span>
           {/* Median first, mean second, and the mean NAMED as the average among
               the paths that cut. "avg 8.9 cuts per scenario" alone read as "the
@@ -9656,7 +9686,7 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
               <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
               <XAxis dataKey="age" stroke="var(--divider)" tickMargin={6} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} />
               <YAxis yAxisId="spend" stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} tickFormatter={(v) => fmtDollar(v)} />
-              <YAxis yAxisId="port" orientation="right" stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH} tick={{ fill: "#6c9bff", fontSize: 10, fontFamily: "var(--font-mono)" }} tickFormatter={(v) => fmtDollar(v)} />
+              <YAxis yAxisId="port" orientation="right" stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH} tick={{ fill: "var(--chart-2)", fontSize: 10, fontFamily: "var(--font-mono)" }} tickFormatter={(v) => fmtDollar(v)} />
               <Tooltip
                 content={({ active, payload, label }) => {
                   if (!active || !payload || !payload.length) return null;
@@ -9669,11 +9699,11 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                       <div style={{ color: "var(--text-secondary)" }}>Prior spend <strong style={{ fontFamily: "var(--font-mono)" }}>{fmtDollar(row["Prior spend (real)"])}</strong> <span style={{ color: "var(--text-faint)" }}>({monthly(row["Prior spend (real)"])}/mo)</span></div>
                       <div style={{ color: "var(--text-secondary)" }}>After guardrail <strong style={{ fontFamily: "var(--font-mono)" }}>{fmtDollar(row["Actual spend (real)"])}</strong> <span style={{ color: "var(--text-faint)" }}>({monthly(row["Actual spend (real)"])}/mo)</span></div>
                       <div style={{ color: "var(--text-muted)" }}>Floor {fmtDollar(row["Floor (real)"])} · Ceiling {fmtDollar(row["Ceiling (real)"])}</div>
-                      <div style={{ color: "#6c9bff" }}>Portfolio {fmtDollar(row["Portfolio (real)"])}</div>
-                      {ev === "cut" && <div style={{ color: "#ff6f7a", fontWeight: 700, marginTop: 4 }}>▼ Spending cut {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate crossed the {Math.round(GK_BAND_PCT * 100)}% upper band</div>}
+                      <div style={{ color: "var(--chart-2)" }}>Portfolio {fmtDollar(row["Portfolio (real)"])}</div>
+                      {ev === "cut" && <div style={{ color: "var(--chart-1)", fontWeight: 700, marginTop: 4 }}>▼ Spending cut {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate crossed the {Math.round(GK_BAND_PCT * 100)}% upper band</div>}
                       {ev === "raise" && <div style={{ color: "var(--positive)", fontWeight: 700, marginTop: 4 }}>▲ Spending raised {Math.round(GK_ADJUST_PCT * 100)}% — withdrawal rate fell {Math.round(GK_BAND_PCT * 100)}% below the initial rate</div>}
                       {ev === "constrained" && (
-                        <div style={{ color: "#f5a623", fontWeight: 700, marginTop: 4 }}>
+                        <div style={{ color: "var(--chart-6)", fontWeight: 700, marginTop: 4 }}>
                           ◆ {row.gkReason === "floor-bind" ? "Floor bound" : "Ceiling bound"} — the guardrail rule was held at your {row.gkReason === "floor-bind" ? "floor" : "ceiling"} setting ({money(row[`${row.gkReason === "floor-bind" ? "Floor" : "Ceiling"} (real)`])}). This is a settings effect, not a market reaction.
                         </div>
                       )}
@@ -9684,10 +9714,10 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                 }}
               />
               <Area yAxisId="spend" type="monotone" dataKey="Ceiling (real)" stroke="none" fill="var(--tint-green-07)" />
-              <Line yAxisId="spend" type="monotone" dataKey="Floor (real)" stroke="#f5a623" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
+              <Line yAxisId="spend" type="monotone" dataKey="Floor (real)" stroke="var(--chart-6)" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
               <Line yAxisId="spend" type="monotone" dataKey="Ceiling (real)" stroke="var(--positive)" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
               <Line yAxisId="spend" type="monotone" dataKey="Prior spend (real)" stroke="var(--text-faint)" strokeWidth={1.2} strokeDasharray="2 3" dot={false} />
-              <Line yAxisId="port" type="monotone" dataKey="Portfolio (real)" stroke="#6c9bff" strokeWidth={2} strokeDasharray="5 3" dot={false} />
+              <Line yAxisId="port" type="monotone" dataKey="Portfolio (real)" stroke="var(--chart-2)" strokeWidth={2} strokeDasharray="5 3" dot={false} />
               <Line yAxisId="spend" type="monotone" dataKey="Actual spend (real)" stroke="var(--accent-teal)" strokeWidth={2.4}
                     dot={(props) => {
                       const ev = gkChartData[props.index]?.gkEvent;
@@ -9702,14 +9732,14 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                       if (ev === "constrained") {
                         const d = 7, off = 11;
                         const pts = `${props.cx},${props.cy - off - d} ${props.cx + d},${props.cy - off} ${props.cx},${props.cy - off + d} ${props.cx - d},${props.cy - off}`;
-                        return <polygon key={`e${props.index}`} points={pts} fill="#f5a623" stroke="var(--bg-base)" strokeWidth={1.5} />;
+                        return <polygon key={`e${props.index}`} points={pts} fill="var(--chart-6)" stroke="var(--bg-base)" strokeWidth={1.5} />;
                       }
                       const up = ev === "raise";
                       const w = 8.5, h = 13, gap = 11;
                       const baseY = up ? props.cy - gap : props.cy + gap;
                       const apexY = up ? baseY - h : baseY + h;
                       const pts = `${props.cx - w},${baseY} ${props.cx + w},${baseY} ${props.cx},${apexY}`;
-                      return <polygon key={`e${props.index}`} points={pts} fill={up ? "var(--positive)" : "#ff6f7a"} stroke="var(--bg-base)" strokeWidth={1.5} />;
+                      return <polygon key={`e${props.index}`} points={pts} fill={up ? "var(--positive)" : "var(--chart-1)"} stroke="var(--bg-base)" strokeWidth={1.5} />;
                     }}
               />
             </ComposedChart>
@@ -9717,12 +9747,12 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
           <div className="leg">
             <div className="li"><div className="ll" style={{ background: "var(--accent-teal)" }} />Actual spending</div>
             <div className="li"><div className="ll" style={{ background: "var(--text-faint)" }} />Prior year's spending</div>
-            <div className="li"><div className="ll" style={{ background: "#f5a623" }} />Floor</div>
+            <div className="li"><div className="ll" style={{ background: "var(--chart-6)" }} />Floor</div>
             <div className="li"><div className="ll" style={{ background: "var(--positive)" }} />Ceiling</div>
-            <div className="li"><div className="ll" style={{ background: "#6c9bff" }} />Portfolio (right axis)</div>
-            <div className="li"><span style={{ color: "#ff6f7a", fontSize: "var(--fs-label)" }}>▼</span> Cut</div>
+            <div className="li"><div className="ll" style={{ background: "var(--chart-2)" }} />Portfolio (right axis)</div>
+            <div className="li"><span style={{ color: "var(--chart-1)", fontSize: "var(--fs-label)" }}>▼</span> Cut</div>
             <div className="li"><span style={{ color: "var(--positive)", fontSize: "var(--fs-label)" }}>▲</span> Raise</div>
-            <div className="li"><span style={{ color: "#f5a623", fontSize: "var(--fs-label)" }}>◆</span> Band bound (your floor/ceiling setting)</div>
+            <div className="li"><span style={{ color: "var(--chart-6)", fontSize: "var(--fs-label)" }}>◆</span> Band bound (your floor/ceiling setting)</div>
           </div>
         </>
       )}
@@ -9745,14 +9775,14 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                   // limit — never a shared "cut" reading.
                   const isConstrained = r.gkEvent === "constrained";
                   const delta = r.actualReal - r.priorReal;
-                  const c = isConstrained ? "#f5a623" : isCut ? "#ff6f7a" : isRaise ? "var(--positive)" : "var(--accent-gold)";
+                  const c = isConstrained ? "var(--chart-6)" : isCut ? "var(--chart-1)" : isRaise ? "var(--positive)" : "var(--accent-gold)";
                   return (
                     <tr key={r.age}>
                       <td style={{ textAlign: "left" }}>{r.age}</td><td>{r.yr}</td>
                       <td style={{ color: c, fontWeight: 700 }}>{isConstrained ? `◆ ${r.gkReason === "floor-bind" ? "Floor bound" : "Ceiling bound"}` : isCut ? "▼ Cut" : isRaise ? "▲ Raise" : "Held"}</td>
                       <td>{money(r.priorReal)}</td>
                       <td>{money(r.actualReal)}</td>
-                      <td style={{ color: delta < 0 ? "#ff6f7a" : delta > 0 ? "var(--positive)" : "var(--text-muted)" }}>{delta > 0 ? "+" : ""}{money(delta)}</td>
+                      <td style={{ color: delta < 0 ? "var(--chart-1)" : delta > 0 ? "var(--positive)" : "var(--text-muted)" }}>{delta > 0 ? "+" : ""}{money(delta)}</td>
                       <td style={{ textAlign: "left", color: "var(--text-muted)", fontSize: "var(--fs-small)" }}>{isConstrained ? `GK rule's figure was held at your ${r.gkReason === "floor-bind" ? "floor" : "ceiling"} setting` : isCut ? `Withdrawal rate crossed the ${Math.round(GK_BAND_PCT * 100)}% upper band` : isRaise ? `Withdrawal rate fell ${Math.round(GK_BAND_PCT * 100)}% below the initial rate` : `Band crossed, but ≤ ${GK_LONGEVITY_YEARS} years remained`}</td>
                     </tr>
                   );
@@ -9769,10 +9799,10 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
               {[
-                ["Scenarios with a cut", pctS(g.cutRate), "#ff6f7a", `${Math.round(g.cutRate * g.paths).toLocaleString()} of ${g.paths.toLocaleString()} paths cut spending at least once`],
+                ["Scenarios with a cut", pctS(g.cutRate), "var(--chart-1)", `${Math.round(g.cutRate * g.paths).toLocaleString()} of ${g.paths.toLocaleString()} paths cut spending at least once`],
                 ["Scenarios with a raise", pctS(g.raiseRate), "var(--positive)", `${Math.round(g.raiseRate * g.paths).toLocaleString()} of ${g.paths.toLocaleString()} paths raised spending`],
                 ["Avg cuts per scenario", g.avgCutsPerPath.toFixed(1), "var(--accent-gold)", "Averaged over every simulated path"],
-                ["Spending range seen", `${money(g.spendMinReal)}–${money(g.spendMaxReal)}`, "#6c9bff", `${perMonth(g.spendMinReal)}–${perMonth(g.spendMaxReal)}/mo · ${retirementYear} dollars`],
+                ["Spending range seen", `${money(g.spendMinReal)}–${money(g.spendMaxReal)}`, "var(--chart-2)", `${perMonth(g.spendMinReal)}–${perMonth(g.spendMaxReal)}/mo · ${retirementYear} dollars`],
                 // Third event type, deliberately last: it answers a different
                 // question from the two above. cutRate/raiseRate are how often the
                 // MARKET moved you; this is how often your own band settings did.
@@ -9781,7 +9811,7 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                 ...(g.constrainedRate != null ? [[
                   "Scenarios where the band bound",
                   pctS(g.constrainedRate),
-                  "#f5a623",
+                  "var(--chart-6)",
                   `${Math.round((g.ceilingBinds || 0) + (g.floorBinds || 0)).toLocaleString()} bind-years (${(g.ceilingBinds || 0).toLocaleString()} ceiling · ${(g.floorBinds || 0).toLocaleString()} floor) across ${g.paths.toLocaleString()} paths — driven by your floor/ceiling settings, not by markets`,
                 ]] : []),
               ].map(([l, v, c, sub]) => (
@@ -9869,7 +9899,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
         </div>
         {notSmart && (
           <div style={{
-            fontSize: "var(--fs-small)", color: "var(--text-secondary)", background: "rgba(251,191,36,0.06)",
+            fontSize: "var(--fs-small)", color: "var(--text-secondary)", background: "var(--tint-amber-07)",
             border: "1px solid rgba(251,191,36,0.22)", borderRadius: 6, padding: "8px 10px",
             marginBottom: 10, lineHeight: 1.5,
           }}>
@@ -9910,12 +9940,12 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
             <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-muted)", fontSize: 9 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
             <Tooltip content={<Tip />} />
             <Bar dataKey="Spending" fill="var(--accent-gold)" name="Spending" />
-            <Bar dataKey="Total Withdrawal" fill="#ff6f7a" name="Total Withdrawal (inc. tax)" />
+            <Bar dataKey="Total Withdrawal" fill="var(--chart-1)" name="Total Withdrawal (inc. tax)" />
           </BarChart>
         </ResponsiveContainer>
         <div className="leg">
           <div className="li"><div className="ll" style={{ background: "var(--accent-gold)" }} />Spending</div>
-          <div className="li"><div className="ll" style={{ background: "#ff6f7a" }} />Total Withdrawal (inc. tax)</div>
+          <div className="li"><div className="ll" style={{ background: "var(--chart-1)" }} />Total Withdrawal (inc. tax)</div>
         </div>
       </div>
 
@@ -9977,8 +10007,8 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
                         </div>
                       )}
                     </td>
-                    <td style={{ color: "#ff6f7a" }}>{fmtDollar(s.fedTax)}</td>
-                    <td style={{ color: "#fb923c" }}>{fmtDollar(s.stateTax)}</td>
+                    <td style={{ color: "var(--chart-1)" }}>{fmtDollar(s.fedTax)}</td>
+                    <td style={{ color: "var(--chart-3)" }}>{fmtDollar(s.stateTax)}</td>
                     <td style={{ color: "var(--accent-purple)" }}>{fmtDollar(s.irmaa)}</td>
                     <td style={{ color: "#8fcfa8",fontSize: "var(--fs-h2)", fontWeight: 'bold' }}>{fmtDollar(s.totalWithdrawal)}</td>
                     <td style={{ color: "var(--accent-teal)", fontWeight: 600 }}>
@@ -10050,7 +10080,7 @@ function BucketCard({ num, color, label, horizon, actual, floor, target, account
 
   const barPct = target > 0 ? Math.min(100, actual / target * 100) : 0;
   const status = actual < floor ? "below" : actual < target ? "ok" : "full";
-  const barClr = status === "below" ? "#ff6f7a" : status === "full" ? "var(--positive)" : color;
+  const barClr = status === "below" ? "var(--chart-1)" : status === "full" ? "var(--positive)" : color;
   const runway = monthly > 0 && num === 1 ? (actual / monthly).toFixed(1) : null;
   return (
     <div style={{ background: "var(--tint-white-02)", border: `1px solid ${withAlpha(color, "33")}`, borderLeft: `3px solid ${color}`, borderRadius: 9, padding: 14, flex: 1, position: "relative" }}>
@@ -10280,7 +10310,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
   }, [b1Actual, b2Actual, b1Floor, b1Target, b2Floor, b2Target, b2Accts, b3Accts, marginalRate, irmaaRisk, hasAccounts, sp]);
 
   // Styles
-  const DC = { critical: "#ff6f7a", warning: "var(--accent-gold)", ok: "var(--positive)", setup: "var(--text-faint)" };
+  const DC = { critical: "var(--chart-1)", warning: "var(--accent-gold)", ok: "var(--positive)", setup: "var(--text-faint)" };
   const DI = { critical: "🔴", warning: "🟡", ok: "✅", setup: "⚙" };
   const now = new Date();
   const monthName = now.toLocaleString("default", { month: "long" });
@@ -10315,7 +10345,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
           </div>
         )}
         {directive.b1Empty && (
-          <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: "var(--fs-small)", color: "#7dd3fc", lineHeight: 1.6 }}>
+          <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid var(--tint-sky-500-25)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: "var(--fs-small)", color: "#7dd3fc", lineHeight: 1.6 }}>
             <strong>No B1 account assigned yet.</strong> Bucket 1 currently holds <strong>$0</strong>. To receive this transfer you need a cash account (HYSA, money market, SGOV) tagged as B1 in <GoStep step={PROFILE_STEP_SAVINGS}>Plan inputs → Current Savings</GoStep>. The steps below show which B2 accounts to sell — the proceeds go into that new B1 account.
           </div>
         )}
@@ -10415,7 +10445,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
                 key={opt.val}
                 onClick={() => saveBCfg({ drawMode: opt.val })}
                 style={{
-                  background: active ? "rgba(14,165,233,0.18)" : "var(--row-highlight)",
+                  background: active ? "var(--tint-sky-500-18)" : "var(--row-highlight)",
                   border: `1px solid ${active ? "#0ea5e9" : "var(--tint-white-10)"}`,
                   color: active ? "#0ea5e9" : "var(--text-secondary)",
                   borderRadius: 4, padding: "2px 8px", fontSize: "var(--fs-small)", cursor: "pointer", fontWeight: active ? 600 : 400,
@@ -10495,10 +10525,10 @@ const PLAN_SHAPE_AXES = [
   { key: "spend", label: "Spend", color: "#a3e635",
     what: "How comfortably the plan funds your spending target",
     how: "4% of today's portfolio vs your planned annual spend (at or above target scores 100)" },
-  { key: "legacy", label: "Legacy", color: "#818cf8",
+  { key: "legacy", label: "Legacy", color: "var(--chart-4)",
     what: "What's left at end of plan",
     how: `Median ending portfolio (p50) — ${fmtDollar(LEGACY_FULL_SCORE_PORT)} or more scores 100` },
-  { key: "resilience", label: "Resilience", color: "#fb923c",
+  { key: "resilience", label: "Resilience", color: "var(--chart-3)",
     what: "How well the plan weathers market stress",
     how: "Success rate with the 2000–2012 sequence forced at retirement" },
 ];
@@ -10613,7 +10643,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
         <div style={{
           fontSize: "var(--fs-label)", lineHeight: 1.5, padding: "8px 12px", borderRadius: 8, marginBottom: 10,
           background: shapeStable ? "rgba(56,189,248,0.06)" : "rgba(251,146,60,0.08)",
-          border: `1px solid ${shapeStable ? "rgba(56,189,248,0.18)" : "rgba(251,146,60,0.25)"}`,
+          border: `1px solid ${shapeStable ? "rgba(56,189,248,0.18)" : "var(--tint-orange-25)"}`,
           color: "var(--text-primary)",
         }}>
           {shapeStable
@@ -10632,7 +10662,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
                     stroke="var(--text-secondary)" fill="var(--text-secondary)" fillOpacity={0.12} strokeWidth={1.5} />
                 )}
                 <Radar name={`Today (${fmtDate(latest.ts)})`} dataKey="today"
-                  stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.25} strokeWidth={2} />
+                  stroke="var(--chart-10)" fill="var(--chart-10)" fillOpacity={0.25} strokeWidth={2} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
               </RadarChart>
             </ResponsiveContainer>
@@ -10696,7 +10726,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
           </div>
         </div>
       ) : (
-        <div style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", background: "rgba(90,209,240,0.05)", border: "1px solid rgba(90,209,240,0.15)", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
+        <div style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", background: "var(--tint-sky-06)", border: "1px solid rgba(90,209,240,0.15)", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
           Save another check-in later to see your trend here — one point doesn't make a line yet.
         </div>
       )}
@@ -10749,10 +10779,10 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
                 {[
                   ["SUCCESS RATE", c.successRate != null ? `${(c.successRate * 100).toFixed(0)}%` : "—", "var(--accent-teal)"],
-                  ["STRESS SR",    c.stressRate  != null ? `${(c.stressRate  * 100).toFixed(0)}%` : "—", "#fb923c"],
+                  ["STRESS SR",    c.stressRate  != null ? `${(c.stressRate  * 100).toFixed(0)}%` : "—", "var(--chart-3)"],
                   ["PORTFOLIO",    c.port           != null ? fmtDollar(c.port)           : "—", "var(--text-primary)"],
                   ["SPENDING",     c.sp             != null ? fmtDollar(c.sp)             : "—", "var(--text-primary)"],
-                  ["LEGACY",       c.medianTerminal != null ? fmtDollar(c.medianTerminal) : "—", "#818cf8"],
+                  ["LEGACY",       c.medianTerminal != null ? fmtDollar(c.medianTerminal) : "—", "var(--chart-4)"],
                   ["RETIRE / PLAN TO", c.retireAge != null ? `${c.retireAge} / ${c.endAge ?? "—"}` : "—", "var(--text-primary)"],
                 ].map(([label, value, color]) => (
                   <div key={label} style={{ background: "var(--row-highlight)", border: "1px solid var(--tint-white-09)", borderRadius: 8, padding: "6px 10px", minWidth: 86 }}>
@@ -10785,7 +10815,7 @@ function stressRateColor(rate) {
   if (rate == null) return "var(--text-muted)";
   if (rate >= 0.85) return "var(--positive)";
   if (rate >= 0.70) return "var(--accent-gold)";
-  return "#ff6f7a";
+  return "var(--chart-1)";
 }
 
 // Small donut gauge showing a scenario's surviving-plans percentage.
@@ -11571,7 +11601,7 @@ function ScenariosTab({
                     fontFamily: "'JetBrains Mono',monospace",
                     background:
                       r < 0 ? "var(--tint-red-15)" : "var(--bg-success)",
-                    color: r < 0 ? "#ff6f7a" : "var(--positive)",
+                    color: r < 0 ? "var(--chart-1)" : "var(--positive)",
                     border: `1px solid ${
                       r < 0 ? "var(--tint-red-30)" : "rgba(79,216,143,0.25)"
                     }`,
@@ -12247,7 +12277,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
         const ex = explainScore(params, mc, computeInitialWR(params));
         if (!ex.drivers.length) return null;
         const tone = {
-          risk:  { fg: "#ff6f7a", tag: "Biggest risk" },
+          risk:  { fg: "var(--chart-1)", tag: "Biggest risk" },
           watch: { fg: "#fdba74", tag: "Worth knowing" },
           good:  { fg: "var(--positive)", tag: "Working for you" },
         };
@@ -12558,7 +12588,7 @@ function MortgageTab({ values, onChange }) {
               <tr key={r.yr}>
                 <td style={{ textAlign:"left", fontFamily:"'DM Sans',sans-serif" }}>{r.yr}</td>
                 <td>{fmtDollar(r.pPaid)}</td>
-                <td style={{ color:"#ff6f7a" }}>{fmtDollar(r.iPaid)}</td>
+                <td style={{ color:"var(--chart-1)" }}>{fmtDollar(r.iPaid)}</td>
                 <td style={{ color:"var(--positive)" }}>{fmtDollar(r.ePaid)}</td>
                 <td style={{ color:"#0ea5e9" }}>{fmtDollar(r.bal)}</td>
               </tr>
@@ -12940,7 +12970,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
               style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: "var(--fs-label)" }}
               title="Liquid Portfolio = investments (excl. real estate). Mortgage Debt shown as negative (dashed red line). Net Worth = Liquid + Real Estate - Mortgage Debt."
             >
-              <span role="img" aria-label="information" style={{ color: "#6c9bff" }}>ℹ️</span>
+              <span role="img" aria-label="information" style={{ color: "var(--chart-2)" }}>ℹ️</span>
             </span>
           </div>
           <Toggle
@@ -12989,7 +13019,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
             <Line
               type="monotone"
               dataKey="Mortgage Debt"
-              stroke="#ff6f7a"
+              stroke="var(--chart-1)"
               strokeWidth={1.5}
               strokeDasharray="4 3"
               dot={false}
@@ -13012,7 +13042,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
         {dataStopsEarly && (
           <div style={{
             marginTop: 8, padding: "10px 12px", borderRadius: 8,
-            background: "rgba(251,146,60,0.10)", border: "1px solid rgba(251,146,60,0.35)",
+            background: "var(--tint-orange-10)", border: "1px solid var(--tint-orange-35)",
             fontSize: "var(--fs-small)", color: "#fdba74", lineHeight: 1.55,
           }}>
             <strong>The line stops at age {lastDataAge}.</strong> The last Monte Carlo run covers
@@ -13027,7 +13057,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
         {/* Legend */}
         <div className="leg" style={{ marginTop: 8, justifyContent: "center" }}>
           <div className="li"><div className="ll" style={{ background: "#0ea5e9" }} />Liquid Portfolio</div>
-          <div className="li"><div className="ll" style={{ background: "#ff6f7a", borderTop: "1px dashed #ff6f7a", height: 2 }} />Mortgage Debt (dashed)</div>
+          <div className="li"><div className="ll" style={{ background: "var(--chart-1)", borderTop: "1px dashed var(--chart-1)", height: 2 }} />Mortgage Debt (dashed)</div>
           {showRE && <div className="li"><div className="ll" style={{ background: "var(--accent-gold)" }} />Real Estate</div>}
           <div className="li"><div className="ll" style={{ background: "var(--positive)" }} />{showRE ? "Net Worth" : "Portfolio (ex. RE)"}</div>
         </div>
@@ -13049,7 +13079,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
 
 // Priority colors
 const PRIORITY_COLOR = {
-  red:    { border: "var(--negative)", bg: "var(--tint-red-07)",  label: "#ff6f7a", dot: "🔴" },
+  red:    { border: "var(--negative)", bg: "var(--tint-red-07)",  label: "var(--chart-1)", dot: "🔴" },
   yellow: { border: "var(--accent-gold)", bg: "rgba(244,211,94,0.07)", label: "var(--accent-gold)", dot: "🟡" },
   green:  { border: "var(--positive)", bg: "rgba(79,216,143,0.07)", label: "var(--positive)", dot: "🟢" },
 };
@@ -13164,19 +13194,19 @@ function MilestonesSection({ params, rmdAge }) {
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 36, flexShrink: 0 }}>
               <div style={{
                 width: 36, height: 36, borderRadius: "50%",
-                background: "rgba(99,102,241,0.15)", border: "2px solid rgba(99,102,241,0.4)",
+                background: "var(--tint-indigo-15)", border: "2px solid var(--tint-indigo-40)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "var(--fs-small)", fontWeight: 700, color: "#818cf8", flexShrink: 0,
+                fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--chart-4)", flexShrink: 0,
               }}>
                 {m.age === (params?.currentAge || 56) ? "Now" : m.age}
               </div>
               {idx < milestones.length - 1 && (
-                <div style={{ width: 2, flex: 1, minHeight: 16, background: "rgba(99,102,241,0.2)", marginTop: 4 }} />
+                <div style={{ width: 2, flex: 1, minHeight: 16, background: "var(--tint-indigo-20)", marginTop: 4 }} />
               )}
             </div>
             {/* Milestone card */}
             <div style={{
-              flex: 1, background: "rgba(99,102,241,0.04)", border: "1px solid rgba(99,102,241,0.15)",
+              flex: 1, background: "rgba(99,102,241,0.04)", border: "1px solid var(--tint-indigo-15)",
               borderRadius: 9, padding: "10px 14px", marginBottom: 2,
             }}>
               <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#a5b4fc", marginBottom: 6 }}>
@@ -13261,7 +13291,7 @@ function ActionPlanRow({ card, isSelected, onClick }) {
         padding:      "10px 14px",
         borderRadius: 8,
         background:   isSelected ? "rgba(99,102,241,0.1)" : "var(--tint-white-02)",
-        border:       `1px solid ${isSelected ? "rgba(99,102,241,0.4)" : "var(--tint-white-06)"}`,
+        border:       `1px solid ${isSelected ? "var(--tint-indigo-40)" : "var(--tint-white-06)"}`,
         cursor:       "pointer",
         transition:   "all 0.12s",
         marginBottom: 4,
@@ -13273,13 +13303,13 @@ function ActionPlanRow({ card, isSelected, onClick }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: C.label, marginBottom: 1, display: "flex", alignItems: "center", gap: 5 }}>
           {card.category}
-          {card.isLiveData  && <span style={{ color: "#22d3ee",  fontSize: "var(--fs-small)" }}>LIVE</span>}
+          {card.isLiveData  && <span style={{ color: "var(--chart-5)",  fontSize: "var(--fs-small)" }}>LIVE</span>}
           {card.aiGenerated && !card.isLiveData && <span style={{ color: "var(--accent-purple)", fontSize: "var(--fs-small)" }}>✦ AI</span>}
           {card.aiChecked && (
             <span style={{
-              background: card.aiNote ? "rgba(99,102,241,0.15)" : "rgba(71,85,105,0.18)",
-              color:      card.aiNote ? "#818cf8"                : "var(--text-muted)",
-              border:     `1px solid ${card.aiNote ? "rgba(99,102,241,0.3)" : "rgba(71,85,105,0.3)"}`,
+              background: card.aiNote ? "var(--tint-indigo-15)" : "rgba(71,85,105,0.18)",
+              color:      card.aiNote ? "var(--chart-4)"                : "var(--text-muted)",
+              border:     `1px solid ${card.aiNote ? "var(--tint-indigo-30)" : "rgba(71,85,105,0.3)"}`,
               borderRadius: 4, padding: "1px 5px", fontSize: "var(--fs-small)", fontWeight: 700,
             }}>
               {card.aiNote ? "AI insight" : "AI reviewed"}
@@ -13291,7 +13321,7 @@ function ActionPlanRow({ card, isSelected, onClick }) {
         </div>
       </div>
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", flexShrink: 0, whiteSpace: "nowrap" }}>{card.deadline}</div>
-      <div style={{ fontSize: "var(--fs-body)", color: isSelected ? "#818cf8" : "#334155", flexShrink: 0 }}>›</div>
+      <div style={{ fontSize: "var(--fs-body)", color: isSelected ? "var(--chart-4)" : "#334155", flexShrink: 0 }}>›</div>
     </div>
   );
 }
@@ -13326,7 +13356,7 @@ function CardDetailPanel({ card, onClose }) {
               background: "var(--tint-white-06)", color: "var(--text-secondary)",
               borderRadius: 4, padding: "2px 8px", fontSize: "var(--fs-small)", fontWeight: 600,
             }}>{card.category}</span>
-            {card.isLiveData  && <span style={{ background: "rgba(6,182,212,0.1)", color: "#22d3ee", borderRadius: 4, padding: "2px 8px", fontSize: "var(--fs-small)", fontWeight: 700 }}>🌐 LIVE</span>}
+            {card.isLiveData  && <span style={{ background: "rgba(6,182,212,0.1)", color: "var(--chart-5)", borderRadius: 4, padding: "2px 8px", fontSize: "var(--fs-small)", fontWeight: 700 }}>🌐 LIVE</span>}
             {card.aiGenerated && !card.isLiveData && <span style={{ background: "rgba(167,139,250,0.1)", color: "var(--accent-purple)", borderRadius: 4, padding: "2px 8px", fontSize: "var(--fs-small)", fontWeight: 700 }}>✦ AI</span>}
           </div>
           <div style={{ fontSize: "var(--fs-h2)", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.4 }}>{card.action}</div>
@@ -13350,9 +13380,9 @@ function CardDetailPanel({ card, onClose }) {
             <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
               <div style={{
                 width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)",
+                background: "var(--tint-indigo-15)", border: "1px solid var(--tint-indigo-30)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "var(--fs-small)", fontWeight: 700, color: "#818cf8",
+                fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--chart-4)",
               }}>{i + 1}</div>
               <div style={{ fontSize: "var(--fs-body)", color: "var(--text-secondary)", lineHeight: 1.55, paddingTop: 2 }}>{step}</div>
             </div>
@@ -13366,7 +13396,7 @@ function CardDetailPanel({ card, onClose }) {
           background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)",
           borderRadius: 8, padding: "10px 14px", marginBottom: 14,
         }}>
-          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#818cf8", marginBottom: 4 }}>AI INSIGHT</div>
+          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--chart-4)", marginBottom: 4 }}>AI INSIGHT</div>
           <div style={{ fontSize: "var(--fs-label)", color: "var(--accent-purple)", lineHeight: 1.55 }}>{card.aiNote}</div>
         </div>
       ) : card.aiChecked ? (
@@ -13382,7 +13412,7 @@ function CardDetailPanel({ card, onClose }) {
 
       {/* Source */}
       {card.source && (
-        <div style={{ fontSize: "var(--fs-small)", color: "#22d3ee", marginBottom: 12 }}>Source: {card.source}</div>
+        <div style={{ fontSize: "var(--fs-small)", color: "var(--chart-5)", marginBottom: 12 }}>Source: {card.source}</div>
       )}
 
       {/* Deadline */}
@@ -13519,7 +13549,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
     : "Run AI analysis on your plan";
 
   const COLORS = {
-    red:    { bg: "var(--tint-red-08)",   border: "var(--tint-red-25)",   label: "#ff6f7a", badge: "🔴 Critical" },
+    red:    { bg: "var(--tint-red-08)",   border: "var(--tint-red-25)",   label: "var(--chart-1)", badge: "🔴 Critical" },
     yellow: { bg: "rgba(244,211,94,0.08)",  border: "rgba(244,211,94,0.25)",  label: "var(--accent-gold)", badge: "🟡 Important" },
     green:  { bg: "rgba(79,216,143,0.08)",  border: "rgba(79,216,143,0.25)",  label: "var(--positive)", badge: "🟢 On Track" },
   };
@@ -13577,7 +13607,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
             display:      "flex",
             alignItems:   "center",
             gap:          16,
-            background:   creditBalance < LOW_BALANCE_WARN_AT ? "rgba(255,111,122,0.06)" : "rgba(124,58,237,0.06)",
+            background:   creditBalance < LOW_BALANCE_WARN_AT ? "var(--tint-red-05)" : "rgba(124,58,237,0.06)",
             border:       `1px solid ${creditBalance < LOW_BALANCE_WARN_AT ? "var(--tint-red-25)" : "rgba(124,58,237,0.2)"}`,
             borderRadius: 10,
             padding:      "10px 16px",
@@ -13626,7 +13656,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                   </button>
                 </div>
               ) : (
-                <div style={{ fontSize: "var(--fs-h1)", fontWeight: 700, color: creditBalance < LOW_BALANCE_WARN_AT ? "#ff6f7a" : "var(--text-primary)", lineHeight: 1 }}>
+                <div style={{ fontSize: "var(--fs-h1)", fontWeight: 700, color: creditBalance < LOW_BALANCE_WARN_AT ? "var(--chart-1)" : "var(--text-primary)", lineHeight: 1 }}>
                   {creditBalance.toLocaleString()}
                 </div>
               )}
@@ -13665,7 +13695,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
               display:      "flex",
               alignItems:   "center",
               gap:          10,
-              background:   "rgba(251,191,36,0.06)",
+              background:   "var(--tint-amber-07)",
               border:       "1px solid rgba(251,191,36,0.3)",
               borderRadius: 10,
               padding:      "10px 16px",
@@ -13708,7 +13738,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
           borderRadius: 8,
           padding: "10px 14px",
           fontSize: "var(--fs-label)",
-          color: "#ff6f7a",
+          color: "var(--chart-1)",
         }}>
           ⚠ AI unavailable: {aiError}
         </div>
@@ -13720,14 +13750,14 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
         const { target, currentPort, currentAge, results } = solver;
         const retireAge = params.retireAge || 60;
         const rowColor = (age) => {
-          if (age == null) return "#ff6f7a";
+          if (age == null) return "var(--chart-1)";
           if (age <= retireAge) return "var(--positive)";
           if (age <= retireAge + 3) return "var(--accent-gold)";
-          return "#ff6f7a";
+          return "var(--chart-1)";
         };
         return (
-          <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 9, padding: "12px 15px", marginBottom: 4 }}>
-            <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#818cf8", marginBottom: 8 }}>
+          <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid var(--tint-indigo-20)", borderRadius: 9, padding: "12px 15px", marginBottom: 4 }}>
+            <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--chart-4)", marginBottom: 8 }}>
               Retirement Date Solver — Target {fmtDollar(target)}
             </div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 8 }}>
@@ -13783,7 +13813,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
 
         const FILTER_OPTS = [
           { key: "all",    label: `All`,       count: counts.all,    color: "var(--text-muted)",  active: "var(--text-primary)" },
-          { key: "red",    label: `Critical`,  count: counts.red,    color: "#ff6f7a",  active: "#fca5a5" },
+          { key: "red",    label: `Critical`,  count: counts.red,    color: "var(--chart-1)",  active: "#fca5a5" },
           { key: "yellow", label: `Important`, count: counts.yellow, color: "var(--accent-gold)",  active: "#fde68a" },
           { key: "green",  label: `On Track`,  count: counts.green,  color: "var(--positive)",  active: "#6ee7b7" },
         ];
@@ -13813,7 +13843,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                 disabled={!canLive}
                 title={canLive ? "Search the web for current IRS limits, SS COLA, Medicare premiums, and more" : "Add a Gemini API key to enable live search"}
                 style={{
-                  background:   !canLive ? "var(--card-bg)" : loadingLive ? "var(--row-highlight)" : "linear-gradient(135deg, #0e7490, #22d3ee)",
+                  background:   !canLive ? "var(--card-bg)" : loadingLive ? "var(--row-highlight)" : "linear-gradient(135deg, #0e7490, var(--chart-5))",
                   border:       "none", color: !canLive || loadingLive ? "var(--text-faint)" : "white",
                   borderRadius: 7, padding: "5px 14px",
                   fontSize: "var(--fs-label)", fontWeight: 600, cursor: canLive && !loadingLive ? "pointer" : "not-allowed",
@@ -13825,7 +13855,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
               </button>
             </div>
 
-            {liveError && <div style={{ fontSize: "var(--fs-small)", color: "#ff6f7a", marginBottom: 8 }}>⚠ {liveError}</div>}
+            {liveError && <div style={{ fontSize: "var(--fs-small)", color: "var(--chart-1)", marginBottom: 8 }}>⚠ {liveError}</div>}
 
             {!liveError && liveCards && liveCards.length === 0 && (
               <div style={{ fontSize: "var(--fs-small)", color: "var(--positive)", marginBottom: 8 }}>
@@ -13833,7 +13863,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
               </div>
             )}
             {!liveError && liveCards && liveCards.length > 0 && (
-              <div style={{ fontSize: "var(--fs-small)", color: "#22d3ee", marginBottom: 8 }}>
+              <div style={{ fontSize: "var(--fs-small)", color: "var(--chart-5)", marginBottom: 8 }}>
                 Found {liveCards.length} live update{liveCards.length > 1 ? "s" : ""} — see below.
               </div>
             )}
@@ -13862,7 +13892,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                 {/* Live cards — separated with a label */}
                 {filtered.some(c => c.isLiveData) && (
                   <>
-                    <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#22d3ee", margin: "12px 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--chart-5)", margin: "12px 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
                       Live Updates
                     </div>
                     {filtered.filter(c => c.isLiveData).map((card, i) => (
@@ -13940,7 +13970,7 @@ function RealEstateStep({ values, onChange }) {
         return (
           <div key={prop.id} style={{
             background: isFirst ? "rgba(13,148,136,0.05)" : "var(--card-bg)",
-            border:`1px solid ${isFirst ? "rgba(13,148,136,0.25)" : "var(--card-border)"}`,
+            border:`1px solid ${isFirst ? "var(--tint-teal-600-25)" : "var(--card-border)"}`,
             borderRadius:10, padding:14,
           }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
@@ -13962,7 +13992,7 @@ function RealEstateStep({ values, onChange }) {
                   <button onClick={() => removeProperty(prop.id)} aria-label={`Remove ${prop.label || "property"}`}
                     style={{ background:"transparent", border:"none", color:"var(--text-faint)",
                       cursor:"pointer", fontSize: "var(--fs-body)", padding:"2px 4px", transition:"color 0.15s" }}
-                    onMouseEnter={e=>e.currentTarget.style.color="#ff6f7a"}
+                    onMouseEnter={e=>e.currentTarget.style.color="var(--chart-1)"}
                     onMouseLeave={e=>e.currentTarget.style.color="var(--text-faint)"}>
                     ✕
                   </button>
@@ -13996,7 +14026,7 @@ function RealEstateStep({ values, onChange }) {
               <span style={{ fontSize: "var(--fs-small)", color:"var(--text-muted)" }}>Net equity:</span>
               <span style={{ fontSize: "var(--fs-body)", fontWeight:700,
                 fontFamily:"'JetBrains Mono',monospace",
-                color: equity >= 0 ? "var(--positive)" : "#ff6f7a" }}>
+                color: equity >= 0 ? "var(--positive)" : "var(--chart-1)" }}>
                 {equity < 0 ? "-" : ""}{fmtDollar(Math.abs(equity))}
               </span>
               {(prop.income||0) > 0 && (
@@ -14218,7 +14248,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
                 border: s.isSettings
                   ? "2px solid rgba(148,163,184,0.4)"
                   : `2px solid ${i <= step ? "var(--positive)" : "var(--tint-white-15)"}`,
-                boxShadow: (!s.isSettings && i === step) ? "0 0 8px #0d948866" : "none",
+                boxShadow: (!s.isSettings && i === step) ? `0 0 8px ${withAlpha("#0d9488", "66")}` : "none",
               }}
             />
             <div>
@@ -14243,8 +14273,8 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
             gap: 10,
             padding: "10px 14px",
             marginBottom: 16,
-            background: "rgba(13,148,136,0.08)",
-            border: "1px solid rgba(13,148,136,0.25)",
+            background: "var(--tint-teal-600-08)",
+            border: "1px solid var(--tint-teal-600-25)",
             borderRadius: 10,
             flexWrap: "wrap",
           }}
@@ -14435,7 +14465,7 @@ function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
   const clampPct = (v) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
   const update = (i, patch) => onChangeSplits(splits.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   return (
-    <div style={{ marginLeft: 106, marginBottom: 8, padding: "8px 10px", background: "rgba(255,255,255,0.025)", border: `1px solid ${withAlpha(color, "33")}`, borderRadius: 6 }}>
+    <div style={{ marginLeft: 106, marginBottom: 8, padding: "8px 10px", background: "var(--tint-white-03)", border: `1px solid ${withAlpha(color, "33")}`, borderRadius: 6 }}>
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 6 }}>
         Split <strong style={{ color: "var(--text-primary)" }}>{acct.name}</strong> across buckets · rolls up to {fmtDollar(bal)}
       </div>
@@ -14625,7 +14655,7 @@ function SavingsPanel({ values, onChange }) {
                   <button
                     onClick={() => removeAccount(acct.id)}
                     style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 4px", opacity: 0.5 }}
-                    onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#ff6f7a"; }}
+                    onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "var(--chart-1)"; }}
                     onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "var(--text-muted)"; }}
                   >
                     ✕
@@ -14720,7 +14750,7 @@ function SavingsPanel({ values, onChange }) {
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>
             <span>Total: <strong style={{ color: "var(--text-primary)" }}>{fmtDollar(autoTotal)}</strong></span>
-            <span>Remaining: <strong style={{ color: "#ff6f7a" }}>{fmtDollar(remaining)}</strong></span>
+            <span>Remaining: <strong style={{ color: "var(--chart-1)" }}>{fmtDollar(remaining)}</strong></span>
           </div>
         </div>
       </ACard>
@@ -15289,14 +15319,14 @@ function AssumptionsPanel({ values, onChange }) {
               />
               <button
                 onClick={() => onChange("carveouts", (values.carveouts || []).filter((_, i) => i !== idx))}
-                style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 6px" }}
+                style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "var(--chart-1)", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 6px" }}
               >×</button>
             </div>
           ))}
           <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 6 }}>Label · $/yr · End year (calendar year when obligation ends)</div>
           <button
             onClick={() => onChange("carveouts", [...(values.carveouts || []), { id: Date.now().toString(), label: "", annual: 0, endYear: new Date().getFullYear() + 5 }])}
-            style={{ fontSize: "var(--fs-small)", background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.25)", color: "var(--accent)", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}
+            style={{ fontSize: "var(--fs-small)", background: "var(--tint-sky-500-10)", border: "1px solid var(--tint-sky-500-25)", color: "var(--accent)", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}
           >+ Add obligation</button>
         </div>
       </ACard>
@@ -15360,7 +15390,7 @@ function AssumptionsPanel({ values, onChange }) {
         {(values.taxFunding === "outside_cash") && (
           <div style={{
             marginTop: 8, padding: "10px 12px", borderRadius: 8,
-            background: "rgba(251,146,60,0.10)", border: "1px solid rgba(251,146,60,0.35)",
+            background: "var(--tint-orange-10)", border: "1px solid var(--tint-orange-35)",
             fontSize: "var(--fs-small)", color: "#fdba74", lineHeight: 1.55,
           }}>
             <strong>Legacy setting — now identical to 'From taxable'.</strong> This option used to
@@ -15422,7 +15452,7 @@ function AssumptionsPanel({ values, onChange }) {
             SS COLA) were ALSO in the sidebar's Macro & Sensitivity card, so this
             card was a second edit surface for one value; the trim removes that.
             The two rows above stay: they are plan GOALS, not model parameters. */}
-        <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(13,148,136,0.06)", border: "1px solid rgba(13,148,136,0.2)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55 }}>
+        <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--tint-teal-600-06)", border: "1px solid rgba(13,148,136,0.2)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55 }}>
           Inflation, cash return, Social Security COLA and your equity glide are model parameters, not plan
           facts — they now live in <strong style={{ color: "var(--accent-teal)" }}>Monte Carlo → ⚙ Advanced Settings</strong>,
           with the rest of the simulation settings.
@@ -15430,7 +15460,7 @@ function AssumptionsPanel({ values, onChange }) {
       </div>
 
       {/* HEALTHCARE SHOCK CARD */}
-      <ACard title="Healthcare Shock Model" accent="#ff6f7a" collapsible defaultOpen={false}>
+      <ACard title="Healthcare Shock Model" accent="var(--chart-1)" collapsible defaultOpen={false}>
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 12 }}>
           In each simulation year after the shock age, there is a random probability of a large one-time healthcare cost.
         </div>
@@ -15473,7 +15503,7 @@ function AssumptionsPanel({ values, onChange }) {
             placeholder="AIza..."
             style={{ width: "260px", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "var(--text-primary)", borderRadius: 6, padding: "4px 8px", fontSize: "var(--fs-label)", fontFamily: "'JetBrains Mono',monospace" }}
           />
-          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: "var(--fs-small)", color: "#6c9bff", marginLeft: 8 }}>Get free key →</a>
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: "var(--fs-small)", color: "var(--chart-2)", marginLeft: 8 }}>Get free key →</a>
         </ARow>
         {/* The list is fetched from Google when a key is present, because a
             hardcoded one is guaranteed to rot: ids get retired per-audience,
@@ -15654,7 +15684,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
             {spouseWorksPastPrimary && (
               <div style={{
                 marginTop: 4, padding: "10px 12px", borderRadius: 8,
-                background: "rgba(251,146,60,0.10)", border: "1px solid rgba(251,146,60,0.35)",
+                background: "var(--tint-orange-10)", border: "1px solid var(--tint-orange-35)",
                 fontSize: "var(--fs-small)", color: "#fdba74", lineHeight: 1.55,
               }}>
                 <strong>Not yet modelled past your retirement.</strong> Your spouse keeps working until
@@ -15721,7 +15751,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
             there. Duplicating the toggle here is the kind of thing that
             got removed elsewhere. */}
         {!values.spouse?.enabled && (
-          <div style={{ padding: "10px 12px", marginBottom: 16, background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ padding: "10px 12px", marginBottom: 16, background: "var(--tint-violet-600-08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
             <span>Modelling one benefit. Add a spouse to include <strong style={{ color: "#c4b5fd" }}>their</strong> benefit, claim age and survivor benefits.</span>
             {/* Index 0 is AboutYouPanel in ProfileWizard's PANELS array. */}
             <button
@@ -15775,7 +15805,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
                   its own effect. */}
               <div style={{
                 margin: "-8px 0 16px", padding: "8px 12px", borderRadius: 8, fontSize: "var(--fs-small)", lineHeight: 1.55,
-                background: sp.dob ? "rgba(124,58,237,0.08)" : "rgba(148,163,184,0.07)",
+                background: sp.dob ? "var(--tint-violet-600-08)" : "rgba(148,163,184,0.07)",
                 border: `1px solid ${sp.dob ? "rgba(167,139,250,0.28)" : "rgba(148,163,184,0.2)"}`,
                 color: sp.dob ? "#c4b5fd" : "var(--text-secondary)",
               }}>
@@ -15810,7 +15840,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
               {higherPia > 0 && (
                 <div style={{
                   margin: "2px 0 14px", padding: "9px 12px", borderRadius: 8, fontSize: "var(--fs-small)", lineHeight: 1.55,
-                  background: topUp > 0 ? "rgba(90,209,240,0.09)" : "rgba(148,163,184,0.08)",
+                  background: topUp > 0 ? "var(--tint-sky-07)" : "rgba(148,163,184,0.08)",
                   border: `1px solid ${topUp > 0 ? "var(--tint-sky-30)" : "rgba(148,163,184,0.22)"}`,
                   color: topUp > 0 ? "var(--accent-teal)" : "var(--text-secondary)",
                 }}>
@@ -15967,13 +15997,13 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
                           on a portfolio and an RMD that barely changed.
                         </li>
                       </ul>
-                      <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(251,146,60,0.25)", color: "#fcd9b6" }}>
+                      <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid var(--tint-orange-25)", color: "#fcd9b6" }}>
                         <strong>See what it costs:</strong> the <em>Stress Test</em> tab shows a
                         <strong> Widow&apos;s penalty</strong> card — your plan run twice, with and without this
                         death, on the same market paths — so the change in success rate is attributable to
                         the death alone.
                       </div>
-                      <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(251,146,60,0.25)", color: "#fcd9b6" }}>
+                      <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid var(--tint-orange-25)", color: "#fcd9b6" }}>
                         Survivor claiming is one of the highest-stakes decisions in Social Security and it
                         turns on both benefit amounts, two different full-retirement ages, health, and whether
                         the survivor is still working. AiRA does not model the earnings test. Get both figures
@@ -16079,7 +16109,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
             startYear: new Date().getFullYear(), endYear: null,
             growthMode: "pct", growthRate: 0, growthAmount: 0, growthCapYears: null, taxable: true,
           }])}
-          style={{ background: "rgba(14,165,233,0.1)", border: "1px dashed rgba(14,165,233,0.45)", borderRadius: 6, color: "var(--accent)", fontSize: "var(--fs-label)", fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
+          style={{ background: "var(--tint-sky-500-10)", border: "1px dashed var(--tint-sky-500-45)", borderRadius: 6, color: "var(--accent)", fontSize: "var(--fs-label)", fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
         >+ Add pension</button>
       </ACard>
 
@@ -16100,9 +16130,9 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         ))}
         <button
           onClick={() => onChange("otherIncomes", [...(values.otherIncomes || []), { id: Date.now().toString(), name: "", annual: 0, startYear: new Date().getFullYear(), endYear: null, growthMode: "pct", growthRate: 0, growthAmount: 0, growthCapYears: null, taxable: true }])}
-          style={{ background: "rgba(14,165,233,0.1)", border: "1px dashed rgba(14,165,233,0.45)", borderRadius: 6, color: "var(--accent)", fontSize: "var(--fs-label)", fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
-          onMouseEnter={e => e.currentTarget.style.background = "rgba(14,165,233,0.18)"}
-          onMouseLeave={e => e.currentTarget.style.background = "rgba(14,165,233,0.1)"}
+          style={{ background: "var(--tint-sky-500-10)", border: "1px dashed var(--tint-sky-500-45)", borderRadius: 6, color: "var(--accent)", fontSize: "var(--fs-label)", fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
+          onMouseEnter={e => e.currentTarget.style.background = "var(--tint-sky-500-18)"}
+          onMouseLeave={e => e.currentTarget.style.background = "var(--tint-sky-500-10)"}
         >+ Add another income source</button>
       </ACard>
 
@@ -16128,7 +16158,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
             <div key={ev.id} style={{ border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: 12, marginBottom: 10, background: "var(--tint-white-02)", position: "relative" }}>
               <button onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter(x => x.id !== ev.id))}
                 title="Remove this windfall"
-                style={{ position: "absolute", top: 8, right: 8, background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "2px 8px" }}>×</button>
+                style={{ position: "absolute", top: 8, right: 8, background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "var(--chart-1)", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "2px 8px" }}>×</button>
               <LumpPensionFields ev={ev} upd={upd} placeholder="Inheritance"
                 taxHint="(most inheritances are NOT ordinary income — leave unchecked unless it's an inherited pre-tax IRA distribution or similar)" />
             </div>
@@ -16140,7 +16170,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
             year: new Date().getFullYear() + 5, direction: "in",
             bucket: "taxable", taxable: false, inflate: false,
           }])}
-          style={{ background: "rgba(14,165,233,0.1)", border: "1px dashed rgba(14,165,233,0.45)", borderRadius: 6, color: "var(--accent)", fontSize: "var(--fs-label)", fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
+          style={{ background: "var(--tint-sky-500-10)", border: "1px dashed var(--tint-sky-500-45)", borderRadius: 6, color: "var(--accent)", fontSize: "var(--fs-label)", fontWeight: 600, padding: "6px 12px", cursor: "pointer", marginTop: 8 }}
         >+ Add a windfall</button>
       </ACard>
 
@@ -16217,7 +16247,7 @@ function PensionEntry({ type, onTypeChange, onRemove, children }) {
           );
         })}
         <button onClick={onRemove} title="Remove this pension"
-          style={{ marginLeft: "auto", background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "2px 8px" }}>×</button>
+          style={{ marginLeft: "auto", background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "var(--chart-1)", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-label)", padding: "2px 8px" }}>×</button>
       </div>
       {children}
     </div>
@@ -16324,7 +16354,7 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
           onMouseDown={(e) => e.preventDefault()}
           onClick={onRemove}
           style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 4px", opacity: 0.5 }}
-          onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#ff6f7a"; }}
+          onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "var(--chart-1)"; }}
           onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "var(--text-muted)"; }}
         >✕</button>
       </div>
@@ -16509,7 +16539,7 @@ function ExpenseImport({ values, onChange }) {
       </div>
 
       {error && (
-        <div style={{ marginTop: 8, fontSize: "var(--fs-small)", color: "#fca5a5", background: "rgba(255,111,122,0.1)", border: "1px solid var(--tint-red-30)", borderRadius: 6, padding: "6px 10px" }}>
+        <div style={{ marginTop: 8, fontSize: "var(--fs-small)", color: "#fca5a5", background: "var(--tint-red-08)", border: "1px solid var(--tint-red-30)", borderRadius: 6, padding: "6px 10px" }}>
           ⚠ {error}
         </div>
       )}
@@ -16539,7 +16569,7 @@ function ExpenseImport({ values, onChange }) {
           </div>
           <button
             onClick={clearImport}
-            style={{ flexShrink: 0, fontSize: "var(--fs-small)", background: "rgba(255,111,122,0.12)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}
+            style={{ flexShrink: 0, fontSize: "var(--fs-small)", background: "var(--bg-danger)", border: "1px solid var(--tint-red-30)", color: "var(--chart-1)", borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}
           >Clear</button>
         </div>
       )}
@@ -16650,7 +16680,7 @@ function ExpensesPanel({ values, onChange }) {
           future year rather than running continuously. Additive on top of
           the base spend, so the withdrawal strategy still governs the
           recurring plan. */}
-      <ACard title="Planned One-Off Expenses" accent="#fb923c"
+      <ACard title="Planned One-Off Expenses" accent="var(--chart-3)"
         desc="Big costs you can see coming — a new roof, a car, a wedding, a heavy travel year. Enter today's price; AiRA inflates it to the year it happens.">
         {/* Outflows only. cashFlowEvents also stores inflows (pension
             lump sums, inheritances — direction:"in"), which are deposits
@@ -16700,7 +16730,7 @@ function ExpensesPanel({ values, onChange }) {
               />
                 <button
                   onClick={() => onChange("cashFlowEvents", (values.cashFlowEvents || []).filter(x => x.id !== ev.id))}
-                  style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "#ff6f7a", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 6px" }}
+                  style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "var(--chart-1)", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 6px" }}
                 >×</button>
               </div>
               {/* Committed vs deferrable decides whether the guardrails may trim
@@ -16718,7 +16748,7 @@ function ExpensesPanel({ values, onChange }) {
             ...(values.cashFlowEvents || []),
             { id: Date.now().toString(), label: "", amount: 0, year: new Date().getFullYear() + 5, recurEveryYears: 0, recurUntilYear: null, deferrable: false, direction: "out" },
           ])}
-          style={{ fontSize: "var(--fs-small)", background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.25)", color: "#fb923c", borderRadius: 6, padding: "5px 12px", cursor: "pointer", marginTop: 4 }}
+          style={{ fontSize: "var(--fs-small)", background: "var(--tint-orange-10)", border: "1px solid var(--tint-orange-25)", color: "var(--chart-3)", borderRadius: 6, padding: "5px 12px", cursor: "pointer", marginTop: 4 }}
         >+ Add planned expense</button>
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginTop: 8, lineHeight: 1.5 }}>
           Leave <strong style={{ color: "var(--text-muted)" }}>Every</strong> blank for a one-time cost. Set it to 7 for a car
@@ -16753,7 +16783,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
     otherIncAtRetire, housingAtRetire, carveoutAtRetire, annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } = wr;
   const retireAge = values.retireAge || 65;
   const inSafeBand = steadyWRpct >= 5.0 && steadyWRpct <= 5.5;
-  const wrColor = inSafeBand ? "var(--positive)" : (steadyWRpct > 5.5 ? "#ff6f7a" : "var(--accent-gold)");
+  const wrColor = inSafeBand ? "var(--positive)" : (steadyWRpct > 5.5 ? "var(--chart-1)" : "var(--accent-gold)");
 
   const activeScenario = twoHousehold
     ? "Claiming non-residency — no state income tax"
@@ -16761,7 +16791,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: "var(--fs-label)", color: "#7dd3fc" }}>
+      <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid var(--tint-sky-500-25)", borderRadius: 8, padding: "10px 14px", fontSize: "var(--fs-label)", color: "#7dd3fc" }}>
         <strong>State tax:</strong> {activeScenario} · Sidebar toggle → "Non-resident (no state tax)"
       </div>
 
@@ -16837,7 +16867,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
           + widow's penalty) lives there now — this card is a pointer, kept
           so users who learned to find SS here aren't left staring at a blank. */}
       <ACard title="Social Security" accent="#7c3aed">
-        <div style={{ padding: "10px 12px", background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ padding: "10px 12px", background: "var(--tint-violet-600-08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <span>Now in the <strong style={{ color: "#c4b5fd" }}>Money In</strong> step — SS is income, not a withdrawal setting.</span>
           {/* Index 2 is ContribPanel in ProfileWizard's PANELS array. */}
           <button
@@ -16884,7 +16914,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             <div style={{
               marginBottom: 14,
               padding: "10px 12px",
-              background: inSafeBand ? "rgba(52,211,153,0.08)" : "var(--tint-amber-08)",
+              background: inSafeBand ? "var(--tint-green-07)" : "var(--tint-amber-08)",
               border: `1px solid ${withAlpha(wrColor, "40")}`,
               borderRadius: 8,
             }}>
@@ -16921,11 +16951,11 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
                 here, and points at the one place they are now edited rather
                 than keeping a second set of controls (rule 1: single point of
                 control). */}
-            <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(13,148,136,0.06)", border: "1px solid rgba(13,148,136,0.2)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55 }}>
+            <div style={{ marginTop: 14, padding: "10px 14px", background: "var(--tint-teal-600-06)", border: "1px solid rgba(13,148,136,0.2)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55 }}>
               Floor and ceiling are edited in <strong style={{ color: "var(--accent-teal)" }}>Monte Carlo → ⚙ Advanced Settings</strong> →
               Spending Guardrails, alongside the rest of the simulation settings. The values in force are shown above.
             </div>
-            <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(14,165,233,0.06)", border: "1px solid rgba(14,165,233,0.18)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55 }}>
+            <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(14,165,233,0.06)", border: "1px solid var(--tint-sky-500-18)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55 }}>
               <div style={{ fontWeight: 700, color: "#7dd3fc", marginBottom: 6 }}>Guyton‑Klinger — the 5 rules</div>
               <div style={{ marginLeft: 8, marginBottom: 6 }}>
                 <strong>1. Initial draw.</strong> Derived from your spending ÷ portfolio at retirement. Safe range is 5–5.5%.<br/>
@@ -18512,7 +18542,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     <span style={{ color: "#059669" }}>Rental:</span> {assumptions.abReliability || 80}% reliability per year
                   </div>
                   <div>
-                    <span style={{ color: "#ff6f7a" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
+                    <span style={{ color: "var(--chart-1)" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
                   </div>
                   {/* One-off events read from `params` — the object the
                       engines actually receive — so this line can never
@@ -18541,7 +18571,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     />
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ color: "#fb923c" }}>Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(2)}% μ
+                    <span style={{ color: "var(--chart-3)" }}>Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(2)}% μ
                     <Hint
                       text={`Post‑retirement expected return. "μ" (mu) is the mean annual return of a ${assumptions.postRetireEq ?? 70}% stocks / ${100 - (assumptions.postRetireEq ?? 70)}% bonds mix. The lower equity weight vs. Phase 1 means less volatility and a slightly lower average return once you're drawing down.`}
                     />
@@ -18719,7 +18749,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               onClick={runSimulation}
               disabled={running}
               style={{
-                background: stale ? "linear-gradient(135deg,#3d6fe0,#6c9bff)" : undefined,
+                background: stale ? "linear-gradient(135deg,#3d6fe0,var(--chart-2))" : undefined,
               }}
             >
               {running ? `Running ${Math.round(Number(params?.mcPaths) || MC_PATHS).toLocaleString()} paths...` : stale ? "⚠ Inputs changed — Re-run" : "▶ Run Monte Carlo"}
@@ -18736,7 +18766,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             {stale && (
               <div
                 style={{
-                  background: "rgba(244,211,94,0.12)",
+                  background: "var(--bg-warning)",
                   border: "1px solid rgba(244,211,94,0.4)",
                   borderRadius: 8,
                   padding: "7px 12px",
@@ -19004,7 +19034,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         <SimMethodModal
                           params={params}
                           withdrawalStrategy={assumptions.withdrawalStrategy}
-                          trigger={<span aria-label="How this simulation works" style={{ color: "#6c9bff", cursor: "pointer", fontSize: 10.5, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px dashed rgba(96,165,250,0.45)", display: "inline-flex", alignItems: "center", gap: 4 }}><InfoIcon size={12} /> How this works</span>}
+                          trigger={<span aria-label="How this simulation works" style={{ color: "var(--chart-2)", cursor: "pointer", fontSize: 10.5, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px dashed rgba(96,165,250,0.45)", display: "inline-flex", alignItems: "center", gap: 4 }}><InfoIcon size={12} /> How this works</span>}
                         />
                         <MCAdvancedSettings p={params} onAssumptionChange={updateAssumption} />
                       </div>
@@ -19218,7 +19248,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         This deletes your saved plan and returns to the quick-start screen. Export your profile first if you want to keep it.
                         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                           <button type="button" className="cfg-btn" style={{ margin: 0 }} onClick={() => setConfirmStartOver(false)}>Cancel</button>
-                          <button type="button" className="cfg-btn" style={{ margin: 0, background: "#ff6f7a" }}
+                          <button type="button" className="cfg-btn" style={{ margin: 0, background: "var(--chart-1)" }}
                             onClick={() => { skipAutosave.current = true; resetLocalProfile(); window.location.reload(); }}>
                             Delete and start over
                           </button>

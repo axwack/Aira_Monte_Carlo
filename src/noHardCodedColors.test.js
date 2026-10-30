@@ -8,7 +8,7 @@ const skip = (l) => /^\s*(\/\/|\/\*|\*|\{\/\*)/.test(l) || /^\s*--[a-z0-9-]+\s*:
 // Colors should come from the theme (var(--positive), var(--accent-gold) ...) so one edit re-themes the app and
 // contrast is checked in one place. This is a ratchet: a new literal color fails the build; after replacing
 // some, lower MAX to the new count.
-const MAX = 728;
+const MAX = 455;
 
 test("hard-coded colors in App.jsx never grow past the ratchet", () => {
   const n = SRC.split("\n").filter((l) => !skip(l)).reduce((sum, l) => sum + (l.match(COLOR) || []).length, 0);

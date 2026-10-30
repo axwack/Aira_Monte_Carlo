@@ -44,7 +44,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function TaxDetailsModal(",
       "description": "Click-open Tax Calculation Details modal. Reads the waterfall row only (rule 8) — no second tax computation.",
-      "sha": "552aa4a75d7983dd"
+      "sha": "5d66347a50196ece"
     },
     {
       "id": "mc-advanced-settings",
@@ -100,7 +100,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function InfoModal(",
       "description": "SHARED: the dialog shell both agents use. deepseek-flash added maxWidth/bodyMaxHeight + controlled open/onClose. Change it carefully and re-stamp.",
-      "sha": "1e4027e7157173e7"
+      "sha": "a092f657bce084ef"
     },
     {
       "id": "claude-not-entered-rows",
@@ -132,7 +132,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function IncomeExpenseStack(",
       "description": "Income/expense legend panel: dash for never-entered rows, provenance footnotes.",
-      "sha": "8420a288199764e6"
+      "sha": "f63c949589976442"
     },
     {
       "id": "claude-verdict-header",
