@@ -1545,9 +1545,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     for (let y = 0; y < accYrs; y++) {
       // Optional flat pre-retirement return (nominal %). Blank keeps the historical draw.
       // seqToday: the prescribed sequence starts now, so it covers these years first.
-      const ret = (seqToday && seqOverride && y < seqOverride.length)
-        ? seqYear(seqOverride[y], glidepathEquityWeight(p.currentAge + y, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC), rand).r
-        : preRetFlat ?? portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
+      let ret;
+      if (seqToday && seqOverride && y < seqOverride.length) {
+        ret = seqYear(seqOverride[y], glidepathEquityWeight(p.currentAge + y, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC), rand).r;
+      } else {
+        // Draw even when a flat rate is set, so the retirement years keep the same market draws.
+        ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
+        if (preRetFlat != null) ret = preRetFlat;
+      }
       pretax   = Math.max(0, pretax   * (1 + ret));
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
@@ -11053,8 +11058,8 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
                   </div>
                   <button type="button" onClick={() => setCrashOpen((o) => !o)} aria-expanded={crashOpen}
                     style={{ marginTop: 8, width: "100%", padding: "7px 0", minHeight: 32, borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
-                      fontSize: "var(--fs-label)", fontWeight: 600, color: "#f87171", background: crashOpen ? "rgba(248,113,113,0.12)" : "transparent",
-                      border: "1px solid rgba(248,113,113,0.35)" }}>
+                      fontSize: "var(--fs-label)", fontWeight: 600, color: SEQ_CRASH, background: crashOpen ? "var(--bg-danger)" : "transparent",
+                      border: `1px solid ${SEQ_CRASH}` }}>
                     {crashOpen ? "▴ Close crash editor" : "▾ Edit the crash: real history or your own years"}
                   </button>
                 </div>
@@ -11174,7 +11179,7 @@ const parseSeqText = (t) => t.split(/[\s,;]+/).filter((x) => x !== "").slice(0, 
 // same runMC the rest of the app uses. Lifts the result to ScenariosTab, which
 // shows it in the stress-test slot below.
 const SEQ_NAMES = { 1929: "Great Depression", 1966: "Stagflation", 1973: "Oil shock", 2000: "Dot-com bust", 2007: "Financial crisis" };
-const SEQ_CRASH = "#f87171";
+const SEQ_CRASH = "var(--negative)";
 
 // Bars for a run of yearly returns: below the line is red, above is teal, so a
 // crash reads as a picture before it reads as numbers. `items` = [{label, r}].
@@ -11252,7 +11257,7 @@ function SequenceBuilder({ p, onResult }) {
   const pill = (on) => ({
     fontSize: "var(--fs-label)", padding: "6px 14px", minHeight: 32, borderRadius: 16, cursor: "pointer", fontFamily: "inherit",
     border: `1px solid ${on ? SEQ_CRASH : "var(--card-border)"}`,
-    background: on ? "rgba(248,113,113,0.14)" : "transparent", color: on ? SEQ_CRASH : "var(--text-secondary)",
+    background: on ? "var(--bg-danger)" : "transparent", color: on ? SEQ_CRASH : "var(--text-secondary)",
   });
   const lab = { fontSize: "var(--fs-label)", color: "var(--text-muted)", marginRight: 8 };
   const head = { fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 8 };
@@ -11278,7 +11283,7 @@ function SequenceBuilder({ p, onResult }) {
               return (
                 <button key={y} type="button" onClick={() => setStartYear(y)} aria-pressed={on}
                         style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", minHeight: 72,
-                          border: `1px solid ${on ? SEQ_CRASH : "var(--card-border)"}`, background: on ? "rgba(248,113,113,0.10)" : "var(--card-bg)",
+                          border: `1px solid ${on ? SEQ_CRASH : "var(--card-border)"}`, background: on ? "var(--bg-danger)" : "var(--card-bg)",
                           color: "var(--text-primary)" }}>
                   <div style={{ fontSize: "var(--fs-h1)", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: on ? SEQ_CRASH : "var(--text-primary)" }}>{y}</div>
                   <div style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)" }}>{SEQ_NAMES[y]}</div>
@@ -11397,6 +11402,8 @@ function ScenariosTab({
   const [showSeq, setShowSeq] = useState(false);
   // A run from the sequence builder replaces the fixed 2000–2012 view below it.
   const [seqRun, setSeqRun] = useState(null);
+  // A builder result belongs to the plan it ran on; drop it when the plan changes.
+  useEffect(() => setSeqRun(null), [baseParams]);
   // Destructured, not read as stress.pcts: the array goes whole to FanChart,
   // which deflates it itself (see noRawMcAccess.test.js).
   const { pcts: stressPcts } = stress ?? {};
@@ -11593,7 +11600,7 @@ function PreRetireReturnField({ value, onChange }) {
         <input type="number" step={0.5} placeholder="historical" value={value ?? ""}
                onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
                onFocus={selectAllOnFocus}
-               style={{ width: 90, background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 6, padding: "3px 6px", fontSize: "var(--fs-label)" }} />
+               style={{ ...SEQ_INPUT_STYLE, width: 90 }} />
       </label>
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", lineHeight: 1.45, marginTop: 4 }}>
         Blank: balances grow with real market draws until you retire. 0 = no growth, only contributions. Re-run to apply.

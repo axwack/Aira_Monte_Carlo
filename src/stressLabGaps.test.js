@@ -226,3 +226,13 @@ describe("Stress Lab panels render", () => {
     act(() => b.root.unmount());
   });
 });
+
+test("a flat pre-retirement rate leaves the retirement-year market draws unchanged", () => {
+  // Accumulates 55 -> 60, then overspends, so the single path always fails and keeps its rows.
+  const plan = { ...P, retireAge: 60, sp: 400_000 };
+  const stocks = (v) => runMC({ ...plan, preRetireReturn: v }, 90, 1, 7, false, null, false, true).failures.worst.rows.map((r) => r.stock);
+  const [flat, blank] = [stocks(6), stocks("")];
+  const n = Math.min(flat.length, blank.length); // the richer plan may run out later
+  expect(n).toBeGreaterThan(3);
+  expect(flat.slice(0, n)).toEqual(blank.slice(0, n));
+});
