@@ -4479,7 +4479,7 @@ function CollapsibleAboutCard({ entry, defaultOpen = false, open: controlled, on
 function AboutButton() {
   const [open, setOpen] = React.useState(false);
   const [tab, setTab] = React.useState(0);
-  const TABS = ["👤 About Me", "📦 The App"];
+  const TABS = ["About Me", "The App"];
 
   const tabBtn = (i) => ({
     flex:1, padding:"7px 4px", fontSize: "var(--fs-small)", fontWeight: tab===i ? 700 : 500,
@@ -5965,7 +5965,7 @@ function IncomeExpensesChart({ p, inf }) {
         footnote="Where each row comes from: Annuity/Rental = your Annuity/Benefit input plus each property's Annual income. Social Security and Pension/Other come from their own inputs. Withdrawals from 401(k)/IRA, taxable, cash and Roth accounts are all in Savings & 401(k)/IRA Drawdown, never in Annuity/Rental."
       />
       <IncomeExpenseStack
-        title="📉 Estimated Expenses"
+        title="Estimated Expenses"
         subtitle="Living costs, housing, taxes, and carveouts (e.g. medical, long-term care) — hover a year for its breakdown"
         data={data} categories={EXPENSE_CATS}
         hoverYr={hoverYr} hoverRow={hoverRow}
@@ -6491,8 +6491,8 @@ const modeDescs = {
         </span>
         <span style={{ color: "var(--text-faint)" }}>
           · {isNoTaxState
-            ? "🌴 Solo mode (lower spend, no state tax)"
-            : `🏠 Both in ${params.stateOfResidence || "your state"} (full spend, state tax applies)`}
+            ? "Solo mode (lower spend, no state tax)"
+            : `Both in ${params.stateOfResidence || "your state"} (full spend, state tax applies)`}
         </span>
       </div>
       {(() => {
@@ -6722,7 +6722,7 @@ const modeDescs = {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {/* ── Inputs ── */}
             <div className="chart-card">
-              <div className="ct">🎯 Current Year Conversion Calculator</div>
+              <div className="ct">Current Year Conversion Calculator</div>
                 <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", fontStyle: "italic", marginBottom: 10 }}>
                     Enter your expected income for {cyYear}, then see how much bracket room remains 
                     for a Roth conversion. Give the recommended number to your CPA by December.
@@ -6990,7 +6990,7 @@ const modeDescs = {
               <span>🔮 <span style={{ color: "var(--accent-teal)" }}>Default</span> = optimizer projection</span>
               <span>📅 <span style={{ color: "var(--text-faint)" }}>Gray</span> = historical (already past)</span>
               <span style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
-                💰 Net→Roth basis:{" "}
+                Net→Roth basis:{" "}
                 {params?.taxFunding === "from_conv"
                   ? <span style={{ color: "#ff6f7a" }}>From conversion (Conv − total tax)</span>
                   : params?.taxFunding === "outside_cash"
@@ -9826,7 +9826,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
   return (
     <>
       <div className="chart-card">
-        <div className="ct">📈 Steady-return schedule · {strategyLabel}</div>
+        <div className="ct">Steady-return schedule · {strategyLabel}</div>
         <div className="ct-sub">
           One fixed path, no market swings: median historical returns every year
           ({expectedReturn(p.preRetireEq ?? 91).toFixed(2)}% before age {resolveGlidepathSwitchAge(p)} / {expectedReturn(p.postRetireEq ?? 70).toFixed(2)}% after) · Inflation {inf}%
@@ -9901,7 +9901,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
 
       <div className="chart-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div className="ct">📋 Year‑by‑Year Schedule</div>
+          <div className="ct">Year‑by‑Year Schedule</div>
           <button onClick={() => setShowTable(!showTable)} className="mbtn" style={{ fontSize: "var(--fs-label)", padding: "3px 8px" }}>{showTable ? "Hide Table" : "Show Table"}</button>
         </div>
         {showTable && (
@@ -10257,7 +10257,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
       <div className="chart-card" style={{ borderLeft: `3px solid ${DC[directive.type]}` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
           <div>
-            <div style={{ fontSize: "var(--fs-body)", fontWeight: 700, color: "#e2e8f0" }}>📋 {monthName} {now.getFullYear()} — Retirement Directive</div>
+            <div style={{ fontSize: "var(--fs-body)", fontWeight: 700, color: "#e2e8f0" }}>{monthName} {now.getFullYear()} — Retirement Directive</div>
             <div style={{ fontSize: "var(--fs-label)", color: DC[directive.type], fontWeight: 600, marginTop: 3 }}>
               {DI[directive.type]} {directive.title}
             </div>
@@ -10324,7 +10324,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
       {runway && (
         <div className="chart-card" style={{ borderLeft: `3px solid ${runway.depleted ? "var(--accent-gold)" : "#4fd88f"}` }}>
           <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-muted)", marginBottom: 6 }}>
-            🧭 Bucket 1 Runway
+            Bucket 1 Runway
           </div>
           {runway.depleted ? (
             <div style={{ fontSize: "var(--fs-body)", color: "#e2e8f0", lineHeight: 1.6 }}>
@@ -10332,7 +10332,7 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
               Around then, plan to move about <strong style={{ color: "var(--accent-gold)" }}>{fmtDollar(runway.refillAmount)}</strong>{" "}
               from Bucket 2 to refill it to your {b1Years}-year target.
               <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginTop: 6 }}>
-                Based on your projected withdrawal schedule (Scenarios → 📋 Withdrawal Plan) — not a separate
+                Based on your projected withdrawal schedule (Scenarios → Withdrawal Plan) — not a separate
                 projection, and not a crash forecast. A market drop or a spending change would move this date.
               </div>
             </div>
@@ -13104,7 +13104,7 @@ function MilestonesSection({ params, rmdAge }) {
       >
         <span style={{ fontSize: "var(--fs-small)", color: "#6366f1", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
         <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#6366f1" }}>
-          📅 Age Milestones
+          Age Milestones
         </span>
         <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginLeft: 4 }}>({milestones.length} milestones)</span>
       </button>
@@ -13225,7 +13225,7 @@ function ActionPlanRow({ card, isSelected, onClick }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: C.label, marginBottom: 1, display: "flex", alignItems: "center", gap: 5 }}>
           {card.category}
-          {card.isLiveData  && <span style={{ color: "#22d3ee",  fontSize: "var(--fs-small)" }}>🌐 LIVE</span>}
+          {card.isLiveData  && <span style={{ color: "#22d3ee",  fontSize: "var(--fs-small)" }}>LIVE</span>}
           {card.aiGenerated && !card.isLiveData && <span style={{ color: "var(--accent-purple)", fontSize: "var(--fs-small)" }}>✦ AI</span>}
           {card.aiChecked && (
             <span style={{
@@ -13234,7 +13234,7 @@ function ActionPlanRow({ card, isSelected, onClick }) {
               border:     `1px solid ${card.aiNote ? "rgba(99,102,241,0.3)" : "rgba(71,85,105,0.3)"}`,
               borderRadius: 4, padding: "1px 5px", fontSize: "var(--fs-small)", fontWeight: 700,
             }}>
-              🤖 {card.aiNote ? "AI insight" : "AI reviewed"}
+              {card.aiNote ? "AI insight" : "AI reviewed"}
             </span>
           )}
         </div>
@@ -13318,7 +13318,7 @@ function CardDetailPanel({ card, onClose }) {
           background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)",
           borderRadius: 8, padding: "10px 14px", marginBottom: 14,
         }}>
-          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#818cf8", marginBottom: 4 }}>🤖 AI INSIGHT</div>
+          <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#818cf8", marginBottom: 4 }}>AI INSIGHT</div>
           <div style={{ fontSize: "var(--fs-label)", color: "var(--accent-purple)", lineHeight: 1.55 }}>{card.aiNote}</div>
         </div>
       ) : card.aiChecked ? (
@@ -13334,7 +13334,7 @@ function CardDetailPanel({ card, onClose }) {
 
       {/* Source */}
       {card.source && (
-        <div style={{ fontSize: "var(--fs-small)", color: "#22d3ee", marginBottom: 12 }}>📡 Source: {card.source}</div>
+        <div style={{ fontSize: "var(--fs-small)", color: "#22d3ee", marginBottom: 12 }}>Source: {card.source}</div>
       )}
 
       {/* Deadline */}
@@ -13499,7 +13499,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
               transition: "all 0.2s",
             }}
           >
-            {loadingAI ? "Analyzing…" : cards ? "✓ AI Applied" : "🤖 Run AI Analysis"}
+            {loadingAI ? "Analyzing…" : cards ? "AI Applied" : "Run AI Analysis"}
           </button>
 
           {loadingAI && (
@@ -13574,7 +13574,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                       fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
                     }}
                   >
-                    🔑 Restore my credits
+                    Restore my credits
                   </button>
                 </div>
               ) : (
@@ -13594,7 +13594,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                 whiteSpace:   "nowrap",
               }}
             >
-              💳 Buy Credits
+              Buy Credits
             </button>
             {getStoredRecoveryLink() && (
               <button
@@ -13606,7 +13606,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                   textUnderlineOffset: 3, whiteSpace: "nowrap", padding: 0, marginLeft: 4,
                 }}
               >
-                🔑 recovery link
+                recovery link
               </button>
             )}
           </div>
@@ -13680,7 +13680,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
         return (
           <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 9, padding: "12px 15px", marginBottom: 4 }}>
             <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#818cf8", marginBottom: 8 }}>
-              🎯 Retirement Date Solver — Target {fmtDollar(target)}
+              Retirement Date Solver — Target {fmtDollar(target)}
             </div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 8 }}>
               Portfolio today: <span style={{ color: "#e2e8f0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(currentPort)}</span>
@@ -13773,7 +13773,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                   boxShadow:    canLive && !loadingLive ? "0 2px 8px rgba(6,182,212,0.25)" : "none",
                 }}
               >
-                {loadingLive ? "Searching…" : liveCards ? "🔄 Refresh Live" : "🌐 Live Updates"}
+                {loadingLive ? "Searching…" : liveCards ? "Refresh Live" : "Live Updates"}
               </button>
             </div>
 
@@ -13786,7 +13786,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
             )}
             {!liveError && liveCards && liveCards.length > 0 && (
               <div style={{ fontSize: "var(--fs-small)", color: "#22d3ee", marginBottom: 8 }}>
-                🌐 Found {liveCards.length} live update{liveCards.length > 1 ? "s" : ""} — see below.
+                Found {liveCards.length} live update{liveCards.length > 1 ? "s" : ""} — see below.
               </div>
             )}
 
@@ -13815,7 +13815,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                 {filtered.some(c => c.isLiveData) && (
                   <>
                     <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "#22d3ee", margin: "12px 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
-                      🌐 Live Updates
+                      Live Updates
                     </div>
                     {filtered.filter(c => c.isLiveData).map((card, i) => (
                       <ActionPlanRow
@@ -14230,7 +14230,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
                 fontFamily: "inherit",
               }}
             >
-              🔁 Reload Saved
+              Reload Saved
             </button>
             <button
               onClick={handleSave}
@@ -14246,7 +14246,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
                 fontWeight: 600,
               }}
             >
-              💾 Save
+              Save
             </button>
           </div>
         </div>
@@ -14506,7 +14506,7 @@ function SavingsPanel({ values, onChange }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <ACard title="💰 Accounts" accent="var(--accent-teal)" desc="Every balance the plan draws from, grouped by tax treatment — the grouping is what decides the withdrawal order and the tax on each dollar.">
+      <ACard title="Accounts" accent="var(--accent-teal)" desc="Every balance the plan draws from, grouped by tax treatment — the grouping is what decides the withdrawal order and the tax on each dollar.">
       <BucketLegend />
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.5, marginTop: -4 }}>
         B1 / B2 / B3 sets how soon each account's money is needed. Each account starts at its category's default; ↺ appears when you change it.
@@ -14644,8 +14644,8 @@ function SavingsPanel({ values, onChange }) {
       })}
       </ACard>
 
-      <ACard title="🎯 Early-Retirement Target" accent="var(--positive)" desc="Your goal number, and how the accounts above track against it.">
-        <WFieldRow label="🎯 Target Portfolio for Early Retirement" helper={`Goal: ${fmtDollar(GOAL)}`}>
+      <ACard title="Early-Retirement Target" accent="var(--positive)" desc="Your goal number, and how the accounts above track against it.">
+        <WFieldRow label="Target Portfolio for Early Retirement" helper={`Goal: ${fmtDollar(GOAL)}`}>
           <ANumInput value={values.earlyRetireTarget || 0} onSet={(v) => onChange("earlyRetireTarget", v)} min={0} max={MAX_MONEY_INPUT} step={50_000} />
         </WFieldRow>
         <div style={{ marginTop: 10 }}>
@@ -14783,7 +14783,7 @@ function AboutYouPanel({ values, onChange }) {
         </WFieldRow>
       </ACard>
 
-      <ACard title="📅 Plan Horizon At A Glance" accent="var(--accent-teal)" desc="Derived from your birthday and the two ages above — nothing to edit here.">
+      <ACard title="Plan Horizon At A Glance" accent="var(--accent-teal)" desc="Derived from your birthday and the two ages above — nothing to edit here.">
         {[
           { label: "Years to retirement", val: yearsToRetire, color: "var(--accent-teal)" },
           { label: "Years in retirement", val: yearsInRetire, color: "var(--accent-purple)" },
@@ -15159,7 +15159,7 @@ function AssumptionsPanel({ values, onChange }) {
           <Toggle
             val={values.useJointRmdTable}
             onChange={(v) => onChange("useJointRmdTable", v)}
-            label="👥 Use Joint & Last Survivor RMD Table (spouse >10 yrs younger)"
+            label="Use Joint & Last Survivor RMD Table (spouse >10 yrs younger)"
             accent="var(--accent-purple)"
           />
         )}
@@ -15264,7 +15264,7 @@ function AssumptionsPanel({ values, onChange }) {
           and Monte Carlo runs use the same setting.
         </div>
         <div style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", marginBottom: 6, marginTop: 4 }}>
-          🎓 FAFSA / CSS College-Aid Protection — enter a year to cap Roth conversions during your child's college aid window. Leave blank to disable.
+          FAFSA / CSS College-Aid Protection — enter a year to cap Roth conversions during your child's college aid window. Leave blank to disable.
         </div>
         <div style={{ display: "flex", gap: 16, marginLeft: 4 }}>
           <ARow label="FAFSA cap through year" desc="Cap conversions at 12% bracket through this year (FAFSA uses 2-yr prior income). Leave blank to skip.">
@@ -15336,7 +15336,7 @@ function AssumptionsPanel({ values, onChange }) {
           The <strong style={{ color: "var(--accent)" }}>account draw order</strong> (which bucket drains first —
           tax-reactive, custom, or pre-tax first) and the sourcing guardrails — pre-tax bracket ceiling,
           IRMAA guard, Roth reserve, and SS-torpedo warnings — are set on{" "}
-          <strong style={{ color: "var(--accent-teal)" }}>Scenarios → 📋 Withdrawal Plan</strong>, right above the
+          <strong style={{ color: "var(--accent-teal)" }}>Scenarios → Withdrawal Plan</strong>, right above the
           waterfall they shape. The distribution strategy stays here in Profile.
         </div>
       </ACard>
@@ -15519,7 +15519,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
       </div>
 
       {/* ── Income card 1: Annual Contributions (inputs + savings total together) ── */}
-      <ACard title="💰 Annual Contributions" desc="Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.">
+      <ACard title="Annual Contributions" desc="Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.">
         <div style={{ fontSize: "var(--fs-small)", color: "#f4d35e", marginBottom: 10, lineHeight: 1.4 }}>⚠ Employer Contribution and Brokerage/After-Tax Savings aren't capped by the tool — the IRS doesn't set a hard per-field limit on either, but real-world amounts are still bounded by your actual plan and income. 401(k), HSA, and Roth IRA below stay capped at their real legal limits.</div>
         <WFieldRow label="401(k) / 403(b) / 457(b) — pre-tax only" helper="Your PRE-TAX employee deferral. Roth 401(k)/403(b) money does NOT belong here — this field is taxed as ordinary income on withdrawal and drives your future RMDs. Put Roth deferrals in the Roth line below until a dedicated Roth 401(k) field exists (REQUIREMENTS §22.1).">
           <ANumInput value={annual401k} onSet={(v) => onChange("contrib", v)} min={0} max={250_000} step={500} suffix="/yr" />
@@ -15625,7 +15625,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
 
         {/* Total belongs WITH the contributions that make it up (logical flow). */}
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <span style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)" }}>💰 Total annual savings <span style={{ color: "var(--text-faint)" }}>
+          <span style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)" }}>Total annual savings <span style={{ color: "var(--text-faint)" }}>
             {spouseTotal > 0
               ? `(you ${fmtDollar(annual401k + employerContrib + rothContrib)} + spouse ${fmtDollar(spouseTotal)} + HSA ${fmtDollar(hsaAnnual)} + brokerage ${fmtDollar(taxableContrib)})`
               : "(incl. employer, HSA, Roth & brokerage)"}
@@ -15988,7 +15988,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           selector is embedded per pension — people commonly have more than
           one, and each can be a different kind. Switching type migrates
           the entry between the two stores. */}
-      <ACard title="🏦 Pensions">
+      <ACard title="Pensions">
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.55 }}>
           Defined-benefit income. Pick the type for each one — AiRA models them differently, and
           getting it wrong is the most common source of bad numbers here.
@@ -16036,7 +16036,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
       </ACard>
 
       {/* Income card: Other Income */}
-      <ACard title="💵 Other Income">
+      <ACard title="Other Income">
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.55 }}>
           Everything that isn't a pension — part-time work, an annuity, royalties, alimony. Recurring
           amounts paid <em>to</em> you, not balances you draw down.
@@ -16068,7 +16068,7 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           trap this card exists to avoid. Before this card existed the only
           way to enter an inheritance was to disguise it as a lump-sum
           pension. */}
-      <ACard title="💰 One-Off Income & Windfalls">
+      <ACard title="One-Off Income & Windfalls">
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.55 }}>
           Money you expect <em>once</em> — an inheritance, a home or business sale. AiRA deposits it into
           the account you pick in the year it arrives, and it compounds from there. It is income, not
@@ -16430,7 +16430,7 @@ function ExpenseImport({ values, onChange }) {
       </button>
     )}
     <div style={{ marginTop: 14, padding: "12px 14px", background: "rgba(168,85,247,0.06)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: 8 }}>
-      <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "#c4b5fd", marginBottom: 4 }}>📄 Import detailed expenses (CSV)</div>
+      <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "#c4b5fd", marginBottom: 4 }}>Import detailed expenses (CSV)</div>
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 8 }}>
         Replace the typed spend above with a line-item budget. <strong style={{ color: "#cbd5e1" }}>Exclude</strong> mortgage/rent,
         debt, medical, long-term care, and income tax — those are modeled separately (Expense Model, carveouts, tax engine).
@@ -16708,8 +16708,8 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
   const wrColor = inSafeBand ? "#4fd88f" : (steadyWRpct > 5.5 ? "#ff6f7a" : "var(--accent-gold)");
 
   const activeScenario = twoHousehold
-    ? "🌴 Claiming non-residency — no state income tax"
-    : `🏠 Resident of ${values.stateOfResidence || "your state"} — state tax applies`;
+    ? "Claiming non-residency — no state income tax"
+    : `Resident of ${values.stateOfResidence || "your state"} — state tax applies`;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -16747,7 +16747,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             }}
             disabled={!onNavigateTab}
           >
-            Change this on the 💸 Withdrawal Plan tab →
+            Change this on the Withdrawal Plan tab →
           </button>
         </div>
       </ACard>
@@ -16760,7 +16760,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
         <div style={{ padding: "10px 12px", background: "rgba(90,209,240,0.06)", border: "1px solid rgba(90,209,240,0.2)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <span>
             Combined annual spending <span style={{ color: "var(--accent-gold)" }}>(after tax)</span>{values.spImportMeta ? (
-              <> · 📄 <strong style={{ color: "#c4b5fd" }}>{values.spImportMeta.mode === "multi" ? "multi-year budget active" : "budget-driven"}</strong></>
+              <> · <strong style={{ color: "#c4b5fd" }}>{values.spImportMeta.mode === "multi" ? "multi-year budget active" : "budget-driven"}</strong></>
             ) : null}
           </span>
           <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -16778,7 +16778,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
               }}
               disabled={!onNavigateStep}
             >
-              Edit in 💸 Spending &amp; Expenses →
+              Edit in Spending &amp; Expenses →
             </button>
           </span>
         </div>
@@ -16790,7 +16790,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
           so users who learned to find SS here aren't left staring at a blank. */}
       <ACard title="Social Security" accent="#7c3aed">
         <div style={{ padding: "10px 12px", background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-          <span>Now in the <strong style={{ color: "#c4b5fd" }}>💵 Money In</strong> step — SS is income, not a withdrawal setting.</span>
+          <span>Now in the <strong style={{ color: "#c4b5fd" }}>Money In</strong> step — SS is income, not a withdrawal setting.</span>
           {/* Index 2 is ContribPanel in ProfileWizard's PANELS array. */}
           <button
             type="button"
@@ -16802,7 +16802,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             }}
             disabled={!onNavigateStep}
           >
-            Edit in 💵 Money In →
+            Edit in Money In →
           </button>
         </div>
       </ACard>
@@ -16812,7 +16812,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
           says where to find it. */}
       <ACard title="Rental Income" accent="#295ff1" collapsible defaultOpen={false}>
         <div style={{ padding: "10px 12px", background: "rgba(41,95,241,0.08)", border: "1px solid rgba(41,95,241,0.28)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-          <span>Now in the <strong style={{ color: "#c4b5fd" }}>💵 Money In</strong> step — it is income, same as SS and pensions.</span>
+          <span>Now in the <strong style={{ color: "#c4b5fd" }}>Money In</strong> step — it is income, same as SS and pensions.</span>
           {/* Index 2 is ContribPanel in ProfileWizard's PANELS array. */}
           <button
             type="button"
@@ -16824,15 +16824,15 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             }}
             disabled={!onNavigateStep}
           >
-            Edit in 💵 Money In →
+            Edit in Money In →
           </button>
         </div>
       </ACard>
 
-      <ACard title="📐 Strategy Detail" accent="var(--accent-purple)" desc="The parameters the strategy you picked above actually uses.">
+      <ACard title="Strategy Detail" accent="var(--accent-purple)" desc="The parameters the strategy you picked above actually uses.">
         {strategy === "gk" && (
           <>
-            <div style={{ fontSize: "var(--fs-body)", color: "#e2e8f0", marginBottom: 12 }}>🛡️ Guyton‑Klinger Guardrails</div>
+            <div style={{ fontSize: "var(--fs-body)", color: "#e2e8f0", marginBottom: 12 }}>Guyton‑Klinger Guardrails</div>
             <div style={{
               marginBottom: 14,
               padding: "10px 12px",
@@ -16906,7 +16906,7 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
         )}
         {strategy === "vpw" && (
           <>
-            <div style={{ fontSize: "var(--fs-body)", color: "#e2e8f0", marginBottom: 12 }}>📉 Variable Percentage Withdrawal</div>
+            <div style={{ fontSize: "var(--fs-body)", color: "#e2e8f0", marginBottom: 12 }}>Variable Percentage Withdrawal</div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 16 }}>Each year, the portfolio is amortized over the years remaining to your plan-to age — so the plan is designed to spend down to roughly zero, not to leave an estate.</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center" }}>
               <div style={{ textAlign: "center" }}><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>Assumed real return</div><div style={{ fontSize: 28, fontWeight: 700, color: "var(--accent-gold)", fontFamily: "'JetBrains Mono',monospace" }}>{(((values.vpwRealReturn ?? 0.0376)) * 100).toFixed(2)}%</div></div>
@@ -18445,13 +18445,13 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               >
                 <div style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.9 }}>
                   <div>
-                    📈 <span style={{ color: "var(--accent-teal)" }}>Equity:</span> {SAMPLE_YEARS}yr S&P bootstrap [-30 / +30%]
+                    <span style={{ color: "var(--accent-teal)" }}>Equity:</span> {SAMPLE_YEARS}yr S&P bootstrap [-30 / +30%]
                   </div>
                   <div>
-                    📊 <span style={{ color: "var(--accent-purple)" }}>Bonds:</span> {SAMPLE_YEARS}yr bond history [-15 / +20%]
+                    <span style={{ color: "var(--accent-purple)" }}>Bonds:</span> {SAMPLE_YEARS}yr bond history [-15 / +20%]
                   </div>
                   <div>
-                    📉  <span style={{ color: "var(--accent-gold)" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
+                    <span style={{ color: "var(--accent-gold)" }}>{getStrategyLabel(assumptions.withdrawalStrategy)}</span>{" "}
                     {(() => {
                       const s = resolveStrategy(assumptions.withdrawalStrategy);
                       if (s === "gk") return `Floor: ${fmtDollar(params.gkFloor)} · Ceiling ${fmtDollar(params.gkCeiling)}`;
@@ -18461,10 +18461,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     })()}
                   </div>
                   <div>
-                    🏖 <span style={{ color: "#059669" }}>Rental:</span> {assumptions.abReliability || 80}% reliability per year
+                    <span style={{ color: "#059669" }}>Rental:</span> {assumptions.abReliability || 80}% reliability per year
                   </div>
                   <div>
-                    🏥 <span style={{ color: "#ff6f7a" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
+                    <span style={{ color: "#ff6f7a" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
                   </div>
                   {/* One-off events read from `params` — the object the
                       engines actually receive — so this line can never
@@ -18479,7 +18479,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     const outs = evs.filter((e) => e.direction !== "in");
                     return (
                       <div>
-                        💰 <span style={{ color: "var(--accent-gold)" }}>One-off events:</span>{" "}
+                        <span style={{ color: "var(--accent-gold)" }}>One-off events:</span>{" "}
                         {ins.length > 0 && `${ins.length} in +${fmtDollar(sum(ins))}`}
                         {ins.length > 0 && outs.length > 0 && " · "}
                         {outs.length > 0 && `${outs.length} out −${fmtDollar(sum(outs))}`}
@@ -18487,13 +18487,13 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     );
                   })()}
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ color: "var(--accent-teal)" }}>💹 Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(2)}% μ
+                    <span style={{ color: "var(--accent-teal)" }}>Phase 1 ({assumptions.preRetireEq ?? 91}/{100 - (assumptions.preRetireEq ?? 91)}):</span> {expectedReturn(assumptions.preRetireEq ?? 91).toFixed(2)}% μ
                     <Hint
                       text={`Pre‑retirement expected return. "μ" (mu) is the mean annual return of a ${assumptions.preRetireEq ?? 91}% stocks / ${100 - (assumptions.preRetireEq ?? 91)}% bonds mix — the weighted average of the S&P 500 and bond history the engine bootstraps from. Individual simulated years vary widely around this average; it is not a guaranteed rate.`}
                     />
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ color: "#fb923c" }}>💹 Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(2)}% μ
+                    <span style={{ color: "#fb923c" }}>Phase 2 ({assumptions.postRetireEq ?? 70}/{100 - (assumptions.postRetireEq ?? 70)}):</span> {expectedReturn(assumptions.postRetireEq ?? 70).toFixed(2)}% μ
                     <Hint
                       text={`Post‑retirement expected return. "μ" (mu) is the mean annual return of a ${assumptions.postRetireEq ?? 70}% stocks / ${100 - (assumptions.postRetireEq ?? 70)}% bonds mix. The lower equity weight vs. Phase 1 means less volatility and a slightly lower average return once you're drawing down.`}
                     />
@@ -18621,7 +18621,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   per-year disclosure is the badge in the Spend column. */}
               <Toggle
                 val={smile} onChange={setSmile}
-                label="🙂 Reduce spending with age"
+                label="Reduce spending with age"
                 hint={
                   "ON (default): your spending target is re-scaled each year to follow the "
                   + "Blanchett retirement-spending curve — real spending drifts down through the "
@@ -18639,7 +18639,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               />
 
               <Toggle
-                val={tax} onChange={setTax} label="🏛 Model taxes" infoAccent={INFO_ACCENT.tax}
+                val={tax} onChange={setTax} label="Model taxes" infoAccent={INFO_ACCENT.tax}
                 hint={<>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> When ON, every year's withdrawal is grossed up by a full tax calculation so the <em>after-tax</em> amount you keep matches your spending target. Without it, the engine would draw exactly your spend number and silently underfund you by whatever taxes are owed.</p>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What's modeled each year:</strong> federal brackets with the standard deduction, the Social Security tax torpedo (provisional-income inclusion), IRMAA Medicare surcharges, and your state's brackets (skipped when Non-resident is on). Tax rises naturally over retirement as Social Security starts and RMDs force pre-tax draws.</p>
@@ -18649,12 +18649,12 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 </>}
               />
               <Toggle
-                val={real} onChange={setReal} label="📉 Show in today's dollars"
+                val={real} onChange={setReal} label="Show in today's dollars"
                 hint={"OFF = future dollars: the actual balance you'd see on a statement that year, inflation included. $3M at 85 sounds like a lot, but decades of inflation are baked into it.\n\nON = today's dollars: the same money re-expressed in what it would buy right now, so you can judge it against prices you know.\n\n(Economists call these 'nominal' and 'real' — same thing, plainer name.)\n\nOne limit: the chart starts at your retirement year, so 'today' means retirement-year purchasing power. Inflation between now and retirement is not removed. If you are already retired, that is the same as today."}
               />
               <Toggle
                 val={!!assumptions.twoHousehold} onChange={(v) => updateAssumption("twoHousehold", v)}
-                label="🌴 Skip state tax (non-resident)" infoAccent={INFO_ACCENT.tax}
+                label="Skip state tax (non-resident)" infoAccent={INFO_ACCENT.tax}
                 hint={<>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>What it does:</strong> Removes state income tax from every year of the simulation. Use this if you (or you and your spouse) qualify as a non-resident of your listed state for the year.</p>
                     <p style={{ margin:"0 0 10px" }}><strong style={{ color:"#e2e8f0" }}>OFF (default):</strong> State tax applies to all taxable income. Use this if you're a resident of your listed state.</p>
@@ -19060,7 +19060,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     </>
                     ) : (
                       <div className="chart-card">
-                        <div className="ct">📉 Guardrails — how your spending flexes over time</div>
+                        <div className="ct">Guardrails — how your spending flexes over time</div>
                         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.55, marginBottom: 4 }}>
                           Your withdrawal strategy raises or cuts spending as markets move, keeping the plan funded.
                           The dashed bands are your spending floor and ceiling; ▲/▼ mark the years an adjustment fired.
