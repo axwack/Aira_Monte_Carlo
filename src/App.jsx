@@ -3998,14 +3998,14 @@ const CSS = `
   .met { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:10px; padding:13px 15px; }
   .ml { font-size:var(--fs-small); color:#94a3b8; margin-bottom:7px; font-weight:600; }
   .mv { font-size:22px; font-weight:800; font-family:'JetBrains Mono',monospace; line-height:1; }
-  .ms { font-size:12px; color:#64748b; margin-top:5px; }
+  .ms { font-size:12px; color:var(--text-muted); margin-top:5px; }
   .analogue { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; font-size:13px; color:#cbd5e1; font-style:italic; }
   .analogue-fade { animation: analogueFade 0.6s ease; }
   @keyframes analogueFade { from { opacity: 0; } to { opacity: 1; } }
   .recomputing { animation: recomputePulse 1.15s ease-in-out infinite; }
   @keyframes recomputePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
   .tabs { display:flex; gap:2px; border-bottom:1px solid rgba(255,255,255,0.10); flex-wrap:wrap; }
-  .tab { flex:1; min-width:72px; padding:10px 6px; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; background:transparent; cursor:pointer; font-size:13px; font-family:var(--font-sans); color:#64748b; transition:color 0.15s, border-color 0.15s, background 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; border-radius:7px 7px 0 0; position:relative; overflow:hidden; }
+  .tab { flex:1; min-width:72px; padding:10px 6px; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; background:transparent; cursor:pointer; font-size:13px; font-family:var(--font-sans); color:var(--text-muted); transition:color 0.15s, border-color 0.15s, background 0.15s; font-weight:500; white-space:nowrap; letter-spacing:-0.01em; border-radius:7px 7px 0 0; position:relative; overflow:hidden; }
   .tab:hover { color:#94a3b8; background:rgba(255,255,255,0.03); }
   /* The active tab's teal underline used to stop at that button's own width, so
      the "you are here" marker read as a short dash floating under one label
@@ -4026,7 +4026,7 @@ const CSS = `
   .ct { font-size:18px; color:#94a3b8; margin-bottom:12px; font-weight:500; }
   .ct-sub { font-size:11.5px; color:var(--text-muted); line-height:1.5; margin:-8px 0 10px; }
   .leg { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
-  .li { display:flex; align-items:center; gap:5px; font-size:12px; color:#64748b; }
+  .li { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-muted); }
   .ll { width:18px; height:2px; border-radius:1px; }
   .ppl-grid { display:flex; flex-wrap:wrap; gap:4px; margin:8px 0; }
   .ppl-dot { width:18px; height:18px; border-radius:50%; }
@@ -4067,7 +4067,7 @@ const CSS = `
   .wf-tbl[data-view="bal"] [data-cg="draw"],
   .wf-tbl[data-view="bal"] [data-cg="conv"],
   .wf-tbl[data-view="bal"] [data-cg="tax"],
-  .wf-tbl[data-view="bal"] [data-cg="risk"] { display:none; }  .roth-tbl th { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.09); }
+  .wf-tbl[data-view="bal"] [data-cg="risk"] { display:none; }  .roth-tbl th { font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.09); }
   .roth-tbl th:first-child { text-align:left; }
   .roth-tbl td { padding:9px 8px; border-bottom:1px solid rgba(255,255,255,0.05); text-align:right; font-family:'JetBrains Mono',monospace; font-size:12px; color:#e2e8f0; }
   .roth-tbl td:first-child { text-align:left; font-family:var(--font-sans); color:#f1f5f9; }
@@ -4093,7 +4093,7 @@ const CSS = `
   .progress-bar { height:5px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden; margin-top:6px; }
   .progress-fill { height:100%; background:var(--accent); border-radius:3px; transition:width 1s; }
   .nw-table { width:100%; border-collapse:collapse; font-size:12px; }
-  .nw-table th { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; border-bottom:1px solid rgba(255,255,255,0.09); text-align:right; font-weight:700; }
+  .nw-table th { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; padding:7px 8px; border-bottom:1px solid rgba(255,255,255,0.09); text-align:right; font-weight:700; }
   .nw-table th:first-child { text-align:left; }
   .nw-table td { padding:8px 8px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right; font-family:'JetBrains Mono',monospace; color:#e2e8f0; }
   .nw-table td:first-child { text-align:left; font-family:var(--font-sans); color:#f1f5f9; }
@@ -19214,7 +19214,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#2563eb",
+                  color: "var(--accent)",
                   cursor: "pointer",
                   fontSize: "var(--fs-small)",
                   textDecoration: "underline",
