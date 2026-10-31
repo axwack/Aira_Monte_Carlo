@@ -132,7 +132,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function IncomeExpenseStack(",
       "description": "Income/expense legend panel: dash for never-entered rows, provenance footnotes.",
-      "sha": "f63c949589976442"
+      "sha": "c77434b700fba2c5"
     },
     {
       "id": "claude-verdict-header",
@@ -140,7 +140,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function VerdictHeader(",
       "description": "Four headline answers strip: Runs-out wording, info icon beside the numbers.",
-      "sha": "111aa88c6cf2711e"
+      "sha": "1e3cd3ca5141bf6a"
     }
   ]
 }

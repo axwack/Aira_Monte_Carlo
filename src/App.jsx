@@ -3263,8 +3263,9 @@ const MAX_MONEY_INPUT = 1_000_000_000;
  * be 46-58px, which clipped seven-figure ticks by 4-6px ("$2,184,596"
  * measures 57px at fontSize 9) — a silently truncated axis number is worse
  * than a wide gutter. Sized for nine figures, since portfolios up to $250M
- * are enterable now. */
-const MONEY_AXIS_WIDTH = 78;
+ * are enterable now. 92 since tick text went from 9px to 11px (--fs-small):
+ * "$44,501,412" in mono at 11px needs ~84px with its tick margin. */
+const MONEY_AXIS_WIDTH = 92;
 const fmtPct = (v) => `${(v * 100).toFixed(1)}%`;
 
 // Status dot: colour comes from a token and the words beside it carry the meaning.
@@ -3911,7 +3912,6 @@ const CSS = `
     --tint-white-14: rgba(255,255,255,0.14);
     --tint-white-15: rgba(255,255,255,0.15);
     --row-highlight: rgba(122,184,245,0.06);
-    --chart-band: rgba(122,184,245,0.14);
     /* Spacing scale — dense numeric-table app; loosening broadly costs
        rows-per-screen. xs and 2xl added for badges/pills and hero breaks
        that were hardcoded ad hoc. */
@@ -5710,13 +5710,13 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             dataKey="age"
             stroke="var(--divider)"
             tickMargin={6}
-            tick={{ fill: "var(--text-muted)", fontSize: 11.5, fontFamily: "var(--font-mono)", letterSpacing: "0.01em" }}
+            tick={{ fill: "var(--text-muted)", fontSize: "var(--fs-small)", fontFamily: "var(--font-mono)", letterSpacing: "0.01em" }}
           />
           <YAxis
             yAxisId="port"
             stroke="var(--divider)"
             tickMargin={4}
-            tick={{ fill: "var(--text-muted)", fontSize: 11.5, fontFamily: "var(--font-mono)" }}
+            tick={{ fill: "var(--text-muted)", fontSize: "var(--fs-small)", fontFamily: "var(--font-mono)" }}
             tickFormatter={(v) => fmtDollar(v)}
             width={MONEY_AXIS_WIDTH}
             domain={[0, maxY]}
@@ -5724,9 +5724,9 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           <Tooltip content={<Tip />} />
 
           {/* Vertical reference lines (D-Day, SS, RMD) */}
-          <ReferenceLine yAxisId="port" x={retireAge} stroke="var(--accent-gold)" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day (Retirement Date)", fill: "var(--accent-gold)", fontSize: 11, fontWeight: 600, position: "top" }} />
-          <ReferenceLine yAxisId="port" x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: 11, fontWeight: 600, position: "top" }} />
-          <ReferenceLine yAxisId="port" x={rmdAge} stroke="var(--positive)" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "var(--positive)", fontSize: 11, fontWeight: 600, position: "top" }} />
+          <ReferenceLine yAxisId="port" x={retireAge} stroke="var(--accent-gold)" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day (Retirement Date)", fill: "var(--accent-gold)", fontSize: "var(--fs-small)", fontWeight: 600, position: "top" }} />
+          <ReferenceLine yAxisId="port" x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: "var(--fs-small)", fontWeight: 600, position: "top" }} />
+          <ReferenceLine yAxisId="port" x={rmdAge} stroke="var(--positive)" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "var(--positive)", fontSize: "var(--fs-small)", fontWeight: 600, position: "top" }} />
 
           {/* Fan areas and percentile lines */}
           <Area yAxisId="port" type="monotone" dataKey="p90" stroke={FAN_COLORS["90th"]} strokeWidth={1} strokeDasharray="4 2" fill="url(#g90v5)" dot={false} name="90th" legendType="none" />
@@ -5747,7 +5747,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             return (
               <>
                 <ReferenceLine yAxisId="port" x={hoveredAge} stroke="rgba(56,189,248,0.5)" strokeWidth={2}
-                  label={{ value: `Age ${hoveredAge}`, fill: "var(--accent)", fontSize: 10, position: "top" }} />
+                  label={{ value: `Age ${hoveredAge}`, fill: "var(--accent)", fontSize: "var(--fs-small)", position: "top" }} />
                 {dot(row.p90, FAN_COLORS["90th"])}
                 {dot(row.p75, FAN_COLORS["75th"])}
                 {dot(row.p50, FAN_COLORS["Median"])}
@@ -5769,7 +5769,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
               yAxisId="port"
               x={currentAge} y={currentPort} r={7}
               fill="var(--chart-2)" stroke="#0f1729" strokeWidth={2}
-              label={{ value: nowPct ? `▶ Now · ${nowPct} %ile` : "▶ Now", fill: "var(--chart-2)", fontSize: 10, position: "top" }}
+              label={{ value: nowPct ? `▶ Now · ${nowPct} %ile` : "▶ Now", fill: "var(--chart-2)", fontSize: "var(--fs-small)", position: "top" }}
             />
           )}
 
@@ -5823,7 +5823,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
                   key={cp.id}
                   x={age} y={cp.value} r={5}
                   fill={color} stroke="#fff" strokeWidth={1.5}
-                  label={showLabel ? { value: labelText, fill: color, fontSize: 9, position: "top" } : undefined}
+                  label={showLabel ? { value: labelText, fill: color, fontSize: "var(--fs-small)", position: "top" } : undefined}
                 />
               );
             });
@@ -5871,7 +5871,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
                     yAxisId="port"
                     x={reassessCross.age} y={portfolioGoal}
                     r={6} fill="var(--accent-gold)" stroke="var(--bg-base)" strokeWidth={2}
-                    label={{ value: `Age ${reassessCross.age}`, fill: "var(--accent-gold)", fontSize: 9, position: "top" }}
+                    label={{ value: `Age ${reassessCross.age}`, fill: "var(--accent-gold)", fontSize: "var(--fs-small)", position: "top" }}
                   />
                 )}
                 {triggerCross && (
@@ -5879,7 +5879,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
                     yAxisId="port"
                     x={triggerCross.age} y={earlyRetireTarget}
                     r={6} fill="var(--chart-9)" stroke="var(--bg-base)" strokeWidth={2}
-                    label={{ value: `Age ${triggerCross.age}`, fill: "var(--chart-9)", fontSize: 9, position: "top" }}
+                    label={{ value: `Age ${triggerCross.age}`, fill: "var(--chart-9)", fontSize: "var(--fs-small)", position: "top" }}
                   />
                 )}
               </>
@@ -6126,8 +6126,8 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
         <ResponsiveContainer width="100%" height={360}>
           <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} onMouseMove={onMove} onMouseLeave={onLeave}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
-            <XAxis dataKey="yr" stroke="#1e3a5f" tick={{ fill: "#71a8f7", fontSize: 10 }} />
-            <YAxis stroke="#1e3a5f" tick={{ fill: "#71a8f7", fontSize: 10 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+            <XAxis dataKey="yr" stroke="#1e3a5f" tick={{ fill: "#71a8f7", fontSize: "var(--fs-small)" }} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "#71a8f7", fontSize: "var(--fs-small)" }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
             <Tooltip content={<Tip />} />
             {categories.map(([key, color], i) => (
               <Bar key={key} dataKey={key} stackId="a" fill={color} radius={i === categories.length - 1 ? [2, 2, 0, 0] : undefined} />
@@ -7042,16 +7042,16 @@ const modeDescs = {
                 <XAxis
                   dataKey="yr"
                   stroke="#1e3a5f"
-                  tick={{ fill: "var(--text-faint)", fontSize: 9 }}
+                  tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }}
                 />
                 <YAxis
                   stroke="#1e3a5f"
-                  tick={{ fill: "var(--text-faint)", fontSize: 9 }}
+                  tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }}
                   tickFormatter={(v) => fmtDollar(v)}
                   width={MONEY_AXIS_WIDTH}
                 />
                 <Tooltip content={<Tip />} />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Legend wrapperStyle={{ fontSize: "var(--fs-small)" }} />
                 <Bar dataKey="10%" stackId="br" fill="#1d4ed8" name="10%" />
                 <Bar dataKey="12%" stackId="br" fill="#0ea5e9" name="12%" />
                 <Bar dataKey="22%" stackId="br" fill="var(--accent-teal)" name="22%" />
@@ -7280,11 +7280,11 @@ const modeDescs = {
                 <XAxis
                   dataKey="age"
                   stroke="#1e3a5f"
-                  tick={{ fill: "var(--text-faint)", fontSize: 9 }}
+                  tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }}
                 />
                 <YAxis
                   stroke="#1e3a5f"
-                  tick={{ fill: "var(--text-faint)", fontSize: 9 }}
+                  tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }}
                   tickFormatter={(v) => fmtDollar(v)}
                   width={MONEY_AXIS_WIDTH}
                 />
@@ -7370,11 +7370,11 @@ const modeDescs = {
                   <XAxis
                     dataKey="age"
                     stroke="#1e3a5f"
-                    tick={{ fill: "var(--text-faint)", fontSize: 9 }}
+                    tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }}
                   />
                   <YAxis
                     stroke="#1e3a5f"
-                    tick={{ fill: "var(--text-faint)", fontSize: 9 }}
+                    tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }}
                     tickFormatter={(v) => fmtDollar(v)}
                     width={MONEY_AXIS_WIDTH}
                   />
@@ -7492,8 +7492,8 @@ const modeDescs = {
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={taxChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%" barGap={2}>
                       <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
-                      <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 9 }} />
-                      <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 9 }} tickFormatter={v => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+                      <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} />
+                      <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} tickFormatter={v => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
                       <Tooltip content={<TaxYearTip />} />
                       <Bar dataKey="opt_fed"   stackId="opt" fill="var(--chart-8)"                name="OPT Federal" />
                       <Bar dataKey="opt_st"    stackId="opt" fill="var(--chart-3)"                name="OPT State" />
@@ -7538,8 +7538,8 @@ const modeDescs = {
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={incChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%" barGap={2}>
                       <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
-                      <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 9 }} />
-                      <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 9 }} tickFormatter={v => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+                      <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} />
+                      <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} tickFormatter={v => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
                       <Tooltip content={<IncYearTip />} />
                       <Bar dataKey="opt_ss"   stackId="opt" fill="var(--accent-teal)"                  name="OPT Social Sec." />
                       <Bar dataKey="opt_ab"   stackId="opt" fill="var(--accent-gold)"                  name="OPT Annuity" />
@@ -7590,10 +7590,10 @@ const modeDescs = {
                   margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                 >
                   <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
-                  <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 9 }} />
-                  <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 9 }} tickFormatter={v => (v * 100).toFixed(0) + "%"} width={36} />
+                  <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} />
+                  <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} tickFormatter={v => (v * 100).toFixed(0) + "%"} width={36} />
                   <Tooltip content={<RateTip />} />
-                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  <Legend wrapperStyle={{ fontSize: "var(--fs-small)" }} />
                   <Line type="monotone" dataKey="OPT Rate" stroke="var(--positive)" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="CUR Rate" stroke="var(--chart-1)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
                 </LineChart>
@@ -9021,10 +9021,10 @@ function WaterfallPlanView({ p, result }) {
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
-            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 9 }} />
-            <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 9 }} tickFormatter={v => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} tickFormatter={v => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
             <Tooltip content={<Tip />} />
-            <Legend wrapperStyle={{ fontSize: 10 }} />
+            <Legend wrapperStyle={{ fontSize: "var(--fs-small)" }} />
             <Bar dataKey="Cash"     stackId="a" fill="var(--text-muted)" />
             <Bar dataKey="Taxable"  stackId="a" fill="var(--chart-10)" />
             <Bar dataKey="Pre-Tax"  stackId="a" fill="var(--accent-gold)" />
@@ -9694,9 +9694,9 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
           <ResponsiveContainer width="100%" height={320}>
             <ComposedChart data={gkChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
-              <XAxis dataKey="age" stroke="var(--divider)" tickMargin={6} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} />
-              <YAxis yAxisId="spend" stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} tickFormatter={(v) => fmtDollar(v)} />
-              <YAxis yAxisId="port" orientation="right" stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH} tick={{ fill: "var(--chart-2)", fontSize: 10, fontFamily: "var(--font-mono)" }} tickFormatter={(v) => fmtDollar(v)} />
+              <XAxis dataKey="age" stroke="var(--divider)" tickMargin={6} tick={{ fill: "var(--text-muted)", fontSize: "var(--fs-small)", fontFamily: "var(--font-mono)" }} />
+              <YAxis yAxisId="spend" stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH} tick={{ fill: "var(--text-muted)", fontSize: "var(--fs-small)", fontFamily: "var(--font-mono)" }} tickFormatter={(v) => fmtDollar(v)} />
+              <YAxis yAxisId="port" orientation="right" stroke="var(--divider)" tickMargin={4} width={MONEY_AXIS_WIDTH} tick={{ fill: "var(--chart-2)", fontSize: "var(--fs-small)", fontFamily: "var(--font-mono)" }} tickFormatter={(v) => fmtDollar(v)} />
               <Tooltip
                 content={({ active, payload, label }) => {
                   if (!active || !payload || !payload.length) return null;
@@ -9926,8 +9926,8 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
         <ResponsiveContainer width="100%" height={340}>
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
-            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 10 }} />
-            <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 10 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
             <Tooltip content={<Tip />} />
             <Line type="monotone" dataKey="Portfolio End" stroke="var(--accent-teal)" strokeWidth={2.5} dot={false} name="Portfolio Balance" />
           </ComposedChart>
@@ -9946,8 +9946,8 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
-            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: 10 }} />
-            <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-muted)", fontSize: 9 }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
+            <XAxis dataKey="age" stroke="#1e3a5f" tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }} />
+            <YAxis stroke="#1e3a5f" tick={{ fill: "var(--text-muted)", fontSize: "var(--fs-small)" }} tickFormatter={(v) => fmtDollar(v)} width={MONEY_AXIS_WIDTH} />
             <Tooltip content={<Tip />} />
             <Bar dataKey="Spending" fill="var(--accent-gold)" name="Spending" />
             <Bar dataKey="Total Withdrawal" fill="var(--chart-1)" name="Total Withdrawal (inc. tax)" />
@@ -10665,15 +10665,15 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
             <ResponsiveContainer width="100%" height={280}>
               <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
                 <PolarGrid stroke="var(--tint-white-12)" />
-                <PolarAngleAxis dataKey="axis" tick={{ fill: "var(--text-primary)", fontSize: 11 }} />
-                <PolarRadiusAxis domain={[0, 100]} tick={{ fill: "var(--text-secondary)", fontSize: 9 }} tickCount={5} angle={90} />
+                <PolarAngleAxis dataKey="axis" tick={{ fill: "var(--text-primary)", fontSize: "var(--fs-small)" }} />
+                <PolarRadiusAxis domain={[0, 100]} tick={{ fill: "var(--text-secondary)", fontSize: "var(--fs-small)" }} tickCount={5} angle={90} />
                 {hasTwo && (
                   <Radar name={`First check-in (${fmtDate(first.ts)})`} dataKey="first"
                     stroke="var(--text-secondary)" fill="var(--text-secondary)" fillOpacity={0.12} strokeWidth={1.5} />
                 )}
                 <Radar name={`Today (${fmtDate(latest.ts)})`} dataKey="today"
                   stroke="var(--chart-10)" fill="var(--chart-10)" fillOpacity={0.25} strokeWidth={2} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Legend wrapperStyle={{ fontSize: "var(--fs-small)" }} />
               </RadarChart>
             </ResponsiveContainer>
           </div>
@@ -12066,7 +12066,7 @@ function VerdictHeader({ mc, stress, real = false, inf = 0, endAge, currentAge, 
       <div style={sep} />
       <div style={fact}>
         <InfoModal title="Your headline answers" accent={INFO_ACCENT.method}
-          trigger={<span aria-label="What are these numbers?" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, color: INFO_ACCENT.method, fontSize: 10.5, fontWeight: 600 }}><InfoIcon size={13} /> What are these?</span>}>
+          trigger={<span aria-label="What are these numbers?" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, color: INFO_ACCENT.method, fontSize: "var(--fs-small)", fontWeight: 600 }}><InfoIcon size={13} /> What are these?</span>}>
           <ModalLede>These numbers answer the questions that actually matter, before you open a single tab.</ModalLede>
           <ModalP><Em color={INFO_ACCENT.money}>Withdrawal rate</Em> — first-year spending net of guaranteed income, divided by the portfolio at retirement, against a {(swrBenchmark * 100).toFixed(0)}% benchmark. It sizes the draw the plan starts from; the success rate on the card above is what says whether that rate holds to age {endAge}.</ModalP>
           <ModalP><Em color={INFO_ACCENT.positive}>Money outlives you</Em> — the same paths, re-weighted by your odds of actually being alive at each failure age. It is always at least as high as the funded-to-age success rate on the card above, and it answers the actuarial question rather than the worst-case one.</ModalP>
@@ -12576,8 +12576,8 @@ function MortgageTab({ values, onChange }) {
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={chartData} margin={{ top:8, right:8, left:0, bottom:0 }}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)"/>
-            <XAxis dataKey="yr" stroke="#1e3a5f" tick={{ fill:"var(--text-faint)", fontSize:9 }}/>
-            <YAxis stroke="#1e3a5f" tick={{ fill:"var(--text-faint)", fontSize:9 }}
+            <XAxis dataKey="yr" stroke="#1e3a5f" tick={{ fill:"var(--text-faint)", fontSize: "var(--fs-small)" }}/>
+            <YAxis stroke="#1e3a5f" tick={{ fill:"var(--text-faint)", fontSize: "var(--fs-small)" }}
               tickFormatter={v=>fmtDollar(v)} width={MONEY_AXIS_WIDTH}/>
             <Tooltip content={<Tip/>}/>
             <Line type="monotone" dataKey="With extra" stroke="var(--positive)" strokeWidth={2.5} dot={false}/>
@@ -13000,11 +13000,11 @@ export function NetWorthTab({ p, mc, inf, real }) {
             <XAxis
               dataKey="age"
               stroke="#1e3a5f"
-              tick={{ fill: "var(--text-faint)", fontSize: 9 }}
+              tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }}
             />
             <YAxis
               stroke="#1e3a5f"
-              tick={{ fill: "var(--text-faint)", fontSize: 9 }}
+              tick={{ fill: "var(--text-faint)", fontSize: "var(--fs-small)" }}
               tickFormatter={(v) => fmtDollar(v)}
               width={MONEY_AXIS_WIDTH}
             />
@@ -18527,7 +18527,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 accent="var(--accent-teal)"
                 trigger={
                   <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", letterSpacing: "0.04em", textDecoration: "underline dotted", textUnderlineOffset: 3 }}>
-                    ⚙ Engine &amp; assumptions · v{APP_VERSION}
+                    Engine &amp; assumptions · v{APP_VERSION}
                   </span>
                 }
               >
@@ -19044,7 +19044,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         <SimMethodModal
                           params={params}
                           withdrawalStrategy={assumptions.withdrawalStrategy}
-                          trigger={<span aria-label="How this simulation works" style={{ color: "var(--chart-2)", cursor: "pointer", fontSize: 10.5, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px dashed rgba(96,165,250,0.45)", display: "inline-flex", alignItems: "center", gap: 4 }}><InfoIcon size={12} /> How this works</span>}
+                          trigger={<span aria-label="How this simulation works" style={{ color: "var(--chart-2)", cursor: "pointer", fontSize: "var(--fs-small)", fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px dashed rgba(96,165,250,0.45)", display: "inline-flex", alignItems: "center", gap: 4 }}><InfoIcon size={12} /> How this works</span>}
                         />
                         <MCAdvancedSettings p={params} onAssumptionChange={updateAssumption} />
                       </div>
