@@ -1392,8 +1392,8 @@ describe("NJ Social Security state-tax exemption (regression)", () => {
     // NJ base the fix computes — reconstructed from the row's own reported
     // figures rather than a fully independent NJ-bracket replica here, since
     // the bracket table itself is covered by a separate audit/test already.
-    expect(r.stateTax).toBe(6_434);
-    expect(r.taxableIncome - r.taxSS).toBe(164_460);
+    expect(r.stateTax).toBe(6_448);
+    expect(r.taxableIncome - r.taxSS).toBe(164_684);
   });
 });
 

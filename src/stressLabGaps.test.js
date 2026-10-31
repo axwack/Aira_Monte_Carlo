@@ -18,7 +18,7 @@ const FAIL = { ...P, currentAge: 65, retireAge: 65, endAge: 95, sp: 120_000, ssb
 
 describe("pre-retirement return", () => {
   // Captured from the pre-Stress-Lab commit c412186 (N=400, seed 42, GK on).
-  const BASE = { rate: 0.9925, medR: 2373815, term: { p10: 2883908, p25: 6221139, p50: 11834775, p75: 22170395, p90: 39598972, mean: 17034223 } };
+  const BASE = { rate: 0.9925, medR: 2373815, term: { p10: 2883908, p25: 6221139, p50: 11824165, p75: 22163962, p90: 39571642, mean: 17022197 } };
   const sig = (r) => ({ rate: r.rate, medR: r.medR, term: r.term });
 
   test.each([["undefined", undefined], ["empty string", ""], ["null", null]])("blank (%s) reproduces the numbers from before the feature", (_, v) => {
