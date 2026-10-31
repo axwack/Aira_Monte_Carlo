@@ -4756,6 +4756,7 @@ function HelpButton() {
           const filtered = !q ? ABOUT_FEATURES : ABOUT_FEATURES.filter(e =>
             e.title.toLowerCase().includes(q) ||
             (e.group || "").toLowerCase().includes(q) ||
+            (e.keywords || []).join(" ").toLowerCase().includes(q) ||
             stripHtml(e.body).toLowerCase().includes(q)
           );
           const groups = [...new Set(filtered.map(e => e.group).filter(Boolean))];
