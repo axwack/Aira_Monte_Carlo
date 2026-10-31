@@ -1,0 +1,11 @@
+# Paths excluded from the Graphify code graph. Gitignore syntax.
+#
+# Added 2026-10-31. The vendored design-taste-frontend skill under .github/skills/
+# is third-party tooling, not project code. Its live-browser.js is over 13,000 lines
+# and every symbol it defines is a hub, so free-text `graphify query` kept answering
+# with skill-script functions (showToast, teardown, initPageChat) instead of App.jsx.
+# Excluding it also stopped vague queries from being truncated.
+#
+# This file can only exclude more than .gitignore does. It never re-includes anything.
+
+.github/skills/
