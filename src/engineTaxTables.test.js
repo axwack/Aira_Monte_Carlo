@@ -62,3 +62,30 @@ describe("2026 standard deduction — Rev. Proc. 2025-32 §.14", () => {
     expect(stdDed(70, true, 1, 60)).toBe(32200 + 1650);
   });
 });
+
+// ── IRMAA 2026 surcharge (Part B + Part D) ────────────────────────────────────
+// Source: CMS, "2026 Medicare Parts A & B Premiums and Deductibles", 14 Nov 2025.
+// Part B per person per month: 81.20 / 202.90 / 324.60 / 446.30 / 487.00
+// Part D per person per month: 14.50 /  37.50 /  60.40 /  83.30 /  91.00
+// f is the annual two-person total, so per person per month = f / 24.
+import { IRMAA_2026 } from "./data/irmaa2026.js";
+
+describe("IRMAA 2026 — Part B + Part D, CMS fact sheet", () => {
+  const cmsMonthlyBplusD = [95.7, 240.4, 385.0, 529.6, 578.0];
+
+  test("thresholds are the CMS 2026 MFJ tier floors", () => {
+    expect(IRMAA_2026.map((r) => r.m)).toEqual([218000, 274000, 342000, 410000, 750000]);
+  });
+
+  test("each tier carries B + D per person per month", () => {
+    IRMAA_2026.forEach((r, i) => {
+      expect(r.f / 24).toBeCloseTo(cmsMonthlyBplusD[i], 4);
+    });
+  });
+
+  test("the surcharge rises with income and has no gap at the top", () => {
+    for (let i = 1; i < IRMAA_2026.length; i++) {
+      expect(IRMAA_2026[i].f).toBeGreaterThan(IRMAA_2026[i - 1].f);
+    }
+  });
+});

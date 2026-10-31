@@ -952,8 +952,11 @@ export function buildWithdrawalWaterfall(params = {}) {
             fixedCosts: housingCost + carveoutCost + ev.committed,
             portAtRetire: totalPort0,
           });
+          // A plan with no planned spending has no floor to defend: passing
+          // adjFloor here made a $0-spend plan draw the whole gkFloor every
+          // year from age retireAge+1 (48k in the default profile).
           sp = gkWithdraw(
-            totalPort, refWR, sp, lastRet, infR, adjFloor, adjCeiling,
+            totalPort, refWR, sp, lastRet, infR, baseSp > 0 ? adjFloor : 0, adjCeiling,
             fixedIncome + otherIncTotal, housingCost + carveoutCost + ev.committed
           );
         } else {

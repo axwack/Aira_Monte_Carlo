@@ -70,8 +70,8 @@ test("the row paints one full-width hairline for the underline to sit on", () =>
 test("size controls density without changing the treatment", () => {
   const sm = render({ size: "sm" });
   const md = render();
-  expect(sm).toContain("font-size:11px");
-  expect(md).toContain("font-size:12px");
+  expect(sm).toContain("font-size:var(--fs-small)");
+  expect(md).toContain("font-size:var(--fs-label)");
   // Both keep the same underline mechanic.
   expect(sm).toContain("border-bottom:2px solid var(--accent-teal)");
   expect(md).toContain("border-bottom:2px solid var(--accent-teal)");

@@ -36,7 +36,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function SectionDisclaimer(",
       "description": "Collapsed short-form disclaimer + inline full-disclosure rollout. Short form must keep the legal hooks visible.",
-      "sha": "46b7d24fe9d1af45"
+      "sha": "89225944640a84c2"
     },
     {
       "id": "tax-details-modal",
@@ -44,7 +44,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function TaxDetailsModal(",
       "description": "Click-open Tax Calculation Details modal. Reads the waterfall row only (rule 8) — no second tax computation.",
-      "sha": "08dc202e2adaba79"
+      "sha": "75635a65277a0f80"
     },
     {
       "id": "mc-advanced-settings",
@@ -52,7 +52,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function MCAdvancedSettings(",
       "description": "Monte Carlo Advanced Settings dialog: paths, historical sampling range, return/cost assumptions, guardrails. Sole editable home for the model parameters.",
-      "sha": "9dc7eca9a1fd457b"
+      "sha": "75f016e712c66b8f"
     },
     {
       "id": "withdrawal-table-segments",
@@ -84,7 +84,7 @@
       "file": "src/engine/buildWithdrawalWaterfall.js",
       "startAnchor": "export function buildWithdrawalWaterfall(",
       "description": "Aira-Claude's region: emits fedBrackets / deduction / fedOrdinary on each row for the Tax Details bracket analysis. Do not edit without re-stamping.",
-      "sha": "f988877fc4ec41aa"
+      "sha": "7ccbec6bbf99bf32"
     },
     {
       "id": "allocation-donut",
@@ -92,7 +92,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function AllocationDonut(",
       "description": "Aira-Claude's region: tax-treatment donut drawn as a CSS conic-gradient ring (avoids the Recharts 3.8 single-slice bug).",
-      "sha": "11653260d7061838"
+      "sha": "3cecbb8819741f8a"
     },
     {
       "id": "info-modal-shell",
@@ -100,7 +100,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function InfoModal(",
       "description": "SHARED: the dialog shell both agents use. deepseek-flash added maxWidth/bodyMaxHeight + controlled open/onClose. Change it carefully and re-stamp.",
-      "sha": "1244b05697eee56b"
+      "sha": "ac25dbc217cd5627"
     },
     {
       "id": "claude-not-entered-rows",
@@ -124,7 +124,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function ADateInput(",
       "description": "Date field wrapper using DateField so half-typed years never reach the profile.",
-      "sha": "7421514cf8e9c582"
+      "sha": "94d069413da1cc69"
     },
     {
       "id": "claude-income-expense-stack",
@@ -132,7 +132,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function IncomeExpenseStack(",
       "description": "Income/expense legend panel: dash for never-entered rows, provenance footnotes.",
-      "sha": "8f87b7cbe4d52876"
+      "sha": "c77434b700fba2c5"
     },
     {
       "id": "claude-verdict-header",
@@ -140,7 +140,7 @@
       "file": "src/App.jsx",
       "startAnchor": "function VerdictHeader(",
       "description": "Four headline answers strip: Runs-out wording, info icon beside the numbers.",
-      "sha": "2486be52e77f09b3"
+      "sha": "1e3cd3ca5141bf6a"
     }
   ]
 }

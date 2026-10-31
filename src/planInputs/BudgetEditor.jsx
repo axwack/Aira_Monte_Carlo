@@ -45,7 +45,7 @@ export function budgetLinesToCsv(lines = []) {
   }).join(","))].join("\n");
 }
 
-const inputStyle = { width: "100%", boxSizing: "border-box", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 5, padding: "5px 6px", fontSize: 11 };
+const inputStyle = { width: "100%", boxSizing: "border-box", background: "#0d1b2a", border: "1px solid #1e3a5f", color: "#e2e8f0", borderRadius: 5, padding: "5px 6px", fontSize: "var(--fs-small)" };
 
 export default function BudgetEditor({ value = [], onChange }) {
   const lines = Array.isArray(value) ? value : [];
@@ -53,7 +53,7 @@ export default function BudgetEditor({ value = [], onChange }) {
   return (
     <section data-testid="budget-editor" style={{ marginTop: 12, padding: "12px 14px", background: "rgba(168,85,247,0.06)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: 8 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: "#c4b5fd", marginBottom: 4 }}>Detailed Expense Budget</div>
-      <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 9 }}>
+      <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 9 }}>
         Enter line items directly or use CSV import/export. Do not include mortgage/rent, debt, medical, long-term care, or income tax here; those are modeled separately.
       </div>
       {lines.map((line, index) => {
@@ -65,13 +65,13 @@ export default function BudgetEditor({ value = [], onChange }) {
             <input aria-label={`Must Spend ${index + 1}`} type="number" min="0" value={line.mustSpend ?? ""} placeholder="Must Spend" onChange={(e) => set(updateLine(lines, index, "mustSpend", e.target.value))} style={inputStyle} />
             <input aria-label={`Like to Spend ${index + 1}`} type="number" min="0" value={line.likeToSpend ?? ""} placeholder="Like to Spend" onChange={(e) => set(updateLine(lines, index, "likeToSpend", e.target.value))} style={inputStyle} />
             <button type="button" aria-label={`Remove budget line ${index + 1}`} onClick={() => set(lines.filter((_, i) => i !== index))}>✕</button>
-            {error && <div style={{ gridColumn: "1 / -1", color: "#fca5a5", fontSize: 10 }}>{error}</div>}
+            {error && <div style={{ gridColumn: "1 / -1", color: "#fca5a5", fontSize: "var(--fs-small)" }}>{error}</div>}
           </div>
         );
       })}
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <button type="button" onClick={() => set([...lines, { ...EMPTY_LINE }])}>+ Add budget line</button>
-        {lines.length > 0 && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{lines.length} line{lines.length === 1 ? "" : "s"} · export-compatible CSV</span>}
+        {lines.length > 0 && <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>{lines.length} line{lines.length === 1 ? "" : "s"} · export-compatible CSV</span>}
       </div>
     </section>
   );

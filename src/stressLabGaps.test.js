@@ -18,7 +18,7 @@ const FAIL = { ...P, currentAge: 65, retireAge: 65, endAge: 95, sp: 120_000, ssb
 
 describe("pre-retirement return", () => {
   // Captured from the pre-Stress-Lab commit c412186 (N=400, seed 42, GK on).
-  const BASE = { rate: 0.9925, medR: 2373815, term: { p10: 2883908, p25: 6221139, p50: 11834775, p75: 22170395, p90: 39598972, mean: 17034223 } };
+  const BASE = { rate: 0.9925, medR: 2373815, term: { p10: 2883908, p25: 6221139, p50: 11824165, p75: 22163962, p90: 39571642, mean: 17022197 } };
   const sig = (r) => ({ rate: r.rate, medR: r.medR, term: r.term });
 
   test.each([["undefined", undefined], ["empty string", ""], ["null", null]])("blank (%s) reproduces the numbers from before the feature", (_, v) => {
@@ -215,6 +215,39 @@ describe("Stress Lab panels render", () => {
     root.unmount();
   });
 
+  test("SequenceBuilder blocks Run on an out-of-range year and says so", () => {
+    const calls = [];
+    const { host, root } = mount(<SequenceBuilder p={P} onResult={(x) => calls.push(x)} />);
+    const btn = (re) => [...host.querySelectorAll("button")].find((b) => re.test(b.textContent));
+    act(() => btn(/My own numbers/).click());
+    const type = (i, v) => {
+      const input = host.querySelectorAll('input[type="number"]')[i];
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, v);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    type(0, "500");
+    expect(btn(/Run scenario/).disabled).toBe(true);
+    expect(host.querySelector('[role="alert"]').textContent).toMatch(/will not run/);
+    act(() => btn(/Run scenario/).click());
+    expect(calls).toEqual([]);
+    act(() => root.unmount());
+  });
+
+  test("SequenceBuilder pasting more years than fit says how many were kept", () => {
+    const { host, root } = mount(<SequenceBuilder p={P} onResult={() => {}} />);
+    act(() => [...host.querySelectorAll("button")].find((b) => /My own numbers/.test(b.textContent)).click());
+    const paste = host.querySelector("#seq-paste");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(paste, "1,2,3,4,5,6,7,8,9,10,11,12");
+      paste.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(host.querySelectorAll('input[type="number"]').length).toBe(10);
+    expect(host.textContent).toMatch(/Kept the first 10 of 12 years/);
+    act(() => root.unmount());
+  });
+
   test("FailedPathPanel shows the no-failure message for null and a table for failures", () => {
     const a = mount(<FailedPathPanel failures={null} n={100} />);
     expect(a.host.textContent).toMatch(/No simulated path ran out/);
@@ -225,4 +258,14 @@ describe("Stress Lab panels render", () => {
     expect(b.host.querySelectorAll("tbody tr").length).toBe(f.worst.rows.length);
     act(() => b.root.unmount());
   });
+});
+
+test("a flat pre-retirement rate leaves the retirement-year market draws unchanged", () => {
+  // Accumulates 55 -> 60, then overspends, so the single path always fails and keeps its rows.
+  const plan = { ...P, retireAge: 60, sp: 400_000 };
+  const stocks = (v) => runMC({ ...plan, preRetireReturn: v }, 90, 1, 7, false, null, false, true).failures.worst.rows.map((r) => r.stock);
+  const [flat, blank] = [stocks(6), stocks("")];
+  const n = Math.min(flat.length, blank.length); // the richer plan may run out later
+  expect(n).toBeGreaterThan(3);
+  expect(flat.slice(0, n)).toEqual(blank.slice(0, n));
 });

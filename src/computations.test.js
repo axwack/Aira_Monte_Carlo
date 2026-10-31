@@ -104,39 +104,39 @@ describe("irmaaCost — IRMAA Medicare surcharges", () => {
   // aira-forecaster-agents/knowledge/TAX_REFERENCE.md "IRMAA Thresholds (MFJ 2026)".
   // REGRESSION (found by a from-scratch engine audit): the table previously
   // paired every floor with the PRECEDING tier's surcharge — $218K carried
-  // $0 instead of $2,160, and the true top tier (>$750K, $12,700) was
-  // entirely absent (the $750K floor incorrectly carried $11,130, the
+  // $0 instead of $2,297, and the true top tier (>$750K, $13,872) was
+  // entirely absent (the $750K floor incorrectly carried $12,710, the
   // NEXT-lower tier's amount). These tests locked in that wrong mapping;
   // corrected here against the canonical reference, not against old code output.
   //   < $218K      → $0
-  //   $218K–$274K  → $2,160
-  //   $274K–$342K  → $5,470
-  //   $342K–$410K  → $8,300
-  //   $410K–$750K  → $11,130
-  //   $750K+       → $12,700
+  //   $218K–$274K  → $2,297
+  //   $274K–$342K  → $5,770
+  //   $342K–$410K  → $9,240
+  //   $410K–$750K  → $12,710
+  //   $750K+       → $13,872
 
   test("MAGI below $218K → $0 (no IRMAA)", () => {
     expect(irmaaCost(200_000, 2026)).toBe(0);
   });
 
-  test("MAGI $218K–$274K → $2,160 surcharge", () => {
-    expect(irmaaCost(250_000, 2026)).toBe(2_160);
+  test("MAGI $218K–$274K → $2,297 surcharge", () => {
+    expect(irmaaCost(250_000, 2026)).toBe(2_297);
   });
 
-  test("MAGI $274K–$342K → $5,470 surcharge", () => {
-    expect(irmaaCost(300_000, 2026)).toBe(5_470);
+  test("MAGI $274K–$342K → $5,770 surcharge", () => {
+    expect(irmaaCost(300_000, 2026)).toBe(5_770);
   });
 
-  test("MAGI $342K–$410K → $8,300 surcharge", () => {
-    expect(irmaaCost(380_000, 2026)).toBe(8_300);
+  test("MAGI $342K–$410K → $9,240 surcharge", () => {
+    expect(irmaaCost(380_000, 2026)).toBe(9_240);
   });
 
-  test("MAGI $410K–$750K → $11,130 surcharge", () => {
-    expect(irmaaCost(500_000, 2026)).toBe(11_130);
+  test("MAGI $410K–$750K → $12,710 surcharge", () => {
+    expect(irmaaCost(500_000, 2026)).toBe(12_710);
   });
 
-  test("MAGI $750K+ → $12,700 surcharge (true top tier)", () => {
-    expect(irmaaCost(800_000, 2026)).toBe(12_700);
+  test("MAGI $750K+ → $13,872 surcharge (true top tier)", () => {
+    expect(irmaaCost(800_000, 2026)).toBe(13_872);
   });
 
   test("future year thresholds inflate at 2.5%/yr (tier at $218K)", () => {
@@ -145,7 +145,7 @@ describe("irmaaCost — IRMAA Medicare surcharges", () => {
     const tierThreshold = Math.round(218_000 * f);
     // Below the inflated $218K threshold → should be $0 (below the first surcharge tier)
     expect(irmaaCost(tierThreshold - 1, 2031)).toBe(0);
-    // Above the inflated $218K threshold → should be $2,160 (inflated)
+    // Above the inflated $218K threshold → should be $2,297 (inflated)
     expect(irmaaCost(tierThreshold + 1, 2031)).toBeGreaterThan(0);
   });
 });
@@ -275,9 +275,9 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
   });
 
   test("IRMAA charged at age 65 when MAGI lands in the $274K-$342K tier", () => {
-    // MAGI = 300K (withdrawal=300K, ss=0) → falls in $274K–$342K tier → $5,470
+    // MAGI = 300K (withdrawal=300K, ss=0) → falls in $274K–$342K tier → $5,770
     const r = calcYearTax(65, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
-    expect(r.irmaa).toBe(5_470);
+    expect(r.irmaa).toBe(5_770);
   });
 
   test("no IRMAA before age 65", () => {
@@ -329,7 +329,7 @@ describe("calcYearTax — IRMAA 2-year lookback (magiLookback param)", () => {
     // 2-years-ago MAGI of $300K (>$274K) is what actually gets charged.
     const r = calcYearTax(66, 2026, 100_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, 300_000);
     expect(r.irmaa).toBeGreaterThan(0);
-    expect(r.irmaa).toBe(5_470); // same $274K–$342K tier as the direct irmaaCost(300_000,...) test above
+    expect(r.irmaa).toBe(5_770); // same $274K–$342K tier as the direct irmaaCost(300_000,...) test above
   });
 
   test("magiLookback below tier-1 charges NO IRMAA even when THIS year's MAGI is high", () => {

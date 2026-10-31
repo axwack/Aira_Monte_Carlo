@@ -445,7 +445,7 @@ export const RULES = [
       params.currentAge >= 55,
     action: "Enable IRMAA guard in Withdrawal Order settings",
     reason: ({ params }) =>
-      `$${Math.round(preTaxTotal(params)).toLocaleString()} pretax — unguarded withdrawals may cross Medicare IRMAA Tier 1 ($218,000 MFJ), adding $2,160–$11,130/yr in surcharges`,
+      `$${Math.round(preTaxTotal(params)).toLocaleString()} pretax — unguarded withdrawals may cross Medicare IRMAA Tier 1 ($218,000 MFJ), adding $2,297–$13,872/yr in surcharges (Part B + D)`,
     deadline: "Before age 63",
   },
   {

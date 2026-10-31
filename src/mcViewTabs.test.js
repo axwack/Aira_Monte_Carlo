@@ -71,11 +71,11 @@ test("the sub-tabs use the app's OWN tab language — the teal underline, not a 
 test("the sub-tabs stay subordinate to the top-level bar (size + fill)", () => {
   // Both levels now use the underline, so the hierarchy rests on the two axes
   // that remain: the top bar is 13px AND tints its active tab; the sub-tabs are
-  // 12.5px and do not fill. Assert both, so a later restyle cannot flatten them
+  // --fs-label (12px) and do not fill. Assert both, so a later restyle cannot flatten them
   // into one indistinguishable level (the v1.2.111 failure).
   const start = SRC.indexOf('aria-label="Monte Carlo views"');
   const block = SRC.slice(start, start + 1800);
-  expect(block).toContain("fontSize: 12.5");
+  expect(block).toContain('fontSize: "var(--fs-label)"');
   expect(block).toContain('background: "transparent"');
   // The top-level bar keeps its tint, so the two levels differ by fill.
   expect(SRC).toMatch(/\.tab\.on \{[^}]*background:color-mix/);

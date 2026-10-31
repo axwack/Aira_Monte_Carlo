@@ -4,7 +4,7 @@ import { BUCKET_HORIZONS, BUCKET_LABELS, bucketColor } from "./engine/bucketColo
 
 export function BucketLegend() {
   return (
-    <div aria-label="Bucket legend" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: 10, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+    <div aria-label="Bucket legend" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.4 }}>
       {[1, 2, 3].map((n) => {
         const key = `b${n}`;
         return (

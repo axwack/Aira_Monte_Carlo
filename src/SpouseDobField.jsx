@@ -27,7 +27,7 @@ export default function SpouseDobField({ value, onSet, hint }) {
   return (
     <div>
       <DateField value={value} onSet={onSet} max={localTodayIso()} style={INPUT_STYLE} />
-      {hint && <div style={{ marginTop: 4, fontSize: 10, color: "var(--text-muted)", lineHeight: 1.4 }}>{hint}</div>}
+      {hint && <div style={{ marginTop: 4, fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.4 }}>{hint}</div>}
     </div>
   );
 }
