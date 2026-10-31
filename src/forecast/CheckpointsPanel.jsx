@@ -114,20 +114,20 @@ export default function CheckpointsPanel({
           borderBottom: "1px solid rgba(255,255,255,0.07)", marginBottom: open ? 14 : 0, fontFamily: "inherit" }}
       >
         <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
-          <span aria-hidden="true" style={{ fontSize: 9, color: "var(--accent-teal)", display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform 120ms ease" }}>▶</span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-teal)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          <span aria-hidden="true" style={{ fontSize: "var(--fs-small)", color: "var(--accent-teal)", display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform 120ms ease" }}>▶</span>
+          <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-teal)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
             Portfolio checkpoints (actual vs. forecast)
           </span>
-          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+          <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>
             {checkpoints.length ? `${checkpoints.length} saved` : "none saved yet"}
           </span>
         </span>
-        <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{open ? "Hide" : "Show"}</span>
+        <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>{open ? "Hide" : "Show"}</span>
       </button>
 
       {open && (
         <>
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
+          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 8 }}>
             Add real portfolio values at specific dates to compare against the simulation's projected median path. This helps you see if you're ahead or behind your retirement goals.
           </div>
 
@@ -167,7 +167,7 @@ export default function CheckpointsPanel({
               </div>
               {/* Says WHY nothing happened. The old handler returned silently. */}
               {error && (
-                <div role="alert" style={{ marginTop: 8, fontSize: 11, color: "#fca5a5" }}>{error}</div>
+                <div role="alert" style={{ marginTop: 8, fontSize: "var(--fs-small)", color: "#fca5a5" }}>{error}</div>
               )}
             </div>
           )}
@@ -214,7 +214,7 @@ export default function CheckpointsPanel({
                         <tr onClick={() => setExpandedId(isExpanded ? null : cp.id)}
                           style={{ cursor: "pointer", background: isExpanded ? "rgba(99,102,241,0.08)" : undefined }}>
                           <td>
-                            <span aria-hidden="true" style={{ marginRight: 4, fontSize: 10, color: "var(--text-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
+                            <span aria-hidden="true" style={{ marginRight: 4, fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
                             {cp.date ? new Date(`${cp.date}T00:00:00`).toLocaleDateString() : "—"}
                             {cp.note && <span style={{ marginLeft: 6, fontSize: 14, color: "var(--text-muted)" }}>· {cp.note}</span>}
                           </td>
@@ -223,17 +223,17 @@ export default function CheckpointsPanel({
                           <td style={{ color: deltaColor, fontFamily: "'JetBrains Mono',monospace" }}>
                             {delta !== null ? (delta >= 0 ? "+" : "") + fmtDollar(delta) : "—"}
                             {delta !== null && p50AtAge > 0 && (
-                              <span style={{ fontSize: 10, marginLeft: 4 }}>({delta >= 0 ? "+" : ""}{(delta / p50AtAge * 100).toFixed(1)}%)</span>
+                              <span style={{ fontSize: "var(--fs-small)", marginLeft: 4 }}>({delta >= 0 ? "+" : ""}{(delta / p50AtAge * 100).toFixed(1)}%)</span>
                             )}
                           </td>
                           <td style={{ color: growthColor, fontFamily: "'JetBrains Mono',monospace" }}>
                             {(growthAbs >= 0 ? "+" : "") + fmtDollar(growthAbs)}
-                            <span style={{ fontSize: 10, marginLeft: 4 }}>({growthAbs >= 0 ? "+" : ""}{(growthPct * 100).toFixed(1)}%)</span>
+                            <span style={{ fontSize: "var(--fs-small)", marginLeft: 4 }}>({growthAbs >= 0 ? "+" : ""}{(growthPct * 100).toFixed(1)}%)</span>
                           </td>
                           <td style={{ color: deltaColor }}>{status}</td>
                           <td onClick={(e) => e.stopPropagation()}>
                             {confirming ? (
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)" }}>
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--fs-small)", color: "var(--text-secondary)" }}>
                                 <span>Reset all balances to {fmtDollar(cp.value)}?</span>
                                 <button type="button" style={{ ...rowBtn, color: "var(--accent-teal)", fontWeight: 700 }}
                                   aria-label={`Confirm: reset all balances to the ${fmtDollar(cp.value)} checkpoint`}
@@ -277,25 +277,25 @@ export default function CheckpointsPanel({
                               </div>
                               <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
                                 <div style={{ background: "var(--card-bg)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                                  <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 2 }}>Snapshot value</div>
+                                  <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 2 }}>Snapshot value</div>
                                   <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(cp.value)}</div>
                                 </div>
                                 {p50AtAge > 0 && (
                                   <div style={{ background: "var(--card-bg)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                                    <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 2 }}>vs Median forecast</div>
+                                    <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 2 }}>vs Median forecast</div>
                                     <div style={{ fontSize: 14, fontWeight: 700, color: deltaColor, fontFamily: "'JetBrains Mono',monospace" }}>
                                       {delta >= 0 ? "+" : ""}{fmtDollar(delta)} ({delta >= 0 ? "+" : ""}{(delta / p50AtAge * 100).toFixed(1)}%)
                                     </div>
                                   </div>
                                 )}
                                 <div style={{ background: "var(--card-bg)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                                  <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 2 }}>Growth since snapshot</div>
+                                  <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 2 }}>Growth since snapshot</div>
                                   <div style={{ fontSize: 14, fontWeight: 700, color: growthColor, fontFamily: "'JetBrains Mono',monospace" }}>
                                     {growthAbs >= 0 ? "+" : ""}{fmtDollar(growthAbs)} ({growthAbs >= 0 ? "+" : ""}{(growthPct * 100).toFixed(1)}%)
                                   </div>
                                 </div>
                                 <div style={{ background: "var(--card-bg)", borderRadius: 6, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                                  <div style={{ fontSize: 10, color: "var(--text-faint)", marginBottom: 2 }}>Current portfolio</div>
+                                  <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 2 }}>Current portfolio</div>
                                   <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(currentPort)}</div>
                                 </div>
                               </div>
@@ -308,7 +308,7 @@ export default function CheckpointsPanel({
                 </tbody>
               </table>
               {hiddenCount > 0 && (
-                <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
+                <div style={{ marginTop: 8, fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>
                   Showing the {maxRows} most recent of {checkpoints.length} checkpoints.
                 </div>
               )}
