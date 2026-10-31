@@ -69,6 +69,7 @@ describe("2026 standard deduction — Rev. Proc. 2025-32 §.14", () => {
 // Part D per person per month: 14.50 /  37.50 /  60.40 /  83.30 /  91.00
 // f is the annual two-person total, so per person per month = f / 24.
 import { IRMAA_2026 } from "./data/irmaa2026.js";
+import { irmaaCost } from "./App.jsx";
 
 describe("IRMAA 2026 — Part B + Part D, CMS fact sheet", () => {
   const cmsMonthlyBplusD = [95.7, 240.4, 385.0, 529.6, 578.0];
@@ -87,5 +88,17 @@ describe("IRMAA 2026 — Part B + Part D, CMS fact sheet", () => {
     for (let i = 1; i < IRMAA_2026.length; i++) {
       expect(IRMAA_2026[i].f).toBeGreaterThan(IRMAA_2026[i - 1].f);
     }
+  });
+
+  // CMS prints tiers 1-4 as "greater than $X": MAGI exactly at a ceiling pays nothing. The top tier is "greater than or equal".
+  test("a MAGI exactly at a tier ceiling pays the tier below; one dollar more pays the tier", () => {
+    expect(irmaaCost(218000, 2026, 0, true)).toBe(0);
+    expect(irmaaCost(218001, 2026, 0, true)).toBe(2297);
+    expect(irmaaCost(410000, 2026, 0, true)).toBe(9240);
+    expect(irmaaCost(410001, 2026, 0, true)).toBe(12710);
+    expect(irmaaCost(749999, 2026, 0, true)).toBe(12710);
+    expect(irmaaCost(750000, 2026, 0, true)).toBe(13872);
+    expect(irmaaCost(109000, 2026, 0, false)).toBe(0);
+    expect(irmaaCost(500000, 2026, 0, false)).toBe(6936);
   });
 });

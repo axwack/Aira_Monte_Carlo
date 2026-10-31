@@ -2961,7 +2961,8 @@ function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
     const thresh = isMFJ ? IRMAA_2026[i].m
       : (i === IRMAA_2026.length - 1 ? 500_000 : IRMAA_2026[i].m / 2);
     const cost = (IRMAA_2026[i].f / 2) * n;
-    if (magi >= thresh * f) return Math.round(cost * f);
+    // CMS: tiers 1-4 start ABOVE the ceiling (MAGI <= $218,000 pays nothing); only the top tier is "greater than or equal".
+    if (i === IRMAA_2026.length - 1 ? magi >= thresh * f : magi > thresh * f) return Math.round(cost * f);
   }
   return 0;
 }
