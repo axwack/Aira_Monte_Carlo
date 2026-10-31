@@ -54,13 +54,16 @@ Verified 2026-07-27 against:
 - 20%: $613,700+
 - NIIT: 3.8% on lesser of NII or (AGI - $250,000)
 
-## IRMAA Thresholds (MFJ 2026)
+## IRMAA Thresholds (MFJ 2026) — Part B + Part D surcharge
+Source: CMS, "2026 Medicare Parts A & B Premiums and Deductibles", 14 Nov 2025
+https://www.cms.gov/newsroom/fact-sheets/2026-medicare-parts-b-premiums-deductibles
 - ≤$218,000: $0 surcharge
-- $218K-$274K: ~$2,160/yr couple
-- $274K-$342K: ~$5,470/yr couple
-- $342K-$410K: ~$8,300/yr couple
-- $410K-$750K: ~$11,130/yr couple
-- >$750K: ~$12,700/yr couple
+- $218K-$274K: $2,296.80/yr couple (B 81.20 + D 14.50 per person per month)
+- $274K-$342K: $5,769.60/yr couple (B 202.90 + D 37.50)
+- $342K-$410K: $9,240/yr couple (B 324.60 + D 60.40)
+- $410K-$750K: $12,710.40/yr couple (B 446.30 + D 83.30)
+- >$750K: $13,872/yr couple (B 487.00 + D 91.00)
+Single filers: same Part B/D amounts, thresholds halved (109K/137K/171K/205K, top 500K).
 
 ## NJ State Tax Brackets (2026)
 - 1.4%: $0 – $20,000
