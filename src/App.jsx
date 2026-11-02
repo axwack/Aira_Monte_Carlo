@@ -12978,12 +12978,11 @@ export function NetWorthTab({ p, mc, inf, real }) {
                 Typical outcome, every 5 years to age {lastDataAge ?? planAge} · {dollarBasisLabel(real, retirementBasisYear(p.currentAge, p.retireAge, CURRENT_YEAR))}{showRE ? "" : " · excludes real estate"}
               </div>
             </div>
-            <span
-              style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: "var(--fs-label)" }}
+            {/* Was a title= tooltip on an emoji, which does nothing on click or touch. InfoDot opens the dialog. */}
+            <InfoDot
+              heading="Reading this chart"
               title="Liquid Portfolio = investments (excl. real estate). Mortgage Debt shown as negative (dashed red line). Net Worth = Liquid + Real Estate - Mortgage Debt."
-            >
-              <span role="img" aria-label="information" style={{ color: "var(--chart-2)" }}>ℹ️</span>
-            </span>
+            />
           </div>
           <Toggle
             val={showRE}
@@ -12993,7 +12992,7 @@ export function NetWorthTab({ p, mc, inf, real }) {
           />
         </div>
 
-        <ResponsiveContainer width="100%" height={540}>
+        <ResponsiveContainer width="100%" height={320}>
           <LineChart
             data={nwData}
             margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
@@ -18435,6 +18434,75 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               aria-current={activeTab === "assumptions" ? "page" : undefined}>
               {activeTab === "assumptions" ? "Editing plan inputs" : `${profileSavedBefore ? "Adjust values" : "Configure your plan"} →`}
             </button>
+
+            <div className="sb-card">
+              <div className="sb-title" {...twisty(sbCoreOpen, () => setSbCoreOpen(v => !v))}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+                <span>{sbCoreOpen ? "▾" : "▸"} Plan basics</span>
+              </div>
+              {sbCoreOpen && (<>
+              <Slider
+                dataLever="retireAge"
+                label="Retire age"
+                value={retAge}
+                min={AGE_LIMITS.retire.min}
+                max={AGE_LIMITS.retire.max}
+                step={1}
+                stepNudge={1}
+                format={(v) => "Age " + v}
+                onChange={setRetAge}
+              />
+              <Slider
+                dataLever="endAge"
+                label="Plan to age"
+                value={endAge}
+                min={AGE_LIMITS.end.min}
+                max={AGE_LIMITS.end.max}
+                step={1}
+                stepNudge={1}
+                format={(v) => "Age " + v}
+                onChange={setEndAge}
+              />
+              <Slider
+                dataLever="sp"
+                label="US annual spend"
+                value={sp}
+                min={0}
+                max={300000}
+                step={1000}
+                stepNudge={5000}
+                format={(v) => fmtDollar(v) + "/yr"}
+                onChange={setSp}
+              />
+              <Slider
+                label="Annual savings"
+                value={contrib}
+                min={0}
+                max={100000}
+                step={500}
+                stepNudge={1000}
+                format={(v) => fmtDollar(v) + "/yr"}
+                onChange={setContrib}
+              />
+              <Slider
+                key={`ssAge-${assumptions.ssAge}`}
+                dataLever="ssAge"
+                label="SS claim age"
+                value={assumptions.ssAge}
+                min={AGE_LIMITS.ss.min}
+                max={AGE_LIMITS.ss.max}
+                step={1}
+                stepNudge={1}
+                quickPills={[
+                  { lbl: "62 (Early)", val: 62 },
+                  { lbl: "67 (FRA)", val: 67 },
+                  { lbl: "70 (Max)", val: 70 },
+                ]}
+                format={(v) => "Age " + v}
+                onChange={(v) => updateAssumption("ssAge", v)}
+              />
+              </>)}
+            </div>
             {/* The landing shows a rule-of-thumb answer; the app shows the full
                 simulation, which needs more than four answers. Say what was
                 filled in on the visitor's behalf, each line a way to fix it —
@@ -18592,74 +18660,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               </InfoModal>
             </div>
 
-            <div className="sb-card">
-              <div className="sb-title" {...twisty(sbCoreOpen, () => setSbCoreOpen(v => !v))}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-                <span>{sbCoreOpen ? "▾" : "▸"} Plan basics</span>
-              </div>
-              {sbCoreOpen && (<>
-              <Slider
-                dataLever="retireAge"
-                label="Retire age"
-                value={retAge}
-                min={AGE_LIMITS.retire.min}
-                max={AGE_LIMITS.retire.max}
-                step={1}
-                stepNudge={1}
-                format={(v) => "Age " + v}
-                onChange={setRetAge}
-              />
-              <Slider
-                dataLever="endAge"
-                label="Plan to age"
-                value={endAge}
-                min={AGE_LIMITS.end.min}
-                max={AGE_LIMITS.end.max}
-                step={1}
-                stepNudge={1}
-                format={(v) => "Age " + v}
-                onChange={setEndAge}
-              />
-              <Slider
-                dataLever="sp"
-                label="US annual spend"
-                value={sp}
-                min={0}
-                max={300000}
-                step={1000}
-                stepNudge={5000}
-                format={(v) => fmtDollar(v) + "/yr"}
-                onChange={setSp}
-              />
-              <Slider
-                label="Annual savings"
-                value={contrib}
-                min={0}
-                max={100000}
-                step={500}
-                stepNudge={1000}
-                format={(v) => fmtDollar(v) + "/yr"}
-                onChange={setContrib}
-              />
-              <Slider
-                key={`ssAge-${assumptions.ssAge}`}
-                dataLever="ssAge"
-                label="SS claim age"
-                value={assumptions.ssAge}
-                min={AGE_LIMITS.ss.min}
-                max={AGE_LIMITS.ss.max}
-                step={1}
-                stepNudge={1}
-                quickPills={[
-                  { lbl: "62 (Early)", val: 62 },
-                  { lbl: "67 (FRA)", val: 67 },
-                  { lbl: "70 (Max)", val: 70 },
-                ]}
-                format={(v) => "Age " + v}
-                onChange={(v) => updateAssumption("ssAge", v)}
-              />
-              </>)}
-            </div>
             <div className="sb-card">
               <div className="sb-title" {...twisty(sbMacroOpen, () => setSbMacroOpen(v => !v))}
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
