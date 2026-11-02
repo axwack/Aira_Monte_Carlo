@@ -203,8 +203,12 @@ import { IRMAA_2026 } from './data/irmaa2026.js';
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
 
-const APP_VERSION = "1.2.150";
-export const BUILD_TAG = `[main] v1.2.150 - design pass: colors and sizes come from theme tokens, status dots, Stress Lab fixes
+const APP_VERSION = "1.3.0";
+export const BUILD_TAG = `[main] v1.3.0 - Home screen: the inputs come first
+- CHANGED: Plan basics is at the top of the left side, right under Configure. The five main inputs show next to your answer on a first run.
+- CHANGED: The Net Worth chart is shorter (320px, was 540px), so the cards under the tabs stay on screen.
+- FIXED: The info icon on the Portfolio projection chart did nothing when clicked. It opens a short explanation now.
+- PRIOR (v1.2.150): design pass: colors and sizes come from theme tokens, status dots, Stress Lab fixes
 - CHANGED: type sizes use --fs-* tokens; about 750 hard-coded colors now use theme tokens (--chart-N, --tint-*, --text-*), so a theme change is one edit. Eight low-contrast text colors now pass 4.5:1.
 - CHANGED: emoji removed from headings, buttons and sub-tabs; status marks are a small colored dot or plain words; labels are sentence case; main and nav landmarks added.
 - STRESS LAB: Run is blocked and explained for out-of-range years; a severity change says it cleared the precise result; a pasted list longer than 10 years says it was cut; deltas show in pp.
