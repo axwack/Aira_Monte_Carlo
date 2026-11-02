@@ -3961,15 +3961,15 @@ const CSS = `
   .landing { min-height:100vh; background:var(--bg-base); display:flex; flex-direction:column; align-items:center; padding:clamp(26px,6vw,60px) 20px 60px; overflow-y:auto; }
   .lp-wrap { width:100%; max-width:760px; }
   .lp-brand { display:flex; align-items:center; justify-content:space-between; margin-bottom:clamp(30px,6vw,52px); }
-  .lp-eyebrow { font-size:12px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; color:var(--accent); margin-bottom:16px; }
-  .lp-answer { font-size:clamp(29px,6vw,50px); font-weight:800; line-height:1.05; letter-spacing:-0.03em; color:var(--text-primary); margin:0; }
+  .lp-eyebrow { font-size:13px; font-weight:600; color:var(--accent); margin-bottom:16px; }
+  .lp-answer { font-size:clamp(29px,6vw,50px); font-weight:500; line-height:1.05; letter-spacing:-0.03em; color:var(--text-primary); margin:0; }
   .lp-age { color:var(--accent-teal); font-family:'JetBrains Mono',monospace; }
   .lp-answer.short .lp-age { color:var(--accent-gold); }
   .lp-sub { margin-top:16px; font-size:16px; color:var(--text-secondary); max-width:54ch; line-height:1.55; }
   .lp-panel { margin-top:28px; background:var(--card-bg); border:1px solid var(--card-border); border-radius:16px; padding:22px; }
   .lp-row { display:grid; grid-template-columns:1fr auto; align-items:baseline; }
   .lp-label { font-size:14px; color:var(--text-secondary); font-weight:600; }
-  .lp-val { font-size:16px; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+  .lp-val { font-size:16px; font-weight:500; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
   /* Typed hero readout. A fixed 14ch width + right alignment keeps the grid's
      right edge steady as the value grows — $250,000,000 must not shove the label. */
   .lp-val-input { width:14ch; text-align:right; background:transparent; border:1px solid transparent; border-radius:6px; padding:2px 6px; cursor:text; }
@@ -3977,10 +3977,10 @@ const CSS = `
   .lp-val-input:focus { outline:none; border-color:var(--accent); background:var(--bg-info); color:var(--text-primary); }
   /* Scoped under .landing so it beats the global input[type=range] display:none. */
   .landing input[type=range].lp-range { -webkit-appearance:none; appearance:none; display:block; width:100%; height:6px; border-radius:100px; background:var(--divider); outline:none; margin:7px 0 18px; cursor:pointer; }
-  .landing input[type=range].lp-range::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:22px; height:22px; border-radius:50%; background:var(--accent); border:3px solid var(--bg-base); box-shadow:0 2px 8px rgba(108,155,255,0.5); cursor:pointer; }
+  .landing input[type=range].lp-range::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:22px; height:22px; border-radius:50%; background:var(--accent); border:3px solid var(--bg-base); cursor:pointer; }
   .landing input[type=range].lp-range::-moz-range-thumb { width:20px; height:20px; border-radius:50%; background:var(--accent); border:3px solid var(--bg-base); cursor:pointer; }
-  .lp-cta { display:inline-flex; align-items:center; gap:9px; margin-top:26px; padding:15px 30px; border:none; border-radius:12px; background:var(--accent); color:#fff; font-size:17px; font-weight:700; font-family:var(--font-sans); letter-spacing:-0.01em; cursor:pointer; box-shadow:0 10px 26px -8px rgba(108,155,255,0.55); transition:transform 0.15s, box-shadow 0.15s; }
-  .lp-cta:hover { transform:translateY(-1px); box-shadow:0 14px 32px -8px rgba(108,155,255,0.7); }
+  .lp-cta { display:inline-flex; align-items:center; gap:9px; margin-top:26px; padding:15px 30px; border:none; border-radius:12px; background:var(--accent); color:var(--bg-base); font-size:17px; font-weight:600; font-family:var(--font-sans); cursor:pointer; transition:filter 0.15s; }
+  .lp-cta:hover { filter:brightness(1.1); }
   .lp-skip { display:block; margin-top:15px; background:none; border:none; color:var(--text-muted); font-size:13px; cursor:pointer; font-family:var(--font-sans); text-decoration:underline; padding:0; }
   .lp-skip:hover { color:var(--text-secondary); }
   /* minmax(0,1fr), not bare 1fr: a grid track's auto minimum is its content's
@@ -17256,12 +17256,12 @@ function RetirementLanding({ onEnter }) {
 
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 38, fontWeight: 800, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{Math.round(conf * 100)}</span>
+            <span style={{ fontSize: 38, fontWeight: 500, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{Math.round(conf * 100)}</span>
             <span style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", fontWeight: 600 }}>% confident<br />at that age</span>
           </div>
           <div style={{ flex: 1, minWidth: 200, height: 10, borderRadius: 100, background: "var(--tint-white-06)", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: -3, bottom: -3, left: "85%", width: 2, background: "var(--text-faint)" }} />
-            <div style={{ height: "100%", borderRadius: 100, width: `${Math.min(100, Math.round(conf * 100))}%`, background: "linear-gradient(90deg,#0d9488,#5ad1f0)", transition: "width 0.35s" }} />
+            <div style={{ height: "100%", borderRadius: 100, width: `${Math.min(100, Math.round(conf * 100))}%`, background: "var(--accent-teal)", transition: "width 0.35s" }} />
           </div>
         </div>
 
@@ -17293,7 +17293,7 @@ function RetirementLanding({ onEnter }) {
           ))}
         </div>
 
-        <button className="lp-cta" onClick={() => onEnter(s)}>Take me to the app! →</button>
+        <button className="lp-cta" onClick={() => onEnter(s)}>Open the app</button>
         <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll enter my own details</button>
 
         <p style={{ marginTop: 32, fontSize: "var(--fs-label)", color: "var(--text-faint)", lineHeight: 1.6, maxWidth: "62ch" }}>
