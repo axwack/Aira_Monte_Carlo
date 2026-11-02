@@ -69,6 +69,79 @@
       To begin the development, run `npm start` or `yarn start`.
       To create a production bundle, use `npm run build` or `yarn build`.
     -->
+
+	<!-- ── TEMPORARY PREVIEW ONLY (branch design/home-s1-preview) ───────────────
+	     Repositions the already-rendered Home screen into the Structure 1
+	     composition at runtime. This is a viewing device, not a build: React may
+	     re-render and undo it, and moved nodes can lose their handlers.
+	     Delete this block to restore the app exactly as it is. No application
+	     code is changed by it. -->
+	<script>
+	(function () {
+	  var tries = 0;
+	  var timer = setInterval(function () {
+	    tries++;
+	    var layout = document.querySelector('.layout');
+	    var main = document.querySelector('main.main');
+	    var met = main && main.querySelector(':scope > .met');
+	    var chart = document.querySelector('.chart-card');
+	    if (!layout || !main || !met || !chart) {
+	      if (tries > 80) { clearInterval(timer); console.warn('[s1-preview] containers not found'); }
+	      return;
+	    }
+	    clearInterval(timer);
+	    try {
+	      /* 1. collapse the input column to a 56px rail */
+	      layout.style.gridTemplateColumns = '56px 1fr';
+	      var side = layout.firstElementChild;
+	      if (side && side !== main) {
+	        side.style.width = '56px';
+	        side.style.minWidth = '0';
+	        side.style.overflow = 'hidden';
+	        Array.prototype.forEach.call(side.children, function (c) { c.style.display = 'none'; });
+	        var label = document.createElement('div');
+	        label.textContent = 'CONFIGURE PLAN';
+	        label.style.cssText = 'writing-mode:vertical-rl;transform:rotate(180deg);font:9.5px/1 ui-monospace,monospace;letter-spacing:.12em;color:#8793a7;padding:16px 0;text-align:center;white-space:nowrap';
+	        side.appendChild(label);
+	      }
+
+	      /* 2. hero row: the answer block and the chart side by side */
+	      var hero = document.createElement('div');
+	      hero.setAttribute('data-s1-preview', 'hero');
+	      hero.style.cssText = 'display:grid;gap:26px;align-items:center;padding:16px 0 20px;border-bottom:1px solid #243040';
+	      main.style.display = 'block';
+	      main.insertBefore(hero, main.firstElementChild);
+	      hero.appendChild(met);
+	      hero.appendChild(chart);
+
+	      /* 3. chart sizing */
+	      chart.style.padding = '12px';
+	      chart.style.height = 'auto';
+
+	      /* 4. responsive */
+	      var mq = window.matchMedia('(max-width: 1000px)');
+	      var mqTiny = window.matchMedia('(max-width: 700px)');
+	      function apply() {
+	        var narrow = mq.matches;
+	        var tiny = mqTiny.matches;
+	        hero.style.gridTemplateColumns = narrow ? '1fr' : '1fr 460px';
+	        chart.style.width = narrow ? '100%' : '460px';
+	        layout.style.gridTemplateColumns = tiny ? '1fr' : '56px 1fr';
+	        if (side && side !== main) side.style.display = tiny ? 'none' : '';
+	      }
+	      apply();
+	      if (mq.addEventListener) mq.addEventListener('change', apply);
+	      if (mqTiny.addEventListener) mqTiny.addEventListener('change', apply);
+
+	      /* 5. tabs scroll on narrow screens */
+	      var tabs = document.querySelector('nav.tabs');
+	      if (tabs) { tabs.style.overflowX = 'auto'; tabs.style.whiteSpace = 'nowrap'; }
+	    } catch (e) {
+	      console.warn('[s1-preview]', e);
+	    }
+	  }, 250);
+	})();
+	</script>
 </body>
 
 </html>

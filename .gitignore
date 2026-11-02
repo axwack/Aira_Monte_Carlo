@@ -96,3 +96,4 @@ graphify-out/
 
 # Encrypted agent folder (git-crypt, see .gitattributes): track its .md files despite *.md above.
 !.agents/**/*.md
+.agents/manifests/Changes_for_AiraClaude.md
