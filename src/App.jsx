@@ -17785,6 +17785,13 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   }, [params]);
   sigRef.current = paramsSig;
 
+  // A starter plan (the landing's "Skip") has a placeholder portfolio figure
+  // but every account at $0, and the simulation reads the accounts: it scored
+  // that plan 0.0% beside a $1,000,000 sidebar. With nothing to simulate, say
+  // so instead of running and showing a failure.
+  const noAccountMoney = Array.isArray(params.accounts) && params.accounts.length > 0
+    && params.accounts.every((a) => !(a.balance > 0));
+
   // The Run/Re-run button owns every run. The single exception is a visitor
   // with nothing to show: no cached run from last time and nothing run yet
   // this session, where an empty screen would be worse than one simulation.
@@ -17798,7 +17805,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     if (ranSigRef.current === null) {
       // Nothing cached and nothing run. A seeded landing entry runs itself,
       // on the seeded numbers, in the effect just below.
-      if (!pendingRunRef.current) runSimulation();
+      if (!pendingRunRef.current && !noAccountMoney) runSimulation();
       return;
     }
 
@@ -17810,7 +17817,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     // profile, or undoing an edit, doesn't leave a "changed" warning up for
     // someone who changed nothing.
     setStale(paramsSig !== ranSigRef.current);
-  }, [paramsSig, runSimulation, showWelcome]);
+  }, [paramsSig, runSimulation, showWelcome, noAccountMoney]);
 
   // Year-end deadline prompt. Reads the browser clock (this app has no
   // server), so a PC with a wrong system date sees it at the wrong time —
@@ -18701,6 +18708,15 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             {(() => {
               const heroColor = mc ? (mc.rate >= 0.85 ? "var(--positive)" : mc.rate >= 0.7 ? "var(--accent-gold)" : "var(--negative)") : "#334155";
               const sep = <span style={{ color: "var(--text-faint)" }}>·</span>;
+              if (!mc && noAccountMoney) return (
+                <div className="met">
+                  <div style={{ fontSize: "var(--fs-h1)", fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>Add Your Accounts to See Your Result</div>
+                  <div style={{ fontSize: "var(--fs-body)", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
+                    This plan has no account balances yet, so there is nothing to simulate. Enter what you hold in each account, then press Run Monte Carlo.
+                  </div>
+                  <button className="mbtn" onClick={() => navigateToTab("assumptions")}>Add Your Accounts</button>
+                </div>
+              );
               return (
                 <div className={`met ${running ? "recomputing" : ""}`} style={{ borderLeft: `4px solid ${heroColor}` }}>
                   {/* Row 1 — the one number that matters, with the disclosure toggle aligned right. */}
