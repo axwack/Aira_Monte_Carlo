@@ -304,6 +304,37 @@ async function handleChat(apiKey, values, mcResults, question, history, usageBuc
   return { text: getText(res) };
 }
 
+// KEEP IN SYNC with HELP_CHAT_RULES in src/helpChat.js (CRA cannot import from /functions).
+const HELP_CHAT_RULES =
+  "You are Aira, the in-app help assistant for a retirement forecaster. Answer ONLY from the HELP ENTRIES below. " +
+  "If they do not answer the question, say you could not find it in Help and suggest the Feedback button. " +
+  "Do not ask for or use the user's personal numbers. This is not personalised financial, tax or legal advice. " +
+  "Be concise (under 120 words) and use plain English. Name the entry you used by its title.";
+
+// Help chat: grounded on at most 3 help entries the client picked. Every input is
+// clamped here because the entries come from the caller, and the caller's credits
+// (or the operator's key) pay for the tokens.
+async function handleHelpChat(apiKey, question, history, helpEntries, usageBucket) {
+  const q = String(question || "").slice(0, 500);
+  if (!q.trim()) throw new Error("Missing question");
+  const entries = (Array.isArray(helpEntries) ? helpEntries : []).slice(0, 3)
+    .map(e => `[${String(e?.id || "").slice(0, 60)}] ${String(e?.title || "").slice(0, 120)}\n${String(e?.text || "").slice(0, 1500)}`)
+    .join("\n\n");
+  const contents = [
+    ...(Array.isArray(history) ? history : []).slice(-4).map(m => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content || "").slice(0, 800) }],
+    })),
+    { role: "user", parts: [{ text: q }] },
+  ];
+  const res = await callGemini(apiKey, MODEL_STANDARD, {
+    systemInstruction: { parts: [{ text: `${HELP_CHAT_RULES}\n\nHELP ENTRIES:\n${entries || "(none)"}` }] },
+    contents,
+    generationConfig: { maxOutputTokens: 400 },
+  }, usageBucket);
+  return { text: getText(res) };
+}
+
 async function handleTimeSensitive(apiKey, values, mcResults, usageBucket) {
   const age       = values.currentAge || 56;
   const retireAge = values.retireAge  || 65;
@@ -438,6 +469,7 @@ function isEmptyResult(type, result) {
     case "roth":          return !result.assessment;
     case "withdrawal":    return !result.recommended;
     case "chat":          return !result.text;
+    case "helpchat":      return !result.text;
     case "timesensitive": return !result.cards || result.cards.length === 0;
     // actionplan always echoes the original cards back — conservatively don't refund
     default:              return false;
@@ -536,6 +568,7 @@ export async function onRequestPost({ request, env }) {
       case "roth":          result = await handleRoth(apiKey, values, usageBucket);                               break;
       case "withdrawal":    result = await handleWithdrawal(apiKey, values, mcResults, usageBucket);              break;
       case "chat":          result = await handleChat(apiKey, values, mcResults, question, history, usageBucket); break;
+      case "helpchat":      result = await handleHelpChat(apiKey, question, history, body.helpEntries, usageBucket); break;
       case "timesensitive": result = await handleTimeSensitive(apiKey, values, mcResults, usageBucket);           break;
       default:              return json({ error: `Unknown type: ${type}` }, 400);
     }
