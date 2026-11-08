@@ -87,17 +87,20 @@ const CSS = `
 .hp-rail button:hover { color:var(--text-primary); }
 .hp-rail button[aria-current="true"] { background:var(--tint-white-06); color:var(--text-primary); font-weight:600; }
 .hp-read { font-size:16px; line-height:1.7; color:var(--text-secondary); }
-.hp-read p, .hp-read li, .hp-read .help-sub { font-size:16px; }
+.hp-read p, .hp-read li { font-size:16px; }
+.hp-read .help-sub { font-size:20px; line-height:1.3; font-weight:700; color:var(--text-primary); margin:32px 0 10px; scroll-margin-top:24px; }
+.hp-read ul { margin:0 0 1em; padding-left:22px; }
 .hp-read p { margin:0 0 1em; }
 .hp-read li + li { margin-top:.5em; }
 .hp-read .help-lede { font-size:20px; line-height:1.5; color:var(--text-primary); margin-bottom:20px; }
 .hp-read strong, .hp-read b { color:var(--text-primary); font-weight:600; }
 .hp-read a { color:var(--accent-teal); text-underline-offset:3px; }
 .hp-read figure { margin:16px 0; }
-.hp-read figure img { max-width:100%; border:1px solid var(--card-border); border-radius:var(--hp-r); }
+.hp-read figure img { display:block; max-width:100%; height:auto; border:1px solid var(--card-border); border-radius:var(--hp-r); }
 .hp-read figcaption { font-size:12px; color:var(--text-muted); margin-top:8px; }
-@media (min-width:1100px) { .hp-read figure { float:right; width:260px; margin:4px 0 16px 24px; } }
-.hp-read .help-note { border-left:1px solid var(--card-border); background:var(--tint-white-06); border-color:var(--card-border); }
+@media (min-width:1100px) { .hp-read figure.side { float:right; width:260px; margin:4px 0 16px 24px; } }  /* class 'side' for a narrow figure */
+.hp-read .help-note { border:1px solid var(--card-border); }  /* flat box: no side tab; the tint still says which kind */
+.hp-read .help-note-icon { display:none; }
 .hp-pn { display:flex; gap:14px; margin-top:40px; padding-top:24px; border-top:1px solid var(--divider); }
 .hp-pn .hp-card { flex:1; padding:14px 16px; min-height:44px; }
 .hp-pn .hp-card:last-child:not(:first-child) { text-align:right; }
@@ -114,6 +117,7 @@ export default function HelpPage({ entries, onClose }) {
   const [query, setQuery] = React.useState("");
   const [tab, setTab] = React.useState("All");
   const [openId, setOpenId] = React.useState(null);
+  const [heads, setHeads] = React.useState([]);
   const rootRef = React.useRef(null);
   const searchRef = React.useRef(null);
 
@@ -129,6 +133,12 @@ export default function HelpPage({ entries, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [openId, onClose]);
   React.useEffect(() => { rootRef.current?.scrollTo?.(0, 0); }, [openId]);
+  // 'On This Page': the entry's own section headings, given ids after render.
+  React.useEffect(() => {
+    const hs = [...(rootRef.current?.querySelectorAll(".hp-read .help-sub") || [])];
+    hs.forEach((h, i) => { h.id = `hp-h-${i}`; });
+    setHeads(hs.map((h) => ({ id: h.id, text: h.textContent })));
+  }, [openId]);
 
   const q = query.trim().toLowerCase();
   // Title 3, keyword 2, group 1, body 1: title matches sort first.
@@ -147,9 +157,14 @@ export default function HelpPage({ entries, onClose }) {
   const body = open ? (
     <>
       <div className="hp-cols">
-        {siblings.length > 1 && (
-          <nav className="hp-rail" aria-label="In This Group">
-            <span className="hp-mono">In This Group</span>
+        {(heads.length > 1 || siblings.length > 1) && (
+          <nav className="hp-rail" aria-label="Help Navigation">
+            {heads.length > 1 && <>
+              <span className="hp-mono">On This Page</span>
+              {heads.map((h) => <button key={h.id} type="button" onClick={() => document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>{h.text}</button>)}
+              <span className="hp-mono" style={{ marginTop: 24 }}>In This Group</span>
+            </>}
+            {heads.length <= 1 && <span className="hp-mono">In This Group</span>}
             {siblings.map((s) => <button key={s.id} type="button" aria-current={s.id === open.id} onClick={() => setOpenId(s.id)}>{s.title}</button>)}
           </nav>
         )}

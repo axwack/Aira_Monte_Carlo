@@ -3194,7 +3194,7 @@ function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRAT
         <div>
           <div style={{ fontSize: "var(--fs-body)", fontWeight: 700, color: "var(--text-primary)", marginBottom: 10 }}>What is Chance of Success?</div>
           <div style={{ fontSize: "var(--fs-body)", color: "var(--text-secondary)", lineHeight: 1.7 }}>
-            It runs your plan through <strong style={{ color: "var(--text-primary)" }}>{MC_PATHS_LABEL} Monte Carlo simulations</strong>. For <em>every year</em> of your retirement, each path draws a <strong style={{ color: "var(--text-primary)" }}>random</strong> year from <strong style={{ color: "var(--text-primary)" }}>{SAMPLE_YEARS} years of real market history (1928–2025)</strong> and applies that year’s actual S&P 500 return, 10-year Treasury return, and inflation <em>together</em> — so the real correlation between them survives (e.g. 2008’s −36.6% stocks paired with its +20.1% bond rally).
+            It runs your plan through <strong style={{ color: "var(--text-primary)" }}>{MC_PATHS_LABEL} Monte Carlo simulations</strong>. For <em>every year</em> of your retirement, each path draws a <strong style={{ color: "var(--text-primary)" }}>random</strong> year from <strong style={{ color: "var(--text-primary)" }}>{SAMPLE_YEARS} years of real market history (1928–2025)</strong> and applies that year’s actual S&amp;P 500 return, 10-year Treasury return, and inflation <em>together</em> — so the real correlation between them survives (e.g. 2008’s −36.6% stocks paired with its +20.1% bond rally).
           </div>
           <div style={{ marginTop: 8, fontSize: "var(--fs-label)", color: "var(--text-muted)", lineHeight: 1.65 }}>
             Years are drawn <strong style={{ color: "var(--text-secondary)" }}>with replacement</strong> and the <strong style={{ color: "var(--text-secondary)" }}>order is reshuffled on every path</strong> — so 2008 might strike twice in one run and never in another. This is a bootstrap of history into thousands of <em>plausible</em> futures, <strong style={{ color: "var(--text-secondary)" }}>not a replay of one past sequence in calendar order</strong>.
@@ -3206,7 +3206,7 @@ function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRAT
             AiRA also applies <strong style={{ color: "var(--accent-gold)" }}>{getStrategyDescription(withdrawalStrategy)}</strong>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-            <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each path draws a random paired S&P 500 + bond year, blended by glide path. Contributions added annually.</div>
+            <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each path draws a random paired S&amp;P 500 + bond year, blended by glide path. Contributions added annually.</div>
             <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>2. Retirement spending</div>Fresh random returns each year. {params.smile !== false ? "Blanchett smile curve." : "Flat real spending."} SS{params.ab > 0 ? " and rental" : ""} income offsets draws.</div>
             <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>3. {getStrategyLabel(strat)} {strat === "gk" ? "guardrails" : "strategy"}</div>{strategyHowItWorks[strat] || strategyHowItWorks.gk}</div>
             <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>4. Survival check</div>Balance above $0 through age {params.endAge} = success. The fan chart shows the 10th–90th percentile spread.</div>
@@ -3221,7 +3221,7 @@ function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRAT
             </ul>
           </div>
           <div style={{ marginTop: 12, fontSize: "var(--fs-small)", color: "var(--text-faint)", lineHeight: 1.6 }}>
-            <strong style={{ color: "var(--text-muted)" }}>Data source:</strong> Aswath Damodaran’s historical returns dataset (S&P 500, 10-year U.S. Treasury, CPI-U), 1928–2025, paired by calendar year. No winsorization — real tail years (1931, 2008, 2022) are kept.
+            <strong style={{ color: "var(--text-muted)" }}>Data source:</strong> Aswath Damodaran’s historical returns dataset (S&amp;P 500, 10-year U.S. Treasury, CPI-U), 1928–2025, paired by calendar year. No winsorization — real tail years (1931, 2008, 2022) are kept.
           </div>
         </div>
         <div style={{ marginTop: 16, background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, padding: "14px 16px" }}>
@@ -5961,7 +5961,7 @@ function IncomeExpensesChart({ p, inf }) {
       {p.ssAge > p.retireAge && (
         <div className="flag-w" style={{ fontSize: "var(--fs-small)" }}>
           Social Security gap, ages {p.retireAge}–{p.ssAge - 1} — with no SS yet, your
-          portfolio carries the full spending need (the green Savings & 401(k)/IRA Drawdown above is
+          portfolio carries the full spending need (the green Savings &amp; 401(k)/IRA Drawdown above is
           largest here). This is the highest sequence-of-returns risk window.
         </div>
       )}
@@ -6712,7 +6712,7 @@ const modeDescs = {
                   </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 20px", fontSize: "var(--fs-label)" }}>
                 <div>
-                  <div style={{ color: "var(--text-secondary)", marginBottom: 6, fontSize: "var(--fs-small)" }}>Tax Year & Income</div>
+                  <div style={{ color: "var(--text-secondary)", marginBottom: 6, fontSize: "var(--fs-small)" }}>Tax Year &amp; Income</div>
                   {[
                     ["Tax Year",          cyYear,   setCyYear,   false, 2026, 2060],
                     ["W-2 / SE Income",   cyW2,     setCyW2,     true],
@@ -7663,7 +7663,7 @@ const modeDescs = {
       >
         This analysis is for planning purposes only. Consult a tax professional
         before executing Roth conversions. Progressive fed brackets (IRS Rev.
-        Proc. 2025-32) · NJ graduated rates · Joint & Last Survivor RMD table ·
+        Proc. 2025-32) · NJ graduated rates · Joint &amp; Last Survivor RMD table ·
         7% growth assumption · Conversion tax default funded from your taxable /
         HSA / cash bucket (Vanguard BETR best practice — lowest effective rate).
         Override in Assumptions → Roth Conversion Strategy.
@@ -12333,7 +12333,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
               </div>
             )}
             <div>
-              <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--positive)", marginBottom: 10 }}>MARKET & STATISTICAL MODEL</div>
+              <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--positive)", marginBottom: 10 }}>MARKET &amp; STATISTICAL MODEL</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <InputCard title="Return Distribution" rows={[["Model", "Historical bootstrap"], ["Equity data", `${SAMPLE_YEARS}yr S&P 500 (${SAMPLE_START_YEAR}–${SAMPLE_END_YEAR})`], [`Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`, "Equity / Bonds"], [`Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`, "Equity / Bonds"]]} />
                 <InputCard title="Inflation & Guardrails" rows={[["Inflation", "Historical bootstrap"], ["Inflation source", `CPI for the same years (${SAMPLE_START_YEAR}–${SAMPLE_END_YEAR})`], ["GK floor", fmtDollar(params.gkFloor) + "/yr"], ["GK ceiling", fmtDollar(params.gkCeiling) + "/yr"]]} />
@@ -12474,7 +12474,7 @@ function MortgageTab({ values, onChange }) {
             <div className="ms">vs no extra</div>
           </div>
           <div className="met">
-            <div className="ml">Monthly P&I</div>
+            <div className="ml">Monthly P&amp;I</div>
             <div className="mv" style={{ color:"var(--text-primary)", fontSize: "var(--fs-h2)" }}>{fmtDollar(sched.pmt)}</div>
             <div className="ms">At {rate}% fixed</div>
           </div>
@@ -15170,7 +15170,7 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in the Net Worth projection.">
           <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
         </ARow>
-        <ARow label="Housing type" desc="Own = mortgage P&I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
+        <ARow label="Housing type" desc="Own = mortgage P&amp;I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
           <select
             value={values.housingType || "own"}
             onChange={(e) => onChange("housingType", e.target.value)}
@@ -18508,7 +18508,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               >
                 <div style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.9 }}>
                   <div>
-                    <span style={{ color: "var(--accent-teal)" }}>Equity:</span> {SAMPLE_YEARS}yr S&P bootstrap [-30 / +30%]
+                    <span style={{ color: "var(--accent-teal)" }}>Equity:</span> {SAMPLE_YEARS}yr S&amp;P bootstrap [-30 / +30%]
                   </div>
                   <div>
                     <span style={{ color: "var(--accent-purple)" }}>Bonds:</span> {SAMPLE_YEARS}yr bond history [-15 / +20%]
