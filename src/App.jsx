@@ -87,6 +87,7 @@ import { BucketLegend, BucketResetButton } from "./BucketLegend";
 import BudgetEditor, { budgetLinesToCsv, lineError } from "./planInputs/BudgetEditor";
 import { NavContext, GoStep } from "./NavContext";
 import CheckpointsPanel from "./forecast/CheckpointsPanel";
+import HelpPage from "./HelpPage";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 import { bucketColor } from "./engine/bucketColors";
 import { retirementTarget, formatRemaining } from "./engine/retirementTarget";
@@ -4710,113 +4711,12 @@ function AboutButton() {
 // purely presentation + filtering.
 function HelpButton() {
   const [open, setOpen] = React.useState(false);
-  const [query, setQuery] = React.useState("");
-  const [openId, setOpenId] = React.useState(null); // one topic open at a time
-
-  const overlay = open ? ReactDOM.createPortal(
-    <div
-      onClick={() => setOpen(false)}
-      style={{ position:"fixed", inset:0, background:"var(--tint-black-70)", zIndex:99999,
-        display:"flex", alignItems:"flex-start", justifyContent:"center",
-        padding:"40px 16px 60px", overflowY:"auto" }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{ background:"#0f1729", border:"1px solid rgba(96,165,250,0.2)",
-          borderRadius:14, padding:"24px 28px 28px", maxWidth:600, width:"100%",
-          boxShadow:"0 24px 60px var(--tint-black-80)" }}
-      >
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
-          <div style={{ fontSize: "var(--fs-h2)", fontWeight:800, color:"var(--text-primary)", letterSpacing:"-0.3px" }}>
-            ❓ Help &amp; How It Works
-          </div>
-          <button onClick={() => setOpen(false)}
-            style={{ background:"transparent", border:"none", color:"var(--text-muted)",
-              cursor:"pointer", fontSize: "var(--fs-h1)", lineHeight:1, padding:"0 2px" }}>×</button>
-        </div>
-
-        <input
-          type="text"
-          autoFocus
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search help topics… e.g. IRMAA, Roth, buckets, spending smile"
-          style={{ width:"100%", boxSizing:"border-box", padding:"10px 14px", marginBottom:16,
-            background:"var(--row-highlight)", border:"1px solid var(--tint-white-12)",
-            borderRadius:9, color:"var(--text-primary)", fontSize: "var(--fs-body)", fontFamily:"inherit" }}
-        />
-
-        {ABOUT_PRODUCT.intro && !query.trim() && (
-          <p style={{ fontSize: "var(--fs-body)", color:"var(--text-secondary)", lineHeight:1.75,
-            margin:"0 0 18px", padding:"12px 14px", background:"rgba(96,165,250,0.06)",
-            border:"1px solid rgba(96,165,250,0.15)", borderRadius:9 }}>
-            {ABOUT_PRODUCT.intro}
-          </p>
-        )}
-
-        {(() => {
-          const q = query.trim().toLowerCase();
-          // Drop <style> blocks first so CSS text is not searchable.
-          const stripHtml = (html) => html.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
-          const filtered = !q ? ABOUT_FEATURES : ABOUT_FEATURES.filter(e =>
-            e.title.toLowerCase().includes(q) ||
-            (e.group || "").toLowerCase().includes(q) ||
-            (e.keywords || []).join(" ").toLowerCase().includes(q) ||
-            stripHtml(e.body).toLowerCase().includes(q)
-          );
-          const groups = [...new Set(filtered.map(e => e.group).filter(Boolean))];
-          const ungrouped = filtered.filter(e => !e.group);
-
-          if (ABOUT_FEATURES.length === 0) {
-            return (
-              <div style={{ fontSize: "var(--fs-label)", color:"var(--text-faint)", textAlign:"center", padding:24 }}>
-                No entries yet. Add items to ABOUT_FEATURES in src/about.js.
-              </div>
-            );
-          }
-          if (filtered.length === 0) {
-            return (
-              <div style={{ fontSize: "var(--fs-label)", color:"var(--text-faint)", textAlign:"center", padding:24 }}>
-                No help topics match "{query.trim()}". Try a different word, or use Feedback to ask directly.
-              </div>
-            );
-          }
-          return (
-            <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
-              {groups.map(g => (
-                <div key={g}>
-                  <div style={{ fontSize: "var(--fs-small)", fontWeight:700, color:"var(--text-faint)", letterSpacing:"1px", marginBottom:9 }}>{g}</div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
-                    {filtered.filter(e => e.group === g).map(e => (
-                      <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} {...(q ? {} : { open: openId === e.id, onToggle: () => setOpenId((id) => (id === e.id ? null : e.id)) })} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {ungrouped.map(e => (
-                <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} {...(q ? {} : { open: openId === e.id, onToggle: () => setOpenId((id) => (id === e.id ? null : e.id)) })} />
-              ))}
-            </div>
-          );
-        })()}
-
-        <button onClick={() => setOpen(false)}
-          style={{ marginTop:22, width:"100%", background:"rgba(96,165,250,0.08)",
-            border:"1px solid rgba(96,165,250,0.25)", borderRadius:8, padding:"9px 0",
-            color:"var(--chart-2)", fontSize: "var(--fs-body)", fontWeight:600, cursor:"pointer" }}>
-          Close
-        </button>
-      </div>
-    </div>,
-    document.body
-  ) : null;
-
   return (
     <>
-      <button className="mbtn" onClick={() => { setQuery(""); setOpen(true); }} title="Look up how a feature or number works">
+      <button className="mbtn" onClick={() => setOpen(true)} title="Look up how a feature or number works">
         Help
       </button>
-      {overlay}
+      {open && <HelpPage entries={ABOUT_FEATURES} onClose={() => setOpen(false)} />}
     </>
   );
 }
