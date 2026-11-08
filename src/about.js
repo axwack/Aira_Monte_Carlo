@@ -76,6 +76,16 @@ export const ABOUT_PRODUCT = {
 export const ABOUT_FEATURES = [
   // ── Getting Started ──────────────────────────────────────
   {
+    id:    "first-plan",
+    group: "Getting Started",
+    icon:  "",
+    title: "Your First Plan in 5 Steps",
+    keywords: ["first plan", "getting started", "start", "sliders", "run", "simulation", "result", "beginner"],
+    body:  "<p class='help-lede'>Answer four questions, run the simulation, and read one number. You can have a first answer in about a minute, then refine it.</p><h3 class='help-sub'>1. Answer Four Questions</h3><p class='help-p'>On the opening screen, move the four sliders: your current age, what you have saved so far, what you add each year, and what you want to spend in retirement. Then choose <strong>Open the app</strong>.</p><h3 class='help-sub'>2. Check What AiRA Assumed</h3><p class='help-p'>The quick estimate is a rule of thumb. The full simulation also needs a few things you did not enter, so the <strong>We assumed</strong> box in the left panel lists them, for example a birth date, which accounts your savings sit in, and a Social Security amount and start age. Press <strong>Change</strong> next to any that are wrong.</p><h3 class='help-sub'>3. Set Your Plan Basics</h3><p class='help-p'>The <strong>Plan basics</strong> panel holds five settings: Retire Age, Plan to Age, US Annual Spend, Annual Savings and SS Claim Age. Move a slider or type a value. Your spending target is an after-tax figure; see <em>Spending Numbers Are AFTER Tax</em>.</p><figure><img src='/help/first-plan-basics.png' alt='The Plan basics panel with sliders for retire age, plan to age, US annual spend, annual savings and SS claim age.'><figcaption>The Plan basics panel, at the top of the left sidebar.</figcaption></figure><h3 class='help-sub'>4. Run the Simulation</h3><p class='help-p'>Press <strong>Run Monte Carlo</strong> in the left panel. AiRA replays your plan through 3,000 simulated market histories. Change an input and the results go stale until you run it again.</p><h3 class='help-sub'>5. Read Your Result</h3><p class='help-p'>The big number is <strong>Success to Age</strong>: the share of simulated market histories in which your money lasts to that age. The strip under it adds five more answers: Withdrawal Rate, Money Outlives You, Worst Case, Runs Out and the Stress Test 2000–12. Press <strong>What are these?</strong> beside the strip for what each one means.</p><figure><img src='/help/first-plan-result.png' alt='The result card showing 99.5 percent success to age 85, with the headline strip of withdrawal rate, money outlives you, worst case, runs out and stress test.'><figcaption>The result card and the headline strip, after a run.</figcaption></figure><h3 class='help-sub'>Where to Go Next</h3><p class='help-p'>Net Worth shows the projection, Forecast shows the full range of outcomes, Analysis holds the detailed tools (Roth conversions, withdrawal plan, stress test, buckets and more), and Action Plan turns the result into next steps. <strong>Plan inputs</strong> is where you fill in everything the sliders left out.</p><h3 class='help-sub'>Your Work Is Saved Here</h3><p class='help-p'>AiRA auto-saves your plan in this browser. It is kept on this device, not uploaded. Use <strong>Export</strong> in the top toolbar to keep a copy you can import later.</p>",
+    source: "src/App.jsx: opening screen, Plan basics panel, headline strip (checked against the live app)",
+    verified: "2026-11-08",
+  },
+  {
     id:    "after-tax",
     group: "Getting Started",
     icon:  "🧾",
@@ -679,5 +689,25 @@ Cards with no badge have not yet been reviewed by AI. Run AI again at any time t
 <strong style="color:#e2e8f0;">When to use it:</strong> Run Live Updates at the start of each year (after IRS announcements in November/December) or any time you suspect a tax law or benefit change may affect your plan. The standard AI analysis does not search the web — these two features complement each other.</p>`,
     source: "",
     verified: "",
+  },
+  {
+    id:    "stress-test",
+    group: "Risk & Returns",
+    icon:  "",
+    title: "Stress Test: Does Your Plan Survive a Bad Break?",
+    keywords: ["stress", "crash", "long-term care", "live to 100", "spouse", "sequence", "2000", "recession"],
+    body:  "<p class='help-lede'>The Stress test tab re-runs your plan with one thing gone wrong, so you can see how much a bad break costs.</p><h3 class='help-sub'>What You See</h3><p class='help-p'>Each card shows two numbers. The big one is how many percentage points the share of funded plans falls versus your baseline. <strong>Drops to</strong> is the share still funded.</p><ul><li><strong>Market Crashes Early:</strong> a one-year equity shock right at retirement. Pick -10%, -25% or -40%, or edit the crash using real history or your own years.</li><li><strong>Long-Term Care Event:</strong> 3 years of memory care at about $110,000 a year.</li><li><strong>Live to 100:</strong> 15 extra years of withdrawals.</li><li><strong>Spouse Passes Early:</strong> the survivor keeps the larger Social Security check and files Single from day one. It is a worst-case bound, not a forecast.</li></ul><h3 class='help-sub'>Quick Check or Precise Run</h3><p class='help-p'><strong>Quick check</strong> gives every card a fast estimate. <strong>Precise run</strong> gives one card the full 3,000-path result.</p><h3 class='help-sub'>What It Does Not Change</h3><p class='help-p'>The simulation varies market returns, inflation, rental reliability and healthcare shocks. Your spending, claim ages, retirement age and any modelled death are held at what you entered. So this measures how much market risk the plan absorbs, not the overall odds that your retirement works out.</p><h3 class='help-sub'>The 2000–2012 Replay</h3><p class='help-p'>Below the cards, a chart replays your plan with the actual 2000–2012 S&amp;P 500 sequence at the start of retirement. The <strong>Stress test 2000–12</strong> figure in the headline strip is the share of paths still funded under it. Open <strong>Show year-by-year S&amp;P sequence</strong> to see each year.</p>",
+    source: "Analysis → Stress test tab (checked against the live app)",
+    verified: "2026-11-08",
+  },
+  {
+    id:    "irmaa",
+    group: "Tax Modeling",
+    icon:  "",
+    title: "IRMAA: The Medicare Surcharge",
+    keywords: ["irmaa", "medicare", "part b", "part d", "surcharge", "lookback", "premium"],
+    body:  "<p class='help-lede'>IRMAA is an extra charge on Medicare premiums for higher-income retirees. AiRA adds it to your plan's costs when your income crosses a tier.</p><h3 class='help-sub'>The Tiers</h3><p class='help-p'>AiRA uses the 2026 figures from the CMS fact sheet, for a two-person Medicare household. The surcharge covers Part B and Part D together, because prescription drugs are a large share of retiree health spending. Income above each line moves you to that tier's yearly surcharge:</p><ul><li>Above $218,000: $2,296.80 a year</li><li>Above $274,000: $5,769.60 a year</li><li>Above $342,000: $9,240 a year</li><li>Above $410,000: $12,710.40 a year</li><li>Above $750,000: $13,872 a year</li></ul><h3 class='help-sub'>The Two-Year Lookback</h3><p class='help-p'>Medicare sets the charge from your income two years earlier, and AiRA does the same in the withdrawal plan. A large Roth conversion or one-off income therefore raises the charge two years later, not in the year it happens.</p><h3 class='help-sub'>Staying Under a Tier</h3><p class='help-p'>On <strong>Analysis</strong> → <strong>Roth conversions</strong>, the <strong>IRMAA-Safe</strong> option fills the 22% bracket but stops at the first IRMAA tier from age 63, because income at 63 sets the surcharge at 65.</p>",
+    source: "src/data/irmaa2026.js (CMS 2026 Medicare Parts A & B fact sheet, 14 Nov 2025)",
+    verified: "2026-11-08",
   },
 ]
