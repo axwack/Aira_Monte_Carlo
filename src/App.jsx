@@ -4756,7 +4756,8 @@ function HelpButton() {
 
         {(() => {
           const q = query.trim().toLowerCase();
-          const stripHtml = (html) => html.replace(/<[^>]+>/g, " ");
+          // Drop <style> blocks first so CSS text is not searchable.
+          const stripHtml = (html) => html.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
           const filtered = !q ? ABOUT_FEATURES : ABOUT_FEATURES.filter(e =>
             e.title.toLowerCase().includes(q) ||
             (e.group || "").toLowerCase().includes(q) ||
@@ -18064,9 +18065,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             <button
               className="mbtn"
               title={mc
-                ? "Snapshot today's plan (success rate, portfolio, spending) to your Progress journal — Analysis → Progress"
+                ? "Snapshot today's plan (success rate, portfolio, spending) to your Progress journal and open it (Analysis → Progress)"
                 : "Run Monte Carlo first — a check-in snapshots your current success rate"}
-              onClick={handleSaveCheckIn}
+              onClick={() => { handleSaveCheckIn(); navigateToTab("scenarios", "progress"); }}
               disabled={!mc}
               style={!mc ? { opacity: 0.45, cursor: "default" } : checkInFlash ? { color: "var(--accent-teal)" } : undefined}
             >

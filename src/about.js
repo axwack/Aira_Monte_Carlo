@@ -283,6 +283,16 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
     source: "",
     verified: "",
   },
+  {
+    id:    "check-ins",
+    group: "Getting Started",
+    icon:  "📈",
+    title: "What Is a Check-In?",
+    keywords: ["check-in","checkin","progress","snapshot","journal","trend","save"],
+    body:  `<p class='help-lede'>A check-in is a dated snapshot of your plan: a saved copy of today's numbers that you can compare with later ones.</p><p class='help-p'><strong>What it records:</strong> your success rate, stress-test rate, portfolio value, spending, retirement age and plan age, and the median ending balance. It does not save your inputs, and it never changes your plan.</p><p class='help-p'><strong>How to make one:</strong> run Monte Carlo, then click <strong>Check-in</strong> in the top toolbar. The app then takes you straight to <strong>Analysis</strong> → <strong>Progress</strong>, where the new check-in is waiting. The button is greyed out until a simulation has run, because a check-in needs a success rate to record.</p><p class='help-p'><strong>Where to see them:</strong> check-ins live in <strong>Analysis</strong> → <strong>Progress</strong>, which you can open any time. Each check-in is a card there, and once you have two or more, a trend and a first-versus-latest comparison appear. You can rename or delete a check-in there too.</p><div class='help-note'><span class='help-note-icon' aria-hidden='true'>!</span><div><strong>Not the same as checkpoints.</strong> A check-in saves what the <em>plan</em> says. A checkpoint records what your <em>real</em> portfolio was on a date and compares it with the forecast. Use check-ins to watch your plan change, and checkpoints to see whether you are on track.</div></div><p class='help-p'><strong>Good to know:</strong> check-ins are stored in this browser. They are included in a profile export, and importing one adds entries to your journal without overwriting your plan inputs. A good rhythm is one check-in a year, or after any big change to your plan.</p>`,
+    source: "",
+    verified: "",
+  },
     {
     id:    "checkpoints",
     group: "Reading the Charts",
