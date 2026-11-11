@@ -1,0 +1,73 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`golden master: fixed-seed runMC accumulating 1`] = `
+Object {
+  "N": 300,
+  "medR": 7015838,
+  "medianExhaustAge": null,
+  "mwRate": 1,
+  "rate": 1,
+  "term": Object {
+    "mean": 68478093,
+    "p10": 12950781,
+    "p25": 23260495,
+    "p50": 40639426,
+    "p75": 79714357,
+    "p90": 139117039,
+  },
+}
+`;
+
+exports[`golden master: fixed-seed runMC base 1`] = `
+Object {
+  "N": 300,
+  "medR": 1600000,
+  "medianExhaustAge": null,
+  "mwRate": 1,
+  "rate": 1,
+  "term": Object {
+    "mean": 7572382,
+    "p10": 1856241,
+    "p25": 3493126,
+    "p50": 5547590,
+    "p75": 9420889,
+    "p90": 15928998,
+  },
+}
+`;
+
+exports[`golden master: fixed-seed runMC highSpend 1`] = `
+Object {
+  "N": 300,
+  "medR": 1600000,
+  "medianExhaustAge": 88,
+  "mwRate": 0.977664,
+  "rate": 0.93,
+  "term": Object {
+    "mean": 5329132,
+    "p10": 247316,
+    "p25": 1057981,
+    "p50": 2784147,
+    "p75": 7202133,
+    "p90": 12096381,
+  },
+}
+`;
+
+exports[`golden master: fixed-seed runMC single 1`] = `
+Object {
+  "N": 300,
+  "medR": 1600000,
+  "medianExhaustAge": null,
+  "mwRate": 1,
+  "rate": 1,
+  "term": Object {
+    "mean": 6634780,
+    "p10": 1391970,
+    "p25": 2891218,
+    "p50": 4828148,
+    "p75": 8260481,
+    "p90": 13987921,
+  },
+}
+`;
