@@ -17187,7 +17187,7 @@ const LANDING_FEATURES = [
   { kicker: "AI Analysis", t: "Turn Your Results Into Next Steps",
     d: "An optional AI analysis reads your plan and writes a ranked list of actions to consider.",
     points: ["Optional: the calculator works fully without it", "Uses AiRA credits, or your own free Gemini key", "It suggests. You decide."],
-    noteTitle: "Optional And Under Your Control", note: "AI analysis is never run unless you press the button." },
+    img: "/landing/ai.png", alt: "The Action Plan tab after AI analysis: a retirement date solver table and a ranked list of nine items marked critical, important or on track.", cap: "The Action Plan tab after an AI analysis, using example numbers." },
 ];
 
 function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
