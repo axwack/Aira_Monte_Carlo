@@ -4025,6 +4025,8 @@ const CSS = `
   .lp-shot-note { padding:28px; display:flex; flex-direction:column; gap:8px; }
   .lp-shot-note b { color:var(--text-primary); font-size:17px; }
   .lp-shot-note span { color:var(--text-secondary); font-size:15px; line-height:1.5; }
+  .lp-video { max-width:900px; }
+  .lp-video video { display:block; width:100%; height:auto; border-radius:8px; background:#000; }
   .lp-reveal { opacity:0; transform:translateY(24px); transition:opacity 0.6s ease, transform 0.6s ease; }
   .lp-reveal.lp-in { opacity:1; transform:none; }
   @media (prefers-reduced-motion: reduce) { .lp-reveal { opacity:1; transform:none; transition:none; } }
@@ -17315,6 +17317,22 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
             </div>
             <p className="lp-fine">An estimate from a simplified model, not financial advice and not a guarantee. The full app is more detailed.</p>
           </div>
+        </section>
+
+        <section className="lp-section">
+          <h2 className="lp-h2">See It In Action</h2>
+          <p className="lp-p" style={{ maxWidth: "62ch", marginBottom: 18 }}>
+            A 24-second silent tour with example numbers: the projection, the forecast range, spending guardrails and a stress test that replays a real market crash.
+          </p>
+          <LpReveal>
+            <figure className="lp-shot lp-video">
+              <video controls preload="none" playsInline poster="/landing/tour-poster.jpg"
+                aria-label="Silent 24-second tour of the AiRA app using example numbers">
+                <source src="/landing/tour.mp4" type="video/mp4" />
+              </video>
+              <figcaption>Press play. No sound. Example numbers.</figcaption>
+            </figure>
+          </LpReveal>
         </section>
 
         <section className="lp-section">
