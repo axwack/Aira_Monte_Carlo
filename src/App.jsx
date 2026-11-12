@@ -3988,6 +3988,34 @@ const CSS = `
   .lp-cta:hover { filter:brightness(1.1); }
   .lp-skip { display:block; margin-top:15px; background:none; border:none; color:var(--text-muted); font-size:13px; cursor:pointer; font-family:var(--font-sans); text-decoration:underline; padding:0; }
   .lp-skip:hover { color:var(--text-secondary); }
+  .lp-site { width:100%; max-width:1080px; }
+  .lp-top { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:clamp(28px,5vw,56px); flex-wrap:wrap; }
+  .lp-nav { display:flex; align-items:center; gap:18px; font-size:14px; white-space:nowrap; }
+  .lp-nav a { color:var(--text-secondary); text-decoration:none; font-weight:600; }
+  .lp-nav a:hover { color:var(--text-primary); }
+  .lp-nav-btn { padding:9px 18px; border-radius:10px; border:1px solid var(--card-border); background:var(--card-bg); color:var(--text-primary); font-size:14px; font-weight:600; font-family:var(--font-sans); cursor:pointer; }
+  .lp-nav-btn:hover { border-color:var(--accent); }
+  .lp-hero { display:grid; grid-template-columns:1fr; gap:36px; align-items:start; }
+  @media (min-width:900px) { .lp-hero { grid-template-columns:1fr 1fr; gap:48px; } }
+  .lp-title { font-size:clamp(34px,5.5vw,54px); font-weight:700; line-height:1.06; letter-spacing:-0.02em; color:var(--text-primary); margin:0; }
+  .lp-micro { margin-top:14px; font-size:13px; color:var(--text-muted); }
+  .lp-card { margin-top:0; }
+  .lp-card-tag { font-size:12px; font-weight:700; color:var(--accent); margin-bottom:12px; }
+  .lp-card .lp-answer { font-size:clamp(26px,4vw,38px); }
+  .lp-card-sub { margin:10px 0 0; font-size:14px; color:var(--text-secondary); line-height:1.5; }
+  .lp-fine { margin:6px 0 0; font-size:12px; color:var(--text-faint); line-height:1.5; }
+  .lp-section { margin-top:clamp(48px,8vw,88px); }
+  .lp-h2 { font-size:clamp(24px,3.6vw,32px); font-weight:700; color:var(--text-primary); margin:0 0 20px; letter-spacing:-0.01em; }
+  .lp-h3 { font-size:17px; font-weight:700; color:var(--text-primary); margin:0 0 8px; }
+  .lp-p { font-size:15px; color:var(--text-secondary); line-height:1.55; margin:0; }
+  .lp-grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+  .lp-grid2 { display:grid; grid-template-columns:1fr; gap:14px; margin-top:20px; }
+  @media (min-width:700px) { .lp-grid2 { grid-template-columns:1fr 1fr; } }
+  .lp-tile { background:var(--card-bg); border:1px solid var(--card-border); border-radius:14px; padding:22px; text-align:left; font-family:var(--font-sans); text-decoration:none; display:block; }
+  .lp-tile-btn { cursor:pointer; width:100%; display:flex; flex-direction:column; justify-content:flex-start; }
+  .lp-tile-btn:hover { border-color:var(--accent); }
+  .lp-num { width:34px; height:34px; border-radius:50%; background:var(--bg-info); color:var(--accent); font-weight:700; display:flex; align-items:center; justify-content:center; margin-bottom:14px; }
+  .lp-foot { margin-top:clamp(48px,8vw,88px); padding-top:22px; border-top:1px solid var(--divider); font-size:13px; color:var(--text-muted); line-height:1.7; }
   /* minmax(0,1fr), not bare 1fr: a grid track's auto minimum is its content's
      max-content width, so a wide child (the 15+ column Withdrawal Plan
      table) silently grows the whole right-pane track past the viewport
@@ -17075,6 +17103,9 @@ function LandingMoneyField({ row }) {
 
 // First-screen landing shown to visitors with no saved profile. Answers the one
 // question — "when can I retire?" — then routes into the full app via onEnter.
+// Set to the Getting Started video URL when episode 1 is live; the card stays hidden while empty.
+const LANDING_INTRO_VIDEO_URL = "";
+
 function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
   const [curAge, setCurAge] = useState(45);
   const [savings, setSavings] = useState(850000);
@@ -17134,91 +17165,173 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
       ...LANDING_LIMITS.spend, money: true, fmt: (v) => fmtDollar(v) + "/yr" },
   ];
 
+  const startNow = savedPlan ? onContinue : () => onEnter(s);
+  const startLabel = savedPlan ? "Open My Saved Plan" : "See Your Real Numbers";
+  const steps = [
+    { n: "1", t: "Answer Four Questions", d: "Your age, what you have saved, what you add each year, and what you want to spend in retirement." },
+    { n: "2", t: "Run The Simulation", d: `AiRA replays your plan through ${MC_PATHS_LABEL} simulated market histories, with taxes, Social Security and the order you withdraw from accounts.` },
+    { n: "3", t: "Read One Number", d: "See the share of simulated futures where your money lasts. Change an input and watch the number move." },
+  ];
+  const checks = [
+    { t: "2026 Tax Rules", d: "Federal tax brackets and standard deductions use the 2026 IRS figures." },
+    { t: "Medicare Premium Surcharges", d: "Income-based surcharges (called IRMAA) use the 2026 Medicare (CMS) figures." },
+    { t: "Required Withdrawals", d: "The rules for when you must start taking money out of retirement accounts (RMDs)." },
+    { t: "Market Stress Tests", d: "Replay past market crashes against your plan to see how it holds up." },
+  ];
+
   return (
     <div className="landing">
-      <div className="lp-wrap">
-        <div className="lp-brand">
+      <div className="lp-site">
+        <header className="lp-top">
           <div className="logo">AiRA <span className="logo-sub">Freedom Financial</span></div>
-          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>v{APP_VERSION}</div>
-        </div>
+          <nav className="lp-nav" aria-label="Page sections">
+            <a href="#lp-how">How It Works</a>
+            <a href="#lp-trust">What We Check</a>
+            <button className="lp-nav-btn" onClick={startNow}>{savedPlan ? "Open My Saved Plan" : "Open The App"}</button>
+          </nav>
+        </header>
 
-        <div className="lp-eyebrow">Quick Estimate Using Example Numbers</div>
-        <h1 className={"lp-answer" + (age != null && conf < 0.9 ? " short" : "")}>
-          {retired
-            ? <>Your money lasts to <span className="lp-age">{landingLastsToAge(s)}</span></>
-            : age != null
-              ? <>You can retire at <span className="lp-age">{age}</span></>
-              : <>Let's find your <span className="lp-age">number</span></>}
-        </h1>
-        <p className="lp-sub">
-          {age != null
-            ? <>Based on your savings and spending, the math says you reach financial independence{" "}
-                <b style={{ color: "var(--text-primary)" }}>{age - curAge <= 0 ? "right now" : `${age - curAge} year${age - curAge === 1 ? "" : "s"} from now`}</b>
-                {conf >= 0.92 ? " — with real margin." : " — with a modest cushion."}</>
-            : <>No age up to {AGE_LIMITS.retire.max} clears 85% confidence at these numbers yet — try saving more, or trimming the spend.</>}
-        </p>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 38, fontWeight: 500, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{Math.round(conf * 100)}</span>
-            <span style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", fontWeight: 600 }}>% confident<br />at that age</span>
+        <section className="lp-hero">
+          <div>
+            <div className="lp-eyebrow">Free Retirement Planner</div>
+            <h1 className="lp-title">See Your Real Retirement Numbers</h1>
+            <p className="lp-sub">
+              Answer four questions to see when you can retire. Then test your plan against {MC_PATHS_LABEL} simulated
+              markets, using your real accounts, taxes and Social Security.
+            </p>
+            <button className="lp-cta" onClick={startNow}>{startLabel}</button>
+            {savedPlan
+              ? <button className="lp-skip" onClick={() => {
+                  if (window.confirm("Replace your saved plan with the numbers on this page?")) onEnter(s);
+                }}>Replace My Plan With These Numbers</button>
+              : <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll Enter My Own Details</button>}
+            <p className="lp-micro">No Account Needed. Your Plan Is Saved On This Device.</p>
           </div>
-          <div style={{ flex: 1, minWidth: 200, height: 10, borderRadius: 100, background: "var(--tint-white-06)", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: -3, bottom: -3, left: "85%", width: 2, background: "var(--text-faint)" }} />
-            <div style={{ height: "100%", borderRadius: 100, width: `${Math.min(100, Math.round(conf * 100))}%`, background: "var(--accent-teal)", transition: "width 0.35s" }} />
-          </div>
-        </div>
 
-        <div style={{ marginTop: 26 }}>
-          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 6, fontWeight: 700 }}>Median portfolio path</div>
-          <canvas ref={canvasRef} style={{ width: "100%", height: 120, display: "block" }} />
-        </div>
+          <div className="lp-panel lp-card">
+            <div className="lp-card-tag">Example Plan: Change The Numbers To Yours</div>
+            <h2 className={"lp-answer" + (age != null && conf < 0.9 ? " short" : "")}>
+              {retired
+                ? <>Your money lasts to <span className="lp-age">{landingLastsToAge(s)}</span></>
+                : age != null
+                  ? <>You can retire at <span className="lp-age">{age}</span></>
+                  : <>Let's find your <span className="lp-age">number</span></>}
+            </h2>
+            <p className="lp-card-sub">
+              {age != null
+                ? <>The math says you reach financial independence{" "}
+                    <b style={{ color: "var(--text-primary)" }}>{age - curAge <= 0 ? "right now" : `${age - curAge} year${age - curAge === 1 ? "" : "s"} from now`}</b>
+                    {conf >= 0.92 ? ", with real margin." : ", with a modest cushion."}</>
+                : <>No age up to {AGE_LIMITS.retire.max} clears 85% confidence at these numbers yet. Try saving more, or trimming the spend.</>}
+            </p>
 
-        <div className="lp-panel">
-          {rows.map((r) => (
-            <div key={r.key}>
-              <div className="lp-row">
-                <span className="lp-label">{r.label}</span>
-                {r.money
-                  ? <LandingMoneyField row={r} />
-                  : <span className="lp-val">{r.fmt(r.val)}</span>}
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 18, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                <span style={{ fontSize: 34, fontWeight: 500, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{Math.round(conf * 100)}</span>
+                <span style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", fontWeight: 600 }}>% confident<br />at that age</span>
               </div>
-              {r.money ? (
-                <input className="lp-range" type="range" min={0} max={LANDING_SLIDER_STEPS} step={1}
-                  aria-label={r.label}
-                  value={landingValToPos(r.val, r.min, r.max)}
-                  onChange={(e) => r.set(landingPosToVal(+e.target.value, r.min, r.max))} />
-              ) : (
-                <input className="lp-range" type="range" min={r.min} max={r.max} step={1}
-                  aria-label={r.label}
-                  value={r.val} onChange={(e) => r.set(+e.target.value)} />
-              )}
+              <div style={{ flex: 1, minWidth: 160, height: 10, borderRadius: 100, background: "var(--tint-white-06)", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: -3, bottom: -3, left: "85%", width: 2, background: "var(--text-faint)" }} />
+                <div style={{ height: "100%", borderRadius: 100, width: `${Math.min(100, Math.round(conf * 100))}%`, background: "var(--accent-teal)", transition: "width 0.35s" }} />
+              </div>
             </div>
-          ))}
-        </div>
 
-        {savedPlan ? (
-          <>
-            <button className="lp-cta" onClick={onContinue}>Open My Saved Plan</button>
-            <button className="lp-skip" onClick={() => {
-              if (window.confirm("Replace your saved plan with the numbers on this page?")) onEnter(s);
-            }}>Replace My Plan With These Numbers</button>
-          </>
-        ) : (
-          <>
-            <button className="lp-cta" onClick={() => onEnter(s)}>See Your Real Numbers</button>
-            <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll Enter My Own Details</button>
-          </>
-        )}
-        <p style={{ marginTop: 10, fontSize: "var(--fs-label)", color: "var(--text-muted)" }}>
-          No Account Needed. Your Plan Is Saved On This Device.
-        </p>
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 6, fontWeight: 700 }}>Median portfolio path</div>
+              <canvas ref={canvasRef} style={{ width: "100%", height: 120, display: "block" }} />
+            </div>
 
-        <p style={{ marginTop: 32, fontSize: "var(--fs-label)", color: "var(--text-faint)", lineHeight: 1.6, maxWidth: "62ch" }}>
-          The numbers above are examples. Move the sliders to yours. This is a 60-second estimate, not financial
-          advice and not a guarantee. The full app runs {MC_PATHS_LABEL} market simulations across your real
-          accounts, taxes, Social Security, and withdrawal order — that's where your true plan lives.
-        </p>
+            <div style={{ marginTop: 18 }}>
+              {rows.map((r) => (
+                <div key={r.key}>
+                  <div className="lp-row">
+                    <span className="lp-label">{r.label}</span>
+                    {r.money
+                      ? <LandingMoneyField row={r} />
+                      : <span className="lp-val">{r.fmt(r.val)}</span>}
+                  </div>
+                  {r.money ? (
+                    <input className="lp-range" type="range" min={0} max={LANDING_SLIDER_STEPS} step={1}
+                      aria-label={r.label}
+                      value={landingValToPos(r.val, r.min, r.max)}
+                      onChange={(e) => r.set(landingPosToVal(+e.target.value, r.min, r.max))} />
+                  ) : (
+                    <input className="lp-range" type="range" min={r.min} max={r.max} step={1}
+                      aria-label={r.label}
+                      value={r.val} onChange={(e) => r.set(+e.target.value)} />
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="lp-fine">An estimate from a simplified model, not financial advice and not a guarantee. The full app is more detailed.</p>
+          </div>
+        </section>
+
+        <section id="lp-how" className="lp-section">
+          <h2 className="lp-h2">How It Works</h2>
+          <div className="lp-grid3">
+            {steps.map((st) => (
+              <div key={st.n} className="lp-tile">
+                <div className="lp-num">{st.n}</div>
+                <h3 className="lp-h3">{st.t}</h3>
+                <p className="lp-p">{st.d}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="lp-section">
+          <h2 className="lp-h2">Choose How To Start</h2>
+          <div className="lp-grid3">
+            {savedPlan && (
+              <button className="lp-tile lp-tile-btn" onClick={onContinue}>
+                <h3 className="lp-h3">Open My Saved Plan</h3>
+                <p className="lp-p">Go straight back to the plan saved on this device.</p>
+              </button>
+            )}
+            <button className="lp-tile lp-tile-btn" onClick={() => (savedPlan ? window.confirm("Replace your saved plan with the numbers on this page?") && onEnter(s) : onEnter(s))}>
+              <h3 className="lp-h3">Start With The Numbers Above</h3>
+              <p className="lp-p">Use the four answers in the example card. The app fills in the rest and lists what it assumed.</p>
+            </button>
+            <button className="lp-tile lp-tile-btn" onClick={() => (savedPlan ? window.confirm("Replace your saved plan with a blank one?") && onEnter(null) : onEnter(null))}>
+              <h3 className="lp-h3">Enter Every Detail Myself</h3>
+              <p className="lp-p">Go to the full inputs for accounts, income, taxes and Social Security.</p>
+            </button>
+            {LANDING_INTRO_VIDEO_URL && (
+              <a className="lp-tile lp-tile-btn" href={LANDING_INTRO_VIDEO_URL} target="_blank" rel="noopener noreferrer">
+                <h3 className="lp-h3">Watch: Getting Started</h3>
+                <p className="lp-p">A short video that walks through your first plan.</p>
+              </a>
+            )}
+          </div>
+        </section>
+
+        <section id="lp-trust" className="lp-section">
+          <h2 className="lp-h2">What We Check</h2>
+          <p className="lp-p" style={{ maxWidth: "62ch" }}>
+            The math follows published rules, and every change runs the full automated test suite before it ships.
+          </p>
+          <div className="lp-grid2">
+            {checks.map((c) => (
+              <div key={c.t} className="lp-tile">
+                <h3 className="lp-h3">{c.t}</h3>
+                <p className="lp-p">{c.d}</p>
+              </div>
+            ))}
+          </div>
+          <div className="lp-tile" style={{ marginTop: 14 }}>
+            <h3 className="lp-h3">What This Doesn't Do</h3>
+            <p className="lp-p">
+              AiRA is an educational tool. It is not financial advice. It cannot predict markets or promise a result,
+              and its assumptions are ones you can see and change.
+            </p>
+          </div>
+        </section>
+
+        <footer className="lp-foot">
+          <div>Built by one person who wanted honest retirement numbers.</div>
+          <div>No account needed. Your plan is saved on this device. v{APP_VERSION}</div>
+        </footer>
       </div>
     </div>
   );
