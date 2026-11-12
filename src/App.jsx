@@ -4003,6 +4003,25 @@ const CSS = `
   .lp-facts div { background:var(--card-bg); border:1px solid var(--card-border); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:4px; }
   .lp-facts b { font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:500; color:var(--accent-teal); }
   .lp-facts span { font-size:12px; color:var(--text-muted); line-height:1.35; }
+  .lp-btnrow { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .lp-btnrow .lp-cta { margin-top:26px; }
+  .lp-ghost { margin-top:26px; padding:14px 22px; border-radius:12px; border:1px solid var(--card-border); background:transparent; color:var(--text-primary); font-size:16px; font-weight:600; font-family:var(--font-sans); cursor:pointer; }
+  .lp-ghost:hover { border-color:var(--accent); }
+  .lp-btnrow .lp-cta-sm { padding:13px 26px; font-size:16px; }
+  .lp-q { font-size:clamp(26px,4vw,38px); font-weight:700; line-height:1.12; letter-spacing:-0.01em; color:var(--text-primary); margin:0; outline:none; }
+  .lp-qrow { margin-top:26px; max-width:520px; }
+  .lp-ringcard { text-align:center; }
+  .lp-ringcard .lp-card-tag { text-align:left; }
+  .lp-ringcard .lp-card-sub { text-align:left; }
+  .lp-ring { position:relative; width:150px; height:150px; margin:8px auto 0; }
+  .lp-ring-arc { transition:stroke-dashoffset 0.4s ease; }
+  .lp-ring-num { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .lp-ring-num b { font-family:'JetBrains Mono',monospace; font-size:38px; font-weight:500; color:var(--text-primary); line-height:1; }
+  .lp-ring-num span { font-size:11px; color:var(--text-muted); font-weight:600; margin-top:4px; }
+  .lp-dots { display:flex; gap:8px; margin-top:18px; }
+  .lp-dots span { width:10px; height:10px; border-radius:50%; background:var(--tint-white-06); }
+  .lp-dots span.on { background:var(--accent); }
+  @media (prefers-reduced-motion: reduce) { .lp-ring-arc { transition:none; } }
   .lp-card { margin-top:0; }
   .lp-card-tag { font-size:12px; font-weight:700; color:var(--accent); margin-bottom:12px; }
   .lp-card .lp-answer { font-size:clamp(26px,4vw,38px); }
@@ -17143,6 +17162,15 @@ function LpReveal({ children, className = "" }) {
 // Set to the Getting Started video URL when episode 1 is live; the card stays hidden while empty.
 const LANDING_INTRO_VIDEO_URL = "";
 
+// Guided order: the three answers a result needs come first, so the ring can appear
+// after question 3 and question 4 (contributions) then moves it live.
+const LANDING_STEPS = [
+  { key: "age", q: "How Old Are You?", help: "Your age sets how many years you have left to save." },
+  { key: "savings", q: "How Much Have You Saved So Far?", help: "Add up your retirement accounts and investments. Round numbers are fine." },
+  { key: "spend", q: "What Do You Want To Spend Each Year In Retirement?", help: "Think in today's dollars." },
+  { key: "contrib", q: "How Much Will You Add Each Year Until Then?", help: "Include any employer match. Use zero if you are not saving." },
+];
+
 const LANDING_FEATURES = [
   { kicker: "The Result", t: "One Clear Number, Backed By Detail",
     d: "Your plan runs through thousands of simulated markets. You get one headline number, then the numbers behind it.",
@@ -17168,6 +17196,8 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
   const [contribL, setContribL] = useState(40000);
   const [spend, setSpend] = useState(90000);
   const canvasRef = useRef(null);
+  const [step, setStep] = useState(null); // null = overview, 0-3 = questions, 4 = result
+  const guidedRef = useRef(null);
   const s = { curAge, savings, contrib: contribL, spend };
   const retired = landingIsRetired(s);
   // Already retired ⇒ the projection IS "drawing down from today", so the
@@ -17206,7 +17236,16 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
     ctx.lineTo(x(pts.length - 1), H - pad); ctx.lineTo(x(0), H - pad); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
     ctx.beginPath(); pts.forEach((p, i) => i === 0 ? ctx.moveTo(x(i), y(p.val)) : ctx.lineTo(x(i), y(p.val)));
     ctx.strokeStyle = "var(--accent-teal)"; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
-  }, [curAge, savings, contribL, spend, age]);
+  }, [curAge, savings, contribL, spend, age, step]);
+
+  useEffect(() => {
+    if (step !== null && guidedRef.current) {
+      guidedRef.current.closest(".landing")?.scrollTo?.(0, 0);
+      window.scrollTo(0, 0);
+      const h = guidedRef.current.querySelector("h2");
+      if (h) h.focus({ preventScroll: true });
+    }
+  }, [step]);
 
   // `money: false` keeps the age row on a plain linear slider with no typed
   // field — an age is two digits and the range is 25–85, so neither fix applies.
@@ -17221,7 +17260,32 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
       ...LANDING_LIMITS.spend, money: true, fmt: (v) => fmtDollar(v) + "/yr" },
   ];
 
+  const renderRow = (r) => (
+    <div key={r.key}>
+      <div className="lp-row">
+        <span className="lp-label">{r.label}</span>
+        {r.money
+          ? <LandingMoneyField row={r} />
+          : <span className="lp-val">{r.fmt(r.val)}</span>}
+      </div>
+      {r.money ? (
+        <input className="lp-range" type="range" min={0} max={LANDING_SLIDER_STEPS} step={1}
+          aria-label={r.label}
+          value={landingValToPos(r.val, r.min, r.max)}
+          onChange={(e) => r.set(landingPosToVal(+e.target.value, r.min, r.max))} />
+      ) : (
+        <input className="lp-range" type="range" min={r.min} max={r.max} step={1}
+          aria-label={r.label}
+          value={r.val} onChange={(e) => r.set(+e.target.value)} />
+      )}
+    </div>
+  );
+
   const startNow = savedPlan ? onContinue : () => onEnter(s);
+  const rowByKey = (k) => rows.find((r) => r.key === k);
+  const replaceAndEnter = () => { if (!savedPlan || window.confirm("Replace your saved plan with these numbers?")) onEnter(s); };
+  const confPct = Math.round(conf * 100);
+  const RING_R = 58, RING_C = 2 * Math.PI * RING_R;
   const startLabel = savedPlan ? "Open My Saved Plan" : "See Your Real Numbers";
   const steps = [
     { n: "1", t: "Answer Four Questions", d: "Your age, what you have saved, what you add each year, and what you want to spend in retirement." },
@@ -17247,6 +17311,7 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
           </nav>
         </header>
 
+        {step === null ? (
         <section className="lp-hero">
           <div>
             <div className="lp-eyebrow">Free Retirement Planner</div>
@@ -17255,7 +17320,10 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
               Answer four questions to see when you can retire. Then test your plan against {MC_PATHS_LABEL} simulated
               markets, using your real accounts, taxes and Social Security.
             </p>
-            <button className="lp-cta" onClick={startNow}>{startLabel}</button>
+            <div className="lp-btnrow">
+              <button className="lp-cta" onClick={startNow}>{startLabel}</button>
+              <button className="lp-ghost" onClick={() => setStep(0)}>Walk Me Through It</button>
+            </div>
             {savedPlan
               ? <button className="lp-skip" onClick={() => {
                   if (window.confirm("Replace your saved plan with the numbers on this page?")) onEnter(s);
@@ -17303,30 +17371,79 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
             </div>
 
             <div style={{ marginTop: 18 }}>
-              {rows.map((r) => (
-                <div key={r.key}>
-                  <div className="lp-row">
-                    <span className="lp-label">{r.label}</span>
-                    {r.money
-                      ? <LandingMoneyField row={r} />
-                      : <span className="lp-val">{r.fmt(r.val)}</span>}
-                  </div>
-                  {r.money ? (
-                    <input className="lp-range" type="range" min={0} max={LANDING_SLIDER_STEPS} step={1}
-                      aria-label={r.label}
-                      value={landingValToPos(r.val, r.min, r.max)}
-                      onChange={(e) => r.set(landingPosToVal(+e.target.value, r.min, r.max))} />
-                  ) : (
-                    <input className="lp-range" type="range" min={r.min} max={r.max} step={1}
-                      aria-label={r.label}
-                      value={r.val} onChange={(e) => r.set(+e.target.value)} />
-                  )}
-                </div>
-              ))}
+              {rows.map(renderRow)}
             </div>
             <p className="lp-fine">An estimate from a simplified model, not financial advice and not a guarantee. The full app is more detailed.</p>
           </div>
         </section>
+        ) : (
+        <section className="lp-hero lp-guided" ref={guidedRef}>
+          <div>
+            {step < 4 ? (
+              <>
+                <div className="lp-eyebrow">Question {step + 1} Of 4</div>
+                <h2 className="lp-q" tabIndex={-1}>{LANDING_STEPS[step].q}</h2>
+                <p className="lp-sub">{LANDING_STEPS[step].help}</p>
+                <div className="lp-qrow">{renderRow(rowByKey(LANDING_STEPS[step].key))}</div>
+              </>
+            ) : (
+              <>
+                <div className="lp-eyebrow">Your Quick Estimate</div>
+                <h2 className="lp-q" tabIndex={-1}>
+                  {retired
+                    ? <>Your money lasts to <span className="lp-age">{landingLastsToAge(s)}</span></>
+                    : age != null
+                      ? <>You can retire at <span className="lp-age">{age}</span></>
+                      : <>Not Yet At These Numbers</>}
+                </h2>
+                <p className="lp-sub">
+                  {age != null
+                    ? <>That is {confPct}% confident at that age, from a simplified model. The full app tests your real accounts, taxes and Social Security against {MC_PATHS_LABEL} simulated markets.</>
+                    : <>No age up to {AGE_LIMITS.retire.max} clears 85% confidence yet. Go back and try saving more, or spending less.</>}
+                </p>
+                <button className="lp-cta" onClick={replaceAndEnter}>See Your Real Numbers</button>
+              </>
+            )}
+            <div className="lp-btnrow" style={{ marginTop: step < 4 ? 8 : 14 }}>
+              {step > 0 && step < 4 && <button className="lp-ghost" onClick={() => setStep(step - 1)}>Back</button>}
+              {step < 4 && <button className="lp-cta lp-cta-sm" onClick={() => setStep(step + 1)}>{step === 3 ? "See My Estimate" : "Next"}</button>}
+              {step === 4 && <button className="lp-ghost" onClick={() => setStep(0)}>Change My Answers</button>}
+            </div>
+            <button className="lp-skip" onClick={() => setStep(null)}>Back To Overview</button>
+          </div>
+
+          <div className="lp-panel lp-card lp-ringcard">
+            {step < 3 ? (
+              <>
+                <div className="lp-card-tag">Your Number</div>
+                <p className="lp-card-sub">Your estimate appears after question 3. It updates as you answer.</p>
+                <div className="lp-dots" aria-hidden="true">
+                  {[0, 1, 2, 3].map((n) => <span key={n} className={n <= step ? "on" : ""} />)}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="lp-card-tag">{step === 3 ? "Updating As You Answer" : "Your Estimate"}</div>
+                <div className="lp-ring" role="img"
+                  aria-label={age != null ? `Confidence at the earliest retirement age: ${confPct} percent` : "No retirement age reaches 85 percent confidence yet"}>
+                  <svg width="150" height="150" viewBox="0 0 150 150" aria-hidden="true">
+                    <circle cx="75" cy="75" r={RING_R} fill="none" stroke="var(--tint-white-06)" strokeWidth="12" />
+                    <circle cx="75" cy="75" r={RING_R} fill="none" strokeWidth="12" strokeLinecap="round"
+                      stroke={conf >= 0.85 ? "var(--accent-teal)" : "var(--accent-gold)"}
+                      strokeDasharray={RING_C} strokeDashoffset={RING_C * (1 - Math.min(1, conf))}
+                      transform="rotate(-90 75 75)" className="lp-ring-arc" />
+                  </svg>
+                  <div className="lp-ring-num"><b>{confPct}</b><span>% Confident</span></div>
+                </div>
+                <h3 className="lp-h3" style={{ marginTop: 14 }}>
+                  {retired ? <>Money lasts to {landingLastsToAge(s)}</> : age != null ? <>Retire at {age}</> : <>No age reaches 85%</>}
+                </h3>
+                <p className="lp-fine">An estimate from a simplified model, not financial advice and not a guarantee.</p>
+              </>
+            )}
+          </div>
+        </section>
+        )}
 
         <section className="lp-section">
           <h2 className="lp-h2">See It In Action</h2>
@@ -17383,6 +17500,10 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
                 <p className="lp-p">Go straight back to the plan saved on this device.</p>
               </button>
             )}
+            <button className="lp-tile lp-tile-btn" onClick={() => setStep(0)}>
+              <h3 className="lp-h3">Walk Me Through It</h3>
+              <p className="lp-p">Four short questions, one at a time, with your estimate updating as you answer.</p>
+            </button>
             <button className="lp-tile lp-tile-btn" onClick={() => (savedPlan ? window.confirm("Replace your saved plan with the numbers on this page?") && onEnter(s) : onEnter(s))}>
               <h3 className="lp-h3">Start With The Numbers Above</h3>
               <p className="lp-p">Use the four answers in the example card. The app fills in the rest and lists what it assumed.</p>
