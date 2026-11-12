@@ -17075,7 +17075,7 @@ function LandingMoneyField({ row }) {
 
 // First-screen landing shown to visitors with no saved profile. Answers the one
 // question — "when can I retire?" — then routes into the full app via onEnter.
-function RetirementLanding({ onEnter }) {
+function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
   const [curAge, setCurAge] = useState(45);
   const [savings, setSavings] = useState(850000);
   const [contribL, setContribL] = useState(40000);
@@ -17197,8 +17197,19 @@ function RetirementLanding({ onEnter }) {
           ))}
         </div>
 
-        <button className="lp-cta" onClick={() => onEnter(s)}>See Your Real Numbers</button>
-        <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll Enter My Own Details</button>
+        {savedPlan ? (
+          <>
+            <button className="lp-cta" onClick={onContinue}>Open My Saved Plan</button>
+            <button className="lp-skip" onClick={() => {
+              if (window.confirm("Replace your saved plan with the numbers on this page?")) onEnter(s);
+            }}>Replace My Plan With These Numbers</button>
+          </>
+        ) : (
+          <>
+            <button className="lp-cta" onClick={() => onEnter(s)}>See Your Real Numbers</button>
+            <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll Enter My Own Details</button>
+          </>
+        )}
         <p style={{ marginTop: 10, fontSize: "var(--fs-label)", color: "var(--text-muted)" }}>
           No Account Needed. Your Plan Is Saved On This Device.
         </p>
@@ -17300,7 +17311,11 @@ export default function AiRAForecaster() {
   // while anyone who has saved a profile goes straight to their dashboard
   // and never sees it. Dismissal still holds for the session (React
   // state), so entering the app is a one-click, non-repeating action.
-  const [showWelcome, setShowWelcome] = useState(() => !loadProfileFromLocal());
+  // `?welcome=1` forces the landing even with a saved plan, for links from videos
+  // and posts. Such visitors get "Open My Saved Plan", never the overwriting seed.
+  const [hasSavedPlan] = useState(() => !!loadProfileFromLocal());
+  const [showWelcome, setShowWelcome] = useState(
+    () => !loadProfileFromLocal() || new URLSearchParams(window.location.search).has("welcome"));
   // True for the session that arrived through the quick estimate: the app then
   // owes the visitor a list of what it assumed beyond their four answers.
   const [fromLanding, setFromLanding] = useState(false);
@@ -17945,7 +17960,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     return (
       <>
         <style>{CSS}</style>
-        <RetirementLanding onEnter={enterFromLanding} />
+        <RetirementLanding onEnter={enterFromLanding} savedPlan={hasSavedPlan}
+          onContinue={() => { dismissWelcome(); setTab("networth"); }} />
       </>
     );
   }
