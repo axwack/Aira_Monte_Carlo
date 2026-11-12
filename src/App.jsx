@@ -17142,7 +17142,7 @@ function RetirementLanding({ onEnter }) {
           <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>v{APP_VERSION}</div>
         </div>
 
-        <div className="lp-eyebrow">Your one-number answer</div>
+        <div className="lp-eyebrow">Quick Estimate Using Example Numbers</div>
         <h1 className={"lp-answer" + (age != null && conf < 0.9 ? " short" : "")}>
           {retired
             ? <>Your money lasts to <span className="lp-age">{landingLastsToAge(s)}</span></>
@@ -17197,11 +17197,15 @@ function RetirementLanding({ onEnter }) {
           ))}
         </div>
 
-        <button className="lp-cta" onClick={() => onEnter(s)}>Open the app</button>
-        <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll enter my own details</button>
+        <button className="lp-cta" onClick={() => onEnter(s)}>See Your Real Numbers</button>
+        <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll Enter My Own Details</button>
+        <p style={{ marginTop: 10, fontSize: "var(--fs-label)", color: "var(--text-muted)" }}>
+          No Account Needed. Your Plan Is Saved On This Device.
+        </p>
 
         <p style={{ marginTop: 32, fontSize: "var(--fs-label)", color: "var(--text-faint)", lineHeight: 1.6, maxWidth: "62ch" }}>
-          This is a 60-second estimate. The full app runs {MC_PATHS_LABEL} market simulations across your real
+          The numbers above are examples. Move the sliders to yours. This is a 60-second estimate, not financial
+          advice and not a guarantee. The full app runs {MC_PATHS_LABEL} market simulations across your real
           accounts, taxes, Social Security, and withdrawal order — that's where your true plan lives.
         </p>
       </div>
