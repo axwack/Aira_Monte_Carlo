@@ -4015,6 +4015,19 @@ const CSS = `
   .lp-tile-btn { cursor:pointer; width:100%; display:flex; flex-direction:column; justify-content:flex-start; }
   .lp-tile-btn:hover { border-color:var(--accent); }
   .lp-num { width:34px; height:34px; border-radius:50%; background:var(--bg-info); color:var(--accent); font-weight:700; display:flex; align-items:center; justify-content:center; margin-bottom:14px; }
+  .lp-feature { display:grid; grid-template-columns:1fr; gap:24px; align-items:center; margin-top:clamp(28px,5vw,56px); }
+  @media (min-width:900px) { .lp-feature { grid-template-columns:1fr 1.25fr; gap:52px; } .lp-feature.lp-flip { grid-template-columns:1.25fr 1fr; } .lp-feature.lp-flip .lp-feature-text { order:2; } }
+  .lp-h3-big { font-size:clamp(22px,3vw,28px); line-height:1.15; margin:0 0 12px; }
+  .lp-bullets { margin:14px 0 0; padding-left:20px; color:var(--text-secondary); font-size:15px; line-height:1.7; }
+  .lp-shot { margin:0; border:1px solid var(--card-border); border-radius:14px; background:var(--card-bg); padding:10px; box-shadow:0 18px 40px rgba(0,0,0,0.35); }
+  .lp-shot img { display:block; width:100%; height:auto; border-radius:8px; }
+  .lp-shot figcaption { font-size:12px; color:var(--text-faint); margin-top:8px; }
+  .lp-shot-note { padding:28px; display:flex; flex-direction:column; gap:8px; }
+  .lp-shot-note b { color:var(--text-primary); font-size:17px; }
+  .lp-shot-note span { color:var(--text-secondary); font-size:15px; line-height:1.5; }
+  .lp-reveal { opacity:0; transform:translateY(24px); transition:opacity 0.6s ease, transform 0.6s ease; }
+  .lp-reveal.lp-in { opacity:1; transform:none; }
+  @media (prefers-reduced-motion: reduce) { .lp-reveal { opacity:1; transform:none; transition:none; } }
   .lp-foot { margin-top:clamp(48px,8vw,88px); padding-top:22px; border-top:1px solid var(--divider); font-size:13px; color:var(--text-muted); line-height:1.7; }
   /* minmax(0,1fr), not bare 1fr: a grid track's auto minimum is its content's
      max-content width, so a wide child (the 15+ column Withdrawal Plan
@@ -17103,8 +17116,45 @@ function LandingMoneyField({ row }) {
 
 // First-screen landing shown to visitors with no saved profile. Answers the one
 // question — "when can I retire?" — then routes into the full app via onEnter.
+// Fades a block in once it scrolls into view. Without IntersectionObserver, or with
+// reduced motion requested, it simply shows at once.
+function LpReveal({ children, className = "" }) {
+  const ref = useRef(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!el || calm || typeof IntersectionObserver === "undefined") { setSeen(true); return undefined; }
+    const io = new IntersectionObserver((es) => {
+      if (es.some((e) => e.isIntersecting)) { setSeen(true); io.disconnect(); }
+    }, { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return <div ref={ref} className={"lp-reveal " + className + (seen ? " lp-in" : "")}>{children}</div>;
+}
+
 // Set to the Getting Started video URL when episode 1 is live; the card stays hidden while empty.
 const LANDING_INTRO_VIDEO_URL = "";
+
+const LANDING_FEATURES = [
+  { kicker: "The Result", t: "One Clear Number, Backed By Detail",
+    d: "Your plan runs through thousands of simulated markets. You get one headline number, then the numbers behind it.",
+    points: ["Share of simulated futures where your money lasts", "Worst case, withdrawal rate and the age money runs out", "Every figure shown in today's dollars"],
+    img: "/landing/result.png", alt: "The AiRA result card showing a 99.5 percent success rate and a strip of supporting figures.", cap: "The result card, using example numbers." },
+  { kicker: "Stress Test", t: "See What Happens When Things Go Wrong",
+    d: "Each card re-runs your plan with one thing going wrong, so you see how much a bad stretch really costs.",
+    points: ["A market crash right at retirement", "A long-term care event", "Living to 100", "Replay real past crashes against your plan"],
+    img: "/landing/stress.png", alt: "Three stress cards: market crashes early, long-term care event and live to 100, each showing the change in success rate.", cap: "The Stress Test tab, using example numbers." },
+  { kicker: "Checkpoints", t: "Save A Check-In And Watch Your Plan Over Time",
+    d: "Plans drift. Save a check-in whenever something changes, and AiRA shows whether your plan is holding or slipping.",
+    points: ["Change in success rate since your first check-in", "A plan-shape chart across five measures", "Everything stays on your device"],
+    img: "/landing/checkpoints.png", alt: "The Progress tab showing latest success rate, change since first check-in and a plan shape chart.", cap: "The Progress tab, using example numbers." },
+  { kicker: "AI Analysis", t: "Turn Your Results Into Next Steps",
+    d: "An optional AI analysis reads your plan and writes a ranked list of actions to consider.",
+    points: ["Optional: the calculator works fully without it", "Uses AiRA credits, or your own free Gemini key", "It suggests. You decide."],
+    noteTitle: "Optional And Under Your Control", note: "AI analysis is never run unless you press the button." },
+];
 
 function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
   const [curAge, setCurAge] = useState(45);
@@ -17265,6 +17315,23 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
             </div>
             <p className="lp-fine">An estimate from a simplified model, not financial advice and not a guarantee. The full app is more detailed.</p>
           </div>
+        </section>
+
+        <section className="lp-section">
+          <h2 className="lp-h2">What AiRA Does Best</h2>
+          {LANDING_FEATURES.map((f, i) => (
+            <LpReveal key={f.t} className={"lp-feature" + (i % 2 ? " lp-flip" : "")}>
+              <div className="lp-feature-text">
+                <div className="lp-eyebrow">{f.kicker}</div>
+                <h3 className="lp-h3 lp-h3-big">{f.t}</h3>
+                <p className="lp-p">{f.d}</p>
+                <ul className="lp-bullets">{f.points.map((pt) => <li key={pt}>{pt}</li>)}</ul>
+              </div>
+              {f.img
+                ? <figure className="lp-shot"><img src={f.img} alt={f.alt} loading="lazy" /><figcaption>{f.cap}</figcaption></figure>
+                : <div className="lp-shot lp-shot-note"><b>{f.noteTitle}</b><span>{f.note}</span></div>}
+            </LpReveal>
+          ))}
         </section>
 
         <section id="lp-how" className="lp-section">
