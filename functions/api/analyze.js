@@ -62,6 +62,12 @@ async function callGemini(apiKey, model, payload, usageBucket) {
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
+    // gemini-flash-lite-latest answers HTTP 400 to thinkingBudget:0 (found 2026-11-12).
+    // Retry once without it; a 400 is not billed, so a failed first try costs nothing.
+    if (res.status === 400 && payload.generationConfig?.thinkingConfig) {
+      const { thinkingConfig, ...generationConfig } = payload.generationConfig;
+      return callGemini(apiKey, model, { ...payload, generationConfig }, usageBucket);
+    }
     const err = await res.text();
     throw new Error(`Gemini ${res.status}: ${err}`);
   }

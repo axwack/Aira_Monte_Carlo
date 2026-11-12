@@ -281,11 +281,17 @@ async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel
 
   let lastErr = null;
   for (const id of candidates) {
-    const res = await fetch(`${GEMINI_BASE}/${id}:generateContent?key=${apiKey}`, {
+    const post = body => fetch(`${GEMINI_BASE}/${id}:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
+    let res = await post(payload);
+    // gemini-flash-lite-latest answers HTTP 400 to thinkingBudget:0 (found 2026-11-12).
+    if (res.status === 400 && payload.generationConfig?.thinkingConfig) {
+      const { thinkingConfig, ...generationConfig } = payload.generationConfig;
+      res = await post({ ...payload, generationConfig });
+    }
     if (res.ok) {
       const data = await res.json();
       recordUsage(id, fnLabel, data.usageMetadata);
