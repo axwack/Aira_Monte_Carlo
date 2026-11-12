@@ -17575,7 +17575,6 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
             <nav aria-label="Help Build It">
               <h3>Help Build It</h3>
               <a href="/contribute">Contribute</a>
-              <a href="/sponsor">Sponsor AiRA</a>
               <a href={aboutLink("YouTube Channel")} target="_blank" rel="noopener noreferrer">YouTube</a>
               <a href={`mailto:${FEEDBACK_EMAIL}`}>Contact</a>
             </nav>
