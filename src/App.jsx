@@ -203,6 +203,8 @@ import { IRMAA_2026 } from './data/irmaa2026.js';
  * also shown as selectable text in the dialog for anyone on webmail.
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
+// Public profile links live in about.js only (pre-commit guard keeps handles out of other files).
+const aboutLink = (label) => ABOUT_ME.links.find((l) => l.label === label)?.url || "";
 
 const APP_VERSION = "1.3.0";
 export const BUILD_TAG = `[main] v1.3.0 - Home screen: the inputs come first
@@ -4053,7 +4055,15 @@ const CSS = `
   .lp-reveal { opacity:0; transform:translateY(24px); transition:opacity 0.6s ease, transform 0.6s ease; }
   .lp-reveal.lp-in { opacity:1; transform:none; }
   @media (prefers-reduced-motion: reduce) { .lp-reveal { opacity:1; transform:none; transition:none; } }
-  .lp-foot { margin-top:clamp(48px,8vw,88px); padding-top:22px; border-top:1px solid var(--divider); font-size:13px; color:var(--text-muted); line-height:1.7; }
+  .lp-foot { margin-top:clamp(48px,8vw,88px); padding-top:32px; border-top:1px solid var(--divider); font-size:14px; color:var(--text-muted); line-height:1.7; }
+  .lp-foot-grid { display:grid; grid-template-columns:1fr; gap:28px; }
+  @media (min-width:700px) { .lp-foot-grid { grid-template-columns:1.6fr 1fr 1fr 1fr; gap:36px; } }
+  .lp-foot h3 { margin:0 0 10px; font-size:13px; font-weight:700; color:var(--text-primary); }
+  .lp-foot nav { display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
+  .lp-foot a, .lp-foot nav button { color:var(--text-secondary); text-decoration:none; font:inherit; font-size:14px; padding:0; background:none; border:0; cursor:pointer; text-align:left; }
+  .lp-foot a:hover, .lp-foot nav button:hover { color:var(--accent); text-decoration:underline; }
+  .lp-foot-line { margin:8px 0 0; max-width:34ch; color:var(--text-muted); }
+  .lp-foot-fine { margin:32px 0 0; padding-top:16px; border-top:1px solid var(--divider); font-size:12px; color:var(--text-faint); }
   /* minmax(0,1fr), not bare 1fr: a grid track's auto minimum is its content's
      max-content width, so a wide child (the 15+ column Withdrawal Plan
      table) silently grows the whole right-pane track past the viewport
@@ -17544,8 +17554,35 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
         </section>
 
         <footer className="lp-foot">
-          <div>Built by one person who wanted honest retirement numbers.</div>
-          <div>No account needed. Your plan is saved on this device. v{APP_VERSION}</div>
+          <div className="lp-foot-grid">
+            <div>
+              <div className="logo">AiRA</div>
+              <p className="lp-foot-line">Built in the open by one person who wanted honest retirement numbers.</p>
+              <p className="lp-foot-line">No ads. No accounts. Your plan stays on your device.</p>
+            </div>
+            <nav aria-label="Use It">
+              <h3>Use It</h3>
+              <button type="button" onClick={startNow}>{savedPlan ? "Open My Saved Plan" : "Open The App"}</button>
+              <a href="#lp-how">How It Works</a>
+              <a href="#lp-trust">What We Check</a>
+            </nav>
+            <nav aria-label="Check My Work">
+              <h3>Check My Work</h3>
+              <a href="https://github.com/axwack/Aira_Monte_Carlo" target="_blank" rel="noopener noreferrer">Source On GitHub</a>
+              <a href="/contribute#check-the-math">Check The Math</a>
+              <a href={`mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent("AiRA wrong number")}`}>Report A Wrong Number</a>
+            </nav>
+            <nav aria-label="Help Build It">
+              <h3>Help Build It</h3>
+              <a href="/contribute">Contribute</a>
+              <a href="/sponsor">Sponsor AiRA</a>
+              <a href={aboutLink("YouTube Channel")} target="_blank" rel="noopener noreferrer">YouTube</a>
+              <a href={`mailto:${FEEDBACK_EMAIL}`}>Contact</a>
+            </nav>
+          </div>
+          <p className="lp-foot-fine">
+            Sponsors get no say in the numbers. AiRA is an educational tool, not financial, tax or legal advice. v{APP_VERSION}
+          </p>
         </footer>
       </div>
     </div>
@@ -18668,7 +18705,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               )}
             </div>
             <a
-              href="https://buymeacoffee.com/axwacki"
+              href={aboutLink("Buy me a coffee")}
               target="_blank"
               rel="noopener noreferrer"
               className="coffee-btn"

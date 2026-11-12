@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contribute And Check The Math | AiRA</title>
+<meta name="description" content="How to help build AiRA or check its math: read the code, report a wrong number, review the tax tables, or use it in teaching.">
+<link rel="canonical" href="https://aira.tiredtoretire.com/contribute">
+<style>
+  :root { --bg:#0e1218; --card:#151b24; --line:#243040; --text:#e8edf5; --text2:#c0c9d6; --muted:#9aa6ba; --accent:#7ab8f5; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f6f8fb; --card:#fff; --line:#d5dce6; --text:#142033; --text2:#34445c; --muted:#56657c; --accent:#1b6fc2; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:Arial, Helvetica, sans-serif; line-height:1.6; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 72px; }
+  a { color:var(--accent); }
+  .back { font-size:14px; font-weight:700; text-decoration:none; }
+  h1 { font-size:clamp(28px,5vw,40px); line-height:1.1; margin:20px 0 12px; letter-spacing:-0.01em; }
+  h2 { font-size:22px; margin:40px 0 10px; }
+  p, li { color:var(--text2); font-size:16px; }
+  ul { padding-left:22px; }
+  code { font-family:'JetBrains Mono', ui-monospace, monospace; font-size:14px; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:1px 6px; color:var(--text); }
+  .note { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin:16px 0; }
+  .note p { margin:0; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="/">Back To AiRA</a>
+  <h1>Contribute And Check The Math</h1>
+  <p>AiRA is built by one person, in public. The code is open, so anyone can check it. Here is where help is most useful.</p>
+
+  <h2 id="check-the-math">Check The Math</h2>
+  <p>This is the most valuable help. If you are a tax pro, a planner, or just careful with numbers, look at these and tell me what is wrong.</p>
+  <ul>
+    <li><b>Tax brackets and state tables:</b> <code>src/data/stateBrackets.js</code></li>
+    <li><b>Medicare IRMAA tiers:</b> <code>src/data/irmaa2026.js</code></li>
+    <li><b>Required minimum distribution divisors:</b> <code>src/data/jointRmdTable.js</code> and <code>src/engine/rulesEngine.js</code></li>
+    <li><b>Withdrawal order and taxes:</b> <code>src/engine/buildWithdrawalWaterfall.js</code></li>
+    <li><b>Roth conversion plan:</b> <code>src/engine/rothConversionPlan.js</code></li>
+  </ul>
+  <div class="note"><p><b>How to report a wrong number.</b> Email
+    <a href="mailto:tiredtoretire@gmail.com?subject=AiRA%20wrong%20number">tiredtoretire@gmail.com</a>
+    with the screen, the figure you see, the figure you expect, and the rule or source behind it. A precise report gets a fix and a thank-you in the app, under the handle you choose.</p></div>
+
+  <h2>Read The Code</h2>
+  <p>The source is on <a href="https://github.com/axwack/Aira_Monte_Carlo" rel="noopener">GitHub</a>. The planner runs in your browser, and the engine has an automated test suite you can run yourself.</p>
+
+  <h2>Use It In Teaching Or Video</h2>
+  <p>Educators and creators are welcome to use AiRA with students or viewers. It is free and has no ads or sign-up. Email me if you want a specific example plan or a walk-through, and tell me what you are making.</p>
+
+  <h2>What AiRA Is Not</h2>
+  <p>AiRA is an educational tool. It is not financial, tax or legal advice, and it cannot predict markets.</p>
+</main>
+</body>
+</html>
