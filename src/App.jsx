@@ -17580,7 +17580,7 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
             </nav>
           </div>
           <p className="lp-foot-fine">
-            Sponsors get no say in the numbers. AiRA is an educational tool, not financial, tax or legal advice. v{APP_VERSION}
+            AiRA is an educational tool, not financial, tax or legal advice. v{APP_VERSION}
           </p>
         </footer>
       </div>
