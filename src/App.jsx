@@ -3999,6 +3999,10 @@ const CSS = `
   @media (min-width:900px) { .lp-hero { grid-template-columns:1fr 1fr; gap:48px; } }
   .lp-title { font-size:clamp(34px,5.5vw,54px); font-weight:700; line-height:1.06; letter-spacing:-0.02em; color:var(--text-primary); margin:0; }
   .lp-micro { margin-top:14px; font-size:13px; color:var(--text-muted); }
+  .lp-facts { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:32px; max-width:520px; }
+  .lp-facts div { background:var(--card-bg); border:1px solid var(--card-border); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:4px; }
+  .lp-facts b { font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:500; color:var(--accent-teal); }
+  .lp-facts span { font-size:12px; color:var(--text-muted); line-height:1.35; }
   .lp-card { margin-top:0; }
   .lp-card-tag { font-size:12px; font-weight:700; color:var(--accent); margin-bottom:12px; }
   .lp-card .lp-answer { font-size:clamp(26px,4vw,38px); }
@@ -17258,6 +17262,11 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
                 }}>Replace My Plan With These Numbers</button>
               : <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll Enter My Own Details</button>}
             <p className="lp-micro">No Account Needed. Your Plan Is Saved On This Device.</p>
+            <div className="lp-facts">
+              <div><b>{MC_PATHS_LABEL}</b><span>Simulated Markets Per Run</span></div>
+              <div><b>2026</b><span>IRS And Medicare Rules</span></div>
+              <div><b>Free</b><span>No Account Needed</span></div>
+            </div>
           </div>
 
           <div className="lp-panel lp-card">
