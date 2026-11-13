@@ -11,6 +11,7 @@
 
 import { useState, useEffect } from "react";
 import { BILLING_ENABLED } from "../ai/ai-analysis.js";
+import { track } from "../analytics.js";
 
 // ─── Credit pack definitions ──────────────────────────────────────────────────
 // Keep in sync with functions/api/webhook.js PACK_CREDITS
@@ -227,6 +228,7 @@ export function deductCredits(totalRawTokens) {
 export async function purchaseCreditPack(packId) {
   const pack = CREDIT_PACKS.find(p => p.id === packId);
   if (!pack) throw new Error(`Unknown pack: ${packId}`);
+  track("checkout_start");
 
   if (!BILLING_ENABLED) {
     // Stub — demo only
@@ -275,6 +277,7 @@ export const REPORT_PRICE_USD = 9.00;
  * one to lead with.
  */
 export async function purchaseReport() {
+  track("report_checkout_start");
   if (!BILLING_ENABLED) {
     console.warn("[BILLING STUB] Would redirect to Stripe for the report");
     try { localStorage.setItem(REPORT_UNLOCK_KEY, JSON.stringify({ unlockedUntil: null, permanent: true })); } catch {}
@@ -319,6 +322,7 @@ export async function purchaseReport() {
  * gating comment in App.jsx for the full rationale.
  */
 export async function unlockReport() {
+  track("report_unlock");
   const jwt = getStoredJWT();
   if (!jwt) throw new Error("Not authenticated — please purchase AiRA credits to continue.");
 
