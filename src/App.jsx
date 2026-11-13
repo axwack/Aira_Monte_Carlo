@@ -5413,16 +5413,23 @@ function fmtLastRun(iso) {
     return "";
   }
 }
+// The AI key is a credential, not a plan input: it lives under its own key so it
+// never rides along in the saved profile or in an exported/shared profile file.
+const LS_AIKEY_KEY = "aira_ai_key_v1";
 export function saveProfileToLocal(values) {
   try {
-    const hasPropIncome = (values.properties || []).some(pr => Number(pr.income) > 0);
+    const { geminiApiKey, ...plan } = values;
+    // Only an explicit "" clears it; a caller that omits the field must not wipe the key.
+    if (geminiApiKey) localStorage.setItem(LS_AIKEY_KEY, geminiApiKey);
+    else if (geminiApiKey === "") localStorage.removeItem(LS_AIKEY_KEY);
+    const hasPropIncome = (plan.properties || []).some(pr => Number(pr.income) > 0);
     const payload = {
-      ...values,
-      ab: hasPropIncome ? 0 : (values.ab || 0),
+      ...plan,
+      ab: hasPropIncome ? 0 : (plan.ab || 0),
       // rothConversionTarget preserves its raw value (e.g. "fill_22") so the dropdown
       // round-trips correctly. Engine strips "fill_" at the params boundary.
-      fafsaEndYear: values.fafsaEndYear || null,
-      cssEndYear: values.cssEndYear || null,
+      fafsaEndYear: plan.fafsaEndYear || null,
+      cssEndYear: plan.cssEndYear || null,
       savedAt: new Date().toISOString(),
       buildTag: BUILD_TAG,
     };
@@ -5448,6 +5455,14 @@ function loadProfileFromLocal() {
     const raw = localStorage.getItem(LS_PROFILE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
+    // Migration: profiles saved before v1.3.1 embedded the AI key. Move it to its
+    // own key and rewrite the profile without it.
+    if (data && data.geminiApiKey) {
+      localStorage.setItem(LS_AIKEY_KEY, data.geminiApiKey);
+      const { geminiApiKey: _moved, ...rest } = data;
+      localStorage.setItem(LS_PROFILE_KEY, JSON.stringify(rest));
+    }
+    if (data) data.geminiApiKey = localStorage.getItem(LS_AIKEY_KEY) || "";
     // Migration: spSpendOutofState (legacy scenario-swap field) -> spOutOfCountry (additive).
     if (data && data.spOutOfCountry == null && data.spSpendOutofState) {
       data.spOutOfCountry = data.spSpendOutofState;
@@ -18096,7 +18111,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     rothConversionTarget: assumptions.rothConversionTarget || "off",
                     fafsaEndYear: assumptions.fafsaEndYear || null,
                     cssEndYear: assumptions.cssEndYear || null,
-                    geminiApiKey: assumptions.geminiApiKey || "",
+                    // geminiApiKey is deliberately NOT exported: this file gets shared.
                     // Progress check-ins ride along with the profile. They
                     // aren't part of `assumptions` — they live in their own
                     // localStorage key (LS_CHECKINS_KEY), so the "spread
@@ -18260,8 +18275,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     rothConversionTarget: restoredRct,
                     fafsaEndYear: data.fafsaEndYear || null,
                     cssEndYear: data.cssEndYear || null,
-                    // Preserve existing API key if imported file has empty/missing key
-                    geminiApiKey: data.geminiApiKey || prev.geminiApiKey || "",
+                    // Never take a key from an imported file (old exports contain one).
+                    geminiApiKey: prev.geminiApiKey || "",
                   }));
 
                   setStale(true);
