@@ -83,3 +83,11 @@ CREATE TABLE IF NOT EXISTS restore_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_restore_customer ON restore_tokens(customer_id);
+
+-- Anonymous daily funnel counters (see db/migrations/009_events.sql).
+CREATE TABLE IF NOT EXISTS events (
+  day   TEXT    NOT NULL,
+  name  TEXT    NOT NULL,
+  n     INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, name)
+);

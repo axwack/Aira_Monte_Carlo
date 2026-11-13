@@ -99,6 +99,7 @@ import { taxableYieldSplit } from "./engine/taxableYield.js";
 // One declaration of every figure's arithmetic, rendered here and enforced by
 // provenance.test.js. Never inline a formula string — it would drift from the test.
 import { formulaFor } from "./provenance.js";
+import { track } from "./analytics.js";
 import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, RecoveryLinkModal, RestoreAccessModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT, MIN_CREDITS_TO_RUN, LOW_BALANCE_WARN_AT, getStoredRecoveryLink } from "./billing/credits.js";
 import { AdminPanel, useOwnerVerified } from "./billing/admin-panel.js";
@@ -13480,6 +13481,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   const creditBalance                    = useCreditBalance();
 
   const runAI = async (baseCards) => {
+    track("ai_click");
     const { runAIActionPlan, profileIsComplete } = await import("./ai/ai-analysis.js");
     console.log("[AI] runAI called. profileIsComplete:", profileIsComplete(params, mc));
     console.log("[AI] geminiApiKey present:", !!assumptions?.geminiApiKey, "model:", assumptions?.geminiModel || "default");
@@ -13526,6 +13528,7 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   };
 
   const runLiveSearch = async () => {
+    track("ai_click");
     const { generateTimeSensitiveCards } = await import("./ai/ai-analysis.js");
     setLoadingLive(true);
     setLiveError(null);
@@ -17853,6 +17856,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   paramsRef.current = params;
 
   const runSimulation = useCallback(() => {
+    track("mc_run");
     runningRef.current = true;
     ranSigRef.current = sigRef.current;
     setRunning(true);
