@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { plainText, helpContext, HELP_CHAT_RULES } from "../helpChat.js";
 import { hasEnoughCredits, deductCredits, MIN_CREDITS_TO_RUN, getStoredJWT, fetchCreditBalance, syncCreditBalance } from "../billing/credits.js";
 /**
  * Shared persona for every Gemini call.
@@ -280,11 +281,17 @@ async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel
 
   let lastErr = null;
   for (const id of candidates) {
-    const res = await fetch(`${GEMINI_BASE}/${id}:generateContent?key=${apiKey}`, {
+    const post = body => fetch(`${GEMINI_BASE}/${id}:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
+    let res = await post(payload);
+    // gemini-flash-lite-latest answers HTTP 400 to thinkingBudget:0 (found 2026-11-12).
+    if (res.status === 400 && payload.generationConfig?.thinkingConfig) {
+      const { thinkingConfig, ...generationConfig } = payload.generationConfig;
+      res = await post({ ...payload, generationConfig });
+    }
     if (res.ok) {
       const data = await res.json();
       recordUsage(id, fnLabel, data.usageMetadata);
@@ -597,6 +604,36 @@ export async function generateChatResponse(values, mcResults, question, history 
   } catch (e) {
     return `**Aira:** AI error — ${e.message}`;
   }
+}
+
+// ─── 5b. Help Chat (grounded on Help entries only) ──────────────────────────
+
+/**
+ * Answer a how-do-I question from the given Help entries (already picked by
+ * retrieveHelpEntries). Same two paths as the plan chat: the billing proxy when
+ * signed in, else the user's own Gemini key. No plan numbers are sent.
+ */
+export async function askHelp(question, history, entries, geminiApiKey, geminiModel) {
+  const helpEntries = entries.map(e => ({ id: e.id, title: e.title, text: plainText(e.body).slice(0, 1500) }));
+  if (BILLING_ENABLED && getStoredJWT()) {
+    const result = await callViaProxy("helpchat", { values: {}, question, history, helpEntries });
+    return result.text;
+  }
+  const apiKey = geminiApiKey?.trim();
+  if (!apiKey) throw new Error("Add your Gemini API key in Profile → Assumptions, or sign in with AiRA credits, to ask Aira.");
+  const contents = [
+    ...(history || []).slice(-4).map(m => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    })),
+    { role: "user", parts: [{ text: question }] },
+  ];
+  const res = await callGemini(apiKey, {
+    systemInstruction: { parts: [{ text: `${HELP_CHAT_RULES}\n\nHELP ENTRIES:\n${helpContext(entries)}` }] },
+    contents,
+    generationConfig: { maxOutputTokens: 400 },
+  }, resolveModel({ geminiModel }), "helpchat");
+  return getText(res);
 }
 
 // ─── 6. AI-Enhanced Action Plan ───────────────────────────────────────────────

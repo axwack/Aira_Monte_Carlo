@@ -87,6 +87,7 @@ import { BucketLegend, BucketResetButton } from "./BucketLegend";
 import BudgetEditor, { budgetLinesToCsv, lineError } from "./planInputs/BudgetEditor";
 import { NavContext, GoStep } from "./NavContext";
 import CheckpointsPanel from "./forecast/CheckpointsPanel";
+import HelpPage from "./HelpPage";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 import { bucketColor } from "./engine/bucketColors";
 import { retirementTarget, formatRemaining } from "./engine/retirementTarget";
@@ -203,6 +204,8 @@ import { IRMAA_2026 } from './data/irmaa2026.js';
  * also shown as selectable text in the dialog for anyone on webmail.
  */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
+// Public profile links live in about.js only (pre-commit guard keeps handles out of other files).
+const aboutLink = (label) => ABOUT_ME.links.find((l) => l.label === label)?.url || "";
 
 const APP_VERSION = "1.3.0";
 export const BUILD_TAG = `[main] v1.3.0 - Home screen: the inputs come first
@@ -3194,7 +3197,7 @@ function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRAT
         <div>
           <div style={{ fontSize: "var(--fs-body)", fontWeight: 700, color: "var(--text-primary)", marginBottom: 10 }}>What is Chance of Success?</div>
           <div style={{ fontSize: "var(--fs-body)", color: "var(--text-secondary)", lineHeight: 1.7 }}>
-            It runs your plan through <strong style={{ color: "var(--text-primary)" }}>{MC_PATHS_LABEL} Monte Carlo simulations</strong>. For <em>every year</em> of your retirement, each path draws a <strong style={{ color: "var(--text-primary)" }}>random</strong> year from <strong style={{ color: "var(--text-primary)" }}>{SAMPLE_YEARS} years of real market history (1928–2025)</strong> and applies that year’s actual S&P 500 return, 10-year Treasury return, and inflation <em>together</em> — so the real correlation between them survives (e.g. 2008’s −36.6% stocks paired with its +20.1% bond rally).
+            It runs your plan through <strong style={{ color: "var(--text-primary)" }}>{MC_PATHS_LABEL} Monte Carlo simulations</strong>. For <em>every year</em> of your retirement, each path draws a <strong style={{ color: "var(--text-primary)" }}>random</strong> year from <strong style={{ color: "var(--text-primary)" }}>{SAMPLE_YEARS} years of real market history (1928–2025)</strong> and applies that year’s actual S&amp;P 500 return, 10-year Treasury return, and inflation <em>together</em> — so the real correlation between them survives (e.g. 2008’s −36.6% stocks paired with its +20.1% bond rally).
           </div>
           <div style={{ marginTop: 8, fontSize: "var(--fs-label)", color: "var(--text-muted)", lineHeight: 1.65 }}>
             Years are drawn <strong style={{ color: "var(--text-secondary)" }}>with replacement</strong> and the <strong style={{ color: "var(--text-secondary)" }}>order is reshuffled on every path</strong> — so 2008 might strike twice in one run and never in another. This is a bootstrap of history into thousands of <em>plausible</em> futures, <strong style={{ color: "var(--text-secondary)" }}>not a replay of one past sequence in calendar order</strong>.
@@ -3206,7 +3209,7 @@ function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRAT
             AiRA also applies <strong style={{ color: "var(--accent-gold)" }}>{getStrategyDescription(withdrawalStrategy)}</strong>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-            <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each path draws a random paired S&P 500 + bond year, blended by glide path. Contributions added annually.</div>
+            <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>1. Accumulation (ages {params.currentAge}–{params.retireAge})</div>Each path draws a random paired S&amp;P 500 + bond year, blended by glide path. Contributions added annually.</div>
             <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>2. Retirement spending</div>Fresh random returns each year. {params.smile !== false ? "Blanchett smile curve." : "Flat real spending."} SS{params.ab > 0 ? " and rental" : ""} income offsets draws.</div>
             <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>3. {getStrategyLabel(strat)} {strat === "gk" ? "guardrails" : "strategy"}</div>{strategyHowItWorks[strat] || strategyHowItWorks.gk}</div>
             <div><div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 3 }}>4. Survival check</div>Balance above $0 through age {params.endAge} = success. The fan chart shows the 10th–90th percentile spread.</div>
@@ -3221,7 +3224,7 @@ function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRAT
             </ul>
           </div>
           <div style={{ marginTop: 12, fontSize: "var(--fs-small)", color: "var(--text-faint)", lineHeight: 1.6 }}>
-            <strong style={{ color: "var(--text-muted)" }}>Data source:</strong> Aswath Damodaran’s historical returns dataset (S&P 500, 10-year U.S. Treasury, CPI-U), 1928–2025, paired by calendar year. No winsorization — real tail years (1931, 2008, 2022) are kept.
+            <strong style={{ color: "var(--text-muted)" }}>Data source:</strong> Aswath Damodaran’s historical returns dataset (S&amp;P 500, 10-year U.S. Treasury, CPI-U), 1928–2025, paired by calendar year. No winsorization — real tail years (1931, 2008, 2022) are kept.
           </div>
         </div>
         <div style={{ marginTop: 16, background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, padding: "14px 16px" }}>
@@ -3988,6 +3991,80 @@ const CSS = `
   .lp-cta:hover { filter:brightness(1.1); }
   .lp-skip { display:block; margin-top:15px; background:none; border:none; color:var(--text-muted); font-size:13px; cursor:pointer; font-family:var(--font-sans); text-decoration:underline; padding:0; }
   .lp-skip:hover { color:var(--text-secondary); }
+  .lp-site { width:100%; max-width:1080px; }
+  .lp-top { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:clamp(28px,5vw,56px); flex-wrap:wrap; }
+  .lp-nav { display:flex; align-items:center; gap:18px; font-size:14px; white-space:nowrap; }
+  .lp-nav a { color:var(--text-secondary); text-decoration:none; font-weight:600; }
+  .lp-nav a:hover { color:var(--text-primary); }
+  .lp-nav-btn { padding:9px 18px; border-radius:10px; border:1px solid var(--card-border); background:var(--card-bg); color:var(--text-primary); font-size:14px; font-weight:600; font-family:var(--font-sans); cursor:pointer; }
+  .lp-nav-btn:hover { border-color:var(--accent); }
+  .lp-hero { display:grid; grid-template-columns:1fr; gap:36px; align-items:start; }
+  @media (min-width:900px) { .lp-hero { grid-template-columns:1fr 1fr; gap:48px; } }
+  .lp-title { font-size:clamp(34px,5.5vw,54px); font-weight:700; line-height:1.06; letter-spacing:-0.02em; color:var(--text-primary); margin:0; }
+  .lp-micro { margin-top:14px; font-size:13px; color:var(--text-muted); }
+  .lp-facts { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:32px; max-width:520px; }
+  .lp-facts div { background:var(--card-bg); border:1px solid var(--card-border); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:4px; }
+  .lp-facts b { font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:500; color:var(--accent-teal); }
+  .lp-facts span { font-size:12px; color:var(--text-muted); line-height:1.35; }
+  .lp-btnrow { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .lp-btnrow .lp-cta { margin-top:26px; }
+  .lp-ghost { margin-top:26px; padding:14px 22px; border-radius:12px; border:1px solid var(--card-border); background:transparent; color:var(--text-primary); font-size:16px; font-weight:600; font-family:var(--font-sans); cursor:pointer; }
+  .lp-ghost:hover { border-color:var(--accent); }
+  .lp-btnrow .lp-cta-sm { padding:13px 26px; font-size:16px; }
+  .lp-q { font-size:clamp(26px,4vw,38px); font-weight:700; line-height:1.12; letter-spacing:-0.01em; color:var(--text-primary); margin:0; outline:none; }
+  .lp-qrow { margin-top:26px; max-width:520px; }
+  .lp-ringcard { text-align:center; }
+  .lp-ringcard .lp-card-tag { text-align:left; }
+  .lp-ringcard .lp-card-sub { text-align:left; }
+  .lp-ring { position:relative; width:150px; height:150px; margin:8px auto 0; }
+  .lp-ring-arc { transition:stroke-dashoffset 0.4s ease; }
+  .lp-ring-num { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .lp-ring-num b { font-family:'JetBrains Mono',monospace; font-size:38px; font-weight:500; color:var(--text-primary); line-height:1; }
+  .lp-ring-num span { font-size:11px; color:var(--text-muted); font-weight:600; margin-top:4px; }
+  .lp-dots { display:flex; gap:8px; margin-top:18px; }
+  .lp-dots span { width:10px; height:10px; border-radius:50%; background:var(--tint-white-06); }
+  .lp-dots span.on { background:var(--accent); }
+  @media (prefers-reduced-motion: reduce) { .lp-ring-arc { transition:none; } }
+  .lp-card { margin-top:0; }
+  .lp-card-tag { font-size:12px; font-weight:700; color:var(--accent); margin-bottom:12px; }
+  .lp-card .lp-answer { font-size:clamp(26px,4vw,38px); }
+  .lp-card-sub { margin:10px 0 0; font-size:14px; color:var(--text-secondary); line-height:1.5; }
+  .lp-fine { margin:6px 0 0; font-size:12px; color:var(--text-faint); line-height:1.5; }
+  .lp-section { margin-top:clamp(48px,8vw,88px); }
+  .lp-h2 { font-size:clamp(24px,3.6vw,32px); font-weight:700; color:var(--text-primary); margin:0 0 20px; letter-spacing:-0.01em; }
+  .lp-h3 { font-size:17px; font-weight:700; color:var(--text-primary); margin:0 0 8px; }
+  .lp-p { font-size:15px; color:var(--text-secondary); line-height:1.55; margin:0; }
+  .lp-grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+  .lp-grid2 { display:grid; grid-template-columns:1fr; gap:14px; margin-top:20px; }
+  @media (min-width:700px) { .lp-grid2 { grid-template-columns:1fr 1fr; } }
+  .lp-tile { background:var(--card-bg); border:1px solid var(--card-border); border-radius:14px; padding:22px; text-align:left; font-family:var(--font-sans); text-decoration:none; display:block; }
+  .lp-tile-btn { cursor:pointer; width:100%; display:flex; flex-direction:column; justify-content:flex-start; }
+  .lp-tile-btn:hover { border-color:var(--accent); }
+  .lp-num { width:34px; height:34px; border-radius:50%; background:var(--bg-info); color:var(--accent); font-weight:700; display:flex; align-items:center; justify-content:center; margin-bottom:14px; }
+  .lp-feature { display:grid; grid-template-columns:1fr; gap:24px; align-items:center; margin-top:clamp(28px,5vw,56px); }
+  @media (min-width:900px) { .lp-feature { grid-template-columns:1fr 1.25fr; gap:52px; } .lp-feature.lp-flip { grid-template-columns:1.25fr 1fr; } .lp-feature.lp-flip .lp-feature-text { order:2; } }
+  .lp-h3-big { font-size:clamp(22px,3vw,28px); line-height:1.15; margin:0 0 12px; }
+  .lp-bullets { margin:14px 0 0; padding-left:20px; color:var(--text-secondary); font-size:15px; line-height:1.7; }
+  .lp-shot { margin:0; border:1px solid var(--card-border); border-radius:14px; background:var(--card-bg); padding:10px; box-shadow:0 18px 40px rgba(0,0,0,0.35); }
+  .lp-shot img { display:block; width:100%; height:auto; border-radius:8px; }
+  .lp-shot figcaption { font-size:12px; color:var(--text-faint); margin-top:8px; }
+  .lp-shot-note { padding:28px; display:flex; flex-direction:column; gap:8px; }
+  .lp-shot-note b { color:var(--text-primary); font-size:17px; }
+  .lp-shot-note span { color:var(--text-secondary); font-size:15px; line-height:1.5; }
+  .lp-video { max-width:900px; }
+  .lp-video video { display:block; width:100%; height:auto; border-radius:8px; background:#000; }
+  .lp-reveal { opacity:0; transform:translateY(24px); transition:opacity 0.6s ease, transform 0.6s ease; }
+  .lp-reveal.lp-in { opacity:1; transform:none; }
+  @media (prefers-reduced-motion: reduce) { .lp-reveal { opacity:1; transform:none; transition:none; } }
+  .lp-foot { margin-top:clamp(48px,8vw,88px); padding-top:32px; border-top:1px solid var(--divider); font-size:14px; color:var(--text-muted); line-height:1.7; }
+  .lp-foot-grid { display:grid; grid-template-columns:1fr; gap:28px; }
+  @media (min-width:700px) { .lp-foot-grid { grid-template-columns:1.6fr 1fr 1fr 1fr; gap:36px; } }
+  .lp-foot h3 { margin:0 0 10px; font-size:13px; font-weight:700; color:var(--text-primary); }
+  .lp-foot nav { display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
+  .lp-foot a, .lp-foot nav button { color:var(--text-secondary); text-decoration:none; font:inherit; font-size:14px; padding:0; background:none; border:0; cursor:pointer; text-align:left; }
+  .lp-foot a:hover, .lp-foot nav button:hover { color:var(--accent); text-decoration:underline; }
+  .lp-foot-line { margin:8px 0 0; max-width:34ch; color:var(--text-muted); }
+  .lp-foot-fine { margin:32px 0 0; padding-top:16px; border-top:1px solid var(--divider); font-size:12px; color:var(--text-faint); }
   /* minmax(0,1fr), not bare 1fr: a grid track's auto minimum is its content's
      max-content width, so a wide child (the 15+ column Withdrawal Plan
      table) silently grows the whole right-pane track past the viewport
@@ -4711,112 +4788,12 @@ function AboutButton() {
 // purely presentation + filtering.
 function HelpButton() {
   const [open, setOpen] = React.useState(false);
-  const [query, setQuery] = React.useState("");
-  const [openId, setOpenId] = React.useState(null); // one topic open at a time
-
-  const overlay = open ? ReactDOM.createPortal(
-    <div
-      onClick={() => setOpen(false)}
-      style={{ position:"fixed", inset:0, background:"var(--tint-black-70)", zIndex:99999,
-        display:"flex", alignItems:"flex-start", justifyContent:"center",
-        padding:"40px 16px 60px", overflowY:"auto" }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{ background:"#0f1729", border:"1px solid rgba(96,165,250,0.2)",
-          borderRadius:14, padding:"24px 28px 28px", maxWidth:600, width:"100%",
-          boxShadow:"0 24px 60px var(--tint-black-80)" }}
-      >
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
-          <div style={{ fontSize: "var(--fs-h2)", fontWeight:800, color:"var(--text-primary)", letterSpacing:"-0.3px" }}>
-            ❓ Help &amp; How It Works
-          </div>
-          <button onClick={() => setOpen(false)}
-            style={{ background:"transparent", border:"none", color:"var(--text-muted)",
-              cursor:"pointer", fontSize: "var(--fs-h1)", lineHeight:1, padding:"0 2px" }}>×</button>
-        </div>
-
-        <input
-          type="text"
-          autoFocus
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search help topics… e.g. IRMAA, Roth, buckets, spending smile"
-          style={{ width:"100%", boxSizing:"border-box", padding:"10px 14px", marginBottom:16,
-            background:"var(--row-highlight)", border:"1px solid var(--tint-white-12)",
-            borderRadius:9, color:"var(--text-primary)", fontSize: "var(--fs-body)", fontFamily:"inherit" }}
-        />
-
-        {ABOUT_PRODUCT.intro && !query.trim() && (
-          <p style={{ fontSize: "var(--fs-body)", color:"var(--text-secondary)", lineHeight:1.75,
-            margin:"0 0 18px", padding:"12px 14px", background:"rgba(96,165,250,0.06)",
-            border:"1px solid rgba(96,165,250,0.15)", borderRadius:9 }}>
-            {ABOUT_PRODUCT.intro}
-          </p>
-        )}
-
-        {(() => {
-          const q = query.trim().toLowerCase();
-          const stripHtml = (html) => html.replace(/<[^>]+>/g, " ");
-          const filtered = !q ? ABOUT_FEATURES : ABOUT_FEATURES.filter(e =>
-            e.title.toLowerCase().includes(q) ||
-            (e.group || "").toLowerCase().includes(q) ||
-            (e.keywords || []).join(" ").toLowerCase().includes(q) ||
-            stripHtml(e.body).toLowerCase().includes(q)
-          );
-          const groups = [...new Set(filtered.map(e => e.group).filter(Boolean))];
-          const ungrouped = filtered.filter(e => !e.group);
-
-          if (ABOUT_FEATURES.length === 0) {
-            return (
-              <div style={{ fontSize: "var(--fs-label)", color:"var(--text-faint)", textAlign:"center", padding:24 }}>
-                No entries yet. Add items to ABOUT_FEATURES in src/about.js.
-              </div>
-            );
-          }
-          if (filtered.length === 0) {
-            return (
-              <div style={{ fontSize: "var(--fs-label)", color:"var(--text-faint)", textAlign:"center", padding:24 }}>
-                No help topics match "{query.trim()}". Try a different word, or use Feedback to ask directly.
-              </div>
-            );
-          }
-          return (
-            <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
-              {groups.map(g => (
-                <div key={g}>
-                  <div style={{ fontSize: "var(--fs-small)", fontWeight:700, color:"var(--text-faint)", letterSpacing:"1px", marginBottom:9 }}>{g}</div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
-                    {filtered.filter(e => e.group === g).map(e => (
-                      <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} {...(q ? {} : { open: openId === e.id, onToggle: () => setOpenId((id) => (id === e.id ? null : e.id)) })} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {ungrouped.map(e => (
-                <CollapsibleAboutCard key={e.id} entry={e} defaultOpen={!!q} {...(q ? {} : { open: openId === e.id, onToggle: () => setOpenId((id) => (id === e.id ? null : e.id)) })} />
-              ))}
-            </div>
-          );
-        })()}
-
-        <button onClick={() => setOpen(false)}
-          style={{ marginTop:22, width:"100%", background:"rgba(96,165,250,0.08)",
-            border:"1px solid rgba(96,165,250,0.25)", borderRadius:8, padding:"9px 0",
-            color:"var(--chart-2)", fontSize: "var(--fs-body)", fontWeight:600, cursor:"pointer" }}>
-          Close
-        </button>
-      </div>
-    </div>,
-    document.body
-  ) : null;
-
   return (
     <>
-      <button className="mbtn" onClick={() => { setQuery(""); setOpen(true); }} title="Look up how a feature or number works">
+      <button className="mbtn" onClick={() => setOpen(true)} title="Look up how a feature or number works">
         Help
       </button>
-      {overlay}
+      {open && <HelpPage entries={ABOUT_FEATURES} onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -6076,7 +6053,7 @@ function IncomeExpensesChart({ p, inf }) {
       {p.ssAge > p.retireAge && (
         <div className="flag-w" style={{ fontSize: "var(--fs-small)" }}>
           Social Security gap, ages {p.retireAge}–{p.ssAge - 1} — with no SS yet, your
-          portfolio carries the full spending need (the green Savings & 401(k)/IRA Drawdown above is
+          portfolio carries the full spending need (the green Savings &amp; 401(k)/IRA Drawdown above is
           largest here). This is the highest sequence-of-returns risk window.
         </div>
       )}
@@ -6827,7 +6804,7 @@ const modeDescs = {
                   </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 20px", fontSize: "var(--fs-label)" }}>
                 <div>
-                  <div style={{ color: "var(--text-secondary)", marginBottom: 6, fontSize: "var(--fs-small)" }}>Tax Year & Income</div>
+                  <div style={{ color: "var(--text-secondary)", marginBottom: 6, fontSize: "var(--fs-small)" }}>Tax Year &amp; Income</div>
                   {[
                     ["Tax Year",          cyYear,   setCyYear,   false, 2026, 2060],
                     ["W-2 / SE Income",   cyW2,     setCyW2,     true],
@@ -7778,7 +7755,7 @@ const modeDescs = {
       >
         This analysis is for planning purposes only. Consult a tax professional
         before executing Roth conversions. Progressive fed brackets (IRS Rev.
-        Proc. 2025-32) · NJ graduated rates · Joint & Last Survivor RMD table ·
+        Proc. 2025-32) · NJ graduated rates · Joint &amp; Last Survivor RMD table ·
         7% growth assumption · Conversion tax default funded from your taxable /
         HSA / cash bucket (Vanguard BETR best practice — lowest effective rate).
         Override in Assumptions → Roth Conversion Strategy.
@@ -12448,7 +12425,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
               </div>
             )}
             <div>
-              <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--positive)", marginBottom: 10 }}>MARKET & STATISTICAL MODEL</div>
+              <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--positive)", marginBottom: 10 }}>MARKET &amp; STATISTICAL MODEL</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <InputCard title="Return Distribution" rows={[["Model", "Historical bootstrap"], ["Equity data", `${SAMPLE_YEARS}yr S&P 500 (${SAMPLE_START_YEAR}–${SAMPLE_END_YEAR})`], [`Pre-retire mix (${params.preRetireEq ?? 91}/${100 - (params.preRetireEq ?? 91)})`, "Equity / Bonds"], [`Post-retire mix (${params.postRetireEq ?? 70}/${100 - (params.postRetireEq ?? 70)})`, "Equity / Bonds"]]} />
                 <InputCard title="Inflation & Guardrails" rows={[["Inflation", "Historical bootstrap"], ["Inflation source", `CPI for the same years (${SAMPLE_START_YEAR}–${SAMPLE_END_YEAR})`], ["GK floor", fmtDollar(params.gkFloor) + "/yr"], ["GK ceiling", fmtDollar(params.gkCeiling) + "/yr"]]} />
@@ -12589,7 +12566,7 @@ function MortgageTab({ values, onChange }) {
             <div className="ms">vs no extra</div>
           </div>
           <div className="met">
-            <div className="ml">Monthly P&I</div>
+            <div className="ml">Monthly P&amp;I</div>
             <div className="mv" style={{ color:"var(--text-primary)", fontSize: "var(--fs-h2)" }}>{fmtDollar(sched.pmt)}</div>
             <div className="ms">At {rate}% fixed</div>
           </div>
@@ -15287,7 +15264,7 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in the Net Worth projection.">
           <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
         </ARow>
-        <ARow label="Housing type" desc="Own = mortgage P&I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
+        <ARow label="Housing type" desc="Own = mortgage P&amp;I drawn from portfolio until payoff. Rent = inflation-adjusted annual rent. None = housing already in core spend.">
           <select
             value={values.housingType || "own"}
             onChange={(e) => onChange("housingType", e.target.value)}
@@ -17192,12 +17169,63 @@ function LandingMoneyField({ row }) {
 
 // First-screen landing shown to visitors with no saved profile. Answers the one
 // question — "when can I retire?" — then routes into the full app via onEnter.
-function RetirementLanding({ onEnter }) {
+// Fades a block in once it scrolls into view. Without IntersectionObserver, or with
+// reduced motion requested, it simply shows at once.
+function LpReveal({ children, className = "" }) {
+  const ref = useRef(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!el || calm || typeof IntersectionObserver === "undefined") { setSeen(true); return undefined; }
+    const io = new IntersectionObserver((es) => {
+      if (es.some((e) => e.isIntersecting)) { setSeen(true); io.disconnect(); }
+    }, { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return <div ref={ref} className={"lp-reveal " + className + (seen ? " lp-in" : "")}>{children}</div>;
+}
+
+// Set to the Getting Started video URL when episode 1 is live; the card stays hidden while empty.
+const LANDING_INTRO_VIDEO_URL = "";
+
+// Guided order: the three answers a result needs come first, so the ring can appear
+// after question 3 and question 4 (contributions) then moves it live.
+const LANDING_STEPS = [
+  { key: "age", q: "How Old Are You?", help: "Your age sets how many years you have left to save." },
+  { key: "savings", q: "How Much Have You Saved So Far?", help: "Add up your retirement accounts and investments. Round numbers are fine." },
+  { key: "spend", q: "What Do You Want To Spend Each Year In Retirement?", help: "Think in today's dollars." },
+  { key: "contrib", q: "How Much Will You Add Each Year Until Then?", help: "Include any employer match. Use zero if you are not saving." },
+];
+
+const LANDING_FEATURES = [
+  { kicker: "The Result", t: "One Clear Number, Backed By Detail",
+    d: "Your plan runs through thousands of simulated markets. You get one headline number, then the numbers behind it.",
+    points: ["Share of simulated futures where your money lasts", "Worst case, withdrawal rate and the age money runs out", "Every figure shown in today's dollars"],
+    img: "/landing/result.png", alt: "The AiRA result card showing a 99.5 percent success rate and a strip of supporting figures.", cap: "The result card, using example numbers." },
+  { kicker: "Stress Test", t: "See What Happens When Things Go Wrong",
+    d: "Each card re-runs your plan with one thing going wrong, so you see how much a bad stretch really costs.",
+    points: ["A market crash right at retirement", "A long-term care event", "Living to 100", "Replay real past crashes against your plan"],
+    img: "/landing/stress.png", alt: "Three stress cards: market crashes early, long-term care event and live to 100, each showing the change in success rate.", cap: "The Stress Test tab, using example numbers." },
+  { kicker: "Checkpoints", t: "Save A Check-In And Watch Your Plan Over Time",
+    d: "Plans drift. Save a check-in whenever something changes, and AiRA shows whether your plan is holding or slipping.",
+    points: ["Change in success rate since your first check-in", "A plan-shape chart across five measures", "Everything stays on your device"],
+    img: "/landing/checkpoints.png", alt: "The Progress tab showing latest success rate, change since first check-in and a plan shape chart.", cap: "The Progress tab, using example numbers." },
+  { kicker: "AI Analysis", t: "Turn Your Results Into Next Steps",
+    d: "An optional AI analysis reads your plan and writes a ranked list of actions to consider.",
+    points: ["Optional: the calculator works fully without it", "Uses AiRA credits, or your own free Gemini key", "It suggests. You decide."],
+    img: "/landing/ai.png", alt: "The Action Plan tab after AI analysis: a retirement date solver table and a ranked list of nine items marked critical, important or on track.", cap: "The Action Plan tab after an AI analysis, using example numbers." },
+];
+
+function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
   const [curAge, setCurAge] = useState(45);
   const [savings, setSavings] = useState(850000);
   const [contribL, setContribL] = useState(40000);
   const [spend, setSpend] = useState(90000);
   const canvasRef = useRef(null);
+  const [step, setStep] = useState(null); // null = overview, 0-3 = questions, 4 = result
+  const guidedRef = useRef(null);
   const s = { curAge, savings, contrib: contribL, spend };
   const retired = landingIsRetired(s);
   // Already retired ⇒ the projection IS "drawing down from today", so the
@@ -17236,7 +17264,16 @@ function RetirementLanding({ onEnter }) {
     ctx.lineTo(x(pts.length - 1), H - pad); ctx.lineTo(x(0), H - pad); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
     ctx.beginPath(); pts.forEach((p, i) => i === 0 ? ctx.moveTo(x(i), y(p.val)) : ctx.lineTo(x(i), y(p.val)));
     ctx.strokeStyle = "var(--accent-teal)"; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
-  }, [curAge, savings, contribL, spend, age]);
+  }, [curAge, savings, contribL, spend, age, step]);
+
+  useEffect(() => {
+    if (step !== null && guidedRef.current) {
+      guidedRef.current.closest(".landing")?.scrollTo?.(0, 0);
+      window.scrollTo(0, 0);
+      const h = guidedRef.current.querySelector("h2");
+      if (h) h.focus({ preventScroll: true });
+    }
+  }, [step]);
 
   // `money: false` keeps the age row on a plain linear slider with no typed
   // field — an age is two digits and the range is 25–85, so neither fix applies.
@@ -17251,76 +17288,319 @@ function RetirementLanding({ onEnter }) {
       ...LANDING_LIMITS.spend, money: true, fmt: (v) => fmtDollar(v) + "/yr" },
   ];
 
+  const renderRow = (r) => (
+    <div key={r.key}>
+      <div className="lp-row">
+        <span className="lp-label">{r.label}</span>
+        {r.money
+          ? <LandingMoneyField row={r} />
+          : <span className="lp-val">{r.fmt(r.val)}</span>}
+      </div>
+      {r.money ? (
+        <input className="lp-range" type="range" min={0} max={LANDING_SLIDER_STEPS} step={1}
+          aria-label={r.label}
+          value={landingValToPos(r.val, r.min, r.max)}
+          onChange={(e) => r.set(landingPosToVal(+e.target.value, r.min, r.max))} />
+      ) : (
+        <input className="lp-range" type="range" min={r.min} max={r.max} step={1}
+          aria-label={r.label}
+          value={r.val} onChange={(e) => r.set(+e.target.value)} />
+      )}
+    </div>
+  );
+
+  const startNow = savedPlan ? onContinue : () => onEnter(s);
+  const rowByKey = (k) => rows.find((r) => r.key === k);
+  const replaceAndEnter = () => { if (!savedPlan || window.confirm("Replace your saved plan with these numbers?")) onEnter(s); };
+  const confPct = Math.round(conf * 100);
+  const RING_R = 58, RING_C = 2 * Math.PI * RING_R;
+  const startLabel = savedPlan ? "Open My Saved Plan" : "See Your Real Numbers";
+  const steps = [
+    { n: "1", t: "Answer Four Questions", d: "Your age, what you have saved, what you add each year, and what you want to spend in retirement." },
+    { n: "2", t: "Run The Simulation", d: `AiRA replays your plan through ${MC_PATHS_LABEL} simulated market histories, with taxes, Social Security and the order you withdraw from accounts.` },
+    { n: "3", t: "Read One Number", d: "See the share of simulated futures where your money lasts. Change an input and watch the number move." },
+  ];
+  const checks = [
+    { t: "2026 Tax Rules", d: "Federal tax brackets and standard deductions use the 2026 IRS figures." },
+    { t: "Medicare Premium Surcharges", d: "Income-based surcharges (called IRMAA) use the 2026 Medicare (CMS) figures." },
+    { t: "Required Withdrawals", d: "The rules for when you must start taking money out of retirement accounts (RMDs)." },
+    { t: "Market Stress Tests", d: "Replay past market crashes against your plan to see how it holds up." },
+  ];
+
   return (
     <div className="landing">
-      <div className="lp-wrap">
-        <div className="lp-brand">
+      <div className="lp-site">
+        <header className="lp-top">
           <div className="logo">AiRA <span className="logo-sub">Freedom Financial</span></div>
-          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>v{APP_VERSION}</div>
-        </div>
+          <nav className="lp-nav" aria-label="Page sections">
+            <a href="#lp-how">How It Works</a>
+            <a href="#lp-trust">What We Check</a>
+            <button className="lp-nav-btn" onClick={startNow}>{savedPlan ? "Open My Saved Plan" : "Open The App"}</button>
+          </nav>
+        </header>
 
-        <div className="lp-eyebrow">Your one-number answer</div>
-        <h1 className={"lp-answer" + (age != null && conf < 0.9 ? " short" : "")}>
-          {retired
-            ? <>Your money lasts to <span className="lp-age">{landingLastsToAge(s)}</span></>
-            : age != null
-              ? <>You can retire at <span className="lp-age">{age}</span></>
-              : <>Let's find your <span className="lp-age">number</span></>}
-        </h1>
-        <p className="lp-sub">
-          {age != null
-            ? <>Based on your savings and spending, the math says you reach financial independence{" "}
-                <b style={{ color: "var(--text-primary)" }}>{age - curAge <= 0 ? "right now" : `${age - curAge} year${age - curAge === 1 ? "" : "s"} from now`}</b>
-                {conf >= 0.92 ? " — with real margin." : " — with a modest cushion."}</>
-            : <>No age up to {AGE_LIMITS.retire.max} clears 85% confidence at these numbers yet — try saving more, or trimming the spend.</>}
-        </p>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 38, fontWeight: 500, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{Math.round(conf * 100)}</span>
-            <span style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", fontWeight: 600 }}>% confident<br />at that age</span>
-          </div>
-          <div style={{ flex: 1, minWidth: 200, height: 10, borderRadius: 100, background: "var(--tint-white-06)", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: -3, bottom: -3, left: "85%", width: 2, background: "var(--text-faint)" }} />
-            <div style={{ height: "100%", borderRadius: 100, width: `${Math.min(100, Math.round(conf * 100))}%`, background: "var(--accent-teal)", transition: "width 0.35s" }} />
-          </div>
-        </div>
-
-        <div style={{ marginTop: 26 }}>
-          <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 6, fontWeight: 700 }}>Median portfolio path</div>
-          <canvas ref={canvasRef} style={{ width: "100%", height: 120, display: "block" }} />
-        </div>
-
-        <div className="lp-panel">
-          {rows.map((r) => (
-            <div key={r.key}>
-              <div className="lp-row">
-                <span className="lp-label">{r.label}</span>
-                {r.money
-                  ? <LandingMoneyField row={r} />
-                  : <span className="lp-val">{r.fmt(r.val)}</span>}
-              </div>
-              {r.money ? (
-                <input className="lp-range" type="range" min={0} max={LANDING_SLIDER_STEPS} step={1}
-                  aria-label={r.label}
-                  value={landingValToPos(r.val, r.min, r.max)}
-                  onChange={(e) => r.set(landingPosToVal(+e.target.value, r.min, r.max))} />
-              ) : (
-                <input className="lp-range" type="range" min={r.min} max={r.max} step={1}
-                  aria-label={r.label}
-                  value={r.val} onChange={(e) => r.set(+e.target.value)} />
-              )}
+        {step === null ? (
+        <section className="lp-hero">
+          <div>
+            <div className="lp-eyebrow">Free Retirement Planner</div>
+            <h1 className="lp-title">See Your Real Retirement Numbers</h1>
+            <p className="lp-sub">
+              Answer four questions to see when you can retire. Then test your plan against {MC_PATHS_LABEL} simulated
+              markets, using your real accounts, taxes and Social Security.
+            </p>
+            <div className="lp-btnrow">
+              <button className="lp-cta" onClick={startNow}>{startLabel}</button>
+              <button className="lp-ghost" onClick={() => setStep(0)}>Walk Me Through It</button>
             </div>
+            {savedPlan
+              ? <button className="lp-skip" onClick={() => {
+                  if (window.confirm("Replace your saved plan with the numbers on this page?")) onEnter(s);
+                }}>Replace My Plan With These Numbers</button>
+              : <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll Enter My Own Details</button>}
+            <p className="lp-micro">No Account Needed. Your Plan Is Saved On This Device.</p>
+            <div className="lp-facts">
+              <div><b>{MC_PATHS_LABEL}</b><span>Simulated Markets Per Run</span></div>
+              <div><b>2026</b><span>IRS And Medicare Rules</span></div>
+              <div><b>Free</b><span>No Account Needed</span></div>
+            </div>
+          </div>
+
+          <div className="lp-panel lp-card">
+            <div className="lp-card-tag">Example Plan: Change The Numbers To Yours</div>
+            <h2 className={"lp-answer" + (age != null && conf < 0.9 ? " short" : "")}>
+              {retired
+                ? <>Your money lasts to <span className="lp-age">{landingLastsToAge(s)}</span></>
+                : age != null
+                  ? <>You can retire at <span className="lp-age">{age}</span></>
+                  : <>Let's find your <span className="lp-age">number</span></>}
+            </h2>
+            <p className="lp-card-sub">
+              {age != null
+                ? <>The math says you reach financial independence{" "}
+                    <b style={{ color: "var(--text-primary)" }}>{age - curAge <= 0 ? "right now" : `${age - curAge} year${age - curAge === 1 ? "" : "s"} from now`}</b>
+                    {conf >= 0.92 ? ", with real margin." : ", with a modest cushion."}</>
+                : <>No age up to {AGE_LIMITS.retire.max} clears 85% confidence at these numbers yet. Try saving more, or trimming the spend.</>}
+            </p>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 18, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                <span style={{ fontSize: 34, fontWeight: 500, color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{Math.round(conf * 100)}</span>
+                <span style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", fontWeight: 600 }}>% confident<br />at that age</span>
+              </div>
+              <div style={{ flex: 1, minWidth: 160, height: 10, borderRadius: 100, background: "var(--tint-white-06)", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: -3, bottom: -3, left: "85%", width: 2, background: "var(--text-faint)" }} />
+                <div style={{ height: "100%", borderRadius: 100, width: `${Math.min(100, Math.round(conf * 100))}%`, background: "var(--accent-teal)", transition: "width 0.35s" }} />
+              </div>
+            </div>
+
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 6, fontWeight: 700 }}>Median portfolio path</div>
+              <canvas ref={canvasRef} style={{ width: "100%", height: 120, display: "block" }} />
+            </div>
+
+            <div style={{ marginTop: 18 }}>
+              {rows.map(renderRow)}
+            </div>
+            <p className="lp-fine">An estimate from a simplified model, not financial advice and not a guarantee. The full app is more detailed.</p>
+          </div>
+        </section>
+        ) : (
+        <section className="lp-hero lp-guided" ref={guidedRef}>
+          <div>
+            {step < 4 ? (
+              <>
+                <div className="lp-eyebrow">Question {step + 1} Of 4</div>
+                <h2 className="lp-q" tabIndex={-1}>{LANDING_STEPS[step].q}</h2>
+                <p className="lp-sub">{LANDING_STEPS[step].help}</p>
+                <div className="lp-qrow">{renderRow(rowByKey(LANDING_STEPS[step].key))}</div>
+              </>
+            ) : (
+              <>
+                <div className="lp-eyebrow">Your Quick Estimate</div>
+                <h2 className="lp-q" tabIndex={-1}>
+                  {retired
+                    ? <>Your money lasts to <span className="lp-age">{landingLastsToAge(s)}</span></>
+                    : age != null
+                      ? <>You can retire at <span className="lp-age">{age}</span></>
+                      : <>Not Yet At These Numbers</>}
+                </h2>
+                <p className="lp-sub">
+                  {age != null
+                    ? <>That is {confPct}% confident at that age, from a simplified model. The full app tests your real accounts, taxes and Social Security against {MC_PATHS_LABEL} simulated markets.</>
+                    : <>No age up to {AGE_LIMITS.retire.max} clears 85% confidence yet. Go back and try saving more, or spending less.</>}
+                </p>
+                <button className="lp-cta" onClick={replaceAndEnter}>See Your Real Numbers</button>
+              </>
+            )}
+            <div className="lp-btnrow" style={{ marginTop: step < 4 ? 8 : 14 }}>
+              {step > 0 && step < 4 && <button className="lp-ghost" onClick={() => setStep(step - 1)}>Back</button>}
+              {step < 4 && <button className="lp-cta lp-cta-sm" onClick={() => setStep(step + 1)}>{step === 3 ? "See My Estimate" : "Next"}</button>}
+              {step === 4 && <button className="lp-ghost" onClick={() => setStep(0)}>Change My Answers</button>}
+            </div>
+            <button className="lp-skip" onClick={() => setStep(null)}>Back To Overview</button>
+          </div>
+
+          <div className="lp-panel lp-card lp-ringcard">
+            {step < 3 ? (
+              <>
+                <div className="lp-card-tag">Your Number</div>
+                <p className="lp-card-sub">Your estimate appears after question 3. It updates as you answer.</p>
+                <div className="lp-dots" aria-hidden="true">
+                  {[0, 1, 2, 3].map((n) => <span key={n} className={n <= step ? "on" : ""} />)}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="lp-card-tag">{step === 3 ? "Updating As You Answer" : "Your Estimate"}</div>
+                <div className="lp-ring" role="img"
+                  aria-label={age != null ? `Confidence at the earliest retirement age: ${confPct} percent` : "No retirement age reaches 85 percent confidence yet"}>
+                  <svg width="150" height="150" viewBox="0 0 150 150" aria-hidden="true">
+                    <circle cx="75" cy="75" r={RING_R} fill="none" stroke="var(--tint-white-06)" strokeWidth="12" />
+                    <circle cx="75" cy="75" r={RING_R} fill="none" strokeWidth="12" strokeLinecap="round"
+                      stroke={conf >= 0.85 ? "var(--accent-teal)" : "var(--accent-gold)"}
+                      strokeDasharray={RING_C} strokeDashoffset={RING_C * (1 - Math.min(1, conf))}
+                      transform="rotate(-90 75 75)" className="lp-ring-arc" />
+                  </svg>
+                  <div className="lp-ring-num"><b>{confPct}</b><span>% Confident</span></div>
+                </div>
+                <h3 className="lp-h3" style={{ marginTop: 14 }}>
+                  {retired ? <>Money lasts to {landingLastsToAge(s)}</> : age != null ? <>Retire at {age}</> : <>No age reaches 85%</>}
+                </h3>
+                <p className="lp-fine">An estimate from a simplified model, not financial advice and not a guarantee.</p>
+              </>
+            )}
+          </div>
+        </section>
+        )}
+
+        <section className="lp-section">
+          <h2 className="lp-h2">See It In Action</h2>
+          <p className="lp-p" style={{ maxWidth: "62ch", marginBottom: 18 }}>
+            A 24-second silent tour with example numbers: the projection, the forecast range, spending guardrails and a stress test that replays a real market crash.
+          </p>
+          <LpReveal>
+            <figure className="lp-shot lp-video">
+              <video controls preload="none" playsInline poster="/landing/tour-poster.jpg"
+                aria-label="Silent 24-second tour of the AiRA app using example numbers">
+                <source src="/landing/tour.mp4" type="video/mp4" />
+              </video>
+              <figcaption>Press play. No sound. Example numbers.</figcaption>
+            </figure>
+          </LpReveal>
+        </section>
+
+        <section className="lp-section">
+          <h2 className="lp-h2">What AiRA Does Best</h2>
+          {LANDING_FEATURES.map((f, i) => (
+            <LpReveal key={f.t} className={"lp-feature" + (i % 2 ? " lp-flip" : "")}>
+              <div className="lp-feature-text">
+                <div className="lp-eyebrow">{f.kicker}</div>
+                <h3 className="lp-h3 lp-h3-big">{f.t}</h3>
+                <p className="lp-p">{f.d}</p>
+                <ul className="lp-bullets">{f.points.map((pt) => <li key={pt}>{pt}</li>)}</ul>
+              </div>
+              {f.img
+                ? <figure className="lp-shot"><img src={f.img} alt={f.alt} loading="lazy" /><figcaption>{f.cap}</figcaption></figure>
+                : <div className="lp-shot lp-shot-note"><b>{f.noteTitle}</b><span>{f.note}</span></div>}
+            </LpReveal>
           ))}
-        </div>
+        </section>
 
-        <button className="lp-cta" onClick={() => onEnter(s)}>Open the app</button>
-        <button className="lp-skip" onClick={() => onEnter(null)}>Skip — I'll enter my own details</button>
+        <section id="lp-how" className="lp-section">
+          <h2 className="lp-h2">How It Works</h2>
+          <div className="lp-grid3">
+            {steps.map((st) => (
+              <div key={st.n} className="lp-tile">
+                <div className="lp-num">{st.n}</div>
+                <h3 className="lp-h3">{st.t}</h3>
+                <p className="lp-p">{st.d}</p>
+              </div>
+            ))}
+          </div>
+        </section>
 
-        <p style={{ marginTop: 32, fontSize: "var(--fs-label)", color: "var(--text-faint)", lineHeight: 1.6, maxWidth: "62ch" }}>
-          This is a 60-second estimate. The full app runs {MC_PATHS_LABEL} market simulations across your real
-          accounts, taxes, Social Security, and withdrawal order — that's where your true plan lives.
-        </p>
+        <section className="lp-section">
+          <h2 className="lp-h2">Choose How To Start</h2>
+          <div className="lp-grid3">
+            {savedPlan && (
+              <button className="lp-tile lp-tile-btn" onClick={onContinue}>
+                <h3 className="lp-h3">Open My Saved Plan</h3>
+                <p className="lp-p">Go straight back to the plan saved on this device.</p>
+              </button>
+            )}
+            <button className="lp-tile lp-tile-btn" onClick={() => setStep(0)}>
+              <h3 className="lp-h3">Walk Me Through It</h3>
+              <p className="lp-p">Four short questions, one at a time, with your estimate updating as you answer.</p>
+            </button>
+            <button className="lp-tile lp-tile-btn" onClick={() => (savedPlan ? window.confirm("Replace your saved plan with the numbers on this page?") && onEnter(s) : onEnter(s))}>
+              <h3 className="lp-h3">Start With The Numbers Above</h3>
+              <p className="lp-p">Use the four answers in the example card. The app fills in the rest and lists what it assumed.</p>
+            </button>
+            <button className="lp-tile lp-tile-btn" onClick={() => (savedPlan ? window.confirm("Replace your saved plan with a blank one?") && onEnter(null) : onEnter(null))}>
+              <h3 className="lp-h3">Enter Every Detail Myself</h3>
+              <p className="lp-p">Go to the full inputs for accounts, income, taxes and Social Security.</p>
+            </button>
+            {LANDING_INTRO_VIDEO_URL && (
+              <a className="lp-tile lp-tile-btn" href={LANDING_INTRO_VIDEO_URL} target="_blank" rel="noopener noreferrer">
+                <h3 className="lp-h3">Watch: Getting Started</h3>
+                <p className="lp-p">A short video that walks through your first plan.</p>
+              </a>
+            )}
+          </div>
+        </section>
+
+        <section id="lp-trust" className="lp-section">
+          <h2 className="lp-h2">What We Check</h2>
+          <p className="lp-p" style={{ maxWidth: "62ch" }}>
+            The math follows published rules, and every change runs the full automated test suite before it ships.
+          </p>
+          <div className="lp-grid2">
+            {checks.map((c) => (
+              <div key={c.t} className="lp-tile">
+                <h3 className="lp-h3">{c.t}</h3>
+                <p className="lp-p">{c.d}</p>
+              </div>
+            ))}
+          </div>
+          <div className="lp-tile" style={{ marginTop: 14 }}>
+            <h3 className="lp-h3">What This Doesn't Do</h3>
+            <p className="lp-p">
+              AiRA is an educational tool. It is not financial advice. It cannot predict markets or promise a result,
+              and its assumptions are ones you can see and change.
+            </p>
+          </div>
+        </section>
+
+        <footer className="lp-foot">
+          <div className="lp-foot-grid">
+            <div>
+              <div className="logo">AiRA</div>
+              <p className="lp-foot-line">Built in the open by one person who wanted honest retirement numbers.</p>
+              <p className="lp-foot-line">No ads. No accounts. Your plan stays on your device.</p>
+            </div>
+            <nav aria-label="Use It">
+              <h3>Use It</h3>
+              <button type="button" onClick={startNow}>{savedPlan ? "Open My Saved Plan" : "Open The App"}</button>
+              <a href="#lp-how">How It Works</a>
+              <a href="#lp-trust">What We Check</a>
+            </nav>
+            <nav aria-label="Check My Work">
+              <h3>Check My Work</h3>
+              <a href="https://github.com/axwack/Aira_Monte_Carlo" target="_blank" rel="noopener noreferrer">Source On GitHub</a>
+              <a href="/contribute#check-the-math">Check The Math</a>
+              <a href={`mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent("AiRA wrong number")}`}>Report A Wrong Number</a>
+            </nav>
+            <nav aria-label="Help Build It">
+              <h3>Help Build It</h3>
+              <a href="/contribute">Contribute</a>
+              <a href={aboutLink("YouTube Channel")} target="_blank" rel="noopener noreferrer">YouTube</a>
+              <a href={`mailto:${FEEDBACK_EMAIL}`}>Contact</a>
+            </nav>
+          </div>
+          <p className="lp-foot-fine">
+            AiRA is an educational tool, not financial, tax or legal advice. v{APP_VERSION}
+          </p>
+        </footer>
       </div>
     </div>
   );
@@ -17413,7 +17693,11 @@ export default function AiRAForecaster() {
   // while anyone who has saved a profile goes straight to their dashboard
   // and never sees it. Dismissal still holds for the session (React
   // state), so entering the app is a one-click, non-repeating action.
-  const [showWelcome, setShowWelcome] = useState(() => !loadProfileFromLocal());
+  // `?welcome=1` forces the landing even with a saved plan, for links from videos
+  // and posts. Such visitors get "Open My Saved Plan", never the overwriting seed.
+  const [hasSavedPlan] = useState(() => !!loadProfileFromLocal());
+  const [showWelcome, setShowWelcome] = useState(
+    () => !loadProfileFromLocal() || new URLSearchParams(window.location.search).has("welcome"));
   // True for the session that arrived through the quick estimate: the app then
   // owes the visitor a list of what it assumed beyond their four answers.
   const [fromLanding, setFromLanding] = useState(false);
@@ -17903,6 +18187,13 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
   }, [params]);
   sigRef.current = paramsSig;
 
+  // A starter plan (the landing's "Skip") has a placeholder portfolio figure
+  // but every account at $0, and the simulation reads the accounts: it scored
+  // that plan 0.0% beside a $1,000,000 sidebar. With nothing to simulate, say
+  // so instead of running and showing a failure.
+  const noAccountMoney = Array.isArray(params.accounts) && params.accounts.length > 0
+    && params.accounts.every((a) => !(a.balance > 0));
+
   // The Run/Re-run button owns every run. The single exception is a visitor
   // with nothing to show: no cached run from last time and nothing run yet
   // this session, where an empty screen would be worse than one simulation.
@@ -17916,7 +18207,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     if (ranSigRef.current === null) {
       // Nothing cached and nothing run. A seeded landing entry runs itself,
       // on the seeded numbers, in the effect just below.
-      if (!pendingRunRef.current) runSimulation();
+      if (!pendingRunRef.current && !noAccountMoney) runSimulation();
       return;
     }
 
@@ -17928,7 +18219,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     // profile, or undoing an edit, doesn't leave a "changed" warning up for
     // someone who changed nothing.
     setStale(paramsSig !== ranSigRef.current);
-  }, [paramsSig, runSimulation, showWelcome]);
+  }, [paramsSig, runSimulation, showWelcome, noAccountMoney]);
 
   // Year-end deadline prompt. Reads the browser clock (this app has no
   // server), so a PC with a wrong system date sees it at the wrong time —
@@ -18052,7 +18343,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     return (
       <>
         <style>{CSS}</style>
-        <RetirementLanding onEnter={enterFromLanding} />
+        <RetirementLanding onEnter={enterFromLanding} savedPlan={hasSavedPlan}
+          onContinue={() => { dismissWelcome(); setTab("networth"); }} />
       </>
     );
   }
@@ -18083,9 +18375,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             <button
               className="mbtn"
               title={mc
-                ? "Snapshot today's plan (success rate, portfolio, spending) to your Progress journal — Analysis → Progress"
+                ? "Snapshot today's plan (success rate, portfolio, spending) to your Progress journal and open it (Analysis → Progress)"
                 : "Run Monte Carlo first — a check-in snapshots your current success rate"}
-              onClick={handleSaveCheckIn}
+              onClick={() => { handleSaveCheckIn(); navigateToTab("scenarios", "progress"); }}
               disabled={!mc}
               style={!mc ? { opacity: 0.45, cursor: "default" } : checkInFlash ? { color: "var(--accent-teal)" } : undefined}
             >
@@ -18431,7 +18723,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               )}
             </div>
             <a
-              href="https://buymeacoffee.com/axwacki"
+              href={aboutLink("Buy me a coffee")}
               target="_blank"
               rel="noopener noreferrer"
               className="coffee-btn"
@@ -18626,7 +18918,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               >
                 <div style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.9 }}>
                   <div>
-                    <span style={{ color: "var(--accent-teal)" }}>Equity:</span> {SAMPLE_YEARS}yr S&P bootstrap [-30 / +30%]
+                    <span style={{ color: "var(--accent-teal)" }}>Equity:</span> {SAMPLE_YEARS}yr S&amp;P bootstrap [-30 / +30%]
                   </div>
                   <div>
                     <span style={{ color: "var(--accent-purple)" }}>Bonds:</span> {SAMPLE_YEARS}yr bond history [-15 / +20%]
@@ -18819,6 +19111,15 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             {(() => {
               const heroColor = mc ? (mc.rate >= 0.85 ? "var(--positive)" : mc.rate >= 0.7 ? "var(--accent-gold)" : "var(--negative)") : "#334155";
               const sep = <span style={{ color: "var(--text-faint)" }}>·</span>;
+              if (!mc && noAccountMoney) return (
+                <div className="met">
+                  <div style={{ fontSize: "var(--fs-h1)", fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>Add Your Accounts to See Your Result</div>
+                  <div style={{ fontSize: "var(--fs-body)", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
+                    This plan has no account balances yet, so there is nothing to simulate. Enter what you hold in each account, then press Run Monte Carlo.
+                  </div>
+                  <button className="mbtn" onClick={() => navigateToTab("assumptions")}>Add Your Accounts</button>
+                </div>
+              );
               return (
                 <div className={`met ${running ? "recomputing" : ""}`} style={{ borderLeft: `4px solid ${heroColor}` }}>
                   {/* Row 1 — the one number that matters, with the disclosure toggle aligned right. */}
