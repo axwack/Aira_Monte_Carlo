@@ -32,6 +32,33 @@ describe("historicalSequence", () => {
   test("stops at the end of the dataset", () => {
     expect(historicalSequence(2024, 10)).toHaveLength(2);
   });
+
+  test("1966 for 30 years runs 1966 to 1995 (the longest Sequence Builder option)", () => {
+    const s = historicalSequence(1966, 30);
+    expect(s).toHaveLength(30);
+    expect([s[0].year, s[29].year]).toEqual([1966, 1995]);
+  });
+});
+
+describe("spending inflation timing in a prescribed sequence", () => {
+  // Bengen raises each year's spending by the PRIOR year's inflation, which is already known.
+  // Using the same year's inflation looks ahead and overspends when inflation is rising (1966-1980).
+  const M = {
+    currentAge: 65, retireAge: 65, endAge: 70, sp: 40_000, port: 100_000, inf: 2.5,
+    tax: false, smile: false, withdrawalStrategy: "bengen", preRetireEq: 60, postRetireEq: 60,
+    filingStatus: "single", stateOfResidence: "NJ", ssb: 0,
+    accounts: [{ id: "1", category: "taxable", name: "Taxable", balance: 100_000 }],
+  };
+  const flat = (infl) => ({ stock: 0, bond: 0, infl });
+
+  test("Bengen year 2 spend uses year 1 inflation, not year 2", () => {
+    // Year 1 inflation 10%, year 2 inflation 0%: a look-ahead would leave year 2 at 40,000.
+    const r = runMC(M, 70, 20, 42, true, [flat(0.10), flat(0), flat(0), flat(0), flat(0), flat(0)], false, true);
+    const rows = r.failures.typical.rows;
+    expect(rows[0].spend).toBe(40_000);
+    expect(rows[1].spend).toBe(44_000);
+    expect(rows[2].spend).toBe(44_000);
+  });
 });
 
 describe("runMC with a prescribed sequence", () => {

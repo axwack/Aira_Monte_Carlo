@@ -267,7 +267,7 @@ describe('Progress check-ins — storage + rendering', () => {
     const div = renderToDiv(React.createElement(ProgressTab, { checkIns, onDelete: () => {} }));
     expect(div.textContent).toContain('Latest success rate');
     expect(div.textContent).toContain('91.0%');
-    expect(div.textContent).toContain('+6.0pp');
+    expect(div.textContent).toContain('+6.0%');
     expect(div.textContent).toContain('Check-in history');
   });
 

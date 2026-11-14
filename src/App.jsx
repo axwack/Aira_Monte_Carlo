@@ -1623,6 +1623,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     let pathConstrained = 0;
     let sp = p.sp;
     let lastReturn = 0;
+    let inflPrev = 0;   // prior year's inflation; only read for y > 0
 
     // IRMAA 2-year lookback history for this path — rolled forward at the
     // end of each retirement year below. Pre-retirement wage income isn't
@@ -1770,7 +1771,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           // report how often the guardrails actually bind (the summary above
           // the Guardrails chart). Accumulated per path, never re-derived.
           gkYearSink = {};
-          sp = guytonKlingerWithdrawal(totalPort, refWR, sp, lastReturn, inflY, adjFloor, adjCeiling, endAge - age, gkIncomeOffset, gkFixedCosts, gkYearSink);
+          sp = guytonKlingerWithdrawal(totalPort, refWR, sp, lastReturn, inflPrev, adjFloor, adjCeiling, endAge - age, gkIncomeOffset, gkFixedCosts, gkYearSink);
           if (gkYearSink.event === "cut") { pathCuts++; gkStats.cuts++; }
           else if (gkYearSink.event === "raise") { pathRaise = true; gkStats.raises++; }
           else if (gkYearSink.event === "constrained") {
@@ -1810,7 +1811,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           if (y === 1) {
             sp = p.sp;
           } else {
-            const inflated = sp * (1 + inflY);
+            const inflated = sp * (1 + inflPrev);
             const floor95 = sp * 0.95;
             sp = Math.max(floor95, inflated);
           }
@@ -1820,7 +1821,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           // Bengen 4% rule (1994): inflation-adjusted constant spending.
           // Does NOT react to portfolio moves — that's the defining feature.
           // Can fail (portfolio depletes). Honest about late-stage risk.
-          sp = sp * (1 + inflY);
+          sp = sp * (1 + inflPrev);
         }
         else if (withdrawalStrategy === "smart") {
           // Smart Waterfall hybrid:
@@ -1833,9 +1834,9 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           const yrsRemaining = endAge - age;
           if (yrsRemaining > 15) {
             const refWR2 = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
-            sp = guytonKlingerWithdrawal(totalPort, refWR2, sp, lastReturn, inflY, adjFloor, adjCeiling, yrsRemaining, gkIncomeOffset, gkFixedCosts);
+            sp = guytonKlingerWithdrawal(totalPort, refWR2, sp, lastReturn, inflPrev, adjFloor, adjCeiling, yrsRemaining, gkIncomeOffset, gkFixedCosts);
           } else {
-            sp = sp * (1 + inflY);
+            sp = sp * (1 + inflPrev);
           }
         }
         else {
@@ -1844,10 +1845,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           // to leave `sp` untouched, which reads as a 1%/yr spending cut
           // instead of an error. Inflation-adjusting is the least-surprising
           // fallback.
-          sp = sp * (1 + inflY);
+          sp = sp * (1 + inflPrev);
         }
       }
       lastReturn = r;
+      inflPrev = inflY;   // spend is raised by the inflation already seen, not this year's (Bengen's rule)
 
       // Post-guardrail annual spending, tracked across every path and year —
       // the "spending actually seen" range.
@@ -10633,7 +10635,7 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
         <div className="met">
           <div className="ml">Since first check-in</div>
           <div className="mv" style={{ color: ratePP == null ? "var(--text-secondary)" : ratePP >= 0 ? "var(--positive)" : "var(--negative)" }}>
-            {ratePP == null ? "—" : `${ratePP >= 0 ? "+" : ""}${ratePP.toFixed(1)}pp`}
+            {ratePP == null ? "—" : `${ratePP >= 0 ? "+" : ""}${ratePP.toFixed(1)}%`}
           </div>
           <div className="ms">{fmtDate(first.ts)} → today</div>
         </div>
@@ -10849,6 +10851,7 @@ function ScenarioGauge({ pct, color }) {
 function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
   const [severity, setSeverity] = useState(-0.40);
   const [crashOpen, setCrashOpen] = useState(false);
+  const [open, setOpen] = useState(false); // collapsed by default: the cards stay empty until a quick check is run
   const [est, setEst] = useState(null);        // { base, [id]: rate } low-path
   const [full, setFull] = useState({});        // { [id]: rate } full-path
   const [running, setRunning] = useState(null);
@@ -10998,7 +11001,11 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
 
   return (
     <div className="chart-card" style={{ marginBottom: 12 }}>
-      <div className="ct" style={{ marginBottom: 4 }}>Stress scenarios against your plan</div>
+      <button type="button" className="ct" onClick={() => setOpen((v) => !v)} aria-expanded={open}
+              style={{ marginBottom: open ? 4 : 0, background: "transparent", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", color: "inherit", textAlign: "left" }}>
+        Stress scenarios against your plan <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (<>
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 12, lineHeight: 1.5 }}>
         Each card re-runs your plan with one thing gone wrong. The big number is how many points the share
         of funded plans falls versus your baseline; <b style={{ color: "var(--text-secondary)" }}>drops to</b> is
@@ -11053,7 +11060,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
             <div className="met" style={{ background: `${withAlpha(col, "0d")}`, border: `1px solid ${withAlpha(col, "33")}` }}>
               <div className="ml">Widow's penalty</div>
               <div className="mv" style={{ color: col }}>
-                {`${pp > 0 ? "+" : ""}${pp.toFixed(1)}pp`}
+                {`${pp > 0 ? "+" : ""}${pp.toFixed(1)}%`}
               </div>
               <div className="ms">
                 {fmtPct(without)} without {whoDies} death → {fmtPct(withDeath)} with it, at age {p.spouse.deathAge}
@@ -11099,7 +11106,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
                     <span style={{ fontSize: "var(--fs-h1)", fontWeight: 800, color, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>
                       {deltaPP == null ? "—" : `${deltaPP > 0 ? "+" : ""}${deltaPP.toFixed(0)}`}
                     </span>
-                    <span style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", fontWeight: 600 }}>pp</span>
+                    <span style={{ fontSize: "var(--fs-label)", color: "var(--text-muted)", fontWeight: 600 }}>%</span>
                   </div>
                   <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)" }}>
                     drops to <b style={{ color, fontFamily: "'JetBrains Mono',monospace" }}>{rate == null ? "—" : fmtPct(rate)}</b>
@@ -11158,6 +11165,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
           ? "Even the worst case here stays in the recoverable range."
           : "At least one scenario pushes the plan into fragile territory — worth a mitigation."}
       </div>
+      </>)}
     </div>
   );
 }
@@ -11168,6 +11176,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
 function FailedPathPanel({ failures, n }) {
   const [which, setWhich] = useState("worst");
   const [allCols, setAllCols] = useState(false);
+  const [open, setOpen] = useState(false); // collapsed by default: a detail view, not the headline
   const box = { marginTop: 12 };
   if (!failures) {
     return <div className="chart-card" style={box}><div className="ct">Why plans failed</div>
@@ -11187,10 +11196,14 @@ function FailedPathPanel({ failures, n }) {
   const td = { textAlign: "right", padding: "3px 8px", fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
   return (
     <div className="chart-card" style={box}>
-      <div className="ct" style={{ marginBottom: 4 }}>Why plans failed</div>
+      <button type="button" className="ct" onClick={() => setOpen((v) => !v)} aria-expanded={open}
+              style={{ marginBottom: 4, background: "transparent", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", color: "inherit", textAlign: "left" }}>
+        Why plans failed <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+      </button>
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 8 }}>
         {failures.count.toLocaleString()}{n ? ` of ${n.toLocaleString()}${` (${((failures.count / n) * 100).toFixed(0)}%)`}` : ""} simulated paths ran out of money. Pick one to see what happened each year (nominal dollars).
       </div>
+      {open && (<>
       <div style={{ fontSize: "var(--fs-label)", color: "var(--text-primary)", marginBottom: 8 }}>
         {WHICH_BLURB[which]} Stocks {pct(f.rows[0]?.stock)} in year 1; money ran out at {f.exhaustAge}.
       </div>
@@ -11232,6 +11245,7 @@ function FailedPathPanel({ failures, n }) {
               style={{ marginTop: 8, background: "transparent", border: "none", color: "var(--accent-teal)", fontSize: "var(--fs-label)", cursor: "pointer", fontFamily: "inherit", padding: "4px 0", minHeight: 28 }}>
         {allCols ? "Show fewer columns ▴" : "Show all columns: returns, spending, income, tax ▾"}
       </button>
+      </>)}
     </div>
   );
 }
@@ -11239,7 +11253,8 @@ function FailedPathPanel({ failures, n }) {
 const SEQ_PICKS = [1929, 1966, 1973, 2000, 2007];
 // A sequence this long is a sequence-risk test; past ~10 years it is just a market forecast.
 const SEQ_DEFAULT_YEARS = 5;
-const SEQ_HISTORY_LENGTHS = [5, 10, 15];
+// 20 to 30 years replay a whole retirement of one real start year (for example 1966): the result is then one path, not a rate.
+const SEQ_HISTORY_LENGTHS = [5, 10, 15, 20, 25, 30];
 const SEQ_MAX_CUSTOM_YEARS = 10;
 const SEQ_INPUT_STYLE = { background: "var(--card-bg-raised)", border: "1px solid var(--card-border)", color: "var(--text-primary)", borderRadius: 6, padding: "5px 8px", fontSize: "var(--fs-label)", minHeight: 28 };
 // A year outside this range is almost certainly a typo, not a market.
@@ -11563,7 +11578,7 @@ function ScenariosTab({
                   color: mc && view.rate >= mc.rate ? "var(--positive)" : "var(--negative)",
                 }}
               >
-                {mc ? `${((view.rate - mc.rate) * 100).toFixed(1)} pp` : "—"}
+                {mc ? `${((view.rate - mc.rate) * 100).toFixed(1)}%` : "—"}
               </div>
               <div className="ms">{formulaFor("stress-delta")}</div>
             </div>

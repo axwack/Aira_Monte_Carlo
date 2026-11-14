@@ -254,6 +254,10 @@ describe("Stress Lab panels render", () => {
     act(() => a.root.unmount());
     const f = runMC(FAIL, 95, 200, 42, true, null, false, true).failures;
     const b = mount(<FailedPathPanel failures={f} n={200} />);
+    // Starts collapsed: the summary shows, the table does not, until the title is clicked.
+    expect(b.host.textContent).toMatch(/simulated paths ran out of money/);
+    expect(b.host.querySelectorAll("tbody tr").length).toBe(0);
+    act(() => { b.host.querySelector("button[aria-expanded]").click(); });
     expect(b.host.textContent).toMatch(/Worst case/);
     expect(b.host.querySelectorAll("tbody tr").length).toBe(f.worst.rows.length);
     act(() => b.root.unmount());
