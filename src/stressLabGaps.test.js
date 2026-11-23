@@ -18,8 +18,8 @@ const FAIL = { ...P, currentAge: 65, retireAge: 65, endAge: 95, sp: 120_000, ssb
 
 describe("pre-retirement return", () => {
   // Captured from the pre-Stress-Lab commit c412186 (N=400, seed 42, GK on), then re-captured on 2026-11-14
-  // after spending began using the PRIOR year's inflation (inflPrev). A blank rate must still equal "no feature".
-  const BASE = { rate: 0.99, medR: 2403223, term: { p10: 2578499, p25: 5976693, p50: 11664095, p75: 22092680, p90: 37603148, mean: 16824668 } };
+  // after spending began using the PRIOR year's inflation (inflPrev), and again on 2026-11-23 for the CMS 2027 IRMAA table. A blank rate must still equal "no feature".
+  const BASE = { rate: 0.99, medR: 2403223, term: { p10: 2578499, p25: 5976693, p50: 11663708, p75: 22091820, p90: 37614217, mean: 16824665 } };
   const sig = (r) => ({ rate: r.rate, medR: r.medR, term: r.term });
 
   test.each([["undefined", undefined], ["empty string", ""], ["null", null]])("blank (%s) reproduces the numbers from before the feature", (_, v) => {

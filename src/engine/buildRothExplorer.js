@@ -20,7 +20,7 @@
 import { spouseAgeOffset, personsAtLeastAge, survivorIsPrimary, firstDeathOnPrimaryClock } from "./ages.js";
 import { survivorFra, survivorBasis, resolveSurvivorClaimAge, survivorYearBenefit } from "./survivorBenefit.js";
 import { STATE_BRACKETS } from "../data/stateBrackets.js";
-import { IRMAA_2026 } from "../data/irmaa2026.js";
+import { irmaaTableFor } from "../data/irmaa2027.js";
 
 
 function getStateBrackets(state, isMFJ) {
@@ -201,17 +201,17 @@ function idxB(br, f) {
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
   // A blank inflation field arrives as NaN; use the 2.5% default rather than propagate it.
   const rate = isNaN(infR) ? 0.025 : infR;
-  // Anchored to ROTH_BASE_YEAR (today), not a hardcoded 2026, so this stays
-  // consistent with the rest of the file as real time passes.
-  const f = Math.pow(1 + rate, yr - ROTH_BASE_YEAR);
-  // IRMAA_2026[i].f is the two-person MFJ surcharge; half of it is one person's.
+  // Published CMS table for this year (2027+ start from the 2027 table), inflated from its own year.
+  const { rows: T, baseYear } = irmaaTableFor(yr);
+  const f = Math.pow(1 + rate, yr - baseYear);
+  // T[i].f is the two-person MFJ surcharge; half of it is one person's.
   const n = beneficiaries != null ? Math.max(0, beneficiaries) : (isMFJ ? 2 : 1);
   if (n === 0) return 0;
-  for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
+  for (let i = T.length - 1; i >= 0; i--) {
     // Single tiers are half the MFJ thresholds, except the top tier ($500,000 vs $750,000).
-    const thresh = isMFJ ? IRMAA_2026[i].m
-      : (i === IRMAA_2026.length - 1 ? 500_000 : IRMAA_2026[i].m / 2);
-    const cost = (IRMAA_2026[i].f / 2) * n;
+    const thresh = isMFJ ? T[i].m
+      : (i === T.length - 1 ? 500_000 : T[i].m / 2);
+    const cost = (T[i].f / 2) * n;
     if (magi >= thresh * f) return Math.round(cost * f);
   }
   return 0;

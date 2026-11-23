@@ -109,7 +109,7 @@ import { AGE_LIMITS } from './data/ageLimits.js';
 import { ComposedChart,Area,BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,ReferenceDot,Legend,RadarChart,PolarGrid,PolarAngleAxis,PolarRadiusAxis,Radar,PieChart,Pie,Cell,} from "recharts";
 import { jointRmdDivisor } from './data/jointRmdTable.js';
 import { STATE_BRACKETS } from './data/stateBrackets.js';
-import { IRMAA_2026 } from './data/irmaa2026.js';
+import { irmaaTableFor } from './data/irmaa2027.js';
 
 // Dropped DM Sans / DM Mono. Down to one text family (Inter) and one mono
 // family (JetBrains Mono), both pulled in through the same @import in the CSS
@@ -2962,17 +2962,19 @@ function idxB(br, f) {
  *   old assumption (2 for MFJ, 1 for single) for callers with no spouse age.
  */
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
-  const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - CURRENT_YEAR);
-  // IRMAA_2026[i].f is the two-person MFJ surcharge, so half of it is one person's.
+  // Published CMS table for this year (2027+ start from the 2027 table), inflated from its own year.
+  const { rows: T, baseYear } = irmaaTableFor(yr);
+  const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - baseYear);
+  // T[i].f is the two-person MFJ surcharge, so half of it is one person's.
   const n = beneficiaries != null ? Math.max(0, beneficiaries) : (isMFJ ? 2 : 1);
   if (n === 0) return 0;
-  for (let i = IRMAA_2026.length - 1; i >= 0; i--) {
+  for (let i = T.length - 1; i >= 0; i--) {
     // Single tiers are half the MFJ thresholds, except the top tier ($500,000 vs $750,000).
-    const thresh = isMFJ ? IRMAA_2026[i].m
-      : (i === IRMAA_2026.length - 1 ? 500_000 : IRMAA_2026[i].m / 2);
-    const cost = (IRMAA_2026[i].f / 2) * n;
-    // CMS: tiers 1-4 start ABOVE the ceiling (MAGI <= $218,000 pays nothing); only the top tier is "greater than or equal".
-    if (i === IRMAA_2026.length - 1 ? magi >= thresh * f : magi > thresh * f) return Math.round(cost * f);
+    const thresh = isMFJ ? T[i].m
+      : (i === T.length - 1 ? 500_000 : T[i].m / 2);
+    const cost = (T[i].f / 2) * n;
+    // CMS: tiers 1-4 start ABOVE the ceiling (MAGI <= the first MFJ ceiling pays nothing); only the top tier is "greater than or equal".
+    if (i === T.length - 1 ? magi >= thresh * f : magi > thresh * f) return Math.round(cost * f);
   }
   return 0;
 }

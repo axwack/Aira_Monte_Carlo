@@ -139,13 +139,11 @@ describe("irmaaCost — IRMAA Medicare surcharges", () => {
     expect(irmaaCost(800_000, 2026)).toBe(13_872);
   });
 
-  test("future year thresholds inflate at 2.5%/yr (tier at $218K)", () => {
-    // 2031 = 5 years out → factor ≈ 1.1314
-    const f = Math.pow(1.025, 5);
-    const tierThreshold = Math.round(218_000 * f);
-    // Below the inflated $218K threshold → should be $0 (below the first surcharge tier)
+  test("future year thresholds inflate at 2.5%/yr from the 2027 table (first tier $224K)", () => {
+    // 2031 = 4 years past the published 2027 table
+    const f = Math.pow(1.025, 4);
+    const tierThreshold = Math.round(224_000 * f);
     expect(irmaaCost(tierThreshold - 1, 2031)).toBe(0);
-    // Above the inflated $218K threshold → should be $2,297 (inflated)
     expect(irmaaCost(tierThreshold + 1, 2031)).toBeGreaterThan(0);
   });
 });
