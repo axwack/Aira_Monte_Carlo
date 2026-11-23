@@ -96,3 +96,38 @@ graphify-out/
 
 # Encrypted agent folder (git-crypt, see .gitattributes): track its .md files despite *.md above.
 !.agents/**/*.md
+
+# ── Standalone .mjs scripts ──────────────────────────────────────────────────
+# Local tooling/one-off scripts, not app source. Exception: package.json's
+# `npm run deploy` runs scripts/deploy.mjs, so it must stay tracked.
+*.mjs
+!scripts/deploy.mjs
+
+# ── Fork/install scope ───────────────────────────────────────────────────────
+# The repo ships only what is needed to clone, `npm install`, run, test and
+# deploy: src/, public/, functions/, db/, package.json + package-lock.json,
+# wrangler.toml, scripts/deploy.mjs, README. Everything below is private
+# tooling, agent coordination, generated output or dev fixtures.
+.agents/
+.continue/
+.github/
+.impeccable/
+.githooks/
+aira-forecaster-agents/
+build/
+docs/
+test_profiles/
+tests/
+data/
+AGENTS.md
+PRODUCT.md
+agent-marks.json
+.graphifyignore
+.gitattributes
+deno.lock
+pnpm-lock.yaml
+pnpm-workspace.yaml
+*.code-workspace
+
+# Not part of AiRA (separate Guesty/Vista Cay project); never commit
+guesty_setup/

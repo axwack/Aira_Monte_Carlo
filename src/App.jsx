@@ -5462,14 +5462,37 @@ function loadProfileFromLocal() {
     return null;
   }
 }
-function exportProfile(values, name = "AiRA_Profile") {
-  const blob = new Blob([JSON.stringify(values, null, 2)], { type: "application/json" });
+// Save a blob with a user-chosen location where the browser supports it
+// (Chromium showSaveFilePicker); otherwise fall back to a plain download.
+// shortcut: Firefox/Safari have no picker, so they use the browser's download folder/prompt.
+async function saveBlobAs(blob, filename, description, accept) {
+  if (typeof window !== "undefined" && window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description, accept }],
+      });
+      const w = await handle.createWritable();
+      await w.write(blob);
+      await w.close();
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // user cancelled the dialog
+      // any other failure (e.g. sandboxed iframe): fall through to plain download
+    }
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-    a.href = url;
-    a.download = `${name}_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportProfile(values, name = "AiRA_Profile") {
+  const blob = new Blob([JSON.stringify(values, null, 2)], { type: "application/json" });
+  return saveBlobAs(blob, `${name}_${new Date().toISOString().slice(0, 10)}.json`,
+    "AiRA profile", { "application/json": [".json"] });
 }
 
 function importProfile(onLoad) {
@@ -6797,6 +6820,34 @@ const modeDescs = {
 
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* ── How this works: dialog, opened from the top of the tab ── */}
+            <InfoModal
+              title="How Tax Room and the Lifetime Ladder Work Together"
+              accent="var(--accent-gold)"
+              maxWidth={560}
+              trigger={
+                <span style={{ fontSize: "var(--fs-small)", color: "var(--accent-gold)", fontWeight: 600 }}>
+                  ▸ How Tax Room and the Lifetime Ladder Work Together
+                </span>
+              }
+            >
+              <ModalP>
+                <Em>Tax Room (this tab)</Em> is grounded in reality — you enter your actual known income
+                for the year and get the exact conversion amount to hand your CPA. It reflects what you
+                can actually do right now, not a forecast.
+              </ModalP>
+              <ModalP>
+                <Em>Lifetime Ladder (Conversion Plan tab)</Em> projects conversions over every future year.
+                For years where you have not saved a real number, it uses the bracket-fill optimizer —
+                which does not know about your working income, Cash or Taxable/Brokerage balance, or IRMAA timing.
+              </ModalP>
+              <ModalNote>
+                <Em color="var(--accent-gold)">Press "Save to Lifetime Ladder"</Em> to anchor the current year to your real number.
+                The Ladder will then use the optimizer only for future years it does not have a pin for.
+                Do this every December to keep the projection grounded year by year — the same way
+                Monte Carlo checkpoints anchor the portfolio balance to reality.
+              </ModalNote>
+            </InfoModal>
             {/* ── Inputs ── */}
             <div className="chart-card">
               <div className="ct">Current Year Conversion Calculator</div>
@@ -6806,10 +6857,15 @@ const modeDescs = {
                   </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 20px", fontSize: "var(--fs-label)" }}>
                 <div>
-                  <div style={{ color: "var(--text-secondary)", marginBottom: 6, fontSize: "var(--fs-small)" }}>Tax Year &amp; Income</div>
+                  <div style={{ color: "var(--text-secondary)", marginBottom: 2, fontSize: "var(--fs-small)" }}>Tax Year &amp; Income</div>
+                  <div style={{ color: "var(--text-faint)", marginBottom: 6, fontSize: "var(--fs-small)", lineHeight: 1.5 }}>
+                    Enter <strong style={{ color: "var(--text-secondary)" }}>gross</strong> annual wages, not take-home pay: the W-2 Box 1 figure
+                    (salary minus pre-tax 401(k) and health premiums). Do not subtract income tax, FICA or other withholding.
+                    Self-employed: net profit.
+                  </div>
                   {[
                     ["Tax Year",          cyYear,   setCyYear,   false, 2026, 2060],
-                    ["W-2 / SE Income",   cyW2,     setCyW2,     true],
+                    ["W-2 Wages (Gross, Box 1)", cyW2, setCyW2,   true],
                     ["Social Security",   cySS,     setCySS,     true],
                     ["Rental / Airbnb",   cyRental, setCyRental, true],
                     ["Other Income",      cyOther,  setCyOther,  true],
@@ -6861,7 +6917,7 @@ const modeDescs = {
               <table className="roth-tbl">
                 <tbody>
                   {[
-                    ["W-2 / SE income",       fmtN(cyW2),       "var(--text-primary)"],
+                    ["W-2 wages (gross)",     fmtN(cyW2),      "var(--text-primary)"],
                     ["Social Security (taxable " + (cySS > 0 ? Math.round((ssTaxable / cySS) * 100) : 0) + "%)", fmtN(ssTaxable), "var(--text-primary)"],
                     ["Rental / Airbnb net",   fmtN(cyRental),   "var(--text-primary)"],
                     ["Other income",          fmtN(cyOther),    "var(--text-primary)"],
@@ -7000,26 +7056,6 @@ const modeDescs = {
               })()}
             </div>
 
-            {/* ── How this works ── */}
-            <div style={{ background: "var(--tint-white-02)", border: "1px solid var(--tint-white-06)", borderRadius: 8, padding: "12px 14px" }}>
-              <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 8 }}>
-                ℹ️ How Tax Room and the Lifetime Ladder work together
-              </div>
-              <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.7 }}>
-                <strong style={{ color: "var(--text-secondary)" }}>Tax Room (this tab)</strong> is grounded in reality — you enter your actual known income
-                for the year and get the exact conversion amount to hand your CPA. It reflects what you
-                can actually do right now, not a forecast.
-                <br /><br />
-                <strong style={{ color: "var(--text-secondary)" }}>Lifetime Ladder (Conversion Plan tab)</strong> projects conversions over every future year.
-                For years where you have not saved a real number, it uses the bracket-fill optimizer —
-                which does not know about your working income, Cash or Taxable/Brokerage balance, or IRMAA timing.
-                <br /><br />
-                <strong style={{ color: "var(--accent-gold)" }}>Press "Save to Lifetime Ladder" above</strong> to anchor the current year to your real number.
-                The Ladder will then use the optimizer only for future years it does not have a pin for.
-                Do this every December to keep the projection grounded year by year — the same way
-                Monte Carlo checkpoints anchor the portfolio balance to reality.
-              </div>
-            </div>
           </div>
         );
       })()}
@@ -16320,9 +16356,13 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
   const blurTimer = useRef(null);
   const nameRef = useRef(null);
 
+  // Mount-only: a freshly added card grabs focus once. Re-running on every
+  // autoFocus change stole focus from the Annual field the moment it was
+  // cleared (annual 0 flips autoFocus true), so a cleared value never stayed cleared.
   useEffect(() => {
     if (autoFocus && nameRef.current) nameRef.current.focus();
-  }, [autoFocus]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onFocusCard = () => { clearTimeout(blurTimer.current); setFocused(true); };
   const onBlurCard = () => { blurTimer.current = setTimeout(() => setFocused(false), 150); };
@@ -16366,7 +16406,7 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
         />
         {!focused && (
           <span style={{ fontSize: "var(--fs-small)", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>
-            {inc.annual ? <span style={{ color: "var(--accent-teal)", fontWeight: 700 }}>{`$${Math.round(inc.annual).toLocaleString()}/yr`}</span> : ""}
+            {inc.annual ? <span style={{ color: "var(--accent-teal)", fontWeight: 700 }}>{`$${Number(inc.annual).toLocaleString("en-US", { maximumFractionDigits: 2 })}/yr`}</span> : ""}
             <span style={{ color: "var(--text-muted)" }}>
               {inc.startYear ? ` · ${inc.startYear}` : ""}
               {inc.endYear ? `–${inc.endYear}` : inc.startYear ? "+" : ""}
@@ -16452,12 +16492,7 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
 // Trigger a client-side download of CSV text (used for the budget templates).
 function downloadCsv(filename, text) {
   const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  return saveBlobAs(blob, filename, "CSV file", { "text/csv": [".csv"] });
 }
 
 /**
