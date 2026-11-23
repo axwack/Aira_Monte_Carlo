@@ -6261,6 +6261,23 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
   const [cySGOVOverride, setCySGOVOverride] = useState(null);
   const cySGOV = cySGOVOverride ?? profileCashForTaxes;
 
+  // Fill the calculator from the saved pin for the selected year. Runs when the
+  // year changes and when pins change (profile import, Save to Lifetime Ladder),
+  // so an imported profile shows its saved Tax Room numbers instead of zeros.
+  const loadPinIntoCalculator = (pin) => {
+    if (!pin) return;
+    if (pin.w2     !== undefined) setCyW2(pin.w2);
+    if (pin.ss     !== undefined) setCySS(pin.ss);
+    if (pin.rental !== undefined) setCyRental(pin.rental);
+    if (pin.other  !== undefined) setCyOther(pin.other);
+    if (pin.sgov   !== undefined) setCySGOVOverride(pin.sgov === profileCashForTaxes ? null : pin.sgov);
+  };
+  useEffect(() => {
+    loadPinIntoCalculator((params?.conversionOverrides || []).find(o => Number(o.year) === Number(cyYear)));
+    // pins and year are the triggers; the setters are stable
+    // eslint-disable-next-line
+  }, [cyYear, params?.conversionOverrides]);
+
   // Depend on `params` itself, never an enumerated subset of its fields.
   // These four memos each used to carry their own hand-maintained field
   // list, and each list was missing something different: `ex` omitted sp/
@@ -7146,14 +7163,7 @@ const modeDescs = {
                         <button
                           onClick={() => {
                             setCyYear(r.yr);
-                            const pin = (params?.conversionOverrides || []).find(o => Number(o.year) === r.yr);
-                            if (pin) {
-                              if (pin.w2     !== undefined) setCyW2(pin.w2);
-                              if (pin.ss     !== undefined) setCySS(pin.ss);
-                              if (pin.rental !== undefined) setCyRental(pin.rental);
-                              if (pin.other  !== undefined) setCyOther(pin.other);
-                              if (pin.sgov   !== undefined) setCySGOV(pin.sgov);
-                            }
+                            loadPinIntoCalculator((params?.conversionOverrides || []).find(o => Number(o.year) === r.yr));
                             setView("thisyear");
                           }}
                           title={`Edit pin for ${r.yr} in calculator`}
@@ -16361,7 +16371,6 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
   // cleared (annual 0 flips autoFocus true), so a cleared value never stayed cleared.
   useEffect(() => {
     if (autoFocus && nameRef.current) nameRef.current.focus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onFocusCard = () => { clearTimeout(blurTimer.current); setFocused(true); };
