@@ -64,10 +64,11 @@ memory/
 .claude/
 
 # ── Markdown ─────────────────────────────────────────────────────────────────
-# Only README ships. CLAUDE.md and REQUIREMENTS.md are private planning docs,
+# Only README and CHANGELOG are tracked (neither is in build/, so neither deploys). CLAUDE.md and REQUIREMENTS.md are private planning docs,
 # synced between machines outside git.
 *.md
 !README.md
+!CHANGELOG.md
 
 # ── Agent workspace ──────────────────────────────────────────────────────────
 # Ignore the folder's CONTENTS (not the folder itself, or the un-ignores below
