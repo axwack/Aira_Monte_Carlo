@@ -13,9 +13,15 @@ describe("IRMAA-Safe in Monte Carlo", () => {
 
   test("both call sites use it for the irmaa target, guard or not", () => {
     const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
-    expect(SRC).toContain('p.rothConversionTarget === "irmaa"\n          ? irmaaTargetRoom(filingStatus, inflFactor, taxResult.magi || 0)');
+    expect(SRC).toContain("const irmaaRoomMC = irmaaTargetRoom(filingStatus, inflFactor, taxResult.magi || 0);");
+    expect(SRC).toContain('p.rothConversionTarget === "irmaa"\n          ? irmaaRoomMC');
     expect(SRC).toContain("if (irmaaOnMC || irmaaTargetMC) {");
     expect(SRC).toContain("bracketSetMC && !irmaaTargetMC");
+  });
+
+  test("with the guard on, a bracket-target conversion is also capped at tier 1", () => {
+    const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
+    expect(SRC).toContain("irmaaOnMC ? irmaaRoomMC : Infinity");
   });
 
   test("an IRMAA-Safe plan still runs", () => {

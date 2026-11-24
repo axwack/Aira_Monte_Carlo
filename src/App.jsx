@@ -2127,9 +2127,14 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       if (p.rothConversionTarget && p.rothConversionTarget !== "off" && pretax > 1000) {
         const inflFactor = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
         // IRMAA-Safe fills MAGI (gains included) up to tier 1, not taxable income (request #38).
+        // With the guard on (age >= 63), a bracket target is also capped at tier 1, as in the engine.
+        const irmaaRoomMC = irmaaTargetRoom(filingStatus, inflFactor, taxResult.magi || 0);
         const room = p.rothConversionTarget === "irmaa"
-          ? irmaaTargetRoom(filingStatus, inflFactor, taxResult.magi || 0)
-          : Math.max(0, getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor) - (taxResult.taxableIncome || 0));
+          ? irmaaRoomMC
+          : Math.min(
+              Math.max(0, getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor) - (taxResult.taxableIncome || 0)),
+              irmaaOnMC ? irmaaRoomMC : Infinity,
+            );
         if (room > 500) {
           let convAmt = Math.min(room, pretax);
           let lastWithConv = null;
