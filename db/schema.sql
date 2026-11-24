@@ -91,3 +91,13 @@ CREATE TABLE IF NOT EXISTS events (
   n     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, name)
 );
+
+-- One customers row per email (migration 010). Repeat Stripe ids alias to the first row.
+CREATE TABLE IF NOT EXISTS customer_aliases (
+  alias_id    TEXT    PRIMARY KEY,
+  customer_id TEXT    NOT NULL REFERENCES customers(stripe_customer_id),
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_alias_customer ON customer_aliases(customer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_email_unique
+  ON customers(lower(email)) WHERE email IS NOT NULL;

@@ -68,6 +68,46 @@ describe("/api/analyze", () => {
     const body = await res.json();
     expect(body._refunded).toBeUndefined();
     expect(db.log.some((s) => s.includes("credits = credits + ?"))).toBe(false);
+    // ...and the balance is drained, or every later call above the guard is free.
+    expect(db.log.some((s) => s.includes("SET credits = 0"))).toBe(true);
+  });
+});
+
+describe("merged customers", () => {
+  const SECRET = "s".repeat(32);
+  const tokenFor = (id) => signJWT({ customerId: id, exp: Math.floor(Date.now() / 1000) + 600 }, SECRET);
+
+  test("6. /api/balance resolves a merged-away id and hands back a token for the kept row", async () => {
+    const { onRequestGet: balance } = require("../../functions/api/balance.js");
+    const { verifyJWT } = require("../../functions/_shared/jwt.js");
+    const db = fakeDb({
+      "FROM customer_aliases": { first: { customer_id: "cus_KEEP" } },
+      "SELECT credits FROM customers": { first: { credits: 4200 } },
+    });
+    const res = await balance({
+      request: new Request("https://x/api/balance", { headers: { Authorization: `Bearer ${await tokenFor("cus_DROP")}` } }),
+      env: { JWT_SECRET: SECRET, DB: db },
+    });
+    const body = await res.json();
+    expect(body).toMatchObject({ credits: 4200, customerId: "cus_KEEP" });
+    expect((await verifyJWT(body.token, SECRET)).customerId).toBe("cus_KEEP");
+  });
+
+  test("7. /api/analyze checks the kept row's balance, not the deleted one", async () => {
+    global.fetch = jest.fn();
+    const seen = [];
+    const db = fakeDb({ "FROM customer_aliases": { first: { customer_id: "cus_KEEP" } } });
+    const prepare = db.prepare.bind(db);
+    db.prepare = (sql) => ({ bind: (...a) => { if (sql.includes("SELECT credits, status")) seen.push(a[0]); return prepare(sql).bind(...a); } });
+    await analyze({
+      request: new Request("https://x/api/analyze", {
+        method: "POST", headers: { Authorization: `Bearer ${await tokenFor("cus_DROP")}` },
+        body: JSON.stringify({ type: "chat", values: {}, question: "hi" }),
+      }),
+      env: { GEMINI_API_KEY: "k", JWT_SECRET: SECRET, DB: db },
+    });
+    expect(seen).toEqual(["cus_KEEP"]);
+    delete global.fetch;
   });
 });
 
@@ -86,6 +126,23 @@ describe("/api/webhook", () => {
     expect(res.status).toBe(500);
     expect(db.log.some((s) => s.startsWith("DELETE FROM webhook_events"))).toBe(true);
     delete global.fetch;
+  });
+
+  test("5. a handler that throws still clears the dedup row", async () => {
+    const WH = "whsec_test";
+    const raw = JSON.stringify({ id: "evt_2", type: "charge.refunded", data: { object: { customer: "cus_1", amount_refunded: 500 } } });
+    const t = Math.floor(Date.now() / 1000);
+    const sig = createHmac("sha256", WH).update(`${t}.${raw}`).digest("hex");
+    const db = fakeDb();
+    const prepare = db.prepare.bind(db);
+    // e.g. migration 010 not applied yet: the alias lookup throws.
+    db.prepare = (sql) => { if (sql.includes("customer_aliases")) throw new Error("no such table"); return prepare(sql); };
+    const res = await webhook({
+      request: new Request("https://x/api/webhook", { method: "POST", headers: { "Stripe-Signature": `t=${t},v1=${sig}` }, body: raw }),
+      env: { STRIPE_WEBHOOK_SECRET: WH, STRIPE_SECRET_KEY: "sk", DB: db },
+    });
+    expect(res.status).toBe(500);
+    expect(db.log.some((s) => s.startsWith("DELETE FROM webhook_events"))).toBe(true);
   });
 });
 

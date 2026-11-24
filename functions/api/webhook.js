@@ -14,6 +14,7 @@
  */
 
 import { json, handleOptions, stripeGet, verifyStripeWebhook } from "../_shared/jwt.js";
+import { canonicalCustomerId } from "../_shared/customers.js";
 import { refundCreditsDelta } from "../_shared/billing-math.js";
 
 const PACK_CREDITS = {
@@ -69,7 +70,15 @@ export async function onRequestPost({ request, env }) {
     }
   }
 
-  const res = await dispatch(event, env);
+  // A throw (e.g. a D1 error in canonicalCustomerId) must become a 500 so the
+  // dedup row below is cleared; otherwise Stripe's retry is ignored as a duplicate.
+  let res;
+  try {
+    res = await dispatch(event, env);
+  } catch (e) {
+    console.error("[webhook] handler threw:", e.message);
+    res = json({ error: "Internal error" }, 500);
+  }
 
   // A 5xx makes Stripe retry this event.id. Forget it, or the retry would hit the
   // dedup row above and be ignored, leaving a paid purchase never credited.
@@ -114,8 +123,9 @@ async function handleCheckoutCompleted(event, env) {
     return json({ received: true, note: "payment_status not paid" });
   }
 
-  const customerId = session.customer;
   const email      = session.customer_details?.email ?? session.customer_email ?? null;
+  // Fold a repeat buyer's new Stripe id into their existing row (one row per email).
+  const customerId = await canonicalCustomerId(env.DB, session.customer, email);
   const packId     = session.metadata?.packId;
   const credits    = PACK_CREDITS[packId] ?? 0;
 
@@ -209,7 +219,7 @@ async function handleCheckoutCompleted(event, env) {
 
 async function handleChargeRefunded(event, env) {
   const charge     = event.data?.object;
-  const customerId = charge?.customer;
+  const customerId = await canonicalCustomerId(env.DB, charge?.customer);
 
   if (!customerId) {
     console.error("[webhook] charge.refunded: no customer on charge");
@@ -293,7 +303,7 @@ async function handleDisputeCreated(event, env) {
     return json({ error: "Charge lookup failed" }, 500);
   }
 
-  const customerId = charge.customer;
+  const customerId = await canonicalCustomerId(env.DB, charge.customer);
   if (!customerId) {
     console.error("[webhook] charge.dispute.created: no customer on charge", chargeId);
     return json({ received: true, note: "no customer on charge" });
@@ -351,7 +361,7 @@ async function handleDisputeClosed(event, env) {
     return json({ error: "Charge lookup failed" }, 500);
   }
 
-  const customerId = charge.customer;
+  const customerId = await canonicalCustomerId(env.DB, charge.customer);
   if (!customerId) {
     return json({ received: true, note: "no customer on charge" });
   }

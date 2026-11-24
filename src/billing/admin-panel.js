@@ -400,7 +400,10 @@ function RestoreLinkSection({ secret, disabled }) {
     // days/maxUses left at the endpoint's defaults (14 days, 3 uses): a
     // support-issued link is a one-off remedy, unlike the customer's own
     // recovery link minted at checkout, which is deliberately long-lived.
-    const r = await adminCall(secret, "issue-restore-link", { email });
+    // A `cus_` id goes as customerId: needed when several customers share an email.
+    const id = email.trim();
+    const r = await adminCall(secret, "issue-restore-link",
+      id.startsWith("cus_") ? { customerId: id } : { email: id });
     setResult(r); setLoading(false);
   };
 
@@ -417,7 +420,7 @@ function RestoreLinkSection({ secret, disabled }) {
         Issue Restore Link (customer lost their credits)
       </div>
       <div style={S.row}>
-        <Field label="Email" value={email} onChange={handleEmail} placeholder="customer@example.com" />
+        <Field label="Email" value={email} onChange={handleEmail} placeholder="customer@example.com or cus_…" />
         <button onClick={run} disabled={disabled || loading || !email} style={S.btn("#0d9488")}>
           {loading ? "…" : "Issue"}
         </button>

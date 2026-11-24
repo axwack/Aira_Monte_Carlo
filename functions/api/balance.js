@@ -20,6 +20,7 @@
 import {
   json, handleOptions, verifyJWT, mintCustomerJWT, shouldRefreshJWT,
 } from "../_shared/jwt.js";
+import { canonicalCustomerId } from "../_shared/customers.js";
 
 export function onRequestOptions() {
   return handleOptions();
@@ -41,10 +42,13 @@ export async function onRequestGet({ request, env }) {
   if (!env.DB) return json({ error: "D1 database not bound — check Pages bindings" }, 500);
 
   let credits = 0;
+  let customerId = payload.customerId;
   try {
+    // A token minted before a customer merge carries the merged-away id.
+    customerId = await canonicalCustomerId(env.DB, payload.customerId);
     const customer = await env.DB.prepare(
       "SELECT credits FROM customers WHERE stripe_customer_id = ?"
-    ).bind(payload.customerId).first();
+    ).bind(customerId).first();
     credits = customer?.credits ?? 0;
   } catch (e) {
     console.error("[balance] D1 query failed:", e.message);
@@ -57,9 +61,10 @@ export async function onRequestGet({ request, env }) {
   // their current token and get another chance on the next app open.
   let token;
   try {
-    if (shouldRefreshJWT(payload)) {
-      token = await mintCustomerJWT(payload.customerId, env.JWT_SECRET);
-      console.log(`[balance] refreshed session for ${payload.customerId}`);
+    // A merged-away id gets a fresh token for the kept row straight away.
+    if (customerId !== payload.customerId || shouldRefreshJWT(payload)) {
+      token = await mintCustomerJWT(customerId, env.JWT_SECRET);
+      console.log(`[balance] refreshed session for ${customerId}`);
     }
   } catch (e) {
     console.error("[balance] token refresh failed (non-fatal):", e.message);
@@ -67,7 +72,7 @@ export async function onRequestGet({ request, env }) {
 
   return json({
     credits,
-    customerId: payload.customerId,
+    customerId,
     ...(token ? { token } : {}),
   });
 }

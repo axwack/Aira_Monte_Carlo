@@ -34,7 +34,8 @@ const PACK_CREDITS = {
 // Derive a stable fake Stripe customer ID from an email for simulation
 function fakeCustomerId(email) {
   // cus_ADMIN_ prefix makes it visually distinct from real Stripe IDs
-  const local = email.toLowerCase().split("@")[0].replace(/[^a-z0-9]/g, "_").slice(0, 16);
+  // Whole address, not just the local part: a@x.com and a@y.com must not collide.
+  const local = email.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 48);
   return `cus_ADMIN_${local}`;
 }
 

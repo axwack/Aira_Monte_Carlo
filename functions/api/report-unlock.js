@@ -34,6 +34,7 @@
  */
 
 import { json, handleOptions, verifyJWT } from "../_shared/jwt.js";
+import { canonicalCustomerId } from "../_shared/customers.js";
 
 // Keep in sync with src/billing/credits.js REPORT_COST_CREDITS.
 const DEFAULT_REPORT_COST_CREDITS = 250;
@@ -49,12 +50,15 @@ async function authenticate(request, env) {
   if (!authHeader.startsWith("Bearer ") || !env.JWT_SECRET) {
     return { error: json({ error: "Authorization required" }, 401) };
   }
+  let payload;
   try {
-    const payload = await verifyJWT(authHeader.slice(7), env.JWT_SECRET);
-    return { customerId: payload.customerId };
+    payload = await verifyJWT(authHeader.slice(7), env.JWT_SECRET);
   } catch {
     return { error: json({ error: "Invalid or expired token" }, 401) };
   }
+  // A token minted before a customer merge carries the merged-away id.
+  const customerId = env.DB ? await canonicalCustomerId(env.DB, payload.customerId) : payload.customerId;
+  return { customerId };
 }
 
 /**

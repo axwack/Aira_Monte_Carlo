@@ -20,6 +20,7 @@
  */
 
 import { json, handleOptions, mintCustomerJWT, stripeGet } from "../_shared/jwt.js";
+import { canonicalCustomerId } from "../_shared/customers.js";
 
 
 export function onRequestOptions() {
@@ -128,10 +129,12 @@ export async function onRequestPost({ request, env }) {
       return fail("payment_not_paid", 402, { error: "Payment not completed" }, { sessionId });
     }
 
-    const customerId = session.customer;
-    if (!customerId) {
+    if (!session.customer) {
       return fail("no_stripe_customer", 400, { error: "No Stripe customer on session" }, { sessionId });
     }
+    // Repeat buyers resolve to their first customers row (see _shared/customers.js).
+    const customerId = await canonicalCustomerId(
+      env.DB, session.customer, session.customer_details?.email ?? session.customer_email ?? null);
 
     // Look up current balance (webhook may have already credited by now)
     let credits = 0;

@@ -11,6 +11,7 @@
  */
 
 import { json, handleOptions, verifyJWT } from "../_shared/jwt.js";
+import { canonicalCustomerId } from "../_shared/customers.js";
 /**
  * Shared persona for every Gemini call.
  *
@@ -436,6 +437,14 @@ async function deductD1Credits(db, customerId, rawTokens) {
 
   const deducted = upd.meta?.changes === 1;
 
+  // Balance is above the pre-call guard but below this call's cost: take what is
+  // left. Without this the balance never moves and every later call is free.
+  if (!deducted) {
+    await db.prepare(
+      "UPDATE customers SET credits = 0, updated_at = unixepoch() WHERE stripe_customer_id = ?"
+    ).bind(customerId).run();
+  }
+
   // Capture last_row_id so AI-2 can reference this deduction row in its refund.
   const ins = await db.prepare(`
     INSERT INTO credit_transactions (customer_id, type, amount, raw_tokens)
@@ -544,6 +553,8 @@ export async function onRequestPost({ request, env }) {
 
   // ── Pre-call balance check (billing mode only) ─────────────────────────
   if (customerId && env.DB) {
+    // A token minted before a customer merge carries the merged-away id.
+    customerId = await canonicalCustomerId(env.DB, customerId);
     const customer = await env.DB.prepare(
       "SELECT credits, status FROM customers WHERE stripe_customer_id = ?"
     ).bind(customerId).first();
