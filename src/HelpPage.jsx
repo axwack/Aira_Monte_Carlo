@@ -76,9 +76,7 @@ const CSS = `
 .hp-band-in { max-width:1040px; margin:0 auto; padding:0 32px; }
 .hp-band h1 { font-size:40px; line-height:1.15; margin:12px 0 16px; max-width:20ch; }
 .hp-band .hp-back, .hp-band .hp-crumb { color:var(--text-primary); opacity:.8; }
-.hp-band .hp-mono { font-family:inherit; font-size:14px; color:var(--text-primary); opacity:.8; }
 .hp-band .hp-crumb { margin:0; }
-.hp-band .hp-mono { margin:0; }
 .hp-cols { display:grid; grid-template-columns:220px minmax(0, 66ch); gap:48px; align-items:start; margin-top:32px; }
 .hp-cols:not(:has(.hp-rail)) { grid-template-columns:minmax(0, 66ch); }
 .hp-rail { position:sticky; top:24px; }
@@ -239,7 +237,6 @@ export default function HelpPage({ entries, onClose }) {
           <button type="button" className="hp-back" onClick={() => setOpenId(null)}>All Help</button>
           <p className="hp-crumb">Help / {open.tab}</p>
           <h1>{open.title}</h1>
-          <p className="hp-mono">{[`About ${Math.max(1, Math.round(open.text.split(" ").length / 200))} min read`, open.source && `Source: ${open.source}`, open.verified && `Verified ${open.verified}`].filter(Boolean).join(" · ")}</p>
         </div></header>
       ) : null}
       <div className="hp-wrap">
