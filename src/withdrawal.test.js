@@ -1589,3 +1589,54 @@ describe("§28.1 — income-covered retiree does not touch Roth", () => {
     expect(buildWithdrawalWaterfall(GARY).smart.rows[0].fromRoth).toBe(0);
   });
 });
+
+// ─── "irmaa" as the TARGET (not just the guard) ───────────────────────────────
+// BRACKET_CEILINGS_*.irmaa holds the tier-1 MAGI threshold, but it was used as a
+// TAXABLE-INCOME ceiling and only corrected when irmaaGuard && age >= 63. Picking
+// the IRMAA-Safe target with the guard off therefore overshot tier 1 by the
+// standard deduction. Both sizing sites now apply the correction themselves.
+
+describe('"irmaa" as the target caps at tier 1 without the guard', () => {
+  // Tier-1 MFJ 2026 = 218,000, indexed to the row's year (same as ENG-8 above).
+  const tier1 = (row) => Math.round(218_000 * Math.pow(1 + 2.5 / 100, row.yr - new Date().getFullYear()));
+
+  test("Step 6.5: rothConversionTarget 'irmaa', guard off, MAGI lands on tier 1", () => {
+    // Big pretax pot + a 24%-style ceiling well above tier 1, so the cap is what binds.
+    const p = {
+      ...BASE,
+      currentAge: 64, retireAge: 64, ssAge: 70, ssb: 0,
+      rothConversionTarget: "irmaa", irmaaGuard: false,
+      accounts: [
+        { id: "t1", category: "pretax",  name: "401k",    balance: 3_000_000 },
+        { id: "t2", category: "roth",    name: "Roth",    balance:   200_000 },
+        { id: "t3", category: "taxable", name: "Taxable", balance:   500_000 },
+        { id: "t4", category: "cash",    name: "Cash",    balance:   200_000 },
+      ],
+    };
+    const row = buildWithdrawalWaterfall(p).smart.rows[0];
+    expect(row.conversionAmount).toBeGreaterThan(0);
+    expect(row.convCapReason).toBe("irmaa_ceil");
+    expect(row.magi).toBeLessThanOrEqual(tier1(row) + 1);
+  });
+
+  test("Step 5: withdrawalBracketTarget 'irmaa', guard off, MAGI lands on tier 1", () => {
+    // Fixed income (SS + annuity) plus a draw, so the pretax cap binds while cash
+    // still funds the rest — no essential-spending override, and no realized gain
+    // entering MAGI (that separate gap is deliberately out of scope here).
+    const p = {
+      ...BASE,
+      currentAge: 70, retireAge: 70, ssAge: 67, ssb: 60_000, ab: 60_000,
+      sp: 260_000, orderingMode: "pretax_first",
+      withdrawalBracketTarget: "irmaa", irmaaGuard: false,
+      accounts: [
+        { id: "t1", category: "pretax",  name: "401k",    balance: 5_000_000 },
+        { id: "t2", category: "roth",    name: "Roth",    balance:         0 },
+        { id: "t3", category: "taxable", name: "Taxable", balance:         0 },
+        { id: "t4", category: "cash",    name: "Cash",    balance: 3_000_000 },
+      ],
+    };
+    const row = buildWithdrawalWaterfall(p).smart.rows[0];
+    expect(row.fromPretax).toBeGreaterThan(0);
+    expect(row.magi).toBeLessThanOrEqual(tier1(row) + 1);
+  });
+});

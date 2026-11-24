@@ -1152,7 +1152,9 @@ export function buildWithdrawalWaterfall(params = {}) {
             );
             const taxSoFar = ordFloor - ded;
 
-            if (irmaaOn) {
+            // `irmaaTier1` is a MAGI threshold but `bracketCeiling("irmaa")` returns it
+            // as a taxable-income ceiling, so the target alone binds too — guard or not.
+            if (irmaaOn || withdrawalBracketTarget === "irmaa") {
               // `ded` is subtracted here only to move the IRMAA MAGI threshold
               // into the same taxable-income space as `ceiling`/`taxSoFar`. It
               // cancels out of `room = ceiling - taxSoFar` algebraically, so
@@ -1362,7 +1364,9 @@ export function buildWithdrawalWaterfall(params = {}) {
           //     loose — it can only under-convert, never let a conversion slip past
           //     the real future cliff. That's the right failure direction for a
           //     guardrail; don't "fix" it into an off-by-2-years bug.
-          if (irmaaGuard && age >= 63) {
+          // Picking "irmaa" as the target states the intent, so it binds there even
+          // with the guard off or under the age gate.
+          if (rothConversionTarget === "irmaa" || (irmaaGuard && age >= 63)) {
             const irmaaTier1 = mfjAt(age) ? IRMAA_TIER1_2026_MFJ : IRMAA_TIER1_2026_SINGLE;
             // Subtracts BOTH LTCG sources that feed MAGI but not taxNoConv.totInc:
             // realizedGain (from a taxable draw) and taxableQualYield (the
