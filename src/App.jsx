@@ -12063,7 +12063,14 @@ function MCOverviewCards({ mc, inf = 0, real = false, endAge, currentAge, retire
  * (§41 A3), never "today's dollars". The engine's actual spend floor is
  * `mc.gkStats.spendMinReal` — a different number, available if wanted.
  */
-function VerdictHeader({ mc, stress, real = false, inf = 0, endAge, currentAge, retireAge, swr, swrBenchmark = 0.04 }) {
+// Monte Carlo sizes conversions by bracket target only; manual per-year pins
+// are honored by the year-by-year schedule, not the simulation.
+export function pinnedConversionNote(count) {
+  if (!count) return null;
+  return `Monte Carlo Ignores Your ${count} Pinned Conversion${count === 1 ? "" : "s"}: these odds assume the bracket-target conversions. The Year-by-Year Schedule uses your pins.`;
+}
+
+function VerdictHeader({ mc, stress, real = false, inf = 0, endAge, currentAge, retireAge, swr, swrBenchmark = 0.04, pinnedConversions = 0 }) {
   if (!mc) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", marginBottom: 10, background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>
@@ -12141,6 +12148,11 @@ function VerdictHeader({ mc, stress, real = false, inf = 0, endAge, currentAge, 
       <div style={{ marginLeft: "auto" }}>
         <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>{real ? `Amounts in ${basisYear} dollars` : "Amounts in future dollars"}</span>
       </div>
+      {pinnedConversions > 0 && (
+        <div style={{ flexBasis: "100%", fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>
+          {pinnedConversionNote(pinnedConversions)}
+        </div>
+      )}
     </div>
   );
 }
@@ -19350,6 +19362,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               swr={swr}
               stress={stress}
               swrBenchmark={params.safeWithdrawalRate}
+              pinnedConversions={(params.conversionOverrides || []).length}
             />
 
             <nav className="tabs" aria-label="Sections" ref={tabsRef}>
