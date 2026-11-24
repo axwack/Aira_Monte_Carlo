@@ -1308,6 +1308,14 @@ function getIrmaaCeiling(tier, filingStatus, inflFactor) {
 }
 
 /**
+ * Room left under the tier-1 IRMAA threshold. MAGI space, so no deduction is
+ * subtracted: a pretax draw or conversion raises MAGI dollar for dollar.
+ */
+export function irmaaTargetRoom(filingStatus, inflFactor, magiSoFar) {
+  return Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactor) - magiSoFar);
+}
+
+/**
  * Returns the TAXABLE INCOME ceiling (after std deduction) for a given bracket target.
  * Values are 2026 estimates, inflated by inflFactor for future years.
  * The "irmaa" target delegates to getIrmaaCeiling so the threshold has one home.
@@ -1911,7 +1919,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable) + ordinaryYieldMC;
         // Infinity when only the IRMAA guard is on — the min() below then
         // makes the IRMAA tier the sole binding ceiling.
-        const ceilingMC = bracketSetMC
+        // IRMAA-Safe is a MAGI limit, not a taxable-income ceiling: it binds
+        // through irmaaTargetRoom below, guard or not (request #38).
+        const irmaaTargetMC = p.withdrawalBracketTarget === "irmaa";
+        const ceilingMC = bracketSetMC && !irmaaTargetMC
           ? getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC)
           : Infinity;
         // The OBBBA senior bonus shelters ordinary income the same way the
@@ -1951,9 +1962,8 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         // same dollar, so both rooms cap the same incremental draw; take
         // whichever is tighter. (LTCG from the taxable draw isn't folded
         // into the MAGI base here yet — a known modeling gap.)
-        if (irmaaOnMC) {
-          const irmaaRoom = Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactorMC) - ordinaryFloorMC);
-          bracketRoomMC = Math.min(bracketRoomMC, irmaaRoom);
+        if (irmaaOnMC || irmaaTargetMC) {
+          bracketRoomMC = Math.min(bracketRoomMC, irmaaTargetRoom(filingStatus, inflFactorMC, ordinaryFloorMC));
         }
       }
 
@@ -2116,8 +2126,10 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       // the whole horizon would swing the ceiling wildly with RNG noise.
       if (p.rothConversionTarget && p.rothConversionTarget !== "off" && pretax > 1000) {
         const inflFactor = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
-        const bracketCeiling = getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor);
-        const room = Math.max(0, bracketCeiling - (taxResult.taxableIncome || 0));
+        // IRMAA-Safe fills MAGI (gains included) up to tier 1, not taxable income (request #38).
+        const room = p.rothConversionTarget === "irmaa"
+          ? irmaaTargetRoom(filingStatus, inflFactor, taxResult.magi || 0)
+          : Math.max(0, getBracketCeiling(p.rothConversionTarget, filingStatus, inflFactor) - (taxResult.taxableIncome || 0));
         if (room > 500) {
           let convAmt = Math.min(room, pretax);
           let lastWithConv = null;
