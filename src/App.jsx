@@ -1316,12 +1316,25 @@ export function irmaaTargetRoom(filingStatus, inflFactor, magiSoFar) {
 }
 
 /**
+ * Shrink a conversion until its MAGI fits under `cap`. MAGI can rise by up to
+ * $1.85 per $1 converted (85% of Social Security becomes taxable), so cutting by
+ * the overshoot always lands at or under the cap, never above it.
+ */
+export function shrinkToIrmaaCap(amt, magiFor, cap) {
+  for (let i = 0; i < 3 && amt > 0; i++) {
+    const over = magiFor(amt) - cap;
+    if (over <= 0) break;
+    amt = Math.max(0, amt - over);
+  }
+  return amt;
+}
+
+/**
  * Returns the TAXABLE INCOME ceiling (after std deduction) for a given bracket target.
  * Values are 2026 estimates, inflated by inflFactor for future years.
- * The "irmaa" target delegates to getIrmaaCeiling so the threshold has one home.
+ * Not for "irmaa": that is a MAGI limit, sized with irmaaTargetRoom (request #38).
  */
 function getBracketCeiling(target, filingStatus, inflFactor) {
-  if (target === "irmaa") return getIrmaaCeiling(1, filingStatus, inflFactor);
   const mfj = filingStatus !== "single";
   const ceilings = mfj
     ? { "10": 24_800, "12": 100_800, "22": 211_400, "24": 403_550, "32": 512_450, "35": 768_700, "37": Infinity }
@@ -2151,21 +2164,27 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           // lookback landed, and it needs no change now that IRMAA is a
           // fixed, lookback-driven constant for the year — a same-year
           // conversion can't move it.
+          // Same realizedGainMC as the spending-draw tax call above — the
+          // delta has to isolate the conversion's own cost, not a
+          // different LTCG estimate. Same magiLookbackMC too, so the
+          // (fixed) IRMAA component agrees with taxResult's — it's this
+          // year's charge, unaffected by convAmt.
+          const withConvFor = (amt) => calcYearTax(
+            age, yr, fromPretax, ss, effectiveAb + otherIncTaxable + ordinaryYieldMC, rmd, amt,
+            p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC + qualifiedYieldMC, magiLookbackMC,
+            spouseAgeAt(p, age)
+          );
           const convTaxFor = (amt) => {
             if (!taxEnabled || amt <= 0) return 0;
-            // Same realizedGainMC as the spending-draw tax call above — the
-            // delta has to isolate the conversion's own cost, not a
-            // different LTCG estimate. Same magiLookbackMC too, so the
-            // (fixed) IRMAA component agrees with taxResult's — it's this
-            // year's charge, unaffected by convAmt.
-            const withConv = calcYearTax(
-              age, yr, fromPretax, ss, effectiveAb + otherIncTaxable + ordinaryYieldMC, rmd, amt,
-              p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC + qualifiedYieldMC, magiLookbackMC,
-              spouseAgeAt(p, age)
-            );
+            const withConv = withConvFor(amt);
             lastWithConv = withConv;
             return Math.max(0, withConv.totalTax - totalTax);
           };
+          // The room above was measured on pre-conversion MAGI, but converting also
+          // makes more Social Security taxable, so re-check MAGI with the conversion.
+          if (p.rothConversionTarget === "irmaa" || irmaaOnMC) {
+            convAmt = shrinkToIrmaaCap(convAmt, (a) => withConvFor(a).magi, getIrmaaCeiling(1, filingStatus, inflFactor));
+          }
           let convTax = convTaxFor(convAmt);
 
           // Shrink (rather than all-or-nothing skip) when pretax can't

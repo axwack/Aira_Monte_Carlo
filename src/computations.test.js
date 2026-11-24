@@ -1750,10 +1750,6 @@ describe("getStandardDeduction / getIrmaaCeiling / getBracketCeiling helpers", (
     expect(getIrmaaCeiling(1, "mfj", 1)).toBe(218_000);
     expect(getIrmaaCeiling(1, "single", 1)).toBe(109_000);
   });
-  test('getBracketCeiling("irmaa") delegates to getIrmaaCeiling (one source of truth)', () => {
-    const inflF = 1.0838;
-    expect(getBracketCeiling("irmaa", "mfj", inflF)).toBe(getIrmaaCeiling(1, "mfj", inflF));
-  });
   test('getBracketCeiling 22% top = $211,400 MFJ; unknown target defaults to 22%', () => {
     expect(getBracketCeiling("22", "mfj", 1)).toBe(211_400);
     expect(getBracketCeiling("bogus", "mfj", 1)).toBe(211_400);
