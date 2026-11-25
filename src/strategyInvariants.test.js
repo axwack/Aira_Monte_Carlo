@@ -1,7 +1,3 @@
-// Cross-strategy invariants — TASKS 2026-10-30 item 4.
-// The ten live strategies are resolved in App.jsx, so these import its exports;
-// no file in that lane is edited. The point is drift detection: a strategy that
-// changes must still satisfy the same invariants as the other nine.
 import { simulateDeterministicWithStrategy } from "./App";
 import { LIVE_STRATEGIES } from "./engine/withdrawalStrategies.js";
 
@@ -51,7 +47,6 @@ describe("every live strategy", () => {
   test.each(LIVE_STRATEGIES)("%s does not draw from an empty portfolio it does not have", (strategy) => {
     const p = { ...P, sp: 40_000, accounts: P.accounts.map((a) => ({ ...a, balance: 0 })) };
     const d = run(p, strategy);
-    // With nothing to draw from, the draw cannot exceed what existed.
     for (const r of rowsOf(d)) {
       if (r.portfolioDraw !== undefined) expect(r.portfolioDraw).toBeGreaterThanOrEqual(0);
     }

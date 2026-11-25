@@ -1,66 +1,7 @@
-/**
- * mcSelectors.js — the ONE place any surface reads a dollar figure out of a
- * runMC() result. Pure, dependency-free (no React, no App.jsx internals) so
- * App.jsx, the rules engine, the score explainer, and the printable report
- * can all import it directly without a circular import back into App.jsx.
- *
- * WHY THIS FILE EXISTS
- * --------------------
- * Reported 2026-09-04: the same run, same age, showed two different median
- * portfolio values in two tabs (~1.9x apart). Investigating turned up FOUR
- * independent reimplementations of "look up the simulated portfolio value at
- * age X" across the codebase (App.jsx's NetWorthTab, MCTab's hero card and
- * its termAt() helper, the Checkpoints table) plus THREE MORE once an
- * eslint rule (no-restricted-properties on mc.pcts/mc.term, see .eslintrc.json)
- * was pointed at the rest of src/: engine/explainScore.js, engine/rulesEngine.js,
- * and report/PrintReport.jsx. Every one disagreed on at least one of: whether
- * to deflate for the Real $ toggle, which aggregate to trust (mc.term vs the
- * matching row in mc.pcts), or how to treat missing data (several used `|| 0`,
- * silently turning "no figure for this age" into a confident $0).
- *
- * Route every new "show a simulated portfolio value" UI through
- * selectPortfolioAtAge() instead of touching `mc.pcts` / `mc.term` directly.
- * See CLAUDE.md rule 8 and src/noRawMcAccess.test.js (App.jsx's own guard)
- * plus the `no-restricted-properties` ESLint rule (all of src/).
- */
-
-// Real $ restates every figure in the purchasing power of the FIRST SIMULATED
-// RETIREMENT YEAR — not of today. deflate() discounts row i by (1+inf)^i and
-// row 0 IS retirement, so that is what the numbers have always meant.
-//
-// That is deliberate, and it matches the engine's own inputs: the spend figure
-// the user types is consumed as-is in retirement year one (runMC, `y === 0`) and
-// is never inflated forward from today. Balances and spending therefore share
-// one yardstick, and the pre-retirement years stay what they are — a forecast of
-// how big the pile gets, not a claim about what a dollar buys along the way.
-/**
- * Number() maps null and "" to 0, which would read as a real age or year here
- * ("no current age" would become age 0 and invent a basis decades out). Treat
- * absent values as missing instead.
- */
 const numericOrNaN = (v) => (v === null || v === undefined || v === "" ? NaN : Number(v));
 
-// A calendar year, not an age. Two call sites currently pass `pcts[0].age` and
-// would otherwise render "50 dollars"; until they pass a year the label stays
-// honest ("Retirement-year dollars") instead of printing a number that is not a
-// date. Bounded so no typo can produce "999999 dollars".
 const isPlausibleYear = (y) => Number.isFinite(y) && y >= 1900 && y <= 2200;
 
-/**
- * The retirement year every Real-$ figure is expressed in — the one basis the
- * whole app names. `currentYear + (retireAge - currentAge)`, floored at the
- * current year so an already-retired household reads the present year rather
- * than a date in the past.
- *
- * Pinned here because three surfaces had already grown their own copy of this
- * expression (VerdictHeader, MCOverviewCards, and the label below). A second
- * copy is how one figure ends up described two ways.
- *
- * @param {number} currentAge
- * @param {number} retireAge
- * @param {number} currentYear  pass the app's CURRENT_YEAR so this stays pure
- * @returns {number|null} null when there is no retirement age to count to
- */
 export function retirementBasisYear(currentAge, retireAge, currentYear) {
   const year = numericOrNaN(currentYear);
   const ret = numericOrNaN(retireAge);
@@ -70,17 +11,6 @@ export function retirementBasisYear(currentAge, retireAge, currentYear) {
   return isPlausibleYear(basis) ? basis : null;
 }
 
-/**
- * Name the dollar basis in words.
- *
- * The Real-$ basis is the retirement year (see the note above), so the honest
- * label is "2041 dollars". This used to return "Today's Dollars", which
- * promised a basis deflate() has never used — the Forecast tab could show
- * "2041 dollars", "Today's Dollars" and "future $" for the very same figures.
- *
- * Pass the year (`retirementBasisYear` above). Without one the label states
- * what the basis is rather than inventing a date for it.
- */
 export const dollarBasisLabel = (useReal, basisYear) => {
   if (!useReal) return "Future dollars";
   const year = numericOrNaN(basisYear);
@@ -99,64 +29,16 @@ export function deflate(data, inf, useReal) {
   }));
 }
 
-/**
- * The Monte Carlo median portfolio for one age, or `null` when there is no
- * figure for that age.
- *
- * `null`, never 0. The Net Worth chart used to do:
- *
- *   const pctIndex = Math.min(age - retireAge, pcts.length - 1);
- *   port = pcts[pctIndex]?.p50 || 0;
- *
- * which produced a confident $0 in three unrelated situations — genuinely zero,
- * no data for this age, and NaN (falsy, so `|| 0` swallowed it). A user reported
- * a plan the engine scores at 99.2% success, median $4.05M at 68 and $10.9M at
- * 90, rendered as $0 from 68 through 90. Nothing on screen distinguished that
- * from a portfolio that had actually died.
- *
- * The clamp was the other half: `Math.min` repeated the final row for every age
- * past the end of the data, so a run whose horizon was shorter than `endAge`
- * grew a flat tail of fabricated years — which the "net worth at age" card then
- * reported as a forecast.
- *
- * Rows are matched on the `age` they carry themselves, falling back to
- * positional arithmetic only for older result objects that predate that field.
- * Positional indexing silently mis-aligns whenever `mc` is stale — computed at a
- * different retireAge than the one now being charted.
- *
- * @param {Array<{age?:number, p50:number}>} pcts  runMC's percentile rows
- * @param {number} age                             the age wanted
- * @param {number} retireAge                       fallback origin for legacy rows
- * @param {"p10"|"p25"|"p50"|"p75"|"p90"} [pct]     which percentile column (default p50/median)
- * @returns {number|null}
- */
 export function mcMedianAtAge(pcts, age, retireAge, pct = "p50") {
   if (!Array.isArray(pcts) || pcts.length === 0) return null;
   let row = pcts.find((d) => d && d.age === age);
   if (!row && !Number.isFinite(pcts[0]?.age)) {
-    // Legacy rows without `age`: derive the index, but do NOT clamp — an index
-    // past the end means "not modelled", which is exactly what null says.
     const i = age - retireAge;
     row = i >= 0 && i < pcts.length ? pcts[i] : null;
   }
   return row && Number.isFinite(row[pct]) ? row[pct] : null;
 }
 
-/**
- * THE single place any UI reads "the simulated portfolio value at age X" from
- * an `mc` (runMC) result. See this file's header comment for why it exists.
- *
- * @param {object} mc            runMC's result (or null/undefined — returns null)
- * @param {number} age           the age wanted
- * @param {object} [opts]
- * @param {number}  opts.retireAge  fallback origin for legacy rows without `age`
- * @param {boolean} [opts.real=false]  true = deflate to the retirement-year basis
- *   ("Today's Dollars" — see deflate()'s own doc comment for why the anchor is
- *   the retirement year, not today). Only meaningful with `opts.inf` set.
- * @param {number}  [opts.inf=0]     inflation rate (%), used only when real=true
- * @param {"p10"|"p25"|"p50"|"p75"|"p90"} [opts.pct="p50"]
- * @returns {number|null}
- */
 export function selectPortfolioAtAge(mc, age, { retireAge, real = false, inf = 0, pct = "p50" } = {}) {
   // eslint-disable-next-line no-restricted-properties -- this IS the selector; see this file's header.
   if (!mc?.pcts) return null;
@@ -165,20 +47,10 @@ export function selectPortfolioAtAge(mc, age, { retireAge, real = false, inf = 0
   return mcMedianAtAge(pcts, age, retireAge, pct);
 }
 
-/**
- * The row index `age` maps to in `mc.pcts`, or -1 when there is none.
- *
- * Extracted so a selector that needs the DEFLATION FACTOR (rather than a
- * percentile value) resolves the row the same way the percentile selectors do.
- * Two independent index derivations is how the deflated and nominal views drift
- * apart by a year.
- */
 export function pctRowIndexAtAge(pcts, age, retireAge) {
   if (!Array.isArray(pcts) || pcts.length === 0) return -1;
   const byAge = pcts.findIndex((d) => d && d.age === age);
   if (byAge >= 0) return byAge;
-  // Legacy rows without `age`: positional arithmetic, no clamp (past the end
-  // means "not modelled", never a fabricated year).
   if (!Number.isFinite(pcts[0]?.age) && Number.isFinite(age) && Number.isFinite(retireAge)) {
     const i = age - retireAge;
     return i >= 0 && i < pcts.length ? i : -1;
@@ -186,20 +58,6 @@ export function pctRowIndexAtAge(pcts, age, retireAge) {
   return -1;
 }
 
-/**
- * The MEAN of the terminal distribution, in the same basis as
- * `selectPortfolioAtAge`.
- *
- * Why a separate selector: the mean is a published SCALAR (`mc.term.mean`) that
- * runMC computes over every path — it is not a percentile column, so it cannot
- * ride the percentile selector. But in a Real-$ view it must be deflated by the
- * SAME factor those percentiles use, or the Overview would show a nominal mean
- * sitting beside real percentiles and quietly overstate it (Rule 1: a figure
- * whose basis differs from its neighbours' without saying so).
- *
- * Returns null when the mean is absent — never 0, for the reason documented on
- * mcMedianAtAge (a confident $0 is indistinguishable from a dead portfolio).
- */
 export function selectTerminalMeanAtAge(mc, age, { retireAge, real = false, inf = 0 } = {}) {
   // eslint-disable-next-line no-restricted-properties -- this IS the selector; see this file's header.
   const mean = mc?.term?.mean;
@@ -207,6 +65,6 @@ export function selectTerminalMeanAtAge(mc, age, { retireAge, real = false, inf 
   if (!real) return mean;
   // eslint-disable-next-line no-restricted-properties -- this IS the selector; see this file's header.
   const i = pctRowIndexAtAge(mc?.pcts, age, retireAge);
-  if (i < 0) return mean;   // no basis to deflate by — show it as-is rather than scale it by a guess
+  if (i < 0) return mean;
   return Math.round(mean / Math.pow(1 + inf / 100, i));
 }

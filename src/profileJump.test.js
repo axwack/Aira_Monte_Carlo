@@ -29,7 +29,6 @@ test("opens on About You by default, on Current Savings when asked, and re-jumps
   expect(el.textContent).toContain("Who You Are");
   render({ step: PROFILE_STEP_SAVINGS, n: 1 });
   expect(el.textContent).not.toContain("Who You Are");
-  // wander back to About You manually, then click the link again -> jumps again
   render({ step: 0, n: 2 });
   expect(el.textContent).toContain("Who You Are");
   render({ step: PROFILE_STEP_SAVINGS, n: 3 });

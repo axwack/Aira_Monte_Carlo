@@ -31,8 +31,6 @@ const BASE = {
   ],
 };
 
-// ─── Output structure ──────────────────────────────────────────────────────────
-
 describe("buildWithdrawalWaterfall — output structure", () => {
   test("returns { smart, naive, summary } with rows arrays", () => {
     const result = buildWithdrawalWaterfall(BASE);
@@ -45,16 +43,13 @@ describe("buildWithdrawalWaterfall — output structure", () => {
 
   test("rows length equals endAge - retireAge + 1", () => {
     const result = buildWithdrawalWaterfall(BASE);
-    const expected = BASE.endAge - BASE.retireAge + 1; // 26
+    const expected = BASE.endAge - BASE.retireAge + 1;
     expect(result.smart.rows.length).toBe(expected);
     expect(result.naive.rows.length).toBe(expected);
   });
 });
 
-// ─── RMD logic ────────────────────────────────────────────────────────────────
-
 describe("buildWithdrawalWaterfall — RMD logic", () => {
-  // RMD start age 75 for born 1960+ (currentAge 65, BASE_YEAR ~2026 → born ~1961)
   test("age 75 row has rmd > 0 and rmdActive = true", () => {
     const result = buildWithdrawalWaterfall(BASE);
     const row = result.smart.rows.find(r => r.age === 75);
@@ -71,27 +66,15 @@ describe("buildWithdrawalWaterfall — RMD logic", () => {
   });
 });
 
-// ─── Bracket ceiling (smart mode) ─────────────────────────────────────────────
-
 describe("buildWithdrawalWaterfall — bracket ceiling (smart mode)", () => {
   test("smart year-1 fromPretax stays within 22% bracket room", () => {
-    // Year 1 (age 65): no SS yet (ssAge=67), no RMD yet
-    // std deduction MFJ 2026: 32200 + 3300 (age65) = 35500
-    // 22% bracket ceiling (taxable income): ~211400
-    // taxableIncomeSoFar = 0 → room = ~211400
-    // need from port = sp=80000 (no fixed income at 65)
-    // fromPretax should be ≤ 211400 but also ≤ need
     const result = buildWithdrawalWaterfall(BASE);
-    const row0 = result.smart.rows[0]; // age 65
-    // MFJ 22% taxable ceiling is 211400 (2026), room >> sp, so fromPretax limited by need not bracket
-    // Just confirm it doesn't exceed the 22% taxable income ceiling
-    const ceiling22_approx = 211_400; // rough
+    const row0 = result.smart.rows[0];
+    const ceiling22_approx = 211_400;
     expect(row0.fromPretax).toBeLessThanOrEqual(ceiling22_approx);
   });
 
   test("naive year-1 fromPretax >= smart year-1 fromPretax", () => {
-    // Naive draw order is pretax first — so year-1 fromPretax must be >= smart's.
-    // Smart draws cash then taxable before touching pretax; naive hits pretax immediately.
     const result = buildWithdrawalWaterfall(BASE);
     const smartRow = result.smart.rows[0];
     const naiveRow = result.naive.rows[0];
@@ -99,28 +82,21 @@ describe("buildWithdrawalWaterfall — bracket ceiling (smart mode)", () => {
   });
 });
 
-// ─── Roth emergency reserve ────────────────────────────────────────────────────
-
 describe("buildWithdrawalWaterfall — Roth emergency reserve", () => {
   test("rothEnd never drops below reserve unless portfolio fully exhausted", () => {
     const reserve = 200_000;
     const result = buildWithdrawalWaterfall({ ...BASE, rothEmergencyReserve: reserve });
     result.smart.rows.forEach(row => {
-      // rothEnd can only go below reserve if ALL buckets are depleted
       const totalPfEnd = row.cashEnd + row.taxableEnd + row.pretaxEnd + row.rothEnd;
       if (totalPfEnd > reserve) {
-        expect(row.rothEnd).toBeGreaterThanOrEqual(reserve - 1); // allow $1 rounding
+        expect(row.rothEnd).toBeGreaterThanOrEqual(reserve - 1);
       }
     });
   });
 });
 
-// ─── Landmine detection ────────────────────────────────────────────────────────
-
 describe("buildWithdrawalWaterfall — landmine detection", () => {
   test("ssTorpedo flag appears in SS years when provisional income exceeds threshold", () => {
-    // ssAge=67; provisional = ss*0.5 + rmd + fromPretax + annuity
-    // With $24K SS: ss*0.5 = $12K, plus pretax draws of ~$80K → provisional ~$92K >> $44K MFJ threshold
     const result = buildWithdrawalWaterfall({ ...BASE, ssTorpedoGuard: true });
     const ssRows = result.smart.rows.filter(r => r.age >= BASE.ssAge);
     const torpedoRows = ssRows.filter(r => r.landmines.ssTorpedo);
@@ -128,29 +104,14 @@ describe("buildWithdrawalWaterfall — landmine detection", () => {
   });
 
   test("irmaaTriggered is false when MAGI < $218K tier-1 threshold", () => {
-    // BASE has sp=$80K, small portfolio — total income well below $218K IRMAA tier-1
-    // Only ages 65+ get IRMAA at all
     const result = buildWithdrawalWaterfall({ ...BASE, sp: 60_000 });
     const earlyRows = result.smart.rows.filter(r => r.age <= 68);
     earlyRows.forEach(row => {
-      // With $60K spend and low pretax draws, MAGI should be < $218K
       expect(row.landmines.irmaaTriggered).toBe(false);
     });
   });
 });
 
-// ─── IRMAA 2-year lookback (2026-07-18) ────────────────────────────────────────
-// Medicare charges year T's surcharge off MAGI from year T-2, not the current
-// year. buildWithdrawalWaterfall now maintains a per-scenario magiByAge history
-// and threads magiLookback into yearTax every year. The first two retirement
-// years (no pre-retirement wage history modeled) fall back to same-year MAGI.
-//
-// LOOKBACK_BASE: cash is abundant enough to fund baseline spending for the
-// whole horizon without ever touching pretax (draw order is cash → taxable →
-// pretax in smart mode), so baseline-year MAGI stays ~$0 (well under the
-// $218K IRMAA tier-1). gr: 0 and inf: 0 freeze balances/thresholds so the
-// ONLY thing that moves MAGI in any given year is a pinned conversionOverrides
-// entry — isolating the lookback effect cleanly.
 const LOOKBACK_BASE = {
   currentAge: 60, retireAge: 60, endAge: 85,
   sp: 60_000, ssAge: 90, ssb: 0, ssCola: 0, ab: 0, inf: 0,
@@ -174,13 +135,8 @@ describe("buildWithdrawalWaterfall — IRMAA 2-year lookback", () => {
     const row63 = result.smart.rows.find(r => r.age === 63);
     const row64 = result.smart.rows.find(r => r.age === 64);
     const row65 = result.smart.rows.find(r => r.age === 65);
-    // Ages 63/64 are under-65 anyway (no IRMAA gate at all), but assert them
-    // explicitly per spec.
     expect(row63.irmaa).toBe(0);
     expect(row64.irmaa).toBe(0);
-    // Age 65's charge is driven by age 63's MAGI (the conversion year) — under
-    // the OLD same-year behavior this charge would never appear at 65 at all
-    // (65's own income is back to baseline-low).
     expect(row65.irmaa).toBeGreaterThan(0);
     expect(row65.landmines.irmaaTriggered).toBe(true);
   });
@@ -194,8 +150,6 @@ describe("buildWithdrawalWaterfall — IRMAA 2-year lookback", () => {
     const row70 = result.smart.rows.find(r => r.age === 70);
     const row71 = result.smart.rows.find(r => r.age === 71);
     const row72 = result.smart.rows.find(r => r.age === 72);
-    // Under the OLD same-year behavior this would have charged AT 70 — the
-    // lookback proves itself by showing $0 here instead.
     expect(row70.irmaa).toBe(0);
     expect(row71.irmaa).toBe(0);
     expect(row72.irmaa).toBeGreaterThan(0);
@@ -212,15 +166,10 @@ describe("buildWithdrawalWaterfall — IRMAA 2-year lookback", () => {
       ],
     });
     const byAge = (a) => result.smart.rows.find(r => r.age === a);
-    // 65/66 themselves: their OWN lookback (ages 63/64) is baseline-low, so no
-    // charge in the conversion years themselves.
     expect(byAge(65).irmaa).toBe(0);
     expect(byAge(66).irmaa).toBe(0);
-    // 67/68: lookback now sees the high 65/66 MAGI — charged.
     expect(byAge(67).irmaa).toBeGreaterThan(0);
     expect(byAge(68).irmaa).toBeGreaterThan(0);
-    // 69+: income already dropped back to baseline two years earlier (67's
-    // own MAGI, which 69 looks back on, is low again) — charge stops.
     expect(byAge(69).irmaa).toBe(0);
     expect(byAge(70).irmaa).toBe(0);
   });
@@ -232,18 +181,10 @@ describe("buildWithdrawalWaterfall — IRMAA 2-year lookback", () => {
       conversionOverrides: [{ year: yr63, amount: 700_000 }],
     });
     const row63 = result.smart.rows.find(r => r.age === 63);
-    expect(row63.magi).toBeGreaterThan(600_000); // conversion dominates MAGI that year
+    expect(row63.magi).toBeGreaterThan(600_000);
   });
 });
 
-// ─── Funding identity holds with IRMAA-triggering income (audit regression) ────
-// Fixed income + otherIncome + RMD + draws − rmdExcess must equal spending +
-// housing + carveouts + fedTax + stateTax + irmaa on every row, within $2
-// rounding — the same identity App.jsx documents above the Withdrawal Order
-// table. No conversionOverrides/rothConversionTarget here (kept "off") so the
-// draw cascade and the reported fedTax/stateTax/irmaa stay in lockstep (a
-// pinned conversion's own tax is funded separately, outside the cascade —
-// deliberately out of scope for this identity check).
 describe("buildWithdrawalWaterfall — funding identity holds with IRMAA-triggering income", () => {
   const IDENTITY_PROFILE = {
     currentAge: 63, retireAge: 63, endAge: 90,
@@ -252,12 +193,6 @@ describe("buildWithdrawalWaterfall — funding identity holds with IRMAA-trigger
     useJointRmdTable: false, gkFloor: 200_000, gkCeiling: 400_000,
     withdrawalBracketTarget: "off", irmaaGuard: false, ssTorpedoGuard: false,
     rothEmergencyReserve: 0, gr: 0.03, rothConversionTarget: "off",
-    // A large balance relative to spending — the identity assumes every
-    // dollar of "need" is actually funded by the draw cascade; a portfolio
-    // that depletes mid-horizon (pretax exhausted, no other buckets left)
-    // breaks that assumption in its own well-known way (a documented
-    // modeling edge case, not part of this lookback fix), so this profile
-    // is sized to comfortably survive the full 63→90 horizon.
     accounts: [
       { id: "p1", category: "pretax", balance: 10_000_000 },
       { id: "c1", category: "cash",   balance:    200_000 },
@@ -271,16 +206,6 @@ describe("buildWithdrawalWaterfall — funding identity holds with IRMAA-trigger
       const rmdExcess = Math.max(0, r.rmd - (r.needFromPort + taxTotal));
       const lhs = r.fixedIncomeTotal + r.otherIncome + r.rmd
         + (r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth) - rmdExcess;
-      // eventCost is real spending the draws must fund, so it belongs on this
-      // side alongside housing and carveouts.
-      //
-      // healthcareRisk deliberately does NOT appear here. It is a probability-
-      // weighted advisory (E[X]), not a cash obligation — see its declaration in
-      // buildWithdrawalWaterfall. It was previously charged to the draw as
-      // `healthcareCost`, which is what made this identity fail on screen: the
-      // rendered table was off by exactly the healthcare charge from age 72 on.
-      // The §72(t) early-distribution penalty is funded by the draws like any
-      // other tax, so it sits on this side too (it is $0 from age 59½ on).
       const rhs = r.spending + r.housingCost + r.carveoutCost + taxTotal
         + (r.eventCost || 0) + (r.earlyPenalty || 0);
       expect(Math.abs(lhs - rhs)).toBeLessThan(2);
@@ -289,8 +214,6 @@ describe("buildWithdrawalWaterfall — funding identity holds with IRMAA-trigger
 
   test("identity holds on every smart row for an IRMAA-triggering profile", () => {
     const result = buildWithdrawalWaterfall(IDENTITY_PROFILE);
-    // Guard: this profile must actually trigger IRMAA somewhere, or the test
-    // isn't exercising the lookback-charged tax component at all.
     expect(result.smart.rows.some(r => r.irmaa > 0)).toBe(true);
     assertIdentity(result.smart.rows);
   });
@@ -301,8 +224,6 @@ describe("buildWithdrawalWaterfall — funding identity holds with IRMAA-trigger
     assertIdentity(result.naive.rows);
   });
 });
-
-// ─── Real-world expenses/income feed "need" and conversion headroom ───────────
 
 describe("buildWithdrawalWaterfall — mortgage, carveouts, other income", () => {
   test("an active mortgage raises needFromPort by the annual P&I", () => {
@@ -352,15 +273,6 @@ function BASE_YEAR() {
   return new Date().getFullYear();
 }
 
-// ─── Mortgage payoff-year fix (audit regression) ───────────────────────────────
-// Before this fix, housingCost used a flat `pmt * 12` and zeroed out entirely in
-// the calendar year the mortgage is paid off, even though up to a full year of
-// real payments were still due that year; extra payments (mortExtra) were also
-// silently dropped from the annual cash cost. mortgageAnnualPayments() sums the
-// schedule's own per-year pPaid+iPaid (which already includes extra payments and
-// the partial final year), and buildWithdrawalWaterfall must charge that exact
-// figure instead.
-
 describe("buildWithdrawalWaterfall — mortgage payoff-year & extra-payment fix (audit regression)", () => {
   const MORT = { mortBalance: 120_000, mortRate: 6, mortStart: "2015-01", mortTerm: 15, mortExtra: 0 };
 
@@ -368,16 +280,12 @@ describe("buildWithdrawalWaterfall — mortgage payoff-year & extra-payment fix 
     const ms = mortgageSchedule(MORT.mortBalance, MORT.mortRate, MORT.mortStart, MORT.mortTerm, MORT.mortExtra);
     const byYear = mortgageAnnualPayments(ms);
     const payoffAmt = byYear.get(ms.payoffYr);
-    // Sanity: the schedule itself actually pays something in the payoff year.
     expect(payoffAmt).toBeGreaterThan(0);
 
     const result = buildWithdrawalWaterfall({ ...BASE, ...MORT, endAge: 95 });
     const payoffRow = result.smart.rows.find(r => r.yr === ms.payoffYr);
     const nextRow = result.smart.rows.find(r => r.yr === ms.payoffYr + 1);
     expect(payoffRow).toBeDefined();
-    // Old behavior: yr === mortPayoffYr fell outside `yr < mortPayoffYr`, so
-    // housingCost was $0 in the payoff year. Fixed behavior: it must charge the
-    // real partial-year amount.
     expect(payoffRow.housingCost).toBeGreaterThan(0);
     expect(payoffRow.housingCost).toBeCloseTo(payoffAmt, -1);
     if (nextRow) expect(nextRow.housingCost).toBe(0);
@@ -387,25 +295,11 @@ describe("buildWithdrawalWaterfall — mortgage payoff-year & extra-payment fix 
     const withExtra = { ...BASE, mortBalance: 300_000, mortRate: 6, mortStart: "2024-01", mortTerm: 30, mortExtra: 500 };
     const ms = mortgageSchedule(withExtra.mortBalance, withExtra.mortRate, withExtra.mortStart, withExtra.mortTerm, withExtra.mortExtra);
     const result = buildWithdrawalWaterfall(withExtra);
-    // Year 0 (retirement year) is a normal full year, nowhere near this 30yr
-    // loan's payoff, so it isolates the extra-payment effect.
     expect(result.smart.rows[0].housingCost).toBeGreaterThan(ms.pmt * 12);
   });
 });
 
-// ─── Guyton-Klinger calibration fix (audit regression) ─────────────────────────
-// Before this fix, the GK band baseline (initWR) was net of SS/income, but the
-// tracked ratio each year used GROSS spending. A retiree whose SS starts at
-// retirement had year-1 cur = sp/port far above initWR = (sp-ss)/port * 1.2,
-// firing the capital-preservation cut every year regardless of portfolio
-// health, and spending death-spiraled toward the floor. Fixed: both sides are
-// the same NET PORTFOLIO NEED, so a healthy portfolio's spending should track
-// plain inflation, not collapse.
-
 describe("buildWithdrawalWaterfall — GK calibration matches income-offset baseline (audit regression)", () => {
-  // Retires AT ssAge with substantial SS, healthy portfolio, endAge far enough
-  // out that yrsRemaining > 15 for the first several years (smart hybrid keeps
-  // using GK, not the Bengen inflation-only fallback).
   const gkProfile = {
     currentAge: 65, retireAge: 65, endAge: 95,
     sp: 80_000, ssAge: 65, ssb: 30_000, ssCola: 2.4,
@@ -426,8 +320,6 @@ describe("buildWithdrawalWaterfall — GK calibration matches income-offset base
     const result = buildWithdrawalWaterfall(gkProfile);
     const early = result.smart.rows.slice(0, 5);
     for (const row of early) {
-      // Well above the floor — the old bug's capital-preservation cut fired
-      // every year, ratcheting spending down toward gkFloor almost immediately.
       expect(row.spending).toBeGreaterThan(gkProfile.gkFloor * 1.3);
     }
   });
@@ -435,9 +327,6 @@ describe("buildWithdrawalWaterfall — GK calibration matches income-offset base
   test("with SS covering a large share of spending, year-over-year spending tracks inflation, not a repeated 10% cut", () => {
     const result = buildWithdrawalWaterfall(gkProfile);
     const rows = result.smart.rows;
-    // A repeated capital-preservation cut compounds ~0.9x(1+inf) each year
-    // (≈ -7.75%); a healthy, correctly-calibrated band should instead grow
-    // at ~ +2.5% (inflation only, since cur stays within the no-adjustment band).
     for (let i = 1; i < 5; i++) {
       const ratio = rows[i].spending / rows[i - 1].spending;
       expect(ratio).toBeGreaterThan(1.0);
@@ -445,13 +334,8 @@ describe("buildWithdrawalWaterfall — GK calibration matches income-offset base
   });
 });
 
-// ─── Summary totals ────────────────────────────────────────────────────────────
-
 describe("buildWithdrawalWaterfall — summary", () => {
   test("naive draws more pretax in early years (pretax-first order confirmed)", () => {
-    // The core invariant of the fix: naive draws pretax BEFORE cash/taxable,
-    // so cumulative fromPretax over the first 5 years must exceed smart's total.
-    // Smart draws cash then taxable in early years, deferring pretax draws.
     const result = buildWithdrawalWaterfall(BASE);
     const naiveEarly = result.naive.rows.slice(0, 5).reduce((s, r) => s + r.fromPretax, 0);
     const smartEarly = result.smart.rows.slice(0, 5).reduce((s, r) => s + r.fromPretax, 0);
@@ -459,28 +343,19 @@ describe("buildWithdrawalWaterfall — summary", () => {
   });
 
   test("smart draws taxable before pretax; naive does not in year 1", () => {
-    // Smart order: cash -> taxable -> pretax. In year 1 smart taps taxable to fill need.
-    // Naive order: pretax -> cash -> taxable. In year 1 naive takes from pretax first,
-    // so taxable is untouched until pretax is exhausted.
     const result = buildWithdrawalWaterfall(BASE);
     const s0 = result.smart.rows[0];
     const n0 = result.naive.rows[0];
-    expect(s0.fromTaxable).toBeGreaterThan(0);   // smart uses taxable in year 1
-    expect(n0.fromTaxable).toBe(0);              // naive does not touch taxable yet
+    expect(s0.fromTaxable).toBeGreaterThan(0);
+    expect(n0.fromTaxable).toBe(0);
   });
 
   test("naive finalPretax = 0 (exhausted); smart retains pretax balance", () => {
-    // Aggressive early pretax draws in naive should deplete the account before endAge,
-    // while smart's bracket-capped approach leaves a residual pretax balance.
-    // smile:false keeps the depletion comparison about DRAW ORDER — the spending
-    // smile makes every plan cheaper, which is enough to stop naive exhausting.
     const result = buildWithdrawalWaterfall({ ...BASE, smile: false });
     expect(result.naive.finalPretax).toBe(0);
     expect(result.smart.finalPretax).toBeGreaterThan(0);
   });
 });
-
-// ─── v1.1.0.30: bracket targets 10/32/35/37 + GK/Bengen hybrid ─────────────────
 
 describe("buildWithdrawalWaterfall — full bracket-target coverage (v1.1.0.30)", () => {
   test("'10' target caps pretax draws below the '22' target (no silent 22% fallback)", () => {
@@ -491,13 +366,9 @@ describe("buildWithdrawalWaterfall — full bracket-target coverage (v1.1.0.30)"
   });
 
   test("'32' target allows more pretax than '24' (previously both fell back to 22)", () => {
-    // Big spend forces the cascade deep into pretax once cash/taxable deplete,
-    // so the 24% ceiling binds in later years while 32% still has room.
     const p = { ...BASE, sp: 400_000, gkFloor: 260_000, gkCeiling: 540_000 };
     const t24 = buildWithdrawalWaterfall({ ...p, withdrawalBracketTarget: "24" });
     const t32 = buildWithdrawalWaterfall({ ...p, withdrawalBracketTarget: "32" });
-    // First year the 24% cap binds, both runs still hold identical balances
-    // (behavior was identical up to that point), so 32% must draw MORE pretax there.
     const cappedRow = t24.smart.rows.find(r => r.pretaxCapReason === "bracket_24");
     expect(cappedRow).toBeDefined();
     const row32 = t32.smart.rows.find(r => r.age === cappedRow.age);
@@ -505,26 +376,16 @@ describe("buildWithdrawalWaterfall — full bracket-target coverage (v1.1.0.30)"
   });
 
   test("spending grows at exactly the inflation rate inside the final 15 years (Bengen phase)", () => {
-    // smile:false isolates this from the Blanchett spending curve, which is an
-    // orthogonal real-spending overlay. With it on, spending deliberately grows
-    // BELOW inflation, which is not what this test is measuring.
-    const result = buildWithdrawalWaterfall({ ...BASE, smile: false }); // endAge 90 → Bengen from age 76
+    const result = buildWithdrawalWaterfall({ ...BASE, smile: false });
     const rows = result.smart.rows;
     const late = rows.filter(r => r.age >= 77 && r.age <= 89);
     for (let i = 1; i < late.length; i++) {
       const ratio = late[i].spending / late[i - 1].spending;
-      expect(ratio).toBeGreaterThan(1.024);  // 2.5% inflation ±rounding
+      expect(ratio).toBeGreaterThan(1.024);
       expect(ratio).toBeLessThan(1.026);
     }
   });
 });
-
-// ─── useJointRmdTable gated by filing status AND the spouse's age ──────────────
-// The joint (Table II) RMD table must only apply when actually filing jointly
-// AND the spouse is more than 10 years younger (IRS Pub 590-B). A stale
-// useJointRmdTable=true left over from switching filingStatus to "single", or
-// with no qualifying younger spouse on the profile, must fall back to the
-// standard Uniform Lifetime table — matching runMC's gate.
 
 describe("buildWithdrawalWaterfall — useJointRmdTable gated by filingStatus (B2 regression)", () => {
   test("filingStatus 'single' + useJointRmdTable=true falls back to Uniform table (matches false)", () => {
@@ -537,9 +398,6 @@ describe("buildWithdrawalWaterfall — useJointRmdTable gated by filingStatus (B
   });
 
   test("filingStatus 'mfj' + useJointRmdTable=true actually uses the Joint table (differs from Uniform)", () => {
-    // Table II is keyed by BOTH ages now, so the profile needs a spouse more
-    // than 10 years younger for the joint lookup to return anything. Two dobs
-    // keep the 15-year gap constant however the calendar year moves.
     const couple = { ...BASE, dob: "1961-01-01", spouse: { enabled: true, dob: "1976-01-01" } };
     const mfjJoint = buildWithdrawalWaterfall({ ...couple, filingStatus: "mfj", useJointRmdTable: true });
     const mfjUniform = buildWithdrawalWaterfall({ ...couple, filingStatus: "mfj", useJointRmdTable: false });
@@ -549,8 +407,6 @@ describe("buildWithdrawalWaterfall — useJointRmdTable gated by filingStatus (B
   });
 
   test("'mfj' + useJointRmdTable=true with a spouse only 5 years younger falls back to Uniform", () => {
-    // The >10-years-younger rule is IRS Pub 590-B's, and jointRmdDivisor
-    // enforces it itself — callers only pass the ages.
     const near = { ...BASE, dob: "1961-01-01", spouse: { enabled: true, dob: "1966-01-01" } };
     const mfjJoint = buildWithdrawalWaterfall({ ...near, filingStatus: "mfj", useJointRmdTable: true });
     const mfjUniform = buildWithdrawalWaterfall({ ...near, filingStatus: "mfj", useJointRmdTable: false });
@@ -560,8 +416,6 @@ describe("buildWithdrawalWaterfall — useJointRmdTable gated by filingStatus (B
   });
 
   test("'mfj' with no qualifying younger spouse + useJointRmdTable=true falls back to Uniform", () => {
-    // BASE has no spouse at all, so the spouse's age is unknown and Table II
-    // cannot be applied — the toggle alone must not switch tables.
     const mfjJoint = buildWithdrawalWaterfall({ ...BASE, filingStatus: "mfj", useJointRmdTable: true });
     const mfjUniform = buildWithdrawalWaterfall({ ...BASE, filingStatus: "mfj", useJointRmdTable: false });
     const rowJoint = mfjJoint.smart.rows.find(r => r.age === 75);
@@ -570,18 +424,11 @@ describe("buildWithdrawalWaterfall — useJointRmdTable gated by filingStatus (B
   });
 });
 
-// ─── Zero-valued inputs are honored (audit backlog item 2: `||` vs `??`) ───────
-// `x || default` treats an explicit 0 as "missing". 0% is a legitimate answer
-// for inflation, other-income growth, and a mortgage rate, so a user's 0 has to
-// reach the math; only an absent field may take the default.
-
 describe("buildWithdrawalWaterfall — explicit zero inputs are honored, not defaulted", () => {
   test("abGrowth 0 freezes other income (old `abGrowth || 3` grew it 3%/yr)", () => {
     const frozen = buildWithdrawalWaterfall({ ...BASE, ab: 50_000, abGrowth: 0, inf: 0 })
       .smart.rows.find(r => r.age === 75);
-    expect(frozen.annuityRental).toBe(50_000);   // 3%/yr for 10 years would be ~67,196
-    // An absent abGrowth must still take the 3.0 default — honoring 0 must not
-    // remove the fallback itself.
+    expect(frozen.annuityRental).toBe(50_000);
     const grown = buildWithdrawalWaterfall({ ...BASE, ab: 50_000, inf: 0 })
       .smart.rows.find(r => r.age === 75);
     expect(grown.annuityRental).toBeGreaterThan(50_000);
@@ -595,15 +442,12 @@ describe("buildWithdrawalWaterfall — explicit zero inputs are honored, not def
       .smart.rows.find(r => r.age === 65);
     expect(at0.housingCost).toBeGreaterThan(0);
     expect(at0.housingCost).toBeLessThan(at65.housingCost);
-    // A missing mortRate still defaults to 6.5.
     const absent = buildWithdrawalWaterfall({ ...BASE, ...loan })
       .smart.rows.find(r => r.age === 65);
     expect(absent.housingCost).toBe(at65.housingCost);
   });
 
   test("inf 0 freezes spending instead of falling back to 2.5%/yr", () => {
-    // Same window as the Bengen-phase test above, with inflation at 0: every
-    // year-over-year spend ratio must be exactly 1 (2.5%/yr would be ~1.025).
     const rows = buildWithdrawalWaterfall({ ...BASE, inf: 0, smile: false }).smart.rows;
     const late = rows.filter(r => r.age >= 77 && r.age <= 89);
     for (let i = 1; i < late.length; i++) {
@@ -612,17 +456,9 @@ describe("buildWithdrawalWaterfall — explicit zero inputs are honored, not def
   });
 });
 
-// ─── Guyton-Klinger 6% inflation pass-through cap (B4 regression) ──────────────
-// Must match App.jsx's GK_INFLATION_CAP = 0.06 exactly — the historical
-// bootstrapped inflation array used by runMC/deterministic engines can exceed
-// 6% (clamped at 7% max), so an uncapped waterfall GK implementation would
-// diverge from the MC/deterministic tabs in high-inflation years.
-
 describe("buildWithdrawalWaterfall — GK 6% inflation pass-through cap (B4 regression)", () => {
   const gkBase = {
     ...BASE,
-    // This suite measures the INFLATION pass-through cap, so the spending smile
-    // (a real-terms lifestyle curve) is switched off to avoid confounding it.
     smile: false,
     sp: 80_000, ssAge: 90, ssb: 0, gkFloor: 20_000, gkCeiling: 400_000,
     accounts: [
@@ -654,15 +490,6 @@ describe("buildWithdrawalWaterfall — GK 6% inflation pass-through cap (B4 regr
   });
 });
 
-// ─── Equity-glide-driven growth (C1 regression) ────────────────────────────────
-// Before this fix, accumulateToRetirement/buildWithdrawalWaterfall hardcoded a
-// flat 7% account-growth rate and never read preRetireEq/postRetireEq at all —
-// two profiles differing only in risk posture produced IDENTICAL Smart
-// Waterfall trajectories, contradicting the Monte Carlo (which correctly reads
-// the glide-path sliders via runMC's portReturn/expectedReturn). BASE pins an
-// explicit gr: 0.07, so these tests clear that override to let the equity
-// sliders actually drive growth.
-
 describe("buildWithdrawalWaterfall — equity-glide-driven growth (C1 regression)", () => {
   const noGr = { ...BASE, gr: undefined };
 
@@ -679,28 +506,19 @@ describe("buildWithdrawalWaterfall — equity-glide-driven growth (C1 regression
   test("two profiles differing only in postRetireEq no longer produce identical trajectories (the reported bug)", () => {
     const low  = buildWithdrawalWaterfall({ ...noGr, postRetireEq: 30 });
     const high = buildWithdrawalWaterfall({ ...noGr, postRetireEq: 70 });
-    // Compare a mid-horizon row's ending total portfolio — by this point enough
-    // compounding has occurred that a flat-7%-for-both bug would show identical
-    // totals, while the real glide-path-driven rates must differ.
     const rowLow  = low.smart.rows[10];
     const rowHigh = high.smart.rows[10];
     expect(rowLow.totalPort).not.toBe(rowHigh.totalPort);
   });
 
   test("gr defaults to expectedReturn(preRetireEq)/expectedReturn(postRetireEq), not a flat 7%, when no explicit gr override is given", () => {
-    // expectedReturn(91) ≈ 7.6%, expectedReturn(70) ≈ 7.34% — both above the
-    // old hardcoded 7.0%, so the very first year's pretax growth (age === retireAge,
-    // which is 65 here, so postGr applies since 65 >= 62) must exceed a flat-7% run.
-    const withGr7   = buildWithdrawalWaterfall({ ...BASE }); // BASE pins gr: 0.07
+    const withGr7   = buildWithdrawalWaterfall({ ...BASE });
     const withGlide = buildWithdrawalWaterfall({ ...noGr, postRetireEq: 70 });
     expect(withGlide.smart.rows[0].pretaxEnd).toBeGreaterThan(withGr7.smart.rows[0].pretaxEnd);
   });
 });
 
 describe("cashRealReturn honored by the waterfall (profile field regression)", () => {
-  // The profile's "Cash return" field drove runMC's cash bucket but the
-  // waterfall hardcoded 4.5% — the user's setting silently did nothing on
-  // the Withdrawal Plan tab. Both engines now read the same field.
   const cashProfile = {
     currentAge: 60, retireAge: 62, endAge: 90,
     sp: 60_000, ssAge: 67, ssb: 30_000, inf: 2.5,
@@ -726,19 +544,6 @@ describe("cashRealReturn honored by the waterfall (profile field regression)", (
   });
 });
 
-// ─── Capital-gains / cost-basis model on taxable brokerage draws (2026-07-18) ──
-// Average-cost basis tracking: taxableBasisPct% of TODAY's taxable balance is
-// cost basis; the rest is unrealized gain, realized proportionally on draws
-// and taxed at LTCG rates (stacked on top of ordinary income) + NIIT, and
-// folded into provisional income (SS taxability) + MAGI (IRMAA).
-
-// sp/balance are deliberately large relative to the standard deduction, and
-// inf: 0 freezes the deduction/bracket inflation, so that even the FIRST
-// year's realized gain clears the standard deduction and lands somewhere
-// inside the LTCG brackets — a modest profile like the other describe blocks'
-// BASE would have every year's combined ordinary+gain income absorbed by a
-// standard deduction that (correctly) keeps inflating for 20+ years, masking
-// the very effect this suite is testing.
 const TAX_HEAVY = {
   currentAge: 65, retireAge: 65, endAge: 80,
   sp: 300_000, ssAge: 90, ssb: 0, ssCola: 0, ab: 0, inf: 0,
@@ -766,9 +571,6 @@ describe("buildWithdrawalWaterfall — capital-gains / cost-basis model", () => 
   });
 
   test("100%-basis account with no portfolio growth realizes ZERO gain — no LTCG/NIIT tax at all (matches pre-feature behavior)", () => {
-    // gr: 0 isolates the LTCG effect from ordinary investment growth: with no
-    // growth AND no accumulation phase (currentAge === retireAge), basis stays
-    // exactly equal to the balance every year, so every draw realizes $0 gain.
     const result = buildWithdrawalWaterfall({ ...TAX_HEAVY, taxableBasisPct: 100, gr: 0 });
     result.smart.rows.forEach(r => {
       expect(r.realizedGain).toBe(0);
@@ -778,8 +580,6 @@ describe("buildWithdrawalWaterfall — capital-gains / cost-basis model", () => 
   });
 
   test("realized gains alone can push Social Security from untaxed to taxed (provisional income includes LTCG)", () => {
-    // No pretax/RMD, no cash — spending is funded by SS + a taxable draw only,
-    // isolating the effect of the realized gain on provisional income.
     const ssProfile = {
       currentAge: 65, retireAge: 65, endAge: 66,
       sp: 80_000, ssAge: 65, ssb: 30_000, ssCola: 2.4, ab: 0, inf: 2.5,
@@ -788,24 +588,13 @@ describe("buildWithdrawalWaterfall — capital-gains / cost-basis model", () => 
       irmaaGuard: false, ssTorpedoGuard: false, rothEmergencyReserve: 0, gr: 0,
       accounts: [{ id: "s1", category: "taxable", balance: 700_000 }],
     };
-    // 100% basis → $0 realized gain → provisional = 0.5×$30K = $15K < $32K MFJ
-    // lower threshold → taxSS = 0.
     const highBasis = buildWithdrawalWaterfall({ ...ssProfile, taxableBasisPct: 100 });
     expect(highBasis.smart.rows[0].taxSS).toBe(0);
-    // 10% basis → ~90% of the draw is realized gain (~$45K on a ~$50K draw) →
-    // provisional = $15K + ~$45K ≈ $60K, well past the $44K MFJ upper threshold
-    // → some SS becomes taxable.
     const lowBasis = buildWithdrawalWaterfall({ ...ssProfile, taxableBasisPct: 10 });
     expect(lowBasis.smart.rows[0].taxSS).toBeGreaterThan(0);
   });
 
   test("basis depletes over time: the realized-gain fraction of each taxable draw is non-decreasing year over year", () => {
-    // No pretax (no RMD/rmdExcess to perturb basis) — every dollar of spending
-    // comes from the taxable bucket, isolating basis-fraction drift. With
-    // average-cost tracking, a proportional draw never changes the basis
-    // fraction by itself; only growth (which grows the balance but not the
-    // basis) shrinks the basis fraction and grows the gain fraction — so the
-    // gain fraction should only ever go up.
     const depletionProfile = {
       currentAge: 65, retireAge: 65, endAge: 85,
       sp: 50_000, ssAge: 67, ssb: 0, ssCola: 2.4, ab: 0, inf: 2.5,
@@ -820,7 +609,7 @@ describe("buildWithdrawalWaterfall — capital-gains / cost-basis model", () => 
       .map(r => r.realizedGain / r.fromTaxable);
     expect(fracs.length).toBeGreaterThan(5);
     for (let i = 1; i < fracs.length; i++) {
-      expect(fracs[i]).toBeGreaterThanOrEqual(fracs[i - 1] - 0.005); // small rounding tolerance
+      expect(fracs[i]).toBeGreaterThanOrEqual(fracs[i - 1] - 0.005);
     }
   });
 });
@@ -848,22 +637,16 @@ describe("buildWithdrawalWaterfall — taxable yield tax drag (taxableYieldPct)"
       irmaaGuard: false, ssTorpedoGuard: false, rothEmergencyReserve: 0, gr: 0,
       accounts: [{ id: "y1", category: "taxable", balance: 1_000_000 }],
     };
-    // spend ($20K) is fully covered by SS ($30K) with no growth, so no draw is
-    // needed — isolates the yield's marginal tax effect from any draw-driven gain.
     const noYield = buildWithdrawalWaterfall({ ...yieldProfile, taxableYieldPct: 0 });
     expect(noYield.smart.rows[0].fromTaxable).toBe(0);
-    expect(noYield.smart.rows[0].taxSS).toBe(0); // provisional = 0.5*30K = 15K < 32K MFJ lower threshold
+    expect(noYield.smart.rows[0].taxSS).toBe(0);
 
-    // $1M * 4% yield = $40K, all ordinary -> provisional = 15K + 40K = 55K,
-    // past the $44K MFJ upper threshold -> some SS becomes taxable.
     const withYield = buildWithdrawalWaterfall({ ...yieldProfile, taxableYieldPct: 4, taxableYieldOrdinaryPct: 100 });
-    expect(withYield.smart.rows[0].fromTaxable).toBe(0); // still no draw — proves the tax is funded without touching the taxable balance
+    expect(withYield.smart.rows[0].fromTaxable).toBe(0);
     expect(withYield.smart.rows[0].taxSS).toBeGreaterThan(0);
   });
 
   test("yield credits taxableBasis — a later draw's realized-gain fraction is smaller than without the yield", () => {
-    // No SS/pretax — every dollar of spending comes from taxable, isolating
-    // the basis-credit effect from any other income source.
     const creditProfile = {
       currentAge: 65, retireAge: 65, endAge: 70,
       sp: 50_000, ssAge: 90, ssb: 0, ssCola: 0, ab: 0, inf: 0,
@@ -922,34 +705,26 @@ describe("runMC — taxable yield tax drag (taxableYieldPct) wiring", () => {
   });
 
   test("a nonzero yield reaches runMC's tax calc — same seed, median terminal portfolio is lower than at 0% yield", () => {
-    // Median terminal value (term.p50) is a more direct, less noisy signal
-    // than the pass/fail `rate` for a small tax-drag effect: more tax paid
-    // every year means less ends up in the portfolio, deterministically,
-    // whereas `rate` is a coarse threshold a wide GK floor/ceiling can absorb.
     const noYield   = runMC({ ...yieldHeavy, taxableYieldPct: 0 }, 90, 500, 42, true);
     const withYield = runMC({ ...yieldHeavy, taxableYieldPct: 4, taxableYieldOrdinaryPct: 60 }, 90, 500, 42, true);
     expect(withYield.term.p50).toBeLessThan(noYield.term.p50);
   });
 });
 
-// ─── Custom account draw order (orderingMode / withdrawalOrder) ──────────────────
-// ─── Other income growth modes (pension fixed-$ COLA vs compounding %) ──────────
 describe("computeOtherIncome — growth modes", () => {
   test("compounding % (default) grows geometrically", () => {
     const inc = [{ annual: 10_000, startYear: 2026, endYear: null, growthMode: "pct", growthRate: 2, taxable: true }];
-    // 3 years elapsed (2029): 10000 × 1.02^3
     expect(computeOtherIncome(inc, 2029).total).toBeCloseTo(10_000 * Math.pow(1.02, 3), 2);
   });
 
   test("fixed $/yr COLA adds a flat amount each year", () => {
     const inc = [{ annual: 30_000, startYear: 2026, endYear: null, growthMode: "fixed", growthAmount: 600, taxable: true }];
-    expect(computeOtherIncome(inc, 2026).total).toBe(30_000);          // start year: no increase yet
-    expect(computeOtherIncome(inc, 2031).total).toBe(33_000);          // +600 × 5 years
+    expect(computeOtherIncome(inc, 2026).total).toBe(30_000);
+    expect(computeOtherIncome(inc, 2031).total).toBe(33_000);
   });
 
   test("growthCapYears caps both modes", () => {
     const fixed = [{ annual: 20_000, startYear: 2026, growthMode: "fixed", growthAmount: 1_000, growthCapYears: 3, taxable: true }];
-    // 10 years elapsed but capped at 3 → 20000 + 1000×3
     expect(computeOtherIncome(fixed, 2036).total).toBe(23_000);
   });
 
@@ -963,30 +738,24 @@ describe("computeOtherIncome — growth modes", () => {
 
 describe("Account draw order — resolveDrawOrder", () => {
   test("Test 1 — resolves each mode and sanitizes custom orders", () => {
-    // default + tax_reactive → the historical sequence
     expect(resolveDrawOrder(undefined)).toEqual(["cash", "taxable", "pretax", "roth"]);
     expect(resolveDrawOrder("tax_reactive")).toEqual(["cash", "taxable", "pretax", "roth"]);
     expect(resolveDrawOrder("pretax_first")).toEqual(["pretax", "cash", "taxable", "roth"]);
-    // custom passes through when it's a full valid permutation
     expect(resolveDrawOrder("custom", ["taxable", "cash", "pretax", "roth"]))
       .toEqual(["taxable", "cash", "pretax", "roth"]);
-    // sanitize: drop dupes + invalid tokens, append any missing bucket
     expect(resolveDrawOrder("custom", ["roth", "roth", "bogus", "cash"]))
       .toEqual(["roth", "cash", "taxable", "pretax"]);
-    // partial order is completed in canonical order
     expect(resolveDrawOrder("custom", ["pretax"]))
       .toEqual(["pretax", "cash", "taxable", "roth"]);
   });
 });
 
 describe("Account draw order — engine behavior", () => {
-  const def = buildWithdrawalWaterfall(BASE); // no orderingMode → default
+  const def = buildWithdrawalWaterfall(BASE);
 
   test("Test 2 — default equals explicit tax_reactive (regression lock)", () => {
     const tr = buildWithdrawalWaterfall({ ...BASE, orderingMode: "tax_reactive" });
     expect(tr.smart.rows).toEqual(def.smart.rows);
-    // The naive ("No plan") scenario is order-invariant — orderingMode must never
-    // touch it (it's the fixed comparison baseline).
     expect(tr.naive.rows).toEqual(def.naive.rows);
     const custom = buildWithdrawalWaterfall({
       ...BASE, orderingMode: "custom", withdrawalOrder: ["roth", "pretax", "taxable", "cash"],
@@ -1000,10 +769,9 @@ describe("Account draw order — engine behavior", () => {
     });
     const c0 = cust.smart.rows[0];
     const d0 = def.smart.rows[0];
-    expect(d0.fromCash).toBeGreaterThan(0);            // default drains cash first
-    expect(c0.fromCash).toBe(0);                       // custom leaves cash untouched first year
+    expect(d0.fromCash).toBeGreaterThan(0);
+    expect(c0.fromCash).toBe(0);
     expect(c0.fromTaxable).toBeGreaterThan(d0.fromTaxable);
-    // Sum invariant: order changes WHERE, not roughly HOW MUCH — both fund ~ the year's spend.
     const total = (r) => r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth + r.rmd;
     expect(total(c0)).toBeGreaterThanOrEqual(BASE.sp * 0.8);
     expect(total(d0)).toBeGreaterThanOrEqual(BASE.sp * 0.8);
@@ -1012,7 +780,7 @@ describe("Account draw order — engine behavior", () => {
   test("Test 4 — Roth reserve is honored even when Roth is dragged to first", () => {
     const rothFirst = buildWithdrawalWaterfall({
       ...BASE, orderingMode: "custom", withdrawalOrder: ["roth", "cash", "taxable", "pretax"],
-      rothEmergencyReserve: 10_000_000, // reserve >> balance → Roth fully protected
+      rothEmergencyReserve: 10_000_000,
     });
     rothFirst.smart.rows.forEach((r) => expect(r.fromRoth).toBe(0));
   });
@@ -1024,7 +792,6 @@ describe("Account draw order — engine behavior", () => {
     };
     const capped   = buildWithdrawalWaterfall({ ...common, withdrawalBracketTarget: "12" });
     const uncapped = buildWithdrawalWaterfall({ ...common, withdrawalBracketTarget: "off" });
-    // The 12% ceiling limits the year-1 pre-tax draw even though pre-tax is drained first.
     expect(capped.smart.rows[0].fromPretax).toBeLessThan(uncapped.smart.rows[0].fromPretax);
     expect(String(capped.smart.rows[0].pretaxCapReason)).toMatch(/^bracket_|^irmaa_ceil$/);
   });
@@ -1054,26 +821,10 @@ describe("Account draw order — runMC honors it (cross-engine, shared resolver)
       expect(r).toBeGreaterThanOrEqual(0);
       expect(r).toBeLessThanOrEqual(1);
     }
-    // Draw order is wired into runMC (same seed, deterministic) — draining
-    // tax-free Roth first is no better than the tax-reactive default.
-    // Tolerance of 1pp: with paired stock/bond/inflation sampling (v1.2.105)
-    // the two strategies both sit at ~99% for this fixture, so per-seed noise
-    // can flip the ordering by a fraction of a percent OR make the two
-    // strategies coincidentally equal. The prior `.not.toBe(...)` assertion
-    // demanded strict inequality, but that is a claim about seed-specific
-    // noise, not about the strategy semantics. The semantic claim
-    // ("roth-first is not meaningfully better") holds up to tolerance and is
-    // all we assert.
     expect(rothFirst.rate).toBeLessThanOrEqual(taxReactive.rate + 0.01);
   });
 });
 
-// ─── Cash-category crash immunity (was the "3-Bucket strategy" block) ────────
-// v1.2.129 removed the "three_bucket" ordering mode. What it claimed to add —
-// protecting a cash bucket from a crash — was already true of the cash
-// CATEGORY in every mode, which is why turning the mode on measured as a
-// no-op. That pre-existing guarantee is what these tests pin down, so a future
-// change to the growth step can't quietly put cash back on the equity path.
 describe("cash-category money is immune to an equity crash sequence", () => {
   const BASE_MC = {
     currentAge: 65, retireAge: 65, endAge: 75, port: 0, contrib: 0, inf: 2.5,
@@ -1093,7 +844,7 @@ describe("cash-category money is immune to an equity crash sequence", () => {
       { id: "b1", category: "cash", name: "Cash moat", balance: 500_000, bucket: 1 },
     ],
   };
-  const PLAN_AGE = 75; // 10 years from retireAge 65 — matches Math.pow(1.03, 10)
+  const PLAN_AGE = 75;
   const N = 60, SEED = 7;
   const lastRow = (r) => r.pcts[r.pcts.length - 1];
 
@@ -1103,11 +854,6 @@ describe("cash-category money is immune to an equity crash sequence", () => {
   });
 
   test("a removed orderingMode value degrades to tax_reactive, not to something else", () => {
-    // Belt-and-braces for the enum removal: a profile saved before v1.2.129
-    // still carries orderingMode "three_bucket". migrateOrderingMode rewrites
-    // it at load, but an unmigrated object reaching an engine directly must
-    // still behave exactly like the default rather than silently taking some
-    // other branch.
     const stale = runMC({ ...CASH_ONLY, orderingMode: "three_bucket" }, PLAN_AGE, N, SEED, true);
     const dflt  = runMC({ ...CASH_ONLY, orderingMode: "tax_reactive" }, PLAN_AGE, N, SEED, true);
     expect(stale.pcts).toEqual(dflt.pcts);
@@ -1121,9 +867,6 @@ describe("cash-category money is immune to an equity crash sequence", () => {
   });
 
   test("bucket tags do not change the forecast at all", () => {
-    // The point of the removal: buckets organize money for planning, they do
-    // not alter what the simulation grows or draws. Same accounts, different
-    // tags, identical result.
     const asB2 = { ...CASH_ONLY, accounts: [{ ...CASH_ONLY.accounts[0], bucket: 2 }] };
     const asB3 = { ...CASH_ONLY, accounts: [{ ...CASH_ONLY.accounts[0], bucket: 3 }] };
     const a = runMC(asB2, PLAN_AGE, N, SEED, true);
@@ -1132,10 +875,6 @@ describe("cash-category money is immune to an equity crash sequence", () => {
   });
 });
 
-// ─── Item 11: rental/annuity single model (REQUIREMENTS §13.2 #11) ────────────
-// The waterfall used to hardcode 1.03 growth, ignore abGrowth/abEndYear, inflate
-// propIncome on a separate CPI track, and stop ALL rental income at age 80.
-
 describe("waterfall rental income — one model, matching the other engines", () => {
   const RENTAL = { ...BASE, ab: 12_000, abGrowth: 3, endAge: 90, abEndYear: null };
 
@@ -1143,7 +882,6 @@ describe("waterfall rental income — one model, matching the other engines", ()
     const rows = buildWithdrawalWaterfall(RENTAL).smart.rows;
     const at81 = rows.find(r => r.age === 81);
     expect(at81).toBeTruthy();
-    // Would have been exactly 0 before the fix, for every profile planning past 80.
     expect(at81.annuityRental).toBeGreaterThan(0);
   });
 
@@ -1153,14 +891,11 @@ describe("waterfall rental income — one model, matching the other engines", ()
     const age75slow = slow.find(r => r.age === 75).annuityRental;
     const age75fast = fast.find(r => r.age === 75).annuityRental;
     expect(age75fast).toBeGreaterThan(age75slow);
-    // 10 years of compounding at 6% vs 3% on 12,000: 21,490 vs 16,127.
     expect(age75fast).toBe(Math.round(12_000 * Math.pow(1.06, 10)));
     expect(age75slow).toBe(Math.round(12_000 * Math.pow(1.03, 10)));
   });
 
   test("ab and propIncome are summed first, then grown on ONE basis", () => {
-    // At the retirement year the growth factor is exactly 1.0, so year 0 must be
-    // the plain sum. Previously propIncome was inflated by CPI separately here.
     const rows = buildWithdrawalWaterfall({
       ...RENTAL, ab: 8_000, propIncome: 10_000,
     }).smart.rows;
@@ -1174,25 +909,13 @@ describe("waterfall rental income — one model, matching the other engines", ()
     expect(after.every(r => r.annuityRental === 0)).toBe(true);
   });
 
-  // abEndYear: 0 is what an exported profile carries when the field was never
-  // touched (App.jsx's `assumptions.abEndYear ?? null` only substitutes for
-  // null/undefined, so a stored 0 passes straight through). App.jsx's own
-  // gates (`p.abEndYear && calYear > p.abEndYear`, used by runMC/runStress
-  // and simulateDeterministicWithStrategy) treat that as "no cutoff" — this
-  // engine must match, or the Withdrawal tab and PrintReport show $0 rental
-  // for every profile that never set the field while the MC/Stress success
-  // rate correctly counts it.
   test("abEndYear: 0 (the untouched-field default) does NOT stop the stream", () => {
     const rows = buildWithdrawalWaterfall({ ...RENTAL, abEndYear: 0 }).smart.rows;
     expect(rows.every(r => r.annuityRental > 0)).toBe(true);
   });
 });
 
-// ─── Item 10 / ENG-8: IRMAA guard caps the Roth conversion ────────────────────
-
 describe("ENG-8 — irmaaGuard caps the Step-6.5 Roth conversion", () => {
-  // Age 64 so the age>=63 gate is open; big pretax balance so the bracket ceiling
-  // (24%) is well above the IRMAA tier-1 ceiling and the guard is what binds.
   const CONV = {
     ...BASE,
     currentAge: 64, retireAge: 64, ssAge: 70, ssb: 0,
@@ -1214,7 +937,6 @@ describe("ENG-8 — irmaaGuard caps the Step-6.5 Roth conversion", () => {
 
   test("guard ON keeps MAGI at or under the IRMAA tier-1 ceiling", () => {
     const on = buildWithdrawalWaterfall({ ...CONV, irmaaGuard: true }).smart.rows[0];
-    // Tier-1 MFJ 2026 = 218,000 per TAX_REFERENCE.md, indexed to the row's year.
     const ceiling = 218_000 * Math.pow(1 + 2.5 / 100, on.yr - new Date().getFullYear());
     expect(on.magi).toBeLessThanOrEqual(Math.round(ceiling) + 1);
   });
@@ -1227,8 +949,6 @@ describe("ENG-8 — irmaaGuard caps the Step-6.5 Roth conversion", () => {
   });
 
   test("below the age gate (62) the conversion cap does NOT bind", () => {
-    // age 62 → the 2-year lookback lands at 64, still pre-Medicare, so IRMAA
-    // cannot be charged on it and the guard must not throttle the conversion.
     const young = { ...CONV, currentAge: 62, retireAge: 62 };
     const off = buildWithdrawalWaterfall({ ...young, irmaaGuard: false }).smart.rows[0];
     const on  = buildWithdrawalWaterfall({ ...young, irmaaGuard: true  }).smart.rows[0];
@@ -1236,9 +956,6 @@ describe("ENG-8 — irmaaGuard caps the Step-6.5 Roth conversion", () => {
   });
 
   test("a same-year conversion never moves that same year's own IRMAA charge", () => {
-    // Pins the 2-year-lookback invariant: IRMAA comes from MAGI[age-2], which is
-    // fixed before conversion sizing, so it must be identical with and without a
-    // conversion in the same year.
     const withC = buildWithdrawalWaterfall({ ...CONV, irmaaGuard: false }).smart.rows;
     const noC   = buildWithdrawalWaterfall({ ...CONV, rothConversionTarget: "off" }).smart.rows;
     const y0 = withC[0], n0 = noC[0];
@@ -1246,11 +963,6 @@ describe("ENG-8 — irmaaGuard caps the Step-6.5 Roth conversion", () => {
     expect(y0.irmaa).toBe(n0.irmaa);
   });
 });
-
-// ─── §23: conversion tax must come from REAL buckets ──────────────────────────
-// Previously `taxFunding` was read by NOTHING in this engine: conversion tax always
-// came out of pre-tax whatever the user picked, and "outside cash" implied an
-// unlimited external pot the simulation never tracked. Now taxable → cash → pretax.
 
 describe("Roth conversion tax funding (§23)", () => {
   const CONV = {
@@ -1272,7 +984,6 @@ describe("Roth conversion tax funding (§23)", () => {
     expect(r.conversionTax).toBeGreaterThan(0);
     expect(r.convTaxFromTaxable).toBeGreaterThan(0);
     expect(r.convTaxFromPretax).toBe(0);
-    // Full conversion reaches the Roth when tax is paid from outside it.
     expect(r.convToRoth).toBe(r.conversionAmount);
   });
 
@@ -1291,7 +1002,6 @@ describe("Roth conversion tax funding (§23)", () => {
   });
 
   test("no imaginary money: tax falls back to pre-tax only when real buckets run dry", () => {
-    // Almost no taxable/cash, so there is nothing outside pre-tax to pay with.
     const broke = {
       ...CONV,
       accounts: [
@@ -1304,7 +1014,6 @@ describe("Roth conversion tax funding (§23)", () => {
     const r = y0({ ...broke, taxFunding: "from_taxable" });
     if (r.conversionAmount > 0) {
       expect(r.convTaxFromTaxable).toBe(0);
-      // It must come from somewhere real — pre-tax — never from nowhere.
       expect(r.convTaxFromPretax).toBeGreaterThan(0);
       expect(r.convTaxFromTaxable + r.convTaxFromCash + r.convTaxFromPretax)
         .toBeCloseTo(r.conversionTax, 0);
@@ -1318,9 +1027,6 @@ describe("Roth conversion tax funding (§23)", () => {
   });
 
   test("totalWithdrawal includes the conversion's own tax-funding draws, not just spending's", () => {
-    // Regression for the Year-by-Year table bug: Total Draw used to omit
-    // convTaxFrom* entirely, so the row's own displayed columns didn't sum
-    // to the row's own displayed Total Draw in a conversion year.
     const r = y0({ ...CONV, taxFunding: "from_taxable" });
     expect(r.conversionAmount).toBeGreaterThan(0);
     expect(r.convTaxFromTaxable).toBeGreaterThan(0);
@@ -1331,12 +1037,6 @@ describe("Roth conversion tax funding (§23)", () => {
   });
 
   test("from_conversion withholding does NOT double-subtract the withheld tax from pretax (regression)", () => {
-    // Found by a from-scratch engine audit: the pretax balance update used to
-    // subtract convAmt AND convTaxFromPretax in withholding mode, but the
-    // withheld tax is carved OUT of convAmt, not a second draw — runMC
-    // already did this correctly, buildWithdrawalWaterfall.js didn't.
-    // No spending draw from pretax (cash covers spending) isolates the
-    // conversion's own bucket math from the spending-driven fromPretax term.
     const isolated = {
       ...CONV, sp: 20_000,
       accounts: [
@@ -1347,20 +1047,14 @@ describe("Roth conversion tax funding (§23)", () => {
       ],
     };
     const r = y0({ ...isolated, taxFunding: "from_conversion" });
-    expect(r.fromPretax).toBe(0); // cash covers the $20K spend, not pretax
+    expect(r.fromPretax).toBe(0);
     expect(r.conversionAmount).toBeGreaterThan(0);
-    expect(r.convTaxFromPretax).toBeGreaterThan(0); // withheld from the transfer
+    expect(r.convTaxFromPretax).toBeGreaterThan(0);
     expect(r.pretaxEnd).toBe(Math.round((1_000_000 - r.conversionAmount) * (1 + CONV.gr)));
   });
 });
 
 describe("NJ Social Security state-tax exemption (regression)", () => {
-  // Found by a from-scratch engine audit: NJ fully exempts Social Security
-  // from state tax (CLAUDE.md rule 4), but neither engine ever subtracted
-  // taxSS from the state tax base — every NJ profile with taxable SS had
-  // state tax overstated. A household whose ONLY income is Social Security
-  // is the cleanest exact case: NJ owes $0 state tax on it, full stop,
-  // regardless of the exact SS-taxability percentage in play.
   const ssOnlyNJ = {
     currentAge: 67, retireAge: 67, endAge: 68,
     sp: 30_000, ssAge: 67, ssb: 40_000, ssCola: 0, ab: 0, inf: 0,
@@ -1377,7 +1071,7 @@ describe("NJ Social Security state-tax exemption (regression)", () => {
 
   test("runMC: SS-only income owes $0 NJ state tax (cross-engine)", () => {
     const mc = runMC({ ...ssOnlyNJ, port: 200_000, preRetireEq: 70, postRetireEq: 60 }, 68, 1, 1, true);
-    expect(mc.rate).toBeGreaterThanOrEqual(0); // smoke: run completes
+    expect(mc.rate).toBeGreaterThanOrEqual(0);
   });
 
   test("NJ state tax on mixed SS + pretax income equals progTax(taxableIncome minus taxSS)", () => {
@@ -1387,34 +1081,19 @@ describe("NJ Social Security state-tax exemption (regression)", () => {
         { id: "r1", category: "roth",   balance: 2_000_000 },
       ] };
     const r = buildWithdrawalWaterfall(mixed).smart.rows[0];
-    expect(r.stateTax).toBeGreaterThan(0); // real pretax income is taxed
-    // r.taxableIncome (federal, includes taxSS) minus r.taxSS is exactly the
-    // NJ base the fix computes — reconstructed from the row's own reported
-    // figures rather than a fully independent NJ-bracket replica here, since
-    // the bracket table itself is covered by a separate audit/test already.
+    expect(r.stateTax).toBeGreaterThan(0);
     expect(r.stateTax).toBe(6_448);
     expect(r.taxableIncome - r.taxSS).toBe(164_684);
   });
 });
 
 describe("Bracket-room under-fill fix — Golden Window (regression)", () => {
-  // Found by a from-scratch engine audit: the Step-4 bracket-room formula
-  // clamped (ordFloor - deduction) at 0 before subtracting it from the
-  // ceiling, so in a year with NO other ordinary income (early retirement,
-  // pre-SS/RMD — the "Golden Window" this app is built to exploit), the
-  // unused standard deduction (~$32-35K MFJ) never widened the room, only
-  // the raw bracket ceiling did. Step 6.5's conversion-room formula (same
-  // file) already did this correctly — this now matches it.
   const golden = {
     currentAge: 60, retireAge: 60, endAge: 61,
-    sp: 500_000, ssAge: 90, ssb: 0, ssCola: 0, ab: 0, inf: 0, // no SS yet
+    sp: 500_000, ssAge: 90, ssb: 0, ssCola: 0, ab: 0, inf: 0,
     filingStatus: "mfj", stateOfResidence: "FL", twoHousehold: false,
     gkFloor: 100_000, gkCeiling: 600_000, withdrawalBracketTarget: "12",
     irmaaGuard: false, ssTorpedoGuard: false, rothEmergencyReserve: 0, gr: 0,
-    // A large Roth balance absorbs whatever the bracket cap leaves
-    // unfunded — without it, Step 5 (Roth) is empty and the engine falls
-    // back to an uncapped pretax overflow rather than fail the plan, which
-    // would mask the bracket cap this test is isolating.
     accounts: [
       { id: "p1", category: "pretax", balance: 2_000_000 },
       { id: "r1", category: "roth",   balance: 2_000_000 },
@@ -1422,22 +1101,14 @@ describe("Bracket-room under-fill fix — Golden Window (regression)", () => {
   };
 
   test("Step 4 room includes the unused standard deduction when other ordinary income is $0", () => {
-    // 2026 MFJ: 12% bracket ceiling $100,800 + std deduction $32,200 (under
-    // 65, no senior bonus) = $133,000 true room. The old bug capped this at
-    // $100,800 — the deduction never carried over. sp is set far above both
-    // figures so the bracket cap, not spending need, is the binding constraint.
     const r = buildWithdrawalWaterfall(golden).smart.rows[0];
     expect(r.pretaxCapReason).toBe("bracket_12");
-    expect(r.fromPretax).toBeGreaterThan(100_800); // proves the deduction carried over
-    expect(r.fromPretax).toBe(133_000); // exact match to the hand-calculated true room
+    expect(r.fromPretax).toBeGreaterThan(100_800);
+    expect(r.fromPretax).toBe(133_000);
   });
 });
 
 describe("taxFunding value contract (§23 follow-up)", () => {
-  // The Profile dropdown emits "from_conv", NOT "from_conversion". A mismatch here
-  // fails SILENTLY — withholding never fires and the tax quietly comes from the
-  // buckets instead. That is the exact class of bug this work exists to kill, so
-  // pin the value the UI actually sends.
   const CONV2 = {
     ...BASE, currentAge: 65, retireAge: 65, ssAge: 70, ssb: 0, sp: 40_000,
     rothConversionTarget: "22", irmaaGuard: false,
@@ -1462,25 +1133,14 @@ describe("taxFunding value contract (§23 follow-up)", () => {
   test("runMC honors taxFunding too — MC must not describe a different plan", () => {
     const mcA = runMC({ ...CONV2, taxFunding: "from_taxable" }, 90, 120, 42, true);
     const mcB = runMC({ ...CONV2, taxFunding: "from_conv" },    90, 120, 42, true);
-    // Same seed, same everything except who pays the tax → results must differ.
     const endA = mcA.pcts?.[mcA.pcts.length - 1]?.p50;
     const endB = mcB.pcts?.[mcB.pcts.length - 1]?.p50;
     expect(typeof endA).toBe("number");
     expect(typeof endB).toBe("number");
-    // Withholding shrinks what reaches the Roth, so terminal wealth must differ.
     expect(endA).not.toBe(endB);
   });
 });
 
-/**
- * Engine fields that the UI needs in order to explain a number.
- *
- * Every field below was computed by the engine and rendered NOWHERE, which is the
- * defect class u/garylapointe found twice: a table that invites reconciliation and
- * then fails it. `rmdSurplus` was worse than missing — the UI recomputed it with a
- * DIFFERENT formula (omitting fed + state tax from the offset), so the "reinvested
- * into Taxable" figure on screen was overstated in every year with income tax.
- */
 describe("disclosure: engine emits what the UI must explain", () => {
   const P = {
     currentAge: 70, retireAge: 70, endAge: 92,
@@ -1496,16 +1156,10 @@ describe("disclosure: engine emits what the UI must explain", () => {
   test("rmdSurplus is emitted, not left for the UI to re-derive", () => {
     const rows = buildWithdrawalWaterfall(P).smart.rows;
     rows.forEach(r => expect(typeof r.rmdSurplus).toBe("number"));
-    // This fixture must actually force RMD beyond need, or the test proves nothing.
     expect(rows.some(r => r.rmdSurplus > 0)).toBe(true);
   });
 
   test("rmdSurplus diverges from the old UI formula in CONVERSION years", () => {
-    // The tooltip's `rmd - (needFromPort + irmaaFull)` agreed exactly in ordinary
-    // years — irmaaFull is fed + state + IRMAA, despite the name. It broke only
-    // when a Roth conversion ran: irmaaFull is the WITH-conversion tax, while the
-    // engine's offset excludes conversion tax (funded separately via convTaxFrom*),
-    // so the tooltip subtracted it twice and understated the reinvestment.
     const rows = buildWithdrawalWaterfall({ ...P, rothConversionTarget: "24" }).smart.rows;
     const stale = (r) => Math.max(0, r.rmd - ((r.needFromPort || 0) + (r.irmaaFull || 0)));
 
@@ -1513,8 +1167,6 @@ describe("disclosure: engine emits what the UI must explain", () => {
     expect(convYear).toBeDefined();
     expect(convYear.rmdSurplus).toBeGreaterThan(stale(convYear));
 
-    // And it must still agree where there is no conversion — otherwise this
-    // "fix" would be silently changing correct numbers.
     rows.filter(r => !(r.conversionAmount > 0))
         .forEach(r => expect(Math.abs(r.rmdSurplus - stale(r))).toBeLessThan(2));
   });
@@ -1536,28 +1188,18 @@ describe("disclosure: engine emits what the UI must explain", () => {
     }).smart.rows;
     const hit = withEvent.find(r => r.eventCost > 0);
     expect(hit).toBeDefined();
-    // The label must ride along, or the UI can name the cost but not the cause.
     expect(hit.eventLabels).toContain("New roof");
     expect(hit.needFromPort).toBeGreaterThan(0);
   });
 });
 
-// ─── §28.1 — a pension holder's income covers his spending ────────────────────
-//
-// u/garylapointe, 2026-07-28: with his $44,668 pension counted, income is
-// ~$81,400, "which is more than enough to cover the taxes listed there and does
-// not need to take the Roth." v1.2.52 fixed the DISPLAY (the pension appeared in
-// no column), but nobody had verified the DRAW. If a Roth draw is real here it is
-// an engine bug and outranks every display fix in §28.
-//
-// These lock the behaviour either way, so the question cannot go unverified again.
 describe("§28.1 — income-covered retiree does not touch Roth", () => {
   const GARY = {
     ...BASE,
     sp: 60_000,
-    ssb: 36_732,          // ~$3,061/mo
-    ssAge: 65,            // already claiming at retirement
-    smile: false,         // isolate the funding question from the spending curve
+    ssb: 36_732,
+    ssAge: 65,
+    smile: false,
     housingType: "none",
     otherIncomes: [
       { id: "pen", name: "Pension", annual: 44_668, startYear: 2000,
@@ -1569,8 +1211,6 @@ describe("§28.1 — income-covered retiree does not touch Roth", () => {
     const r = buildWithdrawalWaterfall(GARY).smart.rows[0];
     const income = (r.fixedIncomeTotal || 0) + (r.otherIncome || 0);
     expect(income).toBeGreaterThan(r.spending);
-    // Whatever leaves the portfolio must be small relative to income — it is the
-    // tax bill on the pension/SS, not a spending shortfall.
     const drawn = r.fromCash + r.fromTaxable + r.fromPretax + r.fromRoth;
     expect(drawn).toBeLessThan(income * 0.35);
   });
@@ -1579,8 +1219,6 @@ describe("§28.1 — income-covered retiree does not touch Roth", () => {
     const rows = buildWithdrawalWaterfall(GARY).smart.rows;
     rows.forEach(r => {
       const cheaperLeft = r.cashEnd > 1 || r.taxableEnd > 1;
-      // Roth is the last resort. If cash or taxable money is still on the books,
-      // a Roth draw means the waterfall skipped a cheaper bucket.
       if (cheaperLeft) expect(r.fromRoth).toBe(0);
     });
   });
@@ -1590,18 +1228,10 @@ describe("§28.1 — income-covered retiree does not touch Roth", () => {
   });
 });
 
-// ─── "irmaa" as the TARGET (not just the guard) ───────────────────────────────
-// BRACKET_CEILINGS_*.irmaa holds the tier-1 MAGI threshold, but it was used as a
-// TAXABLE-INCOME ceiling and only corrected when irmaaGuard && age >= 63. Picking
-// the IRMAA-Safe target with the guard off therefore overshot tier 1 by the
-// standard deduction. Both sizing sites now apply the correction themselves.
-
 describe('"irmaa" as the target caps at tier 1 without the guard', () => {
-  // Tier-1 MFJ 2026 = 218,000, indexed to the row's year (same as ENG-8 above).
   const tier1 = (row) => Math.round(218_000 * Math.pow(1 + 2.5 / 100, row.yr - new Date().getFullYear()));
 
   test("Step 6.5: rothConversionTarget 'irmaa', guard off, MAGI lands on tier 1", () => {
-    // Big pretax pot + a 24%-style ceiling well above tier 1, so the cap is what binds.
     const p = {
       ...BASE,
       currentAge: 64, retireAge: 64, ssAge: 70, ssb: 0,
@@ -1620,9 +1250,6 @@ describe('"irmaa" as the target caps at tier 1 without the guard', () => {
   });
 
   test("Step 5: withdrawalBracketTarget 'irmaa', guard off, MAGI lands on tier 1", () => {
-    // Fixed income (SS + annuity) plus a draw, so the pretax cap binds while cash
-    // still funds the rest — no essential-spending override, and no realized gain
-    // entering MAGI (that separate gap is deliberately out of scope here).
     const p = {
       ...BASE,
       currentAge: 70, retireAge: 70, ssAge: 67, ssb: 60_000, ab: 60_000,

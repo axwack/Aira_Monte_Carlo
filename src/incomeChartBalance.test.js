@@ -2,11 +2,6 @@ import { incomeExpenseRow, notEnteredKeys } from "./App";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 import { INCOME_LABELS } from "./engine/incomeLabels";
 
-// The Income and Expense charts must have the same total every year: every
-// dollar that comes in (income, savings draws, conversions) goes out as
-// spending, tax, or money put back into the accounts. Each case below was a
-// real gap: RMDs, one-off expenses, conversion tax paid from an account, the
-// 72(t) penalty, inflows and surplus income deposited back.
 const Y = new Date().getFullYear();
 const INCOME = ["Social Security", "Annuity/Rental", "Pension/Other", INCOME_LABELS.savingsDrawdown, "One-Off Income", "Roth Conversion"];
 const EXPENSE = ["General/Living", "Mortgage/Housing", "Medical", "Long-Term Care", "Other Expenses", "Income Tax", "Capital Gains Tax", "Moved to Roth", "Saved to Accounts"];
@@ -51,10 +46,6 @@ describe("Income and Expense charts balance every year", () => {
     expect(gaps(plan(o))).toEqual([]);
   });
 
-  // Was an engine bug (fixed by the engine lane, ds41platform): when income
-  // covered core spending, buildWithdrawalWaterfall still drew housing and
-  // carveouts in full, so the draw exceeded every outgoing. baseNeed now nets
-  // income against the total outlay, so this balances like the rest.
   test("income above core spending", () => {
     expect(gaps(plan({ sp: 40_000, gkFloor: 30_000, gkCeiling: 60_000, ssb: 60_000, rothConversionTarget: "off" }))).toEqual([]);
   });

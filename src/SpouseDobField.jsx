@@ -18,11 +18,6 @@ const INPUT_STYLE = {
   width: 130,
 };
 
-/**
- * Spouse DOB field using the same guarded date behavior as the primary DOB.
- * The parent remains the source of truth; this component only presents the
- * field and rejects incomplete/impossible dates through DateField.
- */
 export default function SpouseDobField({ value, onSet, hint }) {
   return (
     <div>

@@ -23,7 +23,7 @@ test("savings row is labelled as including 401(k)/IRA draws", () => {
 test("labels and captions", () => {
   expect(SRC).toContain('label="Original term (yrs)"');
   expect(SRC).toContain("Current life phase");
-  expect(SRC).not.toMatch(/ℹ️<\/span>\}>/); // Median Final Balance uses the standard icon
+  expect(SRC).not.toMatch(/ℹ️<\/span>\}>/);
 });
 
 test("real-estate headers are right-aligned over their inputs", () => {

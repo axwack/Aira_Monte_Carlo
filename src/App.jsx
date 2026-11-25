@@ -97,11 +97,9 @@ import { STRATEGY_LABELS, resolveStrategy, migrateWithdrawalStrategy, migrationN
 import { _defaultBucket, accountBucketPieces, expandAccountBuckets, clampBucket, bucketFractionsByCategory, bucketBalancesForRow, computeBucket1Runway } from "./engine/buckets.js";
 import { dollarBasisLabel, retirementBasisYear, deflate, mcMedianAtAge, selectPortfolioAtAge, selectTerminalMeanAtAge } from "./engine/mcSelectors.js";
 import { taxableYieldSplit } from "./engine/taxableYield.js";
-// One declaration of every figure's arithmetic, rendered here and enforced by
-// provenance.test.js. Never inline a formula string — it would drift from the test.
 import { formulaFor } from "./provenance.js";
 import { track } from "./analytics.js";
-import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED /*, AiraAITab — hidden pending test */ } from "./ai/ai-analysis.js";
+import { solveRetirementDate, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, AiUsageBadge, BILLING_ENABLED } from "./ai/ai-analysis.js";
 import { CreditBalanceBadge, CreditPackModal, RecoveryLinkModal, RestoreAccessModal, useStripeReturn, useRestoreReturn, useCreditBalance, useReportUnlocked, useReportCapability , getStoredJWT, MIN_CREDITS_TO_RUN, LOW_BALANCE_WARN_AT, getStoredRecoveryLink } from "./billing/credits.js";
 import { AdminPanel, useOwnerVerified } from "./billing/admin-panel.js";
 import PrintReport from "./report/PrintReport.jsx";
@@ -111,105 +109,12 @@ import { jointRmdDivisor } from './data/jointRmdTable.js';
 import { STATE_BRACKETS } from './data/stateBrackets.js';
 import { irmaaTableFor } from './data/irmaa2027.js';
 
-// Dropped DM Sans / DM Mono. Down to one text family (Inter) and one mono
-// family (JetBrains Mono), both pulled in through the same @import in the CSS
-// constant below. We used to load two text fonts and two mono fonts for the
-// same job (body text, numeric readout), which just meant two places to keep
-// in sync for no reason. The landing hero classes `.lp-age` and `.lp-val` were
-// the only things still using DM Mono; they're on JetBrains Mono now too.
-
-/** This application is  Aira - Freedom Financial Forecaster
- * Here is some reference information: 
- * IRS Publication 590‑B (PDF) – see Appendix B (pages 46‑60)  https://www.irs.gov/pub/irs-pdf/p590b.pdf
- * Capital Group's joint life table – excerpt for ages 55‑80 https://www.capitalgroup.com/individual/service-and-support/rmd/how-to-calculate/irs-joint-life-table.html
-
-🔢 Please see the disclaimer below. This is an app to help you with retirement planning but not financial advice.
- * 
- */
 
 
-/**
- * Age from a date of birth, by calendar birthday. `asOf` defaults to today, so
- * `ageFromDob(dob)` is "age now" and `ageFromDob(dob, someDate)` is "age on that
- * date". Returns null for a missing/unparseable input so callers choose their
- * own fallback.
- *
- * Please don't re-inline this. At one point we had four separate copies of
- * this logic. Two divided elapsed milliseconds by 365.25 days, which is off by
- * a full year from the calendar answer if you're near your birthday, so the
- * engine and the Profile panel could report different ages for the same
- * person. The other two hand-rolled the birthday adjustment for checkpoint
- * dates, and one of those compared "month-day" as plain strings ("9-5" <
- * "10-1" is true as strings but wrong as dates).
- *
- * On top of that, some views read the stored `currentAge` field instead of
- * deriving it from `dob`, so editing a birthday updated the simulation but
- * left the portfolio fan chart and MC band table showing the old age —
- * including the band table's calendar-year column, quietly shifted off by
- * the difference.
- *
- * `dob` is the source of truth, always derive from it. Stored `currentAge` is
- * only a fallback for imported profiles that don't have a dob.
- */
-/* Lives in src/engine/ages.js now — the engines need it too and can't import
- * from App.jsx without creating a cycle. Re-exported at the bottom of this
- * file so every existing caller and ageDerivation.test.js still work. Please
- * don't add a local copy back — we had four different ways of computing age
- * here before and two of them were wrong. */
-
-/**
- * Parse a date that represents a calendar day (a birthday, a checkpoint date),
- * not a specific instant in time.
- *
- * `new Date("1970-07-27")` parses as UTC midnight, but getFullYear/getMonth/
- * getDate all read it back in local time. West of UTC that lands on the
- * previous day: for a US user that birthday becomes July 26th, and a dob of
- * "1970-01-01" becomes 1969-12-31 — shifting the derived age by a year for
- * the rest of that year. So date-only strings get split and rebuilt with the
- * local-time constructor instead. Anything that already carries a time (or is
- * already a Date object) passes through untouched.
- *
- * Lives in src/engine/ages.js now, same reason as ageFromDob above.
- */
-
-/**
- * Age input bounds, one definition, used by every age control.
- *
- * These used to be hardcoded in three separate places and didn't agree: the
- * sidebar retire-age slider allowed 50-68 while the wizard's input for the
- * same value allowed 50-100, so typing 70 in the Profile and then touching
- * the slider would silently snap it back to 68 — meaning you couldn't model
- * delaying retirement to 70, which is the most common Social Security
- * optimization there is. The landing hero also capped current age at 62 on
- * its own, locking out anyone already retired.
- *
- * These ranges cover real users at both ends: FIRE at 45, delayed SS at 70+,
- * and people who are already retired and just want to know how it's going.
- */
-
-
-/**
- * Where feedback goes.
- *
- * This replaced an EmailJS integration that broke twice in one week for the
- * same reason: its three REACT_APP_EMAILJS_* keys get inlined by CRA at build
- * time, and `.env*` is gitignored, so those values only ever existed on one
- * machine. A fresh clone and production both shipped `undefined` and the
- * button just failed — once telling the user to go open a browser console.
- *
- * A mailto has no keys, no build-time config, no npm dependency, and no public
- * key sitting in the bundle for someone to spam through. It can't break on a
- * new machine because there's nothing to configure. The real tradeoff is that
- * mailto needs the visitor to have a mail client set up, so the address is
- * also shown as selectable text in the dialog for anyone on webmail.
- */
 const FEEDBACK_EMAIL = "tiredtoretire@gmail.com";
-// Public profile links live in about.js only (pre-commit guard keeps handles out of other files).
 const aboutLink = (label) => ABOUT_ME.links.find((l) => l.label === label)?.url || "";
 
 const APP_VERSION = "1.3.0";
-// One line only. Release notes live in CHANGELOG.md (GitHub, not deployed).
-// Changing this resets cached Monte Carlo results for every user.
 export const BUILD_TAG = `v${APP_VERSION} - Home screen: the inputs come first`;
 export const BUILD_TIME = "2026-10-04T12:00:00Z";
 if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
@@ -218,95 +123,33 @@ if (typeof window !== "undefined" && !window.__AIRA_BUILD_LOGGED__) {
   console.log(`[AiRA] build ${BUILD_TAG} · ${BUILD_TIME} · v${APP_VERSION}`);
 }
 
-// Simulation + guardrail constants, all in one place. UI text interpolates
-// these instead of retyping the numbers, so changing a value here changes the
-// engine and every label that mentions it at the same time.
-export const MC_PATHS = 3000;            // Monte Carlo stochastic paths
-export const STRESS_PATHS = 2000;        // 2000–2012 sequence-risk stress paths
-export const MC_PATHS_LABEL = MC_PATHS.toLocaleString();      // "3,000"
-export const STRESS_PATHS_LABEL = STRESS_PATHS.toLocaleString(); // "2,000"
-// Bounds for the user-adjustable path count (MC tab → ⚙ Advanced Settings).
-// The floor keeps a percentile band statistically meaningful; the ceiling is
-// where a main-thread run stops feeling instant.
+export const MC_PATHS = 3000;
+export const STRESS_PATHS = 2000;
+export const MC_PATHS_LABEL = MC_PATHS.toLocaleString();
+export const STRESS_PATHS_LABEL = STRESS_PATHS.toLocaleString();
 export const MC_PATH_MIN = 500;
 export const MC_PATH_MAX = 20000;
-// The window of the Damodaran arrays in engine/expectedReturn.js: 1928–2025,
-// 98 paired years. The Monte Carlo samples whole calendar years out of this
-// range, so the range bounds are a property of the DATA, not a preference —
-// they live here as one pair of constants rather than being retyped into the
-// slider limits, the validation, and the modal copy.
 export const SAMPLE_START_YEAR = 1928;
 export const SAMPLE_END_YEAR = 2025;
 export const SAMPLE_YEARS = SAMPLE_END_YEAR - SAMPLE_START_YEAR + 1;
-// Monte Carlo score bands. rateColor() and riskLabel() used to each hardcode
-// these four numbers separately, and the explainer sentence had a fifth,
-// unrelated one baked in — that's how five copies of "what counts as a good
-// score" end up disagreeing. Same values as before, just one owner now.
 export const MC_BAND_LOW_RISK  = 0.90;
 export const MC_BAND_MODERATE  = 0.80;
 export const MC_BAND_ELEVATED  = 0.70;
 export const MC_BAND_HIGH      = 0.60;
-// Band COLOUR and band LABEL, hoisted to module scope so every surface that
-// colours a success figure reads the same thresholds. They used to be a local
-// `rateColor`/`riskLabel` inside MCTab while MCBandTable carried its OWN inline
-// `0.9 / 0.75` literals in `fundedColor` — two definitions of "what counts as a
-// good score", which is the drift the MC_BAND_* constants were introduced to
-// stop (see the comment above them). One definition, two consumers.
 const rateColor = (r) =>
   r >= MC_BAND_LOW_RISK ? "var(--positive)" : r >= MC_BAND_MODERATE ? "var(--positive)" : r >= MC_BAND_ELEVATED ? "var(--accent-gold)" : r >= MC_BAND_HIGH ? "var(--chart-7)" : "var(--negative)";
-// Short form of the band, for a per-row badge where `riskLabel`'s sentence
-// would not fit. Keys off the same constants, so a badge and the headline it
-// summarises can never disagree about which band a rate is in.
 const bandLabel = (r) =>
   r >= MC_BAND_LOW_RISK ? "Excellent" : r >= MC_BAND_MODERATE ? "Good" : r >= MC_BAND_ELEVATED ? "Concerning" : "Critical";
-// Not a band edge, on purpose — this is the "generally considered a solid
-// plan" rule of thumb from the planning literature, separate from our own
-// severity cutoffs above.
 export const MC_SOLID_PLAN_RATE = 0.85;
 
-// Semantic accent palette for info modals — ONE color per KIND of idea, so a
-// modal's tint tells you its domain at a glance. Pass as InfoModal `accent`.
-// The header template (icon badge + underline + hairline) is uniform in the
-// InfoModal shell; only the hue changes by meaning. Tokens (not raw hex) so
-// dark/light theming carries through; the shell routes every alpha through
-// withAlpha(), so a var() token never gets string-concatenated into bad CSS.
 export const INFO_ACCENT = {
-  method:   "var(--accent-teal)",    // how it works / neutral explanation
-  money:    "var(--chart-2)",               // balances, portfolio values, percentiles
-  tax:      "var(--accent-purple)",  // tax, IRMAA, brackets, Roth conversions
-  positive: "var(--positive)",       // success, probability, "good" outcomes
-  risk:     "var(--accent-gold)",    // warnings, landmines, caution
+  method:   "var(--accent-teal)",
+  money:    "var(--chart-2)",
+  tax:      "var(--accent-purple)",
+  positive: "var(--positive)",
+  risk:     "var(--accent-gold)",
 };
 
-/**
- * PillTab — the app's one row-of-choices idiom.
- *
- * WHY: three groups of pills had each grown their own active state, and a fourth
- * lived in `.mbtn.on`. Four ways to say "this one is selected" means a user has
- * to learn the gesture again on every screen, and it means every new control
- * starts by copying whichever neighbour the author last looked at.
- *
- * THE TREATMENT (Vincent, 2026-09-25): bare text on a shared hairline, active
- * item marked by a 2px accent underline — the same language as the top-level
- * tabs and the Monte Carlo Simulation/Guardrails row. An earlier pass gave these
- * a tinted surface + coloured border box; on screen that read as a wall of
- * buttons competing with the tabs above them, and the boxes made every row look
- * like a form control rather than navigation. The accent colour carries the
- * state; no fill and no border box.
- *
- * WHAT IS STILL NOT UNIFIED, ON PURPOSE: the accent colour. Some rows encode
- * meaning in their hue and flattening it would delete information —
- *   · Bracket Fill: green = safe bracket, amber = caution, red = 32%+ / IRMAA risk
- *   · Tax Room:     amber marks figures anchored to REAL entered income, versus
- *                   the optimizer's projections elsewhere in the row
- * So `accentFor` is a prop and each caller passes what the choice MEANS. It now
- * paints the active item's text AND its underline, which is the only colour the
- * row needs.
- *
- * `size` exists because the Analysis row is primary navigation (7 items, wide
- * spacing) while the compact rows sit inside a settings card; forcing one size
- * on both is what made the Analysis row look like a form last time.
- */
 function PillTab({
   options, value, onChange, accentFor,
   defaultAccent = INFO_ACCENT.method,
@@ -323,15 +166,9 @@ function PillTab({
       aria-label={ariaLabel}
       style={{
         display: "flex",
-        // No gap: the items sit flush on the hairline like real tabs, separated
-        // by their own padding. `marginBottom:-1` on each item drops it onto the
-        // rule so the active underline replaces the grey line instead of
-        // floating above it.
         gap: 2,
         flexWrap: "wrap",
         alignItems: "stretch",
-        // The full-width hairline the underline sits on — this is the line that
-        // makes a row of labels read as a tab bar.
         borderBottom: "1px solid var(--divider)",
         ...style,
       }}
@@ -369,28 +206,11 @@ function PillTab({
   );
 }
 
-// Guyton-Klinger guardrails, as % of core spend
 export const GK_FLOOR_DEFAULT_PCT = 65;export const GK_CEILING_DEFAULT_PCT = 135;
-// Dollar fallbacks used only when a profile predates the % fields
 export const GK_FLOOR_FALLBACK = 48_000;
 export const GK_CEILING_FALLBACK = 115_000;
-// "Today" as a calendar year, for age→year conversion and inflation-factor
-// indexing (e.g. Math.pow(1+rate, yr - CURRENT_YEAR)). Same pattern as
-// buildWithdrawalWaterfall.js's BASE_YEAR and buildRothExplorer.js's
-// ROTH_BASE_YEAR — computed dynamically so it never goes stale like a
-// hardcoded year would. Don't use this for the FED_BRACKETS_2026_* /
-// IRMAA_2026 table names or their dollar figures though — those are the real
-// IRS 2026 bracket numbers and need to stay pinned to 2026.
 const CURRENT_YEAR = new Date().getFullYear();
 
-// Theme system.
-// Runtime accessor for chart series colors. Recharts wants literal color
-// strings on props (`stroke="var(--accent)"`), so a chart that hardcodes those
-// literals ignores the CSS token system entirely. `CHART_PALETTE.accent` reads
-// the current value of `--accent` off the document root at call time, so once
-// a chart switches `stroke="var(--accent)"` to `stroke={CHART_PALETTE.accent}`
-// it follows the theme. Calling `getComputedStyle` on every render is cheap
-// (native, cached by the browser). Guarded for SSR / test.
 export const CHART_PALETTE = {
   get accent()       { return readCssVar('--accent'); },
   get teal()         { return readCssVar('--accent-teal'); },
@@ -410,68 +230,16 @@ function readCssVar(name) {
 }
 
 
-// SP500 / BONDS live in engine/expectedReturn.js now, one source of truth for
-// the historical bootstrap. Both arrays are Damodaran's year-aligned
-// 1928-2025 series (98 pairs), so portReturn() can draw one shared random
-// index and keep the real stock/bond correlation intact, including
-// flight-to-quality in crashes (2008 SP -36.55% pairs with Bond +20.10%). The
-// old arrays had a length mismatch (99 vs 51) and were duplicated across
-// files — see engine/expectedReturn.js header for details.
-// SP500 and BONDS are imported at the top of this file alongside expectedReturn().
-
-// INFL is imported from engine/expectedReturn.js too now — extended to
-// 1928-2025 (98 entries, aligned to SP500/BONDS), and no longer clamped. The
-// old `Math.max(0.5, Math.min(7.0, r))` clamp was cutting off real deflation
-// years (1932: -9.9%) along with real inflation spikes (1974: 11%, 1980:
-// 13.5%, 2022: 8%). See the file header there for the source. Dropped the
-// clamp for the same accuracy reasons as the stock/bond arrays above.
-
-// GK paper: cap CPI pass-through in Guyton-Klinger withdrawal adjustments at 6%.
-// Distinct from the INFL data clamp above (which bounds the historical CPI bootstrap).
 const GK_INFLATION_CAP = 0.06;
-// The other three GK paper numbers, named so the engine and the Advanced
-// Settings disclosure read from ONE definition. They used to be inline
-// literals in guytonKlingerWithdrawal, which meant the "20% band → ±10%"
-// sentence in the UI was a second, independently-typed copy of the rule — the
-// classic drift setup (the explainer and the engine disagreeing after one
-// edit). Percentages, so `* 100` at the display site.
-const GK_BAND_PCT = 0.20;    // WR vs initial WR that triggers an adjustment
-const GK_ADJUST_PCT = 0.10;  // size of the raise/cut when the band is crossed
-const GK_LONGEVITY_YEARS = 15; // no capital-preservation cut with ≤ this many years left
+const GK_BAND_PCT = 0.20;
+const GK_ADJUST_PCT = 0.10;
+const GK_LONGEVITY_YEARS = 15;
 
 const SEQ_2000_2012 = [
   -0.091, -0.119, -0.221, 0.287, 0.109, 0.048, 0.158, 0.055, -0.37, 0.265,
   0.151, 0.021, 0.16,
 ];
 
-// expectedReturn() (the expected-value helper used by computeInitialWR, the
-// deterministic schedule, and the Fan Chart) lives in ./engine/expectedReturn.js
-// now, so buildWithdrawalWaterfall.js, buildRothExplorer.js, and
-// rothConversionPlan.js can all share the same formula instead of each
-// hardcoding a flat 7%. SP500/BONDS stay here unchanged because they feed the
-// stochastic bootstrap draws in portReturn/bootstrapDraw below — a different
-// consumer than expectedReturn().
-
-/**
- * Initial withdrawal rate diagnostic.
- * Projects the portfolio to retirement using real (inflation-adjusted) return,
- * so the result stays in today's dollars.
- * initDrawEst is the net portfolio need at retirement — gross spend minus SS/
- * rental/other income, plus housing/carveouts. It's the same quantity the GK
- * engines (runMC/simulateDeterministicWithStrategy/buildWithdrawalWaterfall)
- * calibrate their own initWR against, so this sidebar number matches what the
- * engines actually use. Housing/carveout/otherIncome terms are evaluated at
- * the retirement calendar year but left un-inflated (today's-dollars mortgage
- * map value / raw carveout annual amounts), to stay consistent with the rest
- * of this helper's today's-dollars framing.
- * initDrawEst also carries one-off expenses planned for the retirement year (a
- * renovation): that is what year one really draws. steadyWRpct leaves them out;
- * it is the plan's ongoing rate, the one guardrails and headlines should judge.
- * Returns { initWRpct, steadyWRpct, projectedPort, initDrawEst, steadyDraw, oneOffAtRetire,
- * baseSpend, ssAtRetire, rentalAtRetire, otherIncAtRetire, housingAtRetire, carveoutAtRetire,
- * annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } so callers can show the math.
- * Accepts either a profile shape (values from RetirementPanel) or the assembled params shape.
- */
 export function computeInitialWR(p) {
   const currentAge = p.currentAge || 35;
   const retireAge = p.retireAge || 65;
@@ -488,8 +256,6 @@ export function computeInitialWR(p) {
     (yrsToRetire > 0 && accumRate > 0
       ? annualAdds * (growth(yrsToRetire) - 1) / accumRate
       : annualAdds * yrsToRetire);
-  // p.sp must be the total combined household spending (US + out-of-country).
-  // The params useMemo already sums these; raw-profile callers must sum before calling.
   const baseSpend = p.sp || 0;
   const ssAtRetire = computeHouseholdSS(p, retireAge);
   const rentalAtRetire = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
@@ -506,8 +272,6 @@ export function computeInitialWR(p) {
   const carveoutAtRetire = (p.carveouts || []).reduce((sum, c) => {
     return sum + (retireCalYear <= (c.endYear || 9999) ? (c.annual || 0) : 0);
   }, 0);
-  // Nominal for the retirement year, then deflated to today's dollars like projectedPort.
-  // Doing it this way also handles events entered in future dollars (inflate: false).
   const oneOffAtRetire = computeCashFlowEvents(p.cashFlowEvents, retireCalYear, inflRate * 100, CURRENT_YEAR).total
     / Math.pow(1 + inflRate, Math.max(0, retireCalYear - CURRENT_YEAR));
   const steadyDraw = Math.max(0, baseSpend - ssAtRetire - rentalAtRetire - otherIncAtRetire) + housingAtRetire + carveoutAtRetire;
@@ -522,15 +286,11 @@ export function computeInitialWR(p) {
 
 function getStateBrackets(state, isMFJ) {
   const entry = STATE_BRACKETS[state];
-  if (!entry) return null; // no state income tax
+  if (!entry) return null;
   return isMFJ ? entry.mfj : entry.single;
 }
 
 
-// One label map for the whole app, including the print report — see
-// engine/withdrawalStrategies.js. It covers retired strategy ids too, so a
-// migration notice or an old checkpoint can still name what the user used to
-// have. Only LIVE_STRATEGIES shows up in the picker.
 export const getStrategyLabel = (strategy) => STRATEGY_LABELS[strategy] || strategy;
 
 export const getStrategyDescription = (strategy) => {
@@ -545,108 +305,45 @@ export const getStrategyDescription = (strategy) => {
   return descriptions[resolveStrategy(strategy)] || descriptions.gk;
 };
 
-// Profiles.
-// Personal data lives in AiRA_Profile.json, never hardcoded here.
-// Use Export to save your data, Import to load it back.
-
-// _defaultBucket / accountBucketPieces / expandAccountBuckets moved to
-// ./engine/buckets.js (imported above) so buildWithdrawalWaterfall.js and
-// bucketStrategy.js can share the same account→bucket partition instead of
-// each growing their own copy.
 export { _defaultBucket, accountBucketPieces, expandAccountBuckets, clampBucket };
 
 export const BLANK_PROFILE = {
   label: "My Plan",
   name: "",
   dob: "",
-  dobIsEstimate: false,        // true when dob was invented from the landing's age slider
-  sex: "blended",              // "male" | "female" | "blended"
+  dobIsEstimate: false,
+  sex: "blended",
   stateOfResidence: "",
   currentAge: 50,
   retireAge: 60,
   endAge: 85,
   port: 1_000_000,
   contrib: 20,
-  employerContrib: 0,           // annual employer contribution (fixed dollar amount, e.g. 401k match + profit sharing)
-  // Savings that aren't tax-advantaged. Kept separate from `contrib` because
-  // the destination bucket changes the tax outcome decades later: taxable
-  // dollars get drawn at LTCG rates against a cost basis (waterfall Step 3),
-  // while pre-tax dollars are ordinary income and also grow the RMD base at
-  // rmdStartAge. Folding brokerage savings into the 401(k) field would quietly
-  // turn one into the other.
-  taxableContrib: 0,            // annual after-tax brokerage/savings contribution ($/yr)
-  rothContrib: 0,               // annual Roth IRA contribution ($/yr, direct or backdoor)
+  employerContrib: 0,
+  taxableContrib: 0,
+  rothContrib: 0,
   inf: 2.5,
-  sp: 10_000,                   // US-domestic annual spending (subject to state tax when applicable)
-  spOutOfCountry: 0,            // additive out-of-country annual spending (never state-taxed)
-  spSpendOutofState: 0,         // legacy field — kept for profile-load migration; superseded by spOutOfCountry
+  sp: 10_000,
+  spOutOfCountry: 0,
+  spSpendOutofState: 0,
   portfolioGoal: 1_000_000,
   ssAge: 67,
   ssb: 24_000,
-  ssPia: 0,                    // own FRA/PIA annual amount — only needed if claiming before/after FRA
-  // Spousal Social Security: additive, off by default so every existing
-  // single-person profile still computes exactly the same as before this
-  // feature existed.
+  ssPia: 0,
   spouse: {
     enabled: false,
-    // Spouse's date of birth. This is what makes per-person modeling
-    // possible: every engine walks one `age`, the primary's, so without this
-    // the spouse's Social Security claim age got compared against the
-    // primary's age and a younger spouse ended up collecting years early.
-    // Blank means the spouse is assumed to be the same age as the primary,
-    // which is exactly the old behavior, so no saved profile changes until
-    // this gets filled in.
     dob: "",
-    ssb: 0,                    // spouse's own annual benefit at their claim age
-    ssAge: 67,                 // spouse's own claim age, independent of the primary's
-    ssPia: 0,                  // spouse's own FRA/PIA annual amount, for the spousal top-up
-    // The spouse's own age at a modeled first death (the widow's-penalty
-    // scenario). null means it's not modeled, so filing status stays constant
-    // exactly like before. This is one user-entered age rather than a
-    // mortality draw on purpose — that keeps it a deterministic event in a
-    // known year instead of a variable threaded through 3,000 Monte Carlo paths.
+    ssb: 0,
+    ssAge: 67,
+    ssPia: 0,
     deathAge: null,
-    // Whose age `deathAge` is. "spouse" (default) means the spouse dies and
-    // the primary survives, the only case the model used to handle. "primary"
-    // means the higher earner dies first, which is often more realistic since
-    // they're frequently the older partner. This isn't just a label — the
-    // survivor's identity decides the plan horizon, Medicare start, the
-    // age-65 add-on, the RMD clock, and the survivor's own FRA. Default
-    // preserves every existing plan.
     firstToDie: "spouse",
-    // Survivor benefit.
-    // Deemed filing doesn't apply to survivor benefits, so the survivor's own
-    // retirement benefit and the survivor benefit are independent — either
-    // can be claimed first and switched later. That flexibility doesn't exist
-    // anywhere else in Social Security, and it only works if we track a
-    // separate claim age. null means claim as soon as eligible (60, or the
-    // death year if later).
     survivorClaimAge: null,
-    // Optional: the survivor benefit as SSA quotes it at that claim age,
-    // already reduced. Supplying it skips our reduction schedule entirely —
-    // if you have the real number, use it. 0/blank means derive it from the
-    // deceased's check or PIA instead.
     survivorBenefitAtClaim: 0,
-    // Per-person contributions.
-    // The household used to have one set of contribution fields running for
-    // `retireAge - currentAge` — one retirement date for two people.
-    // Splitting the amounts doesn't actually change anything (all three
-    // engines just sum into buckets, so 24,500 + 18,000 in one field is
-    // identical to two fields); splitting the stop date is the whole point.
-    // One partner retiring at 62 while the other works to 67 used to lose —
-    // or invent — five years of one salary's savings, compounded to retirement.
-    //
-    // Only job-bound streams live here. Brokerage savings stay
-    // household-level (no employment link, no statutory cap), and the HSA
-    // stays household-level too because its stop rule is Medicare
-    // enrollment, not retirement.
-    //
-    // null/0 defaults reproduce the pre-feature result exactly for every
-    // saved profile, same regression-safe idiom as spouse.dob above.
-    retireAge: null,        // their retirement age, on their own clock. null = same as primary
-    contrib: 0,             // their pre-tax 401(k)/403(b)/457(b) deferral
-    employerContrib: 0,     // their employer match / profit sharing
-    rothContrib: 0,         // their Roth IRA
+    retireAge: null,
+    contrib: 0,
+    employerContrib: 0,
+    rothContrib: 0,
   },
   ab: 0,
   useAb: true,
@@ -657,55 +354,42 @@ export const BLANK_PROFILE = {
   employerStartDate: "",
   gkFloor: 48_000,
   gkFloorSpendOutofState: 48_000,
-  gkFloorPct: GK_FLOOR_DEFAULT_PCT,    // floor as % of core spend
+  gkFloorPct: GK_FLOOR_DEFAULT_PCT,
   gkTarget: 72_000,
   gkCeiling: 100_000,
-  gkCeilingPct: GK_CEILING_DEFAULT_PCT, // ceiling as % of core spend
-  // Mortgage
+  gkCeilingPct: GK_CEILING_DEFAULT_PCT,
   mortBalance: 0,
   mortRate: 5.0,
   mortStart: "2020-01",
   mortTerm: 30,
   mortExtra: 0,
   mortPI: 0,
-  // Real estate (not in liquid portfolio)
   properties: [
     { id:"p1", label:"Primary Residence", value:0, mortgage:0, income:0 },
     { id:"p2", label:"Property 2",        value:0, mortgage:0, income:0 },
   ],
-  // NEW:
-  filingStatus: "mfj",          // "mfj" | "single" — drives federal brackets & std deduction
-  reGrowthRate: 3.0,            // annual home/RE appreciation rate (%)
-  useJointRmdTable: false,      // default: use Uniform Lifetime table
-  cashRealReturn: 3.0,          // default return for cash/HYSA (percent)
-  // ── Monte Carlo simulation mechanics (edited in the MC tab's ⚙ Advanced
-  // Settings, not in Profile). Both defaults reproduce the previous
-  // behaviour EXACTLY: MC_PATHS paths over the whole 1928–2025 history. That
-  // matters — an absent field must not change any existing result, so
-  // resolveSampleRange() returns null (= sample the full arrays) unless the
-  // user actually narrows the window.
-  mcPaths: MC_PATHS,            // stochastic paths per run
+  filingStatus: "mfj",
+  reGrowthRate: 3.0,
+  useJointRmdTable: false,
+  cashRealReturn: 3.0,
+  mcPaths: MC_PATHS,
   mcRangeStart: SAMPLE_START_YEAR,
   mcRangeEnd: SAMPLE_END_YEAR,
-  taxableBasisPct: 70,          // % of TODAY's taxable-brokerage balance that is cost basis (rest = unrealized LTCG)
-  taxableYieldPct: 0,           // annual yield (%) taxed every year regardless of withdrawal — default off, 0 reproduces pre-feature behavior exactly
-  taxableYieldOrdinaryPct: 50,  // % of that yield taxed as ordinary income (interest); rest at qualified-dividend/LTCG rates
-  // Expense model
-  housingType: "own",           // "own" | "rent" | "none"
-  annualRent: 0,                // annual rent if housingType === "rent" (today's dollars)
-  carveouts: [],                // [{id, label, annual, endYear}] Other Expenses (HOA, Insurance, etc.) in today's dollars; endYear = null for indefinite
-  // Planned one-off / periodic costs — see computeCashFlowEvents in engine/expenses.js.
-  // [{id, label, year, amount, recurEveryYears, recurUntilYear, inflate, deferrable}]
+  taxableBasisPct: 70,
+  taxableYieldPct: 0,
+  taxableYieldOrdinaryPct: 50,
+  housingType: "own",
+  annualRent: 0,
+  carveouts: [],
   cashFlowEvents: [],
-  spSchedule: null,             // [{year, amount}] explicit per-year core spend from a detailed CSV import; null = use sp + strategy
-  budgetLines: [],              // rows typed into the inline budget editor (Plan inputs > Spending & Expenses)
-  spImportMeta: null,           // { mode, fileName, importedAt, total|years, essentialTotal } — display only, for the import summary card
-  rothConversionTarget: "off",  // "off" | "12" | "22" | "24" | "irmaa"
-  fafsaGuard: false,            // cap Roth conversions during college aid years — set true + fafsaEndYear to activate
-  fafsaEndYear: null,           // last year to cap at 12% (FAFSA lookback window); e.g. 2034
-  cssEndYear: null,             // last year to cap at 22% (CSS Profile window)
-  conversionOverrides: [],      // [{id, year, amount}] manual per-year conversion amounts — populated in user's exported JSON
-  // Account breakdown (feeds port total)
+  spSchedule: null,
+  budgetLines: [],
+  spImportMeta: null,
+  rothConversionTarget: "off",
+  fafsaGuard: false,
+  fafsaEndYear: null,
+  cssEndYear: null,
+  conversionOverrides: [],
   accounts: [
     { id: "1", category: "pretax", name: "401(k)",      balance: 0, bucket: 2 },
     { id: "2", category: "roth",   name: "Roth IRA",    balance: 0, bucket: 3 },
@@ -713,60 +397,36 @@ export const BLANK_PROFILE = {
     { id: "4", category: "hsa",    name: "HSA",         balance: 0, bucket: 3 },
     { id: "5", category: "cash",   name: "Cash/Savings",balance: 0, bucket: 1 },
   ],
-  // MC assumptions
   abReliability: 80,
-  otherIncomes: [],   // [{ id, name, annual, startYear, endYear, growthMode:"pct"|"fixed", growthRate, growthAmount, growthCapYears, taxable }]
+  otherIncomes: [],
   abGrowth: 3.0,
   ssCola: 2.4,
   preRetireEq: 91,
   postRetireEq: 70,
-  // null → the glidepath shifts at retireAge (previous behaviour). Set it to
-  // separate "when I de-risk" from "when I stop working" — e.g. 90/10 until 67
-  // while retiring at 62. See engine/glidepath.js.
   glidepathSwitchAge: null,
   fixedWithdrawalRate: 4.0,
   hcShockAge: 72,
   hcProb: 3.5,
   hcMin: 70_000,
   hcMax: 130_000,
-  checkpoints: [],          // each: { id, date, value, note }
+  checkpoints: [],
   earlyRetireTarget: 2_000_000,
   withdrawalStrategy: "gk",
-  withdrawalBracketTarget: "22",  // "10"|"12"|"22"|"24"|"irmaa"|"off" — pretax ceiling in smart mode
-  irmaaGuard: false,              // cap pretax draws below IRMAA tier-1 ceiling (ages 63+)
-  ssTorpedoGuard: false,          // show SS torpedo landmine warnings in Withdrawal Plan tab
-  rothEmergencyReserve: 0,        // never draw Roth below this $ floor
-  // IRC 72(t) exceptions to the 10% early-distribution tax. Both default off:
-  // the penalty is the law, and an exception is something the user has to
-  // affirm. Only asked when retireAge < 59.5 (see the Early Retirement card).
-  ruleOf55: false,                // separated from employer at 55+, plan not rolled over
-  sepp72t: false,                 // a 72(t) SEPP is running
-  sepp72tStartAge: null,          // series start age; must run to max(start+5, 59.5)
-  orderingMode: "tax_reactive",   // "tax_reactive"|"custom"|"pretax_first" — which bucket drains first (orthogonal to strategy + guardrails)
-  withdrawalOrder: ["cash", "taxable", "pretax", "roth"], // used only when orderingMode === "custom"
-  // Bucket 1's target size, in years of spending — caps the yield sweep
-  // above: once Bucket 1 reaches this size, Bucket 2 stops losing return to
-  // it. Same concept BucketsTab already shows as its own (currently
-  // localStorage-only) b1Years config; this profile-level default is what
-  // the return engines read until that gets unified.
+  withdrawalBracketTarget: "22",
+  irmaaGuard: false,
+  ssTorpedoGuard: false,
+  rothEmergencyReserve: 0,
+  ruleOf55: false,
+  sepp72t: false,
+  sepp72tStartAge: null,
+  orderingMode: "tax_reactive",
+  withdrawalOrder: ["cash", "taxable", "pretax", "roth"],
   b1Years: 2,
-  // b2Years: not yet read by any engine (only b1Years caps the yield
-  // sweep) — promoted alongside b1Years so BucketsTab's two "years of
-  // spending" steppers share one source of truth instead of one living in
-  // the profile and the other in localStorage for no principled reason.
   b2Years: 5,
   geminiApiKey: "",
-  geminiModel: "",  // empty = use ai-analysis.js DEFAULT_GEMINI_MODEL
+  geminiModel: "",
 };
 
-/* Real-world probability analogies, grouped into success-rate bands (min =
- * band floor in %). Several entries per band feed the revolving display so
- * users get varied context for what their number actually means. Every `stat`
- * is the analogy's own real-world probability, stated approximately but
- * honestly — users should be able to sanity-check the comparison, not just
- * take the vibe. (Fixed two that were wrong: "calling heads three times in a
- * row" is 12.5%, not the 87.5% chance of NOT flipping three heads in a row —
- * and the 4-year college graduation rate is about 46%, nowhere near 80%.) */
 const ANALOGUES = [
   {
     min: 95,
@@ -922,7 +582,6 @@ const ANALOGUES = [
 ];
 
 
-// Math core
 function mulberry32(seed) {
   return () => {
     seed |= 0;
@@ -944,81 +603,32 @@ function clip(v, lo, hi) {
 function bootstrapDraw(arr, rand) {
   return arr[Math.floor(rand() * arr.length)];
 }
-/**
- * Resolve the user's historical-sampling window into array offsets.
- *
- * Returns `null` when the window is the full history, which is the signal for
- * every sampler to take its ORIGINAL `Math.floor(rand() * SP500.length)` path.
- * That is deliberate: the full range must reproduce the pre-feature behaviour
- * exactly — same rand() call count, same index mapping — so existing seeds,
- * saved results and the whole test suite are unaffected by this feature
- * existing. Only a genuinely narrowed window changes the indexing.
- *
- * Bounds come from SAMPLE_START_YEAR/SAMPLE_END_YEAR (the length of the
- * Damodaran arrays), never from a literal, and a reversed or out-of-range
- * input falls back to the full history rather than throwing.
- */
 function resolveSampleRange(p) {
   const lo = Number(p?.mcRangeStart);
   const hi = Number(p?.mcRangeEnd);
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
   const start = Math.max(0, Math.round(lo) - SAMPLE_START_YEAR);
   const end   = Math.min(SP500.length - 1, Math.round(hi) - SAMPLE_START_YEAR);
-  if (end <= start) return null;                 // degenerate → full history
-  if (start === 0 && end === SP500.length - 1) return null;  // full → fast path
+  if (end <= start) return null;
+  if (start === 0 && end === SP500.length - 1) return null;
   return { start, count: end - start + 1, lo: SAMPLE_START_YEAR + start, hi: SAMPLE_START_YEAR + end };
 }
-// One shared index pick, so portReturn and drawYearBundle can't drift apart on
-// what "sample a year" means (rule 8's spirit: one owner for one decision).
 function sampleYearIndex(rand, range) {
   return range ? range.start + Math.floor(rand() * range.count)
                : Math.floor(rand() * SP500.length);
 }
 function portReturn(age, rand, preRetireEq, postRetireEq, switchAge, range = null) {
-  // The glidepath switches at `glidepathSwitchAge`, defaulting to the user's
-  // retirement age. Callers pass the already-resolved age from
-  // resolveGlidepathSwitchAge — see engine/glidepath.js for why this is
-  // single-sourced (four call sites had drifted onto a hardcoded 62 before).
   const eqW = glidepathEquityWeight(age, preRetireEq, postRetireEq, switchAge);
-  // Paired bootstrap sampling: one shared random index draws the same
-  // calendar year's stock and bond return together, so the historical
-  // stock/bond correlation is preserved — including the flight-to-quality
-  // flip in crashes (2008: SP500[i]=-36.55%, BONDS[i]=+20.10%) and the rare
-  // double-down (2022: SP500[i]=-18.04%, BONDS[i]=-17.83%). Drawing them
-  // independently, like the old code did, effectively forces
-  // cov(stocks, bonds) = 0 and invents year combinations that never
-  // happened. Needs SP500 and BONDS to be equal-length and year-aligned;
-  // engine/expectedReturn.js guarantees both (Damodaran 1928-2025, 98 pairs).
   const i = sampleYearIndex(rand, range);
   return eqW * SP500[i] + (1 - eqW) * BONDS[i];
 }
-// Paired return + inflation for one retirement year. Same shared index
-// selects SP500[i], BONDS[i], and INFL[i], so a year like 1974 draws stocks
-// (-25.9%), bonds (+1.99%) and inflation (+11.0%) together — the canonical
-// stagflation-year triple. The old code drew INFL independently via a second
-// rand() call, so a bootstrap could pair 2008's crash with 2015's 0.1% CPI,
-// which understates how bad stagflation actually is for retirement spending
-// power.
-//
-// The second `rand()` call below is thrown away on purpose — it just keeps
-// the rand() call count per retirement year matching the old (independent-INFL)
-// version, so the same seed still produces the same draw sequence and the
-// test suite doesn't need rebalancing over an RNG-order shift. If we ever
-// drop that RNG-ordering discipline (see the comment above `netNeed offset`
-// in runMC), this can go.
 function drawYearBundle(age, rand, preRetireEq, postRetireEq, switchAge, range = null) {
   const eqW = glidepathEquityWeight(age, preRetireEq, postRetireEq, switchAge);
   const i = sampleYearIndex(rand, range);
-  rand(); // rand()-count shim — see comment above
+  rand();
   return {
     ret: eqW * SP500[i] + (1 - eqW) * BONDS[i],
     inflY: INFL[i],
-    // The sampled historical-year index, additive (existing {ret, inflY}
-    // destructuring callers are unaffected). Exposed so the 3-Bucket strategy
-    // (bucketStrategy.js) can compute Bucket 1/2/3 returns from the SAME
-    // sampled year as `ret` — reusing `i` instead of drawing a second random
-    // year preserves the paired stock/bond correlation this function exists
-    // to guarantee (see the paired-bootstrap comment above portReturn).
     i,
   };
 }
@@ -1035,17 +645,9 @@ function guytonKlingerWithdrawal(
     yearsRemaining = Infinity,
     incomeOffset = 0,
     fixedCosts = 0,
-    // Optional sink for WHAT the guardrail did this year. The function has
-    // always applied the cut/raise and then thrown that fact away by returning
-    // only a dollar figure, so nothing downstream — not the schedule, not the
-    // chart, not the "how often do the guardrails bind?" summary — could say
-    // whether a year was cut, raised, or left alone without re-deriving it from
-    // the paper's rules (a second copy that would drift). Callers that pass
-    // nothing keep the old numeric return exactly.
     out = null
   ) {
     if (out) { out.event = null; out.reason = null; out.currentWR = null; }
-    // NaN guards — fall back to safe values if any parameter is invalid
     if (isNaN(portfolioValue) || portfolioValue <= 0) return floor || 0;
     if (isNaN(lastWithdrawal)) lastWithdrawal = floor || 0;
     if (isNaN(lastReturn)) lastReturn = 0;
@@ -1054,60 +656,27 @@ function guytonKlingerWithdrawal(
     if (isNaN(incomeOffset)) incomeOffset = 0;
     if (isNaN(fixedCosts)) fixedCosts = 0;
 
-    // GK Rule: Withdrawal/Inflation — adjust by CPI only when prior-year return ≥ 0,
-    // and cap the inflation pass-through per the original paper.
     const cappedInfl = Math.min(GK_INFLATION_CAP, inflationRate);
     let w =
       lastReturn >= 0 ? lastWithdrawal * (1 + cappedInfl) : lastWithdrawal;
 
-    // Guard: if the baseline draw is already fully covered by income at
-    // retirement (initialWR <= 0), skip the band adjustments entirely —
-    // otherwise currentWR <= 0.8*0 is always true and fires a meaningless
-    // +10% raise every year regardless of portfolio health.
     if (initialWR > 0) {
-      // This ratio has to track the same quantity initialWR was calibrated
-      // against — net portfolio need (gross withdrawal minus SS/annuity/
-      // otherIncome, plus housing/carveouts), not the gross withdrawal `w`.
-      // Otherwise a retiree whose SS starts at retirement gets a currentWR
-      // far above initialWR every year, which triggers a bogus
-      // capital-preservation cut no matter how healthy the portfolio is.
       const netNeed = Math.max(0, w - incomeOffset) + fixedCosts;
       const currentWR = portfolioValue !== 0 ? netNeed / portfolioValue : 0;
 
-      // GK Prosperity Rule: WR drops 20% below initial → +10%
       if (currentWR <= initialWR * (1 - GK_BAND_PCT)) {
         w *= 1 + GK_ADJUST_PCT;
         if (out) { out.event = "raise"; out.reason = "prosperity"; }
       }
-      // GK Capital Preservation Rule: WR rises 20% above initial → -10%.
-      // GK Longevity Rule: skip the cut when ≤15 years remaining.
       else if (currentWR >= initialWR * (1 + GK_BAND_PCT) && yearsRemaining > GK_LONGEVITY_YEARS) {
         w *= 1 - GK_ADJUST_PCT;
         if (out) { out.event = "cut"; out.reason = "preservation"; }
       } else if (out && currentWR >= initialWR * (1 + GK_BAND_PCT)) {
-        // The band was crossed but the longevity rule blocked the cut — worth
-        // distinguishing from "nothing happened", because it is the guardrail
-        // deliberately standing down near the end of the plan.
         out.reason = "longevity-hold";
       }
       if (out) out.currentWR = currentWR;
     }
 
-    // Custom safety belt (not from the GK paper): clamp to floor/ceiling.
-    //
-    // A bind here reports its OWN event type, `constrained`, rather than folding
-    // into "cut"/"raise". Different cause, different remedy: a band rule fires
-    // because the portfolio drifted from the reference withdrawal rate, whereas
-    // this fires because the user's own gkFloorPct/gkCeilingPct settings left the
-    // rule nowhere to go. Merging them would let the headline number claim
-    // market-driven adjustments that were really produced by a slider — and it
-    // fixes an inverted signal, since tightening the band makes binding MORE
-    // frequent while leaving cutRate/raiseRate unchanged or lower.
-    //
-    // Detection compares `w` BEFORE the clamp. Testing the returned value against
-    // the band can never show a bind, because it has already been pulled inside
-    // it. The 1e-9 tolerance absorbs float noise on a value that landed exactly
-    // on a limit through multiplication.
     const clampedW = Math.max(floor || 0, Math.min(ceiling || Infinity, w));
     if (out && Number.isFinite(w)) {
       if (Number.isFinite(ceiling) && w > ceiling + 1e-9) {
@@ -1121,14 +690,6 @@ function guytonKlingerWithdrawal(
     return clampedW;
 }
 
-/**
- * Realized capital gain from a taxable-brokerage draw, using average-cost
- * basis tracking (not per-lot). g = draw × (1 − basis/balance) — the fraction
- * of the account that is unrealized gain. Guards balance<=0 and basis>=balance
- * (fully-basis accounts realize $0 gain). Shared by runMC and the deterministic
- * conversion-delta helper; buildWithdrawalWaterfall.js keeps its own copy since
- * it does not import from App.jsx.
- */
 function realizedGainFromDraw(draw, balance, basis) {
   if (!draw || draw <= 0 || !balance || balance <= 0) return 0;
   const frac = Math.max(0, 1 - (basis || 0) / balance);
@@ -1148,20 +709,9 @@ function calcYearTax(
   filingStatus = "mfj",
   stateOfResidence = "NJ",
   ltcgAmount = 0,
-  // IRMAA 2-year lookback: MAGI from two years ago (SSA charges year T's
-  // premium off the tax return filed two years prior). When the caller has
-  // that history it gets passed here; the current year `yr` still selects the
-  // bracket table, only the MAGI used to walk the table changes. `null`
-  // (default) keeps the old same-year-MAGI behavior for any caller that
-  // hasn't wired the history through yet.
   magiLookback = null,
-  // Spouse's age in this same tax year, or null when unknown. Only the
-  // per-person amounts read it: the age-65 standard-deduction add-on and the
-  // OBBBA senior bonus. null reproduces the old behavior (one age standing in
-  // for both filers), so callers that haven't passed a spouse age are unaffected.
   spouseAge = null
 ) {
-  // Replace any NaN arguments with 0
   withdrawalAmount = isNaN(withdrawalAmount) ? 0 : withdrawalAmount;
   ssIncome = isNaN(ssIncome) ? 0 : ssIncome;
   RentalIncome = isNaN(RentalIncome) ? 0 : RentalIncome;
@@ -1176,83 +726,41 @@ function calcYearTax(
     (RentalIncome || 0) +
     (rmdIncome || 0) +
     (conversionAmount || 0);
-  // IRC §86 provisional-income tiers: 0% / 50% / 85% of SS taxable by income
-  // level. Realized capital gains count toward provisional income (they're
-  // part of MAGI), so they get added to the "other income" side of the
-  // SS-taxability test even though they aren't part of ordinary
-  // `otherIncome`/`totalIncome` below.
   const taxableSS = taxableSocialSecurity(ssIncome, otherIncome + ltcgAmount, isMFJ);
-  const totalIncome = taxableSS + otherIncome; // ordinary income total (excludes LTCG)
+  const totalIncome = taxableSS + otherIncome;
   const inflationFactor = Math.pow(1 + inflationRate, Math.max(0, yr - CURRENT_YEAR));
 
-  // IRMAA MAGI = AGI + tax-exempt interest; untaxed SS doesn't get added back.
-  // AGI includes the full realized gain (pre-deduction), unlike taxableIncome
-  // below. It's computed here, ahead of every deduction, for two reasons: it
-  // genuinely doesn't depend on deductions, and the OBBBA senior bonus
-  // deduction's phase-out is keyed to MAGI, so MAGI needs to exist first.
-  // Keeping it above the deduction lines also makes it structurally
-  // impossible for a deduction to ever net out of MAGI — IRMAA doesn't take one.
   const magi = totalIncome + ltcgAmount;
 
-  // Standard deduction (including the age-65+ add-on), inflation-adjusted
-  // forward. Single source: getStandardDeduction, see TAX_REFERENCE.md.
   const stdDeduction = getStandardDeduction(age, filingStatus, inflationFactor, spouseAge);
-  // OBBBA senior bonus deduction (2025-2028 only, $0 from 2029) — a separate,
-  // additive deduction, not inflation-indexed on purpose, stacked on top of
-  // the standard deduction and its age-65 add-on. It only reduces taxable
-  // income; `magi` above is already fixed and never gets reduced by it.
   const seniorBonus = getSeniorBonusDeduction(age, filingStatus, magi, yr, spouseAge);
   const totalDeduction = stdDeduction + seniorBonus;
   const taxableIncome = Math.max(0, totalIncome - totalDeduction);
-  // LTCG stacks on top of ordinary income (the IRS stacking rule): gains
-  // occupy the taxable-income band from `taxableIncome` up to
-  // `taxableIncome + gainTaxable`. If ordinary income didn't fully use up the
-  // deductions, gains soak up whatever's left of them first.
   const gainTaxable = Math.max(0, totalIncome + ltcgAmount - totalDeduction) - taxableIncome;
 
-  // Select federal brackets by filing status
   const rawBrackets = isMFJ ? FED_BRACKETS_2026_MFJ : FED_BRACKETS_2026_SINGLE;
   const fedBrackets = idxB(rawBrackets, inflationFactor);
   const fedTaxOrdinary = progTax(taxableIncome, fedBrackets);
 
-  // LTCG bracket walk over the stacked interval [taxableIncome, taxableIncome+gainTaxable).
   const ltcgBrackets = idxB(isMFJ ? LTCG_BRACKETS_2026_MFJ : LTCG_BRACKETS_2026_SINGLE, inflationFactor);
   const ltcgTax = Math.round(
     progTax(taxableIncome + gainTaxable, ltcgBrackets) - progTax(taxableIncome, ltcgBrackets)
   );
 
-  // NIIT (IRC §1411): 3.8% of the lesser of net investment income (LTCG here)
-  // or the excess of MAGI over the statutory (not inflation-indexed) threshold.
   const niitThreshold = isMFJ ? NIIT_THRESHOLD_MFJ : NIIT_THRESHOLD_SINGLE;
   const niit = ltcgAmount > 0
     ? Math.round(NIIT_RATE * Math.min(ltcgAmount, Math.max(0, magi - niitThreshold)))
     : 0;
 
-  // LTCG tax + NIIT fold into the federal total so the funding-identity math
-  // downstream (totalTax = fedTax + stateTax + irmaa) keeps working unchanged;
-  // the components also come back separately (ltcgTax, niit) for the UI to show.
   const fedTax = fedTaxOrdinary + ltcgTax + niit;
   let stateTax = 0;
 
   if (!isTwoHousehold) {
     const stateBr = getStateBrackets(stateOfResidence, isMFJ);
-    // NJ fully exempts Social Security from state tax (CLAUDE.md rule 4) —
-    // taxableSS is already folded into totalIncome/taxableIncome above, so
-    // back it out of the state base specifically. Only NJ's exemption is
-    // modeled explicitly (the app's documented domicile); other states keep
-    // their existing (SS-inclusive) behavior.
     const stateTaxSS = stateOfResidence === "NJ" ? taxableSS : 0;
-    // Most states tax capital gains as ordinary income (no LTCG preferential
-    // rate), so add the realized gain to the state taxable base.
     if (stateBr) stateTax = Math.round(progTax(Math.max(0, taxableIncome - stateTaxSS) + ltcgAmount, idxB(stateBr, inflationFactor)));
   }
-      // IRMAA charge uses the 2-year-old MAGI when the caller supplied one,
-      // otherwise falls back to this year's own MAGI (the pre-lookback behavior).
       const irmaaMagi = (typeof magiLookback === "number" && !isNaN(magiLookback)) ? magiLookback : magi;
-      // Medicare starts at each person's own 65. `medicareHeads` is 0 before
-      // either qualifies, 1 during an age gap, 2 once both are on Medicare —
-      // so an age-gapped couple isn't charged two surcharges starting from
-      // the older one's 65th birthday.
       const medicareHeads = personsAtLeastAge(age, spouseAge, isMFJ, 65);
       const irmaa = medicareHeads > 0
         ? irmaaCost(irmaaMagi, yr, inflationRate, isMFJ, medicareHeads)
@@ -1268,58 +776,29 @@ function calcYearTax(
   return {
     fedTax, stateTax, irmaa, totalTax, effectiveRate, marginalBracket, taxableIncome,
     ltcgTax, niit, realizedGain: Math.round(ltcgAmount),
-    // Deduction components, returned separately so the UI can explain the
-    // 2028→2029 jump when the OBBBA senior bonus sunsets.
     stdDeduction, seniorBonus,
-    // This year's own MAGI (never the lookback substitution) — callers store
-    // this in a per-age history so it becomes the magiLookback input two
-    // years from now.
     magi,
   };
 }
 
-/**
- * Standard deduction (MFJ/Single), with the age-65+ add-on, inflated forward.
- * Canonical source: TAX_REFERENCE.md → "Standard Deduction (MFJ 2026)".
- * One source of truth — calcYearTax and the sourcing waterfall both call
- * this instead of re-declaring the numbers themselves.
- */
 function getStandardDeduction(age, filingStatus, inflFactor, spouseAge = null) {
   const mfj = filingStatus !== "single";
-  let sd = mfj ? 32_200 : 16_100;          // base, 2026
-  // The age-65 add-on is per filer ($1,650 each). It used to get granted to
-  // both spouses as soon as the primary turned 65, which overstated the
-  // deduction by $1,650/yr for the whole age gap. `spouseAge = null` keeps the
-  // old behavior for profiles with no spouse birthdate. See engine/ages.js.
+  let sd = mfj ? 32_200 : 16_100;
   const seniors = personsAtLeastAge(age, spouseAge, mfj, 65);
   sd += seniors * 1_650;
   return Math.round(sd * inflFactor);
 }
 
-/**
- * IRMAA MAGI ceiling for a given tier, inflated forward.
- * Canonical source: TAX_REFERENCE.md → "IRMAA Thresholds (MFJ 2026)".
- * tier 1 = base tier below which there is no Medicare surcharge.
- */
 function getIrmaaCeiling(tier, filingStatus, inflFactor) {
   const mfj = filingStatus !== "single";
-  const base = mfj ? 218_000 : 109_000;    // tier-1 MAGI ceiling, 2026
+  const base = mfj ? 218_000 : 109_000;
   return Math.round(base * inflFactor);
 }
 
-/**
- * Room left under the tier-1 IRMAA threshold. MAGI space, so no deduction is
- * subtracted: a pretax draw or conversion raises MAGI dollar for dollar.
- */
 export function irmaaTargetRoom(filingStatus, inflFactor, magiSoFar) {
   return Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactor) - magiSoFar);
 }
 
-/**
- * Shrink a conversion until its MAGI fits under `cap`. MAGI can rise by up to
- * $1.85 per $1 converted (85% of Social Security becomes taxable), so cutting by
- * the overshoot always lands at or under the cap, never above it.
- */
 export function shrinkToIrmaaCap(amt, magiFor, cap) {
   for (let i = 0; i < 3 && amt > 0; i++) {
     const over = magiFor(amt) - cap;
@@ -1329,11 +808,6 @@ export function shrinkToIrmaaCap(amt, magiFor, cap) {
   return amt;
 }
 
-/**
- * Returns the TAXABLE INCOME ceiling (after std deduction) for a given bracket target.
- * Values are 2026 estimates, inflated by inflFactor for future years.
- * Not for "irmaa": that is a MAGI limit, sized with irmaaTargetRoom (request #38).
- */
 function getBracketCeiling(target, filingStatus, inflFactor) {
   const mfj = filingStatus !== "single";
   const ceilings = mfj
@@ -1343,17 +817,11 @@ function getBracketCeiling(target, filingStatus, inflFactor) {
   return base === Infinity ? Infinity : Math.round(base * inflFactor);
 }
 
-// Optional flat pre-retirement return from Assumptions (percent, nominal). Blank/NaN
-// means "not set": callers fall back to the historical draw / expected return.
 function flatPreRetReturn(p) {
   const v = p.preRetireReturn;
   return v === "" || v == null || !Number.isFinite(Number(v)) ? null : Number(v) / 100;
 }
 
-// One prescribed sequence year. `entry` is a bare equity return, or
-// {stock, bond?, infl?} (a real historical year with all three paired).
-// Bond/inflation are always drawn so the rand() stream is identical either way;
-// a paired value then overrides the draw.
 function seqYear(entry, eqW, rand) {
   const stock = typeof entry === "number" ? entry : entry.stock;
   const bondDraw = bootstrapDraw(BONDS, rand);
@@ -1362,8 +830,6 @@ function seqYear(entry, eqW, rand) {
   return { stock, bond, infl: entry?.infl ?? inflDraw, r: eqW * stock + (1 - eqW) * bond };
 }
 
-// Real calendar years `startYear...` as paired {stock, bond, infl, year} entries
-// (1928-2025), for seqOverride. Stops at the end of the dataset.
 export function historicalSequence(startYear, years = 13) {
   const i0 = startYear - SAMPLE_START_YEAR;
   return Array.from({ length: years }, (_, k) => i0 + k)
@@ -1371,115 +837,38 @@ export function historicalSequence(startYear, years = 13) {
     .map((i) => ({ year: SAMPLE_START_YEAR + i, stock: SP500[i], bond: BONDS[i], infl: INFL[i] }));
 }
 
-// seqOverride: optional array of equity returns (decimals) prescribed for the
-// first N retirement years — used by the Stress Test to force the 2000-2012
-// sequence at retirement. When supplied, year y's equity component is
-// seqOverride[y] (blended with a bootstrapped bond draw at the same
-// age-based equity weight portReturn uses); past the array length, returns
-// fall back to the normal bootstrap. Everything else — tax (calcYearTax,
-// including the non-resident/state toggle), RMDs, bucket sourcing, strategy —
-// is identical to a normal run, so the stress pivot can never diverge from the MC.
 function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = null, seqToday = false, keepFailures = false) {
   const rand = mulberry32(seed);
-  // "Tax drag" master toggle. Off (p.tax === false) zeroes all tax — federal,
-  // state, IRMAA, and Roth-conversion cost — for a pure pre-tax view of
-  // portfolio dynamics. calcYearTax still runs (its taxableIncome /
-  // marginalBracket feed sourcing and conversion sizing), just no tax dollars
-  // get withdrawn. Since the Stress Test delegates to runMC, this toggle
-  // governs MC and Stress the same way. Only an explicit boolean false turns
-  // it off — a numeric/true value (default) keeps tax on.
   const taxEnabled = p.tax !== false;
-  // Account draw order (which bucket drains first) — constant for the whole
-  // run. Default "tax_reactive" resolves to cash → taxable → pretax → roth,
-  // the old hardcoded sequence. Shared resolver keeps this matching
-  // buildWithdrawalWaterfall's smart scenario.
   const drawOrderMC = resolveDrawOrder(p.orderingMode, p.withdrawalOrder);
-  // 3-Bucket asset-location strategy (additive layer — see
-  // engine/bucketStrategy.js header comment). Computed once from today's
-  // accounts, held constant for the whole path per the documented
-  // simplification in buildWithdrawalWaterfall.js's identical precompute.
-  // Already-retired users enter the age they actually retired at, which is in
-  // the past. Balances are always today's, so starting the drawdown there
-  // would replay years that already happened. See effectiveRetireAge.
   const retAgeMC = effectiveRetireAge(p.retireAge, p.currentAge);
-  // Equity glidepath switch age — resolved once here so the accumulation
-  // loop, the normal drawdown draw, and the stress-sequence branch below
-  // can't disagree (the stress branch used to hardcode 62). Uses the
-  // effective retirement age as the fallback, matching every other age in
-  // this engine.
-  // Share of pre-tax sitting in a former-employer plan — the only slice Rule
-  // of 55 can reach. Constant for the run (detected off starting balances).
   const ruleOf55ShareMC = detectEmployerPlan(p.accounts).share;
-  // Calendar-year Rule-of-55 test, computed once per run. Separation in or
-  // after the year the employee turns 55 qualifies — `retireAge >= 55` was
-  // stricter than the statute actually requires. See ruleOf55SeparationQualifies.
   const ruleOf55OkMC = ruleOf55SeparationQualifies({
     dob: p.dob, birthYear: p.birthYear, currentAge: p.currentAge, retireAge: retAgeMC,
   });
   const glideSwitchAgeMC = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeMC });
-  // Historical sampling window for this run (null = full 1928–2025 history).
-  // Resolved once so the accumulation loop, the retirement draw, and any
-  // future sampler all use the same window — the same single-resolution
-  // discipline the glidepath switch age above needs.
   const sampleRangeMC = resolveSampleRange(p);
   const accYrs = Math.max(0, retAgeMC - p.currentAge);
-  // The horizon follows whoever is alive. When the primary dies first and a
-  // younger spouse survives, the money has to last until the survivor reaches
-  // endAge, so the projection runs past the age the primary would have
-  // reached. Same as endAge whenever no first death is modeled or the primary
-  // is the survivor, so no existing plan changes length.
   const planEndMC = planEndAgeOnPrimaryClock(p, endAge);
   const retYrs = planEndMC - retAgeMC;
   const results = [];
-  // Guardrail-binding statistics, accumulated across every path so the
-  // Guardrails view can say how often the GK rules actually fire — the "cuts in
-  // X% of scenarios, raises in Y%" summary. Counted where the adjustment is
-  // APPLIED (guytonKlingerWithdrawal's `out` sink), never re-derived from the
-  // spend path afterwards; a re-derivation would have to re-implement the
-  // bands, the longevity rule and the income offset, and would drift.
-  //
-  // `constrained` / `pathsWithConstrained` track the THIRD event type: years the
-  // floor/ceiling band bound, which is a settings effect rather than a market
-  // effect and therefore never folded into cuts/raises.
   const gkStats = { paths: 0, pathsWithCut: 0, pathsWithRaise: 0, cuts: 0, raises: 0, longevityHolds: 0, constrained: 0, pathsWithConstrained: 0, ceilingBinds: 0, floorBinds: 0, spendMinReal: Infinity, spendMaxReal: 0, cutCounts: [] };
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
-  // resolveStrategy, not `|| "gk"`. A retired id (an old saved profile) or a
-  // typo would otherwise match no branch in the chain below and leave `sp`
-  // unassigned for the whole run — spending never inflation-adjusts and the
-  // smile quietly deflates it about 1%/yr with no error. See
-  // engine/withdrawalStrategies.js.
   const withdrawalStrategy = resolveStrategy(p.withdrawalStrategy);
 
-  // User settings for cash return and RMD table
   const cashRealReturn = (p.cashRealReturn ?? 3.0) / 100;
-  // Joint & Last Survivor is only legal while the much-younger spouse is
-  // alive and the sole beneficiary, so this has to be a per-year test once a
-  // first death is modeled — a hoisted constant would keep using the longer
-  // divisors and understate every post-death RMD. filesJointlyAt carries both
-  // conditions (filing status and the death year).
   const useJointTableAt = (age) => (p.useJointRmdTable ?? false) && filesJointlyAt(p, age);
   const UNIFORM_TABLE = RMD_DIV;
 
-  // SECURE 2.0 RMD start age (72/73/75 by birth year), user override wins
   const rmdStartAge = (typeof p.rmdStartAge === "number" && p.rmdStartAge > 0)
     ? p.rmdStartAge
     : getRmdStartAge({ dob: p.dob, birthYear: p.birthYear, currentAge: p.currentAge });
 
-  // Expected inflation for tax-bracket/IRMAA indexing. Brackets have to
-  // compound at the assumed long-run rate, not a single bootstrapped year's
-  // draw (see inflY below).
   const taxInfl = (p.inf ?? 2.5) / 100;
 
-  // Percent of today's taxable-brokerage balance that is cost basis (the
-  // user reads this off their brokerage statement). The rest is unrealized
-  // gain, realized proportionally (average-cost basis, not per-lot) as the
-  // account gets drawn down.
   const taxableBasisPct = Math.max(0, Math.min(100, p.taxableBasisPct ?? 70));
 
-  // Pre-compute the actual annual mortgage cash cost per calendar year
-  // (including extra payments and the partial payoff year), constant across
-  // all paths since the mortgage is path-independent.
   let mortByYear = new Map();
   if (p.mortBalance > 0) {
     const ms = mortgageSchedule(
@@ -1492,16 +881,8 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     mortByYear = mortgageAnnualPayments(ms);
   }
 
-  // One-off inflows (inheritance, home sale, pension lump sum) landing during
-  // the accumulation years, precomputed once since they're path-independent
-  // like the mortgage. Only the retirement loop used to process
-  // cashFlowEvents, so a lump sum arriving before retirement got silently
-  // dropped from every path — a user testing a $1M future inheritance would
-  // see the numbers not move at all. Accumulation year y is calendar year
-  // CURRENT_YEAR + y; the retirement loop starts at CURRENT_YEAR + accYrs, so
-  // an event fires in exactly one phase.
   const preRetFlat = flatPreRetReturn(p);
-  const seqOffset = seqToday ? accYrs : 0; // retirement years continue after the accumulation years
+  const seqOffset = seqToday ? accYrs : 0;
   const failedRuns = [];
   const accInflowByYear = [];
   for (let y = 0; y < accYrs; y++) {
@@ -1509,37 +890,22 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   }
 
   for (let i = 0; i < N; i++) {
-    // Initialize buckets from p.accounts for this path
     let pretax = 0, roth = 0, taxable = 0, cash = 0;
     for (const acct of (p.accounts || [])) {
       const bal = acct.balance || 0;
       if (acct.category === "pretax") pretax += bal;
       else if (acct.category === "roth") roth += bal;
       else if (acct.category === "taxable") taxable += bal;
-      // "hsa" and any unrecognized category fall through to cash. This used
-      // to be `else if (category === "cash")`, which silently dropped every
-      // hsa-category balance from the simulation — BLANK_PROFILE ships an HSA
-      // account by default, so any user with an HSA had it vanish from their
-      // portfolio. accumulateToRetirement() already bucketed hsa into cash
-      // via a catch-all else, so the two engines disagreed before. Now they match.
       else cash += bal;
     }
-    // Basis is a % of today's taxable balance, fixed in dollars from here on
-    // — accumulation-phase growth (below) increases the balance but not the
-    // basis (growth is unrealized gain), so the basis fraction shrinks by
-    // retirement even though no draw has happened yet.
     let taxableBasis = taxable * (taxableBasisPct / 100);
     let totalPort = pretax + roth + taxable + cash;
 
-    // Accumulation phase
     for (let y = 0; y < accYrs; y++) {
-      // Optional flat pre-retirement return (nominal %). Blank keeps the historical draw.
-      // seqToday: the prescribed sequence starts now, so it covers these years first.
       let ret;
       if (seqToday && seqOverride && y < seqOverride.length) {
         ret = seqYear(seqOverride[y], glidepathEquityWeight(p.currentAge + y, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC), rand).r;
       } else {
-        // Draw even when a flat rate is set, so the retirement years keep the same market draws.
         ret = portReturn(p.currentAge + y, rand, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC, sampleRangeMC);
         if (preRetFlat != null) ret = preRetFlat;
       }
@@ -1547,27 +913,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       roth     = Math.max(0, roth     * (1 + ret));
       taxable  = Math.max(0, taxable  * (1 + ret));
       cash     = Math.max(0, cash     * (1 + ret));
-      // Contributions land in the bucket they actually belong to. They used
-      // to all get added to `pretax`, which mispriced every later withdrawal:
-      // brokerage savings became ordinary income instead of LTCG-with-basis,
-      // and it inflated the RMD base at rmdStartAge.
-      // Job-bound streams come from one shared helper so this loop,
-      // simulateDeterministicWithStrategy, and accumulateToRetirement can't
-      // disagree about whose contributions have stopped. A spouse who
-      // retires before the primary stops contributing on their own date, not
-      // the primary's.
       const jc = jobContributionsForYear(p, p.currentAge + y);
       pretax  += jc.pretax;
-      cash    += (p.hsaContrib || 0);          // HSA balances live in the cash bucket
+      cash    += (p.hsaContrib || 0);
       roth    += jc.roth;
       taxable += (p.taxableContrib || 0);
-      // Brokerage contributions are already-taxed dollars, so they add basis
-      // one-for-one. Only market growth is unrealized gain.
       taxableBasis += (p.taxableContrib || 0);
-      // Pre-retirement one-off inflows get deposited into their bucket, like
-      // contributions (no return in the arrival year). Outflow events stay
-      // retirement-only — pre-retirement spending is assumed to be paid from
-      // wages, which this engine doesn't model. See accInflowByYear above.
       const evAcc = accInflowByYear[y];
       if (evAcc && evAcc.inflow > 0) {
         pretax += evAcc.byBucket.pretax || 0;
@@ -1575,7 +926,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         cash   += evAcc.byBucket.cash   || 0;
         const taxableIn = evAcc.byBucket.taxable || 0;
         taxable += taxableIn;
-        taxableBasis += taxableIn;   // already-taxed money arrives as basis
+        taxableBasis += taxableIn;
       }
       totalPort = pretax + roth + taxable + cash;
     }
@@ -1584,58 +935,26 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
     const path = [portAtRetire];
     let survived = true, exhaustAge = null;
-    // How many years this path had to exceed the bracket target to stay
-    // funded. Aggregated below so the UI can eventually tell the user a tax
-    // preference got overridden, instead of them wondering why their
-    // marginal rate exceeds the target they chose.
     let bracketOverrideYears = 0;
     let rothReserveBrokenYears = 0;
-    // Per-path guardrail tallies (see gkStats above).
     let gkYearSink = null;
     let pathCuts = 0;
     let pathRaise = false;
-    // Years this path was constrained by the floor/ceiling band itself rather
-    // than by a GK band rule. Counted separately — see the `constrained` event
-    // note in guytonKlingerWithdrawal for why it must not join cuts/raises.
     let pathConstrained = 0;
     let sp = p.sp;
     let lastReturn = 0;
-    let inflPrev = 0;   // prior year's inflation; only read for y > 0
+    let inflPrev = 0;
 
-    // IRMAA 2-year lookback history for this path — rolled forward at the
-    // end of each retirement year below. Pre-retirement wage income isn't
-    // modeled (this engine only knows portfolio/SS/rental income), so the
-    // first two retirement years (y === 0, 1) have no usable 2-years-ago
-    // figure; those years fall back to same-year MAGI (the pre-lookback
-    // approximation) via the `y >= 2` gate below.
     let magiOneYearAgo = null, magiTwoYearsAgo = null;
 
-    // Opt-in per-year detail for the "why plans failed" view (null = off, zero cost).
     const rows = keepFailures ? [] : null;
     for (let y = 0; y < retYrs; y++) {
       const startBal = totalPort;
       const age = retAgeMC + y;
       const calYear = CURRENT_YEAR + (age - p.currentAge);
-      // Stress sequence override: prescribe the equity leg for the first
-      // seqOverride.length retirement years; bond leg stays bootstrapped at
-      // the same age-based equity weight portReturn uses. No override means
-      // a normal draw.
-      //
-      // The seqOverride branch draws bonds and inflation independently (two
-      // rand() calls) because the SEQ_2000_2012 array has no year labels to
-      // pair against. The normal branch uses drawYearBundle(), which returns
-      // a paired (stock, bond, inflation) triple from one historical year —
-      // see its definition for the rand()-count shim that keeps this branch
-      // matching the seqOverride branch's rand() consumption.
       let r, inflY;
-      // The seqOverride branch below builds `r` from these two directly.
       let stockReturnMC, bondReturnMC;
       if (seqOverride && y + seqOffset < seqOverride.length) {
-        // Same weight portReturn would have used at this age. This line used
-        // to hardcode 62 while portReturn switched at the retirement age, so
-        // every Stress Test scenario modeled a different investor than the
-        // headline run: a 67 retiree got de-risked five years early, a 60
-        // retiree stayed aggressive two years too long.
         const eqW = glidepathEquityWeight(age, p.preRetireEq, p.postRetireEq, glideSwitchAgeMC);
         ({ stock: stockReturnMC, bond: bondReturnMC, infl: inflY, r } = seqYear(seqOverride[y + seqOffset], eqW, rand));
       } else {
@@ -1649,23 +968,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       const adjFloor = gkFloor * cumInfl;
       const adjCeiling = gkCeiling * cumInfl;
 
-      // Deterministic income/fixed-cost pieces needed both by this year's GK
-      // netNeed offset (below) and by `need` after the strategy block —
-      // moved above the strategy switch without touching the rand() call
-      // order: none of these consume rand(), so r/inflY/abReliable's draw
-      // sequence is unaffected. abReliable itself stays in its original spot
-      // (right after `lastReturn = r`) — only these deterministic values
-      // moved earlier.
       const ss = computeHouseholdSS(p, age);
       const growthFactor = Math.pow(1 + (p.abGrowth ?? 3) / 100, Math.min(y, 20));
       const totalRental = Math.round(((p.propIncome || 0) + (p.ab > 0 ? p.ab : 0)) * growthFactor);
-      // Deterministic expected rental (abEndYear cutoff applied, but not the
-      // abReliability coin-flip below) — used only to offset GK's netNeed.
-      // The actual reliability draw still gates `effectiveAb`, the real
-      // income used in the real `need` afterward, exactly like before.
       const rentalForGK = (p.abEndYear && calYear > p.abEndYear) ? 0 : totalRental;
 
-      // Housing cost (own = mortgage cash cost while active, rent = inflation-adjusted rent, none = 0)
       const housingType = p.housingType || "own";
       let housingCost = 0;
       if (housingType === "own") {
@@ -1674,88 +981,44 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         housingCost = Math.round((p.annualRent || 0) * cumInfl);
       }
 
-      // Active fixed carveouts
       const carveoutCost = (p.carveouts || []).reduce((sum, c) => {
         return sum + (calYear <= (c.endYear || 9999) ? Math.round((c.annual || 0) * cumInfl) : 0);
       }, 0);
 
       const { total: otherIncTotal, totalTaxable: otherIncTaxable } = computeOtherIncome(p.otherIncomes, calYear);
 
-      // GK's netNeed income offset — same net portfolio need quantity initWR
-      // was calibrated against: SS + expected rental + other income offset
-      // gross spend; housing + carveouts add to it.
-      // Planned one-off / periodic expenses (roof, car, wedding). Additive,
-      // so the distribution strategy still governs the recurring base —
-      // unlike a multi-year CSV, which replaces the spend rule and disables
-      // guardrails.
       const ev = computeCashFlowEvents(p.cashFlowEvents, calYear, p.inf ?? 2.5, CURRENT_YEAR);
       const eventCost = ev.total;
 
-      // Inflows (lump-sum pension, cash-balance rollover, inheritance, home
-      // sale) get deposited into their bucket so they compound. They must not
-      // be netted against spending — `need` is Math.max(0, sp - income),
-      // which would discard everything past one year's need.
       if (ev.inflow > 0) {
         pretax  += ev.byBucket.pretax  || 0;
         roth    += ev.byBucket.roth    || 0;
         cash    += ev.byBucket.cash    || 0;
         const taxableIn = ev.byBucket.taxable || 0;
         taxable += taxableIn;
-        taxableBasis += taxableIn;   // already-taxed money arrives as basis
+        taxableBasis += taxableIn;
         totalPort = pretax + roth + taxable + cash;
       }
 
-      // Annual yield tax drag (see engine/taxableYield.js) — computed once
-      // against the entering balance (untouched by anything below until the
-      // growth line). Real interest/dividends are taxed the year they're
-      // paid whether or not they're reinvested. ordinaryYieldMC stacks into
-      // this year's tax calc the same way effectiveAb/otherIncTaxable does;
-      // qualifiedYieldMC stacks onto realized capital gains at each
-      // calcYearTax call below. Credited to taxableBasis after the draws/tax
-      // resolve (with rmdExcess/surplusToTaxableMC), not by touching the
-      // growth line — it's already-taxed money that must never be taxed
-      // again on a later withdrawal.
       const { yieldAmount: taxableYieldAmtMC, ordinaryYield: ordinaryYieldMC, qualifiedYield: qualifiedYieldMC } =
         taxableYieldSplit(taxable, p.taxableYieldPct, p.taxableYieldOrdinaryPct);
 
-      // Healthcare shock — stochastic per path, inflated to this year.
-      // Treated as a committed cost: a medical bill isn't discretionary
-      // spending the guardrails can trim.
       const hcShock = healthcareShockDraw(age, rand, p, cumInfl);
 
       const gkIncomeOffset = ss + rentalForGK + otherIncTotal;
-      // Only committed events are shielded from the guardrails; a deferrable
-      // one (a big travel year) is discretionary and can be trimmed like base spend.
       const gkFixedCosts = housingCost + carveoutCost + ev.committed + hcShock;
 
-      // ── Withdrawal strategy ──
       if (p.spSchedule && p.spSchedule.length) {
-        // A detailed year-by-year budget is the spending plan — it overrides
-        // the distribution strategy's spend rule. Values are nominal for each
-        // listed year; beyond the last year the last value carries forward, inflated.
         sp = scheduleSpendForYear(p.spSchedule, calYear, p.inf ?? 2.5);
       } else if (y === 0) {
-        // First year: use target spend (p.sp)
       } else {
         if (withdrawalStrategy === "gk") {
-          // Years remaining uses the horizon being simulated (`endAge`), not
-          // p.endAge, so the GK longevity rule stays consistent with this
-          // run's survival test. Reference re-based on this year's income so
-          // a scheduled pension raise can't masquerade as portfolio
-          // outperformance. See gkReferenceWR.
           const refWR = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
-          // Record the guardrail's action for this path-year so the run can
-          // report how often the guardrails actually bind (the summary above
-          // the Guardrails chart). Accumulated per path, never re-derived.
           gkYearSink = {};
           sp = guytonKlingerWithdrawal(totalPort, refWR, sp, lastReturn, inflPrev, adjFloor, adjCeiling, endAge - age, gkIncomeOffset, gkFixedCosts, gkYearSink);
           if (gkYearSink.event === "cut") { pathCuts++; gkStats.cuts++; }
           else if (gkYearSink.event === "raise") { pathRaise = true; gkStats.raises++; }
           else if (gkYearSink.event === "constrained") {
-            // Third type: the band bound, not a GK rule. Deliberately NOT counted
-            // as a cut or raise — see guytonKlingerWithdrawal's clamp note. A
-            // ceiling bind raises spend and a floor bind cuts it, so direction is
-            // recorded from which limit bound rather than inferred from `event`.
             pathConstrained++;
             gkStats.constrained++;
             if (gkYearSink.reason === "ceiling-bind") gkStats.ceilingBinds++;
@@ -1764,21 +1027,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           else if (gkYearSink.reason === "longevity-hold") gkStats.longevityHolds++;
         }
         else if (withdrawalStrategy === "fixed") {
-          // Pure fixed %: draw = rate × port. No GK clamp — that defeats the purpose.
           const fixedRate = p.fixedWithdrawalRate ?? 0.04;
           sp = totalPort * fixedRate;
         }
         else if (withdrawalStrategy === "vpw") {
-          // VPW = portfolio amortized over remaining years at an assumed
-          // return. Canonical PMT payout rate: r / (1 - (1+r)^(-n)), n =
-          // years of payments left. r is a fixed assumption (that's VPW's
-          // defining feature), profile-overridable.
           const rVPW = p.vpwRealReturn ?? 0.0376;
-          // Deplete by the plan-to age, not a separate hardcoded 100.
-          // vpwEndAge used to be its own field defaulting to 100, so setting
-          // "Plan to age 105" still amortized to 100 — the spend-to-zero
-          // answer was five years off with nothing in the UI saying so. An
-          // explicit vpwEndAge still wins if set.
           const n = Math.max(1, (p.vpwEndAge ?? endAge ?? 100) - age);
           const rateVPW = rVPW === 0 ? 1 / n : rVPW / (1 - Math.pow(1 + rVPW, -n));
           const newSp = totalPort * Math.min(0.10, rateVPW);
@@ -1795,19 +1048,9 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
         }
         else if (withdrawalStrategy === "bengen") {
-          // Bengen 4% rule (1994): inflation-adjusted constant spending.
-          // Does NOT react to portfolio moves — that's the defining feature.
-          // Can fail (portfolio depletes). Honest about late-stage risk.
           sp = sp * (1 + inflPrev);
         }
         else if (withdrawalStrategy === "smart") {
-          // Smart Waterfall hybrid:
-          //   yearsRemaining > 15  → GK guardrails (adaptive, paper-faithful)
-          //   yearsRemaining ≤ 15  → Bengen (inflation-only, no portfolio reaction)
-          // The split point matches GK's own longevity-clause threshold so we
-          // exit GK exactly where its safety brake would have been disabled.
-          // Years remaining uses the simulated horizon (`endAge`), not p.endAge — see gk note above.
-          // Bucket sourcing is handled below regardless.
           const yrsRemaining = endAge - age;
           if (yrsRemaining > 15) {
             const refWR2 = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
@@ -1817,182 +1060,69 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
           }
         }
         else {
-          // Shouldn't be reachable while `withdrawalStrategy` comes from
-          // resolveStrategy, but keeping it here anyway: an unmatched id used
-          // to leave `sp` untouched, which reads as a 1%/yr spending cut
-          // instead of an error. Inflation-adjusting is the least-surprising
-          // fallback.
           sp = sp * (1 + inflPrev);
         }
       }
       lastReturn = r;
-      inflPrev = inflY;   // spend is raised by the inflation already seen, not this year's (Bengen's rule)
+      inflPrev = inflY;
 
-      // Post-guardrail annual spending, tracked across every path and year —
-      // the "spending actually seen" range.
-      //
-      // REAL dollars, deflated to the RETIREMENT YEAR (cumInfl is 1 at y === 0,
-      // so retirement year one is the yardstick — the same basis
-      // engine/mcSelectors.js::deflate() uses, and the same one the spend the
-      // user typed is consumed in). Nominal would have been the easy version and
-      // the wrong one: a nominal range spanning 30 years of inflation mostly
-      // measures the inflation, so the low end is always year one and the high
-      // end always the last year — a range that says nothing about the
-      // guardrails. The field NAMES carry the basis (`...Real`) because
-      // "spendMin" with an unstated basis is exactly how a dollar figure ends up
-      // labelled "today's dollars" when it is retirement-year dollars
-      // (REQUIREMENTS §41 A3).
-      //
-      // Positive values only: a depleted path's trailing $0 years would drag the
-      // minimum to zero and make the range meaningless.
       if (sp > 0) {
         const spReal = sp / cumInfl;
         if (spReal < gkStats.spendMinReal) gkStats.spendMinReal = spReal;
         if (spReal > gkStats.spendMaxReal) gkStats.spendMaxReal = spReal;
       }
 
-      // Income from SS and rental/AB. COLA compounds from the claiming age
-      // (p.ssAge), not the retirement-year loop counter `y` — someone who
-      // retires before claiming SS would otherwise get bogus pre-claim COLA
-      // compounding baked into their very first check (matches
-      // buildWithdrawalWaterfall.js's `age - ssAge` pattern). ss/totalRental
-      // are already computed above (before the strategy block); only the
-      // reliability coin-flip and the real effectiveAb need computing here.
       const abReliable = rand() < (p.abReliability || 80) / 100;
       const effectiveAb = (p.abEndYear && calYear > p.abEndYear) ? 0 :
         (abReliable ? totalRental : 0);
 
-      // Blanchett spending smile — a real lifestyle curve applied to this
-      // year's spend. Not fed back into `sp` on purpose, since that's the
-      // withdrawal strategy's running state: multiplying it would compound
-      // the smile year over year and corrupt GK's own inflation logic. This
-      // is an overlay on what the strategy decided, not a change to the strategy.
       const spSmiled = sp * spendingSmileFactor(age, retAgeMC, p.smile !== false);
-      // Income nets against the WHOLE outlay (base spend + every fixed cost),
-      // not base spend alone. The old form — max(0, spend - income) + fixedCosts
-      // — floored the income offset at base spend and then added fixed costs
-      // raw, so a household whose SS + rental + other income EXCEEDED base spend
-      // still sold assets to cover housing/carveouts/events/healthcare. That
-      // biased the success rate DOWN whenever income > base spend. Folding the
-      // fixed costs inside the max lets surplus income offset them, and leaves
-      // `incomeSurplus` (below) + the remaining draw (further below) netting the
-      // same quantity, so all three agree.
       const need = Math.max(0, (spSmiled + housingCost + carveoutCost + eventCost + hcShock) - ss - effectiveAb - otherIncTotal);
-      // Income above spending used to get discarded by the max(0, ...) above
-      // while the tax on it still got charged to the portfolio, so received
-      // money vanished and assets were sold to pay its bill. Now surplus
-      // funds the tax first and the remainder gets deposited (see the long
-      // note in buildWithdrawalWaterfall).
       const incomeSurplus = Math.max(0,
         (ss + effectiveAb + otherIncTotal) - (spSmiled + housingCost + carveoutCost + eventCost + hcShock));
 
-      // RMD calculation
       let rmd = 0;
       if (age >= rmdStartAge && pretax > 0) {
-        // Table II needs both ages and only applies when the spouse is more than 10 years
-        // younger; jointRmdDivisor returns null otherwise, which falls back to Uniform.
         const jointDiv = useJointTableAt(age) ? jointRmdDivisor(age, spouseAgeAt(p, age)) : null;
         const divisor = jointDiv ?? (UNIFORM_TABLE[age] || 15.0);
         rmd = Math.round(pretax / divisor);
       }
-      // Tax + withdrawal sizing (source-aware, fixed-point).
-      // Ordinary income = RMD + discretionary pretax draw only; cash/taxable/
-      // Roth draws aren't ordinary income (LTCG on taxable draws is a
-      // documented gap). Taxes depend on the pretax draw, which depends on
-      // the total draw size (need + taxes), which depends on taxes — iterate
-      // to convergence. RMD proceeds fund spending first; any excess gets
-      // reinvested in taxable.
       const yr = CURRENT_YEAR + (age - p.currentAge);
-      // Filing status has to vary over time here. This used to be
-      // `p.filingStatus || "mfj"`, a constant, so the survivor's tax bill
-      // couldn't be modeled: on a first death the brackets narrow, the
-      // standard deduction roughly halves, the IRMAA tiers halve, and the
-      // senior bonus halves. One shared rule with buildWithdrawalWaterfall
-      // via engine/ages.js, otherwise the two engines describe different households.
       const filingStatus = filingStatusAt(p, age);
 
-      // Sourcing guardrails (bracket cap, IRMAA guard, Roth reserve) are
-      // independent of the distribution strategy — they apply to any
-      // strategy once the user has chosen a bracket target. "off" opts out
-      // to naive (pretax-first, uncapped). The rooms don't depend on the
-      // draw size, so compute them once.
       let bracketRoomMC = Infinity;
-      // Either constraint binds independently. The IRMAA guard used to sit
-      // inside this bracket-target check, so it did nothing whenever the
-      // target was "off" — a dead setting (verified byte-identical with the
-      // guard on and off). Decoupled here and in buildWithdrawalWaterfall
-      // together, since letting the two engines disagree is exactly the kind
-      // of drift this codebase keeps running into.
       const bracketSetMC = !!(p.withdrawalBracketTarget && p.withdrawalBracketTarget !== "off");
       const irmaaOnMC    = !!p.irmaaGuard && age >= 63;
       if (bracketSetMC || irmaaOnMC) {
         const inflFactorMC = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
         const sdMC = getStandardDeduction(age, filingStatus, inflFactorMC, spouseAgeAt(p, age));
-        // 85% SS inclusion is a worst-case estimate on purpose, so the cap never overshoots.
         const ordinaryFloorMC = Math.round(ss * 0.85) + rmd + (effectiveAb + otherIncTaxable) + ordinaryYieldMC;
-        // Infinity when only the IRMAA guard is on — the min() below then
-        // makes the IRMAA tier the sole binding ceiling.
-        // IRMAA-Safe is a MAGI limit, not a taxable-income ceiling: it binds
-        // through irmaaTargetRoom below, guard or not (request #38).
         const irmaaTargetMC = p.withdrawalBracketTarget === "irmaa";
         const ceilingMC = bracketSetMC && !irmaaTargetMC
           ? getBracketCeiling(p.withdrawalBracketTarget, filingStatus, inflFactorMC)
           : Infinity;
-        // The OBBBA senior bonus shelters ordinary income the same way the
-        // standard deduction does, so the bracket room needs to include it or
-        // sourcing will under-fill the bracket that calcYearTax actually
-        // grants. Its phase-out is MAGI-keyed and MAGI rises with the very
-        // draw being sized, so estimate the bonus at the high end of this
-        // year's plausible MAGI (floor + the room before the bonus) — that
-        // gives the worst-case phase-out and the smallest bonus. Same
-        // conservative spirit as the 85% SS inclusion above: the cap can
-        // under-fill the bracket but must never overshoot it. The bonus
-        // estimate needs a finite ceiling; with no bracket target the IRMAA
-        // tier is the only thing that can bind, so use it as the proxy.
         const ceilingForBonusMC = Number.isFinite(ceilingMC)
           ? ceilingMC
           : Math.max(0, getIrmaaCeiling(1, filingStatus, inflFactorMC) - sdMC);
-        // NOT Math.max(0, ordinaryFloorMC - sdMC)/Math.max(0, ... ) — a
-        // deduction unused by other-ordinary-income (Golden Window years:
-        // early retirement, no SS/RMD/rental yet, ordinaryFloorMC can be $0)
-        // still has to carry into this draw's room, or the bracket-fill
-        // target under-fills by up to the whole standard deduction
-        // (~$32-35K MFJ). Only the OUTER clamp (bracketRoomMC = Math.max(0,
-        // ceilingMC - taxableSoFarMC), below) needs a floor at 0. Matches
-        // the corresponding fix in buildWithdrawalWaterfall.js — same bug,
-        // same root cause, found by a from-scratch engine audit.
         const roomBeforeBonusMC = Math.max(0, ceilingForBonusMC - (ordinaryFloorMC - sdMC));
         const seniorBonusMC = getSeniorBonusDeduction(
           age, filingStatus, ordinaryFloorMC + roomBeforeBonusMC, yr, spouseAgeAt(p, age)
         );
         const taxableSoFarMC = ordinaryFloorMC - (sdMC + seniorBonusMC);
-        // Bracket room lives in taxable-income space (ceiling is post-deduction).
         bracketRoomMC = Number.isFinite(ceilingMC)
           ? Math.max(0, ceilingMC - taxableSoFarMC)
           : Infinity;
-        // IRMAA room lives in MAGI space — don't subtract the standard
-        // deduction. A pretax draw raises taxable income and MAGI by the
-        // same dollar, so both rooms cap the same incremental draw; take
-        // whichever is tighter. (LTCG from the taxable draw isn't folded
-        // into the MAGI base here yet — a known modeling gap.)
         if (irmaaOnMC || irmaaTargetMC) {
           bracketRoomMC = Math.min(bracketRoomMC, irmaaTargetRoom(filingStatus, inflFactorMC, ordinaryFloorMC));
         }
       }
 
       const rothFloorMC = p.rothEmergencyReserve || 0;
-      // IRMAA 2-year lookback for this year's charge: the MAGI from age-2,
-      // rolled forward at the bottom of the previous two iterations. The
-      // first two retirement years (y < 2) have no pre-retirement wage
-      // history to look back on (this engine doesn't model wages), so they
-      // fall back to null and calcYearTax uses same-year MAGI, matching the
-      // pre-lookback approximation for those two years only.
       const magiLookbackMC = (y >= 2 && typeof magiTwoYearsAgo === "number") ? magiTwoYearsAgo : null;
       let taxResult = null;
       let totalTax = 0;
       let fromCash = 0, fromTaxable = 0, fromPretax = 0, fromRoth = 0;
       let shortfall = 0;
-      // Nominal dollars. `spend` is the year's total outlay before income; `income` is SS + other.
       const rowOf = (end, short = 0) => ({
         age, year: calYear, stock: stockReturnMC, ret: r, infl: inflY,
         spend: Math.round(spSmiled + housingCost + carveoutCost + eventCost + hcShock),
@@ -2000,17 +1130,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         start: Math.round(startBal), end: Math.round(end), short: Math.round(short),
       });
       let earlyPenMC = { penalty: 0, exemptAmount: 0, reason: "" };
-      // 12 passes, not 4 — the tax/draw fixed point converges geometrically
-      // at roughly the marginal rate (about 0.3x/pass); 4 passes came out
-      // $100-350 short of the true tax bill every year. The <$1 break makes
-      // extra passes free once it's converged. Matches
-      // buildWithdrawalWaterfall's pass cap exactly.
       for (let pass = 0; pass < 12; pass++) {
-        // Withdraw from buckets in the user's chosen order (default
-        // tax_reactive = cash → taxable → pretax capped → roth). The
-        // bracket/IRMAA cap stays on the pretax step and the reserve floor on
-        // the roth step wherever each lands. Surplus income funds the tax
-        // bill before any asset gets sold.
         let remaining = Math.max(0, need + totalTax - rmd - incomeSurplus);
         fromCash = fromTaxable = fromPretax = fromRoth = 0;
         const drawMC = {
@@ -2021,18 +1141,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         };
         for (const bucket of drawOrderMC) drawMC[bucket]();
 
-        // Essential-spending override — the bracket cap is soft. Mirrors
-        // buildWithdrawalWaterfall's override exactly, see the long
-        // rationale there. Short version: `bracketRoomMC` decides which
-        // dollars to draw, never whether the household eats. A household
-        // whose rental/pension income fills the target bracket by itself had
-        // zero room, so a mostly-pre-tax portfolio couldn't be drawn at all,
-        // `shortfall` stayed positive, and the path below got marked
-        // `survived = false` while holding millions. That's how a ~100% plan
-        // ended up reporting 3.3%.
-        //
-        // Has to live in both engines, or they disagree about survival —
-        // that's the cross-engine drift this codebase keeps running into.
         if (remaining > 0.01) {
           const pretaxAvail = Math.max(0, pretax - rmd) - fromPretax;
           if (pretaxAvail > 0) {
@@ -2042,12 +1150,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
             bracketOverrideYears++;
           }
         }
-        // Roth emergency reserve, same principle — see the long note in
-        // buildWithdrawalWaterfall. A reserve you can't reach in an emergency
-        // is just a vault, and holding it past the point of failure protects
-        // the money from its own purpose. Measured before this fix: a $1.9M
-        // reserve on a $2.05M portfolio took success from 100% to 47% while
-        // the reserve sat untouched. Strictly last, after uncapped pre-tax.
         if (remaining > 0.01 && rothFloorMC > 0) {
           const reserveLeft = Math.max(0, roth - fromRoth);
           if (reserveLeft > 0) {
@@ -2059,23 +1161,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         }
         shortfall = remaining;
 
-        // Realized LTCG on this pass's taxable draw — read-only off the
-        // current (pre-draw) taxable balance/basis; the real `taxableBasis`
-        // gets mutated exactly once below, after the fixed point converges,
-        // using the final fromTaxable (not accumulated pass-by-pass).
         const gPass = realizedGainFromDraw(fromTaxable, taxable, taxableBasis);
         taxResult = calcYearTax(
           age, yr, fromPretax, ss, effectiveAb + otherIncTaxable + ordinaryYieldMC, rmd, 0,
           p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", gPass + qualifiedYieldMC, magiLookbackMC,
           spouseAgeAt(p, age)
         );
-        // IRC §72(t) additional tax on pre-59½ distributions. It's inside the
-        // fixed point for the same reason as the rest of the bill: a bigger
-        // pretax draw owes a bigger penalty, which widens the need, which
-        // grows the draw. Without this the MC's success rate rated an
-        // early-retirement plan as cheaper than it really is, while the
-        // waterfall (which does charge it) said otherwise — the two engines
-        // need to price the same dollars.
         earlyPenMC = earlyWithdrawalPenalty({
           separationQualifies: ruleOf55OkMC,
           age, pretaxDistribution: fromPretax + rmd,
@@ -2094,53 +1185,26 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         break;
       }
 
-      // Realized gain for the year (final, converged fromTaxable) — the one
-      // authoritative value used both to mutate taxableBasis below and to
-      // feed the Roth-conversion delta-tax helper further down, so a pure
-      // conversion cost doesn't get polluted by a second, different gain estimate.
       const realizedGainMC = realizedGainFromDraw(fromTaxable, taxable, taxableBasis);
 
-      // Update bucket balances. Excess RMD (forced out beyond what spending
-      // and taxes consumed) gets reinvested in the taxable bucket, not vaporized.
       const rmdExcess = Math.max(0, rmd - (need + totalTax));
-      // Basis consumed by the draw = draw - realized gain (the non-gain,
-      // return-of-basis portion); reinvested rmdExcess is fresh money, so
-      // it's fresh basis dollar-for-dollar.
       const consumedBasisMC = fromTaxable - realizedGainMC;
-      // Surplus left after this year's tax gets deposited as basis (already
-      // taxed money); only later growth is gain. Mirrors the waterfall exactly.
       const surplusToTaxableMC = Math.max(0, incomeSurplus - Math.max(0, totalTax - rmd));
-      // The yield's tax was already funded above (it widened totalTax, which
-      // widened this year's draws) — crediting it to basis here (not to the
-      // balance, which grows unchanged below) is what stops it from being
-      // taxed a second time as unrealized gain on a later withdrawal.
       taxableBasis = Math.max(0, taxableBasis - consumedBasisMC) + rmdExcess + surplusToTaxableMC + taxableYieldAmtMC;
       cash    = Math.max(0, cash    - fromCash);
       taxable = Math.max(0, taxable - fromTaxable) + rmdExcess + surplusToTaxableMC;
       pretax  = Math.max(0, pretax  - fromPretax - rmd);
       roth    = Math.max(0, roth    - fromRoth);
 
-      // NaN-proof buckets before growth (just in case)
       cash    = isNaN(cash)    ? 0 : cash;
       taxable = isNaN(taxable) ? 0 : taxable;
       pretax  = isNaN(pretax)  ? 0 : pretax;
       roth    = isNaN(roth)    ? 0 : roth;
 
-      // IRMAA lookback history: this year's MAGI, used two years from now.
-      // Defaults to the no-conversion taxResult.magi, overwritten below with
-      // the post-conversion MAGI when a conversion actually executes (a
-      // conversion raises MAGI, so the age+2 IRMAA charge needs to see it —
-      // the conversion can't affect its own year's charge under the lookback).
       let finalMagiMC = taxResult.magi;
 
-      // Bracket-fill Roth conversion (after spending withdrawals, before
-      // growth). Bracket ceilings index at the assumed long-run inflation
-      // rate, not inflY — compounding a single bootstrapped year's draw over
-      // the whole horizon would swing the ceiling wildly with RNG noise.
       if (p.rothConversionTarget && p.rothConversionTarget !== "off" && pretax > 1000) {
         const inflFactor = Math.pow(1 + taxInfl, Math.max(0, yr - CURRENT_YEAR));
-        // IRMAA-Safe fills MAGI (gains included) up to tier 1, not taxable income (request #38).
-        // With the guard on (age >= 63), a bracket target is also capped at tier 1, as in the engine.
         const irmaaRoomMC = irmaaTargetRoom(filingStatus, inflFactor, taxResult.magi || 0);
         const room = p.rothConversionTarget === "irmaa"
           ? irmaaRoomMC
@@ -2151,24 +1215,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         if (room > 500) {
           let convAmt = Math.min(room, pretax);
           let lastWithConv = null;
-          // True conversion cost is the delta in total tax versus the
-          // no-conversion tax (correct progressive bracket stacking), not a
-          // flat marginal-rate estimate — a single bracket's rate
-          // understates cost whenever `room` spans intervening brackets.
-          // Mirrors buildWithdrawalWaterfall.js's Step 6.5/7 exactly:
-          // recompute full tax with the conversion stacked as ordinary
-          // income via calcYearTax's own `conversionAmount` parameter, then
-          // take the delta. Note: `totalTax` (and `withConv.totalTax`)
-          // exclude IRMAA (calcYearTax.totalTax = fedTax+stateTax), so this
-          // delta was already a pure fed+state conversion cost before the
-          // lookback landed, and it needs no change now that IRMAA is a
-          // fixed, lookback-driven constant for the year — a same-year
-          // conversion can't move it.
-          // Same realizedGainMC as the spending-draw tax call above — the
-          // delta has to isolate the conversion's own cost, not a
-          // different LTCG estimate. Same magiLookbackMC too, so the
-          // (fixed) IRMAA component agrees with taxResult's — it's this
-          // year's charge, unaffected by convAmt.
           const withConvFor = (amt) => calcYearTax(
             age, yr, fromPretax, ss, effectiveAb + otherIncTaxable + ordinaryYieldMC, rmd, amt,
             p.twoHousehold || false, taxInfl, filingStatus, p.stateOfResidence || "NJ", realizedGainMC + qualifiedYieldMC, magiLookbackMC,
@@ -2180,21 +1226,11 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
             lastWithConv = withConv;
             return Math.max(0, withConv.totalTax - totalTax);
           };
-          // The room above was measured on pre-conversion MAGI, but converting also
-          // makes more Social Security taxable, so re-check MAGI with the conversion.
           if (p.rothConversionTarget === "irmaa" || irmaaOnMC) {
             convAmt = shrinkToIrmaaCap(convAmt, (a) => withConvFor(a).magi, getIrmaaCeiling(1, filingStatus, inflFactor));
           }
           let convTax = convTaxFor(convAmt);
 
-          // Shrink (rather than all-or-nothing skip) when pretax can't
-          // self-fund the conversion plus its incremental tax — converge on
-          // the largest amount the remaining pretax balance can afford,
-          // mirroring the waterfall's own loop. Who pays the conversion tax
-          // has to match buildWithdrawalWaterfall exactly, or the Monte
-          // Carlo success rate describes a different plan than the
-          // Withdrawal/Conversion tabs. This block used to do `pretax -=
-          // convAmt + convTax` unconditionally, ignoring the setting entirely.
           const withholdConvMC = p.taxFunding === "from_conv" || p.taxFunding === "from_conversion";
           const outsideForConvMC = withholdConvMC ? 0 : Math.max(0, taxable) + Math.max(0, cash);
 
@@ -2209,11 +1245,9 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
 
           if (convAmt > 500) {
             if (withholdConvMC) {
-              // Withheld out of the transfer: gross leaves pretax, net reaches Roth.
               pretax -= convAmt;
               roth   += Math.max(0, convAmt - convTax);
             } else {
-              // Real buckets, same order the waterfall uses: taxable → cash → pretax.
               let owed = convTax;
               const fromTaxConv  = Math.min(owed, Math.max(0, taxable)); owed -= fromTaxConv;
               const fromCashConv = Math.min(owed, Math.max(0, cash));    owed -= fromCashConv;
@@ -2227,14 +1261,9 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         }
       }
 
-      // Roll the 2-year IRMAA lookback history forward: this year's final MAGI
-      // (post-conversion when one executed) becomes "two years ago" once we
-      // reach year y+2.
       magiTwoYearsAgo = magiOneYearAgo;
       magiOneYearAgo = finalMagiMC;
 
-      // Apply growth. Cash earns its own safe rate; everything else earns the
-      // portfolio-wide glidepath return for this sampled year.
       cash    = Math.max(0, cash    * (1 + cashRealReturn));
       pretax  = Math.max(0, pretax  * (1 + r));
       roth    = Math.max(0, roth    * (1 + r));
@@ -2249,47 +1278,22 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
         exhaustAge = age;
       }
     }
-    // The shortfall branch above `break`s out of this loop before its
-    // `path.push`, so an exhausted path's array is shorter than a survivor's
-    // — its last entry is a stale mid-run balance, not $0 at the terminal
-    // age. `pcts` (below) already treats a missing entry as `?? 0`; padding
-    // here makes `term`'s per-path-last-value quantile (mc.term.p50, the
-    // Forecast tab headline) count the same $0 for that path, matching
-    // `pcts`'s terminal row (the Net Worth tab chart) instead of diverging from it.
     while (path.length <= retYrs) path.push(0);
-    // Fold this path's guardrail behaviour into the run-level totals.
     gkStats.paths++;
     gkStats.cuts += pathCuts;
-    // Keep every path's own count. The MEAN alone was misleading on screen: the
-    // headline read "avg 8.9 cuts per scenario" while the median path never cut
-    // at all, because a minority of sequences cut repeatedly and dragged the
-    // average up. A mean is not a typical experience when the distribution is
-    // this skewed, so the distribution is kept and the median reported beside it
-    // (the same reasoning as Mean vs Median Final Balance on the Overview).
     gkStats.cutCounts.push(pathCuts);
     if (pathCuts > 0) gkStats.pathsWithCut++;
     if (pathRaise) gkStats.pathsWithRaise++;
-    // `constrained` is per-path incidence of the band binding at least once.
-    // Reported as its own rate rather than merged, so tightening gkFloorPct /
-    // gkCeilingPct moves a visible number in the direction it should.
     if (pathConstrained > 0) gkStats.pathsWithConstrained++;
     results.push({ path, survived, exhaustAge, portAtRetire, bracketOverrideYears, rothReserveBrokenYears });
     if (rows && !survived) failedRuns.push({ rows, exhaustAge, portAtRetire, path: i });
   }
 
-  // Aggregate results
   const pcts = [];
   for (let t = 0; t <= retYrs; t++) {
-    // Use ?? 0 so exhausted paths count as $0, not undefined
     const vals = results.map(r => r.path[t] ?? 0).sort((a, b) => a - b);
     const q = pct => vals[Math.floor(pct * (vals.length - 1))];
-    // Clamped, matching the drawdown loop that produced `path` — otherwise
-    // the fan chart's age axis (and every calendar year derived from it)
-    // would start before today for an already-retired user.
     const ageT = retAgeMC + t;
-    // Fraction of paths not yet exhausted at this age — feeds the per-age
-    // band table under the fan chart. A path counts as funded at ageT if it
-    // never exhausted, or exhausted at a later age.
     const alive = results.filter(r => r.exhaustAge == null || r.exhaustAge > ageT).length / N;
     pcts.push({
       age: ageT,
@@ -2298,13 +1302,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     });
   }
   const nS = results.filter(r => r.survived).length;
-  // Share of paths that had to break the bracket target at least once to
-  // stay funded. A high value means the chosen target is unreachable for
-  // this household, usually because non-portfolio income already fills it.
   const bracketOverrideRate = results.filter(r => r.bracketOverrideYears > 0).length / N;
-  // Median age at which money ran out, across failing paths only. This is
-  // the single most useful number for explaining a low score — "it fails"
-  // isn't actionable, "it typically fails at 78" is. null when nothing failed.
   const exhaustAges = results.filter(r => !r.survived && Number.isFinite(r.exhaustAge))
     .map(r => r.exhaustAge).sort((a, b) => a - b);
   const medianExhaustAge = exhaustAges.length
@@ -2315,19 +1313,7 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   const medR = rV[Math.floor(rV.length / 2)];
   const tV = results.map(r => r.path[r.path.length - 1]).sort((a, b) => a - b);
   const qt = p => tV[Math.floor(p * (tV.length - 1))];
-  // Mean of the terminal distribution. Deliberately NOT the average of p10..p90:
-  // that would be an average of five quantiles, which is not the distribution's
-  // mean and would understate it (the mean sits above the median here because a
-  // handful of very good sequences drag it up — the right tail the percentile
-  // ladder deliberately truncates). Rounded once, here, so every surface shows
-  // the same figure.
   const termMean = tV.length ? Math.round(tV.reduce((s, v) => s + v, 0) / tV.length) : 0;
-  // Mortality-weighted success: a failed path only fails you if you're alive
-  // to experience it. Weight each failure by P(alive at its exhaust age),
-  // from the same SSA table the fan chart's mortality overlay uses. The raw
-  // `rate` is the conservative "live to the horizon" number; `mwRate` is the
-  // actuarial "chance the money outlives you" number (Blanchett/Kitces-style).
-  // mwRate is always >= rate, since each failure's weight is <= 1.
   const failSurvivalSum = results.reduce(
     (s, r) => s + (r.survived ? 0 : survivalToAge(p.currentAge, r.exhaustAge ?? endAge, p.sex)),
     0
@@ -2339,10 +1325,6 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
     rothReserveBrokenRate,
     medianExhaustAge,
     mwRate,
-    // How often the spending guardrails actually bound, counted where they were
-    // applied. null-shaped (never Infinity) when no path registered a spend.
-    // The spend range is in RETIREMENT-YEAR dollars (see the accumulation note
-    // in the year loop) — label it with that basis, never "today's dollars".
     gkStats: gkStats.paths > 0 ? {
       ...gkStats,
       spendMinReal: Number.isFinite(gkStats.spendMinReal) ? Math.round(gkStats.spendMinReal) : 0,
@@ -2350,23 +1332,15 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
       cutRate: gkStats.pathsWithCut / gkStats.paths,
       raiseRate: gkStats.pathsWithRaise / gkStats.paths,
       avgCutsPerPath: gkStats.cuts / gkStats.paths,
-      // The typical experience, and the average among the paths that actually
-      // cut. Reporting only the overall mean invited "the typical plan cuts ~9
-      // times", which the median-path chart directly contradicted.
       medianCutsPerPath: gkStats.cutCounts.length
         ? [...gkStats.cutCounts].sort((a, b) => a - b)[Math.floor(gkStats.cutCounts.length / 2)]
         : 0,
       avgCutsAmongCutters: gkStats.pathsWithCut > 0 ? gkStats.cuts / gkStats.pathsWithCut : 0,
-      // Third event type — the floor/ceiling band binding, counted apart from the
-      // GK rules. `constrainedRate` is per-path incidence; the split lets the view
-      // say which limit bound, since a ceiling bind and a floor-bind imply
-      // opposite setting changes.
       constrainedRate: gkStats.pathsWithConstrained / gkStats.paths,
       avgConstrainedPerPath: gkStats.constrained / gkStats.paths,
     } : null,
     pcts,
     medR,
-    // Only with keepFailures. Three representative failed paths with per-year rows.
     failures: failedRuns.length ? (() => {
       const s = [...failedRuns].sort((a, b) => a.exhaustAge - b.exhaustAge);
       return { count: s.length, worst: s[0], typical: s[s.length >> 1], closest: s[s.length - 1] };
@@ -2376,32 +1350,12 @@ function runMC(p, endAge, N = MC_PATHS, seed = 42, useGK = true, seqOverride = n
   };
 }
 
-// Stress Test is the same engine as runMC, with the 2000-2012 equity
-// sequence forced at retirement (sequence-of-returns risk). Delegating to
-// runMC instead of carrying a parallel implementation guarantees one tax
-// model, one sourcing waterfall, and one RMD/strategy code path across the
-// Monte Carlo, the deterministic schedule, and the stress pivot. The
-// non-resident/state-tax toggle, IRMAA, SS torpedo, and bracket caps all
-// propagate to the stress number automatically, so no field can read
-// differently here than anywhere else. (This used to run a flat taxDragRate
-// heuristic that ignored p.twoHousehold, so the toggle had no effect on the
-// stress success rate.)
 function runStress(p, endAge, N = STRESS_PATHS, seed = 99) {
   return runMC(p, endAge, N, seed, true, SEQ_2000_2012);
 }
 
-// Deterministic withdrawal schedule (median returns)
-
 function simulateDeterministicWithStrategy(p, inf, strategyArg) {
-  // The strategy arrives as an argument here (the Withdrawal tab passes its
-  // preview selection, not p.withdrawalStrategy), so it needs its own guard
-  // — migrating the saved profile alone doesn't protect this entry point.
   const withdrawalStrategy = resolveStrategy(strategyArg ?? p.withdrawalStrategy);
-  // Smart Waterfall: source the schedule directly from
-  // buildWithdrawalWaterfall's "smart" scenario, the one source of truth for
-  // bucket draws, Roth conversions, mortgage/carveout costs, and
-  // source-aware tax. This is the real-life year-by-year plan, not a
-  // re-derived approximation.
   if (withdrawalStrategy === "smart") {
     const wf = buildWithdrawalWaterfall(p);
     const { total: portAtRetire } = accumulateToRetirement(p);
@@ -2414,10 +1368,6 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
       carveoutCost: r.carveoutCost,
       healthcareRisk: r.healthcareRisk,
       conversionAmount: r.conversionAmount,
-      // Carried so this table can disclose the same reconciliation the
-      // Withdrawal Plan table does. It shows the identical conversion
-      // figure, so it invites the identical (wrong) comparison against a
-      // nominal published bracket top.
       bracketTopYr: r.bracketTopYr, stdDedYr: r.stdDedYr,
       taxableIncome: r.taxableIncome, totInc: r.totInc,
       marginalBracket: r.marginalBracket, convCapReason: r.convCapReason,
@@ -2432,55 +1382,27 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     return { schedule, portAtRetire: Math.round(portAtRetire), initWR };
   }
 
-  // Clamped for already-retired users — see effectiveRetireAge.
   const retAgeDet = effectiveRetireAge(p.retireAge, p.currentAge);
-  // Same resolved switch age runMC uses, so the deterministic table and the
-  // Monte Carlo it sits beside model the same investor (this engine used to
-  // hardcode 62 in its retirement loop).
   const glideSwitchAgeDet = resolveGlidepathSwitchAge({ ...p, retireAge: retAgeDet });
   const accYrs = Math.max(0, retAgeDet - p.currentAge);
   const preRetFlat = flatPreRetReturn(p);
-  // Same horizon rule as runMC.
   const planEndDet = planEndAgeOnPrimaryClock(p, p.endAge);
   const retYrs = planEndDet - retAgeDet;
-  // `p.port` is the aggregate starting balance the UI keeps in sync with the
-  // sum of `accounts` (see the account editor and the import path, which both
-  // recompute one from the other). Callers that build a profile from accounts
-  // alone — tests, and any programmatic entry point — leave it undefined, and
-  // reading it raw poisoned the whole schedule with NaN from year 0: the
-  // portfolio went NaN on the first draw, so every subsequent GK call tripped
-  // the `portfolioValue <= 0 || isNaN` guard and silently returned the floor
-  // with an empty guardrail sink (no event/reason/wr recorded). Fall back to
-  // the accounts sum so an accounts-only profile behaves identically to the
-  // in-sync UI profile; when `p.port` is a finite number, nothing changes.
   let port = Number.isFinite(p.port)
     ? p.port
     : (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0);
 
-  // Accumulation using median returns
   for (let y = 0; y < accYrs; y++) {
     const ret = preRetFlat ?? expectedReturn(glidepathEqPct(p.currentAge + y, p.preRetireEq, p.postRetireEq, glideSwitchAgeDet)) / 100;
-    // Aggregate portfolio here (no per-bucket split in this engine), but the
-    // total needs to include every contribution stream runMC applies or the
-    // two engines report different portfolio-at-retirement figures.
-    // Job-bound streams via the shared per-person-contributions helper —
-    // same per-person stop rule runMC applies, or the two engines disagree
-    // the moment a spouse retires first.
     const jcDet = jobContributionsForYear(p, p.currentAge + y);
     port = port * (1 + ret)
       + jcDet.pretax + jcDet.roth + (p.hsaContrib || 0)
       + (p.taxableContrib || 0);
-    // Pre-retirement one-off inflows (inheritance, lump-sum pension) get
-    // deposited like contributions — same fix as runMC's accumulation loop;
-    // this engine tracks one aggregate portfolio, so the inflow just adds.
     const evAccDet = computeCashFlowEvents(p.cashFlowEvents, CURRENT_YEAR + y, p.inf ?? 2.5, CURRENT_YEAR);
     if (evAccDet.inflow > 0) port += evAccDet.inflow;
   }
 
   const portAtRetire = port;
-  // Precompute the actual annual mortgage cash cost per calendar year
-  // (including extra payments and the partial payoff year), same model as
-  // buildWithdrawalWaterfall/runMC.
   let mortByYear = new Map();
   if (p.mortBalance > 0) {
     const ms = mortgageSchedule(p.mortBalance, p.mortRate ?? 6.5, p.mortStart || "2020-01", p.mortTerm || 30, p.mortExtra || 0);
@@ -2488,10 +1410,6 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   }
   const gkFloor = p.gkFloor || GK_FLOOR_FALLBACK;
   const gkCeiling = p.gkCeiling || GK_CEILING_FALLBACK;
-  // Baseline initWR = net portfolio need at retirement / portfolio, no tax,
-  // same quantity the yearly loop's GK netNeed offset computes (mirrors
-  // runMC/buildWithdrawalWaterfall's calibration). ab0 includes propIncome
-  // to match this engine's own `ab` term in the yearly loop below.
   const ss0 = computeHouseholdSS(p, retAgeDet);
   const ab0 = (p.ab > 0 ? p.ab : 0) + (p.propIncome || 0);
   const calYear0 = CURRENT_YEAR + (retAgeDet - p.currentAge);
@@ -2508,12 +1426,6 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   }, 0);
   const initNeed0 = Math.max(0, p.sp - ss0 - ab0 - otherInc0) + housing0 + carveout0;
   const initWR = portAtRetire > 0 ? initNeed0 / portAtRetire : 0.04;
-  // Source-aware tax: reuse the Smart Waterfall engine so the tax column
-  // here matches what the Waterfall tab shows for the same age. The
-  // waterfall knows each account type (cash/taxable/pretax/roth) and only
-  // treats pretax draws as ordinary income — without this override,
-  // calcYearTax would treat every portfolio draw as ordinary income, badly
-  // overstating fed tax for years that draw from taxable brokerage or Roth.
   const smartTaxByAge = new Map();
   try {
     const wf = buildWithdrawalWaterfall(p);
@@ -2523,48 +1435,19 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
         stateTax: row.stateTax || 0,
         irmaa: row.irmaa || 0,
         totalTax: row.totalTax || 0,
-        // Real cash costs the waterfall itself draws real money to cover
-        // (irmaaFull = fedTax+stateTax+irmaa; earlyPenalty is the separate
-        // IRC 72(t) 10% additional tax) — omitted here before, so this
-        // table's totalDraw only ever counted fed+state, understating the
-        // draw (and overstating Portfolio End) in any year either applies.
         irmaaFull: row.irmaaFull || 0,
         earlyPenalty: row.earlyPenalty || 0,
       });
     }
-  } catch { /* fall back to calcYearTax below */ }
+  } catch { }
 
-  // Same "Tax drag" master toggle as runMC — off zeroes all tax so the
-  // deterministic table matches the MC/Stress pivots under a pre-tax view.
   const taxEnabled = p.tax !== false;
 
-  // The year loop runs twice.
-  // The tax columns are borrowed from buildWithdrawalWaterfall, and that's
-  // correct — the waterfall is account-aware, so only pre-tax draws are
-  // ordinary income, whereas calcYearTax on an aggregate draw treats every
-  // dollar as ordinary and badly overstates tax. The bug was that the
-  // waterfall taxed its own spend path (the GK/Bengen hybrid) no matter
-  // which strategy was selected, so the draw on screen and the tax beside it
-  // described different plans. Measured before this fix: five strategies
-  // drawing between $2.28M and $3.45M over a lifetime all displayed the same
-  // $210,686 of tax.
-  //
-  // So: pass 1 discovers this strategy's spend path, the waterfall gets
-  // re-run against that path, and pass 2 uses the resulting per-age tax.
-  //
-  // Everything the loop mutates (`port`, `sp`, `lastReturn`, `schedule`) is
-  // declared inside runPass, so a second call starts from the same state as
-  // the first. `portAtRetire` is the accumulation result and is read-only here.
   const runPass = (taxByAge) => {
   let port = portAtRetire;
   let sp = p.sp;
   let lastReturn = 0;
   const schedule = [];
-  // Pre-smile spend per calendar year — the input to pass 2's waterfall.
-  // Pre-smile matters here: buildWithdrawalWaterfall applies
-  // spendingSmileFactor after its spSchedule override, so feeding back the
-  // post-smile `spending` field would apply the smile twice. Measured on a
-  // $1.5M/$80k profile: $20,913 too little at age 80.
   const spByYear = [];
 
   for (let y = 0; y < retYrs; y++) {
@@ -2576,19 +1459,12 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
     const adjFloor = gkFloor * cumInfl;
     const adjCeiling = gkCeiling * cumInfl;
 
-    // Deterministic income/fixed-cost pieces — moved above the strategy switch
-    // so GK's netNeed offset can use this year's own figures (no rand() in
-    // this engine, so there's no draw-order concern to preserve here).
-    // COLA compounds from the claiming age (p.ssAge), not the retirement-year
-    // loop counter `y` — see runMC's identical fix above.
     const ss = computeHouseholdSS(p, age);
     const growthFactor = Math.pow(1 + (p.abGrowth ?? 3)/100, Math.min(y, 20));
     const rawAb = Math.round(((p.ab > 0 ? p.ab : 0) + (p.propIncome || 0)) * growthFactor);
     const ab = (p.abEndYear && yr > p.abEndYear) ? 0 : rawAb;
     const { total: otherIncTotal } = computeOtherIncome(p.otherIncomes, yr);
 
-    // Housing cost: mortgage cash cost while active, or inflation-adjusted
-    // rent — same model as buildWithdrawalWaterfall's Step 1.
     let housingCost = 0;
     if ((p.housingType || "own") === "own") {
       housingCost = mortByYear.get(yr) || 0;
@@ -2599,59 +1475,33 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
       return sum + (yr <= (c.endYear || 9999) ? Math.round((c.annual || 0) * cumInfl) : 0);
     }, 0);
 
-    // GK's netNeed income offset — same net portfolio need quantity initWR
-    // was calibrated against.
     const evDet = computeCashFlowEvents(p.cashFlowEvents, yr, p.inf ?? 2.5, CURRENT_YEAR);
     const eventCostDet = evDet.total;
-    // This engine tracks one aggregate portfolio, so an inflow just adds to
-    // it; the per-bucket routing that matters for tax lives in runMC and
-    // buildWithdrawalWaterfall.
     if (evDet.inflow > 0) port += evDet.inflow;
 
-    // Advisory only, not charged to this year's draw on purpose. See the
-    // matching note in buildWithdrawalWaterfall: this is E[X] on a median
-    // path, and this table is what a real person enacts. At the default
-    // 3.5%/yr the median shock is $0, so charging $3,500 produced a
-    // withdrawal figure that's wrong in every actual year. runMC still draws
-    // it stochastically, so the success rate beside this table still prices
-    // the risk correctly.
     const hcRiskDet = expectedHealthcareShock(age, p, cumInfl);
 
     const gkIncomeOffset = ss + ab + otherIncTotal;
     const gkFixedCosts = housingCost + carveoutCost + evDet.committed;
 
-    // What the guardrail does this year, recorded rather than re-derived. Set
-    // by guytonKlingerWithdrawal via its `out` sink, consumed by the schedule
-    // row below and charted in the Guardrails view.
     let gkEvent = null;
-    // The spend this year STARTS from, before the strategy touches it. GK's
-    // adjustments are relative to last year's figure, so the chart needs both
-    // ends of that move to show what a cut or raise actually did.
     const spEntering = sp;
 
-    // Apply withdrawal strategy (deterministic version)
     if (p.spSchedule && p.spSchedule.length) {
-      // Detailed budget overrides the distribution strategy (see runMC note).
       sp = scheduleSpendForYear(p.spSchedule, yr, p.inf ?? 2.5);
     } else if (y === 0) {
-      // first year: use target spend
     } else {
       if (withdrawalStrategy === "gk") {
         const refWRd = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
-        // `gkEvent` captures what the guardrail did, so the schedule can chart
-        // cuts and raises without re-deriving the rules (see the `out` param).
         gkEvent = {};
         sp = guytonKlingerWithdrawal(port, refWRd, sp, lastReturn, inflY, adjFloor, adjCeiling, p.endAge - age, gkIncomeOffset, gkFixedCosts, gkEvent);
       }
       else if (withdrawalStrategy === "fixed") {
-        // Pure fixed %: draw = rate × port. No GK clamp.
         const fixedRate = p.fixedWithdrawalRate ?? 0.04;
         sp = port * fixedRate;
       }
       else if (withdrawalStrategy === "vpw") {
-        // VPW PMT payout rate: r / (1 - (1+r)^(-n)). Has to match runMC exactly.
         const rVPW = p.vpwRealReturn ?? 0.0376;
-        // Follows the plan-to age — see the matching note in runMC.
         const n = Math.max(1, (p.vpwEndAge ?? p.endAge ?? 100) - age);
         const rate = rVPW === 0 ? 1 / n : rVPW / (1 - Math.pow(1 + rVPW, -n));
         const newSp = port * Math.min(0.10, rate);
@@ -2667,13 +1517,9 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
         sp = Math.max(adjFloor, Math.min(adjCeiling, sp));
       }
       else if (withdrawalStrategy === "bengen") {
-        // Bengen 4% rule: inflation-adjusted constant. Does not react to portfolio.
         sp = sp * (1 + inflY);
       }
       else if (withdrawalStrategy === "smart") {
-        // Smart Waterfall hybrid: GK when yearsRemaining > 15, Bengen when
-        // <= 15. The split matches GK's own longevity-clause threshold so we
-        // exit GK exactly where its safety brake would otherwise be disabled.
         const yrsRemaining = p.endAge - age;
         if (yrsRemaining > 15) {
           const refWRd2 = gkReferenceWR({ plannedSpend: p.sp, cumInfl, incomeOffset: gkIncomeOffset, fixedCosts: gkFixedCosts, portAtRetire });
@@ -2683,78 +1529,30 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
         }
       }
       else {
-        // Unreachable via resolveStrategy; see the matching note in runMC.
         sp = sp * (1 + inflY);
       }
     }
     lastReturn = ret;
 
-    // Blanchett spending smile — a real lifestyle curve applied to this
-    // year's spend. Not fed back into `sp` on purpose, since that's the
-    // withdrawal strategy's running state: multiplying it would compound the
-    // smile year over year and corrupt GK's own inflation logic. This is an
-    // overlay on what the strategy decided, not a change to the strategy.
     const spSmiledDet = sp * spendingSmileFactor(age, retAgeDet, p.smile !== false);
-    // hcRiskDet isn't in this sum — see its declaration above. Every term
-    // here is a cash obligation the user actually pays this year.
     const need = Math.max(0, spSmiledDet - ss - ab - otherIncTotal) + housingCost + carveoutCost + eventCostDet;
-    // This engine tracks one aggregate portfolio, so surplus income just
-    // stays invested rather than evaporating. Same rule as the other two
-    // engines, or they'd disagree about the balance — the drift class this
-    // codebase keeps running into.
     const incomeSurplusDet = Math.max(0,
       (ss + ab + otherIncTotal) - (spSmiledDet + housingCost + carveoutCost + eventCostDet));
 
-    // Prefer the Smart Waterfall's source-aware tax (matches the Waterfall
-    // tab) — this path automatically carries LTCG/cost-basis and the IRMAA
-    // 2-year lookback since buildWithdrawalWaterfall models both now. Fall
-    // back to the legacy "treat everything as ordinary income" calc only
-    // when no waterfall row exists for this age (e.g. accounts not
-    // configured); that fallback has no taxable-bucket split (ltcgAmount
-    // defaults to 0) and no lookback history to thread through (magiLookback
-    // defaults to null, so same-year MAGI, the pre-lookback approximation) —
-    // both unchanged and out of scope here.
     const wfTax = taxByAge.get(age);
     const taxResult = wfTax ?? calcYearTax(age, yr, need, ss, ab, 0, 0, p.twoHousehold || false, inflY, filingStatusAt(p, age), p.stateOfResidence || "NJ", 0, null, spouseAgeAt(p, age));
-    // Kept for display (matches the waterfall's own fed+state-only totalTax,
-    // shown alongside the separate irmaa column) — NOT what funds the draw.
     const totalTax = taxEnabled ? taxResult.totalTax : 0;
-    // What actually has to be drawn: fed+state+IRMAA+early-withdrawal-penalty,
-    // all real cash costs. When wfTax came from the waterfall, totalTax
-    // deliberately excludes irmaa (irmaaFull carries fed+state+irmaa
-    // instead) and never carried earlyPenalty at all — both omitted here
-    // silently understated every year's draw (and overstated Portfolio End)
-    // whenever either applied. The calcYearTax fallback's totalTax already
-    // includes irmaa in its own definition; it never computes an early
-    // penalty at all (a separate, pre-existing, out-of-scope gap for that
-    // fallback path only — it has no per-category state to compute one from).
     const fundedTax = taxEnabled
       ? (wfTax ? (wfTax.irmaaFull + wfTax.earlyPenalty) : taxResult.totalTax)
       : 0;
     const totalDraw = need + fundedTax;
-    // Draw-then-grow, matching buildWithdrawalWaterfall's own per-bucket
-    // pattern (draw and surplus applied first, growth multiplies what's
-    // left) — growing the FULL balance and only then subtracting the draw
-    // credited a full year's growth to money that was actually withdrawn
-    // and spent, silently overstating Portfolio End every year, whether or
-    // not any tax applied.
     port = Math.max(0, port - totalDraw + incomeSurplusDet) * (1 + ret);
 
-    // Pre-smile, and one entry for every plan year. Full coverage matters
-    // here too: scheduleSpendForYear carries the last entry forward
-    // inflated, so a sparse schedule would inflate an already-nominal figure
-    // a second time. With an entry per year, `elapsed` is always 0 and each
-    // value comes back verbatim (verified in deterministicTaxPath.test.js).
     spByYear.push({ year: yr, amount: Math.round(sp) });
 
     schedule.push({
       age, yr,
       spending: Math.round(spSmiledDet),
-      // Guardrail provenance for this year, straight from the engine that
-      // applied it (see guytonKlingerWithdrawal's `out` param). `spEntering`
-      // and `spAfterGK` bracket the adjustment; floor/ceiling are the year's
-      // inflation-adjusted bands, so the chart's dashed lines are the limits
-      // the engine actually clamped to rather than a UI reconstruction.
       spEntering: Math.round(spEntering),
       spAfterGK: Math.round(sp),
       gkEvent: gkEvent ? gkEvent.event : null,
@@ -2766,7 +1564,6 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
       portfolioDraw: Math.round(need),
       housingCost: Math.round(housingCost),
       carveoutCost: Math.round(carveoutCost),
-      // Advisory, NOT included in portfolioDraw/totalWithdrawal above.
       healthcareRisk: Math.round(hcRiskDet),
       conversionAmount: 0,
       fedTax: taxEnabled ? taxResult.fedTax : 0,
@@ -2781,29 +1578,12 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
   return { schedule, spByYear };
   };
 
-  // Pass 1 — the strategy's own spend path, still carrying the waterfall's
-  // default-path tax. Its draws are already correct; only its tax is
-  // borrowed from the wrong plan.
   const pass1 = runPass(smartTaxByAge);
 
-  // When the user has supplied a detailed budget, that budget already
-  // overrides the distribution strategy in both engines — the waterfall is
-  // already taxing this exact spend path, so a second pass would just
-  // recompute the same numbers and risk clobbering the user's own schedule.
-  // Nothing to reconcile.
   if (p.spSchedule && p.spSchedule.length) {
     return { schedule: pass1.schedule, portAtRetire: Math.round(portAtRetire), initWR };
   }
 
-  // Re-run the waterfall against this strategy's spending, then replay the
-  // year loop with the tax that produces.
-  //
-  // Single iteration, on purpose. Pass 2's tax differs slightly from pass
-  // 1's, which changes the portfolio, which changes next year's spend for
-  // the portfolio-linked strategies (fixed, vpw). That residual is
-  // second-order and much smaller than the defect being fixed, but it's
-  // still a residual: the tax column is now computed against this
-  // strategy's spending, not proven to be its exact fixed point.
   let pass2 = null;
   try {
     const wf2 = buildWithdrawalWaterfall({ ...p, spSchedule: pass1.spByYear });
@@ -2818,57 +1598,23 @@ function simulateDeterministicWithStrategy(p, inf, strategyArg) {
         earlyPenalty: row.earlyPenalty || 0,
       });
     }
-    // Only accept the second pass if it actually produced tax rows. An empty
-    // map would silently drop every row back to the calcYearTax fallback,
-    // which treats all draws as ordinary income — worse than the bug being fixed.
     if (taxByAge2.size > 0) pass2 = runPass(taxByAge2);
-  } catch { /* keep pass 1 */ }
+  } catch { }
 
   const finalSchedule = (pass2?.schedule?.length ? pass2 : pass1).schedule;
-  // pass1.spByYear is this strategy's own pre-smile spend path, in
-  // buildWithdrawalWaterfall's spSchedule shape ([{year, amount}]) — exposed
-  // so callers other than this function's own pass 2 (e.g.
-  // waterfallForActiveStrategy below) can re-run the waterfall against the
-  // ACTUAL selected strategy's spending instead of its own internal
-  // GK/Bengen-at-15yr default. Not populated for withdrawalStrategy ===
-  // "smart" (returned earlier above) or when p.spSchedule already overrides
-  // every strategy identically — callers should treat a missing/empty
-  // spByYear as "no override needed."
   return { schedule: finalSchedule, portAtRetire: Math.round(portAtRetire), initWR, spByYear: pass1.spByYear };
 }
 
-/**
- * The one place that decides what spend schedule buildWithdrawalWaterfall
- * should run against for a given profile — used by every UI surface that
- * needs the waterfall's sourcing/tax detail for the user's ACTUAL saved
- * strategy (the B1 End table, the Buckets tab's runway card, the
- * Income & Expenses chart, the year-end tax-room prompt), instead of each
- * one calling buildWithdrawalWaterfall(p) directly.
- *
- * buildWithdrawalWaterfall(p) with no spSchedule override always paces
- * spending with its OWN internal GK-guardrail/Bengen-at-15yr hybrid — the
- * "Smart Waterfall" distribution option — regardless of p.withdrawalStrategy.
- * That's correct when the strategy actually IS "smart" (or the user supplied
- * an explicit spSchedule import, which already overrides every strategy
- * identically), but for gk/bengen/fixed/vpw/ninety_five_rule it silently
- * substitutes a different plan's spending for the one on screen — the same
- * defect simulateDeterministicWithStrategy's own comment documents fixing
- * for ITS tax column ("five strategies... all displayed the same $210,686 of
- * tax"). This applies that same fix — discover the strategy's own spend path
- * first, then re-run the waterfall against it — to every other consumer.
- */
 function waterfallForActiveStrategy(p) {
   const strategy = resolveStrategy(p?.withdrawalStrategy);
   if (strategy === "smart" || (p?.spSchedule && p.spSchedule.length)) {
     return buildWithdrawalWaterfall(p);
   }
   const det = simulateDeterministicWithStrategy(p, p?.inf ?? 2.5, strategy);
-  if (!det?.spByYear?.length) return buildWithdrawalWaterfall(p); // defensive: no path found, fall back rather than throw
+  if (!det?.spByYear?.length) return buildWithdrawalWaterfall(p);
   return buildWithdrawalWaterfall({ ...p, spSchedule: det.spByYear });
 }
 
-// Roth conversion explorer
-// 2026 MFJ federal brackets (inflation-adjusted from 2025)
 const FED_BRACKETS_2026_MFJ = [
   { lo: 0,       hi: 24800,  rate: 0.10 },
   { lo: 24800,   hi: 100800, rate: 0.12 },
@@ -2878,7 +1624,6 @@ const FED_BRACKETS_2026_MFJ = [
   { lo: 512450,  hi: 768700, rate: 0.35 },
   { lo: 768700,  hi: Infinity, rate: 0.37 },
 ];
-// 2026 Single filer federal brackets (~half the MFJ thresholds)
 const FED_BRACKETS_2026_SINGLE = [
   { lo: 0,      hi: 12400,  rate: 0.10 },
   { lo: 12400,  hi: 50400,  rate: 0.12 },
@@ -2889,9 +1634,6 @@ const FED_BRACKETS_2026_SINGLE = [
   { lo: 640600, hi: Infinity, rate: 0.37 },
 ];
 
-// IRS Pub 590-B Table III (Uniform Lifetime) divisors, 2022+ table.
-// Default table for owners whose sole-beneficiary spouse is NOT >10 years younger.
-// (The >10-years-younger Joint & Last Survivor case uses jointRmdDivisor from src/data/jointRmdTable.js.)
 const RMD_DIV = {
   72: 27.4,
   73: 26.5,
@@ -2944,28 +1686,15 @@ function idxB(br, f) {
     rate: b.rate,
   }));
 }
-/**
- * @param {number|null} beneficiaries  How many people in the household are
- *   actually on Medicare this year (65+). IRMAA thresholds are per tax
- *   return — they stay keyed to filing status — but the surcharge is per
- *   beneficiary, so a couple where only one has reached 65 pays one
- *   surcharge against the MFJ threshold. This used to always charge two for
- *   MFJ, overstating Medicare cost for the whole age gap. `null` keeps the
- *   old assumption (2 for MFJ, 1 for single) for callers with no spouse age.
- */
 function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
-  // Published CMS table for this year (2027+ start from the 2027 table), inflated from its own year.
   const { rows: T, baseYear } = irmaaTableFor(yr);
   const f = Math.pow(1 + (isNaN(infR) ? 0.025 : infR), yr - baseYear);
-  // T[i].f is the two-person MFJ surcharge, so half of it is one person's.
   const n = beneficiaries != null ? Math.max(0, beneficiaries) : (isMFJ ? 2 : 1);
   if (n === 0) return 0;
   for (let i = T.length - 1; i >= 0; i--) {
-    // Single tiers are half the MFJ thresholds, except the top tier ($500,000 vs $750,000).
     const thresh = isMFJ ? T[i].m
       : (i === T.length - 1 ? 500_000 : T[i].m / 2);
     const cost = (T[i].f / 2) * n;
-    // CMS: tiers 1-4 start ABOVE the ceiling (MAGI <= the first MFJ ceiling pays nothing); only the top tier is "greater than or equal".
     if (i === T.length - 1 ? magi >= thresh * f : magi > thresh * f) return Math.round(cost * f);
   }
   return 0;
@@ -2973,13 +1702,6 @@ function irmaaCost(magi, yr, infR = 0.025, isMFJ = true, beneficiaries = null) {
 
 const ROTH_BASE_YEAR = new Date().getFullYear();
 
-/**
- * SECURE Act 2.0 RMD start age.
- * Born before 1951 → 72 (pre-SECURE 2.0 transition)
- * Born 1951–1959  → 73
- * Born 1960+      → 75
- * Accepts either a birth year (number) or an ISO dob string ("YYYY-MM-DD").
- */
 function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   let by = null;
   if (typeof birthYear === "number" && birthYear > 0) by = birthYear;
@@ -2989,46 +1711,12 @@ function getRmdStartAge({ dob, birthYear, currentAge } = {}) {
   } else if (typeof currentAge === "number" && currentAge > 0) {
     by = ROTH_BASE_YEAR - currentAge;
   }
-  if (by === null) return 73; // safe default
+  if (by === null) return 73;
   if (by >= 1960) return 75;
   if (by >= 1951) return 73;
   return 72;
 }
 
-// Disclaimers
-/**
- * Section-level "this is a projection, not advice" notice.
- *
- * The footer disclaimer covers the app, but a user who lands on a results
- * tab, reads a success rate or a year-by-year withdrawal table, and acts on
- * it might never scroll to the footer at all. The two surfaces that most
- * resemble advice — a probability of success, and a schedule saying how much
- * to take from which account — carry it inline, next to the number instead
- * of a page away.
- *
- * One component, not a retyped string, so the wording can't drift between
- * sections.
- *
- * ── Why it is collapsed, and why that is still enough ─────────────────────
- * The full paragraph was four lines of amber on every results tab — a lot of
- * prime screen for text nobody rereads. It now ships as a one-line short-form
- * notice with the long form one click away.
- *
- * The legal line this walks: what a disclaimer has to do is WARN, and the two
- * load-bearing hooks of this one are "not financial advice" and "consult a
- * professional before acting". Both stay in the ALWAYS-VISIBLE line — they are
- * never behind the rollout. Only the elaboration (that a success rate is a
- * share of simulated scenarios rather than a probability, that past results
- * don't predict future ones) is collapsed, and that elaboration is also
- * permanent in the footer and the About panel regardless of this control.
- * So the collapsed state is a complete short-form disclaimer on its own, not
- * a stub that needs expanding to mean anything.
- *
- * Also note: a roll-out disclosure is a real control, not a tooltip. The old
- * `title=`-only warnings were invisible on touch — the failure mode this
- * codebase keeps hitting — so the toggle is a button with aria-expanded, and
- * the text expands inline in the page rather than into a dialog.
- */
 function SectionDisclaimer({ children, summary }) {
   const [open, setOpen] = useState(false);
   return (
@@ -3072,21 +1760,6 @@ function SectionDisclaimer({ children, summary }) {
   );
 }
 
-// Icons
-/**
- * Info icon, drawn as SVG instead of the Unicode "ⓘ" (U+24D8) it replaces.
- *
- * The glyph looked wrong for reasons no amount of CSS could fix: its shape
- * comes from whatever font happens to resolve it, so the circle's weight,
- * diameter, and baseline offset all changed between platforms and between
- * the app's two typefaces. At the 10-11px size it was used at, the ring
- * rendered hairline-thin and sat a pixel or two above the text it
- * annotated. A vector draws identically everywhere, stays crisp at any
- * size, and lines up on the text baseline.
- *
- * Inherits color through `currentColor`, so callers keep styling it with
- * plain `color` — including hover transitions — exactly as they did the glyph.
- */
 function InfoIcon({ size = 14, title, style }) {
   return (
     <svg
@@ -3104,17 +1777,6 @@ function InfoIcon({ size = 14, title, style }) {
   );
 }
 
-/**
- * The standard hoverable info affordance: an InfoIcon in a muted circular
- * well that brightens on hover, with the explanation as a native tooltip.
- * Replaces the hand-rolled `infoDot` style object that used to get retyped
- * at each call site.
- */
-// Root-cause fix (2026-09-23): this used to be a `title=` tooltip only, which
-// shows nothing on many setups and is dead on touch — the exact trap that hid
-// the Success Rate card's explanation. Now it opens the same click InfoModal
-// the rest of the app uses, so the info actually displays. Same props, so
-// every caller is fixed at once. `heading` optionally titles the dialog.
 function InfoDot({ title, heading = "What this means", size = 14, color = "var(--text-secondary)", hoverColor = "var(--text-primary)" }) {
   const [hover, setHover] = useState(false);
   return (
@@ -3141,19 +1803,6 @@ function InfoDot({ title, heading = "What this means", size = 14, color = "var(-
   );
 }
 
-// ── "How this simulation works" — the rich Chance-of-Success method modal.
-// Single entry point: the Success Rate card's ⓘ (design-authority verdict,
-// 2026-09-24 — the old inline "View method & data" card was a duplicate
-// trigger to this same dialog and was deleted). Describes AiRA's ACTUAL engine:
-// a bootstrap Monte Carlo that draws random years (with replacement, order
-// reshuffled) from the real 1928–2025 Damodaran arrays runMC samples
-// (SP500/BONDS/INFL) — NOT a sequential historical replay. The pool-stats box
-// characterizes that distribution honestly instead of aping a year-scrubber.
-// One plain-language description per withdrawal strategy, keyed by resolved
-// strategy id. Module scope so every ⓘ that opens SimMethodModal (the hero
-// "Success to Age" ⓘ and the Monte Carlo tab's Success Rate card) reads the
-// same text — it used to be local to MCTab, which is why the hero ⓘ could not
-// reach the rich modal at all.
 const STRATEGY_HOW_IT_WORKS = {
   gk: "Guyton‑Klinger guardrails — Every year, if the current withdrawal rate exceeds 120% of the initial rate, spending cuts 10% (never below floor). If it falls below 80%, spending increases 10% (never above ceiling).",
   fixed: "Fixed Percentage — You withdraw a constant percentage of the current portfolio each year, automatically adjusting with market value.",
@@ -3165,9 +1814,6 @@ const STRATEGY_HOW_IT_WORKS = {
 
 function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRATEGY_HOW_IT_WORKS, trigger }) {
   const strat = resolveStrategy(withdrawalStrategy);
-  // Honest characterization of the bootstrap POOL — the distribution runMC
-  // samples from — NOT a year-by-year scenario table (that would ape a
-  // sequential-backtest app; AiRA draws years at random, never in order).
   const pool = useMemo(() => {
     const eq = SP500.map((v) => v * 100);
     const infl = INFL.map((v) => (v ?? 0) * 100);
@@ -3247,53 +1893,19 @@ function SimMethodModal({ params, withdrawalStrategy, strategyHowItWorks = STRAT
   );
 }
 
-// Formatters
-/* The one money formatter. Whole dollars, grouped, no abbreviation, ever.
- * There used to be `fmtK` and `fmtM` alongside this, byte-identical to it
- * and to each other. Three names implying three formats invited exactly one
- * bug: something that actually did abbreviate (`landingMoney`) read as
- * normal because "we have a K formatter". Retirement numbers get compared,
- * not skimmed — $1,049,999 shown as "$1.0M" hides $50K. One name, one format. */
 const fmtDollar = (v) => `$${Math.round(v).toLocaleString()}`;
-/* Upper bound for any typed dollar field. ANumInput clamps to `max` on blur,
- * so a tight max silently rewrites what the user entered — the old $10M cap
- * on the portfolio target turned a $100M plan into a $10M one with no
- * warning. Input validation shouldn't encode an assumption about how rich
- * the user is — that's a presentation concern, not a data one. Not applied
- * to fields with a statutory ceiling (401k/Roth/HSA contributions, SS
- * benefit) or to rates, percentages and ages, where the bound is real
- * domain validation. */
 const MAX_MONEY_INPUT = 1_000_000_000;
-/* Gutter for a Y axis labeled in whole dollars. The per-chart widths used to
- * be 46-58px, which clipped seven-figure ticks by 4-6px ("$2,184,596"
- * measures 57px at fontSize 9) — a silently truncated axis number is worse
- * than a wide gutter. Sized for nine figures, since portfolios up to $250M
- * are enterable now. 92 since tick text went from 9px to 11px (--fs-small):
- * "$44,501,412" in mono at 11px needs ~84px with its tick margin. */
 const MONEY_AXIS_WIDTH = 92;
 const fmtPct = (v) => `${(v * 100).toFixed(1)}%`;
 
-// Status dot: colour comes from a token and the words beside it carry the meaning.
 const Dot = ({ tone = "info" }) => <span className={`dot dot-${tone}`} aria-hidden="true" />;
 
-// Appending hex alpha to a color (`${c}44`) only works when `c` is a hex
-// literal. The design-token migration turned many color sources into CSS
-// tokens, and "var(--positive)44" isn't a color — the browser drops the
-// whole declaration, so the tint and border silently vanish. A few of these
-// sources are ternaries that return a token on one branch and a raw hex on
-// the other (rateColor, wrColor), so the same card renders bordered at one
-// value and borderless at another — that's how this survived, it looks like
-// a theme quirk rather than a bug. color-mix handles tokens; hex inputs
-// keep their exact prior string.
 export const withAlpha = (color, hexAlpha) => {
   if (typeof color !== "string" || !color.includes("var(")) return `${color}${hexAlpha}`;
   const pct = Math.round((parseInt(hexAlpha, 16) / 255) * 1000) / 10;
   return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 };
 
-// SINGLE SOURCE OF TRUTH for account-category label + color. Used by the
-// Savings panel editor (SavingsPanel) AND the sidebar AllocationDonut, so the
-// donut's slice colors can never drift from the account chips they summarize.
 export const ACCOUNT_CATEGORIES = [
   { key: "pretax",  label: "Pre-Tax",        color: "#0ea5e9", defaultName: "401(k)" },
   { key: "roth",    label: "Roth",           color: "var(--accent-purple)", defaultName: "Roth IRA" },
@@ -3302,14 +1914,6 @@ export const ACCOUNT_CATEGORIES = [
   { key: "cash",    label: "Cash / Savings", color: "var(--text-secondary)", defaultName: "Savings" },
 ];
 
-// Tax-treatment donut of the CURRENT portfolio, by account category. Reads the
-// same accounts + ACCOUNT_CATEGORIES the profile editor writes — no re-derived
-// totals. Zero-balance categories are dropped so the ring shows only what the
-// user actually holds. Drawn as a CSS conic-gradient ring rather than a
-// Recharts Pie: a single-category (100%) portfolio is a full-circle slice,
-// which Recharts 3.8 renders as an EMPTY path — conic-gradient has no such
-// degenerate case, needs no chart lib mounted in an 84px box, and the
-// radial mask punches the hole so it reads as a ring over any background.
 function AllocationDonut({ accounts, onEdit }) {
   const data = ACCOUNT_CATEGORIES
     .map((c) => ({ ...c, value: (accounts || []).filter((a) => a.category === c.key).reduce((s, a) => s + (a.balance || 0), 0) }))
@@ -3331,9 +1935,6 @@ function AllocationDonut({ accounts, onEdit }) {
         Tax Treatment
       </h2>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {/* The ring is the thing a new user reaches for to change the split,
-            so with onEdit it IS the control. The mask lives on the inner span
-            so it can't clip the button's focus outline. */}
         <Ring
           {...(onEdit ? { type: "button", className: "donut-btn", onClick: onEdit, "aria-label": "Edit account split" } : { style: { flexShrink: 0 } })}
           title={data.map((d) => `${d.label}: ${fmtDollar(d.value)} (${((d.value / total) * 100).toFixed(0)}%)`).join("\n")}
@@ -3364,17 +1965,6 @@ function AllocationDonut({ accounts, onEdit }) {
   );
 }
 
-// Numeric entry
-/* The one parser every typed number field uses. People paste what they see
- * — "$1,250,000" — and type shorthand — "1.25M", "750k". Raw `Number()`
- * returns NaN for all of those, and a field that drops NaN on the floor
- * silently discards the entry and snaps back to the old value on blur. That
- * reads as the app eating your data, with no error to explain it.
- *
- * Returns null when the text genuinely isn't a number, so the caller can
- * leave the existing value alone. Finiteness gets checked explicitly
- * because `Number("1e999")` is Infinity and passes `!isNaN` — Infinity in a
- * balance renders as "∞" and poisons every projection downstream of it. */
 function parseNumericEntry(text) {
   const cleaned = String(text).trim().replace(/[$,%\s]/g, "");
   if (!cleaned) return null;
@@ -3383,15 +1973,10 @@ function parseNumericEntry(text) {
   const n = Number(suffix ? cleaned.slice(0, -1) : cleaned);
   return Number.isFinite(n) ? n * mult : null;
 }
-/* Whole dollars at or above `min`. Returns null when the text isn't a number,
- * so the caller leaves the existing value untouched. */
 function parseMoneyInput(text, min) {
   const n = parseNumericEntry(text);
   return n === null ? null : Math.max(min, Math.round(n));
 }
-/* All analogies in the band the rate falls into (band = highest `min` ≤ rate).
- * Exported for tests. The array is ordered highest-band-first, so the first
- * match's `min` identifies the band. */
 export function getAnalogues(rate) {
   const pct = rate * 100;
   const first = ANALOGUES.find((a) => pct >= a.min) || ANALOGUES[ANALOGUES.length - 1];
@@ -3402,10 +1987,6 @@ function getAnalogue(rate) {
   return getAnalogues(rate)[0];
 }
 
-/* Revolving analogy card — cycles through every analogy in the current band so
- * users see several independent real-world reference points for the same
- * number, each with its own (approximate, defensible) probability. Click
- * advances immediately; auto-advances every 7s. */
 function RotatingAnalogue({ rate, endAge }) {
   const pool = getAnalogues(rate);
   const [idx, setIdx] = useState(0);
@@ -3437,45 +2018,17 @@ function RotatingAnalogue({ rate, endAge }) {
   );
 }
 
-// dollarBasisLabel/deflate/mcMedianAtAge/selectPortfolioAtAge moved to
-// engine/mcSelectors.js (imported at the top of this file) so the rules
-// engine, score explainer, and printable report can share them without a
-// circular import back into this file. The only thing ever wrong here was
-// the label "today's dollars", which promised a basis the math does not
-// use — see mcSelectors.js's own header for the full history.
-
-/* Per-age band table under the Monte Carlo fan chart — the same percentile
- * data the chart plots (deflated the same way when Real $ is on), one row
- * per age, plus the share of simulated paths still funded at that age.
- * Milestone rows (SS claiming, RMD start) are flagged so the table reads
- * like the chart's reference lines. */
 function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, hoveredAge, onHoverAge, totalPaths, retireAge, landmarkOnly = false, embedded = false }) {
   const [show, setShow] = useState(embedded);
-  // "What do these numbers mean?" — an inline, mobile-readable explainer
-  // (not a browser tooltip) condensing the About page's "still-funded-percent"
-  // card. Independent of `show` so it's reachable even with the table collapsed.
   const [showExplainer, setShowExplainer] = useState(false);
   const data = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
   if (!data || data.length === 0) return null;
-  // Landmark mode: fewer rows of the SAME table, for a summary surface. The
-  // Overview tab wants a handful of ages, not forty — but a condensed COPY of
-  // this table would be a second reader of `mc.pcts`, which is the anti-goal
-  // (REQUIREMENTS §41 §5). So the rows are filtered here and every cell below
-  // still comes from one implementation.
-  // Ages kept: the first, your retirement, SS claim, Medicare, first RMD, the
-  // decade markers inside the horizon, and the plan age — enough to see the
-  // shape without a second table.
   const rows = useMemo(() => {
     if (!landmarkOnly) return data;
     const keep = new Set([data[0]?.age, data[data.length - 1]?.age, retireAge, ssAge, rmdAge, 60, 65, 70, 75, 80, 85].filter((a) => a != null));
     const picked = data.filter((d) => keep.has(d.age));
-    // Never render an empty table if the horizon missed every landmark.
     return picked.length ? picked : [data[0], data[data.length - 1]].filter(Boolean);
   }, [data, landmarkOnly, retireAge, ssAge, rmdAge]);
-  // Colour comes from the shared band helper, not a local copy. This used to be
-  // `a >= 0.9 ? green : a >= 0.75 ? gold : red` — inline literals that had
-  // already drifted from the app's own bands (0.75 is not a band edge; 0.80 is).
-  // Two definitions of "a good score" is how five copies happened once before.
   const fundedColor = (a) => rateColor(a ?? 1);
   return (
     <div className={embedded ? undefined : "chart-card"}>
@@ -3518,12 +2071,6 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
               ? "Landmark ages only — your retirement, Social Security claim, Medicare, first RMD and the decade markers inside your horizon. "
               : "Each row is one age from the fan chart above: "}
             The percentile spread of{" "}
-            {/* The RUN's path count, not the MC_PATHS constant. This sentence
-                said "3,000" no matter what was run, so after the path count
-                became user-adjustable (⚙ Advanced Settings) it described a
-                simulation the reader was not looking at. A caption that names a
-                number has to read the same value the table's own count column
-                does. */}
             <strong style={{ color: "var(--text-secondary)" }}>
               {totalPaths ? totalPaths.toLocaleString() : MC_PATHS_LABEL}
             </strong>{" "}
@@ -3570,10 +2117,6 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
                         {d.age}{isSS && " 🏛️"}{isRMD && " 📋"}
                       </td>
                       <td>{currentAge != null ? yr : "—"}</td>
-                      {/* Band badge sits INSIDE the Still Funded cell: it is the
-                          same number, labelled with the app's band vocabulary —
-                          not a fourth success metric, and not a column of its
-                          own (that would just be the same figure twice). */}
                       <td style={{ fontWeight: 600 }}>
                         <span style={{ color: fundedColor(d.alive ?? 1) }}>
                           {d.alive != null ? `${(d.alive * 100).toFixed(1)}%` : "—"}
@@ -3601,9 +2144,6 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
               </tbody>
             </table>
           </div>
-          {/* Band key. Built from the MC_BAND_* constants rather than retyped
-              percentages, so the legend can never disagree with the colours
-              above it — the failure mode the constants exist to prevent. */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", alignItems: "center", marginTop: 8, fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>
             <span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>Still Funded:</span>
             {[
@@ -3628,10 +2168,6 @@ function MCBandTable({ pcts, inf, useReal, ssAge, rmdAge, currentAge, endAge, ho
   );
 }
 
-// The five life-phase "sectors" the badge cycles through as retirement age
-// advances. Each carries the age window it covers and the one-line reason it
-// matters, so the badge's InfoModal can explain the current phase (and the
-// whole arc) instead of leaving "Sector 1: The Escape" as an unexplained label.
 const SECTORS = [
   {
     n: "Sector 1: The Escape",
@@ -3773,9 +2309,6 @@ function SectorBadge({ age }) {
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                {/* Left group wraps as a unit; the "You are here" marker is a
-                    real pill (not an em-dash text suffix that dropped to its own
-                    line and read as a floating dash). */}
                 <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, minWidth: 0, flex: "1 1 auto" }}>
                   <span style={{ fontSize: "var(--fs-label)", fontWeight: 800, color: s.color }}>{s.n}</span>
                   {isCur && (
@@ -3795,7 +2328,6 @@ function SectorBadge({ age }) {
   );
 }
 
-// CSS
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
   /* Design tokens — single source for the palette. Reference as var(--x) in
@@ -4333,50 +2865,14 @@ const CSS = `
   }
 `;
 
-// Monte Carlo fan-chart palette.
-// One source of truth for the percentile band colors so the chart lines/
-// areas and the tooltip stay in lock-step. Distinct hue ramp (upside →
-// downside): 90th indigo, 75th cyan, Median teal, 25th amber, 10th red.
-// The Tip has to resolve by series name — Recharts hands Area series their
-// fill (a gradient url) as `p.color`, which would otherwise render as a broken swatch.
 const FAN_COLORS = {
-  "90th":   "var(--chart-4)", // indigo
-  "75th":   "var(--chart-5)", // cyan
-  "Median": "var(--accent-teal)", // teal (bold anchor line)
-  "25th":   "var(--accent-gold)", // amber
-  "10th":   "var(--chart-1)", // red
+  "90th":   "var(--chart-4)",
+  "75th":   "var(--chart-5)",
+  "Median": "var(--accent-teal)",
+  "25th":   "var(--accent-gold)",
+  "10th":   "var(--chart-1)",
 };
 
-/**
- * Heading for the shared chart tooltip.
- *
- * Pure and exported so it can be tested without a DOM — the bug it fixes is
- * a string-formatting decision, not a rendering one.
- *
- * `Tip` is shared by ten charts and they don't agree on their x-axis key —
- * most use dataKey="age", two use dataKey="yr". The heading used to be a
- * hardcoded `Age {label}`, so on the year-keyed charts it printed "Age
- * 2044," labeling a calendar year as an age (a user reported this with a screenshot).
- *
- * Reads the data row rather than the axis label: Recharts hands the whole
- * row back on payload[].payload, and these rows carry both `age` and `yr`.
- * Falls back to the label disambiguated by magnitude — nobody is 1900 years
- * old, and no plan year is below 130.
- */
-/**
- * Headline for the first-death disclosure box.
- *
- * The true branch used to read "Your spouse survives" when
- * `primarySurvives` is true — i.e. when the spouse dies and you survive.
- * Exactly backwards, and a user reported it after selecting "My spouse"
- * under "Who passes first" and being told his spouse survives. The
- * arithmetic underneath was right all along (the survivor benefit shown is
- * the deceased spouse's, passing to the primary) — only the sentence was inverted.
- *
- * Pure and exported so the wording is covered by a test. A label that
- * contradicts the model is the most repeated kind of bug in this codebase,
- * and it's invisible to every engine test.
- */
 export function firstDeathHeadline(primarySurvives, deathAtYourAge, survAgeAtDeath) {
   return primarySurvives
     ? `Modelled from your age ${deathAtYourAge} — your spouse dies first and you survive.`
@@ -4399,7 +2895,6 @@ export function tipHeading(payload, label) {
 const Tip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
 
-  // Filter to keep only the first occurrence of each name
   const seen = new Set();
   const uniquePayload = payload.filter(p => {
     if (seen.has(p.name)) return false;
@@ -4546,17 +3041,6 @@ const IncYearTip = ({ active, payload, label }) => {
     </div>
   );
 };
-/**
- * `hint` used to render as a native `title=` tooltip, which meant the
- * explanation was hover-only — undiscoverable to anyone who doesn't think
- * to hover, and just missing entirely on touch devices. It now opens an
- * InfoModal on click via the existing InfoIcon affordance, which fixes
- * discoverability and touch in one move. `title` stays on the icon only as
- * harmless extra flavor for mouse users, never as the only way to see it.
- *
- * `infoTitle` names the modal; it defaults to the toggle's own label so
- * callers that only pass `hint` get a correct heading for free.
- */
 function Toggle({ val, onChange, label, accent = "var(--positive)", hint, infoTitle, infoAccent }) {
   return (
     <div className="tog-row">
@@ -4574,7 +3058,6 @@ function Toggle({ val, onChange, label, accent = "var(--positive)", hint, infoTi
               </span>
             }
           >
-            {/* Hints are plain strings with \n\n paragraph breaks, or ready-made JSX. */}
             {typeof hint === "string" ? hint.split("\n\n").map((para, i) => (
               <p key={i} style={{ margin: "0 0 10px" }}>{para}</p>
             )) : hint}
@@ -4594,16 +3077,10 @@ function Toggle({ val, onChange, label, accent = "var(--positive)", hint, infoTi
   );
 }
 
-// About page content — edit everything below this line freely.
-// No component changes needed, just update the objects and arrays.
-
-// `open` + `onToggle` make it controlled, so a list can keep one topic open at
-// a time (Help). Without them it manages itself (search results stay all-open).
 function CollapsibleAboutCard({ entry, defaultOpen = false, open: controlled, onToggle }) {
   const [selfOpen, setSelfOpen] = React.useState(defaultOpen);
   const open = controlled ?? selfOpen;
   const ref = React.useRef(null);
-  // When the topic above collapses, this one jumps up the page: keep it in view.
   React.useEffect(() => { if (controlled) ref.current?.scrollIntoView?.({ block: "nearest" }); }, [controlled]);
   return (
     <div ref={ref} style={{ background:"var(--card-bg)",
@@ -4657,7 +3134,6 @@ function AboutButton() {
           borderRadius:14, padding:"24px 28px 28px", maxWidth:600, width:"100%",
           boxShadow:"0 24px 60px var(--tint-black-80)" }}
       >
-        {/* Header */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:18 }}>
           <div>
             <div style={{ fontSize: "var(--fs-h2)", fontWeight:800, color:"var(--text-primary)", letterSpacing:"-0.3px" }}>
@@ -4670,14 +3146,12 @@ function AboutButton() {
               cursor:"pointer", fontSize: "var(--fs-h1)", lineHeight:1, padding:"0 2px" }}>×</button>
         </div>
 
-        {/* Tab bar */}
         <div style={{ display:"flex", borderBottom:"1px solid var(--tint-white-08)", marginBottom:22 }}>
           {TABS.map((t, i) => (
             <button key={i} style={tabBtn(i)} onClick={() => setTab(i)}>{t}</button>
           ))}
         </div>
 
-        {/* Tab 0 — About Me */}
         {tab === 0 && (
           <div>
             <div style={{ fontSize: "var(--fs-h2)", fontWeight:700, color:"var(--text-primary)" }}>{ABOUT_ME.name}</div>
@@ -4704,11 +3178,6 @@ function AboutButton() {
               ))}
             </div>
 
-            {/* Special thanks. Credit belongs to the people who found a bug and
-                described it precisely enough to fix — that's rarer and more
-                useful than generic feedback, and naming them publicly is the
-                only payment on offer. Content lives in about.js (ABOUT_THANKS)
-                so adding someone needs no JSX. */}
             {ABOUT_THANKS?.people?.length > 0 && (
               <div style={{ marginTop: 26, paddingTop: 20, borderTop: "1px solid var(--tint-white-08)" }}>
                 <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-gold)", marginBottom: 8 }}>
@@ -4717,7 +3186,6 @@ function AboutButton() {
                 <p style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
                   {ABOUT_THANKS.intro}
                 </p>
-                {/* One wrapped line of names, not a card per person: the list grows and cards ate the modal. */}
                 <div style={{ fontSize: "var(--fs-body)", color: "var(--text-primary)", lineHeight: 1.9 }}>
                   {ABOUT_THANKS.people.map((pr, i) => (
                     <span key={pr.handle} title={pr.note || undefined} style={{ whiteSpace: "nowrap" }}>
@@ -4733,7 +3201,6 @@ function AboutButton() {
           </div>
         )}
 
-        {/* Tab 1 — The App */}
         {tab === 1 && (
           <div>
             <div style={{ fontSize: "var(--fs-body)", color:"var(--chart-2)", fontWeight:600, marginBottom:10 }}>
@@ -4777,11 +3244,6 @@ function AboutButton() {
   );
 }
 
-// Searchable knowledge base — pulled out of AboutButton's old "How It Works"
-// tab so it's reachable on its own (people look for help mid-task, not from
-// an about-the-author screen) and so a search box actually has somewhere
-// findable to live. Content stays in ABOUT_FEATURES (src/about.js); this is
-// purely presentation + filtering.
 function HelpButton() {
   const [open, setOpen] = React.useState(false);
   return (
@@ -4794,8 +3256,6 @@ function HelpButton() {
   );
 }
 
-// Small hover / click / focus info popover — replaces flaky native `title`
-// tooltips so the (i) always reveals its explanation (works on touch + keyboard too).
 function Hint({ text, width = 240 }) {
   const [show, setShow] = React.useState(false);
   return (
@@ -4835,24 +3295,6 @@ function Hint({ text, width = 240 }) {
   );
 }
 
-// `maxWidth` / `bodyMaxHeight` are additive overrides for content-heavy modals
-// (the tax-detail breakdown needs a wide, scrollable panel — 480px with no cap
-// would overflow the viewport). Defaults are unchanged, so every existing
-// caller renders exactly as before.
-//
-// `open` / `onClose` add a CONTROLLED mode. A per-row detail panel mounts once
-// and is pointed at whichever row was clicked, instead of one self-managing
-// InfoModal per row (40 rows would otherwise mean 40 independent dialogs whose
-// content each had to be built up front). Uncontrolled callers pass neither and
-// behave exactly as before.
-// ── Info-modal body text kit ────────────────────────────────────────────────
-// A shared FORMAT for modal bodies so they read as one family instead of a wall
-// of gray text. The template, top to bottom:
-//   <ModalLede>       one-line takeaway (bold, primary)         — the answer
-//   <ModalP>          supporting copy, with <Em>key terms</Em>  — the why
-//   <ModalNote>       tinted callout for a caveat / "it is NOT" — the catch
-// Em defaults to a neutral emphasis; pass color for a semantic key term
-// (e.g. the modal's INFO_ACCENT so the term matches the header).
 function ModalLede({ children }) {
   return <div style={{ fontSize: "var(--fs-h2)", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: 10 }}>{children}</div>;
 }
@@ -4880,10 +3322,8 @@ function InfoModal({ title, children, accent = "var(--chart-2)", trigger, maxWid
   const setOpen = (next) => {
     if (isControlled) { if (!next && onClose) onClose(); }
     else setUncontrolledOpen(next);
-    if (!next) trigRef.current?.focus(); // hand focus back to whatever opened it
+    if (!next) trigRef.current?.focus();
   };
-  // Keyboard users open with Enter/Space; the trigger is a span (not a
-  // <button>) because some callers place it inside other controls.
   const trigProps = {
     ref: trigRef, role: "button", tabIndex: 0, "aria-haspopup": "dialog", className: "info-trig",
     onClick: () => setOpen(true),
@@ -4905,10 +3345,6 @@ function InfoModal({ title, children, accent = "var(--chart-2)", trigger, maxWid
           padding:28, maxWidth, width:"100%", boxShadow:"0 24px 60px var(--tint-black-60)",
           maxHeight: "calc(100vh - 48px)", display: "flex", flexDirection: "column" }}
       >
-        {/* Uniform header for EVERY info modal: an accent icon badge + the
-            title carrying a 2.5px accent underline (the "how it works" look),
-            over a faint accent hairline that separates header from body. One
-            shell, so every modal in the app reads as one family. */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12,
           marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${withAlpha(accent, "22")}`, flexShrink: 0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
@@ -4955,23 +3391,6 @@ function InfoModal({ title, children, accent = "var(--chart-2)", trigger, maxWid
   );
 }
 
-/**
- * A table header whose explanation opens on click.
- *
- * These used to be `<th title="…">Label <InfoIcon/></th>`. Adding the
- * visible info marker fixed discoverability (you can see an explanation
- * exists) but not reachability — `title=` doesn't exist on touch devices at
- * all, so every phone and tablet user could see the marker and never
- * actually read the text. The explanation is what tells you how to read the
- * column, so it needs to actually open: visible affordance, opens on click.
- *
- * `tip` accepts the same plain strings the old `title=` used, including the
- * `&#10;&#10;` / "\n\n" paragraph breaks and "• " bullets they were written with.
- */
-// `...rest` is forwarded to the <th> so callers can hang attributes on the
-// header cell itself — the withdrawal table tags each column with `data-cg`
-// (its column group) so a view can hide whole groups in CSS. Without the
-// forward, those tags were silently dropped and the group views did nothing.
 function ThInfo({ children, tip, style, accent = "#93c5fd", modalTitle, ...rest }) {
   const paras = String(tip)
     .replace(/&#10;/g, "\n")
@@ -5015,11 +3434,10 @@ function Slider({ label, value, min, max, step, stepNudge, format, onChange, qui
   const pct = max > min ? ((clamped - min) / (max - min)) * 100 : 0;
   const trackRef = useRef(null);
 
-  // Stepper nudge increments
   const nudge = stepNudge || step;
   const handleDec = useCallback((e) => {
     e?.stopPropagation();
-    const next = Math.min(value, Math.max(min, Number((value - nudge).toFixed(4)))); // a typed value past the track must not snap back
+    const next = Math.min(value, Math.max(min, Number((value - nudge).toFixed(4))));
     onChange(next);
   }, [value, min, nudge, onChange]);
 
@@ -5032,7 +3450,7 @@ function Slider({ label, value, min, max, step, stepNudge, format, onChange, qui
 const [draft, setDraft] = useState(null);
   const commitDraft = useCallback(() => {
     if (draft !== null) {
-      const n = parseMoneyInput(draft, min); // "$1,250,000", "1.25M", spaces
+      const n = parseMoneyInput(draft, min);
       if (n !== null) onChange(n);
       setDraft(null);
     }
@@ -5082,7 +3500,6 @@ const [draft, setDraft] = useState(null);
     [min, max, step, onChange]
   );
 
-  // If no label is passed (e.g. inside DualInput), render a compact full-width track directly.
   if (!label) {
     return (
       <div className="sl-row-compact" style={{ width: "100%", padding: "3px 0 6px" }}>
@@ -5166,12 +3583,6 @@ const [draft, setDraft] = useState(null);
             inputMode="decimal"
             aria-label={label}
             value={draft !== null ? draft : format(value)}
-            // width:auto on a text input doesn't shrink to its own value
-            // (unlike block elements) — it just sits at the CSS max-width
-            // regardless of content, so short values like "80%" got the
-            // same box as "$1,250,000/yr". valueWidth lets a caller with
-            // short, bounded content (a plain percentage, an age) opt into
-            // a tighter box; every other Slider is untouched (prop omitted).
             style={valueWidth ? { minWidth: valueWidth, maxWidth: valueWidth } : undefined}
             title="Click to type an exact value — you can enter more than the slider's range"
             onFocus={(e) => {
@@ -5203,7 +3614,6 @@ const [draft, setDraft] = useState(null);
         </div>
       </div>
 
-      {/* Full-width interactive slider track */}
       <div
         ref={trackRef}
         onClick={handleClick}
@@ -5266,7 +3676,6 @@ const [draft, setDraft] = useState(null);
         />
       </div>
 
-      {/* Quick selection pill chips (if provided) */}
       {Array.isArray(quickPills) && quickPills.length > 0 && (
         <div style={{ display: "flex", gap: 5, marginTop: 1, flexWrap: "wrap" }}>
           {quickPills.map((pill) => {
@@ -5297,7 +3706,6 @@ const [draft, setDraft] = useState(null);
     </div>
   );
 }
-// Helper UI functions
 function DualInput({ label, value, min, max, step, format, onChange }) {
   return (
     <div style={{ marginBottom: 8 }}>
@@ -5316,14 +3724,8 @@ function DualInput({ label, value, min, max, step, format, onChange }) {
   );
 }
 
-// Import / export
 const LS_PROFILE_KEY = "aira_profile_v1";
 
-// Progress check-ins.
-// A running journal of plan snapshots (success rate, portfolio, spending,
-// ages). Stored under their own key, outside the profile — unlike Export/
-// Import, check-ins never get loaded back into the planner, they only feed
-// the Progress view.
 const LS_CHECKINS_KEY = "aira_checkins_v1";
 function loadCheckIns() {
   try {
@@ -5341,13 +3743,6 @@ function saveCheckIns(list) {
     return false;
   }
 }
-// Cache of the last completed Monte Carlo run, so reopening the app shows the
-// numbers you last pressed Run for instead of spending a fresh simulation (or
-// showing an empty screen) on every visit. Stored with the signature of the
-// inputs that produced it, so the app can tell "these are your current
-// numbers" from "these are from before you changed something", and stamped
-// with the build so an engine change never re-presents results the current
-// code wouldn't reproduce.
 const LS_RESULTS_KEY = "aira_results_v1";
 function saveResultsToLocal(sig, mc, stress) {
   try {
@@ -5356,7 +3751,7 @@ function saveResultsToLocal(sig, mc, stress) {
     }));
     return true;
   } catch {
-    return false;   // private mode or quota — the app still works, it just re-runs
+    return false;
   }
 }
 function loadResultsFromLocal() {
@@ -5371,8 +3766,6 @@ function loadResultsFromLocal() {
     return null;
   }
 }
-// "just now" / "14:32" / "Mar 3" — enough to tell this session's numbers from
-// ones restored from a previous visit, without a precision nobody needs.
 function fmtLastRun(iso) {
   try {
     const then = new Date(iso);
@@ -5387,21 +3780,16 @@ function fmtLastRun(iso) {
     return "";
   }
 }
-// The AI key is a credential, not a plan input: it lives under its own key so it
-// never rides along in the saved profile or in an exported/shared profile file.
 const LS_AIKEY_KEY = "aira_ai_key_v1";
 export function saveProfileToLocal(values) {
   try {
     const { geminiApiKey, ...plan } = values;
-    // Only an explicit "" clears it; a caller that omits the field must not wipe the key.
     if (geminiApiKey) localStorage.setItem(LS_AIKEY_KEY, geminiApiKey);
     else if (geminiApiKey === "") localStorage.removeItem(LS_AIKEY_KEY);
     const hasPropIncome = (plan.properties || []).some(pr => Number(pr.income) > 0);
     const payload = {
       ...plan,
       ab: hasPropIncome ? 0 : (plan.ab || 0),
-      // rothConversionTarget preserves its raw value (e.g. "fill_22") so the dropdown
-      // round-trips correctly. Engine strips "fill_" at the params boundary.
       fafsaEndYear: plan.fafsaEndYear || null,
       cssEndYear: plan.cssEndYear || null,
       savedAt: new Date().toISOString(),
@@ -5413,8 +3801,6 @@ export function saveProfileToLocal(values) {
     return false;
   }
 }
-/** Start over: forget the saved plan and its cached results, nothing else
- * (check-ins, bucket config, theme, year-end ack are separate keys and stay). */
 export function resetLocalProfile() {
   try {
     localStorage.removeItem(LS_PROFILE_KEY);
@@ -5429,36 +3815,23 @@ function loadProfileFromLocal() {
     const raw = localStorage.getItem(LS_PROFILE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    // Migration: profiles saved before v1.3.1 embedded the AI key. Move it to its
-    // own key and rewrite the profile without it.
     if (data && data.geminiApiKey) {
       localStorage.setItem(LS_AIKEY_KEY, data.geminiApiKey);
       const { geminiApiKey: _moved, ...rest } = data;
       localStorage.setItem(LS_PROFILE_KEY, JSON.stringify(rest));
     }
     if (data) data.geminiApiKey = localStorage.getItem(LS_AIKEY_KEY) || "";
-    // Migration: spSpendOutofState (legacy scenario-swap field) -> spOutOfCountry (additive).
     if (data && data.spOutOfCountry == null && data.spSpendOutofState) {
       data.spOutOfCountry = data.spSpendOutofState;
     }
-    // Migration: legacy saves stripped the "fill_" prefix from rothConversionTarget.
-    // Restore it so the dropdown matches an option again.
     if (data && data.rothConversionTarget && /^\d+$/.test(data.rothConversionTarget)) {
       data.rothConversionTarget = "fill_" + data.rothConversionTarget;
     }
-    // Migration: six distribution strategies got retired. A saved profile
-    // still naming one would match no branch in either engine, which reads
-    // as a silent ~1%/yr spending cut instead of an error — so remap here,
-    // at the one point every saved profile enters the app, and stamp
-    // `withdrawalStrategyMigratedFrom` so the UI can say it happened.
     return migrateOrderingMode(migrateWithdrawalStrategy(data));
   } catch {
     return null;
   }
 }
-// Save a blob with a user-chosen location where the browser supports it
-// (Chromium showSaveFilePicker); otherwise fall back to a plain download.
-// shortcut: Firefox/Safari have no picker, so they use the browser's download folder/prompt.
 async function saveBlobAs(blob, filename, description, accept) {
   if (typeof window !== "undefined" && window.showSaveFilePicker) {
     try {
@@ -5471,8 +3844,7 @@ async function saveBlobAs(blob, filename, description, accept) {
       await w.close();
       return;
     } catch (e) {
-      if (e && e.name === "AbortError") return; // user cancelled the dialog
-      // any other failure (e.g. sandboxed iframe): fall through to plain download
+      if (e && e.name === "AbortError") return;
     }
   }
   const url = URL.createObjectURL(blob);
@@ -5502,12 +3874,10 @@ function importProfile(onLoad) {
       try {
         const parsed = JSON.parse(ev.target.result);
         
-        // Ensure accounts is always a valid array
         if (!Array.isArray(parsed.accounts)) {
           parsed.accounts = BLANK_PROFILE.accounts;
         }
         
-        // Ensure properties is always a valid array
         if (!Array.isArray(parsed.properties)) {
           parsed.properties = BLANK_PROFILE.properties;
         } else {
@@ -5516,7 +3886,6 @@ function importProfile(onLoad) {
             );
         }
         
-        // Ensure checkpoints is always an array and all entries have string IDs
         if (!Array.isArray(parsed.checkpoints)) {
           parsed.checkpoints = [];
         } else {
@@ -5525,12 +3894,10 @@ function importProfile(onLoad) {
           );
         }
         
-        // Ensure otherIncomes is always a valid array
         if (!Array.isArray(parsed.otherIncomes)) {
           parsed.otherIncomes = [];
         }
 
-        // Fix date format if needed
         if (parsed.dob && !/^\d{4}-\d{2}-\d{2}$/.test(parsed.dob)) {
           const d = new Date(parsed.dob);
           if (!isNaN(d.getTime())) {
@@ -5548,39 +3915,33 @@ function importProfile(onLoad) {
   input.click();
 }
 
-// SSA 2022 Period Life Table — annual death probability qx by single age
-// Source: https://www.ssa.gov/oact/STATS/table4c6.html
-// Index 0 = age 50, index 50 = age 100
 const SSA_QX_MALE = [
-  0.00520,0.00568,0.00619,0.00674,0.00733, // 50-54
-  0.00796,0.00865,0.00940,0.01022,0.01112, // 55-59
-  0.01213,0.01324,0.01446,0.01580,0.01729, // 60-64
-  0.01892,0.02069,0.02263,0.02475,0.02706, // 65-69
-  0.02960,0.03239,0.03548,0.03890,0.04267, // 70-74
-  0.04685,0.05149,0.05661,0.06224,0.06840, // 75-79
-  0.07514,0.08250,0.09054,0.09930,0.10882, // 80-84
-  0.11915,0.13033,0.14237,0.15527,0.16903, // 85-89
-  0.18359,0.19878,0.21432,0.22962,0.24419, // 90-94
-  0.25855,0.27357,0.28997,0.30826,0.32870, // 95-99
-  0.35148,                                  // 100
+  0.00520,0.00568,0.00619,0.00674,0.00733,
+  0.00796,0.00865,0.00940,0.01022,0.01112,
+  0.01213,0.01324,0.01446,0.01580,0.01729,
+  0.01892,0.02069,0.02263,0.02475,0.02706,
+  0.02960,0.03239,0.03548,0.03890,0.04267,
+  0.04685,0.05149,0.05661,0.06224,0.06840,
+  0.07514,0.08250,0.09054,0.09930,0.10882,
+  0.11915,0.13033,0.14237,0.15527,0.16903,
+  0.18359,0.19878,0.21432,0.22962,0.24419,
+  0.25855,0.27357,0.28997,0.30826,0.32870,
+  0.35148,
 ];
 const SSA_QX_FEMALE = [
-  0.00280,0.00304,0.00330,0.00359,0.00390, // 50-54
-  0.00425,0.00463,0.00507,0.00556,0.00612, // 55-59
-  0.00675,0.00746,0.00824,0.00909,0.01003, // 60-64
-  0.01107,0.01222,0.01349,0.01490,0.01646, // 65-69
-  0.01819,0.02012,0.02228,0.02469,0.02739, // 70-74
-  0.03044,0.03388,0.03774,0.04205,0.04683, // 75-79
-  0.05211,0.05793,0.06433,0.07134,0.07900, // 80-84
-  0.08733,0.09637,0.10613,0.11664,0.12795, // 85-89
-  0.14011,0.15315,0.16711,0.18203,0.19792, // 90-94
-  0.21476,0.23238,0.25058,0.26894,0.28700, // 95-99
-  0.30462,                                  // 100
+  0.00280,0.00304,0.00330,0.00359,0.00390,
+  0.00425,0.00463,0.00507,0.00556,0.00612,
+  0.00675,0.00746,0.00824,0.00909,0.01003,
+  0.01107,0.01222,0.01349,0.01490,0.01646,
+  0.01819,0.02012,0.02228,0.02469,0.02739,
+  0.03044,0.03388,0.03774,0.04205,0.04683,
+  0.05211,0.05793,0.06433,0.07134,0.07900,
+  0.08733,0.09637,0.10613,0.11664,0.12795,
+  0.14011,0.15315,0.16711,0.18203,0.19792,
+  0.21476,0.23238,0.25058,0.26894,0.28700,
+  0.30462,
 ];
 
-/* P(alive at toAge | alive at fromAge) from the SSA period life table above,
- * the one mortality source for the whole app. Ages below 50 are treated as q=0 (negligible for this app's planning
- * ranges); ages past 100 hold the age-100 rate. Exported for tests. */
 export function survivalToAge(fromAge, toAge, sex = "blended") {
   if (toAge <= fromAge) return 1;
   let survM = 1, survF = 1;
@@ -5600,7 +3961,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
 
   const rawData = useMemo(() => deflate(pcts, inf, useReal), [pcts, inf, useReal]);
 
-  // Deterministic accumulation path: current portfolio → retirement
   const accumData = useMemo(() => {
     if (!currentPort || currentAge == null || currentAge >= retireAge) return [];
     const ret = expectedReturn(preRetireEq ?? 91) / 100;
@@ -5608,22 +3968,7 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     const pts = [];
     for (let age = currentAge; age <= retireAge; age++) {
       pts.push({ age, accum: p });
-      // Household total for this age when the full profile is available: the
-      // 401(k) line alone understated every other stream, and a spouse who
-      // retires first has to drop out on their own date. Falls back to the
-      // bare `contrib` prop so any other caller keeps working.
       const add = hhProfile ? householdAnnualContribution(hhProfile, age) : (contrib || 0);
-      // One-off inflows landing in this pre-retirement year. All three
-      // engines deposit these during accumulation (runMC,
-      // simulateDeterministicWithStrategy, accumulateToRetirement) but this
-      // line didn't, so a windfall entered for a year before retirement was
-      // invisible until the MC bands took over at retirement — the money
-      // appeared to arrive on the retirement date no matter which year the
-      // user typed. Same year mapping the engines use: accumulation year y
-      // is calendar year CURRENT_YEAR + y.
-      //
-      // Inflows only, matching the engines — pre-retirement one-off costs
-      // are assumed to be paid from wages, which no engine models.
       const evIn = computeCashFlowEvents(
         hhProfile?.cashFlowEvents, CURRENT_YEAR + (age - currentAge), hhProfile?.inf ?? 2.5, CURRENT_YEAR,
       ).inflow;
@@ -5632,8 +3977,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     return pts;
   }, [currentPort, currentAge, retireAge, contrib, preRetireEq, hhProfile]);
 
-  // Merge accumulation into chart data so XAxis spans both phases.
-  // When toggle is OFF, revert to retirement-only range (rawData).
   const data = useMemo(() => {
     if (!showTargets || accumData.length === 0) return rawData;
     const preRetire = accumData.slice(0, -1).map(d => ({ age: d.age, accum: d.accum }));
@@ -5641,7 +3984,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     return [...preRetire, ...(atRetire ? [atRetire] : []), ...rawData.slice(atRetire ? 1 : 0)];
   }, [accumData, rawData, showTargets]);
 
-  // Interpolate which percentile a value falls at within the fan bands
   const calcPercentile = (value, row) => {
     if (!row || !row.p10 || !row.p90) return null;
     const { p10, p25, p50, p75, p90 } = row;
@@ -5653,7 +3995,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
     return "≥90th";
   };
 
-  // "You Are Here" percentile (only meaningful if already in retirement)
   const nowPct = currentAge >= retireAge
     ? calcPercentile(currentPort, pcts.find(d => d.age === currentAge))
     : null;
@@ -5671,7 +4012,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           {title && <div className="ct" style={{ margin: 0 }}>{title}</div>}
           {showTargets && (() => {
             const currentYear = new Date().getFullYear();
-            // One line per goal: the amount, then when the median path reaches it.
             const goalLine = (icon, name, amount, color) => {
               const cross = (pcts || []).find(d => d.p50 >= amount);
               const diff = cross ? cross.age - (retireAge || 65) : 0;
@@ -5703,7 +4043,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
         </div>
       </div>
       {view === "table" ? table : (<>
-      {/* Height follows the viewport so the whole chart fits on one screen. */}
       <div style={{ height: "clamp(320px, 50vh, 640px)" }}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
@@ -5741,20 +4080,16 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
           />
           <Tooltip content={<Tip />} />
 
-          {/* Vertical reference lines (D-Day, SS, RMD) */}
           <ReferenceLine yAxisId="port" x={retireAge} stroke="var(--accent-gold)" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "D-Day (Retirement Date)", fill: "var(--accent-gold)", fontSize: "var(--fs-small)", fontWeight: 600, position: "top" }} />
           <ReferenceLine yAxisId="port" x={ssAge} stroke="#c084fc" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: "SS", fill: "#c084fc", fontSize: "var(--fs-small)", fontWeight: 600, position: "top" }} />
           <ReferenceLine yAxisId="port" x={rmdAge} stroke="var(--positive)" strokeWidth={1} strokeDasharray="4 3" label={{ value: "RMD", fill: "var(--positive)", fontSize: "var(--fs-small)", fontWeight: 600, position: "top" }} />
 
-          {/* Fan areas and percentile lines */}
           <Area yAxisId="port" type="monotone" dataKey="p90" stroke={FAN_COLORS["90th"]} strokeWidth={1} strokeDasharray="4 2" fill="url(#g90v5)" dot={false} name="90th" legendType="none" />
           <Area yAxisId="port" type="monotone" dataKey="p75" stroke={FAN_COLORS["75th"]} strokeWidth={1} strokeDasharray="3 2" fill="url(#g75v5)" dot={false} name="75th" legendType="none" />
           <Line yAxisId="port" type="monotone" dataKey="p50" stroke={FAN_COLORS["Median"]} strokeWidth={2.5} dot={false} name="Median" />
           <Line yAxisId="port" type="monotone" dataKey="p25" stroke={FAN_COLORS["25th"]} strokeWidth={1.5} dot={false} strokeDasharray="5 3" name="25th" />
           <Line yAxisId="port" type="monotone" dataKey="p10" stroke={FAN_COLORS["10th"]} strokeWidth={1.5} dot={false} strokeDasharray="3 3" name="10th" />
 
-          {/* Hover highlight — when a row in the age-band table below is hovered,
-              spotlight that age column and mark its percentile values on the fan. */}
           {hoveredAge != null && (() => {
             const row = data.find((d) => d.age === hoveredAge);
             if (!row) return null;
@@ -5775,13 +4110,11 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             );
           })()}
 
-          {/* Deterministic accumulation path (pre-retirement) */}
           {showTargets && accumData.length > 0 && (
             <Line yAxisId="port" type="monotone" dataKey="accum" stroke="var(--chart-2)" strokeWidth={2}
               strokeDasharray="6 3" dot={false} name="Expected path" connectNulls={false} />
           )}
 
-          {/* You Are Here */}
           {showTargets && currentAge != null && currentPort != null && (
             <ReferenceDot
               yAxisId="port"
@@ -5791,16 +4124,11 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             />
           )}
 
-          {/* Checkpoint dots — color + percentile label, one label per age */}
           {(() => {
             if (!checkpoints || !dob) return null;
             const labeledAges = new Set();
             return checkpoints.map((cp) => {
               if (!cp.date) return null;
-              // Shared helper. The hand-rolled version here compared
-              // month-day as plain strings, so e.g. "9-5" < "10-1" was true
-              // as strings but wrong as a date — mis-aging checkpoints in
-              // some months.
               const age = ageFromDob(dob, cp.date);
               if (age == null) return null;
 
@@ -5828,7 +4156,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
                 }
               }
 
-              // Only the first checkpoint at each age gets a text label
               const showLabel = !labeledAges.has(age);
               if (showLabel) labeledAges.add(age);
               const labelText = showLabel
@@ -5847,7 +4174,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
             });
           })()}
 
-          {/* Target horizontal lines (toggled via showTargets) */}
           {showTargets && <ReferenceLine
             yAxisId="port"
             y={portfolioGoal}
@@ -5907,7 +4233,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
       </ResponsiveContainer>
       </div>
 
-      {/* Legend: the two goal lines are named in the status line above. */}
       <div className="leg">
         {[
           ...(showTargets && accumData.length > 0 ? [{ c: "var(--chart-2)", l: "Expected path" }] : []),
@@ -5926,10 +4251,6 @@ function FanChart({ pcts, retireAge, ssAge, rmdAge, inf, useReal, title, checkpo
   );
 }
 
-// Splits a profile's "Other Expenses" carveouts by label into Medical /
-// Long-Term Care / Other, for the Income & Expenses breakdown below. Carveouts
-// are matched by keyword in their label so users can drive these categories
-// just by naming a carveout "Medical" or "Long-Term Care".
 function categorizeCarveouts(carveouts, yr, inf) {
   const iF = Math.pow(1 + (inf ?? 2.5) / 100, yr - new Date().getFullYear());
   let medical = 0, ltc = 0, other = 0;
@@ -5944,28 +4265,6 @@ function categorizeCarveouts(carveouts, yr, inf) {
   return { medical, ltc, other };
 }
 
-/* One vocabulary for income, everywhere.
- *
- * On the Income tab it wasn't called "fixed income," it was called SS on
- * that chart, so it didn't map well against the other surfaces. The same
- * three streams were named three different ways across surfaces — "SS"/
- * "Rental"/"Other Inc" in the schedule table, "Social Security"/"Rental/
- * Passive"/"Other Income" here, and enumerated as "Social Security +
- * Pension/Other + Annuity/Rental" in the withdrawal table's own legend. A
- * label should mean the same thing everywhere it appears, and the component
- * names should be recognizable as the parts of the "Income" aggregate.
- *
- * Canonical names (match the engine fields they render — r.ss,
- * r.otherIncome, r.annuityRental): "Social Security", "Pension/Other",
- * "Annuity/Rental". Aggregate of the three: "Income". No fourth spelling. */
-/* "One-Off Income" is `r.eventInflow` — an inheritance, home sale or
- * lump-sum pension landing in a retirement year. It was missing from this
- * list entirely, so the one surface a user goes to for "where does my money
- * come from" was the only one that dropped it: the engine row carries it,
- * and the Withdrawal Plan table already marks it (+💰). It's not
- * double-counted against Savings Drawdown — the waterfall deposits an
- * inflow into its bucket and computes the year's draw separately, so the
- * two are independent money-in figures. */
 const INCOME_CATS = [
   [INCOME_LABELS.savingsDrawdown, "var(--accent-teal)"],
   ["Social Security", withAlpha("#7c3aed", "cc")],
@@ -5987,17 +4286,6 @@ const EXPENSE_CATS = [
   ["Saved to Accounts", withAlpha("#ec4899", "cc")],
 ];
 
-// "Income & Expenses" — a Boldin-style pair of stacked-bar charts sourced from
-// the Smart Waterfall plan, so the figures shown here (including Roth
-// conversions, mortgage payoff, and carveouts) match the Withdrawal Plan tab
-// by construction. Hovering a year updates the side panel from "Lifetime"
-// totals to that year's breakdown.
-
-// Everything a waterfall row spends out of the accounts. The engine keeps the
-// forced RMD out of fromPretax, so leaving it off made the bar collapse at RMD
-// age while the accounts were still full; the reinvested surplus never left.
-// Conversion tax counts only where it was paid from an account rather than
-// withheld from the conversion itself (that part is inside the conversion bar).
 export function savingsDrawdownOf(r) {
   const convTaxPaid = (r.convTaxFromCash || 0) + (r.convTaxFromTaxable || 0) + (r.convTaxFromPretax || 0);
   const convTaxWithheld = (r.conversionAmount || 0) - (r.convToRoth ?? r.conversionAmount ?? 0);
@@ -6005,7 +4293,6 @@ export function savingsDrawdownOf(r) {
     + convTaxPaid - convTaxWithheld;
 }
 
-// One chart row per waterfall year: the income stack and the expense stack.
 export function incomeExpenseRow(r, carveouts, inf) {
   const { medical, ltc, other } = categorizeCarveouts(carveouts, r.yr, inf);
   return {
@@ -6021,10 +4308,8 @@ export function incomeExpenseRow(r, carveouts, inf) {
     "Medical": medical,
     "Long-Term Care": ltc,
     "Other Expenses": other + (r.eventCost || 0),
-    // The 10% early-withdrawal penalty is an IRS charge the draws pay, so it belongs here.
     "Income Tax": r.fedTax + r.stateTax + r.irmaa + (r.earlyPenalty || 0),
     "Capital Gains Tax": 0,
-    // Money that stays in the plan: the two stacks only balance if it shows.
     "Moved to Roth": r.convToRoth ?? r.conversionAmount ?? 0,
     "Saved to Accounts": (r.eventInflow || 0) + (r.surplusToTaxable || 0),
   };
@@ -6046,12 +4331,6 @@ function IncomeExpensesChart({ p, inf }) {
     <>
       <IncomeExpenseStack
         title="Estimated Income, Drawdowns & Roth Conversions"
-        /* The horizon is stated explicitly because leaving it out reads as a
-           dropped entry. A user who enters a windfall for a pre-retirement
-           year finds no trace of it here and concludes the chart is broken
-           — it isn't, the chart just starts at retirement and that money is
-           already inside the balances these years begin from. The silence
-           was the actual bug. */
         subtitle={`Sourced from the Smart Waterfall plan — hover a year to see its breakdown on the right. Retirement years only (${data[0]?.yr} onward): money arriving before then is already inside the balances these years start from.`}
         data={data} categories={INCOME_CATS}
         hoverYr={hoverYr} hoverRow={hoverRow}
@@ -6080,8 +4359,6 @@ function IncomeExpensesChart({ p, inf }) {
   );
 }
 
-// One row of the portfolio-draw reconciliation panel. Negative values render with a
-// leading minus and in the muted offset color; the dollar magnitude is always shown.
 function ReconLine({ label, value, color }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 0", fontSize: "var(--fs-small)" }}>
@@ -6096,7 +4373,6 @@ function ReconLine({ label, value, color }) {
   );
 }
 
-/** Expense rows that are 0 only because nothing was entered, so they show "—" instead of a confident $0. */
 export function notEnteredKeys(p) {
   const keys = ["Capital Gains Tax"];
   const oneOffOut = (p.cashFlowEvents || []).some((e) => e.direction !== "in");
@@ -6105,8 +4381,6 @@ export function notEnteredKeys(p) {
   return keys;
 }
 
-/** Why the Mortgage/Housing row is empty, from the same fields the engine reads (housingType, mortBalance,
- * annualRent). "" when a housing cost is actually charged. `lifetimeTotal` = the row's total over the chart's years. */
 export function housingRowNote(p, lifetimeTotal) {
   const type = p.housingType || "own";
   if (type === "none") return "included in your spending";
@@ -6122,8 +4396,6 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
   }));
   const total = rows.reduce((s, r) => s + r.value, 0);
 
-  // Portfolio-draw reconciliation (expense panel only): everything going out,
-  // minus every other source of money, equals the green drawdown bar exactly.
   const sumKey = (k) => hoverRow ? (hoverRow[k] || 0) : data.reduce((s, d) => s + (d[k] || 0), 0);
   const recon = reconcile ? (() => {
     const otherIncome  = sumKey("Social Security") + sumKey("Annuity/Rental") + sumKey("Pension/Other")
@@ -6198,20 +4470,9 @@ function IncomeExpenseStack({ title, subtitle, data, categories, hoverYr, hoverR
   );
 }
 
-// Two-way mapping between the Conversion Plan tab's button vocabulary
-// ("fill_22", "no_convert", "irmaa_safe" — matches rothConversionPlan.js's
-// ROTH_MODE_TO_TARGET) and the persisted profile field
-// params.rothConversionTarget ("fill_22", "off", "irmaa", plus the legacy
-// un-prefixed "37"). This keeps the Conversion Plan tab's selector and the
-// Withdrawal Plan / Monte Carlo's stored setting as a single value, no
-// separate "rothMode" state.
 const PROFILE_TO_ROTHMODE = {
   off: "no_convert",
   irmaa: "irmaa_safe",
-  // Un-prefixed values: the params memo strips "fill_" for the engines'
-  // getBracketCeiling lookups, so both spellings need to map here —
-  // otherwise a stored fill_12/24/32/35 silently falls back to fill_22 in
-  // the Roth tab.
   "10": "fill_10", "12": "fill_12", "22": "fill_22", "24": "fill_24",
   "32": "fill_32", "35": "fill_35", "37": "fill_37",
   fill_10: "fill_10", fill_12: "fill_12", fill_22: "fill_22", fill_24: "fill_24",
@@ -6228,36 +4489,23 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
 
   const [showInputs, setShowInputs] = useState(false);
   const [view, setView] = useState("optimized");
-  // Bracket-fill strategy is a single value, persisted to the profile as
-  // params.rothConversionTarget — the Conversion Plan tab is where it gets
-  // tuned, but the Withdrawal Plan tab / Monte Carlo runs read the same
-  // stored value, no separate, disconnected "rothMode" local setting.
   const rothMode = PROFILE_TO_ROTHMODE[params?.rothConversionTarget] ?? "fill_22";
   const setRothMode = (mode) => {
     if (onAssumptionChange) onAssumptionChange("rothConversionTarget", ROTHMODE_TO_PROFILE[mode] ?? "fill_22");
   };
 
-  // Current-Year Calculator state
-  const currentCalYear = new Date().getFullYear() + 1; // plan for next year by default
+  const currentCalYear = new Date().getFullYear() + 1;
   const [cyYear,   setCyYear]   = useState(currentCalYear);
   const [cyW2,     setCyW2]     = useState(0);
   const [cySS,     setCySS]     = useState(0);
   const [cyRental, setCyRental] = useState(0);
   const [cyOther,  setCyOther]  = useState(0);
-  // Cash available for taxes defaults from the profile's Bucket 1 (Cash)
-  // allocation — the same "pay bills now" reserve shown on the Withdrawal
-  // Plan / Bucket Strategy tab, including any per-account splits the user
-  // has assigned to Bucket 1. A one-off override lets the user refine it
-  // for this analysis without creating a second, disconnected balance.
   const profileCashForTaxes = expandAccountBuckets(params?.accounts || [])
     .filter(a => a.bucket === 1)
     .reduce((s, a) => s + (a.balance || 0), 0);
   const [cySGOVOverride, setCySGOVOverride] = useState(null);
   const cySGOV = cySGOVOverride ?? profileCashForTaxes;
 
-  // Fill the calculator from the saved pin for the selected year. Runs when the
-  // year changes and when pins change (profile import, Save to Lifetime Ladder),
-  // so an imported profile shows its saved Tax Room numbers instead of zeros.
   const loadPinIntoCalculator = (pin) => {
     if (!pin) return;
     if (pin.w2     !== undefined) setCyW2(pin.w2);
@@ -6268,26 +4516,14 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
   };
   useEffect(() => {
     loadPinIntoCalculator((params?.conversionOverrides || []).find(o => Number(o.year) === Number(cyYear)));
-    // pins and year are the triggers; the setters are stable
     // eslint-disable-next-line
   }, [cyYear, params?.conversionOverrides]);
 
-  // Depend on `params` itself, never an enumerated subset of its fields.
-  // These four memos each used to carry their own hand-maintained field
-  // list, and each list was missing something different: `ex` omitted sp/
-  // endAge/gkFloor/gkCeiling/stateOfResidence/irmaaGuard while `convRows`
-  // (the table rendered directly below ex's summary cards) tracked them —
-  // so editing spend in the sidebar refreshed the ladder table but left the
-  // Lifetime Tax Delta/RMD Reduction/Eff. Rate cards above it showing the
-  // previous profile. `params` is itself a useMemo in the parent, so it's
-  // referentially stable between real edits; depending on it is both
-  // correct and cheap, and it can never go stale as new profile fields get added.
   const ex = useMemo(
     () => buildWaterfallComparison(params ?? {}, rothMode),
     [params, rothMode]
   );
 
-  // No-tax state scenario: same profile but state tax zeroed out (twoHousehold flag)
   const exNoTax = useMemo(
     () => buildWaterfallComparison({ ...(params ?? {}), twoHousehold: true }, rothMode),
     [params, rothMode]
@@ -6308,22 +4544,17 @@ function RothLadder({ params, onSaveConversionOverride, onRemoveConversionOverri
     filingStatus,
   } = ex;
 
-  // Conversion Plan ladder — built directly from buildWithdrawalWaterfall so the
-  // "Conversion" column always equals the Withdrawal Schedule tab's "Roth Conv"
-  // figure for the same year (see rothConversionPlan.js::buildConversionLadder).
   const convRows = useMemo(
     () => buildConversionLadder(params ?? {}, rothMode).rows,
     [params, rothMode]
   );
 
-  // Reconciled conversion plan — single source of truth, matches the
-  // Withdrawal Schedule tab's "Roth Conv" figures (see rothConversionPlan.js).
   const conversionPlan = useMemo(
     () => buildConversionPlan(params ?? {}),
     [params]
   );
 
-const state = params.stateOfResidence || "NJ";   // fallback to your actual state
+const state = params.stateOfResidence || "NJ";
 const domLabel = isNoTaxState
   ? "No Tax State Move or Out of Country"
   : `${state} Domicile (with tax)`;
@@ -6380,22 +4611,12 @@ const modeDescs = {
             ["Filing Status", filingStatus === "mfj" ? "MFJ" : "Single", "var(--text-secondary)"],
             ["Bracket Target", modeLabels[rothMode], "var(--accent-teal)"],
             [
-              // Used to be two hardcoded literals ($32,200 / $16,100) — a
-              // second copy of a TAX_REFERENCE constant that would silently
-              // disagree with the engine the moment one changed. Reads the
-              // engine's own helper at inflFactor 1 (today's dollars) now,
-              // and states the age basis, which the old label never did.
               "Std Deduction (under 65)",
               fmtDollar(getStandardDeduction(64, filingStatus, 1)) +
                 " (indexed " + params.inf + "%/yr; higher from 65)",
               "var(--text-secondary)",
             ],
             [
-              // Used to be labeled "Other Income" while showing rental, with
-              // a hardcoded $20,000 fallback and a hardcoded "3% growth"
-              // that ignored params.abGrowth. Three bugs in five lines:
-              // wrong name, invented value, an asserted rate the plan might
-              // not even use.
               "Annuity/Rental",
               (params.ab > 0
                 ? fmtDollar(params.ab) + "/yr"
@@ -6520,9 +4741,6 @@ const modeDescs = {
         }}
       >
         <div style={{ display: "flex", gap: 4 }}>
-        {/* Same PillTab idiom. Tax Room keeps its amber because the colour is
-            meaningful here, not decorative: it marks the views grounded in
-            income you actually entered, as against the optimizer's projections. */}
         <PillTab
           ariaLabel="Roth conversion view"
           size="sm"
@@ -6567,12 +4785,6 @@ const modeDescs = {
         </div>
         <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
 
-          {/* One idiom now (see PillTab). The risk grading is preserved as the
-              ACCENT rather than a coloured border-box: green = safe bracket,
-              amber = caution, red = 32%+ / IRMAA exposure. Flattening these to a
-              single colour would delete a warning that stops someone converting
-              into a bracket cliff, so the hue stays meaningful and only the
-              chrome is shared. */}
           <PillTab
             ariaLabel="Bracket fill strategy"
             size="sm"
@@ -6736,31 +4948,20 @@ const modeDescs = {
         const b35t    = fB.find(b => b.rate === 0.35)?.hi ?? 0;
         const b37t    = fB.find(b => b.rate === 0.37)?.hi ?? 0;
 
-        // SS provisional income → 0% / 50% / 85% taxable per IRC §86 tiers
         const ssTaxable = Math.round(taxableSocialSecurity(cySS, cyW2 + cyRental + cyOther, isMFJ));
         const grossInc  = cyW2 + ssTaxable + cyRental + cyOther;
-        // Deduction for this panel's year. This used to be a bare
-        // `(isMFJ ? 32200 : 16100) * f` with no age-65 add-on at all —
-        // another copy of the standard deduction that understated the
-        // deduction (and so overstated tax and understated conversion
-        // headroom) for every 65+ user. Now routed through the same
-        // canonical helpers as calcYearTax so all three can't drift:
-        // age-aware standard deduction plus the OBBBA senior bonus, whose
-        // phase-out reads this year's own MAGI.
         const cyAge     = (params?.currentAge || 0) + (cyYear - CURRENT_YEAR);
         const stdD      = getStandardDeduction(cyAge, params?.filingStatus || "mfj", f);
         const cySeniorBonus = getSeniorBonusDeduction(
           cyAge, params?.filingStatus || "mfj", grossInc, cyYear
         );
         const dedD      = stdD + cySeniorBonus;
-        const taxableBC = Math.max(0, grossInc - dedD);           // taxable before conversion
+        const taxableBC = Math.max(0, grossInc - dedD);
         const fedTaxBC  = Math.round(progTax(taxableBC, fB));
 
-        // State tax on non-conversion income
         const stateBr   = getStateBrackets(params?.stateOfResidence || "NJ", isMFJ);
         const stTaxBC   = stateBr ? Math.round(progTax(taxableBC, stateBr)) : 0;
 
-        // Bracket headroom
         const room12 = Math.max(0, b12t - taxableBC);
         const room22 = Math.max(0, b22t - taxableBC);
         const room24 = Math.max(0, b24t - taxableBC);
@@ -6768,7 +4969,6 @@ const modeDescs = {
         const room35 = Math.max(0, b35t - taxableBC);
         const room37 = Math.max(0, b37t - taxableBC);
 
-        // Tax cost for converting the full room at each bracket
         function convTax(convAmt) {
           const fedInc = Math.round(progTax(taxableBC + convAmt, fB)) - fedTaxBC;
           const stInc  = stateBr
@@ -6783,7 +4983,6 @@ const modeDescs = {
         const tax35 = convTax(room35);
         const tax37 = convTax(room37);
 
-        // Map rothMode to the bracket row that should be highlighted and recommended
         const modeHighlight = {
           fill_10: "12%", fill_12: "12%",
           fill_22: "22%", irmaa_safe: "22%",
@@ -6805,7 +5004,6 @@ const modeDescs = {
           targetLabel === "37%" ? tax37 :
           tax22;
 
-        // Recommended: fill to selected bracket, capped by available SGOV cash
         let recConv, recTax, recNote;
         if (recRoom === 0) {
           recConv = 0; recTax = convTax(0); recNote = `Already above ${targetLabel} bracket — no room`;
@@ -6814,7 +5012,6 @@ const modeDescs = {
         } else if (recRoomTax.total <= cySGOV) {
           recConv = recRoom; recTax = recRoomTax; recNote = `Cash/Treasury/Short Term cash covers full ${targetLabel} fill`;
         } else {
-          // Scale down proportionally — linear approx within bracket
           const ratio = cySGOV / recRoomTax.total;
           recConv = Math.round(recRoom * ratio);
           recTax  = convTax(recConv);
@@ -6831,7 +5028,6 @@ const modeDescs = {
 
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {/* ── How this works: dialog, opened from the top of the tab ── */}
             <InfoModal
               title="How Tax Room and the Lifetime Ladder Work Together"
               accent="var(--accent-gold)"
@@ -6859,7 +5055,6 @@ const modeDescs = {
                 Monte Carlo checkpoints anchor the portfolio balance to reality.
               </ModalNote>
             </InfoModal>
-            {/* ── Inputs ── */}
             <div className="chart-card">
               <div className="ct">Current Year Conversion Calculator</div>
                 <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", fontStyle: "italic", marginBottom: 10 }}>
@@ -6922,7 +5117,6 @@ const modeDescs = {
               </div>
             </div>
 
-            {/* ── Income Breakdown ── */}
             <div className="chart-card">
               <div className="ct">Income Breakdown — Tax Year {cyYear}</div>
               <table className="roth-tbl">
@@ -6945,7 +5139,6 @@ const modeDescs = {
               </table>
             </div>
 
-            {/* ── Bracket Headroom ── */}
             <div className="chart-card">
               <div className="ct">Bracket Headroom — {cyYear} (inflation-indexed)</div>
               <table className="roth-tbl">
@@ -6985,7 +5178,6 @@ const modeDescs = {
               </table>
             </div>
 
-            {/* ── Recommendation ── */}
             <div className="chart-card" style={{ border: "1px solid rgba(244,211,94,0.4)", background: "rgba(244,211,94,0.05)" }}>
               <div className="ct" style={{ color: "var(--accent-gold)" }}>Recommended Conversion — {cyYear}</div>
               {(() => {
@@ -7344,13 +5536,6 @@ const modeDescs = {
           <div
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
           >
-          {/* Traced this, and the value is correct: `nw` here is `r.totalPort`
-              (rothConversionPlan.js ~225), i.e. all four buckets. But the
-              chart directly above only stacks Pre-Tax and Roth, so these
-              cards are legitimately larger than the bars a reader just
-              looked at, with nothing saying why. Disclosing the composition
-              instead of changing the number — an aggregate should say what
-              it contains. */}
           <div className="met">
               <div className="ml">Savings at Age {params.endAge || 90} — Without</div>
               <div className="mv" style={{ color: "var(--text-secondary)", fontSize: "var(--fs-h2)" }}>
@@ -7701,9 +5886,9 @@ const modeDescs = {
         </div>
       )}
       {view === "scenarios" && (() => {
-        const baseCur = cur;            // user's state, no conversions
-        const baseOpt = opt;            // user's state, with conversions
-        const noTaxOpt = exNoTax.opt;   // no-tax state, with conversions
+        const baseCur = cur;
+        const baseOpt = opt;
+        const noTaxOpt = exNoTax.opt;
         const userState = params.stateOfResidence || "Your State";
         const allYears = baseOpt.rows.filter(r => r.age >= (params.retireAge || 60));
         const stSave = baseCur.cTax - baseOpt.cTax;
@@ -7718,7 +5903,6 @@ const modeDescs = {
             </div>
             <table className="roth-tbl">
               <thead>
-                {/* Row 1: scenario group banners */}
                 <tr>
                   <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Year</th>
                   <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Age</th>
@@ -7732,7 +5916,6 @@ const modeDescs = {
                     No-Tax State + Convert
                   </th>
                 </tr>
-                {/* Row 2: measure sub-headers */}
                 <tr>
                   <th style={{ color: "var(--chart-1)", background: "var(--tint-red-07)", borderLeft: "2px solid rgba(255,111,122,0.35)" }}>Roth $</th>
                   <ThInfo style={{ color: "var(--chart-1)", background: "var(--tint-red-07)", cursor: "help" }} tip={`Total income tax owed this year = federal + ${userState} state tax combined. Hover any data cell for the federal / state split.`}>Total Tax</ThInfo>
@@ -7755,15 +5938,12 @@ const modeDescs = {
                     <tr key={r.yr} style={{ background: hasConv ? "var(--tint-teal-600-06)" : undefined }}>
                       <td>{r.yr}</td>
                       <td style={{ color: "var(--text-secondary)" }}>{r.age}</td>
-                      {/* No Conversion columns */}
                       <td style={{ color: "var(--chart-1)", background: "var(--tint-red-07)", borderLeft: "2px solid var(--tint-red-25)" }}>{nc.conv > 0 ? fmtDollar(nc.conv) : "—"}</td>
                       <td style={{ color: "var(--chart-1)", background: "var(--tint-red-07)", cursor: "help" }} title={`Fed: ${fmtDollar(nc.fedT || 0)} | State: ${fmtDollar(nc.stT || 0)}`}>{fmtDollar(nc.totT || 0)}</td>
                       <td style={{ color: "var(--text-secondary)", background: "var(--tint-red-07)" }}>{fmtDollar(nc.pT || 0)}</td>
-                      {/* {userState} + Convert columns */}
                       <td style={{ color: "var(--accent-teal)", fontWeight: bo.conv > 0 ? 600 : 400, background: "var(--tint-sky-07)", borderLeft: "2px solid var(--tint-sky-25)" }}>{bo.conv > 0 ? fmtDollar(bo.conv) : "—"}</td>
                       <td style={{ color: "var(--accent-teal)", background: "var(--tint-sky-07)", cursor: "help" }} title={`Fed: ${fmtDollar(bo.fedT || 0)} | State: ${fmtDollar(bo.stT || 0)}`}>{fmtDollar(bo.totT || 0)}</td>
                       <td style={{ color: "var(--text-secondary)", background: "var(--tint-sky-07)" }}>{fmtDollar(bo.pT || 0)}</td>
-                      {/* No-Tax State + Convert columns */}
                       <td style={{ color: "var(--positive)", fontWeight: nt.conv > 0 ? 600 : 400, background: "var(--tint-green-07)", borderLeft: "2px solid rgba(52,211,153,0.25)" }}>{nt.conv > 0 ? fmtDollar(nt.conv) : "—"}</td>
                       <td style={{ color: "var(--positive)", background: "var(--tint-green-07)", cursor: "help" }} title={`Fed: ${fmtDollar(nt.fedT || 0)} | State: $0 (no-tax state)`}>{fmtDollar(nt.totT || 0)}</td>
                       <td style={{ color: "var(--text-secondary)", background: "var(--tint-green-07)" }}>{fmtDollar(nt.pT || 0)}</td>
@@ -7806,29 +5986,15 @@ const modeDescs = {
   );
 }
 
-/**
- * Year-end check — the December deadline.
- *
- * Every tax lever here is use-it-or-lose-it on Dec 31: a Roth conversion has
- * to settle (not just be requested), harvesting has to actually trade, a QCD
- * has to clear. Unused bracket room doesn't roll over — you can't go back
- * and fill last year's 12% bracket. The app modeled all of it and said
- * nothing when it actually counted.
- *
- * Two surfaces on purpose: a popup once per year so it can't be missed, and
- * a persistent strip on the Net Worth card so dismissing the popup doesn't
- * throw the information away for the rest of the month.
- */
 const LS_YEAREND_KEY = "aira_yearend_ack_v1";
 
 function yearEndAcked(year) {
   try { return Number(localStorage.getItem(LS_YEAREND_KEY)) === year; } catch { return false; }
 }
 function ackYearEnd(year) {
-  try { localStorage.setItem(LS_YEAREND_KEY, String(year)); } catch { /* private mode */ }
+  try { localStorage.setItem(LS_YEAREND_KEY, String(year)); } catch { }
 }
 
-/** Shared body: the countdown, the room, and what to do about it. */
 function YearEndBody({ room, days, year, compact }) {
   const money = (n) => (n === Infinity ? "no limit" : fmtDollar(n));
   return (
@@ -7875,7 +6041,6 @@ function YearEndBody({ room, days, year, compact }) {
   );
 }
 
-/** Compact strip for the Net Worth card. Visible all December. */
 function YearEndStrip({ room, days, year }) {
   return (
     <div style={{
@@ -7890,7 +6055,6 @@ function YearEndStrip({ room, days, year }) {
   );
 }
 
-/** Once-a-year popup. Portalled so no ancestor can clip it. */
 function YearEndModal({ room, days, year, onClose, onSaveCheckIn, canCheckIn }) {
   const [saved, setSaved] = React.useState(false);
   if (typeof document === "undefined") return null;
@@ -7956,22 +6120,6 @@ function YearEndModal({ room, days, year, onClose, onSaveCheckIn, canCheckIn }) 
 
 const LANDMINE_TIP_W = 290;
 
-/**
- * Landmine hover card.
- *
- * Rendered through a portal to document.body rather than as an absolutely
- * positioned child. The table it lives in sits inside `overflowX: auto`, and
- * per the CSS spec a scroll value on one axis forces the other to `auto`
- * too — so the old `position:absolute; bottom:100%` card got clipped by its
- * own scroll container the moment it extended above the first row. (A user
- * reported this with a screenshot: the 72(t) card was sheared off by the
- * panel above it.)
- *
- * Portalling escapes every ancestor clip. Position then gets computed in
- * viewport space from the trigger's rect, flipped below when there isn't
- * room above, and clamped horizontally so a landmine in the last column
- * can't run off-screen.
- */
 function LandmineTip({ emoji, label, detail, color }) {
   const [show, setShow] = React.useState(false);
   const [pos, setPos] = React.useState(null);
@@ -7981,8 +6129,6 @@ function LandmineTip({ emoji, label, detail, color }) {
     const el = ref.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    // Measured lazily: the card is ~1 line of title + wrapped detail. Estimating
-    // high is the safe direction — it only decides flip, never final size.
     const estH = 150;
     const above = r.top;
     const flipDown = above < estH + 12;
@@ -8000,7 +6146,6 @@ function LandmineTip({ emoji, label, detail, color }) {
   const open = () => { place(); setShow(true); };
   const close = () => setShow(false);
 
-  // A scroll or resize while open would strand the card away from its trigger.
   React.useEffect(() => {
     if (!show) return;
     const onMove = () => place();
@@ -8041,29 +6186,14 @@ function LandmineTip({ emoji, label, detail, color }) {
   );
 }
 
-/**
- * Combined Withdrawal Plan tab — wraps the two views that answer the two
- * different planning questions, with each question called out prominently
- * and a twisty (collapsible) body. Both sections default to open so the
- * full plan is visible on first load; the user can collapse either to focus.
- */
-// Sourcing guardrails — the "which bucket" controls, kept next to the
-// waterfall they shape. They persist to the profile via the same
-// onAssumptionChange setter the Profile panel uses, so the MC stale-flag
-// fires the same way. Distribution strategy stays in Profile (it's global,
-// drives MC).
-// Plain-language names for the four drawable buckets (shared by the order control
-// and the templated Section-1 subtitle).
 const BUCKET_LABELS = { cash: "Cash ", taxable: "Taxable brokerage", pretax: "Pre-tax (IRA/401k)", roth: "Roth" };
 const BUCKET_LABELS_SHORT = { cash: "cash", taxable: "taxable", pretax: "pre-tax", roth: "Roth" };
 
-// "Account draw order" — which bucket drains first. Orthogonal to the distribution
-// strategy (how much to spend) and to the guardrails (how deep to draw pre-tax/Roth).
 function AccountDrawOrder({ p, onAssumptionChange }) {
   const set = onAssumptionChange ?? (() => {});
   const mode = p.orderingMode || "tax_reactive";
-  const effective = resolveDrawOrder(mode, p.withdrawalOrder);          // shown for non-custom modes
-  const customOrder = resolveDrawOrder("custom", p.withdrawalOrder);    // the editable list
+  const effective = resolveDrawOrder(mode, p.withdrawalOrder);
+  const customOrder = resolveDrawOrder("custom", p.withdrawalOrder);
 
   const move = (i, dir) => {
     const j = i + dir;
@@ -8073,14 +6203,6 @@ function AccountDrawOrder({ p, onAssumptionChange }) {
     set("withdrawalOrder", next);
   };
 
-  // Every option here genuinely reorders the draw. A fourth, "three_bucket",
-  // was removed in v1.2.129: it never changed draw order at all, and its
-  // asset-location half was measured to be a bit-for-bit no-op (Bucket 2 and
-  // Bucket 3 both resolve to postRetireEq, which IS the portfolio-wide
-  // retirement return, and cash already earns cashRealReturn in every mode).
-  // Time-horizon buckets live on as an organizing/planning view in the
-  // 🧺 Buckets tab, which is where they belong — they are an investing and
-  // behavioral frame, not a withdrawal-ordering rule.
   const MODES = [
     ["tax_reactive", "Tax-reactive", true],
     ["custom",       "Custom",       false],
@@ -8168,12 +6290,6 @@ function SourcingGuardrails({ p, onAssumptionChange, summary }) {
                 onFocus={selectAllOnFocus}
               />
       </label>
-      {/* IRC 72(t): only asked when it can actually apply. Determined up
-          front from retireAge, not discovered mid-plan. The Rule of 55
-          option only appears when a former-employer plan is actually
-          detected among the pretax accounts — it doesn't reach an IRA, so
-          offering it to a pure-rollover holder would invite a wrong answer.
-          Detection is name-based (the account model has no 401k/IRA subtype). */}
       {(p.retireAge ?? 99) < EARLY_PENALTY_AGE && (() => {
         const plan = detectEmployerPlan(p.accounts || []);
         return (
@@ -8229,7 +6345,6 @@ function SourcingGuardrails({ p, onAssumptionChange, summary }) {
         <input type="checkbox" checked={p.ssTorpedoGuard ?? false} onChange={(e) => set("ssTorpedoGuard", e.target.checked)} style={{ cursor: "pointer", width: 15, height: 15 }} />
         Flag when Social Security gets taxed at 85%
       </label>
-      {/* Live feedback: the effect of these controls, surfaced at the strip (design #3) */}
       <span
         style={{
           marginLeft: "auto", fontSize: "var(--fs-small)", fontWeight: 700,
@@ -8245,8 +6360,6 @@ function SourcingGuardrails({ p, onAssumptionChange, summary }) {
   );
 }
 
-// Hoisted out of WithdrawalPlanCombined so it isn't recreated on every render
-// (a fresh component identity each render remounts the subtree and drops focus).
 function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle, badge }) {
   return (
     <button
@@ -8273,8 +6386,6 @@ function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle, ba
         </div>
         <div style={{ fontSize: "var(--fs-body)", color: "var(--text-muted)", marginTop: 5 }}>{subtitle}</div>
       </div>
-      {/* Badge intercepts its own clicks so opening the "how this works" info
-          doesn't also collapse/expand the section it sits on top of. */}
       {badge && (
         <span onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0, marginTop: 1 }}>
           {badge}
@@ -8285,37 +6396,14 @@ function WithdrawalSectionHeader({ open, onToggle, color, question, subtitle, ba
 }
 
 function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange, mc }) {
-  // design-authority (2026-09-09): both defaulted to true, which is why every
-  // first visit rendered draw order + guardrails + waterfall table AND the
-  // strategy chart all at once, on top of the disclaimer/orientation/strategy
-  // banners already above them — the "very very confusing" complaint. Closed
-  // by default; the user opens what they came here for.
   const [openSourcing, setOpenSourcing] = useState(false);
   const [openStrategy, setOpenStrategy] = useState(false);
-  // The Section-2 selector is PREVIEW-ONLY: it drives the year-by-year table below
-  // without overwriting the Profile default (which drives the whole app + MC). A
-  // separate "Set as default" action commits it. Seed from the global default and
-  // re-sync if that default changes elsewhere (e.g. the Profile panel).
   const [previewStrategy, setPreviewStrategy] = useState(withdrawalStrategy);
   useEffect(() => { setPreviewStrategy(withdrawalStrategy); }, [withdrawalStrategy]);
   const previewIsDefault = previewStrategy === withdrawalStrategy;
-  // Compute the waterfall once here so the guardrail strip (always visible) and the
-  // table (when expanded) share it — no double compute, and the strip can show the
-  // live "tax saved vs no plan" delta from the same summary.
   const waterfall = useMemo(() => waterfallForActiveStrategy(p), [p]);
-  // Set when this profile was loaded off a strategy that's since been retired.
   const migrated = migrationNotice(p.withdrawalStrategyMigratedFrom);
 
-  // Was its own persistent banner above both sections; moved into the
-  // top-right corner of both section headers, so it's visible on the content
-  // regardless of which one the user has open — rather than floating above
-  // both in a strip. Both sections share the SAME static badge: neither
-  // section's content actually flips on `previewStrategy` (Section 1 reads
-  // `p` directly; Section 2's dropdown-driven preview is a separate, already
-  // self-labeled state — see its "Preview how X paces spending" subtitle and
-  // the "Previewing your saved default" line under the dropdown below, which
-  // is where the preview/saved explanation now lives instead of on the badge
-  // itself). The badge just always names the one strategy actually saved.
   const savedPlanBadge = (
     <span
       style={{
@@ -8333,10 +6421,6 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Retired-strategy notice. A saved plan silently changing which spending
-          rule it runs is exactly the defect class this cull was meant to reduce,
-          so the swap is stated, the replacement is named, and we say plainly
-          whether the numbers moved. Dismissing clears the stamp for good. */}
       {migrated && (
         <div style={{
           background: migrated.fidelity === "changed" ? "var(--tint-amber-08)" : "var(--tint-teal-600-08)",
@@ -8362,7 +6446,6 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         </div>
       )}
 
-      {/* Orientation card — explains the two-question framing */}
       <div style={{
         background: "var(--tint-teal-600-06)",
         border: "1px solid rgba(13,148,136,0.18)",
@@ -8380,24 +6463,6 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         </span>
       </div>
 
-      {/* Global strategy control.
-          This block used to render between Section 2's header and Section
-          2's collapsible body — a dead zone belonging to no visible
-          container, and structurally inconsistent with Section 1 (which
-          puts every control inside its collapsible).
-
-          It's hoisted to tab level rather than pushed into Section 2's
-          collapsible because it writes `withdrawalStrategy` — the single
-          global consumed by runMC, simulateDeterministicWithStrategy, the
-          home Net Worth card, the MCTab InputCard row, the engine InfoModal
-          and buildRothExplorer. Gating the app's only strategy-write behind
-          a twisty would recreate the exact confusion the banner below was
-          built to fix.
-
-          Relocated only — dropdown, button styling and commit logic are
-          untouched. The persistent SAVED/PREVIEW state that used to sit here
-          as its own banner now renders as a small badge in the top-right
-          corner of each section header below — see `strategyStatusBadge`. */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
           <select
             value={previewStrategy}
@@ -8421,9 +6486,6 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
             <option value="vpw">VPW (Variable Percentage · spends to zero)</option>
           </select>
           <div style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", lineHeight: 1.5 }}>{getStrategyDescription(previewStrategy)}</div>
-          {/* Commit action — only shown when the preview differs from the
-              saved default. This is the one explicit path from "previewing"
-              to "applied app-wide." */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 24 }}>
             {previewIsDefault ? (
               <span style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "inline-flex", alignItems: "center", gap: 5 }}>
@@ -8448,18 +6510,9 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
                 <span style={{ fontSize: "var(--fs-label)", color: "var(--accent-gold)" }}>
                   Nothing has changed in your plan yet.
                 </span>
-                {/* Promoted from a ghost button to a solid primary. This is
-                    the only control in the entire app that writes
-                    withdrawalStrategy — verified by grep; the Profile panel
-                    displays it but has no selector. A single, conditional,
-                    low-contrast button being the sole commit path is why the
-                    preview/saved split read as a bug. */}
                 <button
                   onClick={() => {
                     onAssumptionChange("withdrawalStrategy", previewStrategy);
-                    // Choosing a strategy answers the migration notice —
-                    // leaving it up would keep telling the user about a swap
-                    // they've now overridden.
                     if (p.withdrawalStrategyMigratedFrom) onAssumptionChange("withdrawalStrategyMigratedFrom", null);
                   }}
                   style={{
@@ -8488,7 +6541,6 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           </div>
         </div>
 
-      {/* Section 1: Sourcing */}
       <div>
         <WithdrawalSectionHeader
           open={openSourcing}
@@ -8498,11 +6550,6 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
           subtitle={`Account-by-account sourcing — ${resolveDrawOrder(p.orderingMode, p.withdrawalOrder).map((b) => BUCKET_LABELS_SHORT[b]).join(" → ")} — with tax landmines flagged`}
           badge={savedPlanBadge}
         />
-        {/* Guardrails live inside the collapsible now — they're only
-            revealed when the green sourcing section is expanded, alongside
-            the waterfall table they shape. The order control sits above the
-            guardrails strip since ordering is the outer sequence and the
-            guardrails are inner caps. */}
         {openSourcing && (
           <div style={{ paddingLeft: 4 }}>
             <AccountDrawOrder p={p} onAssumptionChange={onAssumptionChange} />
@@ -8512,7 +6559,6 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         )}
       </div>
 
-      {/* Section 2: Strategy pacing */}
       <div>
         <WithdrawalSectionHeader
           open={openStrategy}
@@ -8529,10 +6575,6 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
         )}
       </div>
 
-      {/* design-authority (2026-09-09): moved from the top of the tab. A "not
-          financial advice" banner needs to be reliably present, not first —
-          footer placement is standard for this disclaimer type and stops it
-          from eating the fold before the user sees any content. */}
       <SectionDisclaimer>
         This schedule is an illustration produced by a model — not a recommendation to
         withdraw from, convert, or roll over any specific account. It cannot see your full
@@ -8544,34 +6586,6 @@ function WithdrawalPlanCombined({ p, inf, withdrawalStrategy, onAssumptionChange
   );
 }
 
-/**
- * Tax Calculation Details — the click-open breakdown of ONE year's tax on the
- * year-by-year withdrawal schedule.
- *
- * Replaces the `title=` tooltips that used to sit on the Fed Tax / State Tax /
- * IRMAA cells. Those were genuinely unreachable: `title=` renders nothing on
- * many desktop setups and does not exist at all on touch, so the explanation
- * that makes the column readable was invisible to every phone and tablet user.
- *
- * RULE 8 — read only, never recompute. Every figure below comes off the
- * buildWithdrawalWaterfall row this modal was opened from (r). The component
- * calls no tax function, holds no bracket table, and embeds no threshold:
- *   r.totInc / r.magi / r.taxableIncome / r.marginalBracket / r.taxSS / r.ss
- *   r.fedTax / r.ltcgTax / r.niit / r.stateTax / r.irmaa / r.irmaaFull
- *   r.earlyPenalty / r.effectiveRate / r.realizedGain
- *   r.fromCash / r.fromTaxable / r.fromPretax / r.rmd / r.fromRoth
- *   r.annuityRental / r.otherIncome / r.conversionAmount / r.conversionTax
- *   r.cashEnd / r.taxableEnd / r.pretaxEnd / r.rothEnd / r.totalPort
- *   r.stdDedYr / r.bracketTopYr   (null outside Roth-conversion years)
- *
- * The two derivations that DO appear are decompositions of numbers the engine
- * already published, and they are labelled as such:
- *   - federal ordinary tax = r.fedTax − r.ltcgTax − r.niit. The engine returns
- *     fedTax as exactly that sum (buildWithdrawalWaterfall.js, `fedT`), so this
- *     splits a published total into its published parts rather than recomputing
- *     it. The long-standing Fed Tax tooltip used the same split.
- *   - Monthly = Annualized ÷ 12, a unit conversion of a displayed figure.
- */
 function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
   if (!r) return null;
   const money = (v) => fmtDollar(Math.round(Number(v) || 0));
@@ -8579,8 +6593,8 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
   const mfj = filingStatusAt(p, r.age) !== "single";
   const stateLabel = p?.twoHousehold ? "Non-resident (no state tax)" : (p?.stateOfResidence || "NJ");
 
-  const totInc   = Number(r.totInc) || 0;          // ordinary income (excludes LTCG)
-  const magi     = Number(r.magi) || 0;            // totInc + realized gain
+  const totInc   = Number(r.totInc) || 0;
+  const magi     = Number(r.magi) || 0;
   const gain     = Number(r.realizedGain) || 0;
   const fedTax   = Number(r.fedTax) || 0;
   const ltcgTax  = Number(r.ltcgTax) || 0;
@@ -8588,20 +6602,11 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
   const stateTax = Number(r.stateTax) || 0;
   const irmaa    = Number(r.irmaa) || 0;
   const penalty  = Number(r.earlyPenalty) || 0;
-  // Decomposition of the published fedTax (see header note) — never negative.
   const fedOrdinary = Math.max(0, fedTax - ltcgTax - niit);
   const totalLoaded = fedTax + stateTax + irmaa + penalty;
-  // Gross income actually RECEIVED this year (spendable), summed from the same
-  // source rows shown below — excludes the Roth conversion amount, which is an
-  // internal pre-tax→Roth transfer, not spendable income (its tax IS in
-  // totalLoaded). "After tax" = what you keep = gross received − total tax, the
-  // basis the reference tool uses (Gross − Tax = After-Tax). MAGI was the wrong
-  // base: a Roth-funded year (MAGI ≈ 0) showed ≈ $0 after-tax while the retiree
-  // actually spent from tax-free Roth.
   const grossIncome = (Number(r.rmd) || 0) + (Number(r.fromPretax) || 0) + (Number(r.fromTaxable) || 0)
     + (Number(r.fromRoth) || 0) + (Number(r.ss) || 0) + (Number(r.annuityRental) || 0) + (Number(r.otherIncome) || 0);
   const afterTax    = grossIncome - totalLoaded;
-  // SS inclusion, straight off the row's own two figures.
   const ssPct = (Number(r.ss) || 0) > 0 ? Math.round((Number(r.taxSS) || 0) / Number(r.ss) * 100) : 0;
 
   const section = { background: "var(--row-highlight)", border: "1px solid var(--tint-white-08)", borderRadius: 9, padding: 14, marginBottom: 12 };
@@ -8614,9 +6619,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
   const balLbl = { fontSize: "var(--fs-small)", color: "var(--text-faint)" };
   const balVal = { fontSize: "var(--fs-body)", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "var(--text-primary)", marginTop: 3 };
 
-  // Income-source rows, assembled only from row fields. A source with no
-  // dollars this year is dropped, so a 2031 RMD-free year doesn't render a
-  // column of zeros.
   const sources = [
     r.rmd > 0 && { label: "Pre-Tax — RMD (forced)", amt: r.rmd, treat: "Ordinary income — required by law" },
     r.fromPretax > 0 && { label: "Pre-Tax — discretionary draw", amt: r.fromPretax, treat: "Ordinary income" },
@@ -8628,12 +6630,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
     r.conversionAmount > 0 && { label: "Roth conversion (above)", amt: r.conversionAmount, treat: `Ordinary income — adds ${money(r.conversionTax)} to this year's tax` },
   ].filter(Boolean);
 
-  // Federal bracket fill — walk taxable income across THIS year's own indexed
-  // bracket array (r.fedBrackets, straight from the engine's yearTax). Per
-  // bracket, amount = overlap of [lo,hi] with [0, taxableIncome] and tax =
-  // amount × rate — the exact same arithmetic progTax runs, so the column sums
-  // to the engine's fedOrdinary. No bracket table or inflation factor is
-  // rebuilt here (Rule 8): if the engine changed the ladder, this follows.
   const fedBr = Array.isArray(r.fedBrackets) ? r.fedBrackets : [];
   const ti    = Number(r.taxableIncome) || 0;
   const bracketFill = [];
@@ -8656,7 +6652,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
       open={open}
       onClose={onClose}
     >
-      {/* Header — who, which rules, and the one number that matters */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>
           Age {r.age} · {mfj ? "Married filing jointly" : "Single"} · {stateLabel}
@@ -8668,7 +6663,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
         </div>
       </div>
 
-      {/* 1. Portfolio balances — end-of-year, per bucket, from the row */}
       <div style={section}>
         <div style={secHead}>Portfolio Balances (end of {r.yr})</div>
         <div style={{ display: "flex", gap: 6 }}>
@@ -8680,7 +6674,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
         </div>
       </div>
 
-      {/* 2. Income sources — annualized and monthly, with the treatment applied */}
       <div style={section}>
         <div style={secHead}>Income Sources</div>
         <table style={tbl}>
@@ -8704,7 +6697,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
         </table>
       </div>
 
-      {/* 3. How the taxable base was arrived at */}
       <div style={section}>
         <div style={secHead}>How This Year's Taxable Income Is Calculated</div>
         <table style={tbl}>
@@ -8728,7 +6720,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
         </div>
       </div>
 
-      {/* 4. The tax calculation itself */}
       <div style={section}>
         <div style={secHead}>Tax Calculation</div>
         <table style={tbl}>
@@ -8757,8 +6748,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
         </table>
       </div>
 
-      {/* 5. Federal Tax Bracket Analysis — how taxable income stacks across the
-             year's inflation-indexed brackets. Bar + table sum to fedOrdinary. */}
       {bracketFill.length > 0 && ti > 0 && (
         <div style={section}>
           <div style={secHead}>Federal Tax Bracket Analysis</div>
@@ -8803,9 +6792,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
         </div>
       )}
 
-      {/* 6. Monthly summary — the same Gross − Tax = After-Tax identity as the
-             reference tool, per month. All three are ÷12 of figures above; the
-             identity holds because afterTax is defined as grossIncome − totalLoaded. */}
       <div style={section}>
         <div style={secHead}>Monthly Summary</div>
         <div style={{ display: "flex", gap: 6 }}>
@@ -8827,7 +6813,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
         </div>
       </div>
 
-      {/* Disclosures — every total above shows what it was built from */}
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.65, borderTop: "1px solid var(--tint-white-08)", paddingTop: 10 }}>
         <div style={{ marginBottom: 6 }}>
           <strong style={{ color: "var(--text-secondary)" }}>What's inside these numbers.</strong>{" "}
@@ -8851,18 +6836,6 @@ function TaxDetailsModal({ r, p, dollarBasis, open, onClose }) {
   );
 }
 
-/**
- * Column-group segments for the year-by-year withdrawal table.
- *
- * `key`  — unique (React key, and the segment identity)
- * `cg`   — the CSS group tag the columns carry; a view hides whole `cg`s
- * `span` — how many columns the segment owns; constant, since hiding is per
- *          group rather than per column, so a visible header span is always right
- * `view` — which lens this segment belongs to (null = always visible)
- *
- * Order matches the table's left-to-right reading (the funding identity), so the
- * group header can never disagree with the columns beneath it.
- */
 const WF_SEGMENTS = [
   { key: "time",   cg: "time",   span: 1, label: "Timeline",                     view: null,     cls: "" },
   { key: "spend",  cg: "spend",  span: 2, label: "Spending",                     view: "flows",  cls: "wf-grp-s" },
@@ -8877,31 +6850,15 @@ const WF_SEGMENTS = [
 
 function WaterfallPlanView({ p, result }) {
   const [mode, setMode] = useState("smart");
-  // One dialog, pointed at whichever year's Tax details was clicked. The old
-  // cells carried `title=` tooltips for this — a string that many desktop
-  // setups never render and touch devices cannot open at all, so the breakdown
-  // behind Fed Tax / State Tax / IRMAA was unreachable for a whole class of
-  // users. Click is the pattern that works everywhere.
   const [taxRow, setTaxRow] = useState(null);
-  // Which column groups the year-by-year table shows. "all" is the full 23-column
-  // schedule; the others are lenses onto the same rows (see .wf-tbl CSS).
   const [wfView, setWfView] = useState("all");
   const { smart, naive, summary } = result;
   const rows = mode === "smart" ? smart.rows : naive.rows;
 
-  // Bucket 1's true dollar share, summed across whichever categories it's
-  // tagged in — NOT "pick one category and show its whole balance" (the old
-  // b1Cats approach), which silently dropped a second category entirely and
-  // overstated Bucket 1 whenever its category also held Bucket 2/3 money
-  // (e.g. a taxable account split 40% B1 / 60% B2 showed the FULL taxable
-  // balance as "B1 End", so it could never visibly deplete). Reuses the
-  // exact fraction math the 3-Bucket engine itself uses (bucketStrategy.js),
-  // so this display can't disagree with what the simulation actually did.
   const b1Pieces = expandAccountBuckets(p.accounts).filter(piece => piece.bucket === 1);
   const hasB1 = b1Pieces.length > 0;
   const b1FracsByCategory = bucketFractionsByCategory(p.accounts);
 
-  // Operator cells — visually wire the withdrawal columns into the equation they satisfy
   const opThStyle = { padding: "0 3px", color: "var(--text-faint)", fontWeight: 400, fontSize: "var(--fs-small)", textAlign: "center" };
   const opTdStyle = { padding: "0 3px", color: "var(--text-faint)", fontWeight: 600, fontSize: "var(--fs-label)", textAlign: "center" };
 
@@ -8916,9 +6873,6 @@ function WaterfallPlanView({ p, result }) {
     age: r.age,
     Cash:    Math.round(r.fromCash),
     Taxable: Math.round(r.fromTaxable),
-    // Pre-Tax = TOTAL pretax outflow (forced RMD + discretionary draw). The RMD
-    // funds spending like any other dollar, so omitting it left a hole in the
-    // stack during RMD years even though the money was flowing out of the IRA.
     "Pre-Tax": Math.round(r.fromPretax + r.rmd),
     Roth:    Math.round(r.fromRoth),
     "Fed Tax":   Math.round(r.fedTax),
@@ -8927,39 +6881,8 @@ function WaterfallPlanView({ p, result }) {
     "Roth Conversion": Math.round(r.conversionAmount),
   }));
 
-  // earlyPenalty wasn't included here, so a row could show BOTH the ⛔ early-
-  // withdrawal-penalty icon (gated on r.earlyPenalty > 0, below) AND the ✓
-  // "no landmines" checkmark side by side — contradictory, and it also meant
-  // the row didn't get the red highlight every other landmine type gets.
   const anyLandmine = (r) => r.landmines.ssTorpedo || r.landmines.irmaaTriggered || r.landmines.rmdActive || r.earlyPenalty > 0;
   const anyConversion = rows.some(r => r.conversionAmount > 0);
-  /* Withdrawal rate — one definition.
-   *
-   * A user reported the WR column read 17.8% in a year whose actual draw was
-   * $26K. He worked out why himself — 17.8% was his $100,000 spending over
-   * the portfolio, not his withdrawal.
-   *
-   * The column divided spending by the end-of-year portfolio, wrong twice over:
-   *   - Numerator was spending, not the withdrawal. For anyone with
-   *     meaningful income (his pension covered about $81K of a $100K spend)
-   *     those differ enormously, and the column claimed to be "withdrawal
-   *     rate vs portfolio." A plan drawing under 5% displayed as drawing
-   *     17.8% — a number that reads as severe distress and could push
-   *     someone into cutting spending they don't need to cut.
-   *   - Denominator was `totalPort`, the end-of-year balance, after the
-   *     year's draw already came out. Dividing by the smaller, post-draw
-   *     number inflates the rate further.
-   *
-   * On top of that, the same tab already computed this correctly for the
-   * "Avg. Withdrawal Rate" card (`totalWithdrawal / start-of-year port`), so
-   * one page carried two different withdrawal rates that disagreed by a
-   * factor of four. Both now come from `wrAt` below — one definition can't
-   * drift from itself.
-   *
-   * Numerator is `totalWithdrawal` = rmd + cash + taxable + pretax + roth:
-   * the actual gross portfolio outflow, the same figure the "Total Draw"
-   * column shows.
-   */
   const portAtRetire = accumulateToRetirement(p).total;
   const wrAt = (i) => {
     const r = rows[i];
@@ -8968,12 +6891,6 @@ function WaterfallPlanView({ p, result }) {
     return startPort > 0 ? r.totalWithdrawal / startPort : null;
   };
 
-  /* The GK guardrail band is ±20% around the first year's actual withdrawal
-   * rate, which is what Guyton-Klinger actually compares against — the
-   * initial WR. It used to be anchored to `p.sp / p.port`, a spending rate,
-   * so the band and the value being banded were different quantities. Falls
-   * back to the user's own safe-withdrawal-rate benchmark when year one has
-   * no draw at all. */
   const initialWR = wrAt(0) || (p.safeWithdrawalRate ?? 0.04);
   const rowWRColor = (i) => {
     const wr = wrAt(i);
@@ -8981,25 +6898,13 @@ function WaterfallPlanView({ p, result }) {
     return wr > initialWR * 1.2 ? "var(--chart-1)" : wr < initialWR * 0.8 ? "var(--accent-gold)" : "var(--positive)";
   };
 
-  // "Average retirement withdrawal rate" / "Out of money date" — Boldin-style
-  // decision metrics, computed from this scenario's own rows (no separate model).
   const wrSeries = rows.map((_, i) => wrAt(i)).filter(v => v != null);
   const avgWithdrawalRate = wrSeries.length ? wrSeries.reduce((a, b) => a + b, 0) / wrSeries.length : 0;
   const depletionRow = rows.find(r => r.totalPort <= 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Summary cards — auto-fit so an odd card count (this grid gained 2
-          conditional 3-Bucket cards) fills each row edge-to-edge instead of
-          a fixed repeat(3,1fr) leaving a stranded partial row. */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
-        {/* "Smart" collided with the unrelated "Smart Waterfall" PACING
-            strategy option in the Section 2 dropdown — same word, two
-            different things (this card is about DRAW ORDER, not how much to
-            spend), and a user tripped on it. Relabeled to match the "Your
-            plan" / "No plan" wording the toggle below already uses, instead
-            of inventing a third term. "waterfall" (engine jargon) replaced
-            with the actual order, spelled out. */}
         <div className="met">
           <div className="ml">Your Plan's Lifetime Tax</div>
           <div className="mv" style={{ color: "var(--positive)", fontSize: "var(--fs-h2)" }}>{fmtDollar(summary.lifetimeTaxSmart)}</div>
@@ -9040,7 +6945,6 @@ function WaterfallPlanView({ p, result }) {
         </div>
       </div>
 
-      {/* Toggle */}
       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
         <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginRight: 4 }}>View:</span>
         <button style={btnStyle(mode === "smart")} onClick={() => setMode("smart")}>Your plan</button>
@@ -9052,7 +6956,6 @@ function WaterfallPlanView({ p, result }) {
         )}
       </div>
 
-      {/* Stacked bar chart */}
       <div className="chart-card">
         <div className="ct">Annual Withdrawals by Source — {mode === "smart" ? "Your plan" : "No plan"}</div>
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 8 }}>
@@ -9078,13 +6981,8 @@ function WaterfallPlanView({ p, result }) {
         </ResponsiveContainer>
       </div>
 
-      {/* Year-by-year table */}
       <div className="chart-card" style={{ overflowX: "auto" }}>
         <div className="ct">Year-by-Year Withdrawal Schedule</div>
-        {/* Which lens the table is showing. 23 columns is more than anyone can
-            read across, so the same rows are offered grouped: everything, just
-            the flows, just the taxes, or just the balances. The funding identity
-            never changes — only how much of it is on screen at once. */}
         <div className="wf-views">
           <span style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginRight: 2 }}>Show:</span>
           {[["all", "All columns"], ["flows", "Flows (in → out)"], ["tax", "Taxes & risk"], ["bal", "Balances"]].map(([k, label]) => (
@@ -9108,9 +7006,6 @@ function WaterfallPlanView({ p, result }) {
         </div>
         <table className="roth-tbl wf-tbl" data-view={wfView}>
           <thead>
-            {/* Group header. Column counts are the group's own column count and
-                are constant, because a view hides whole groups — so a visible
-                group's span is always right without recomputation. */}
             <tr>
               {WF_SEGMENTS.map((seg) => {
                 if (seg.key === "conv" && !anyConversion) return null;
@@ -9125,9 +7020,6 @@ function WaterfallPlanView({ p, result }) {
               <th data-cg="time">Age</th>
               <ThInfo data-cg="spend" tip={"Target spending this year.\n\nOpen any row's Spending cell for the full need breakdown — housing, carveouts, planned one-off costs, other income and taxes."}>Spending</ThInfo>
               <ThInfo data-cg="spend" style={opThStyle} tip={"Spending is funded by the income + draw columns to the right — see the funding identity above the table."}>←</ThInfo>
-              {/* This is the aggregate whose components a user couldn't
-                  find, and its explanation used to be hover-only, so absent
-                  on every phone. Click-open modal, visible affordance. */}
               <th data-cg="income">
                 Income{" "}
                 <InfoModal title="Income — what this column contains" accent="var(--accent-teal)"
@@ -9178,24 +7070,9 @@ function WaterfallPlanView({ p, result }) {
           </thead>
           <tbody>
             {rows.map((r, rowIdx) => {
-              // null = no account is tagged Bucket 1 at all ("—" is correct:
-              // there's nothing to show). 0 = Bucket 1 exists and has
-              // genuinely depleted — the whole point of tracking it, so it
-              // must read as "$0", not the same dash as "not applicable".
               const b1End = hasB1
                 ? bucketBalancesForRow(r, b1FracsByCategory)[1]
                 : null;
-              // Every term, not just the final one: each contributing
-              // category's own "Start − Draw [− Conv Tax] [+ reinvested] =
-              // pre-growth, × (1+rate) = End" line (straight off the
-              // cashStart/gr/etc. fields buildWithdrawalWaterfall.js now
-              // emits — see its row-push comment — never re-derived here),
-              // THEN that category's "End × B1% = contribution" tag line.
-              // The general explanation of what Bucket 1 IS lives in the
-              // column header's InfoModal (click the ⓘ next to "B1 End");
-              // this is the per-row arithmetic only. Categories with 0%
-              // tagged Bucket 1 (e.g. Roth, usually) are omitted so the
-              // tooltip doesn't pad itself with unused lines.
               const b1Breakdown = hasB1 ? (() => {
                 const CAT_META = {
                   cash:    { label: "Cash",    start: r.cashStart,    end: r.cashEnd,    draw: r.fromCash,    gr: r.cashGr,
@@ -9230,9 +7107,6 @@ function WaterfallPlanView({ p, result }) {
                   })
                   .filter(Boolean);
                 if (!blocks.length) return null;
-                // Only state the sum explicitly when more than one category
-                // contributes — with one block its last line already ends
-                // in the total, so restating it reads as "$X = $X".
                 return blocks.length > 1 ? `${blocks.join("\n\n")}\n\nTotal B1 End = ${fmtDollar(b1End)}` : blocks[0];
               })() : null;
               return (
@@ -9240,17 +7114,11 @@ function WaterfallPlanView({ p, result }) {
                 <td data-cg="time">{r.age}</td>
                 <td data-cg="spend" style={{ textAlign: "right" }}
                     title={`Spending ${fmtDollar(r.spending)}`
-                      // The smile quietly re-scales this cell — say so.
                       + (r.smileFactor != null && Math.abs(r.smileFactor - 1) >= 0.005
                           ? ` (spending-curve ${r.smileFactor > 1 ? "+" : "−"}${Math.abs(Math.round((r.smileFactor - 1) * 1000) / 10)}% applied to your ${fmtDollar(r.smileBase)} target)`
                           : "")
                       + (r.housingCost > 0 ? ` + housing ${fmtDollar(r.housingCost)}` : "")
                       + (r.carveoutCost > 0 ? ` + carveouts ${fmtDollar(r.carveoutCost)}` : "")
-                      // Planned one-off / periodic expenses. These do get charged
-                      // to the draw, and until now appeared in no column and no
-                      // tooltip — so a $40k roof spiked the withdrawal with
-                      // nothing on screen to explain it. Same bug behind a
-                      // phantom age-72 jump a user reported.
                       + (r.eventCost > 0
                           ? ` + planned expense${(r.eventLabels || []).length > 1 ? "s" : ""} ${fmtDollar(r.eventCost)}`
                             + ((r.eventLabels || []).length ? ` (${r.eventLabels.join(", ")})` : "")
@@ -9258,19 +7126,12 @@ function WaterfallPlanView({ p, result }) {
                       + ` + taxes ${fmtDollar(r.fedTax + r.stateTax + r.irmaa)}`
                       + (r.otherIncome > 0 ? ` − other income ${fmtDollar(r.otherIncome)}` : "")
                       + ` = total need funded by the income + draw columns to the right`
-                      // Healthcare shock is absent here on purpose — it's a
-                      // probability-weighted risk priced by the Monte Carlo,
-                      // never charged in this table.
                       }>
                   {fmtDollar(r.spending)}
                   {r.eventCost > 0 && (
-                    // Visible cue — hover-only disclosure is unreachable on touch.
                     <span style={{ color: "#fb7185", fontSize: "var(--fs-small)", marginLeft: 3 }}
                           title={`Includes ${fmtDollar(r.eventCost)} of planned one-off spending`}>+📌</span>
                   )}
-                  {/* Visible, not hover-only: this cell isn't the number the
-                      user typed — the spending curve has re-scaled it. A
-                      user suspected exactly this and had no way to see it. */}
                   {r.smileFactor != null && Math.abs(r.smileFactor - 1) >= 0.005 && (
                     <span style={{ color: "var(--accent-purple)", fontSize: "var(--fs-small)", marginLeft: 3, fontFamily: "'JetBrains Mono',monospace" }}
                           title={`Spending curve: your ${fmtDollar(r.smileBase)} target × ${r.smileFactor.toFixed(3)} for age ${r.age}. Turn it off with "Smile spending" in the sidebar Options.`}>
@@ -9281,20 +7142,6 @@ function WaterfallPlanView({ p, result }) {
                 <td data-cg="spend" style={opTdStyle}>←</td>
                 <td data-cg="income" style={{ textAlign: "right", color: "var(--accent-teal)" }}
                     title={(() => {
-                      // A user reported that the components shown didn't add
-                      // up to the total. The engine was right — otherIncome
-                      // (pensions, annuities, any user-defined stream) gets
-                      // netted from need at buildWithdrawalWaterfall ~702 —
-                      // but this column rendered only `fixedIncomeTotal`
-                      // (= SS + annuity/rental), so a pension simply never
-                      // appeared. A retiree with a $44k pension saw a
-                      // shortfall that didn't exist.
-                      //
-                      // Fixed in the display only. The engine field stays
-                      // untouched on purpose: withdrawal.test.js asserts the
-                      // funding identity as `fixedIncomeTotal + otherIncome +
-                      // rmd + ...`, so folding the pension into the engine's
-                      // value would double-count it and break a real invariant.
                       const parts = [`Social Security ${fmtDollar(r.ss)}`];
                       if (r.annuityRental > 0) parts.push(`Annuity/Rental ${fmtDollar(r.annuityRental)}`);
                       if (r.otherIncome > 0)   parts.push(`Pension/Other ${fmtDollar(r.otherIncome)}`);
@@ -9302,11 +7149,6 @@ function WaterfallPlanView({ p, result }) {
                       let t = parts.length > 1
                         ? `${parts.join(" + ")} = ${fmtDollar(total)}\n\nCovered first, before any portfolio draw.`
                         : `Social Security: ${fmtDollar(r.ss)}`;
-                      // One-off money arriving (inheritance, home sale, pension
-                      // lump sum). It's deposited into an account bucket
-                      // rather than netted against spending, so it never
-                      // showed in this column — the balance just jumped with
-                      // nothing on screen accounting for it.
                       if (r.eventInflow > 0) {
                         t += `\n\nPLUS ${fmtDollar(r.eventInflow)} arriving this year`
                           + ((r.eventLabels || []).length ? ` (${r.eventLabels.join(", ")})` : "")
@@ -9318,19 +7160,6 @@ function WaterfallPlanView({ p, result }) {
                   {((r.fixedIncomeTotal || 0) + (r.otherIncome || 0)) > 0
                     ? fmtDollar((r.fixedIncomeTotal || 0) + (r.otherIncome || 0))
                     : "—"}
-                  {/* The amount renders on screen, not only in the tooltip.
-                      This used to be a bare "+💰" next to a "—", so a year
-                      in which six figures arrived read as a year with no
-                      money in it, and the balance on the right jumped with
-                      nothing on the row accounting for it. A user reported
-                      exactly that: "the money isn't being calculated here."
-                      It was — it gets deposited into a bucket and its tax
-                      gets charged — but nothing said so without a hover, and
-                      `title=` is dead on touch. Rendered as a separate
-                      annotation rather than folded into the income figure
-                      because it isn't income offsetting this year's spend —
-                      it's a deposit, and the funding identity in the header
-                      needs to keep reading true. */}
                   {r.eventInflow > 0 && (
                     <span style={{ color: "var(--positive)", fontSize: "var(--fs-small)", marginLeft: 3, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}
                           title={`${fmtDollar(r.eventInflow)} one-off money arriving${(r.eventLabels || []).length ? ` (${r.eventLabels.join(", ")})` : ""} — deposited into your accounts, not spent. It raises the balances on the right rather than reducing this year's draw.`}>
@@ -9341,12 +7170,6 @@ function WaterfallPlanView({ p, result }) {
                 <td data-cg="income" style={opTdStyle}>+</td>
                 <td data-cg="draw" style={{ textAlign: "right", color: "var(--text-muted)" }} title={fmtDollar(r.fromCash)}>
                   {r.fromCash > 0 ? fmtDollar(r.fromCash) : "—"}
-                  {/* This is the conversion's own tax bill, paid from Cash — a
-                      real draw the engine tracks (convTaxFromCash) but that
-                      isn't part of fromCash (the spending-driven draw). Shown
-                      as a separate badge, same pattern as the eventInflow
-                      badge above, so fromCash keeps meaning "spending share"
-                      while Total Draw's identity still balances with it added. */}
                   {r.convTaxFromCash > 0 && (
                     <span style={{ color: "var(--accent-purple)", fontSize: "var(--fs-small)", marginLeft: 3, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}
                           title={`+${fmtDollar(r.convTaxFromCash)} paid from Cash to fund this year's Roth conversion tax — see the Roth Conv column for the full breakdown.`}>
@@ -9367,22 +7190,7 @@ function WaterfallPlanView({ p, result }) {
                 <td data-cg="draw" style={opTdStyle}>+</td>
                 <td data-cg="draw" style={{ textAlign: "right", color: "var(--accent-gold)" }}
                     title={(() => {
-                      // The displayed figure is the total pretax outflow the
-                      // user actually has to withdraw: forced RMD +
-                      // discretionary bracket-capped draw. (The engine
-                      // tracks them separately; showing only the
-                      // discretionary part used to display "—" in
-                      // RMD-funded years while six figures were actually
-                      // leaving the IRA.)
                       const totalPretaxOut = r.fromPretax + r.rmd;
-                      // Read the engine's figure — it's the number that
-                      // actually moved money into the taxable bucket. This
-                      // used to be re-derived here as `rmd - (needFromPort +
-                      // irmaaFull)`, which matched in ordinary years but
-                      // double-subtracted the conversion tax in Roth
-                      // conversion years (irmaaFull is with-conversion; the
-                      // engine's offset isn't), understating the reinvested
-                      // surplus by up to five figures.
                       const rmdExcess = r.rmdSurplus || 0;
                       let t = `${fmtDollar(totalPretaxOut)} total from pretax`;
                       if (r.rmd > 0) t += ` = forced RMD ${fmtDollar(r.rmd)} + discretionary ${fmtDollar(r.fromPretax)}`;
@@ -9406,10 +7214,6 @@ function WaterfallPlanView({ p, result }) {
                 <td data-cg="draw" style={{ textAlign: "right", color: "var(--text-primary)", fontWeight: 600 }}
                     title={`${fmtDollar(r.totalWithdrawal)} leaves the portfolio this year (Cash ${fmtDollar(r.fromCash + (r.convTaxFromCash || 0))} + Taxable ${fmtDollar(r.fromTaxable + (r.convTaxFromTaxable || 0))} + Pre-Tax ${fmtDollar(r.fromPretax + r.rmd + (r.convTaxFromPretax || 0))} + Roth ${fmtDollar(r.fromRoth)}) — covers spending, housing, carveouts, all taxes, and this year's Roth conversion tax (the "+conv" badges to the left)`}>
                   {r.totalWithdrawal > 0 ? fmtDollar(r.totalWithdrawal) : "—"}
-                  {/* The delta a user has to compute by eye otherwise — "why
-                      is Total Draw bigger than Spending?" This IS the answer:
-                      housing + carveouts + taxes + conversion-tax funding,
-                      none of which is itself spending. */}
                   {(r.totalWithdrawal - r.spending) !== 0 && (
                     <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", fontWeight: 400, marginTop: 1 }}
                          title={`Total Draw ${fmtDollar(r.totalWithdrawal)} − Spending ${fmtDollar(r.spending)} — the gap is housing, carveouts, taxes, and any Roth-conversion tax funding, none of which is spending itself.`}>
@@ -9423,18 +7227,11 @@ function WaterfallPlanView({ p, result }) {
                         if (!(r.conversionAmount > 0)) return "No conversion this year";
                         let t = `Converted ${fmtDollar(r.conversionAmount)} pretax → Roth`
                           + ` — adds ~${fmtDollar(r.conversionTax)} to this year's tax (included in Fed/State).`;
-                        // Where the conversion tax came from. The engine
-                        // already routes it (taxable → cash → pretax, or
-                        // withheld from the transfer) and records each
-                        // source; none of it was ever displayed, so the user
-                        // couldn't see which account actually paid — or
-                        // whether that was the right account.
                         const src = [];
                         if (r.convTaxFromTaxable > 0) src.push(`Taxable ${fmtDollar(r.convTaxFromTaxable)}`);
                         if (r.convTaxFromCash > 0)    src.push(`Cash ${fmtDollar(r.convTaxFromCash)}`);
                         if (r.convTaxFromPretax > 0)  src.push(`Pre-Tax ${fmtDollar(r.convTaxFromPretax)}`);
                         if (src.length) t += `\n\nTax paid from: ${src.join(" + ")}.`;
-                        // Withholding out of the transfer means less money lands in the Roth.
                         if (r.convToRoth > 0 && r.convToRoth < r.conversionAmount) {
                           t += `\n\nOnly ${fmtDollar(r.convToRoth)} actually reaches the Roth —`
                             + ` the tax was withheld from the transfer. Paying it from Taxable or Cash`
@@ -9446,15 +7243,6 @@ function WaterfallPlanView({ p, result }) {
                           t += `\n\nPart of the tax came from Pre-Tax — that draw is itself`
                             + ` ordinary income. Taxable or Cash is the cheaper source.`;
                         }
-                        // The reconciliation. A user compared this row's
-                        // gross ordinary income against the 2026 nominal
-                        // bracket top and concluded the plan had overshot
-                        // into the next bracket. It hadn't: the deduction
-                        // comes off first, and the ceiling is indexed
-                        // forward to the row's own year. Both numbers were
-                        // computed by the engine and neither was ever
-                        // shown, so the only check the user could run was
-                        // one that had to fail.
                         if (r.bracketTopYr != null) {
                           const pct = Math.round((r.marginalBracket || 0) * 100);
                           t += `\n\nWhy this is still inside the ${pct}% bracket, in ${r.yr} dollars:`
@@ -9477,11 +7265,6 @@ function WaterfallPlanView({ p, result }) {
                       <span style={{ color: "var(--accent-gold)", fontSize: "var(--fs-small)", marginLeft: 2 }}
                             title={`Only ${fmtDollar(r.convToRoth)} of the ${fmtDollar(r.conversionAmount)} reaches the Roth — tax withheld from the transfer`}>◑</span>
                     )}
-                    {/* The ceiling the conversion was sized to, in this
-                        row's dollars. On screen, not just in the tooltip
-                        above — the whole problem was a user reaching for a
-                        number the UI never gave them, and a tooltip is dead
-                        on touch. This is the figure their own arithmetic needs. */}
                     {r.conversionAmount > 0 && r.bracketTopYr != null && (
                       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap", marginTop: 1 }}>
                         {r.convCapReason === "irmaa_ceil"
@@ -9500,11 +7283,6 @@ function WaterfallPlanView({ p, result }) {
                     }>
                   {b1End == null ? "—" : fmtDollar(b1End)}
                 </td>
-                {/* Fed Tax / State Tax / IRMAA used to explain themselves with
-                    `title=` strings. The breakdown is now the click-open
-                    TaxDetailsModal (one instance, above), so these cells carry
-                    one shared "Tax details" affordance instead of three
-                    tooltips that touch users could never open. */}
                 <td data-cg="tax" style={{ textAlign: "right", color: "var(--chart-1)" }}>
                   {fmtDollar(r.fedTax)}
                   {(r.ltcgTax > 0 || r.niit > 0) && (
@@ -9593,10 +7371,6 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
         </table>
       </div>
 
-      {/* The single dialog the per-row "Tax details" buttons open. Mounted
-          once, outside the row map, so 40 rows don't mean 40 dialog
-          instances — only the opened one renders its content. Every figure it
-          shows comes from the row it was handed (rule 8). */}
       <TaxDetailsModal
         r={taxRow}
         p={p}
@@ -9608,29 +7382,11 @@ This is the DRAW, not your spending — income covers the rest. Guardrail band i
   );
 }
 
-// Guyton-Klinger "Spending Path with Guardrail Adjustments" — extracted from
-// DeterministicWithdrawalView so the SAME chart+strip renders both there (the
-// Withdrawal Plan tab) and on the Monte Carlo tab, from one source (rule 8 — no
-// second copy that could drift). Self-contained: computes its own deterministic
-// schedule and the cross-scenario strip reads mc.gkStats. Returns null for
-// non-GK strategies and before a run, so callers can drop it in unconditionally.
-// The chart JSX is DeepSeek-flash's, moved verbatim; only the data prep and the
-// gating/wrapper moved.
-// Which distribution strategies flex spending via guardrails (so the GK
-// spending-path chart is meaningful). One list, read by GuardrailsSpendingPath
-// AND by the callers that gate its container — never duplicate the set.
 const GUARDRAIL_STRATEGIES = ["gk", "smart", "risk", "kitces", "vanguard", "endowment", "cape", "one_n"];
 function isGuardrailStrategy(strategy) {
   return GUARDRAIL_STRATEGIES.includes(resolveStrategy(strategy));
 }
 
-// Guyton-Klinger guardrails — a tabbed view (Spending Path · Adjustment Events ·
-// Across All Scenarios), mirroring the competitor's structure but honest to
-// AiRA's engine. One shared component rendered by BOTH the Withdrawal Plan tab
-// and the Monte Carlo tab (rule 8 — one source, no drift). The Spending Path
-// chart is DeepSeek-flash's, verbatim, plus a Portfolio line on a 2nd axis.
-// Self-contained: computes its own deterministic schedule; the cross-scenario
-// figures read mc.gkStats. Returns null for non-GK strategies and before a run.
 function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
   const [subTab, setSubTab] = useState("path");
   const gkApplies = isGuardrailStrategy(withdrawalStrategy);
@@ -9660,8 +7416,6 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
   const events = rows.filter((r) => r.gkEvent === "cut" || r.gkEvent === "raise" || r.gkEvent === "constrained" || r.gkReason === "longevity-hold");
   const cutCount = rows.filter((r) => r.gkEvent === "cut").length;
   const raiseCount = rows.filter((r) => r.gkEvent === "raise").length;
-  // Band binds listed with the events (they moved spending) but counted apart,
-  // and split by which limit bound so the row can name it.
   const constrainedCount = rows.filter((r) => r.gkEvent === "constrained").length;
   const holdCount = rows.filter((r) => r.gkReason === "longevity-hold").length;
   const money = (v) => fmtDollar(v || 0);
@@ -9682,20 +7436,11 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
 
   return (
     <div style={topRule ? { marginTop: 20, borderTop: "1px solid var(--divider)", paddingTop: 14 } : undefined}>
-      {/* Persistent cross-scenario headline (Monte Carlo result). Absent before a
-          run — it is an MC figure, so there is nothing honest to show yet. */}
       {g && (
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "6px 18px", padding: "8px 12px", marginBottom: 12, background: "var(--row-highlight)", border: "1px solid var(--card-border)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)" }}>
           <span style={{ fontWeight: 700, color: "var(--text-primary)" }}>Across {g.paths.toLocaleString()} simulated scenarios:</span>
           <span>guardrails <strong style={{ color: "var(--chart-1)" }}>cut spending in {pctS(g.cutRate)}</strong> of scenarios</span>
           <span><strong style={{ color: "var(--positive)" }}>raised it in {pctS(g.raiseRate)}</strong></span>
-          {/* Median first, mean second, and the mean NAMED as the average among
-              the paths that cut. "avg 8.9 cuts per scenario" alone read as "the
-              typical plan cuts ~9 times" — while the median path below cuts ZERO
-              times. Only a minority cut at all, and they cut repeatedly, so the
-              mean is not the typical case. Reporting the median without the
-              qualifier would hide the tail; reporting the mean without it
-              invented a typical case that does not exist. */}
           <span>
             cuts: typically <strong style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{g.medianCutsPerPath}</strong> per scenario
             {g.avgCutsAmongCutters > 0 && (
@@ -9709,7 +7454,6 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
         </div>
       )}
 
-      {/* Sub-tabs */}
       <div style={{ display: "flex", gap: 18, borderBottom: "1px solid var(--divider)", marginBottom: 12 }}>
         <TabBtn id="path" label="Spending Path" />
         <TabBtn id="events" label={`Adjustment Events${events.length ? ` (${events.length})` : ""}`} />
@@ -9723,12 +7467,6 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
               One <strong style={{ color: "var(--text-secondary)" }}>median-returns</strong> path — teal is what you actually spend, riding between your floor and ceiling; the blue dashed line is the portfolio (right axis). ▲/▼ mark the years an adjustment fired.
             </div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
-              {/* "· {retirementYear} $" was a bare year + currency sign with no
-                  unit word — it read as a broken number ("2041 $") and was the
-                  only one of this view's FOUR basis labels spelled that way
-                  (§41 A3 says "{retirementYear} dollars", and three of the four
-                  already did). Same convention everywhere or the basis stops
-                  being trustworthy. */}
               {cutCount} cut{cutCount === 1 ? "" : "s"} · {raiseCount} raise{raiseCount === 1 ? "" : "s"}{holdCount ? ` · ${holdCount} held` : ""} · in {retirementYear} dollars
             </div>
           </div>
@@ -9773,13 +7511,6 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                     dot={(props) => {
                       const ev = gkChartData[props.index]?.gkEvent;
                       if (!ev) return <g key={`d${props.index}`} />;
-                      // Three shapes, not three colors. Cut/raise are vertical
-                      // triangles reading as "down/up"; a band bind is neither —
-                      // the settings ceiling or floor holding spend at a limit —
-                      // so it gets a diamond in the gold already used for the
-                      // floor line. Direction is carried by geometry rather than
-                      // colour alone because red/green is unreadable for ~8% of
-                      // readers, and a third colour would make that worse.
                       if (ev === "constrained") {
                         const d = 7, off = 11;
                         const pts = `${props.cx},${props.cy - off - d} ${props.cx + d},${props.cy - off} ${props.cx},${props.cy - off + d} ${props.cx - d},${props.cy - off}`;
@@ -9820,10 +7551,6 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
               <tbody>
                 {events.map((r) => {
                   const isCut = r.gkEvent === "cut", isRaise = r.gkEvent === "raise";
-                  // A band bind keeps its own row type. Note it can move spend in
-                  // EITHER direction (ceiling binds up, floor binds down), so the
-                  // colour follows the arithmetic delta while the label names the
-                  // limit — never a shared "cut" reading.
                   const isConstrained = r.gkEvent === "constrained";
                   const delta = r.actualReal - r.priorReal;
                   const c = isConstrained ? "var(--chart-6)" : isCut ? "var(--chart-1)" : isRaise ? "var(--positive)" : "var(--accent-gold)";
@@ -9854,11 +7581,6 @@ function GuardrailsView({ p, inf, withdrawalStrategy, mc, topRule = true }) {
                 ["Scenarios with a raise", pctS(g.raiseRate), "var(--positive)", `${Math.round(g.raiseRate * g.paths).toLocaleString()} of ${g.paths.toLocaleString()} paths raised spending`],
                 ["Avg cuts per scenario", g.avgCutsPerPath.toFixed(1), "var(--accent-gold)", "Averaged over every simulated path"],
                 ["Spending range seen", `${money(g.spendMinReal)}–${money(g.spendMaxReal)}`, "var(--chart-2)", `${perMonth(g.spendMinReal)}–${perMonth(g.spendMaxReal)}/mo · ${retirementYear} dollars`],
-                // Third event type, deliberately last: it answers a different
-                // question from the two above. cutRate/raiseRate are how often the
-                // MARKET moved you; this is how often your own band settings did.
-                // Tightening the floor/ceiling raises this number and should never
-                // make the first two look calmer than they are.
                 ...(g.constrainedRate != null ? [[
                   "Scenarios where the band bound",
                   pctS(g.constrainedRate),
@@ -9901,9 +7623,6 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
     "Total Withdrawal": s.totalWithdrawal,
     "Portfolio End": s.portfolioEnd,
     Spending: s.spending,
-    // Guardrail series, straight off the schedule row the engine emitted —
-    // including the floor/ceiling it actually clamped to, and the cut/raise it
-    // actually applied. Nothing here is re-derived from the spend path.
     "Prior spend": s.spEntering,
     "Post-guardrail": s.spAfterGK ?? s.spending,
     Floor: s.gkFloor,
@@ -9911,33 +7630,13 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
     gkEvent: s.gkEvent,
     gkReason: s.gkReason,
   }));
-  // The Guyton-Klinger spending-path chart + cross-scenario strip now live in
-  // the shared <GuardrailsSpendingPath> (rendered below, and on the MC tab) —
-  // its data prep moved with it.
 
   if (!schedule || schedule.length === 0) {
     return <div className="chart-card">No data available. Run Monte Carlo first.</div>;
   }
 
-  // One label map for the whole app (getStrategyLabel). A second copy here
-  // is how the chart title used to disagree with the picker beside it.
   const strategyLabel = getStrategyLabel(resolveStrategy(withdrawalStrategy));
 
-  // Only the "smart" strategy actually runs through buildWithdrawalWaterfall
-  // (see simulateDeterministicWithStrategy's dispatch) — every other
-  // strategy (gk, vpw, fixed, ...) falls to a separate, simpler engine: one
-  // blended growth rate for the whole portfolio (no cash/taxable/pretax/roth
-  // split), and no concept of a Roth conversion at all — Roth Conv reads $0
-  // here even in a year the Sourcing section converts real money, because
-  // this schedule's Fed/State Tax is borrowed from that same Sourcing-section
-  // calculation (so the tax IS real and DOES include any conversion), while
-  // every other column on this schedule is this engine's own, independent
-  // number. The two schedules can genuinely disagree — most visibly in a
-  // conversion year — because they're not the same calculation. Routing
-  // every strategy through the real per-account engine is real, tracked
-  // future work (three sessions have deferred it so far, per project
-  // memory), not a quick fix — this disclosure exists so the disagreement
-  // reads as a known limitation instead of a bug the user has to chase.
   const notSmart = resolveStrategy(withdrawalStrategy) !== "smart";
 
   return (
@@ -9963,7 +7662,6 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
             real amount. For your actual plan's numbers, use the Sourcing section above.
           </div>
         )}
-        {/* Portfolio Balance is a genuine running total — a line, one $ axis. */}
         <ResponsiveContainer width="100%" height={340}>
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
@@ -9977,13 +7675,8 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
           <div className="li"><div className="ll" style={{ background: "var(--accent-teal)" }} />Portfolio Balance</div>
         </div>
 
-        {/* GK spending-path chart + cross-scenario strip — now the shared
-            <GuardrailsSpendingPath> (also rendered on the Monte Carlo tab). */}
         <GuardrailsView p={p} inf={inf} withdrawalStrategy={withdrawalStrategy} mc={mc} topRule />
 
-        {/* Spending/Withdrawal are each year's OWN number, not a flow between
-            years — bars, not lines, sharing the same age x-axis as the chart
-            above instead of a fabricated second $ scale on one plot. */}
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
             <CartesianGrid strokeDasharray="2 4" stroke="var(--row-highlight)" />
@@ -10001,16 +7694,6 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-        {/* This used to say "Median accumulation," which claims the figure
-            is the 50th percentile of the Monte Carlo distribution. It isn't:
-            `simulateDeterministicWithStrategy` gets it from
-            `accumulateToRetirement(p)`, a single deterministic
-            compound-growth projection at the expected return (App.jsx
-            ~1818). No distribution is involved and there's no median to
-            take. Same kind of mislabeling as the "safe spend" and "GK
-            guardrails" labels elsewhere — the caption claimed an authority
-            the number never had. The whole view is deterministic, so the
-            caption says that now. */}
         <div className="met"><div className="ml">Portfolio at Retirement</div><div className="mv" style={{ color: "var(--accent-teal)" }}>{fmtDollar(portAtRetire)}</div><div className="ms">Single projection at the expected return — not a median</div></div>
         <div className="met"><div className="ml">Initial Withdrawal Rate</div><div className="mv" style={{ color: "var(--accent-gold)" }}>{(initWR * 100).toFixed(1)}%</div><div className="ms">Net portfolio draw / portfolio</div></div>
         <div className="met"><div className="ml">Final Portfolio (Age {schedule[schedule.length - 1]?.age})</div><div className="mv" style={{ color: schedule[schedule.length - 1]?.portfolioEnd > 0 ? "var(--positive)" : "var(--negative)" }}>{fmtDollar(schedule[schedule.length - 1]?.portfolioEnd || 0)}</div><div className="ms">{schedule[schedule.length - 1]?.portfolioEnd > 0 ? "Survives" : "Exhausted"}</div></div>
@@ -10024,10 +7707,6 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
         {showTable && (
           <div style={{ overflowX: "auto" }}>
             <table className="nw-table" style={{ fontSize: "var(--fs-label)" }}>
-              {/* These three used to be "SS" / "Rental" / "Other Inc" here
-                  and three other things elsewhere. Canonical names only —
-                  see INCOME_CATS. Together they're the "Income" aggregate
-                  the Withdrawal Plan table shows as one column. */}
               <thead><tr><th>Age</th><th>Year</th><th>Spending</th><th>Social Security</th><th>Annuity/Rental</th><th>Pension/Other</th><th>Housing</th><th>Carveouts</th><th>Portfolio Draw</th><th>Roth Conv.</th><th>Fed Tax</th><th>State Tax</th><th>IRMAA</th><th>Total Withdrawal</th><th>Portfolio End</th></tr></thead>
               <tbody>
                 {schedule.map((s) => (
@@ -10069,7 +7748,7 @@ function DeterministicWithdrawalView({ p, inf, withdrawalStrategy, smartRows, mc
                         const smartRow = smartRows.find(r => r.age === s.age);
                         if (!smartRow) return null;
                         const delta = s.portfolioEnd - smartRow.totalPort;
-                        if (Math.abs(delta) < 500) return null; // noise-floor: not worth a click
+                        if (Math.abs(delta) < 500) return null;
                         return (
                           <InfoModal
                             title="Why Portfolio End differs this year"
@@ -10114,8 +7793,6 @@ function _loadBCfg() {
   try { return JSON.parse(localStorage.getItem(_BCFG_KEY) || "null") || {}; } catch { return {}; }
 }
 
-// Bucket status card — hoisted to module scope so React doesn't unmount it
-// on every BucketsTab re-render (which would kill the tooltip hover state).
 function BucketCard({ num, color, label, horizon, actual, floor, target, accounts: acctList, role, holdings, monthly }) {
   const [showInfo, setShowInfo] = useState(false);
   const hideTimer = useRef(null);
@@ -10210,18 +7887,10 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
     try { localStorage.setItem(_BCFG_KEY, JSON.stringify(next)); } catch {}
     setBCfg(next);
   };
-  // b1Years/b2Years moved OUT of localStorage-only bCfg and into the profile
-  // (params.b1Years/.b2Years) — this display and the yield-sweep cap in
-  // bucketStrategy.js were reading two disconnected copies of "years of
-  // spending Bucket 1 should hold": this stepper wrote to localStorage only,
-  // so adjusting it changed nothing in the actual simulation. Now there's
-  // one number. drawMode stays localStorage-only (display-only, no engine
-  // reads it).
-  const b1Years  = params.b1Years ?? 2;     // user-adjustable, default 2yr
-  const b2Years  = params.b2Years ?? 5;     // user-adjustable, default 5yr
-  const drawMode = bCfg.drawMode ?? "net";  // 'net' (default) or 'gross'
+  const b1Years  = params.b1Years ?? 2;
+  const b2Years  = params.b2Years ?? 5;
+  const drawMode = bCfg.drawMode ?? "net";
 
-  // Core params
   const sp         = params.sp        || 0;
   const port       = params.port      || 0;
   const retireAge  = params.retireAge || 60;
@@ -10231,7 +7900,6 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
   const yrsToRetire = Math.max(0, retireAge - currentAge);
   const retireYear  = new Date().getFullYear() + yrsToRetire;
 
-  // Net draw: gross spend + mortgage P&I − rental/property income
   const mortAnnualPI = (() => {
     if (!params.mortBalance || params.mortBalance <= 0) return 0;
     const ms = mortgageSchedule(params.mortBalance, params.mortRate ?? 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0);
@@ -10239,12 +7907,9 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
   })();
   const propIncome  = params.propIncome || 0;
   const netDraw     = Math.max(0, sp + mortAnnualPI - propIncome);
-  const spendBasis  = drawMode === "gross" ? sp : netDraw;   // what bucket targets sit on
+  const spendBasis  = drawMode === "gross" ? sp : netDraw;
   const monthly     = spendBasis > 0 ? Math.round(spendBasis / 12) : 0;
 
-  // Actual balances from designated accounts.
-  // Expand split accounts into per-bucket pieces so a single account can
-  // feed more than one bucket (each piece carries its allocated slice of the balance).
   const accts  = expandAccountBuckets(params.accounts);
   const b1Accts = accts.filter(a => a.bucket === 1);
   const b2Accts = accts.filter(a => a.bucket === 2);
@@ -10254,19 +7919,12 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
   const b3Actual = b3Accts.reduce((s, a) => s + (a.balance || 0), 0);
   const hasAccounts = (b1Actual + b2Actual + b3Actual) > 0;
 
-  // Thresholds, driven by user-configured year targets (b1Years, b2Years)
-  // and the active spend basis (net draw by default; gross spend if the
-  // user opts in).
-  const b1Floor    = spendBasis;                                       // 1yr — always the replenish trigger
-  const b1Target   = spendBasis * b1Years;                             // user-set (default 3yr)
-  const ssGapYears = Math.max(b2Years, ssAge - retireAge);             // at least b2Years bridge
+  const b1Floor    = spendBasis;
+  const b1Target   = spendBasis * b1Years;
+  const ssGapYears = Math.max(b2Years, ssAge - retireAge);
   const b2Floor    = spendBasis * b2Years;
   const b2Target   = Math.max(b2Floor, Math.round(ssGapYears * spendBasis));
 
-  // One call to the real engine, shared by the tax-guidance row below and the
-  // runway estimate further down — not two independent reads of the same
-  // simulation, and not a second, cruder projection of it (see the runway
-  // comment below for what this replaced).
   const waterfallResult = useMemo(() => {
     if (!sp || !port) return null;
     try { return waterfallForActiveStrategy(params); }
@@ -10276,19 +7934,13 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
   const marginalRate = simRow?.marginalBracket ?? 12;
   const irmaaRisk    = simRow?.landmines?.irmaaTriggered ?? false;
 
-  // Bucket 1 runway — see computeBucket1Runway (engine/buckets.js) for the
-  // depletion logic. This used to be approximated by a `monthsToFloor` flat
-  // linear estimate (today's balance minus today's floor, over today's flat
-  // monthly spend); reading the real schedule instead means it can't
-  // silently disagree with what the Withdrawal Plan tab shows for the same plan.
   const runway = useMemo(() => {
     if (!hasAccounts || b1Accts.length === 0) return null;
-    if (b1Actual < b1Floor) return null; // already below floor — the directive above already covers this
+    if (b1Actual < b1Floor) return null;
     const fracs = bucketFractionsByCategory(params.accounts);
     return computeBucket1Runway(waterfallResult?.smart?.rows, fracs, b1Years);
   }, [hasAccounts, b1Accts.length, b1Actual, b1Floor, waterfallResult, params.accounts, b1Years]);
 
-  // Directive logic
   const directive = useMemo(() => {
     if (!hasAccounts || !sp) return { type: "setup" };
 
@@ -10296,7 +7948,6 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
     const b2Pretax  = b2Accts.filter(a => a.category === "pretax");
     const b3All     = b3Accts;
 
-    // Dynamic label: single account → its name; multiple → comma list
     const acctLabel = (pool, fallback) =>
       pool.length === 1 ? pool[0].name
       : pool.length > 1 ? pool.map(a => a.name).join(" + ")
@@ -10354,13 +8005,11 @@ function BucketsTab({ params = {}, onAssumptionChange }) {
         const amt = Math.min(rem, b3Roth.reduce((s, a) => s + (a.balance || 0), 0));
         steps.push({ label: `Sell equity in ${acctLabel(b3Roth, "Roth accounts")} — transfer cash to B2`, accounts: b3Roth, amount: amt, tax: "Tax-free", note: "Sell equity holdings inside Roth; move the cash proceeds to your B2 bond/stable-value account" });
       }
-      // Canonical rule: only replenish B2 from B3 when markets are favorable.
       return { type: "warning", title: "Bucket 2 below floor — replenish from Bucket 3", needed, steps, marketWarning: true };
     }
     return { type: "ok", title: "All buckets healthy — no action needed" };
   }, [b1Actual, b2Actual, b1Floor, b1Target, b2Floor, b2Target, b2Accts, b3Accts, marginalRate, irmaaRisk, hasAccounts, sp]);
 
-  // Styles
   const DC = { critical: "var(--chart-1)", warning: "var(--accent-gold)", ok: "var(--positive)", setup: "var(--text-faint)" };
 const DI_TONE = { critical: "bad", warning: "warn", ok: "ok" };
   const now = new Date();
@@ -10370,7 +8019,6 @@ const DI_TONE = { critical: "bad", warning: "warn", ok: "ok" };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
-      {/* Monthly directive */}
       <div className="chart-card" style={{ borderLeft: `3px solid ${DC[directive.type]}` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
           <div>
@@ -10435,9 +8083,6 @@ const DI_TONE = { critical: "bad", warning: "warn", ok: "ok" };
         )}
       </div>
 
-      {/* Bucket 1 runway — reads the SAME projected schedule the Withdrawal
-          Plan tab shows, so this can't quietly disagree with it. See the
-          `runway` useMemo above for what "depleted" means here. */}
       {runway && (
         <div className="chart-card" style={{ borderLeft: `3px solid ${runway.depleted ? "var(--accent-gold)" : "var(--positive)"}` }}>
           <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-muted)", marginBottom: 6 }}>
@@ -10461,15 +8106,12 @@ const DI_TONE = { critical: "bad", warning: "warn", ok: "ok" };
         </div>
       )}
 
-      {/* Buffer + draw-mode controls */}
       <div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px", flexWrap: "wrap" }}>
         <span style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>Buffer targets:</span>
         {[
           { label: "B1 years", key: "b1Years", val: b1Years, min: 1, max: 7, hint: "2–3 recommended" },
           { label: "B2 years", key: "b2Years", val: b2Years, min: 3, max: 12, hint: "5–10 recommended" },
         ].map(({ label, key, val, min, max, hint }) => {
-          // b1Years/b2Years write to the PROFILE (onAssumptionChange) — this
-          // is the field the engine actually reads for the yield-sweep cap.
           const setYears = (n) => (onAssumptionChange ? onAssumptionChange(key, n) : saveBCfg({ [key]: n }));
           return (
           <div key={key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -10507,7 +8149,6 @@ const DI_TONE = { critical: "bad", warning: "warn", ok: "ok" };
         </div>
       </div>
 
-      {/* Bucket status cards */}
       <div style={{ display: "flex", gap: 10 }}>
         <BucketCard num={1} color={bucketColor(1)} label="Bucket 1 — Cash" horizon={`0–${b1Years} years · pay bills now`}
           actual={b1Actual} floor={b1Floor} target={b1Target} accounts={b1Accts} monthly={monthly}
@@ -10525,19 +8166,8 @@ const DI_TONE = { critical: "bad", warning: "warn", ok: "ok" };
     </div>
   );
 }
-// Progress tab — check-in journal
 const CHECKIN_TICK = { fill: "var(--text-secondary)", fontSize: "var(--fs-small)" };
 
-// Five absolute 0–100 scores describing the "shape" of a plan snapshot.
-// Absolute (not cohort-relative) so the same snapshot always scores the same:
-//   confidence — MC success rate
-//   retireBy   — planned retirement age, 50 → 100 pts down to 75 → 0 (lower age = better)
-//   spend      — how comfortably the 4% rule covers the target: 4% × port vs sp
-//   legacy     — median ending portfolio (p50); $1M+ scores 100
-//   resilience — success rate under the 2000–2012 stress sequence
-// Median ending portfolio that earns a full legacy score. Named because the
-// help copy below quotes it — a literal in both places would let the number
-// the user reads drift from the number the score uses.
 const LEGACY_FULL_SCORE_PORT = 1_000_000;
 function planShapeScores(c) {
   const clamp = (v) => Math.max(0, Math.min(100, v));
@@ -10550,8 +8180,6 @@ function planShapeScores(c) {
   };
 }
 
-// Merge imported check-ins into the existing journal: entries whose id already
-// exists locally are skipped (local wins), result sorted by timestamp.
 function mergeCheckIns(existing, imported) {
   const base = Array.isArray(existing) ? existing : [];
   const inc  = Array.isArray(imported) ? imported : [];
@@ -10583,19 +8211,6 @@ const PLAN_SHAPE_AXES = [
     what: "How well the plan weathers market stress",
     how: "Success rate with the 2000–2012 sequence forced at retirement" },
 ];
-
-/* `exportCheckInsFile` was deleted here. Check-ins now ride in the one
- * profile export (see the Export button's payload — `checkIns` is part of
- * it), so a second button emitting a second file shape was a second thing
- * to remember to click, and the file it produced was the one a user was
- * most likely to be holding when they'd lost everything else.
- *
- * Import stays, and stays tolerant of both shapes: the old
- * `AiRA_Progress_*.json` ({kind:"aira_checkins", checkIns:[...]}) and a full
- * profile export both expose `.checkIns`, and a bare array is accepted too.
- * Removing an export is safe; removing the only way to read files users
- * already have on disk isn't.
- */
 
 function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
   const fmtDate = (ts) => {
@@ -10653,7 +8268,6 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
     ? (latest.successRate - first.successRate) * 100 : null;
   const portDelta = latest.port != null && first.port != null ? latest.port - first.port : null;
 
-  // ── Plan shape (radar) ──
   const sFirst = planShapeScores(first);
   const sToday = planShapeScores(latest);
   const hasTwo = sorted.length >= 2;
@@ -10688,7 +8302,6 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
         </div>
       </div>
 
-      {/* ── Plan shape over time (radar) ── */}
       <div style={{ background: "var(--card-bg)", border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
         <div className="ct">Plan shape over time</div>
         <div style={{
@@ -10742,9 +8355,6 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
       {sorted.length >= 2 ? (
         <div style={{ background: "var(--card-bg)", border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
           <div className="ct">Plan trend</div>
-          {/* Success rate (%) and Portfolio ($) are unrelated scales — two
-              single-axis charts sharing the same date x-axis instead of one
-              dual-axis plot whose alignment would be arbitrary. */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
@@ -10782,7 +8392,6 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
         </div>
       )}
 
-      {/* ── Check-in history (cards) ── */}
       <div style={{
       background: "var(--card-bg)",
       border: "1px solid var(--tint-white-08)",
@@ -10791,10 +8400,6 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <div className="ct" style={{ marginBottom: 0 }}>Check-in history</div>
           <div style={{ fontSize: "var(--fs-small)", display: "flex", gap: 12, alignItems: "center" }}>
-            {/* Says where the export went rather than leaving a gap where a
-                button used to be — a user who has clicked "Export progress"
-                before needs to be told it is now part of the profile export,
-                not left to conclude the feature was removed. */}
             <span style={{ color: "var(--text-muted)" }}>
               ⬇ Included in <strong style={{ color: "var(--text-secondary)" }}>Export</strong> (top toolbar)
             </span>
@@ -10850,18 +8455,12 @@ function ProgressTab({ checkIns, onDelete, onRename, onImport }) {
   );
 }
 
-// Stress-scenario constants.
-// Scenario knobs (not tax constants): a memory-care shock and its duration.
-// Crash severity is user-driven via the buttons below.
 const STRESS_QUICK_PATHS = 200;
-const STRESS_QUICK_PATHS_LABEL = STRESS_QUICK_PATHS.toLocaleString();                 // fast, noisy estimate
-// How much earlier the stress tab moves an authored first death. Named so
-// the scenario label and the mutation can't drift apart.
+const STRESS_QUICK_PATHS_LABEL = STRESS_QUICK_PATHS.toLocaleString();
 const STRESS_DEATH_SOONER_YEARS = 10;
-const LTC_ANNUAL_COST = 110000;                 // memory care ≈ $110k/yr, today's $
+const LTC_ANNUAL_COST = 110000;
 const LTC_YEARS = 3;
 
-// Success-rate → traffic-light color, shared by the gauge ring and the pp delta.
 function stressRateColor(rate) {
   if (rate == null) return "var(--text-muted)";
   if (rate >= 0.85) return "var(--positive)";
@@ -10869,7 +8468,6 @@ function stressRateColor(rate) {
   return "var(--chart-1)";
 }
 
-// Small donut gauge showing a scenario's surviving-plans percentage.
 function ScenarioGauge({ pct, color }) {
   const r = 24, circ = 2 * Math.PI * r;
   const dash = circ * Math.max(0, Math.min(100, pct)) / 100;
@@ -10884,25 +8482,17 @@ function ScenarioGauge({ pct, color }) {
   );
 }
 
-// Card grid of "what if" stress scenarios. Each card shows a quick low-path
-// estimate immediately, with a "Run full" button that re-runs the real engine
-// (MC_PATHS) for that one scenario. Deltas are computed against a like-for-like
-// baseline: estimate-vs-estimate, or (once run) full-vs-full using the app's mc.
 function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
   const [severity, setSeverity] = useState(-0.40);
   const [crashOpen, setCrashOpen] = useState(false);
-  const [open, setOpen] = useState(false); // collapsed by default: the cards stay empty until a quick check is run
-  const [est, setEst] = useState(null);        // { base, [id]: rate } low-path
-  const [full, setFull] = useState({});        // { [id]: rate } full-path
+  const [open, setOpen] = useState(false);
+  const [est, setEst] = useState(null);
+  const [full, setFull] = useState({});
   const [running, setRunning] = useState(null);
-  const [sevNote, setSevNote] = useState("");   // why a precise crash result disappeared
+  const [sevNote, setSevNote] = useState("");
   const endAge = p.endAge || 90;
 
-  /* Has the user authored a first death in their Profile? If so the stress
-   * scenario varies their model rather than inventing one. */
   const authoredDeath = !!(p.spouse?.enabled && Number(p.spouse?.deathAge) > 0);
-  /* The decedent's own age when the death is moved earlier. Floored at
-   * their current age + 1 — a death already in the past isn't a scenario. */
   const soonerDeathAge = useMemo(() => {
     if (!authoredDeath) return null;
     const decedentIsPrimary = p.spouse?.firstToDie === "primary";
@@ -10924,9 +8514,6 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
       run: (N, seed) => runMC(
         { ...p, carveouts: [...(p.carveouts || []), {
           id: "_ltc_shock", label: "LTC shock",
-          // 3-year care cost absorbed across the remaining plan (engine
-          // carveouts run from retirement; amortizing keeps the total real
-          // without a start-year lever the engine doesn't have).
           annual: Math.round(LTC_ANNUAL_COST * LTC_YEARS / Math.max(1, endAge - p.retireAge)),
           endYear: null,
         }] },
@@ -10939,38 +8526,13 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
     },
     {
       id: "survivor",
-      // This scenario used to be a second death model: it forced
-      // filingStatus "single" from day one of retirement, applied its own
-      // SS haircut, ignored spouse.deathAge entirely (by setting enabled:
-      // false), and never extended the horizon. So a user who carefully
-      // modeled a death at 78 clicked here and got an answer computed from
-      // a different death and a different survivor rule, with nothing
-      // saying their setting was discarded.
-      //
-      // It's now a variation on the model the user authored. When a first
-      // death is on file we move that death earlier and let the engine do
-      // everything else — filesJointlyAt handles the filing-status flip
-      // (MFJ through the death year), the survivor benefit rules apply the
-      // permanent reduction and the PIA basis, and planEndAgeOnPrimaryClock
-      // extends the horizon for a younger survivor. The tab then answers
-      // the question a user actually has — "how much worse if the timing is
-      // bad?" — instead of re-answering "what if there were a death at
-      // all," which the base plan already covers and the widow's-penalty
-      // card above reports.
       label: authoredDeath ? `First death ${STRESS_DEATH_SOONER_YEARS} years sooner` : "Spouse passes early",
       sub: authoredDeath
         ? `Your modelled first death at ${soonerDeathAge} instead of ${p.spouse.deathAge} — same survivor rules, worse timing`
         : "Survivor keeps the larger SS check AND files Single, from day one — a worst-case bound, not a forecast",
       run: (N, seed) => runMC(
         authoredDeath
-          // Only the timing changes. Every other survivor rule is inherited.
           ? { ...p, spouse: { ...p.spouse, deathAge: soonerDeathAge } }
-          // No death on file, so there's nothing to move. Keep the
-          // long-standing day-one bound (relabeled above so it isn't
-          // mistaken for a forecast). The 0.67 fallback stays for profiles
-          // with no spousal data: it's only right for a one-earner couple,
-          // but it's what those profiles have always seen here, and
-          // regressing them to "no haircut at all" would be worse.
           : {
               ...p,
               ssb: p.spouse?.enabled
@@ -10985,10 +8547,6 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
     },
   ], [p, endAge, severity]);
 
-  // These estimates are six simulations, so they run when asked and not
-  // before. The signature is what the last set was computed from: when the
-  // plan changes underneath them they are marked stale rather than silently
-  // recomputed.
   const [estRunning, setEstRunning] = useState(false);
   const estSigRef = useRef(null);
   const inputSig = useMemo(() => {
@@ -10998,23 +8556,15 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
 
   const runEstimates = () => {
     setEstRunning(true);
-    // Yield so the button can paint its running state before the engine
-    // takes the main thread; see runSimulation for the same pattern.
     setTimeout(() => {
       const out = { base: runMC(p, endAge, STRESS_QUICK_PATHS, 7, true).rate };
       scenarios.forEach((s) => { out[s.id] = s.run(STRESS_QUICK_PATHS, 7).rate; });
-      // The widow's-penalty counterfactual: the same plan with the modeled
-      // first death removed. Same seed and path count as `base` above on
-      // purpose — with a different seed part of the "penalty" would be RNG
-      // noise, and a card labeled "what this death costs" would be
-      // reporting randomness. Only computed when a death is actually
-      // modeled, so this costs nothing for the profiles that don't use the feature.
       out.noDeath = authoredDeath
         ? runMC({ ...p, spouse: { ...p.spouse, deathAge: null } }, endAge, STRESS_QUICK_PATHS, 7, true).rate
         : null;
       estSigRef.current = inputSig;
       setEst(out);
-      setFull({});   // full-path results were measured against the old inputs
+      setFull({});
       setEstRunning(false);
     }, 0);
   };
@@ -11031,7 +8581,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
 
   const setSev = (v) => {
     setSeverity(v);
-    setFull((f) => { const n = { ...f }; delete n.crash; return n; }); // crash result now stale
+    setFull((f) => { const n = { ...f }; delete n.crash; return n; });
     setSevNote(full.crash != null ? "Severity changed, so the precise result was cleared. Run it again." : "");
   };
 
@@ -11052,9 +8602,6 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
         the share still funded. <b style={{ color: "var(--text-secondary)" }}>Quick check</b> gives every card a fast
         estimate; <b style={{ color: "var(--text-secondary)" }}>Precise run</b> gives one card the full
         {" "}{MC_PATHS_LABEL}-path result.
-        {/* The success rate is widely read as "the chance my retirement
-            works." It's narrower than that, and saying so changes how the
-            number should be read. */}
         <div style={{ marginTop: 6, color: "var(--text-muted)" }}>
           What the simulation varies: <b style={{ color: "var(--text-secondary)" }}>market returns, inflation,
           rental reliability and healthcare shocks</b>. Your spending, claim ages, retirement age and
@@ -11082,17 +8629,10 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
         </span>
       </div>
 
-      {/* The widow's-penalty delta.
-          The base plan already contains the modeled death, so the scenario
-          grid's "vs baseline" can't show what that death costs — it
-          compares against a baseline that includes it. This card is the
-          missing comparison: the same plan with the death removed. Without
-          it a user sets a death age, watches the success rate change, and
-          has no way to attribute the change. */}
       {authoredDeath && est?.noDeath != null && (() => {
         const withDeath = est.base;
         const without   = est.noDeath;
-        const pp        = (withDeath - without) * 100;      // negative = it costs you
+        const pp        = (withDeath - without) * 100;
         const col       = pp <= -10 ? "var(--negative)" : pp <= -3 ? "var(--accent-gold)" : "var(--positive)";
         const whoDies   = p.spouse?.firstToDie === "primary" ? "your" : "your spouse's";
         return (
@@ -11125,7 +8665,7 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
         {scenarios.map((s) => {
           const real = full[s.id];
           const measured = real != null;
-          const rate = measured ? real : est ? est[s.id] : null;         // 0..1
+          const rate = measured ? real : est ? est[s.id] : null;
           const baseline = measured ? (baseRate ?? est?.base) : est?.base;
           const deltaPP = rate != null && baseline != null ? (rate - baseline) * 100 : null;
           const color = stressRateColor(rate);
@@ -11210,13 +8750,10 @@ function StressScenarioGrid({ p, baseRate, fmtPct, onSeqResult }) {
   );
 }
 
-// Year-by-year look at three representative simulated plans that ran out of
-// money: the earliest failure, the median one, and the latest (closest call).
-// Dollars are nominal. Rows come from runMC(..., keepFailures).
 function FailedPathPanel({ failures, n }) {
   const [which, setWhich] = useState("worst");
   const [allCols, setAllCols] = useState(false);
-  const [open, setOpen] = useState(false); // collapsed by default: a detail view, not the headline
+  const [open, setOpen] = useState(false);
   const box = { marginTop: 12 };
   if (!failures) {
     return <div className="chart-card" style={box}><div className="ct">Why plans failed</div>
@@ -11291,25 +8828,16 @@ function FailedPathPanel({ failures, n }) {
 }
 
 const SEQ_PICKS = [1929, 1966, 1973, 2000, 2007];
-// A sequence this long is a sequence-risk test; past ~10 years it is just a market forecast.
 const SEQ_DEFAULT_YEARS = 5;
-// 20 to 30 years replay a whole retirement of one real start year (for example 1966): the result is then one path, not a rate.
 const SEQ_HISTORY_LENGTHS = [5, 10, 15, 20, 25, 30];
 const SEQ_MAX_CUSTOM_YEARS = 10;
 const SEQ_INPUT_STYLE = { background: "var(--card-bg-raised)", border: "1px solid var(--card-border)", color: "var(--text-primary)", borderRadius: 6, padding: "5px 8px", fontSize: "var(--fs-label)", minHeight: 28 };
-// A year outside this range is almost certainly a typo, not a market.
 const SEQ_RETURN_MIN = -90, SEQ_RETURN_MAX = 200;
 const parseSeqText = (t) => t.split(/[\s,;]+/).filter((x) => x !== "").slice(0, SEQ_MAX_CUSTOM_YEARS);
 
-// Replay a real historical start year (stocks, bonds and inflation paired) or a
-// hand-typed run of equity returns, from retirement or from today, through the
-// same runMC the rest of the app uses. Lifts the result to ScenariosTab, which
-// shows it in the stress-test slot below.
 const SEQ_NAMES = { 1929: "Great Depression", 1966: "Stagflation", 1973: "Oil shock", 2000: "Dot-com bust", 2007: "Financial crisis" };
 const SEQ_CRASH = "var(--negative)";
 
-// Bars for a run of yearly returns: below the line is red, above is teal, so a
-// crash reads as a picture before it reads as numbers. `items` = [{label, r}].
 function SeqBars({ items, big }) {
   const half = big ? 44 : 28;
   const maxAbs = Math.max(0.3, ...items.map((i) => Math.abs(i.r || 0)));
@@ -11347,7 +8875,6 @@ function SequenceBuilder({ p, onResult }) {
   const [pasteNote, setPasteNote] = useState("");
   const endAge = p.endAge || 90;
 
-  // Custom years that will actually run, plus why a year was left out.
   const typed = custom.map((v) => v.trim()).filter((v) => v !== "");
   const valid = typed.filter((v) => Number.isFinite(Number(v)));
   const outOfRange = valid.filter((v) => Number(v) < SEQ_RETURN_MIN || Number(v) > SEQ_RETURN_MAX);
@@ -11377,7 +8904,6 @@ function SequenceBuilder({ p, onResult }) {
       });
       setBusy(false);
       setStatus(`Done: ${seq.length} ${hist ? "historical" : "custom"} years ${when}. Results are below.`);
-      // The result renders further down the page; bring it to the Run button's user.
       if (typeof document !== "undefined") document.getElementById("stress-result")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     }, 30);
   };
@@ -11534,12 +9060,8 @@ function ScenariosTab({
 
   const [scenarioSubTab, setScenarioSubTab] = useState(initialSubTab || "roth");
   const [showSeq, setShowSeq] = useState(false);
-  // A run from the sequence builder replaces the fixed 2000–2012 view below it.
   const [seqRun, setSeqRun] = useState(null);
-  // A builder result belongs to the plan it ran on; drop it when the plan changes.
   useEffect(() => setSeqRun(null), [baseParams]);
-  // Destructured, not read as stress.pcts: the array goes whole to FanChart,
-  // which deflates it itself (see noRawMcAccess.test.js).
   const { pcts: stressPcts } = stress ?? {};
   const view = seqRun ?? (stress ? {
     rate: stress.rate, pcts: stressPcts,
@@ -11547,16 +9069,12 @@ function ScenariosTab({
     chips: SEQ_2000_2012.map((r, i) => ({ label: String(2000 + i), r })),
   } : null);
 
-  // Consume a pending cross-tab navigation request once, on arrival — a
-  // pointer elsewhere in the app (e.g. RetirementPanel's Withdrawal Strategy
-  // card) asked to land on a specific sub-tab here. Cleared immediately so a
-  // later manual visit to Analysis isn't silently redirected.
   useEffect(() => {
     if (initialSubTab) {
       setScenarioSubTab(initialSubTab);
       onSubTabConsumed && onSubTabConsumed();
     }
-  }, [initialSubTab]); // onSubTabConsumed intentionally omitted — see comment above
+  }, [initialSubTab]);
 
   const SCENARIO_SUBTABS = [
     ["roth",        "Roth conversions"],
@@ -11570,10 +9088,6 @@ function ScenariosTab({
 
   return (
     <div>
-      {/* Navigation, so one accent throughout — no meaning is carried by hue
-          here, unlike the bracket-fill and Tax Room rows. The wrapper no longer
-          paints its own bottom rule: PillTab now owns the hairline, and two
-          hairlines one pixel apart is what made this row look doubled. */}
       <div style={{ marginBottom: 12 }}>
         <PillTab
           ariaLabel="Analysis view"
@@ -11589,9 +9103,6 @@ function ScenariosTab({
           {view && (
             <>
           <div id="stress-result" style={{ scrollMarginTop: 12 }} />
-          {/* Moved up from below the fan chart — these two headline numbers
-              are the reason to open this sub-tab at all, so they sit right
-              under the scenario grid instead of buried under the chart. */}
           <div
             style={{
               display: "grid",
@@ -11637,10 +9148,6 @@ function ScenariosTab({
             earlyRetireTarget={earlyRetireTarget}
             dob={dob}
           />
-          {/* Year-by-year S&P sequence — the raw input the fan chart and the
-              two headline numbers above are already built from, so it's
-              supporting detail, not something that needs to be visible by
-              default. Closed unless asked for. */}
           <button
             onClick={() => setShowSeq((v) => !v)}
             style={{
@@ -11700,32 +9207,6 @@ function ScenariosTab({
   );
 }
 
-/**
- * Monte Carlo — ⚙ Advanced Settings.
- *
- * Simulation mechanics live here rather than in Profile, because they answer
- * "how do I run the model?", not "what is my plan?" — the same Proximity split
- * the Withdrawal tab's guardrail strip uses. The controls are the ones that
- * only mean anything inside a simulation:
- *
- *   Simulations per run   — path count (was the fixed MC_PATHS constant)
- *   Historical range      — which calendar years the bootstrap may draw from
- *                           (was: always the full 1928–2025 history)
- *   Spending guardrails   — GK floor/ceiling as % of core spend (moved here
- *                           from the Profile spending card, which now points
- *                           at this dialog instead of duplicating the inputs)
- *
- * The GK paper's own numbers (band, adjustment size, inflation cap, longevity
- * cutoff) are NOT editable: they are the published method, and exposing them as
- * sliders would invite a plan that is no longer Guyton-Klinger. They are shown
- * as read-only disclosure, read from the same constants the engine uses.
- *
- * Every control writes through `onAssumptionChange`, so this dialog and the
- * engine read one value — there is no second copy of these settings anywhere.
- */
-// Blank keeps the historical draw; a number grows every account by exactly that
-// (nominal) % per year until retirement. Lives beside, not inside, the
-// DeepSeek-owned MCAdvancedSettings region.
 function PreRetireReturnField({ value, onChange }) {
   return (
     <div style={{ marginBottom: 10 }}>
@@ -11749,9 +9230,6 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
   const endYr   = Number.isFinite(Number(p?.mcRangeEnd))   ? Math.round(Number(p.mcRangeEnd))   : SAMPLE_END_YEAR;
   const pathCount = Math.max(MC_PATH_MIN, Math.min(MC_PATH_MAX, Math.round(Number(p?.mcPaths) || MC_PATHS)));
 
-  // Stats for the window actually being sampled. Display-only summary of the
-  // SAME arrays the bootstrap draws from — it does not feed the engine, and it
-  // is not a second source of truth for any number the engine reports.
   const stat = useMemo(() => {
     const lo = range ? range.start : 0;
     const hi = range ? range.start + range.count - 1 : SP500.length - 1;
@@ -11800,7 +9278,6 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
         </button>
       }
     >
-      {/* Simulations */}
       <div style={sec}>
         <div style={secHead}>Simulations</div>
         <div style={row}>
@@ -11815,7 +9292,6 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
         </div>
       </div>
 
-      {/* Historical sampling range — the competitor's marquee control */}
       <div style={sec}>
         <div style={secHead}>Historical Range To Sample</div>
         <div style={row}>
@@ -11852,13 +9328,6 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
         )}
       </div>
 
-      {/* Return & cost assumptions — moved out of Profile's "Monte Carlo Model
-          Parameters" card, which was a second copy of the sidebar's Macro &
-          Sensitivity card. Trimmed to the four that actually change a
-          projection's shape: inflation, the cash rate, the SS COLA, and the
-          equity glide. Deliberately NOT here: the two portfolio targets
-          (earlyRetireTarget / portfolioGoal) — those are GOALS, not model
-          parameters, so they stay in Profile where the rest of the plan lives. */}
       <div style={sec}>
         <div style={secHead}>Return &amp; Cost Assumptions</div>
         <div style={row}>
@@ -11914,7 +9383,6 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
         </div>
       </div>
 
-      {/* Spending guardrails — moved here from the Profile spending card */}
       <div style={sec}>
         <div style={secHead}>Spending Guardrails</div>
         <div style={row}>
@@ -11930,8 +9398,6 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
           will never fall below the floor even after repeated cuts, nor rise above the ceiling after repeated raises.
           These apply to the GK-family strategies (Guyton-Klinger, Risk, Kitces) and the Smart waterfall.
         </div>
-        {/* Read-only: the published method, cited from the engine's own constants
-            so the sentence cannot drift from the arithmetic. */}
         <div style={{ borderTop: "1px solid var(--tint-white-08)", paddingTop: 10, fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.6 }}>
           <div style={{ fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>Guyton-Klinger rules in force (fixed by the method)</div>
           <div>Withdrawal rate {Math.round(GK_BAND_PCT * 100)}% above the initial rate → cut spending {Math.round(GK_ADJUST_PCT * 100)}%.</div>
@@ -11941,8 +9407,6 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
         </div>
       </div>
 
-      {/* What the run costs, stated plainly — the honest version of the
-          reference design's "29 yr plan / 127 simulations" badge. */}
       <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", lineHeight: 1.6 }}>
         Plan horizon {Math.max(0, (p.endAge || 0) - effectiveRetireAge(p.retireAge, p.currentAge))} yrs ·
         {" "}{pathCount.toLocaleString()} paths × {stat.n}-year sampling window ({stat.years}) ·
@@ -11952,46 +9416,17 @@ function MCAdvancedSettings({ p, onAssumptionChange }) {
   );
 }
 
-/**
- * Monte Carlo Overview — the four-card verdict row (REQUIREMENTS §42 Spec A).
- *
- * READ-ONLY, one selector per figure (rule 8 / §41 §2):
- *   Success Rate        mc.rate                    (a scalar; the guard covers
- *                                                    the mc.pcts / mc.term DOLLAR
- *                                                    arrays, not scalars)
- *   Mean Final Balance  selectTerminalMeanAtAge()   — NOT an average of
- *                                                    p10..p90, and NOT a raw
- *                                                    mc.term read, so it deflates
- *                                                    on the Real-$ toggle exactly
- *                                                    as its neighbours do
- *   Best Case / Median  selectPortfolioAtAge()      — mc.term.p50/p90 are the
- *                                                    guarded fields; a direct read
- *                                                    fails noRawMcAccess.test.js
- *
- * Each card declares itself in src/provenance.js with a prose formula, and
- * renders that formula on screen (Rule 1a) — a card whose label class is not
- * declared in the registry turns the build red.
- */
 function MCOverviewCards({ mc, inf = 0, real = false, endAge, currentAge, retireAge }) {
   if (!mc) return null;
   const p50 = selectPortfolioAtAge(mc, endAge, { retireAge, real, inf, pct: "p50" });
   const p90 = selectPortfolioAtAge(mc, endAge, { retireAge, real, inf, pct: "p90" });
   const mean = selectTerminalMeanAtAge(mc, endAge, { retireAge, real, inf });
   const money = (v) => (v == null ? "—" : fmtDollar(v));
-  // Basis named with the actual calendar year of retirement year one (§41 A3),
-  // never "today's dollars" — the spend the user types is consumed as-is in
-  // retirement year one and never inflated forward from today.
   const retAge = effectiveRetireAge(retireAge, currentAge);
   const basisYear = CURRENT_YEAR + Math.max(0, retAge - (currentAge ?? retAge));
   const basis = real ? `${basisYear} dollars` : `future (${basisYear}-basis) dollars`;
   const paths = mc.N ? mc.N.toLocaleString() : "simulated";
 
-  // Four explicit cards, NOT a `.map()` over the data above. Deliberate: the
-  // provenance gate counts literal label-class occurrences in this file and
-  // requires one registry entry each. A mapped card list appears exactly ONCE in
-  // source, so it would slide past the count check and let four undeclared cards
-  // ship — the loophole the registry exists to close. The values stay computed
-  // once, above; only the markup is repeated.
   const cardStyle = { color: INFO_ACCENT.money, textAlign: "right" };
   const provLine = { fontSize: "var(--fs-small)", color: "var(--text-faint)", marginTop: 6, lineHeight: 1.45 };
   return (
@@ -12029,34 +9464,6 @@ function MCOverviewCards({ mc, inf = 0, real = false, endAge, currentAge, retire
   );
 }
 
-/**
- * Persistent Verdict Header — REQUIREMENTS §41 verdict item #3.
- *
- * The brief's own acceptance test (§7): a cold user answers FOUR questions in
- * 30 seconds without clicking —
- *     is my money going to last · will it outlive ME · what's my worst case ·
- *     when would it run out.
- * Today the app opens on inputs, so that test fails: the answer lives inside a
- * tab, below a Run button the user has to know to press.
- *
- * This strip sits above the tab bar and stays there, so the answer is on screen
- * before any navigation. Every figure is a READ off the existing `mc` payload —
- * no new engine work (rule 8):
- *   survived to plan age   mc.rate            (scalar)
- *   outlives you           mc.mwRate          (scalar, mortality-weighted)
- *   worst case             selectPortfolioAtAge(pct p10)  ← the guarded field
- *   median failure age     mc.medianExhaustAge
- *
- * LABELLING NOTE (Rule 1): the brief calls the p10 figure a "real floor SPEND".
- * It is not spending — `term.p10` is the 10th-percentile final BALANCE, i.e. the
- * pessimistic ending portfolio, not a spending level. Calling it spend would be
- * exactly the mislabel class this codebase keeps paying for, so it is labelled
- * as the worst-case balance and the basis is named with the retirement YEAR
- * (§41 A3), never "today's dollars". The engine's actual spend floor is
- * `mc.gkStats.spendMinReal` — a different number, available if wanted.
- */
-// Monte Carlo sizes conversions by bracket target only; manual per-year pins
-// are honored by the year-by-year schedule, not the simulation.
 export function pinnedConversionNote(count) {
   if (!count) return null;
   return `Monte Carlo Ignores Your ${count} Pinned Conversion${count === 1 ? "" : "s"}: these odds assume the bracket-target conversions. The Year-by-Year Schedule uses your pins.`;
@@ -12153,34 +9560,14 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
   const [showInputs, setShowInputs] = useState(false);
   const [showGaps, setShowGaps] = useState(false);
 
-  // Clamped the same way runMC/simulateDeterministicWithStrategy clamp
-  // their own start age (see effectiveRetireAge) — a user who enters a
-  // retireAge in the past relative to currentAge (already retired) actually
-  // gets simulated starting today, not at the stale entered age. Without
-  // this, accPhase showed a backwards range ("Age 65 → 55") and retPhase
-  // named a phase start (55) the engine never actually uses (it starts at
-  // 65) — both were describing a simulation that wasn't the one being run.
   const effRetireAge = effectiveRetireAge(params.retireAge, params.currentAge);
   const accPhase = effRetireAge > params.currentAge
     ? `Age ${params.currentAge} → ${effRetireAge}`
     : "already retired — no accumulation phase";
   const retPhase = `Age ${effRetireAge} → ${params.endAge}`;
 
-  // termAt(k) used to hand-roll its own deflation (`termDivisor = (1+inf)^
-  // termYears`) because mc.term has no array position for deflate()'s
-  // row-index math — a second, parallel implementation of the same "discount
-  // to the retirement-year basis" concept deflate() already owns. Verified
-  // numerically equivalent (termYears === the array index deflate() would use
-  // for this same row), but one future edit to deflate()'s convention away
-  // from silently diverging again — the exact failure class in CLAUDE.md
-  // rule 8. selectPortfolioAtAge() looks up the SAME terminal row through
-  // mc.pcts instead of mc.term, sharing deflate()'s actual math rather than
-  // re-deriving it, and — as a side effect — reads the row at THIS card's own
-  // age (params.endAge) rather than trusting mc.term's implicit horizon,
-  // which can differ from endAge when a survivor's clock extends the plan.
   const termAt = (k) => selectPortfolioAtAge(mc, params.endAge, { retireAge: effRetireAge, real, inf, pct: k }) ?? 0;
   const dollarBasis = dollarBasisLabel(real, retirementBasisYear(params.currentAge, effRetireAge, CURRENT_YEAR));
-  // The run's own path count where a RESULT is described; the default only before a run.
   const pathsLabel = mc?.N ? mc.N.toLocaleString() : MC_PATHS_LABEL;
   const mortSched = params.mortBalance > 0
     ? mortgageSchedule(params.mortBalance, params.mortRate ?? 6.5, params.mortStart || "2020-01", params.mortTerm || 30, params.mortExtra || 0)
@@ -12189,13 +9576,6 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
   const mortPayoffAge = mortSched
     ? params.currentAge + (mortSched.payoffYr - new Date().getFullYear())
     : 0;
-  // One-off cash flows (windfalls in, planned lump costs out). These move
-  // the plan as much as any return assumption — a $1M inheritance landing
-  // at 68 shifts every downstream percentile — but this panel used to
-  // disclose only the recurring inputs, so nothing on screen told the user
-  // whether the run actually included the event they'd just entered. Same
-  // list the engines read (params.cashFlowEvents), so what's shown is what
-  // was simulated.
   const cfEvents   = params.cashFlowEvents || [];
   const cfIsLive   = (e) => Number.isFinite(Number(e.year)) && (Number(e.amount) || 0) !== 0;
   const cfInflows  = cfEvents.filter((e) => e.direction === "in"  && cfIsLive(e));
@@ -12206,8 +9586,6 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
     return `${(ev.label || "").trim() || fallback} · ${ev.year} (age ${cfAgeAt(ev.year)})`
       + (every > 0 ? ` · every ${every} yr` : "");
   };
-  // `inflate !== false` is the engine's default (see computeCashFlowEvents) —
-  // report the treatment that will actually be applied, not the raw field.
   const cfBasis    = (ev) => ev.inflate !== false ? `today's $ · +${params.inf ?? 2.5}%/yr` : "as entered (nominal)";
   const cfInflowRows = cfInflows.flatMap((ev) => [
     [cfWhen(ev, "Windfall"), "+" + fmtDollar(Number(ev.amount) || 0)],
@@ -12218,11 +9596,6 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
     [cfWhen(ev, "One-off cost"), "−" + fmtDollar(Number(ev.amount) || 0)],
     [`↳ ${ev.deferrable ? "discretionary" : "committed"}`, cfBasis(ev)],
   ]);
-
-  // `hint` is what stays visible while a panel is shut — the one fact that
-  // tells the user whether opening it is worth a click (how many score
-  // drivers, how many saved checkpoints). Without it, collapsing hides not
-  // just the detail but the fact that there's any.
 
   const SectionHeader = ({ label, open, onToggle, color = "var(--accent-teal)", hint }) => (
     <div
@@ -12245,8 +9618,6 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
   const InputCard = ({ title, rows }) => (
     <div style={{ background: "var(--row-highlight)", border: "1px solid var(--tint-white-08)", borderRadius: 9, padding: 14 }}>
       <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--text-faint)", marginBottom: 10 }}>{title}</div>
-      {/* Index in the key: rows are now generated per cash-flow event, and two
-          events can legitimately produce the same label ("↳ into taxable"). */}
       {rows.map(([label, val], i) => (
         <div key={`${label}|${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6, fontSize: "var(--fs-label)" }}>
           <span style={{ color: "var(--text-muted)" }}>{label}</span>
@@ -12256,26 +9627,12 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
     </div>
   );
 
-  // strategyHowItWorks moved to module scope (STRATEGY_HOW_IT_WORKS, next to
-  // SimMethodModal) so the hero "Success to Age" ⓘ and this tab share ONE copy.
-
-  // A 40+ year retirement runs past the evidence behind two of this
-  // model's defaults. The simulation itself is honest — it bootstraps
-  // returns across the whole horizon — but a success rate is only as good
-  // as the spending path and the costs fed into it, and both weaken the
-  // earlier you retire. Said plainly and up front, because the failure mode
-  // is a confident number that's optimistic for reasons the user can't see.
   const planHorizon  = Math.max(0, (params.endAge || 0) - effRetireAge);
   const longHorizon  = planHorizon >= 40;
   const preMedicare  = Math.max(0, 65 - effRetireAge);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* What the forecast leaves out: one line that still says WHAT is missing
-          and WHICH WAY it errs (so the honesty survives without a click), with
-          the detail and the "what to do" in the standard info pop-up. It was a
-          full-width block taking a fifth of the screen. Click, not hover: a
-          hover-only pop-up never opens on a phone. */}
       {(longHorizon || preMedicare > 0) && (<>
         <button type="button" className="gap-row" onClick={() => setShowGaps(true)} aria-haspopup="dialog">
           <Dot tone="warn" />
@@ -12328,11 +9685,8 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
         </InfoModal>
       </>)}
 
-      {/* The picture first: the hero above already gave the number. */}
       {chart}
       {!mc && <div style={{ textAlign: "center", padding: "20px", color: "var(--text-faint)", fontSize: "var(--fs-body)" }}>{running ? `Running ${MC_PATHS_LABEL} paths...` : "Run Monte Carlo from the sidebar to see results here."}</div>}
-      {/* The ending balance as one percentile row. It replaces the stress-test
-          card (now a cell in the verdict strip) and the median card. */}
       {mc && (
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 18px", padding: "0 2px", fontSize: "var(--fs-label)", color: "var(--text-muted)" }}>
           <span>Balance at age {params.endAge} · {dollarBasis}</span>
@@ -12343,13 +9697,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
       )}
 
 
-      {/* What's driving this. One line per driver; a driver flagged as the
-          biggest risk opens by itself, the rest open on click. Every engine
-          bug found here was invisible on screen: a number that can't explain
-          itself can't be questioned. */}
       {mc && (() => {
-        // Third argument: the verdict strip's withdrawal rate, so the driver
-        // and the strip show one figure.
         const ex = explainScore(params, mc, computeInitialWR(params));
         if (!ex.drivers.length) return null;
         const tone = {
@@ -12384,15 +9732,7 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
 
 
 
-      {/* Guardrails MOVED to its own sub-tab of the Monte Carlo tab
-          (2026-09-24, Vincent's ask: "one is called simulation and the other
-          guardrails inside of this main tab"). It renders from the shell beside
-          this tab, because the fan chart and band table are shell-level children
-          of the Monte Carlo tab — a copy left here would appear under BOTH
-          sub-tabs and stop being a tab at all. The card chrome went with it. */}
 
-
-      {/* Inputs collapsible — source of record for every model assumption. */}
       <div style={{ background: "var(--card-bg)", border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: 16, scrollMarginTop: 16 }}>
         <SectionHeader label="Simulation inputs & assumptions" open={showInputs} onToggle={() => setShowInputs(!showInputs)}
           hint={[
@@ -12407,11 +9747,6 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
               <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "#0ea5e9", marginBottom: 10 }}>ACCUMULATION PHASE ({accPhase})</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <InputCard title="Starting Balances" rows={[...(params.accounts || []).filter(a => (a.balance || 0) > 0).map(a => [a.name || a.category, fmtDollar(a.balance || 0)]), ["Total liquid", fmtDollar(params.port)]]} />
-                {/* "Total savings" used to print `params.contrib` alone —
-                    the 401(k) deferral — while calling itself the total,
-                    silently omitting employer money, HSA, Roth and
-                    brokerage. It discloses every component now, and the
-                    spouse's own streams and stop age when they have them. */}
                 <InputCard title="Annual Contributions" rows={(() => {
                   const yrs = Math.max(0, params.retireAge - params.currentAge);
                   const spX = params.spouse || {};
@@ -12439,12 +9774,6 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--accent-purple)", marginBottom: 10 }}>WITHDRAWAL PHASE ({retPhase})</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-                {/* Reports the smile curve the engine actually runs. This
-                    used to claim fixed bands ("115% until 74, then 85%")
-                    that were never implemented — and which would imply a
-                    26% spending cliff on a single birthday. The real model
-                    is a compounding real rate; see spendingSmileFactor in
-                    engine/expenses.js. */}
                 <InputCard title="Living Expenses" rows={[
                   ["Base annual spend", fmtDollar(params.sp) + "/yr"],
                   ["Spending model", params.smile !== false ? "Blanchett smile" : "Flat (real)"],
@@ -12457,13 +9786,6 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
                 <InputCard title="Additional Costs" rows={[[`Healthcare (age ${params.hcShockAge ?? 72}+)`, `${params.hcProb ?? 3.5}% shock prob/yr`], ["Shock range", `${fmtDollar(params.hcMin ?? 70000)}–${fmtDollar(params.hcMax ?? 130000)}`], ["Mortgage annual", mortAnnual > 0 ? fmtDollar(mortAnnual) + "/yr" : "Paid off"], ["Mortgage payoff", mortPayoffAge > 0 ? "~" + mortPayoffAge : "—"]]} />
               </div>
             </div>
-            {/* One-off cash flows — rendered only when the user has entered
-                at least one, so the panel doesn't grow an empty section for
-                the common case. Inflows and outflows are separate cards
-                because they're separate mechanics: a windfall is deposited
-                into a bucket and compounds, a one-off cost is added to that
-                year's spend. Showing them in one list is what let a $1M
-                inheritance read as a $1M expense. */}
             {(cfInflows.length > 0 || cfOutflows.length > 0) && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, color: "var(--accent-gold)", marginBottom: 10 }}>
@@ -12503,9 +9825,6 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
         )}
       </div>
 
-      {/* The panel is DeepSeek's src/forecast/CheckpointsPanel.jsx (WP-G): labelled
-          row actions, a confirm before "set baseline", and a reason when Save
-          cannot proceed. It owns its own collapse header. */}
       <CheckpointsPanel
         checkpoints={checkpoints}
         mc={mc}
@@ -12518,20 +9837,6 @@ function MCTab({ params, mc, running, onRun, checkpoints, onUpdateCheckpoints, o
         onSetBaseline={onSetBaselineFromCheckpoint}
       />
 
-      {/* Disclaimer LAST, matching the Withdrawal tab's placement and the
-          earlier design-authority ruling recorded there: a "not financial
-          advice" notice has to be reliably present, not first. Sitting above the
-          results it pushed the answer the user opened this tab for below the
-          fold — the same "promote the summary, don't bury it" problem the
-          v1.2.110 regroup fixed. The always-visible short form keeps the two
-          legal hooks ("not financial advice", "consult a licensed professional")
-          on screen; the elaboration is one click away and also permanent in the
-          footer and the Terms of Service. */}
-      {/* Disclaimer moved OUT of MCTab to the very bottom of the Monte Carlo
-          tab (after the fan chart + band table) — it was rendering mid-page,
-          between the inputs panel and the Forecast Portfolio chart, eating
-          prime real estate. See the montecarlo tab render (renders
-          <McTabDisclaimer/> last). */}
     </div>
   );
 }
@@ -12578,7 +9883,6 @@ function MortgageTab({ values, onChange }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
 
-      {/* Read-only summary. The one editor lives in Plan inputs > Real Estate & Debt. */}
       <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, flexWrap:"wrap" }}>
           <div style={{ fontSize: "var(--fs-label)", fontWeight:600, color:"var(--text-primary)" }}>Properties</div>
@@ -12596,7 +9900,6 @@ function MortgageTab({ values, onChange }) {
           </div>
         ))}
 
-        {/* Totals row */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
           {[
             { l:"Total value",    v:totalValue,    c:"var(--text-primary)" },
@@ -12613,7 +9916,6 @@ function MortgageTab({ values, onChange }) {
         </div>
       </div>
 
-      {/* ── PRIMARY MORTGAGE CALCULATOR ── */}
       <div className="chart-card">
         <div className="ct">{properties[0]?.label || "Primary Residence"} · Mortgage calculator</div>
 
@@ -12652,7 +9954,6 @@ function MortgageTab({ values, onChange }) {
         </ResponsiveContainer>
       </div>
 
-      {/* ── AMORTIZATION TABLE ── */}
       <div className="chart-card">
         <div className="ct">Amortization — first 10 years{extra > 0 ? " with extra payments" : ""}</div>
         <table className="nw-table">
@@ -12676,33 +9977,6 @@ function MortgageTab({ values, onChange }) {
   );
 }
 
-// mcMedianAtAge / selectPortfolioAtAge moved to engine/mcSelectors.js
-// (imported at the top of this file) — see that file's doc comments for
-// the full history (the $0-vs-null bug, the flat-tail clamp bug, and the
-// three-call-sites-disagreed bug this consolidation fixed).
-
-/**
- * Net Worth chart tooltip — a component breakdown of the hovered year.
- *
- * The shared <Tip/> lists whatever series happen to be on the chart, which for
- * this one reads "Liquid Portfolio / Mortgage Debt / Real Estate / Net Worth" —
- * four lines where two are the same money counted twice (Mortgage Debt is shown
- * negative and already subtracted inside Net Worth), and none of them says which
- * accounts the liquid figure is made of.
- *
- * This version leads with the total and shows the composition under it:
- * pre-tax · tax-free (Roth + HSA) · taxable · cash, then real estate and the
- * mortgage that comes off. It also names the calendar year and whose figures
- * these are, so a hover answers "what am I looking at" without a trip to the
- * legend.
- *
- * Buckets come from ACCOUNT_CATEGORIES — the same source the sidebar donut and
- * the account editor use — so the split can't drift from what the user entered.
- * The liquid total itself is NOT re-summed here: it stays the engine's number
- * from the row, and the bucket lines are shown only when they reconcile to it
- * (see the check below). If they ever stop reconciling, the breakdown hides
- * rather than contradicting the headline.
- */
 function NetWorthTip({ active, payload, label, p }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload || {};
@@ -12712,9 +9986,6 @@ function NetWorthTip({ active, payload, label, p }) {
   const nw = row["Net Worth"];
   const yr = Number.isFinite(label) ? new Date().getFullYear() + (label - (p?.currentAge ?? label)) : null;
 
-  // Account-category split of the liquid portfolio, from the profile the user
-  // filled in. Cash and "cash-like" categories roll into one line so the block
-  // stays short; Roth + HSA group as tax-free.
   const accts = p?.accounts || [];
   const sumOf = (keys) => accts.filter((a) => keys.includes(a.category)).reduce((s, a) => s + (a.balance || 0), 0);
   const groups = [
@@ -12724,19 +9995,6 @@ function NetWorthTip({ active, payload, label, p }) {
     { name: "Cash",        color: "var(--text-muted)", value: sumOf(["cash"]) },
   ].filter((g) => g.value > 0);
   const groupTotal = groups.reduce((s, g) => s + g.value, 0);
-  // These are TODAY'S entered balances. The chart line is a projection, so at
-  // any age past the current one the two are different numbers by construction -
-  // and they must never be presented as if the split adds up to the hovered
-  // year. So the block is labelled as what it is (a "from" line under the first
-  // data point, where they genuinely do coincide; otherwise an explicitly
-  // today-labelled composition), and it is dropped entirely once the projection
-  // has run past them by more than a rounding step.
-  // "Equal to the hovered year" has to mean actually equal, not "within a few
-  // percent" — a 1-2% drift is exactly what one year of growth looks like, and
-  // calling that the year's own composition would be the lie this whole guard
-  // exists to prevent. So the unlabelled case is tight (rounding only), while
-  // the split stays visible-but-labelled for a little while longer, until the
-  // projection has overtaken today's total.
   const atStart = Number.isFinite(liquid) && Math.abs(liquid - groupTotal) <= 1;
   const stillTraceableToToday = Number.isFinite(liquid) && liquid > 0 && liquid <= groupTotal * 1.5;
 
@@ -12784,13 +10042,6 @@ function NetWorthTip({ active, payload, label, p }) {
 
 export function NetWorthTab({ p, mc, inf, real }) {
   const [showRE, setShowRE] = useState(false);
-  // The per-age chart line and "Net worth at age X" card go through
-  // selectPortfolioAtAge() below (the shared basis-aware lookup — see its
-  // doc comment). `dPcts` stays as a local, array-wide deflate() only because
-  // the peak-liquid scan below needs every row at once, which a single-age
-  // selector call can't give it; it uses the SAME `deflate()` primitive the
-  // selector uses internally, so the two can't drift out of basis with
-  // each other again.
   // eslint-disable-next-line no-restricted-properties -- array-wide scan (peak across every age); no single-age selector call could give this.
   const dPcts = useMemo(() => (mc ? deflate(mc.pcts, inf, real) : []), [mc, inf, real]);
   const props    = p.properties || [];
@@ -12812,7 +10063,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
   const nwData = useMemo(() => {
     if (!mc) return [];
 
-    // Current liquid portfolio from accounts (matches home page sidebar)
     const currentPort = (p.accounts || []).reduce((s, a) => s + (a.balance || 0), 0) || p.port || 0;
     const preReturnRate = expectedReturn(p.preRetireEq ?? 91) / 100;
 
@@ -12828,49 +10078,14 @@ export function NetWorthTab({ p, mc, inf, real }) {
 
       let port;
       if (age < p.retireAge) {
-        // Accumulation phase: grow from current portfolio deterministically
         const yearsToAge = age - p.currentAge;
         let acc = currentPort;
         for (let y = 0; y < yearsToAge; y++) {
-          // Household total per year, not the 401(k) line alone — and it
-          // drops the spouse's streams on their own retirement date, so
-          // this projection tracks the engines instead of drifting from them.
-          // Grow, then add the year's contributions and any one-off inflow
-          // that lands in it — the same order and the same year mapping the
-          // engines use (accumulation year y = CURRENT_YEAR + y). Without
-          // the inflow term this curve ignored windfalls until retirement,
-          // then handed over to the MC median which had counted them: the
-          // jump landed on the retirement year regardless of the year the
-          // user entered. Inflows only, matching the engines — pre-retirement
-          // one-off costs are assumed to be paid from wages.
           acc = acc * (1 + preReturnRate) + householdAnnualContribution(p, p.currentAge + y)
               + computeCashFlowEvents(p.cashFlowEvents, CURRENT_YEAR + y, p.inf ?? 2.5, CURRENT_YEAR).inflow;
         }
         port = Number.isFinite(acc) ? Math.round(acc) : null;
       } else {
-        // Retirement phase: the MC median for this age.
-        //
-        // Looked up by age, not by array position. This used to be
-        //   pctIndex = Math.min(age - p.retireAge, pcts.length - 1)
-        //   port     = pcts[pctIndex]?.p50 || 0
-        // which had two failure modes, both of which drew a confident $0:
-        //
-        //   1. `Math.min` clamped past the end of the data, so every age
-        //      beyond the Monte Carlo horizon repeated the final entry. A
-        //      plan whose horizon is shorter than `endAge` got a flat line
-        //      of fabricated years, and the "net worth at age" card below
-        //      read that fabricated value as though it were a forecast.
-        //   2. `|| 0` collapsed three different states into one number —
-        //      genuinely zero, no data, and NaN. NaN is falsy, so a single
-        //      broken input rendered as $0 from the poisoned year onward,
-        //      indistinguishable from a real answer. A user reported
-        //      exactly that: a plan the engine scores at 99.2% success,
-        //      with a median of $4.05M at 68 and $10.9M at 90, drawn as $0
-        //      from 68 to 90.
-        //
-        // Positional indexing also silently misaligned whenever `mc` was
-        // stale (computed at a different retireAge than the one being
-        // charted); the rows carry their own `age`, so use it.
         port = selectPortfolioAtAge(mc, age, { retireAge: p.retireAge, real, inf });
       }
 
@@ -12879,10 +10094,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
       const yearsFromNow = yr - new Date().getFullYear();
       const reGrow = Math.pow(1 + (p.reGrowthRate ?? 3.0) / 100, yearsFromNow);
       const re = showRE ? Math.round(reTotal * reGrow) : 0;
-      // null (not 0) where there's no portfolio figure: Recharts breaks the
-      // line on null, which is the honest rendering of "not modeled." Net
-      // Worth has to break with it, or the chart would keep drawing
-      // `re - mortBal` as if it were a projection.
       return {
         age,
         "Liquid Portfolio": port,
@@ -12893,12 +10104,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
     });
   }, [p, mc, dPcts, showRE, mortSched, reTotal]);
 
-  // Peak liquid portfolio (median). Both of these read the row's own age
-  // rather than deriving it from `retireAge + index`, and both ignore
-  // non-finite p50s — one NaN used to turn the headline figure into NaN via
-  // Math.max. Reads `dPcts` (same basis as the chart above), not raw
-  // `mc.pcts` — otherwise this card and "Net worth at age X" below it would
-  // show two different bases.
   const finitePcts = useMemo(
     () => dPcts.filter((d) => Number.isFinite(d.p50)),
     [dPcts]
@@ -12910,10 +10115,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
   const peakPort = peakRow ? peakRow.p50 : 0;
   const peakAge = peakRow ? (peakRow.age ?? p.retireAge + finitePcts.indexOf(peakRow)) : 0;
 
-  // The last age the chart actually has a figure for, and the final value
-  // there. Reporting `p.endAge` when the data stops earlier is what let the
-  // summary card announce "$0 at age 90" for a plan that was never modeled
-  // to 90.
   const lastRealRow = [...nwData].reverse().find((d) => d["Net Worth"] != null);
   const finalNW = lastRealRow ? lastRealRow["Net Worth"] : 0;
   const lastDataAge = lastRealRow ? lastRealRow.age : null;
@@ -12930,9 +10131,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
           </div>
           <div className="ms">Age {peakAge} · typical outcome</div>
         </div>
-        {/* Names the age the number is actually for. It used to always say
-            `planAge` (the age you typed) even when the projection stopped
-            earlier, so a missing-data $0 was presented as "net worth at 90". */}
         <div className="met">
           <div className="ml">Net worth at age {lastDataAge ?? planAge}</div>
           <div className="mv" style={{ color: dataStopsEarly ? "var(--accent-gold)" : "var(--text-primary)", fontSize: "var(--fs-h2)" }}>
@@ -12945,10 +10143,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
             )}
           </div>
         </div>
-        {/* A card for something the user never entered is an empty state dressed
-            as a metric ("Mortgage-free —", "Real estate equity $0"). Each shows
-            only once there is something to show; the line under the row says
-            what is missing and where to add it. */}
         {p.mortBalance > 0 && (
         <div className="met">
           <div className="ml">Mortgage‑free</div>
@@ -12969,22 +10163,10 @@ export function NetWorthTab({ p, mc, inf, real }) {
           <div className="ms">Not counted in your portfolio</div>
         </div>
         )}
-        {/* This card used to render three different quantities under one
-            label ("Safe spending target") and one strategy caption. Only
-            two of the three are computed; the middle branch — by far the
-            most common, since it fires for every strategy except `fixed`
-            once a target is entered — just echoes the user's own number
-            back. Captioning that "GK guardrails" attributed the figure to a
-            strategy that hadn't touched it. Each branch now states what it
-            actually is, and all three disclose the after-tax basis (runMC
-            draws tax on top of the target, never out of it — see the
-            fixed-point loop in runMC). */}
         {(() => {
           const port     = (p.accounts||[]).reduce((s,a)=>s+(a.balance||0),0) || p.port || 0;
           const strategy = resolveStrategy(p.withdrawalStrategy);
-          const rate     = p.fixedWithdrawalRate || 0.04; // always decimal in params (normalized in the params memo)
-          // No literal fallback rate: the benchmark the rest of the app shows
-          // is the user's own safeWithdrawalRate, so this card uses the same one.
+          const rate     = p.fixedWithdrawalRate || 0.04;
           const benchRate = p.safeWithdrawalRate ?? 0.04;
           const pctOf     = (r) => (r * 100).toFixed(1).replace(/\.0$/, "");
           const STRAT = { gk:"Guyton-Klinger guardrails", fixed:"Fixed %", vpw:"VPW", ninety_five_rule:"95% rule", bengen:"Bengen 4% rule", smart:"Smart Waterfall" };
@@ -13010,9 +10192,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
           return (
             <div className="met" title={hint}>
               <div className="ml">{label}</div>
-              {/* fmtDollar, not an inline toLocaleString — one money
-                  helper. Inline formatting is how an abbreviator slipped in
-                  unnoticed once already. */}
               <div className="mv" style={{ color: "#4ade80", fontSize: "var(--fs-h2)" }}>{fmtDollar(monthly)}</div>
               <div className="ms">{note}</div>
             </div>
@@ -13042,7 +10221,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
                 Typical outcome, every 5 years to age {lastDataAge ?? planAge} · {dollarBasisLabel(real, retirementBasisYear(p.currentAge, p.retireAge, CURRENT_YEAR))}{showRE ? "" : " · excludes real estate"}
               </div>
             </div>
-            {/* Was a title= tooltip on an emoji, which does nothing on click or touch. InfoDot opens the dialog. */}
             <InfoDot
               heading="Reading this chart"
               title="Liquid Portfolio = investments (excl. real estate). Mortgage Debt shown as negative (dashed red line). Net Worth = Liquid + Real Estate - Mortgage Debt."
@@ -13109,11 +10287,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
           </LineChart>
         </ResponsiveContainer>
 
-        {/* A break in the line now means "no figure for these years" and
-            says so. Before, those years were drawn as $0 — a plan the
-            engine scores at 99% success could appear to end broke. Silence
-            is better than a wrong number, but a stated reason is better than
-            silence. */}
         {dataStopsEarly && (
           <div style={{
             marginTop: 8, padding: "10px 12px", borderRadius: 8,
@@ -13129,7 +10302,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
           </div>
         )}
 
-        {/* Legend */}
         <div className="leg" style={{ marginTop: 8, justifyContent: "center" }}>
           <div className="li"><div className="ll" style={{ background: "#0ea5e9" }} />Liquid Portfolio</div>
           <div className="li"><div className="ll" style={{ background: "var(--chart-1)", borderTop: "1px dashed var(--chart-1)", height: 2 }} />Mortgage Debt (dashed)</div>
@@ -13137,7 +10309,6 @@ export function NetWorthTab({ p, mc, inf, real }) {
           <div className="li"><div className="ll" style={{ background: "var(--positive)" }} />{showRE ? "Net Worth" : "Portfolio (ex. RE)"}</div>
         </div>
 
-        {/* Footnote about peak age */}
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginTop: 6, textAlign: "center" }}>
           * Peak portfolio is the highest point of the typical (median) outcome across your whole plan, to age {p.endAge}.
         </div>
@@ -13152,14 +10323,12 @@ export function NetWorthTab({ p, mc, inf, real }) {
   );
 }
 
-// Priority colors
 const PRIORITY_COLOR = {
   red:    { border: "var(--negative)", bg: "var(--tint-red-07)",  label: "var(--chart-1)" },
   yellow: { border: "var(--accent-gold)", bg: "rgba(244,211,94,0.07)", label: "var(--accent-gold)" },
   green:  { border: "var(--positive)", bg: "rgba(79,216,143,0.07)", label: "var(--positive)" },
 };
 
-// Milestone timeline
 function buildMilestones(params, rmdAge) {
   const age       = params?.currentAge  || 56;
   const retireAge = params?.retireAge   || 65;
@@ -13265,7 +10434,6 @@ function MilestonesSection({ params, rmdAge }) {
       <div style={{ position: "relative" }}>
         {milestones.map((m, idx) => (
           <div key={m.age} style={{ display: "flex", gap: 14, marginBottom: 14 }}>
-            {/* Timeline spine */}
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 36, flexShrink: 0 }}>
               <div style={{
                 width: 36, height: 36, borderRadius: "50%",
@@ -13279,7 +10447,6 @@ function MilestonesSection({ params, rmdAge }) {
                 <div style={{ width: 2, flex: 1, minHeight: 16, background: "var(--tint-indigo-20)", marginTop: 4 }} />
               )}
             </div>
-            {/* Milestone card */}
             <div style={{
               flex: 1, background: "rgba(99,102,241,0.04)", border: "1px solid var(--tint-indigo-15)",
               borderRadius: 9, padding: "10px 14px", marginBottom: 2,
@@ -13303,7 +10470,6 @@ function MilestonesSection({ params, rmdAge }) {
   );
 }
 
-// Card step lookup
 function getCardSteps(card) {
   if (card.steps?.length) return card.steps;
   const a = (card.action   || "").toLowerCase();
@@ -13353,7 +10519,6 @@ function getCardSteps(card) {
   return [];
 }
 
-// Action plan row
 function ActionPlanRow({ card, isSelected, onClick }) {
   const C = PRIORITY_COLOR[card.priority] || PRIORITY_COLOR.yellow;
   return (
@@ -13401,7 +10566,6 @@ function ActionPlanRow({ card, isSelected, onClick }) {
   );
 }
 
-// Card detail panel
 function CardDetailPanel({ card, onClose }) {
   const C     = PRIORITY_COLOR[card.priority] || PRIORITY_COLOR.yellow;
   const steps = getCardSteps(card);
@@ -13419,7 +10583,6 @@ function CardDetailPanel({ card, onClose }) {
       maxHeight:    "80vh",
       overflowY:    "auto",
     }}>
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
         <div style={{ flex: 1, paddingRight: 12 }}>
           <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
@@ -13439,7 +10602,6 @@ function CardDetailPanel({ card, onClose }) {
         <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-faint)", cursor: "pointer", fontSize: "var(--fs-h1)", lineHeight: 1, flexShrink: 0 }}>×</button>
       </div>
 
-      {/* Details */}
       {card.reason && (
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 6 }}>DETAILS</div>
@@ -13447,7 +10609,6 @@ function CardDetailPanel({ card, onClose }) {
         </div>
       )}
 
-      {/* What to do */}
       {steps.length > 0 && (
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-faint)", marginBottom: 8 }}>WHAT TO DO</div>
@@ -13465,7 +10626,6 @@ function CardDetailPanel({ card, onClose }) {
         </div>
       )}
 
-      {/* AI insight */}
       {card.aiNote ? (
         <div style={{
           background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)",
@@ -13485,12 +10645,10 @@ function CardDetailPanel({ card, onClose }) {
         </div>
       ) : null}
 
-      {/* Source */}
       {card.source && (
         <div style={{ fontSize: "var(--fs-small)", color: "var(--chart-5)", marginBottom: 12 }}>Source: {card.source}</div>
       )}
 
-      {/* Deadline */}
       <div style={{ fontSize: "var(--fs-label)", color: "var(--text-faint)", display: "flex", alignItems: "center", gap: 6, paddingTop: 8, borderTop: "1px solid var(--tint-white-06)" }}>
         ⏱ <span style={{ color: "var(--text-muted)" }}>{card.deadline}</span>
       </div>
@@ -13498,7 +10656,6 @@ function CardDetailPanel({ card, onClose }) {
   );
 }
 
-// ActionPlanTab
 function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rmdAgeProp }) {
   const currentYear = new Date().getFullYear();
   const retireYear = currentYear + ((params?.retireAge || 60) - (params?.currentAge || 56));
@@ -13511,10 +10668,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   const [loadingAI, setLoadingAI]       = useState(false);
   const [aiError, setAiError]           = useState(null);
   const [showBuyModal, setShowBuyModal] = useState(false);
-  // Re-open the recovery link later. It's shown once at purchase, but a
-  // user who clicked past it then has no way back to the only thing that
-  // protects their purchase — so it stays reachable from the panel that
-  // shows the balance.
   const [showRecovery, setShowRecovery] = useState(false);
   const [showRestore, setShowRestore]   = useState(false);
   const [liveCards, setLiveCards]       = useState(null);
@@ -13534,15 +10687,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
       console.warn("[AI] Profile incomplete — runAI exiting silently. Need: port>50K, sp>0, mcResults.rate>0, ≥1 funded account.");
       return;
     }
-    // Pre-flight credit check. The server refuses below MIN_CREDITS_TO_RUN
-    // and returns 402, which used to be the first time a user learned they
-    // were short: the button looked available, the spinner ran, and the buy
-    // modal appeared as the result of a failure. Checking here turns that
-    // into an offer made before the attempt.
-    //
-    // Only when billing is actually in play — a user on their own Gemini
-    // key never touches credits, so their balance is irrelevant to whether
-    // they can run (ai-analysis.js routes on `getStoredJWT()`, not on the balance).
     if (BILLING_ENABLED && getStoredJWT() && creditBalance < MIN_CREDITS_TO_RUN) {
       console.warn(`[AI] pre-flight: ${creditBalance} credits < ${MIN_CREDITS_TO_RUN} minimum — prompting instead of failing.`);
       setAiError(`AI analysis needs at least ${MIN_CREDITS_TO_RUN.toLocaleString()} credits and you have ${creditBalance.toLocaleString()}. Top up to continue — nothing was charged.`);
@@ -13598,25 +10742,18 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
     );
   }
 
-  // Evaluate declarative rules engine
   const baseCards = evaluateRulesEngine({
     params, mc, assumptions,
     currentYear, retireYear, daysToRetire,
   });
 
-  // Display AI-annotated cards if available, else base cards
   const displayCards = cards || baseCards;
 
-  // Gate: AI button only enabled when profile has real data AND either credits (billing) or Gemini key (BYOK)
   const hasGeminiKey = !!(assumptions?.geminiApiKey?.trim());
   const profileReady = (params.port || 0) > 50_000 &&
     (params.sp  || 0) > 0 &&
     mc?.rate > 0 &&
     (params.accounts || []).some(a => (a.balance || 0) > 0);
-  // Used to be `creditBalance >= 5` — a bare literal that enabled the
-  // button at a balance the server rejects (its floor is MIN_CREDITS_GUARD
-  // = 50). Anyone between 5 and 49 credits got an enabled button and a
-  // guaranteed failure.
   const hasAiAccess  = BILLING_ENABLED ? (creditBalance >= MIN_CREDITS_TO_RUN || hasGeminiKey) : hasGeminiKey;
   const canRunAI     = !loadingAI && !cards && profileReady && hasAiAccess;
   const aiDisabledReason = !profileReady
@@ -13634,10 +10771,8 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 
-      {/* AI controls */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, flexWrap: "wrap" }}>
 
-        {/* Left — action button + status */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
           <button
             onClick={() => runAI(baseCards)}
@@ -13678,7 +10813,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
           )}
         </div>
 
-        {/* Right — credit panel (BILLING_ENABLED), or Coming Soon stub */}
         {BILLING_ENABLED ? (
           <div style={{
             display:      "flex",
@@ -13694,16 +10828,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
               <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--accent-purple)", marginBottom: 2 }}>
                 AiRA Credits
               </div>
-              {/* "You have 0 credits" and "this browser has no session" are
-                  completely different situations, and showing a bare 0 for
-                  both told paying customers they had nothing — right next
-                  to a Buy Credits button, so the natural response was to
-                  pay a second time. Credits live in the database against a
-                  Stripe customer; the browser's only claim on them is a JWT
-                  in localStorage, which doesn't travel between browsers,
-                  devices, or origins, and isn't part of a profile export.
-                  With no token we genuinely don't know the balance, so say
-                  that instead of asserting zero. */}
               {!getStoredJWT() ? (
                 <div style={{ maxWidth: 230 }}>
                   <div style={{ fontSize: "var(--fs-body)", fontWeight: 700, color: "var(--accent-gold)", lineHeight: 1.25 }}>
@@ -13713,13 +10837,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                     Already bought credits? They're safe — this browser just isn't linked
                     to your purchase.
                   </div>
-                  {/* This state told the user to "use your restore link"
-                      and then gave them nowhere to put one: the only button
-                      on this panel was Buy Credits, so the path of least
-                      resistance was paying twice for credits they already
-                      owned. redeemRestoreToken existed but was reachable
-                      only by loading a ?restore= URL — no use if the link
-                      is in a password manager, an email, or on another screen. */}
                   <button
                     onClick={() => setShowRestore(true)}
                     style={{
@@ -13796,7 +10913,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
         )}
       </div>
 
-      {/* Session token usage — shown for BYOK users after any AI call */}
       <AiUsageBadge style={{ marginBottom: 4 }} />
 
       {showBuyModal && <CreditPackModal onClose={() => setShowBuyModal(false)} />}
@@ -13821,7 +10937,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
         </div>
       )}
 
-      {/* Retirement Date Solver */}
       {(() => {
         const solver = solveRetirementDate(params);
         const { target, currentPort, currentAge, results } = solver;
@@ -13840,9 +10955,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 8 }}>
               Portfolio today: <span style={{ color: "var(--text-primary)", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(currentPort)}</span>
               &nbsp;·&nbsp;Planned retirement: <span style={{ color: "var(--text-primary)" }}>age {retireAge}</span>
-              {/* Household total — this drives a retirement-date answer, so
-                  quoting the 401(k) line alone understated the saving that
-                  gets the user there, and ignored a working spouse entirely. */}
               &nbsp;·&nbsp;Annual contrib: <span style={{ color: "var(--text-primary)", fontFamily: "'JetBrains Mono',monospace" }}>{fmtDollar(householdAnnualContribution(params))}</span>
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-label)" }}>
@@ -13880,7 +10992,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
         );
       })()}
 
-      {/* Summary bar + filter */}
       {(() => {
         const allCards     = [...displayCards, ...(liveCards || [])];
         const counts       = { all: allCards.length, red: 0, yellow: 0, green: 0 };
@@ -13897,7 +11008,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
 
         return (
           <div>
-            {/* Filter row */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
               {FILTER_OPTS.map(f => (
                 <button
@@ -13945,10 +11055,8 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
               </div>
             )}
 
-            {/* Master-detail layout */}
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
 
-              {/* Left — list of rows */}
               <div style={{ flex: selectedCard ? "0 0 46%" : 1, minWidth: 0, transition: "flex 0.2s" }}>
                 {filtered.length === 0 && (
                   <div style={{ fontSize: "var(--fs-label)", color: "var(--text-faint)", padding: "20px 0", textAlign: "center" }}>
@@ -13956,7 +11064,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                   </div>
                 )}
 
-                {/* Regular cards */}
                 {filtered.filter(c => !c.isLiveData).map((card, i) => (
                   <ActionPlanRow
                     key={card.id || i}
@@ -13966,7 +11073,6 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                   />
                 ))}
 
-                {/* Live cards — separated with a label */}
                 {filtered.some(c => c.isLiveData) && (
                   <>
                     <div style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--chart-5)", margin: "12px 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
@@ -13983,13 +11089,11 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
                   </>
                 )}
 
-                {/* Milestones — inside the list column */}
                 <div style={{ marginTop: 16 }}>
                   <MilestonesSection params={params} rmdAge={rmdAgeProp} />
                 </div>
               </div>
 
-              {/* Right — detail panel */}
               {selectedCard && (
                 <div style={{ flex: "0 0 51%", minWidth: 0 }}>
                   <CardDetailPanel
@@ -14007,13 +11111,10 @@ function ActionPlanTab({ params, mc, assumptions, mortgagePayoffYear, rmdAge: rm
   );
 }
 
-/** Plan inputs > Real Estate & Debt: the one editor for properties and the primary mortgage
- * (same sliders and month picker the Analysis tab had; MortgageTab is now a read-only summary). */
 function RealEstateStep({ values, onChange }) {
   const properties = values.properties || [{ id: "p1", label: "Primary Residence", value: 0, mortgage: 0, income: 0 }];
   const updateProp = (id, field, val) => {
     onChange("properties", properties.map((p) => (p.id === id ? { ...p, [field]: val } : p)));
-    // Keep primary mortgage in sync with mortgage calculator
     if (id === properties[0]?.id && field === "mortgage") onChange("mortBalance", val);
   };
   const addProperty = () => {
@@ -14080,10 +11181,6 @@ function RealEstateStep({ values, onChange }) {
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
               <div>
                 <div style={{ fontSize: "var(--fs-small)", color:"var(--text-muted)", marginBottom:4, textAlign:"right" }}>Gross value</div>
-                {/* `max` bounds the DRAG range only — DualInput's typed field
-                    accepts values above it (see Slider.commitDraft). A 999B max
-                    here made one pixel of travel worth ~$1.4B, so the slider
-                    could not land on any real house price. */}
                 <DualInput label="" value={prop.value||0} min={0} max={10_000_000} step={5_000}
                   format={v=>`$${Math.round(v).toLocaleString()}`} onChange={v=>updateProp(prop.id,"value",v)}/>
               </div>
@@ -14143,7 +11240,6 @@ function RealEstateStep({ values, onChange }) {
   );
 }
 
-/** ProfileWizard step index of "Current Savings" (accounts, balances, split). Keep in sync with STEPS below. */
 export const PROFILE_STEP_SAVINGS = 1;
 export const PROFILE_STEP_MONEY_IN = 2;
 export const PROFILE_STEP_SPENDING = 3;
@@ -14152,8 +11248,6 @@ export const PROFILE_STEP_SETTINGS = 6;
 
 export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, jumpTo }) {
   const [step, setStep] = useState(jumpTo?.step ?? 0);
-  // Deep links from the sidebar ("Edit accounts") land on the step that holds the field.
-  // `jumpTo` is {step, n}; n changes on every click so the same step can be requested twice.
   useEffect(() => { if (jumpTo) setStep(jumpTo.step); }, [jumpTo]);
   const [saveStatus, setSaveStatus] = useState("");
 
@@ -14191,35 +11285,11 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
     }
   })();
 
-  /* Step order: personal identity first, then money in, money out, the
-   * plan — and global configuration last. About You is the dependency
-   * root: `values.dob` drives ageFromDob(), which several later subtitles
-   * and the engine derive from, so asking for it first matches what the
-   * data actually needs.
-   *
-   * Assumptions used to be step 1 while also holding five identity fields
-   * (name, dob, state, employer start date, filing status). Those moved to
-   * About You, so this panel is now purely engine configuration — returns,
-   * inflation, tax toggles, API key. Think of it as the phone's Settings
-   * app, not part of telling us about yourself.
-   *
-   * `isSettings` marks it as a global surface rather than a workflow step.
-   * The sidebar reads it to drop the row out of the progress-dot language:
-   * a settings panel is never "completed," so showing a filled step dot
-   * for it would assert something false.
-   */
   const STEPS = [
     { label: "About You", icon: "👤", sub: `You are ${ageFromDob(values.dob) ?? values.currentAge} yrs old` },
     { label: "Current Savings", icon: "💰", sub: `Net worth of ${fmtDollar(values.port)} saved. Congratulations!` },
     {
       label: "Money In", icon: "💵",
-      // Money In holds both the working-years contributions and every
-      // recurring retirement stream (SS, rental, pensions, other income).
-      // The old subtitle read only the contribution figure, so a retired
-      // user with a $50K pension saw "Contributing $0/yr while working" —
-      // exactly backwards as a signal. Show both halves; fall back to a
-      // static label only when the household has neither, so the string is
-      // never "$0/yr saving · $0/yr in retirement" for a brand-new profile.
       sub: (() => {
         const saving = householdAnnualContribution(values);
         const retInc = totalRetirementIncome(values);
@@ -14281,13 +11351,9 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
         flexShrink: 0,
       }}
     >
-      {/* LEFT SIDEBAR – unchanged */}
       <div className="wizard-sidebar" style={{ borderRight: "1px solid var(--tint-white-06)", padding: 16 }}>
         {STEPS.map((s, i) => (
           <React.Fragment key={i}>
-          {/* Visual separation for the global-settings surface. Position
-              alone didn't express it: everything in this list shares one
-              progress-dot language, which implies a linear sequence you complete. */}
           {s.isSettings && (
             <div style={{
               marginTop: 14, marginBottom: 6, paddingTop: 10,
@@ -14311,8 +11377,6 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
               border: i === step ? "1px solid rgba(13,148,136,0.3)" : "1px solid transparent",
             }}
           >
-            {/* A settings panel is never "done," so it gets a static
-                marker instead of a progress dot that fills in as you pass it. */}
             <div
               style={{
                 width: 14,
@@ -14339,9 +11403,7 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
         ))}
       </div>
 
-      {/* RIGHT PANEL */}
       <div className="wizard-panel" style={{ padding: 24 }}>
-        {/* Save bar – unchanged */}
         <div
           style={{
             display: "flex",
@@ -14406,7 +11468,6 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
           </div>
         </div>
 
-        {/* Mobile step selector – unchanged */}
         <div className="wizard-mobile-steps" style={{ marginBottom: 16 }}>
           <select
             value={step}
@@ -14437,10 +11498,8 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
           {currentStepData.sub}
         </div>
 
-        {/* Panel content */}
         {currentPanel}
 
-        {/* Navigation – unchanged */}
         <div
           style={{
             display: "flex",
@@ -14496,15 +11555,6 @@ export function ProfileWizard({ values, onChange, onNavigateTab, autosavedAt, ju
   );
 }
 
-/* Stable module-level FieldRow for all ProfileWizard panels.
-   Defined outside panel components so the reference never changes between
-   renders — prevents React from unmounting/remounting inputs on each keystroke.
-*/
-// Facts vs levers: Plan inputs records what is, the sidebar asks what if.
-// Retire age, plan-to age, US spend and SS claim age are levers — the sidebar
-// sliders are their ONE editor (Single Point of Control), so here they are
-// read-outs with a way to reach the slider. Outside the app shell (isolated
-// renders) there is no sidebar, so only the value shows.
 const LeverContext = createContext(null);
 function LeverValue({ lever, children }) {
   const focusLever = useContext(LeverContext);
@@ -14530,10 +11580,6 @@ function WFieldRow({ label, helper, children }) {
   );
 }
 
-// Quicken-style split editor: one account, several bucket allocations by %.
-// The account keeps its single rolled-up balance; this just edits how that
-// balance is distributed across B1/B2/B3. Hoisted to module scope so it isn't
-// recreated each render (which would drop input focus while typing).
 function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
   const splits = acct.splits || [];
   const bal = acct.balance || 0;
@@ -14549,9 +11595,6 @@ function AccountSplitEditor({ acct, color, onChangeSplits, onClose }) {
       {splits.map((s, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
           {[1, 2, 3].map(b => {
-            // Same cash-only constraint as the main [B1]/[B2]/[B3] chips —
-            // a split slice of a non-cash account can't promise "spendable
-            // without tax/penalty" any more than the whole account could.
             const disabled = b === 1 && acct.category !== "cash";
             return (
               <button key={b} onClick={() => !disabled && update(i, { bucket: b })}
@@ -14596,15 +11639,9 @@ function SavingsPanel({ values, onChange }) {
   const GOAL = values.earlyRetireTarget || 1_000_000;
   const accounts = values.accounts || BLANK_PROFILE.accounts;
   const [splitEditId, setSplitEditId] = useState(null);
-  // Cost basis / yield are global (one blended assumption across the WHOLE
-  // taxable category, not per-account) — design-authority (2026-09-10):
-  // moved here from a disconnected Tax Settings card on a different Profile
-  // sub-page, since this is the only place "taxable" is otherwise discussed.
-  // Collapsed by default — set-and-forget values, not something to force on
-  // every visit.
   const [showTaxAssumptions, setShowTaxAssumptions] = useState(false);
 
-  const CATEGORIES = ACCOUNT_CATEGORIES; // hoisted to module scope — shared with the sidebar AllocationDonut
+  const CATEGORIES = ACCOUNT_CATEGORIES;
 
   const catSum = (cat) => accounts.filter(a => a.category === cat).reduce((s, a) => s + (a.balance || 0), 0);
   const autoTotal = accounts.reduce((s, a) => s + (a.balance || 0), 0);
@@ -14635,8 +11672,6 @@ function SavingsPanel({ values, onChange }) {
 
   const setBucket = (id, b) => onChange("accounts", accounts.map(a => a.id === id ? { ...a, bucket: b } : a));
 
-  // Persist a split. Empty array reverts the account to a single bucket
-  // (strips the `splits` key) so the data model stays clean.
   const setSplits = (id, newSplits) => onChange("accounts", accounts.map(a => {
     if (a.id !== id) return a;
     if (!newSplits || newSplits.length === 0) { const { splits, ...rest } = a; return rest; }
@@ -14695,12 +11730,6 @@ function SavingsPanel({ values, onChange }) {
                   ) : (
                     [1,2,3].map(b => {
                       const active = clampBucket(acct.bucket ?? _defaultBucket(acct.category), acct.category) === b;
-                      // Bucket 1 is the cash cushion — spendable without a tax
-                      // or penalty hit, which only a cash-category account can
-                      // promise. Disabled (not just visually inert) on every
-                      // other category so this can't be mis-tagged going
-                      // forward; clampBucket (engine/buckets.js) is the
-                      // backstop for data saved before this existed.
                       const disabled = b === 1 && cat.key !== "cash";
                       return (
                         <button key={b} onClick={() => !disabled && setBucket(acct.id, b)}
@@ -14773,15 +11802,6 @@ function SavingsPanel({ values, onChange }) {
                     <ARow label="Taxable cost basis" desc="Percent of your taxable brokerage balance that is cost basis (from your brokerage statement). The rest is unrealized gain — selling realizes it as LTCG income, taxed at 0/15/20% federal (plus state, plus NIIT above the MAGI threshold) and counted toward Social Security's provisional income and Medicare IRMAA.">
                       <ANumInput value={values.taxableBasisPct ?? 70} onSet={(v) => onChange("taxableBasisPct", v)} min={0} max={100} step={5} suffix="%" />
                     </ARow>
-                    {/* Real securities pay interest/dividends every year, taxed whether or
-                        not you reinvest them — the rest of a taxable account's growth stays
-                        deferred (untaxed until sold, above). Different holdings split this
-                        very differently (a muni bond fund pays none of this; a taxable bond
-                        fund pays mostly this); rather than model every security, this is
-                        one blended annual rate applied to your whole taxable balance.
-                        Off (0%) by default — turning it on will raise your projected tax
-                        and lower projected ending balances slightly, even without changing
-                        any other input. */}
                     <ARow label="Taxable annual yield" desc="Percent of your taxable brokerage balance assumed to be interest/dividend yield, taxed every year even if reinvested — the rest of its growth stays deferred until you sell, same as above. 0% (off) leaves your plan unchanged; a diversified stock+bond account is often 1.5–3%.">
                       <ANumInput value={values.taxableYieldPct ?? 0} onSet={(v) => onChange("taxableYieldPct", v)} min={0} max={10} step={0.5} suffix="%" />
                     </ARow>
@@ -14838,11 +11858,6 @@ function SavingsPanel({ values, onChange }) {
 function AboutYouPanel({ values, onChange }) {
   const derivedAge = ageFromDob(values.dob);
   const currentAgeForCalc = derivedAge ?? values.currentAge;
-  // Retirement age is a decimal (63.6 for a mid-year D-Day), so subtracting
-  // a whole age produced 1.6000000000000014 on screen — binary floating
-  // point, shown raw. Rounded to one decimal at the point of display; the
-  // engines keep the full precision value, so this changes nothing a
-  // projection depends on.
   const round1 = (n) => Math.round(n * 10) / 10;
   const yearsToRetire = round1(Math.max(0, values.retireAge - currentAgeForCalc));
   const yearsInRetire = round1(Math.max(0, values.endAge - values.retireAge));
@@ -14850,13 +11865,6 @@ function AboutYouPanel({ values, onChange }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {/* These five used to be in "Assumptions → Model Parameters," which
-          is where a user looking for their own details would never think
-          to look — and About You carried a pointer sending them there.
-          Name, birthday, home state, employer start date and filing status
-          are who you are, not model parameters; the returns, inflation and
-          tax assumptions that belong under that heading stayed behind. One
-          category, one place. */}
       <ACard title="Who You Are" accent="#0ea5e9" desc="Who you are. Your birthday is the input of record — age, D-Day and every accumulation year derive from it.">
         <ARow label="Name" desc="Appears on the printable report and in the exported JSON filename (AiRA_Profile_&lt;name&gt;_YYYY-MM-DD.json). Not used in any calculation.">
           <input
@@ -14892,18 +11900,6 @@ function AboutYouPanel({ values, onChange }) {
             <option value="single">Single (unmarried)</option>
           </select>
         </ARow>
-        {/* The one spouse switch.
-            `spouse.enabled` used to live inside the Social Security card,
-            labeled "Add my spouse's Social Security," because SS was the
-            only thing it gated. It now also gates per-person
-            contributions — a step earlier in the wizard — so a user had to
-            jump forward to a card about Social Security, tick a box that
-            never mentions savings, and come back.
-
-            It belongs here: it's a statement about who the household is,
-            next to filing status, and ahead of both features that read it.
-            The Social Security and Contributions cards now point at this
-            control rather than duplicating it — one flag, one switch. */}
         <ARow label="Include a spouse or partner" desc="Model two people instead of one. Turns on your spouse's own Social Security (their benefit, their claim age, survivor benefits) and lets their retirement contributions stop on their own retirement date. Off leaves your plan exactly as it is today.">
           <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "var(--fs-label)", color: "var(--text-secondary)" }}>
             <input
@@ -14956,10 +11952,6 @@ function AboutYouPanel({ values, onChange }) {
   );
 }
 
-/* Stable module-level helpers for AssumptionsPanel.
-   Defined outside the component so their reference never changes between
-   renders — prevents React from unmounting/remounting inputs on each keystroke.
-*/
 function ARow({ label, desc, children }) {
   return (
     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid var(--tint-white-06)" }}>
@@ -14972,45 +11964,20 @@ function ARow({ label, desc, children }) {
   );
 }
 
-/**
- * Select a numeric field's contents when it gains focus, so typing replaces
- * the value instead of appending to it.
- *
- * A user reported this: a field pre-filled with 0, clicked at the left
- * edge, then typing "40000" left the original zero on the end — the plan
- * silently used $400,000. Every Profile field ships with a default (often
- * 0), so this hit any value the caret happened to land in front of, and
- * produced a 10x error with no visible sign anything was wrong.
- *
- * Deferred a frame because focusing swaps the displayed text (formatted
- * "40,000" -> raw "40000"); selecting synchronously would be undone by that
- * re-render.
- */
 function selectAllOnFocus(e) {
   const el = e.target;
-  requestAnimationFrame(() => { try { el.select(); } catch { /* detached */ } });
+  requestAnimationFrame(() => { try { el.select(); } catch { } });
 }
 
 function ANumInput({ value, onSet, min, max, step, suffix = "", plain = false }) {
   const [isFocused, setIsFocused] = useState(false);
   const [localValue, setLocalValue] = useState("");
-  // A fractional step (0.1, 0.5) means this field takes decimals — hint the
-  // decimal keypad on mobile (type=text already allows "." on desktop).
   const allowDecimals = step != null && !Number.isInteger(step);
-  // Absent bounds are unbounded, not NaN. See handleBlur.
   const lo = min ?? -Infinity;
   const hi = max ?? Infinity;
   const inputRef = useRef(null);
-  // Set by the first keystroke after focus. The auto-select is deferred to
-  // the next frame (it has to run after the focus re-render swaps the
-  // display from "6,126" to "6126," or the render wipes the selection) —
-  // but a deferred select() that lands once typing has begun selects what
-  // was just typed, and the following keystroke replaces the whole field.
-  // That's how an edit ends up as a single digit. This flag makes the late
-  // select a no-op.
   const typedSinceFocus = useRef(false);
 
-  // Sync local value when prop changes (e.g., after import or external update)
   useEffect(() => {
     if (!isFocused) {
       setLocalValue(value != null && !isNaN(value) ? value.toString() : "");
@@ -15020,48 +11987,21 @@ function ANumInput({ value, onSet, min, max, step, suffix = "", plain = false })
   const handleChange = (e) => {
     const raw = e.target.value;
     typedSinceFocus.current = true;
-    setLocalValue(raw);            // show exactly what was typed; don't fight the caret
-    // Clearing the field means zero — preserved from the original
-    // `Number("")` behavior so wiping a value still sets it to 0 rather
-    // than silently restoring the old one.
+    setLocalValue(raw);
     const num = raw.trim() === "" ? 0 : parseNumericEntry(raw);
     if (num !== null) {
-      // `min` isn't enforced here on purpose — en route to "50" you pass
-      // "5," and snapping that up would fight the typist. `max` is,
-      // because you never need to pass through a too-large number to reach
-      // a valid one, and deferring it to blur loses the clamp whenever the
-      // parent re-render remounts this input mid-edit: handleBlur never
-      // fires and the out-of-range value stays committed (a 100%-max
-      // equity field kept 100,000,000). Clamping here survives that, blur
-      // still applies `min`.
       onSet(max != null ? Math.min(max, num) : num);
     }
   };
 
   const handleBlur = () => {
     setIsFocused(false);
-    // Clamp what the user actually typed, not the `value` prop.
-    //
-    // Two bugs lived in the old `Math.max(min, Math.min(max, value))`:
-    //
-    // 1. Absent bounds became NaN. `Math.max(undefined, 75)` is NaN, and
-    //    that went straight back out through onSet — one blur on a field
-    //    whose caller omitted `min` or `max` destroyed the value. Every
-    //    current call site passes both, so this was latent, but it's one
-    //    forgotten prop away from silently zeroing a balance. `lo`/`hi`
-    //    remove the trap at the source.
-    //
-    // 2. It clamped the prop. The prop is one render behind whenever the
-    //    parent hasn't yet applied the last keystroke, so blurring could
-    //    clamp a stale number and write it back — the final digits of an
-    //    edit vanishing on click-away. What the user typed is in
-    //    `localValue`; that's the thing to commit.
     const typed  = localValue.trim() === "" ? 0 : parseNumericEntry(localValue);
     const fallbk = value != null && !isNaN(value) ? value : null;
     const base   = typed !== null ? typed : fallbk;
-    if (base === null) return;              // unparseable and no prop to fall back on
+    if (base === null) return;
     const clamped = Math.max(lo, Math.min(hi, base));
-    if (!Number.isFinite(clamped)) return;  // never commit NaN/±Infinity
+    if (!Number.isFinite(clamped)) return;
     if (clamped !== value) onSet(clamped);
     setLocalValue(clamped.toString());
   };
@@ -15083,15 +12023,11 @@ function ANumInput({ value, onSet, min, max, step, suffix = "", plain = false })
         onFocus={() => {
           setIsFocused(true);
           typedSinceFocus.current = false;
-          // Not the shared `selectAllOnFocus` on purpose: this field needs
-          // the "has the user started typing?" guard, and the shared
-          // helper has no way to know. Still deferred a frame so it runs
-          // after the display swaps from formatted to raw.
           requestAnimationFrame(() => {
             const el = inputRef.current;
             if (!el || typedSinceFocus.current) return;
             if (typeof document !== "undefined" && document.activeElement !== el) return;
-            try { el.select(); } catch { /* detached */ }
+            try { el.select(); } catch { }
           });
         }}
         onBlur={handleBlur}
@@ -15141,54 +12077,10 @@ function ADateInput({ value, onSet, max }) {
   );
 }
 
-/**
- * The section container for a Profile panel. One card = one topic.
- *
- * `collapsible` is decided by frequency, not length: set-once groups
- * (identity, API keys, tax mechanics) get `collapsible defaultOpen={false}`
- * so they don't occupy vertical space every visit; anything a user
- * revisits most sessions (spending, contributions, Social Security,
- * pensions) stays open. A long panel gets fixed by splitting it into more
- * cards, not by collapsing one giant one — those are different problems
- * and conflating them is what turned this into four competing patterns
- * before.
- *
- * Heading treatment: 14px near-white with a muted description. This
- * replaced an 11px uppercase accent-colored title on purpose.
- * `ContribPanel` had privately reimplemented this card — identical chrome
- * under local `sectionCard` / `sectionTitle` / `sectionDesc` objects — and
- * its heading was the more legible of the two. I liked the treatment on
- * one of those cards ("Pensions"), so the canonical component adopted the
- * better version instead of flattening the duplicate down to the weaker
- * one. `accent` now draws a thin left border, keeping the color coding
- * without tinting the title.
- *
- * Nesting rule: the neutral card chrome below is reserved for the outer
- * section wrapper. Anything inside it — disclosure strips, totals rows,
- * per-entry rows — should use a lighter hairline or a colored tint, never
- * a second instance of this same grey bordered box, or the panel becomes
- * boxes inside boxes and gets harder to scan. See specs/UI_DESIGN_SPEC.md.
- */
-/**
- * Month + year selects for a "YYYY-MM" value.
- *
- * Replaces `<input type="month">`, whose year is a bare spinner: there's
- * no visible range, you can't see what's selectable, and reaching a start
- * date 20 years back means clicking an arrow 240 times. Reported directly:
- * "the year doesn't show a range of years in the mortgage drop down."
- *
- * The year range is derived, never a literal: `MORT_START_YEARS_BACK`
- * covers an existing mortgage already part-paid, and `_FORWARD` covers a
- * purchase you're still planning. Anchored to the current year so it can
- * never go stale.
- *
- * Emits the same "YYYY-MM" string the native control did, so
- * `mortgageSchedule` and every stored profile are unaffected.
- */
 const MONTH_NAMES = ["January","February","March","April","May","June",
                      "July","August","September","October","November","December"];
-const MORT_START_YEARS_BACK = 40;   // a 30-yr mortgage taken out a decade before that
-const MORT_START_YEARS_FWD  = 10;   // a purchase you are still planning
+const MORT_START_YEARS_BACK = 40;
+const MORT_START_YEARS_FWD  = 10;
 
 function MonthYearSelect({ value, onSet }) {
   const now = new Date();
@@ -15197,8 +12089,6 @@ function MonthYearSelect({ value, onSet }) {
   const month = m ? Number(m[2]) : now.getMonth() + 1;
   const first = now.getFullYear() - MORT_START_YEARS_BACK;
   const last  = now.getFullYear() + MORT_START_YEARS_FWD;
-  // A stored value outside the range must still be selectable, or opening the
-  // control would silently rewrite the user's date.
   const years = [];
   for (let y = Math.min(first, year); y <= Math.max(last, year); y++) years.push(y);
   const emit = (yy, mm) => onSet(`${yy}-${String(mm).padStart(2, "0")}`);
@@ -15237,8 +12127,6 @@ function ACard({ title, accent, desc, children, collapsible = false, defaultOpen
     <div style={{
       background: "var(--card-bg)",
       border: "1px solid var(--tint-white-08)",
-      // `accent` is a thin left edge, not a tinted title — it keeps the
-      // color coding while every card's heading stays the same legible near-white.
       borderLeft: accent ? `3px solid ${accent}` : "1px solid var(--tint-white-08)",
       borderRadius: 12, padding: 16,
     }}>
@@ -15260,9 +12148,6 @@ function ACard({ title, accent, desc, children, collapsible = false, defaultOpen
 }
 
 function AssumptionsPanel({ values, onChange }) {
-  // Live model list for the AI Model dropdown. Debounced because this reads a
-  // key the user is still typing — firing per keystroke would send a stream of
-  // half-keys to Google and rate-limit the one request that matters.
   const [liveModels, setLiveModels] = useState([]);
   const geminiKey = values.geminiApiKey || "";
   useEffect(() => {
@@ -15276,9 +12161,6 @@ function AssumptionsPanel({ values, onChange }) {
     }, 600);
     return () => { alive = false; clearTimeout(t); };
   }, [geminiKey]);
-  // Live list wins; the shipped constant is the fallback before a key exists.
-  // Labels come from the shipped list where we have one, so familiar models keep
-  // their "(recommended)" / cost notes instead of becoming bare ids.
   const modelOptions = liveModels.length
     ? liveModels.map((id) => ({ id, label: GEMINI_MODELS.find(m => m.id === id)?.label || id }))
     : GEMINI_MODELS.map(({ id, label }) => ({ id, label }));
@@ -15294,20 +12176,11 @@ function AssumptionsPanel({ values, onChange }) {
     hcMax,
   } = values;
 
-  // Shared helper — this used to divide elapsed ms by 365.25 days, so it
-  // could report a different age than the About You panel for the same birthday.
   const derivedAge = ageFromDob(dob) ?? "—";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-      {/* Tax settings.
-          Cost basis / yield moved to the taxable account group in
-          SavingsPanel (design-authority, 2026-09-10) — those are global
-          assumptions about the taxable category, but they're meaningless
-          without the account context that only lives there, and this page
-          was a disconnected second location for the same state. Only the
-          joint-RMD toggle stays: it keys off filing status, not accounts. */}
       <ACard title="Tax Settings" accent="var(--accent)"
         desc="How AiRA taxes your withdrawals. Defaults are fine for most people.">
         {(values.filingStatus || "mfj") !== "single" && (
@@ -15320,14 +12193,10 @@ function AssumptionsPanel({ values, onChange }) {
         )}
       </ACard>
 
-      {/* EXPENSE MODEL CARD */}
       <ACard title="Housing & Fixed Obligations" accent="var(--accent-gold)" collapsible defaultOpen={false}>
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 12 }}>
           Separate housing &amp; fixed obligations from core lifestyle spend. The MC engine adds each carveout to the portfolio draw automatically.
         </div>
-        {/* Moved here from Personal Profile: an appreciation rate for
-            real estate belongs with the housing inputs it applies to, not
-            beside the user's date of birth. */}
         <ARow label="Home / RE Annual Growth" desc="Annual appreciation rate applied to real estate values in the Net Worth projection.">
           <ANumInput value={values.reGrowthRate} onSet={(v) => onChange("reGrowthRate", v)} min={0} max={10} step={0.5} suffix="%" />
         </ARow>
@@ -15344,7 +12213,6 @@ function AssumptionsPanel({ values, onChange }) {
         </ARow>
         {(values.housingType || "own") === "rent" && (
           <ARow label="Annual rent" desc="Today's dollars — inflated each year in simulation">
-            {/* ✅ Fixed: Now correctly uses annualRent field */}
             <ANumInput value={values.annualRent} onSet={(v) => onChange("annualRent", v)} min={0} max={MAX_MONEY_INPUT} step={500} />
           </ARow>
         )}
@@ -15408,7 +12276,6 @@ function AssumptionsPanel({ values, onChange }) {
         </div>
       </ACard>
 
-      {/* ROTH CONVERSION CARD */}
       <ACard title="Roth Conversion Strategy" accent="var(--accent-purple)">
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 12 }}>
           After each year's spending withdrawal, AiRA converts additional pretax → Roth to fill up to your target bracket. Tax on conversion is funded from the pretax bucket.
@@ -15445,14 +12312,6 @@ function AssumptionsPanel({ values, onChange }) {
               />
           </ARow>
         </div>
-        {/* Paying conversion tax from money the plan never tracks is the
-            single biggest way to flatter a Roth strategy — every dollar
-            converted lands in the Roth untouched, funded from a pot the
-            simulation never depletes. A user put it well: "unlimited
-            outside funds should come with a warning: do you have a money
-            tree?" It stays available because some people genuinely hold
-            cash outside the modeled accounts, but it no longer passes as a
-            neutral default. */}
         <ARow label="Tax funding source" desc="Who pays the tax on each conversion. 'From taxable' debits your real taxable / HSA / cash buckets — the honest default for most people. 'From the conversion' withholds the tax out of the amount transferred, so less lands in the Roth. 'Outside cash' is kept only so older saved profiles still load — it now behaves exactly like 'From taxable'.">
           <select
             value={values.taxFunding || "from_taxable"}
@@ -15483,9 +12342,6 @@ function AssumptionsPanel({ values, onChange }) {
 
       </ACard>
 
-      {/* Withdrawal order — sourcing controls moved to the Withdrawal Plan
-          tab, next to the waterfall they shape. Profile keeps a read-only
-          pointer for discoverability. */}
       <ACard title="Withdrawal Order" accent="var(--accent-teal)">
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", lineHeight: 1.5 }}>
           The <strong style={{ color: "var(--accent)" }}>account draw order</strong> (which bucket drains first —
@@ -15496,7 +12352,6 @@ function AssumptionsPanel({ values, onChange }) {
         </div>
       </ACard>
 
-      {/* MONTE CARLO MODEL PARAMETERS CARD */}
       <div
         style={{
           background: "var(--card-bg)",
@@ -15522,13 +12377,6 @@ function AssumptionsPanel({ values, onChange }) {
         <ARow label="Reassess Portfolio Target" desc="Portfolio value at which to start seriously planning exit. This number is a number where, if you hit this, would reconsider your target goal? This is a number that is a secondary decision. If you hit this, would you be ok with this goal if something caused a change in your plan,">
           <ANumInput value={values.portfolioGoal} onSet={(v) => onChange("portfolioGoal", v)} min={0} max={MAX_MONEY_INPUT} step={50000} />
         </ARow>
-        {/* The model parameters that used to sit here — inflation, cash return,
-            SS COLA, the two equity weights and the glidepath switch age — moved
-            into the Monte Carlo tab's ⚙ Advanced Settings, alongside the
-            simulation mechanics they act on. Two of them (the equity weights and
-            SS COLA) were ALSO in the sidebar's Macro & Sensitivity card, so this
-            card was a second edit surface for one value; the trim removes that.
-            The two rows above stay: they are plan GOALS, not model parameters. */}
         <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--tint-teal-600-06)", border: "1px solid rgba(13,148,136,0.2)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55 }}>
           Inflation, cash return, Social Security COLA and your equity glide are model parameters, not plan
           facts — they now live in <strong style={{ color: "var(--accent-teal)" }}>Monte Carlo → ⚙ Advanced Settings</strong>,
@@ -15536,7 +12384,6 @@ function AssumptionsPanel({ values, onChange }) {
         </div>
       </div>
 
-      {/* HEALTHCARE SHOCK CARD */}
       <ACard title="Healthcare Shock Model" accent="var(--chart-1)" collapsible defaultOpen={false}>
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 12 }}>
           In each simulation year after the shock age, there is a random probability of a large one-time healthcare cost.
@@ -15565,11 +12412,6 @@ function AssumptionsPanel({ values, onChange }) {
         Changes take effect on next Monte Carlo run · These replace all hardcoded simulation values
       </div>
 
-      {/* AI Assistant. Its own card, per request. These are credentials/
-          config for an optional feature — nothing to do with the
-          retirement model — so mixing them in with identity fields made
-          both harder to scan. Collapsed by default: set once, or never (AI
-          also works on credits without a key). */}
       <ACard title="AI Assistant" accent="#c4b5fd" collapsible defaultOpen={false}
         desc="Optional. Bring your own free Gemini key to run AI analysis without spending AiRA credits.">
         <ARow label="Gemini API Key" desc="Bring your own free key from Google AI Studio to unlock AI analysis.">
@@ -15582,13 +12424,6 @@ function AssumptionsPanel({ values, onChange }) {
           />
           <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ fontSize: "var(--fs-small)", color: "var(--chart-2)", marginLeft: 8 }}>Get free key →</a>
         </ARow>
-        {/* The list is fetched from Google when a key is present, because a
-            hardcoded one is guaranteed to rot: ids get retired per-audience,
-            so "gemini-2.5-flash is no longer available to new users" keeps
-            working for my own project and 404s for everyone else —
-            invisible in testing, and the user's first sign of it is a raw
-            Gemini 404 the moment they click Analyze. The shipped list is
-            only the fallback for when there's no key yet or the probe fails. */}
         <ARow label="AI Model" desc="Fetched live from Google using your key, so a model Google retires disappears from this list instead of failing mid-analysis.">
           <select
             value={values.geminiModel || DEFAULT_GEMINI_MODEL}
@@ -15598,9 +12433,6 @@ function AssumptionsPanel({ values, onChange }) {
             {modelOptions.map(m => (
               <option key={m.id} value={m.id}>{m.label}</option>
             ))}
-            {/* A saved model that Google no longer lists must still
-                render, or the select would silently show a different
-                model than the one stored. */}
             {!modelOptions.some(m => m.id === (values.geminiModel || DEFAULT_GEMINI_MODEL)) && (
               <option value={values.geminiModel || DEFAULT_GEMINI_MODEL}>
                 {values.geminiModel || DEFAULT_GEMINI_MODEL} (not offered by your key)
@@ -15627,11 +12459,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
   const taxableContrib = values.taxableContrib || 0;
   const hsaAnnual = hsaMonthly * 12;
 
-  // Per-person contributions.
-  // Only the job-bound streams are per person. Brokerage savings are
-  // household money with no employment link, and the HSA stops at Medicare
-  // enrollment rather than at retirement — splitting either would model
-  // the wrong rule.
   const sp = values.spouse || {};
   const spouseOn = !!sp.enabled;
   const setSpouse = (patch) => onChange("spouse", { ...sp, ...patch });
@@ -15641,31 +12468,14 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
   const spouseTotal = spouseOn ? sp401k + spEmp + spRoth : 0;
   const totalSavings = annual401k + hsaAnnual + employerContrib + rothContrib + taxableContrib + spouseTotal;
 
-  // Contributions are modeled only up to the primary's retirement date,
-  // because the retirement loop has no concept of them past that. When the
-  // spouse's own date lands later, the plan silently uses the primary's —
-  // which is exactly what it did before this feature, but the user needs
-  // to be told rather than left to assume the later date was honored.
   const spouseStopOnPrimaryClock = spouseOn ? contribStopOnPrimaryClock(values) : Infinity;
   const spouseWorksPastPrimary = Number.isFinite(spouseStopOnPrimaryClock)
     && spouseStopOnPrimaryClock > (values.retireAge || 0)
     && spouseTotal > 0;
 
-  // Shared "profile section card" chrome — one consistent look so sections
-  // read as a uniform, logically-ordered stack instead of scattered
-  // mismatched blocks. Section chrome comes from <ACard> — this panel used
-  // to define its own identical copy (sectionCard/sectionTitle/
-  // sectionDesc), which is how the Profile ended up with four competing
-  // section styles. One implementation now.
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-      {/* Section headers split Money In by when each stream applies. A
-          retired user skips "While Working" immediately; a still-working
-          user knows the retirement half is a plan, not something to fill
-          in today. Cards inside each group are the pre-existing ACards —
-          this is a grouping label, not a nested chrome. */}
       <div style={{
         marginBottom: 2,
         fontSize: "var(--fs-small)", fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-faint)",
@@ -15673,7 +12483,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         While Working
       </div>
 
-      {/* ── Income card 1: Annual Contributions (inputs + savings total together) ── */}
       <ACard title="Annual Contributions" desc="Still working? Enter your annual retirement-account contributions — leave at 0 if you're already retired.">
         <div style={{ fontSize: "var(--fs-small)", color: "var(--accent-gold)", marginBottom: 10, lineHeight: 1.4 }}>Employer Contribution and Brokerage/After-Tax Savings aren't capped by the tool — the IRS doesn't set a hard per-field limit on either, but real-world amounts are still bounded by your actual plan and income. 401(k), HSA, and Roth IRA below stay capped at their real legal limits.</div>
         <WFieldRow label="401(k) / 403(b) / 457(b) — pre-tax only" helper="Your PRE-TAX employee deferral. Roth 401(k)/403(b) money does NOT belong here — this field is taxed as ordinary income on withdrawal and drives your future RMDs. Put Roth deferrals in the Roth line below until a dedicated Roth 401(k) field exists (REQUIREMENTS §22.1).">
@@ -15692,14 +12501,9 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           <ANumInput value={taxableContrib} onSet={(v) => onChange("taxableContrib", v)} min={0} max={999_000_000_000} step={1_000} suffix="/yr" />
         </WFieldRow>
 
-        {/* Pointer, not a toggle. The one spouse switch lives in About
-            You: it used to be buried in the Social Security card, which
-            meant discovering per-person contributions required visiting a
-            later step and a card about a different subject. */}
         {!spouseOn && (
           <div style={{ padding: "10px 12px", marginTop: 4, background: "rgba(167,139,250,0.08)", border: "1px solid rgba(167,139,250,0.28)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
             <span>Two of you saving? Enter your spouse's contributions separately so they stop on <strong style={{ color: "#c4b5fd" }}>their</strong> retirement date, not yours.</span>
-            {/* Index 0 is AboutYouPanel in ProfileWizard's PANELS array. */}
             <button
               type="button"
               onClick={() => onNavigateStep && onNavigateStep(0)}
@@ -15715,12 +12519,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           </div>
         )}
 
-        {/* Spouse's job-bound contributions.
-            Shown only when the spouse is enabled, so a single-person
-            profile is visually unchanged. Splitting the amounts alone
-            would change no number — all three engines sum into buckets —
-            so the field that earns this section is "Their retirement
-            age": it's the only input here that moves a dollar. */}
         {spouseOn && (
           <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--tint-white-08)" }}>
             <div style={{ fontSize: "var(--fs-label)", fontWeight: 700, color: "var(--accent-purple)", marginBottom: 4 }}>
@@ -15732,11 +12530,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
               household-wide: brokerage money isn't tied to a job, and HSA contributions stop at
               Medicare enrolment rather than at retirement.
             </div>
-            {/* Plain input, not ANumInput: this field has to stay
-                nullable, and ANumInput clamps a blank to `min` on blur —
-                which would silently write a retirement age the user never
-                entered. Same pattern the other nullable fields
-                (fafsaEndYear/cssEndYear) already use. */}
             <WFieldRow label="Their retirement age" helper="Their OWN age when they stop working — not yours. This is the field that changes your projection: it decides how many more years their contributions keep landing. Leave blank to use your retirement age.">
               <input
                 type="number"
@@ -15778,7 +12571,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           </div>
         )}
 
-        {/* Total belongs WITH the contributions that make it up (logical flow). */}
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--tint-white-08)" }}>
           <span style={{ fontSize: "var(--fs-label)", color: "var(--text-secondary)" }}>Total annual savings <span style={{ color: "var(--text-faint)" }}>
             {spouseTotal > 0
@@ -15789,9 +12581,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         </div>
       </ACard>
 
-      {/* Second section header. Border-top separates the two groups; the
-          old 6-card flat list read as peer streams, which buried the
-          timing distinction. */}
       <div style={{
         marginTop: 4, marginBottom: 2, paddingTop: 12,
         borderTop: "1px solid var(--tint-white-10)",
@@ -15800,11 +12589,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         In Retirement
       </div>
 
-      {/* Income card 2: Social Security (moved from the Retirement Plan
-          step) — SS is money coming in, not a withdrawal setting. Moved
-          here so every income source lives in the same step. The primary +
-          spouse + widow's-penalty block moved as one unit; every field,
-          helper, and disclosure is unchanged from where it lived before. */}
       <ACard title="Social Security" accent="#7c3aed">
         <WFieldRow label="Social Security Benefit" helper="Monthly benefit at your SS start age. (Per Month)">
           <ANumInput value={Math.round((values.ssb || 0) / 12)} onSet={(v) => onChange("ssb", Math.round(v * 12))} min={0} max={10_000} step={50} suffix="/mo" />
@@ -15813,24 +12597,9 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
           <LeverValue lever="ssAge">Age {values.ssAge || 67}</LeverValue>
         </WFieldRow>
 
-        {/* Spouse Social Security.
-            Everything here is a number the user reads off ssa.gov. We
-            don't derive benefits from a PIA + claim-age schedule on
-            purpose: SSA's own estimate beats our reconstruction of it, and
-            it can't drift out of date on us.
-
-            Only fields the engine actually reads are shown. There's no
-            "when does my spouse die" input yet, because the engine doesn't
-            model that event — shipping the control first would create a
-            dead setting that does nothing. */}
-        {/* Read-only pointer, not a second checkbox. `spouse.enabled` is
-            one household fact with one switch, in About You — see the note
-            there. Duplicating the toggle here is the kind of thing that
-            got removed elsewhere. */}
         {!values.spouse?.enabled && (
           <div style={{ padding: "10px 12px", marginBottom: 16, background: "var(--tint-violet-600-08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
             <span>Modelling one benefit. Add a spouse to include <strong style={{ color: "#c4b5fd" }}>their</strong> benefit, claim age and survivor benefits.</span>
-            {/* Index 0 is AboutYouPanel in ProfileWizard's PANELS array. */}
             <button
               type="button"
               onClick={() => onNavigateStep && onNavigateStep(0)}
@@ -15849,37 +12618,22 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         {values.spouse?.enabled && (() => {
           const sp = values.spouse || {};
           const setSpouse = (patch) => onChange("spouse", { ...sp, ...patch });
-          // The spousal top-up is 50% of the higher earner's PIA (the
-          // full-retirement-age amount) — not 50% of whatever they
-          // actually claim, and delayed credits never raise it. So we have
-          // to ask for the FRA amount separately; it's the one number that
-          // can't be inferred from what someone is receiving.
           const primaryPia = Number(values.ssPia) || 0;
           const spousePia  = Number(sp.ssPia) || 0;
           const higherPia  = Math.max(primaryPia, spousePia);
           const topUp      = Math.max(0, higherPia * 0.5 - spousePia);
-          // Per-person clock. The engines walk one age — the primary's —
-          // so the gap is what places the spouse's milestones on that timeline.
           const gap        = spouseAgeOffset(values);
           const spouseAge  = personAgeNow(sp);
           const yourAge    = personAgeNow(values);
           const spouseClaimAtYourAge = (sp.ssAge || 67) + gap;
           return (
             <>
-              {/* This is the enabler. Without it the spouse's claim age
-                  was compared against the primary's age, so a younger
-                  spouse started collecting early by exactly the age gap
-                  (see spousalSS.test.js). Asked for first, because every
-                  other spouse figure below is interpreted against it. */}
               <WFieldRow
                 label="Spouse's date of birth"
                 helper="Their own age drives when their benefit starts, when they reach Medicare at 65, and their own RMD age. Leave blank to assume they are the same age as you."
               >
                 <SpouseDobField value={sp.dob || ""} onSet={(dob) => setSpouse({ dob })} />
               </WFieldRow>
-              {/* Disclose the derivation where it's entered: a date field
-                  that silently shifts ten years of income needs to show
-                  its own effect. */}
               <div style={{
                 margin: "-8px 0 16px", padding: "8px 12px", borderRadius: 8, fontSize: "var(--fs-small)", lineHeight: 1.55,
                 background: sp.dob ? "var(--tint-violet-600-08)" : "rgba(148,163,184,0.07)",
@@ -15934,15 +12688,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
                 </div>
               )}
 
-              {/* The widow's penalty, now modeled. Replaces the "Not
-                  modeled yet" note that sat here. One user-entered age, not
-                  a mortality draw, so the event lands in a known year and
-                  can be explained rather than merely averaged. */}
-              {/* Who dies first. Not cosmetic: it decides whose age drives
-                  the plan horizon, Medicare, the age-65 add-on, the RMD
-                  clock and the survivor's own FRA. Asked before the age,
-                  because the age below is read as belonging to whoever is
-                  selected here. */}
               <WFieldRow
                 label="Who passes first"
                 helper="The higher earner is often the older partner, so this is frequently the more realistic case — and it changes far more than the benefit: the plan then has to fund the survivor's whole life, not yours."
@@ -15975,17 +12720,12 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
                 />
               </WFieldRow>
               {sp.deathAge > 0 ? (() => {
-                // Everything here depends on who dies. `deathAge` is
-                // always the decedent's own age, so translate once and
-                // derive the rest from the survivor's perspective, exactly
-                // as the engine does.
                 const primarySurvives = (sp.firstToDie || "spouse") !== "primary";
                 const deathAtYourAge = primarySurvives ? sp.deathAge + gap : sp.deathAge;
                 const survivorDob = primarySurvives ? values.dob : sp.dob;
                 const survFraAge = survivorFra(
                   survivorDob ? parseInt(String(survivorDob).slice(0, 4), 10) : null
                 );
-                // The survivor's own age in the death year.
                 const survAgeAtDeath = primarySurvives ? deathAtYourAge : sp.deathAge - gap;
                 const survClaim = resolveSurvivorClaimAge(sp.survivorClaimAge, survAgeAtDeath);
                 const decOwnClaimAge = primarySurvives ? (sp.ssAge || 67) : (values.ssAge || 67);
@@ -16002,11 +12742,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
                 const jointTotal = ownAmt + (Number(sp.ssb) || 0) + topUp;
                 return (
                   <>
-                    {/* The survivor's own benefit and the survivor benefit
-                        are independent (deemed filing doesn't apply), so
-                        this needs its own claim age. It's the only real
-                        flexibility a survivor has and the app couldn't
-                        express it before. */}
                     <WFieldRow
                       label="Survivor claims the survivor benefit at age"
                       helper={`Survivor benefits can start at 60 — earlier than the 62 floor on your own benefit — and they are a SEPARATE benefit, so this age is independent of your own claim age. Blank = claim as soon as eligible (${survClaim}).`}
@@ -16104,12 +12839,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         })()}
       </ACard>
 
-      {/* Income card 3: Rental / Airbnb (moved from the Retirement Plan
-          step) — blanket rental income is money coming in, so it belongs
-          in the same step as SS and pensions. Per-property rental stays on
-          the Housing tab (that's a separate object with its own fields);
-          this card is the household-level fallback the engine uses when no
-          property has its own income set. */}
       <ACard title="Rental Income" accent="#295ff1" collapsible defaultOpen={false}>
         <WFieldRow
           label="Rental Net Income (annual)"
@@ -16134,22 +12863,12 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         </WFieldRow>
       </ACard>
 
-      {/* Income card 4: Pensions.
-          Split from Other Income because a pension is a distinct object
-          with a type, and the three types behave completely differently in
-          the engine: a monthly pension is a recurring stream that offsets
-          spending, while a lump sum or cash balance is a deposit into an
-          account that compounds from the year it arrives. The type
-          selector is embedded per pension — people commonly have more than
-          one, and each can be a different kind. Switching type migrates
-          the entry between the two stores. */}
       <ACard title="Pensions">
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.55 }}>
           Defined-benefit income. Pick the type for each one — AiRA models them differently, and
           getting it wrong is the most common source of bad numbers here.
         </div>
 
-        {/* Monthly pensions live in otherIncomes; lump/cash live in cashFlowEvents. */}
         {(values.otherIncomes || []).filter(x => x.kind === "pension").map((inc) => (
           <PensionEntry
             key={inc.id}
@@ -16190,7 +12909,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         >+ Add pension</button>
       </ACard>
 
-      {/* Income card: Other Income */}
       <ACard title="Other Income">
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.55 }}>
           Everything that isn't a pension — part-time work, an annuity, royalties, alimony. Recurring
@@ -16213,16 +12931,6 @@ function ContribPanel({ values, onChange, onNavigateStep }) {
         >+ Add another income source</button>
       </ACard>
 
-      {/* Income card: One-off income & windfalls.
-          A single future inflow — an inheritance, a home sale, a business
-          exit. Stored as a cashFlowEvents inflow (direction:"in") so the
-          engines deposit it into the chosen account bucket in the year it
-          arrives and it compounds from there. It must never be entered as
-          recurring Other Income: need = max(0, sp − income) nets a stream
-          against one year's spending and silently discards the rest — the
-          trap this card exists to avoid. Before this card existed the only
-          way to enter an inheritance was to disguise it as a lump-sum
-          pension. */}
       <ACard title="One-Off Income & Windfalls">
         <div style={{ fontSize: "var(--fs-small)", color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.55 }}>
           Money you expect <em>once</em> — an inheritance, a home or business sale. AiRA deposits it into
@@ -16261,21 +12969,6 @@ const PENSION_TYPES = [
   { id: "cash",    icon: "🏦", label: "Cash Balance",     desc: "Balance you'll roll over" },
 ];
 
-/**
- * Moves a pension between the two storage models when its type changes.
- *
- * A monthly pension is a recurring stream (`otherIncomes`), while a lump
- * sum or cash balance is a one-time inflow event (`cashFlowEvents`).
- * They're stored separately because the engines treat them completely
- * differently — one offsets spending each year, the other gets deposited
- * into an account and compounds — so switching type has to migrate the
- * record rather than flip a flag.
- *
- * Destination defaults are chosen so most users never touch them: a
- * cash-balance plan is almost always rolled to an IRA (no tax on receipt,
- * becomes RMD-able), whereas a lump sum taken as cash is ordinary income
- * that year and the net proceeds land liquid.
- */
 function convertPension(values, onChange, entry, fromType, toType) {
   if (fromType === toType) return;
   const incomes = values.otherIncomes  || [];
@@ -16305,7 +12998,6 @@ function convertPension(values, onChange, entry, fromType, toType) {
   }]);
 }
 
-/** Wraps one pension with its embedded type selector. */
 function PensionEntry({ type, onTypeChange, onRemove, children }) {
   return (
     <div style={{ border: "1px solid var(--tint-white-08)", borderRadius: 10, padding: 12, marginBottom: 10, background: "var(--tint-white-02)" }}>
@@ -16331,8 +13023,6 @@ function PensionEntry({ type, onTypeChange, onRemove, children }) {
   );
 }
 
-/** Fields for a one-time inflow (lump-sum / cash-balance pension, or a
- *  windfall like an inheritance — the One-Off Income card reuses this). */
 function LumpPensionFields({ ev, upd, placeholder = "Cash balance pension", taxHint = "(uncheck for a direct rollover)" }) {
   const cell = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "var(--text-primary)", borderRadius: 6, padding: "5px 8px", fontSize: "var(--fs-label)", fontFamily: "'JetBrains Mono',monospace", width: "100%" };
   const lbl  = { fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 3, display: "block" };
@@ -16372,9 +13062,6 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
   const blurTimer = useRef(null);
   const nameRef = useRef(null);
 
-  // Mount-only: a freshly added card grabs focus once. Re-running on every
-  // autoFocus change stole focus from the Annual field the moment it was
-  // cleared (annual 0 flips autoFocus true), so a cleared value never stayed cleared.
   useEffect(() => {
     if (autoFocus && nameRef.current) nameRef.current.focus();
   }, []);
@@ -16463,7 +13150,6 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
           </div>
           <div>
             <div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 3 }}>Grows by</div>
-            {/* Segmented control — both units visible so it's obvious you can switch. */}
             <div style={{ display: "flex", border: "1px solid #1e3a5f", borderRadius: 5, overflow: "hidden", marginBottom: 4 }}>
               {[["pct", "% /yr"], ["fixed", "$ /yr"]].map(([m, lbl]) => {
                 const on = (inc.growthMode || "pct") === m;
@@ -16504,28 +13190,17 @@ function OtherIncomeCard({ inc, autoFocus, onChange, onRemove }) {
   );
 }
 
-// Trigger a client-side download of CSV text (used for the budget templates).
 function downloadCsv(filename, text) {
   const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
   return saveBlobAs(blob, filename, "CSV file", { "text/csv": [".csv"] });
 }
 
-/**
- * Detailed-expense CSV import. Sits inside the Spending section, beside
- * the core-spend inputs. A one-year budget sums to the US Spending field
- * (inflated forward like a typed number); a multi-year budget becomes an
- * explicit per-year spend schedule that overrides the withdrawal-strategy
- * spend rule. Follows the Boldin "Detailed Budgeter" exclusion convention:
- * mortgage/rent, debt, medical, long-term care, and income tax are modeled
- * elsewhere and shouldn't be in the uploaded file.
- */
 function ExpenseImport({ values, onChange }) {
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState([]);
   const fileRef = useRef(null);
   const meta = values.spImportMeta || null;
 
-  // One apply path for both the uploaded file and the inline editor's rows.
   const applyCsv = (text, fileName) => {
     setError(""); setWarnings([]);
     try {
@@ -16540,7 +13215,6 @@ function ExpenseImport({ values, onChange }) {
           firstYear: r.schedule[0].year, lastYear: r.schedule[r.schedule.length - 1].year,
         });
       } else {
-        // Single-year budget lands in the US Spending field; clear any prior schedule.
         onChange("sp", r.total);
         onChange("spSchedule", null);
         onChange("spImportMeta", {
@@ -16659,15 +13333,6 @@ function ExpenseImport({ values, onChange }) {
   );
 }
 
-/**
- * Spending & Expenses tab — the typed spending fields and the
- * detailed-budget CSV uploader live together: they're two ways of
- * expressing the same thing, so they belong on one screen — type a number,
- * or upload a budget that replaces/overrides it, with the interaction
- * visible in place. The uploaded budget drives the same fields it always
- * did (sp / spSchedule / spImportMeta); the Retirement Plan tab keeps a
- * compact spending summary.
- */
 function ExpensesPanel({ values, onChange }) {
   const meta = values.spImportMeta || null;
   const usSp = values.sp || 0;
@@ -16676,13 +13341,6 @@ function ExpensesPanel({ values, onChange }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <ACard title="Spending" accent="var(--accent-teal)">
-        {/* The after-tax basis used to be stated on the results surfaces
-            and in the About tab, but not here — which is where the user
-            actually forms their mental model of what number to type.
-            Wording matches the results-bar tooltip and the About card on
-            purpose so the three agree. Inline and visible, not a tooltip:
-            this changes how the number gets read, and `title=` doesn't
-            exist on touch. */}
         <div style={{
           marginBottom: 16, padding: "9px 12px", borderRadius: 8,
           background: "var(--tint-amber-07)", border: "1px solid rgba(251,191,36,0.28)",
@@ -16710,11 +13368,6 @@ function ExpensesPanel({ values, onChange }) {
           <span>Total combined annual spending, after tax (used for portfolio draw)</span>
           <strong style={{ color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--fs-body)" }}>{fmtDollar(combinedSp)}/yr</strong>
         </div>
-        {/* The spending curve is the one setting that silently changes
-            the number typed above, and it lives in the sidebar — so a user
-            who suspects their spending is being padded looks here and
-            finds nothing. Read-only pointer, not a second control: the
-            toggle stays a single point of control. */}
         <div style={{ marginTop: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.5 }}>
           {values.smile !== false ? (
             <>
@@ -16749,21 +13402,8 @@ function ExpensesPanel({ values, onChange }) {
         )}
       </ACard>
 
-      {/* Planned one-off expenses.
-          Distinct from the recurring spend above: this is the
-          roof-in-10-years / car-every-7 case, a cost that lands in one
-          future year rather than running continuously. Additive on top of
-          the base spend, so the withdrawal strategy still governs the
-          recurring plan. */}
       <ACard title="Planned One-Off Expenses" accent="var(--chart-3)"
         desc="Big costs you can see coming — a new roof, a car, a wedding, a heavy travel year. Enter today's price; AiRA inflates it to the year it happens.">
-        {/* Outflows only. cashFlowEvents also stores inflows (pension
-            lump sums, inheritances — direction:"in"), which are deposits
-            into an account, not spending. Rendering the whole array here
-            made a $1M inheritance appear as a $1M planned expense, so users
-            reasonably concluded their windfall was being canceled out.
-            Inflows are managed from the Income step (Pensions / One-Off
-            Income cards). */}
         {(values.cashFlowEvents || []).filter(e => e.direction !== "in").length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 70px 70px 78px 28px", gap: 6, marginBottom: 4, fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>
             <span>What</span><span style={{ textAlign: "right" }}>Cost</span><span style={{ textAlign: "right" }}>Year</span>
@@ -16771,8 +13411,6 @@ function ExpensesPanel({ values, onChange }) {
           </div>
         )}
         {(values.cashFlowEvents || []).filter(e => e.direction !== "in").map((ev) => {
-          // Patch/remove by id, not index — the render list is filtered,
-          // so an index into it doesn't address the same element in the full array.
           const upd = (patch) => onChange("cashFlowEvents",
             (values.cashFlowEvents || []).map(x => x.id === ev.id ? { ...x, ...patch } : x));
           const cell = { background: "#0d1b2a", border: "1px solid #1e3a5f", color: "var(--text-primary)", borderRadius: 6, padding: "4px 8px", fontSize: "var(--fs-label)", fontFamily: "'JetBrains Mono',monospace" };
@@ -16790,7 +13428,6 @@ function ExpensesPanel({ values, onChange }) {
                   onChange={(e) => upd({ year: Number(e.target.value) })} style={num}
                 onFocus={selectAllOnFocus}
               />
-                {/* Blank = one-time. */}
                 <input type="number" value={ev.recurEveryYears || ""} min={0} max={50} step={1} placeholder="—"
                   title="Repeat every N years. Leave blank for a one-time cost."
                   onChange={(e) => upd({ recurEveryYears: Number(e.target.value) || 0 })} style={num}
@@ -16808,9 +13445,6 @@ function ExpensesPanel({ values, onChange }) {
                   style={{ background: "var(--tint-red-15)", border: "1px solid var(--tint-red-30)", color: "var(--chart-1)", borderRadius: 5, cursor: "pointer", fontSize: "var(--fs-body)", padding: "2px 6px" }}
                 >×</button>
               </div>
-              {/* Committed vs deferrable decides whether the guardrails may trim
-                  this in a bad market — the same idea as Must Spend vs Like to
-                  Spend for recurring costs. A roof can't wait; a trip can. */}
               <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: "var(--fs-small)", color: "var(--text-secondary)", cursor: "pointer" }}>
                 <input type="checkbox" checked={!!ev.deferrable} onChange={(e) => upd({ deferrable: e.target.checked })} />
                 I could delay this in a bad market <span style={{ color: "var(--text-faint)" }}>(guardrails may trim it)</span>
@@ -16838,22 +13472,17 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
   const usSp = values.sp || 0;
   const outOfCountrySp = values.spOutOfCountry != null ? values.spOutOfCountry : (values.spSpendOutofState || 0);
   const combinedSp = usSp + outOfCountrySp;
-  const twoHousehold = values.twoHousehold ?? false;   // toggle ONLY controls state tax now
+  const twoHousehold = values.twoHousehold ?? false;
   const baseSpend = combinedSp || 100000;
   const floorPct = values.gkFloorPct ?? GK_FLOOR_DEFAULT_PCT;
   const ceilingPct = values.gkCeilingPct ?? GK_CEILING_DEFAULT_PCT;
-  // An imported Must/Like budget drives the floor/ceiling; else % of core spend
-  // (keep the 100k display fallback for the percent path when no spend is set yet).
   const guard = resolveSpendGuardrails({ sp: usSp, spOutOfCountry: outOfCountrySp, gkFloorPct: floorPct, gkCeilingPct: ceilingPct, spImportMeta: values.spImportMeta });
   const guardFromImport = guard.source === "import";
   const floor = guardFromImport ? guard.gkFloor : Math.round(baseSpend * (floorPct / 100));
   const ceiling = guardFromImport ? guard.gkCeiling : Math.round(baseSpend * (ceilingPct / 100));
   const strategy = resolveStrategy(values.withdrawalStrategy);
 
-  // Initial WR diagnostic — pass combined sp so the helper, the GK card, the metrics WR
-  // badge, and the gk-bar strategy strap all show the same number.
   const wr = computeInitialWR({ ...values, sp: combinedSp });
-  // The guardrail band judges the ongoing rate; a one-off is shown as a separate year-one line.
   const { steadyWRpct, initWRpct, projectedPort, steadyDraw, initDrawEst, oneOffAtRetire, ssAtRetire, rentalAtRetire,
     otherIncAtRetire, housingAtRetire, carveoutAtRetire, annualAdds, accumRate, nominalRate, inflRate, yrsToRetire } = wr;
   const retireAge = values.retireAge || 65;
@@ -16885,11 +13514,6 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
             {getStrategyLabel(strategy)}
           </div>
           <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", lineHeight: 1.4 }}>{getStrategyDescription(strategy)}</div>
-          {/* Real navigation: jumps to Analysis and lands directly on its
-              Withdrawal Plan sub-tab (ScenariosTab's own sub-tab state is
-              seeded from AiRAForecaster's pendingScenarioSubTab — see
-              navigateToTab). There's no "Withdrawal Schedule" tab; that was
-              the original bug — this pointer named a tab that never existed. */}
           <button
             type="button"
             onClick={() => onNavigateTab && onNavigateTab("scenarios", "withdrawals")}
@@ -16905,10 +13529,6 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
         </div>
       </ACard>
 
-      {/* Spending inputs and the budget uploader live together in the
-          Spending & Expenses tab now. This compact summary keeps the
-          number visible here (the WR diagnostic and guardrails below are
-          calibrated to it). */}
       <ACard title="Spending" accent="var(--accent-teal)">
         <div style={{ padding: "10px 12px", background: "var(--tint-sky-06)", border: "1px solid var(--tint-sky-20)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <span>
@@ -16918,9 +13538,6 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
           </span>
           <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <strong style={{ color: "var(--accent-teal)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--fs-body)" }}>{fmtDollar(combinedSp)}/yr</strong>
-            {/* Same wizard, different step — index 3 is ExpensesPanel
-                in ProfileWizard's PANELS array (see the "Spending &
-                Expenses" STEPS entry it's paired with). */}
             <button
               type="button"
               onClick={() => onNavigateStep && onNavigateStep(3)}
@@ -16937,14 +13554,9 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
         </div>
       </ACard>
 
-      {/* Social Security moved to the Money In step, alongside
-          contributions and pensions. Everything about it (primary + spouse
-          + widow's penalty) lives there now — this card is a pointer, kept
-          so users who learned to find SS here aren't left staring at a blank. */}
       <ACard title="Social Security" accent="#7c3aed">
         <div style={{ padding: "10px 12px", background: "var(--tint-violet-600-08)", border: "1px solid rgba(124,58,237,0.28)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <span>Now in the <strong style={{ color: "#c4b5fd" }}>Money In</strong> step — SS is income, not a withdrawal setting.</span>
-          {/* Index 2 is ContribPanel in ProfileWizard's PANELS array. */}
           <button
             type="button"
             onClick={() => onNavigateStep && onNavigateStep(2)}
@@ -16960,13 +13572,9 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
         </div>
       </ACard>
 
-      {/* Rental / Airbnb moved to the Money In step alongside SS and
-          pensions. Pointer left in place so the field's old home still
-          says where to find it. */}
       <ACard title="Rental Income" accent="#295ff1" collapsible defaultOpen={false}>
         <div style={{ padding: "10px 12px", background: "rgba(41,95,241,0.08)", border: "1px solid rgba(41,95,241,0.28)", borderRadius: 8, fontSize: "var(--fs-label)", color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <span>Now in the <strong style={{ color: "#c4b5fd" }}>Money In</strong> step — it is income, same as SS and pensions.</span>
-          {/* Index 2 is ContribPanel in ProfileWizard's PANELS array. */}
           <button
             type="button"
             onClick={() => onNavigateStep && onNavigateStep(2)}
@@ -17018,14 +13626,6 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
               <div style={{ width: 1, height: 30, background: "var(--tint-white-10)" }} />
               <div style={{ textAlign: "center" }}><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)", marginBottom: 4 }}>Ceiling</div><div style={{ fontSize: 28, fontWeight: 700, color: "var(--positive)", fontFamily: "'JetBrains Mono',monospace" }}>{guardFromImport ? fmtDollar(ceiling) : `${ceilingPct}%`}</div><div style={{ fontSize: "var(--fs-small)", color: "var(--text-faint)" }}>{guardFromImport ? "full budget / yr" : `${fmtDollar(ceiling)} / yr`}</div></div>
             </div>
-            {/* The Floor/Ceiling inputs used to live here AND nowhere else. They
-                are simulation guardrails, not plan facts, so they moved into
-                the Monte Carlo tab's ⚙ Advanced Settings dialog (see
-                MCAdvancedSettings) — the tab where you actually watch them
-                bind. This card keeps the read-outs above, so nothing is lost
-                here, and points at the one place they are now edited rather
-                than keeping a second set of controls (rule 1: single point of
-                control). */}
             <div style={{ marginTop: 14, padding: "10px 14px", background: "var(--tint-teal-600-06)", border: "1px solid rgba(13,148,136,0.2)", borderRadius: 8, fontSize: "var(--fs-small)", color: "var(--text-secondary)", lineHeight: 1.55 }}>
               Floor and ceiling are edited in <strong style={{ color: "var(--accent-teal)" }}>Monte Carlo → ⚙ Advanced Settings</strong> →
               Spending Guardrails, alongside the rest of the simulation settings. The values in force are shown above.
@@ -17078,13 +13678,9 @@ function RetirementPanel({ values, onChange, onNavigateStep, onNavigateTab }) {
 
 
 
-// Landing quick-estimate.
-// A simple heuristic on purpose, used only on the visitor landing so the
-// sliders feel alive. The real 3,000-path engine takes over the moment
-// they enter the app.
-const LANDING_SS_ANNUAL = 30000;      // rough real Social Security from 67
-const LANDING_REAL_RETURN = 0.045;    // real, after inflation
-const LANDING_TARGET = 0.85;          // confidence goal
+const LANDING_SS_ANNUAL = 30000;
+const LANDING_REAL_RETURN = 0.045;
+const LANDING_TARGET = 0.85;
 
 function landingProject(retireAge, s) {
   const n = Math.max(0, retireAge - s.curAge);
@@ -17096,8 +13692,6 @@ function landingProject(retireAge, s) {
   const conf = 1 / (1 + Math.exp((wr - 0.042) / 0.006));
   return { port, conf: Math.max(0.02, Math.min(0.985, conf)) };
 }
-// Search runs to the top of the retire-age range, not a hardcoded 72, so
-// the hero can still answer for someone planning to work past 72.
 function landingEarliestAge(s) {
   for (let a = Math.max(s.curAge + 1, 50); a <= AGE_LIMITS.retire.max; a++) {
     if (landingProject(a, s).conf >= LANDING_TARGET) return a;
@@ -17105,22 +13699,11 @@ function landingEarliestAge(s) {
   return null;
 }
 
-// Past the normal retirement window the "when can you retire" question is
-// the wrong one — the user is already retired (or about to be), and what
-// they want to know is whether the money lasts. The hero flips to that
-// framing rather than searching future ages that don't apply.
-// `landingProject(curAge, ...)` is exactly "retire now," which is the
-// right projection for someone drawing down today.
 const LANDING_ALREADY_RETIRED_AGE = 66;
 function landingIsRetired(s) {
   return s.curAge >= LANDING_ALREADY_RETIRED_AGE;
 }
 
-// Age at which the drawdown path hits zero, for the already-retired
-// headline. Walks the same path the chart draws, so the number and the
-// curve agree. "95+" is the cap because the landing model is a teaser, not
-// the real engine — anything beyond that should be answered by the actual
-// Monte Carlo.
 function landingLastsToAge(s) {
   const pts = landingPath(s, s.curAge);
   const dead = pts.find((p) => p.age > s.curAge && p.val <= 0);
@@ -17139,31 +13722,13 @@ function landingPath(s, retireAge) {
   }
   return pts;
 }
-/* Landing input scale.
- * The hero has to serve someone with $200K and someone with $200M on the
- * same 700px track. A linear range can't: at a $999B max each pixel was
- * worth about $1.4B, so the smallest possible nudge threw savings into the
- * billions and the readout leapt from "$850K" to "$40000M." Lowering the
- * max just recreates the original complaint — that nobody could enter more
- * than $5M.
- *
- * Two independent fixes, because they solve two different problems:
- *   1. The slider is logarithmic. Pixels buy percentage change, not
- *      dollars, so one step moves about 0.8% wherever you are: $853K →
- *      $860K, $40.1M → $40.4M. The whole range stays reachable and every
- *      part of it stays precise.
- *   2. The readout is a typed field, so the slider's ceiling is a
- *      convenience bound, not a limit. Type $400M and it takes it; the
- *      thumb just pins at the end. Same contract as the `Slider` component above.
- * Values snap to 3 significant figures so dragging yields $1,250,000
- * rather than $1,253,881 — a number a person would actually say out loud. */
 const LANDING_LIMITS = {
   savings: { min: 50_000, max: 250_000_000 },
   contrib: { min:      0, max:   5_000_000 },
   spend:   { min: 40_000, max:   5_000_000 },
 };
-const LANDING_SLIDER_STEPS = 1000;   // thumb positions, not dollars
-const LANDING_LOG_FLOOR = 1_000;     // log(0) is -Infinity; curve starts here
+const LANDING_SLIDER_STEPS = 1000;
+const LANDING_LOG_FLOOR = 1_000;
 
 function roundSig(v, digits) {
   if (!(v > 0)) return 0;
@@ -17177,7 +13742,6 @@ function landingPosToVal(pos, min, max) {
   return roundSig(Math.exp(lo + (hi - lo) * (pos / LANDING_SLIDER_STEPS)), 3);
 }
 function landingValToPos(val, min, max) {
-  // A typed value may exceed `max` — pin the thumb rather than reject the number.
   const v = Math.max(min, Math.min(max, val || 0));
   if (v <= 0) return 0;
   const lo = Math.log(Math.max(LANDING_LOG_FLOOR, min));
@@ -17185,24 +13749,7 @@ function landingValToPos(val, min, max) {
   return Math.round(((Math.log(Math.max(LANDING_LOG_FLOOR, v)) - lo) / (hi - lo)) * LANDING_SLIDER_STEPS);
 }
 
-/* The hero readout, typed. This is what lets someone enter $180M without
- * the slider needing a $180M-wide linear range: the field is the source of
- * truth and the slider is a fast approximate control over the common
- * range. A typed value above `max` is accepted and the thumb pins at the
- * end. `min` is still enforced — a negative portfolio is meaningless, not
- * merely unusual. */
 function LandingMoneyField({ row }) {
-  // `draft` is non-null only while focused: during editing we show
-  // exactly what was typed so the formatter doesn't fight the caret, and
-  // on commit we go back to the formatted display.
-  //
-  // The draft is mirrored in a ref because Escape has to beat the blur
-  // that follows it. Escape clears the draft and blurs; blur then fires
-  // `commit`, which would still see the pre-Escape draft in React state
-  // and commit the very edit Escape just canceled. The ref is already null
-  // by then, so commit correctly no-ops. (`Slider` above solves the same
-  // race with a functional setState updater; a ref does it without calling
-  // a parent setter from inside an updater function.)
   const [draft, setDraft] = useState(null);
   const draftRef = useRef(null);
   const put = (v) => { draftRef.current = v; setDraft(v); };
@@ -17211,7 +13758,7 @@ function LandingMoneyField({ row }) {
     if (d === null) return;
     put(null);
     const n = parseMoneyInput(d, row.min);
-    if (n !== null) row.set(n);   // unparseable text leaves the value untouched
+    if (n !== null) row.set(n);
   };
   return (
     <input
@@ -17232,10 +13779,6 @@ function LandingMoneyField({ row }) {
   );
 }
 
-// First-screen landing shown to visitors with no saved profile. Answers the one
-// question — "when can I retire?" — then routes into the full app via onEnter.
-// Fades a block in once it scrolls into view. Without IntersectionObserver, or with
-// reduced motion requested, it simply shows at once.
 function LpReveal({ children, className = "" }) {
   const ref = useRef(null);
   const [seen, setSeen] = useState(false);
@@ -17252,11 +13795,8 @@ function LpReveal({ children, className = "" }) {
   return <div ref={ref} className={"lp-reveal " + className + (seen ? " lp-in" : "")}>{children}</div>;
 }
 
-// Set to the Getting Started video URL when episode 1 is live; the card stays hidden while empty.
 const LANDING_INTRO_VIDEO_URL = "";
 
-// Guided order: the three answers a result needs come first, so the ring can appear
-// after question 3 and question 4 (contributions) then moves it live.
 const LANDING_STEPS = [
   { key: "age", q: "How Old Are You?", help: "Your age sets how many years you have left to save." },
   { key: "savings", q: "How Much Have You Saved So Far?", help: "Add up your retirement accounts and investments. Round numbers are fine." },
@@ -17289,12 +13829,10 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
   const [contribL, setContribL] = useState(40000);
   const [spend, setSpend] = useState(90000);
   const canvasRef = useRef(null);
-  const [step, setStep] = useState(null); // null = overview, 0-3 = questions, 4 = result
+  const [step, setStep] = useState(null);
   const guidedRef = useRef(null);
   const s = { curAge, savings, contrib: contribL, spend };
   const retired = landingIsRetired(s);
-  // Already retired ⇒ the projection IS "drawing down from today", so the
-  // reference age is their current age rather than a future retirement date.
   const age = retired ? s.curAge : landingEarliestAge(s);
   const conf = (age != null
     ? landingProject(age, s)
@@ -17340,8 +13878,6 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
     }
   }, [step]);
 
-  // `money: false` keeps the age row on a plain linear slider with no typed
-  // field — an age is two digits and the range is 25–85, so neither fix applies.
   const rows = [
     { key: "age", label: "Current age", val: curAge, set: setCurAge,
       min: AGE_LIMITS.current.min, max: AGE_LIMITS.current.max, money: false, fmt: (v) => v },
@@ -17671,12 +14207,6 @@ function RetirementLanding({ onEnter, savedPlan = false, onContinue }) {
   );
 }
 
-/**
- * Show a toast and auto-dismiss it. Returns the timer id so the caller's
- * effect can clear it on unmount/re-fire. Errors get a longer dwell than
- * successes — a failed purchase or restore is something the user may need
- * to read twice or copy into a support email.
- */
 function setToastTimed(setter, toast, ms) {
   setter(toast);
   return setTimeout(() => setter(null), ms);
@@ -17686,54 +14216,30 @@ export default function AiRAForecaster() {
   const [activeTab, setTab] = useState(() =>
     loadProfileFromLocal() ? "networth" : "assumptions"
   );
-  // Monte Carlo's own two views (Vincent, 2026-09-24): "Simulation" holds the
-  // verdict + results + fan chart + band table + the per-run input audit trail;
-  // "Guardrails" holds the spending-flex analysis. They were one long scroll
-  // with the guardrails section wedged between the result and its assumptions.
-  // State lives here, not in MCTab, because the fan chart and the band table are
-  // SHELL-level children of this tab — a sub-tab bar inside MCTab could not hide
-  // them, and the Guardrails view would have appeared underneath both.
   const [mcView, setMcView] = useState("simulation");
-  // Sidebar accordion — independently collapsible, not a true single-open
-  // accordion, since these are live input controls a user may be actively
-  // adjusting in more than one section at once. Starts collapsed so the
-  // sidebar opens as a short list of section headers rather than three
-  // screens of stacked sliders; opening one is a click. Which sections are
-  // open is a per-user view choice and changes nothing that's simulated.
   const [profileSavedBefore] = useState(() => !!loadProfileFromLocal());
-  const [sbCoreOpen, setSbCoreOpen] = useState(() => !loadProfileFromLocal()); // first run: show the basics
+  const [sbCoreOpen, setSbCoreOpen] = useState(() => !loadProfileFromLocal());
   const [confirmStartOver, setConfirmStartOver] = useState(false);
   const skipAutosave = useRef(false);
   const [sbMacroOpen, setSbMacroOpen] = useState(false);
   const [sbOptionsOpen, setSbOptionsOpen] = useState(false);
-  // Cross-tab "Edit this on the X tab" pointers (e.g. RetirementPanel's
-  // Withdrawal Strategy card) need to land on a specific sub-tab inside
-  // ScenariosTab, not just the top-level tab. ScenariosTab's own sub-tab
-  // state is local and resets on mount, so it reads this as its initial
-  // value — set right before switching activeTab, consumed once, then
-  // cleared so a later manual visit to Analysis doesn't get silently redirected.
   const [pendingScenarioSubTab, setPendingScenarioSubTab] = useState(null);
   const [profileJump, setProfileJump] = useState(null);
-  // profileStep: ProfileWizard step index to open (1 = Current Savings). Optional.
   const navigateToTab = useCallback((tab, subTab = null, profileStep = null) => {
     if (subTab) setPendingScenarioSubTab(subTab);
     if (profileStep != null) setProfileJump({ step: profileStep, n: Date.now() });
     setTab(tab);
   }, []);
-  // Sidebar launchers switch the tab AND bring the editor into view. On a
-  // phone the tab bar sits below the fold, so a bare tab switch changed
-  // nothing on screen and the button read as dead.
   const focusLever = useCallback((key) => {
     setSbCoreOpen(true);
-    setTimeout(() => { // after the card has opened
+    setTimeout(() => {
       const el = document.querySelector(`[data-lever="${key}"]`), sb = el?.closest(".sidebar");
       if (!el) return;
-      if (sb.getBoundingClientRect().top < 0) window.scrollTo({ top: 0 }); // phone: sidebar sits above the editor
+      if (sb.getBoundingClientRect().top < 0) window.scrollTo({ top: 0 });
       sb.scrollTop += el.getBoundingClientRect().top - sb.getBoundingClientRect().top - 60;
       el.querySelector("input")?.focus({ preventScroll: true });
     }, 0);
   }, []);
-  // A clickable section title that also works from the keyboard.
   const twisty = (open, fn) => ({
     role: "button", tabIndex: 0, "aria-expanded": open, onClick: fn,
     onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); } },
@@ -17743,46 +14249,22 @@ export default function AiRAForecaster() {
     navigateToTab("assumptions", null, step);
     const tabs = tabsRef.current, main = tabs?.parentElement;
     if (!tabs) return;
-    // Desktop: only the main column scrolls. scrollIntoView would also drag
-    // the page up under the sticky header and clip the sidebar.
     if (main.scrollHeight > main.clientHeight) main.scrollTop += tabs.getBoundingClientRect().top - main.getBoundingClientRect().top;
     else tabs.scrollIntoView({ block: "start" });
   }, [navigateToTab]);
-  // The visitor landing is the homepage for anyone without a saved profile
-  // — not a one-time splash. It used to also be gated on a
-  // `aira_welcomed_v1` flag, so the moment a visitor clicked through (or
-  // hit Skip) the page became permanently unreachable: no link anywhere
-  // returns to it. A visitor who bounced and came back tomorrow never saw
-  // it again despite never having entered a single number. Gating on the
-  // saved profile alone means unregistered visitors always land here,
-  // while anyone who has saved a profile goes straight to their dashboard
-  // and never sees it. Dismissal still holds for the session (React
-  // state), so entering the app is a one-click, non-repeating action.
-  // `?welcome=1` forces the landing even with a saved plan, for links from videos
-  // and posts. Such visitors get "Open My Saved Plan", never the overwriting seed.
   const [hasSavedPlan] = useState(() => !!loadProfileFromLocal());
   const [showWelcome, setShowWelcome] = useState(
     () => !loadProfileFromLocal() || new URLSearchParams(window.location.search).has("welcome"));
-  // True for the session that arrived through the quick estimate: the app then
-  // owes the visitor a list of what it assumed beyond their four answers.
   const [fromLanding, setFromLanding] = useState(false);
   const [running, setRunning] = useState(false);
   const [stale, setStale] = useState(false);
-  // Opening the app presents the last run you asked for, rather than spending
-  // a simulation to redraw numbers you have already seen. Read once, here,
-  // because the staleness check below needs the inputs it was computed from.
   const [cachedRun] = useState(loadResultsFromLocal);
   const [mc, setMc] = useState(cachedRun?.mc ?? null);
   const [stress, setStress] = useState(cachedRun?.stress ?? null);
-  // Nothing recomputes on its own any more, so say when these numbers are from.
   const [lastRunAt, setLastRunAt] = useState(cachedRun?.savedAt ?? null);
-  // Shared hover state so hovering a row in the age-band table highlights the
-  // matching age column on the fan chart above (FanChart + MCBandTable are siblings).
   const [hoveredAge, setHoveredAge] = useState(null);
 
 
-  // Progress check-ins: a journal of plan snapshots (see LS_CHECKINS_KEY).
-  // Requires a completed MC run so the snapshot carries a real success rate.
   const [checkIns, setCheckIns] = useState(loadCheckIns);
   const [checkInFlash, setCheckInFlash] = useState(false);
 
@@ -17830,28 +14312,12 @@ export default function AiRAForecaster() {
   const [feedbackEmail, setFeedbackEmail] = useState("");
   const [showTerms, setShowTerms] = useState(false);
   const [showReport, setShowReport] = useState(false);
-  // Re-checked from the server each time the report is opened, so a window that
-  // expired (or was unlocked on another device) is picked up without a reload.
   const reportUnlocked = useReportUnlocked(showReport ? 1 : 0);
-  // Fail-closed capability probe (GEMINI_API_KEY presence) — see
-  // functions/api/report-capability.js. Independent of BILLING_ENABLED so
-  // flipping that source-level flag can no longer unlock the report for free
-  // on a deployment that isn't actually the operator's own.
   const reportCapable = useReportCapability();
-  // Owner preview: true only after /api/admin verified ADMIN_SECRET
-  // server-side this session (see admin-panel.js). Lets me read the real
-  // report without the purchase prompt end users see. `?aira_admin=1` on
-  // its own doesn't grant this — the param is in the bundle, the secret isn't.
   const ownerVerified = useOwnerVerified();
-  // { msg, tone: "ok" | "err" }. Failures have to be visible: a silent
-  // failure on a paid return or a restore link leaves the customer stuck
-  // with no idea why, and no way to tell us what went wrong. Errors persist
-  // longer than successes.
   const [stripeToast, setStripeToast] = useState(null);
   const stripeReturn  = useStripeReturn();
   const restoreReturn = useRestoreReturn();
-  // Recovery link: opened once on a successful purchase, and re-openable from the
-  // credit panel. `null` = closed; an object = showing that link.
   const [recoveryLink, setRecoveryLink] = useState(null);
   useEffect(() => {
     if (stripeReturn?.success && stripeReturn.restoreUrl) {
@@ -17860,28 +14326,10 @@ export default function AiRAForecaster() {
   }, [stripeReturn]);
   useEffect(() => {
     if (!stripeReturn) return;
-    // A report buyer is granted zero credits by design, so the credits
-    // wording told someone who had just paid $9 that they received "0
-    // credits added to your account" — the most alarming possible sentence
-    // at that moment. Branch on what was actually bought.
     const reportBuy = stripeReturn.packId === "report";
-    // The poll above already waited about 12s for the entitlement. If
-    // it's still not there the webhook hasn't landed, and a cheerful
-    // "unlocking shortly" leaves someone who's just paid staring at a
-    // paywall with no idea what to do — the one failure mode worth
-    // designing for, because it's the only one that takes money and
-    // delivers nothing. Stripe retries, and the grant is idempotent, so it
-    // usually self-heals; say that, and give them a route out if it doesn't.
-    // Amber, not green: this isn't a completed transaction yet.
     const stalled = reportBuy && !stripeReturn.reportUnlocked;
     const okMsg = reportBuy
       ? (stripeReturn.reportUnlocked
-          // Names the next step, because Stripe's redirect is a full page
-          // load: the entitlement and the saved profile both survive it,
-          // but `mc` doesn't, so the Report button lands disabled. A buyer
-          // seeing "unlocked" beside a greyed-out button concludes they
-          // paid for nothing — and the only existing hint is a title= on a
-          // disabled button, which most browsers never render.
           ? "Report unlocked — it's yours permanently. Press ▶ Run Monte Carlo, then Report."
           : `Payment received — your report is taking longer than usual to unlock. Reload this page in a minute. If it is still locked, email ${FEEDBACK_EMAIL} with your Stripe receipt and we will open it straight away.`)
       : `${(stripeReturn.credits || 0).toLocaleString()} credits added to your account`;
@@ -17897,16 +14345,11 @@ export default function AiRAForecaster() {
       : setToastTimed(setStripeToast, { msg: `${restoreReturn.error}`, tone: "err" }, 15000);
     return () => clearTimeout(t);
   }, [restoreReturn]);
-  // Signature of the inputs the last run used; null until the first run is
-  // launched. "Results are stale" means the current inputs differ from these.
   const ranSigRef = useRef(cachedRun?.sig ?? null);
   const runningRef = useRef(false);
   const sigRef = useRef(null);
-  // Set true when the visitor enters from the landing so the next params
-  // update (after seeding) triggers one real Monte Carlo run with their numbers.
   const pendingRunRef = useRef(false);
 
-  // Slider states – initialized from BLANK_PROFILE
   const [port, setPort] = useState(BLANK_PROFILE.port);
   const [contrib, setContrib] = useState(BLANK_PROFILE.contrib);
   const [inf, setInf] = useState(BLANK_PROFILE.inf);
@@ -17921,9 +14364,7 @@ export default function AiRAForecaster() {
   const [real, setReal] = useState(BLANK_PROFILE.real);
   const [withdrawalStrategy, setWithdrawalStrategy] = useState(BLANK_PROFILE.withdrawalStrategy || "gk");
 
-  // Assumptions state – all user data lives here
   const [assumptions, setAssumptions] = useState(() => {
-    // Try to load saved profile on initialization
     const saved = loadProfileFromLocal();
     if (saved) {
       return {
@@ -17948,7 +14389,6 @@ export default function AiRAForecaster() {
     []
   );
 
-  // Auto‑load saved profile on mount (already handled in useState initializer, but sync sliders)
   useEffect(() => {
     const saved = loadProfileFromLocal();
     if (!saved) return;
@@ -17968,25 +14408,11 @@ export default function AiRAForecaster() {
     if (saved.withdrawalStrategy !== undefined) setWithdrawalStrategy(saved.withdrawalStrategy);
   }, []);
 
-  // Current age: one value, everywhere.
-  // `dob` is the only input of record. This derives from it, and the
-  // effect below writes the result back into assumptions.currentAge so
-  // that every consumer — the engines via params, every Profile panel via
-  // `values`, the AI context builders, the exported JSON — reads the same
-  // number. Nothing should compute its own age from dob, and nothing
-  // should read a stored age that could disagree with the birthday on
-  // file. The stored field survives only so dob-less imported profiles keep working.
   const currentAge = useMemo(
     () => ageFromDob(assumptions.dob) ?? assumptions.currentAge ?? BLANK_PROFILE.currentAge,
     [assumptions.dob, assumptions.currentAge]
   );
 
-  // The complete profile exactly as persisted: `assumptions` merged with
-  // the slider states that live outside it (port, sp, retAge, ...). One
-  // source of truth for both the manual Save button (ProfileWizard) and
-  // the autosave effect below — so a forgotten manual save and an autosave
-  // can never write different snapshots, and sliders that call setPort/
-  // setSp without touching assumptions still get captured.
   const liveProfile = useMemo(() => ({
     ...assumptions,
     currentAge,
@@ -18001,31 +14427,18 @@ export default function AiRAForecaster() {
     withdrawalStrategy: assumptions.withdrawalStrategy,
   }), [assumptions, currentAge, retAge, endAge, port, contrib, sp, ssb, ab]);
 
-  // Silent autosave.
-  // Debounced persistence of the full profile so a user who forgets to
-  // hit Save never loses their work — it auto-restores on next load via
-  // loadProfileFromLocal(). Reuses the proven saveProfileToLocal() path
-  // (same key, same schema, same private-mode guard) that the manual Save uses.
-  //   - Skips the initial hydration render so mount doesn't redundantly re-save.
-  //   - Stays dormant on the visitor welcome screen, so an untouched
-  //     blank profile never creates a phantom "saved profile" that would
-  //     suppress the landing page on the next visit.
   const autosaveReady = useRef(false);
   const [lastAutosaveAt, setLastAutosaveAt] = useState(null);
   useEffect(() => {
     if (!autosaveReady.current) { autosaveReady.current = true; return; }
     if (showWelcome) return;
     const t = setTimeout(() => {
-      if (skipAutosave.current) return; // Start over in progress
+      if (skipAutosave.current) return;
       if (saveProfileToLocal(liveProfile)) setLastAutosaveAt(new Date());
     }, 1000);
     return () => clearTimeout(t);
   }, [liveProfile, showWelcome]);
 
-  // Keep the stored field reconciled with dob. Without this, editing a
-  // birthday updated the simulation (which reads the derived value) while
-  // every panel and chart reading assumptions.currentAge kept showing the
-  // old age. Guarded by the inequality so it settles in one pass.
   useEffect(() => {
     const derived = ageFromDob(assumptions.dob);
     if (derived != null && derived !== assumptions.currentAge) {
@@ -18039,7 +14452,6 @@ export default function AiRAForecaster() {
     return getRmdStartAge({ dob: assumptions.dob, currentAge });
   }, [assumptions.dob, assumptions.rmdStartAge, currentAge]);
 
-  // Main params object for simulations – uses assumptions, NOT BLANK_PROFILE
   const params = useMemo(
     () => ({
       dob: assumptions.dob || "",
@@ -18049,37 +14461,22 @@ export default function AiRAForecaster() {
       endAge,
       ssAge: assumptions.ssAge,
       ssPia: assumptions.ssPia || 0,
-      // Spread wholesale so newly-added spouse fields (dob, and deathAge
-      // below) can't be silently dropped here — this memo is where dead
-      // settings get born if you're not careful. `dob` in the default
-      // keeps the shape identical to BLANK_PROFILE.
       spouse: assumptions.spouse || {
         enabled: false, dob: "", ssb: 0, ssAge: 67, ssPia: 0,
         deathAge: null, firstToDie: "spouse",
         survivorClaimAge: null, survivorBenefitAtClaim: 0,
-        // Kept in the fallback purely so this object stays shape-identical
-        // to BLANK_PROFILE.spouse, as the comment above requires. The
-        // engines already default these to 0 via jobContributionsForYear.
         retireAge: null, contrib: 0, employerContrib: 0, rothContrib: 0,
       },
       port,
       contrib,
       employerContrib: assumptions.employerContrib || 0,
       hsaContrib: Math.round((assumptions.hsaMonthly || 0) * 12),
-      // Has to be forwarded here or the Profile inputs are a no-op — the
-      // engines read `params`, not `assumptions`. (Same trap the sourcing
-      // guardrails hit.)
       taxableContrib: assumptions.taxableContrib || 0,
       rothContrib: assumptions.rothContrib || 0,
       accounts: assumptions.accounts,
-      // Portfolio draw = US + out-of-country (always combined). The
-      // state-tax toggle is independent now: twoHousehold on means
-      // "claiming non-residency" and skips state tax, but doesn't swap the
-      // spending value.
       sp: (sp || 0) + (assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0),
       spOutOfCountry: assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0,
-      spSpendOutofState: assumptions.spSpendOutofState,   // legacy passthrough
-      // Floor/ceiling: an imported Must/Like budget drives these; else % of core spend.
+      spSpendOutofState: assumptions.spSpendOutofState,
       ...resolveSpendGuardrails({
         sp,
         spOutOfCountry: assumptions.spOutOfCountry || assumptions.spSpendOutofState || 0,
@@ -18114,7 +14511,6 @@ export default function AiRAForecaster() {
       housingType: assumptions.housingType || "own",
       annualRent: assumptions.annualRent || 0,
       carveouts: assumptions.carveouts || [],
-      // Has to be forwarded — the engines read `params`, not `assumptions`.
       cashFlowEvents: assumptions.cashFlowEvents || [],
       spSchedule: (assumptions.spSchedule && assumptions.spSchedule.length) ? assumptions.spSchedule : null,
       rothConversionTarget: (() => { const r = assumptions.rothConversionTarget || "off"; return r.startsWith("fill_") ? r.replace("fill_", "") : r; })(),
@@ -18126,29 +14522,19 @@ export default function AiRAForecaster() {
       preRetireEq: assumptions.preRetireEq,
       preRetireReturn: assumptions.preRetireReturn ?? null,
       postRetireEq: assumptions.postRetireEq,
-      // Has to be forwarded — the engines read `params`, not `assumptions`.
-      // null keeps the default (switch at retireAge).
       glidepathSwitchAge: assumptions.glidepathSwitchAge ?? null,
       hcShockAge: assumptions.hcShockAge,
       hcProb: assumptions.hcProb,
       hcMin: assumptions.hcMin,
       hcMax: assumptions.hcMax,
       cashRealReturn: assumptions.cashRealReturn ?? 3.0,
-      // Mortality weighting for runMC's "money outlives you" metric.
       sex: assumptions.sex || "blended",
       taxableBasisPct: assumptions.taxableBasisPct ?? 70,
       taxableYieldPct: assumptions.taxableYieldPct ?? 0,
       taxableYieldOrdinaryPct: assumptions.taxableYieldOrdinaryPct ?? 50,
       useJointRmdTable: assumptions.useJointRmdTable || false,
       withdrawalStrategy: assumptions.withdrawalStrategy,
-      // Set when a retired strategy was remapped on load. Forwarded so the
-      // Withdrawal tab can say the plan changed — a silent remap would be
-      // the same "app knew something the screen didn't" problem as the
-      // strategy deletion itself.
       withdrawalStrategyMigratedFrom: assumptions.withdrawalStrategyMigratedFrom ?? null,
-      // Sourcing guardrails — have to be forwarded here or runMC + the
-      // Withdrawal Plan tab never see them (they live in `assumptions`,
-      // but the engine reads `params`). Defaults mirror BLANK_PROFILE.
       withdrawalBracketTarget: assumptions.withdrawalBracketTarget || "22",
       irmaaGuard: assumptions.irmaaGuard || false,
       rothEmergencyReserve: assumptions.rothEmergencyReserve || 0,
@@ -18156,25 +14542,18 @@ export default function AiRAForecaster() {
       sepp72t: assumptions.sepp72t || false,
       sepp72tStartAge: assumptions.sepp72tStartAge ?? null,
       ssTorpedoGuard: assumptions.ssTorpedoGuard || false,
-      // Account draw order (which bucket drains first) — orthogonal to strategy + guardrails.
       orderingMode: assumptions.orderingMode || "tax_reactive",
       withdrawalOrder: assumptions.withdrawalOrder || ["cash", "taxable", "pretax", "roth"],
       b1Years: assumptions.b1Years ?? 2,
       b2Years: assumptions.b2Years ?? 5,
-      fixedWithdrawalRate: (() => { const r = assumptions.fixedWithdrawalRate || 4.0; return r < 1 ? r : r / 100; })(), // normalize: stored as % (4) or decimal (0.04) → always decimal
-      // VPW's two inputs. This memo is an allowlist, not a spread —
-      // neither used to be forwarded, so `vpwRealReturn` could be set in
-      // the profile and the engine would still use its own 3.76% default.
-      // That matters now: the 1/N → VPW migration writes vpwRealReturn: 0,
-      // and without these two lines it would be a dead setting.
-      // `?? null` (not `||`) so a deliberate 0 survives.
+      fixedWithdrawalRate: (() => { const r = assumptions.fixedWithdrawalRate || 4.0; return r < 1 ? r : r / 100; })(),
       vpwRealReturn: assumptions.vpwRealReturn ?? null,
       vpwEndAge: assumptions.vpwEndAge ?? null,
       safeWithdrawalRate: 0.04,
       checkpoints: assumptions.checkpoints || [],
       earlyRetireTarget: assumptions.earlyRetireTarget,
       portfolioGoal: assumptions.portfolioGoal,
-      abEndYear: assumptions.abEndYear ?? null,   // rental income stops after this year
+      abEndYear: assumptions.abEndYear ?? null,
       otherIncomes: assumptions.otherIncomes || [],
     }),
     [
@@ -18197,10 +14576,6 @@ export default function AiRAForecaster() {
 
 const mortgagePayoffYear = mortgageSched.payoffYr;
 
-  // Read through a ref so this callback is stable for the life of the app.
-  // Effects that trigger a run depend on it, and a callback that changed
-  // identity with every params object would re-fire them on renders where
-  // nothing the simulation reads actually changed.
   const paramsRef = useRef(params);
   paramsRef.current = params;
 
@@ -18210,31 +14585,15 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     ranSigRef.current = sigRef.current;
     setRunning(true);
     setStale(false);
-    // Yield once so React can commit and paint "Running..." before the engine
-    // blocks the main thread. Zero delay, and deliberately not a debounce:
-    // nothing here waits for quiet, coalesces callers, or cancels a pending
-    // run. (requestAnimationFrame is the tempting alternative but paints the
-    // indicator only some of the time when a run starts from an effect.)
     setTimeout(() => {
-      // Single horizon: every simulation is graded to the profile's own
-      // plan age (params.endAge). No hardcoded reference ages. A shorter
-      // runway with the same funds correctly scores higher, and the stress
-      // test shares the same horizon.
       const p = paramsRef.current;
-      // Record the inputs this run actually used, not the ones it was queued
-      // with — anything edited before this frame is included in the result.
       ranSigRef.current = sigRef.current;
       const planAge = p.endAge || 90;
-      // Path count is user-adjustable (MC tab → ⚙ Advanced Settings); the
-      // default is the MC_PATHS constant, so an untouched profile runs exactly
-      // as before. Clamped here rather than trusted, because this value
-      // arrives from a persisted profile that a hand-edit could malform.
       const paths = Math.max(MC_PATH_MIN, Math.min(MC_PATH_MAX, Math.round(p.mcPaths || MC_PATHS)));
       const rEnd_ = runMC(p, planAge, paths, 43, true);
       const str = runStress(p, planAge, STRESS_PATHS, 99);
       setMc(rEnd_);
       setStress(str);
-      // Keep it for the next visit, tagged with the inputs it came from.
       saveResultsToLocal(sigRef.current, rEnd_, str);
       setLastRunAt(new Date().toISOString());
       runningRef.current = false;
@@ -18242,65 +14601,31 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     }, 0);
   }, []);
 
-  // "Inputs changed" has to mean the numbers the simulation actually reads
-  // changed value. `assumptions` carries fields params doesn't use and gets
-  // rewritten with settings that don't affect a run, so keying off the params
-  // object itself would mark perfectly good results stale — visibly, right
-  // after entering from the landing page.
   const paramsSig = useMemo(() => {
     try { return JSON.stringify(params); } catch { return String(Date.now()); }
   }, [params]);
   sigRef.current = paramsSig;
 
-  // A starter plan (the landing's "Skip") has a placeholder portfolio figure
-  // but every account at $0, and the simulation reads the accounts: it scored
-  // that plan 0.0% beside a $1,000,000 sidebar. With nothing to simulate, say
-  // so instead of running and showing a failure.
   const noAccountMoney = Array.isArray(params.accounts) && params.accounts.length > 0
     && params.accounts.every((a) => !(a.balance > 0));
 
-  // The Run/Re-run button owns every run. The single exception is a visitor
-  // with nothing to show: no cached run from last time and nothing run yet
-  // this session, where an empty screen would be worse than one simulation.
-  // (This used to auto-re-run on a 350ms debounce after any params change,
-  // which is what failed on slower machines: a full MC_PATHS-path simulation
-  // on the main thread after every slider nudge.)
   useEffect(() => {
-    // Landing page is up; there are no real inputs to run on yet.
     if (showWelcome) return;
 
     if (ranSigRef.current === null) {
-      // Nothing cached and nothing run. A seeded landing entry runs itself,
-      // on the seeded numbers, in the effect just below.
       if (!pendingRunRef.current && !noAccountMoney) runSimulation();
       return;
     }
 
-    // A queued run reads the latest inputs when it fires, so it already
-    // covers this change — flagging stale here would be a lie it then clears.
     if (runningRef.current) return;
 
-    // Compare against the inputs the last run used, so restoring a saved
-    // profile, or undoing an edit, doesn't leave a "changed" warning up for
-    // someone who changed nothing.
     setStale(paramsSig !== ranSigRef.current);
   }, [paramsSig, runSimulation, showWelcome, noAccountMoney]);
 
-  // Year-end deadline prompt. Reads the browser clock (this app has no
-  // server), so a PC with a wrong system date sees it at the wrong time —
-  // accepted, versus adding a network dependency for a reminder. Placed
-  // after `params` because it reads it; hoisting it above would be a
-  // temporal-dead-zone error.
-  //
-  // The waterfall is built inside the December branch only, so eleven
-  // months of the year this memo costs one getMonth() call and nothing else.
   const yearEndInfo = useMemo(() => {
     const now = new Date();
-    // ?yearend=1 forces the December view year-round. A seasonal feature
-    // is otherwise unreviewable for eleven months, and "change your PC
-    // clock" is a terrible way to QA something that writes to localStorage.
     let forced = false;
-    try { forced = new URLSearchParams(window.location.search).get("yearend") === "1"; } catch { /* SSR/test */ }
+    try { forced = new URLSearchParams(window.location.search).get("yearend") === "1"; } catch { }
     if (!forced && !isYearEndWindow(now)) return { show: false };
     const year = now.getFullYear();
     let rows = [];
@@ -18314,8 +14639,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
         bracketCeiling: getBracketCeiling,
         irmaaCeiling: getIrmaaCeiling,
         filingStatus: params.filingStatus || "mfj",
-        // Prefer the conversion target — this prompt is mostly about conversions —
-        // and fall back to the sourcing bracket cap, then the 22% default.
         target: params.rothConversionTarget && params.rothConversionTarget !== "off"
           ? params.rothConversionTarget
           : (params.withdrawalBracketTarget && params.withdrawalBracketTarget !== "off"
@@ -18324,15 +14647,14 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       }),
     };
   }, [params]);
-  // Popup fires once per calendar year; the Net Worth strip stays all December.
   const [showYearEndModal, setShowYearEndModal] = useState(() => {
     let forced = false;
-    try { forced = new URLSearchParams(window.location.search).get("yearend") === "1"; } catch { /* SSR/test */ }
-    if (forced) return true;   // preview always opens, ignoring the once-a-year ack
+    try { forced = new URLSearchParams(window.location.search).get("yearend") === "1"; } catch { }
+    if (forced) return true;
     return isYearEndWindow() && !yearEndAcked(new Date().getFullYear());
   });
 
- const swr = computeInitialWR(params).steadyWRpct.toFixed(1);   // one-offs would make one year read as the plan's rate
+ const swr = computeInitialWR(params).steadyWRpct.toFixed(1);
  const analogue = mc ? getAnalogue(mc.rate) : null;
 
   const TABS = [
@@ -18351,10 +14673,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       alert("Please select a feedback type.");
       return;
     }
-    // Hands off to the visitor's own mail client. Doesn't close the dialog
-    // or clear the fields on purpose: if no mail client is configured
-    // nothing visible happens, and closing would silently destroy what
-    // they wrote. Leaving it open keeps both the text and the address on screen.
     const subject = `AiRA feedback — ${feedbackType}`;
     const body = [
       feedbackText || "(no details entered)",
@@ -18368,7 +14686,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
-  // After a landing "Take me to the app!" seed, run one real MC on the fresh params.
   useEffect(() => {
     if (pendingRunRef.current) {
       pendingRunRef.current = false;
@@ -18376,7 +14693,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     }
   }, [paramsSig, runSimulation]);
 
-  // Seed the profile from the landing's quick-estimate inputs, then enter the app.
   const enterFromLanding = (inp) => {
     if (inp) {
       const yr = new Date().getFullYear();
@@ -18390,9 +14706,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       setContrib(inp.contrib);
       setSp(inp.spend);
       updateAssumption("dob", `${yr - inp.curAge}-06-15`);
-      updateAssumption("dobIsEstimate", true); // June 15 is a placeholder, not a birthday
-      // The landing's headline is "You can retire at N". Open the app on that
-      // same N, or the two screens describe different plans.
+      updateAssumption("dobIsEstimate", true);
       const landingAge = landingIsRetired(inp) ? null : landingEarliestAge(inp);
       if (landingAge != null) { setRetAge(landingAge); updateAssumption("retireAge", landingAge); }
       setStale(true);
@@ -18403,7 +14717,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
     setTab(inp ? "networth" : "assumptions");
   };
 
-  // --- RENDER ---
   if (showWelcome) {
     return (
       <>
@@ -18454,9 +14767,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               onClick={() =>
                 exportProfile(
                   {
-                    // Spread all assumptions fields so nothing is ever silently omitted
                     ...assumptions,
-                    // Override with the separate state variables — these are the live source of truth
                     retireAge: retAge,
                     endAge,
                     port,
@@ -18472,24 +14783,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     rothConversionTarget: assumptions.rothConversionTarget || "off",
                     fafsaEndYear: assumptions.fafsaEndYear || null,
                     cssEndYear: assumptions.cssEndYear || null,
-                    // geminiApiKey is deliberately NOT exported: this file gets shared.
-                    // Progress check-ins ride along with the profile. They
-                    // aren't part of `assumptions` — they live in their own
-                    // localStorage key (LS_CHECKINS_KEY), so the "spread
-                    // everything so nothing is silently omitted" comment
-                    // above wasn't true of them. A user who exported their
-                    // profile, moved machines and imported it lost the
-                    // entire journal with no warning, because the only
-                    // export that carried it was a second button on the
-                    // Progress tab.
                     checkIns,
-                    // Bucket Strategy tab settings (b1Years/b2Years/
-                    // drawMode) are also not part of `assumptions` —
-                    // BucketsTab owns them in its own localStorage key
-                    // (_BCFG_KEY) instead of lifted root state, same gap
-                    // the checkIns comment above already describes. Read
-                    // fresh here rather than threading bCfg through root
-                    // state for one export call.
                     bCfg: _loadBCfg(),
                     savedAt: new Date().toISOString(),
                     exportedAt: new Date().toISOString(),
@@ -18508,20 +14802,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               title="Import profile from JSON"
               onClick={() =>
                 importProfile((rawData) => {
-                  // Same retired-strategy migration the localStorage path
-                  // gets. An exported JSON is the other way an old profile
-                  // enters the app, and it shouldn't take a different route.
                   const data = migrateOrderingMode(migrateWithdrawalStrategy(rawData));
-                  // Merged, never replaced — same rule the Progress tab's
-                  // own import uses (handleImportCheckIns). Importing a
-                  // profile onto a machine that already has a journal
-                  // shouldn't delete history that only exists there;
-                  // mergeCheckIns dedupes by id and re-sorts by date.
                   if (Array.isArray(data.checkIns)) handleImportCheckIns(data.checkIns);
-                  // Merged into existing local config, never replaced
-                  // wholesale — same rule as checkIns above, so an older
-                  // export missing a newer bCfg field (e.g. drawMode) can't
-                  // reset it back to default on import.
                   if (data.bCfg && typeof data.bCfg === "object") {
                     try { localStorage.setItem(_BCFG_KEY, JSON.stringify({ ..._loadBCfg(), ...data.bCfg })); } catch {}
                   }
@@ -18543,13 +14825,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   if (data.real !== undefined) setReal(data.real);
                   if (data.withdrawalStrategy !== undefined) setWithdrawalStrategy(data.withdrawalStrategy);
 
-                  // Migrate old account fields if needed
-                  // Legacy import migration. The keys below are the wire
-                  // format of profiles saved before the accounts array
-                  // existed — renaming them would stop those files
-                  // importing. The display names are generic on purpose:
-                  // labeling an account with its custodian would tell
-                  // anyone reading this public repo where my money is held.
                   if (data.solo401k !== undefined && !data.accounts) {
                     data.accounts = [
                       ...(data.solo401k ? [{ id: "m1", category: "pretax", name: "Pre-Tax 401k", balance: data.solo401k }] : []),
@@ -18581,10 +14856,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       p.id ? { ...p, id: String(p.id) } : { ...p, id: "p" + (i + 1) }
                  );
                 }
-                // --Carveouts and checkpoints should always be arrays, and checkpoints should have string IDs for React keys--
                   if (!Array.isArray(data.carveouts)) data.carveouts = [];
                   if (!Array.isArray(data.otherIncomes)) data.otherIncomes = [];
-                  // Detailed-expense import: schedule must be a non-empty [{year,amount}] array or null.
                   if (!Array.isArray(data.spSchedule) || data.spSchedule.length === 0) {
                     data.spSchedule = null;
                     if (data.spImportMeta && data.spImportMeta.mode === "multi") data.spImportMeta = null;
@@ -18597,19 +14870,14 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     );
                   }
 
-                  // Migrate old "otherInc" field to "otherIncomes"
                   if (data.otherInc && !data.otherIncomes) {
                     data.otherIncomes = data.otherInc;
                   }
-                  // Ensure otherIncomes is always an array
                   if (!Array.isArray(data.otherIncomes)) {
                     data.otherIncomes = [];
                   }
 
                   const hasPropIncome = (data.properties || []).some(pr => Number(pr.income) > 0);
-                  // rothConversionTarget round-trips as "fill_22"/"off"/"irmaa". Legacy exports
-                  // (pre-fix) stripped to bare bracket numbers like "22" -- re-prefix them so
-                  // the dropdown finds a matching option.
                   const rawRct = data.rothConversionTarget || "off";
                   const restoredRct = /^\d+$/.test(rawRct) ? "fill_" + rawRct : rawRct;
                   setAssumptions((prev) => ({
@@ -18620,10 +14888,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     dobIsEstimate: !!data.dobIsEstimate,
                     stateOfResidence: data.stateOfResidence || "NJ",
                     filingStatus: data.filingStatus || "mfj",
-                    // Match BLANK_PROFILE's fresh-profile default (false)
-                    // so an older export missing this field doesn't
-                    // silently flip to zero state tax vs. a hand-entered
-                    // profile with identical data.
                     twoHousehold: data.twoHousehold ?? false,
                     portfolioGoal: data.portfolioGoal ?? 3_200_000,
                     earlyRetireTarget: data.earlyRetireTarget ?? 3_500_000,
@@ -18636,7 +14900,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     rothConversionTarget: restoredRct,
                     fafsaEndYear: data.fafsaEndYear || null,
                     cssEndYear: data.cssEndYear || null,
-                    // Never take a key from an imported file (old exports contain one).
                     geminiApiKey: prev.geminiApiKey || "",
                   }));
 
@@ -18649,8 +14912,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
             >
               Import
             </button>
-            {/* Two groups, one divider: what acts on YOUR PLAN (read it, record it,
-                save it, load it), then what is about THE APP. */}
             <div aria-hidden="true" style={{ width: 1, height: 20, background: "var(--tint-white-14)", margin: "0 5px" }} />
             <HelpButton />
             <AboutButton />
@@ -18729,7 +14990,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     onFocus={(e) => (e.target.style.borderColor = "var(--accent-purple)")}
                     onBlur={(e) => (e.target.style.borderColor = "#1e3a5f")}
                   />
-                  {/* Optional contact fields */}
                   <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                     {[
                       { val: feedbackName, set: setFeedbackName, placeholder: "Name (optional)" },
@@ -18751,9 +15011,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       />
                     ))}
                   </div>
-                  {/* Shown, not just linked: a mailto does nothing on a
-                      machine with no mail client, and a visitor should
-                      never be left with a dead button and no address. */}
                   <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
                     Opens your email app. Or write to{" "}
                     <span style={{ color: "var(--accent-purple)", fontFamily: "'JetBrains Mono',monospace", userSelect: "all" }}>
@@ -18797,19 +15054,10 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               Buy me a coffee
             </a>
           </div>
-          {/* Header day-counter removed — the same figure lives inside
-              the D-Day Countdown Panel in the sidebar (bottom of this
-              file), so showing it twice was redundant. With this block
-              gone, .hdr's justify-content:space-between pushes the buttons
-              flush right. */}
         </div>
 
         <div className="layout">
           <div className="sidebar">
-            {/* The launcher stands alone above the cards: inside the countdown
-                card it read as that card's action, not as the way into every
-                input. It also says when you are already there, instead of
-                staying a loud call to action that appears to do nothing. */}
             <button type="button" className="cfg-btn cfg-launch" onClick={() => openPlanInputs()}
               aria-current={activeTab === "assumptions" ? "page" : undefined}>
               {activeTab === "assumptions" ? "Editing plan inputs" : `${profileSavedBefore ? "Adjust values" : "Configure your plan"} →`}
@@ -18883,11 +15131,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               />
               </>)}
             </div>
-            {/* The landing shows a rule-of-thumb answer; the app shows the full
-                simulation, which needs more than four answers. Say what was
-                filled in on the visitor's behalf, each line a way to fix it —
-                otherwise the two screens just look like they disagree. Only
-                assumptions that still hold are listed. */}
             {fromLanding && (() => {
               const funded = (assumptions.accounts || []).filter((a) => (a.balance || 0) > 0);
               const items = [
@@ -19004,11 +15247,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                   <div>
                     <span style={{ color: "var(--chart-1)" }}>Healthcare:</span> {assumptions.hcProb || 3.5}% shock risk age {assumptions.hcShockAge || 72}+
                   </div>
-                  {/* One-off events read from `params` — the object the
-                      engines actually receive — so this line can never
-                      claim an event the simulation didn't run. Full
-                      per-event breakdown lives in Simulation Inputs &
-                      Assumptions on the MC tab. */}
                   {(() => {
                     const evs  = (params.cashFlowEvents || []).filter((e) => Number.isFinite(Number(e.year)) && (Number(e.amount) || 0) !== 0);
                     if (evs.length === 0) return null;
@@ -19046,14 +15284,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 <span>{sbMacroOpen ? "▾" : "▸"} Market assumptions</span>
               </div>
               {sbMacroOpen && (<>
-              {/* These four were editable HERE and again in the Monte Carlo
-                  tab's ⚙ Advanced Settings — two live controls writing one
-                  value, which is exactly the Single Point of Control violation
-                  this project's design rules exist to prevent (and a user could
-                  set 5% inflation in one and read 2.5% in the other). The
-                  sidebar keeps what a sidebar is for — the current values, all
-                  of them at a glance — and the dialog owns the editing. The
-                  button below is that dialog, so this is still one click. */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "7px 10px", fontSize: "var(--fs-label)", marginBottom: 12 }}>
                 <span style={{ color: "var(--text-muted)" }}>Inflation (CPI)</span>
                 <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{Number(assumptions.inf ?? inf ?? 2.5).toFixed(1)}%/yr</span>
@@ -19081,14 +15311,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                 {sbOptionsOpen ? "▾" : "▸"} Options
               </div>
               {sbOptionsOpen && (<>
-              {/* A user put it well: "there are a lot of tabs with sub
-                  tabs and I'll be darned if I can find that one." The
-                  control was findable only if you already knew the word
-                  "smile," and nothing said what it did to your numbers.
-                  Renamed to what it is, and the effect is stated now with
-                  the engine's own factors (no second copy of the curve —
-                  spendingSmileFactor is the one source). The matching
-                  per-year disclosure is the badge in the Spend column. */}
               <Toggle
                 val={smile} onChange={setSmile}
                 label="Reduce spending with age"
@@ -19170,9 +15392,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               </div>
             )}
 
-            {/* Hero: one number that matters, with secondary metrics
-                demoted to a compact strip and all interpretive copy behind
-                a "What does this mean?" toggle. */}
             {(() => {
               const heroColor = mc ? (mc.rate >= 0.85 ? "var(--positive)" : mc.rate >= 0.7 ? "var(--accent-gold)" : "var(--negative)") : "#334155";
               const sep = <span style={{ color: "var(--text-faint)" }}>·</span>;
@@ -19187,7 +15406,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               );
               return (
                 <div className={`met ${running ? "recomputing" : ""}`} style={{ borderLeft: `4px solid ${heroColor}` }}>
-                  {/* Row 1 — the one number that matters, with the disclosure toggle aligned right. */}
                   <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
                       <div className="mv" style={{ fontSize: 44, color: heroColor }}>
@@ -19195,11 +15413,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       </div>
                       <div style={{ fontSize: "var(--fs-h2)", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 5 }}>
                         Success to Age {endAge}
-                        {/* Opens the SAME rich method modal as the Monte Carlo tab's
-                            Success Rate card (one component, one copy — rule 8).
-                            This was an InfoDot with one sentence, so the hero ⓘ
-                            never reached the real explanation of how the number is
-                            made. Trigger mirrors InfoDot's round icon. */}
                         <SimMethodModal
                           params={params}
                           withdrawalStrategy={withdrawalStrategy}
@@ -19215,14 +15428,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         />
                       </div>
                     </div>
-                    {/* design-authority (2026-09-17): was an inline expand/collapse
-                        panel below the hero card. Moved into an InfoModal so the
-                        interpretive content (odds analogy + 26-person visual) is a
-                        proper "fun spot" — one click, no layout shift, dismissible —
-                        instead of pushing the tabs down every time it's open.
-                        RotatingAnalogue's own click-to-cycle still works inside the
-                        modal: InfoModal's card stops click propagation to the
-                        backdrop, so cycling an analogy never closes the dialog. */}
                     {mc && (
                       <span style={{ marginLeft: "auto" }}>
                         <InfoModal
@@ -19234,10 +15439,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                             </span>
                           }
                         >
-                          {/* 26-person visual leads — most legible "fun" per pixel,
-                              per design-authority. Dots sized to fit InfoModal's
-                              480px max width in one row (26 × 12px + 25 × 3px gap
-                              ≈ 387px, under the ~424px usable width). */}
                           {(() => {
                             const success = Math.round(mc.rate * 26);
                             const fail = 26 - success;
@@ -19272,8 +15473,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                               </div>
                             );
                           })()}
-                          {/* Odds analogy second, fully interactive — click cycles
-                              through every analogy in the same probability band. */}
                           {analogue && (
                             <div style={{ borderTop: "1px solid var(--tint-white-08)", paddingTop: 12 }}>
                               <div style={{ fontSize: "var(--fs-small)", color: "var(--text-muted)", marginBottom: 6 }}>Put another way</div>
@@ -19284,51 +15483,15 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                       </span>
                     )}
                   </div>
-                  {/* Row 2 — secondary metrics, one line: portfolio at plan age and the
-                      spend target. Withdrawal rate moved to the verdict strip as its own
-                      card, and the strategy-detail strip was removed, so this row carries
-                      no strategy copy. */}
                   <div style={{ fontSize: "var(--fs-body)", color: "var(--text-muted)", marginTop: 11, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 12px" }}>
-                    {/* `mc.medR` is the median portfolio at the start of
-                        retirement (runMC captures portAtRetire before the
-                        drawdown loop), so showing it under "at age
-                        {endAge}" reported the wrong metric entirely — the
-                        balance before a single withdrawal, labeled as the
-                        balance after a full retirement. medR is still
-                        correct on the "Portfolio at Retirement" card.
-                        Routed through selectPortfolioAtAge() at this
-                        label's own age (endAge) rather than reading
-                        mc.term.p50 straight off runMC — mc.term reflects
-                        the survivor-extended plan horizon when one is
-                        modeled, which isn't always endAge, so reading it
-                        directly could show a different age than the one
-                        printed right next to it. Follows the Real-$ toggle
-                        and names its basis with the same label as the
-                        percentile row on the Forecast tab, so the two medians
-                        are the same figure. */}
                     <span title="Median projected portfolio value left at your plan age, across all simulated paths.">
                       <strong style={{ color: "var(--text-secondary)" }}>{mc ? fmtDollar(selectPortfolioAtAge(mc, endAge, { retireAge: retAge, real, inf }) ?? 0) : "—"}</strong> at age {endAge} <span style={{ fontSize: "var(--fs-label)", opacity: 0.75 }}>({dollarBasisLabel(real, retirementBasisYear(params.currentAge, retAge, CURRENT_YEAR)).toLowerCase()})</span>
                     </span>
                     {sep}
-                    {/* This is params.sp — the spending target the user
-                        typed — divided by 12. The engine doesn't solve for
-                        it. Labeling it "safe spend" claimed a number the
-                        app had computed and certified, when all it does is
-                        echo the input back; the success rate to the left
-                        is what says whether the target holds. "Your
-                        target" is the honest frame.
-
-                        It's also after tax. runMC sizes the portfolio draw
-                        as `need + totalTax` (~line 1538) — tax is an
-                        additional draw on top of the spend target, never
-                        netted out of it — so this is money that reaches
-                        the household to spend. Nothing said so before,
-                        which is why it needed saying. */}
                     <span title="Your spending target — the figure you entered, shown monthly. This is money to spend AFTER tax: the engine withdraws enough extra from the portfolio to cover the tax bill on top of this amount, so taxes are not taken out of it. Covered by Social Security, rental and other income first, then your portfolio draw. The success rate on the left is what tells you whether this target holds.">
                       <strong style={{ color: "var(--accent)" }}>${(Math.round(params.sp / 12)).toLocaleString()}/mo</strong> your spend target <span style={{ fontSize: "var(--fs-label)", opacity: 0.75 }}>(after tax)</span>
                     </span>
                   </div>
-                  {/* Sector / life-phase badge — lower far right, aligned under the toggle. */}
                   {analogue && (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, marginTop: 10 }}>
                       <span style={{ fontSize: "var(--fs-small)", fontWeight: 700, color: "var(--text-muted)" }}>Current life phase</span>
@@ -19339,11 +15502,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               );
             })()}
 
-            {/* THE VERDICT, before the tabs. The brief's §7 test — answer "am I
-                okay?" in 30s without clicking — fails when the answer lives
-                inside a tab below a Run button. This strip is above every tab,
-                so the four headline answers are on screen the moment a run
-                exists, whichever tab the user lands on. */}
             <VerdictHeader
               mc={mc}
               real={real}
@@ -19383,14 +15541,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
               <>
                 {activeTab === "montecarlo" && (
                   <>
-                    {/* Monte Carlo's two views, in the app's own tab language:
-                        the teal UNDERLINE (`.tab.on`), not a new segmented
-                        control. Vincent, 2026-09-24: a filled pill track was a
-                        fourth tab idiom in an app whose established one is the
-                        underline — consistency wins over my hierarchy argument.
-                        Subordinate to the top-level bar by SIZE (12.5px vs 13px)
-                        and by FILL (the top bar tints its active tab; this one
-                        does not), so the levels still read as levels. */}
                     <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap", borderBottom: "1px solid var(--divider)", marginBottom: 12 }}>
                     <div role="tablist" aria-label="Monte Carlo views" style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
                       {[["simulation", "Simulation"], ["guardrails", "Guardrails"]].map(([k, label]) => {
@@ -19422,8 +15572,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         );
                       })}
                     </div>
-                      {/* Run details share the sub-tab row: path count, sampling
-                          window, the method pop-up and Advanced Settings. */}
                       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "4px 14px", flexWrap: "wrap", padding: "4px 0", fontSize: "var(--fs-small)", color: "var(--text-muted)" }}>
                         <span>
                           {(() => {
@@ -19475,13 +15623,7 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                           }));
                           updateAssumption("accounts", scaledAccounts);
                         }
-                        // Changing the baseline is an input edit like any
-                        // other: it marks the results stale and waits for the
-                        // Run button, rather than racing a run against state
-                        // that hasn't committed yet.
                       }}
-                      // The chart and the age table are placed BY the tab (chart first,
-                      // table after the explanation) rather than stacked after it.
                       chart={mc && (
                       <FanChart
                         // eslint-disable-next-line no-restricted-properties -- FanChart deflates the whole array itself; see noRawMcAccess.test.js.
@@ -19495,17 +15637,12 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         earlyRetireTarget={assumptions.earlyRetireTarget}
                         dob={assumptions.dob}
                         portfolioGoal={assumptions.portfolioGoal}
-                        // Derived age, not assumptions.currentAge — that
-                        // stored field never changes when the birthday
-                        // does, so the fan kept plotting the old age (and
-                        // the accumulation ramp and "you are here" dot with it).
                         currentAge={currentAge}
                         currentPort={params.port}
                         contrib={params.contrib}
                         hhProfile={params}
                         preRetireEq={params.preRetireEq ?? 91}
                         hoveredAge={hoveredAge}
-                        // The age-by-age table is the chart card's "Table" view.
                         table={(
                       <MCBandTable
                         embedded
@@ -19515,22 +15652,11 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                         useReal={real}
                         ssAge={assumptions.ssAge}
                         rmdAge={rmdAge}
-                        // Same fix: this feeds the table's calendar-year
-                        // column (yr = CURRENT_YEAR + age - currentAge),
-                        // so a stale age shifted every year in the table
-                        // by the difference.
                         currentAge={currentAge}
                         endAge={endAge}
                         hoveredAge={hoveredAge}
                         onHoverAge={setHoveredAge}
-                        // Path count is user-adjustable (⚙ Advanced Settings),
-                        // so the Success Count column reads mc.N rather than the
-                        // MC_PATHS constant — otherwise a 500-path run would
-                        // print "3,000" beside every row.
                         totalPaths={mc.N}
-                        // Phase boundary: the effective retirement age, the same
-                        // clamp the engines use (an already-retired user's phase
-                        // flips at today, not at a stale entered age).
                         retireAge={effectiveRetireAge(params.retireAge, params.currentAge)}
                       />
                         )}
@@ -19545,9 +15671,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                           Your withdrawal strategy raises or cuts spending as markets move, keeping the plan funded.
                           The dashed bands are your spending floor and ceiling; ▲/▼ mark the years an adjustment fired.
                         </div>
-                        {/* GuardrailsView returns null for a strategy that has no guardrails, which
-                            would leave a blank tab with no explanation — the same dead-end the
-                            competitor's empty columns create. Say why instead. */}
                         {isGuardrailStrategy(assumptions.withdrawalStrategy) ? (
                           <GuardrailsView p={params} inf={inf} withdrawalStrategy={assumptions.withdrawalStrategy} mc={mc} topRule={false} />
                         ) : (
@@ -19619,7 +15742,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
                     rmdAge={rmdAge}
                   />
                 )}
-                {/* AiraAITab is dormant — integration target is inside ActionPlanTab (above), not as its own tab. */}
                 {activeTab === "assumptions" && (
                   <>
                   <ProfileWizard
@@ -19696,10 +15818,8 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
         </div>
       </div>
 
-      {/* Admin panel (hidden; activate via ?aira_admin=1) */}
       <AdminPanel />
 
-      {/* Purchase / account-restore toast (success + failure) */}
       {recoveryLink && (
         <RecoveryLinkModal
           url={recoveryLink.url}
@@ -19710,10 +15830,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
       {stripeToast && (
         <div style={{
           position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
-          // Amber is its own state, not a shade of success. A payment
-          // that went through but hasn't yet delivered is neither "done"
-          // nor "failed," and showing it green would tell someone staring
-          // at a paywall that everything worked.
           background: stripeToast.tone === "err"
             ? "rgba(220,38,38,0.97)"
             : stripeToast.tone === "warn"
@@ -19722,8 +15838,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
           color: "white",
           borderRadius: 8, padding: "10px 20px", fontSize: "var(--fs-body)", fontWeight: 600,
           boxShadow: "0 4px 16px var(--tint-black-40)", zIndex: 99999,
-          // Clickable when it carries an email address to act on; the success
-          // and error toasts stay click-through as before.
           pointerEvents: stripeToast.tone === "warn" ? "auto" : "none",
           maxWidth: "min(92vw, 560px)", textAlign: "center",
           lineHeight: 1.45,
@@ -19732,7 +15846,6 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
         </div>
       )}
 
-      {/* Terms of Service Modal */}
       {showTerms && (
         <div
           style={{
@@ -19876,30 +15989,9 @@ const mortgagePayoffYear = mortgageSched.payoffYr;
           stress={stress}
           rmdAge={rmdAge}
           onClose={() => setShowReport(false)}
-          // Paywall gate. `!reportCapable` always wins: the report stays
-          // locked on any deployment whose server doesn't have
-          // GEMINI_API_KEY configured, regardless of BILLING_ENABLED —
-          // closes the "flip one source-level boolean and self-host it
-          // free" loophole (BILLING_ENABLED=false used to unconditionally
-          // unlock, since the report's data is 100% client-computed and
-          // BILLING_ENABLED isn't a real secret). On my real deployment
-          // reportCapable is true and behavior is unchanged:
-          // BILLING_ENABLED=false still opens the report free for
-          // local/dev convenience; BILLING_ENABLED=true gates on
-          // useReportUnlocked(), which reconciles against the ledger —
-          // this used to read a localStorage flag, so editing one value
-          // granted access and clearing it caused a second 250-credit
-          // charge for a window already owned. A server-verified owner
-          // reads the real report with no purchase prompt. This also
-          // bypasses `reportCapable` on purpose: proving ADMIN_SECRET is
-          // strictly stronger evidence of being the operator than the
-          // GEMINI_API_KEY probe it replaces.
           locked={ownerVerified ? false : (!reportCapable || (BILLING_ENABLED && !reportUnlocked))}
         />
       )}
-      {/* Says why the report is unlocked, so an owner preview can never
-          be mistaken for what a paying customer sees. Sits above the
-          report overlay (z-index 20000 in PrintReport's own CSS). */}
       {showReport && mc && ownerVerified && (
         <div style={{
           position: "fixed", top: 10, left: "50%", transform: "translateX(-50%)",

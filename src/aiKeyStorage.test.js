@@ -1,5 +1,3 @@
-// The AI key is a credential: it must never sit inside the saved profile (which
-// gets exported and shared). Covers save, load, legacy migration, and omit-safety.
 import { saveProfileToLocal, BLANK_PROFILE } from "./App";
 
 const PROFILE_KEY = "aira_profile_v1";

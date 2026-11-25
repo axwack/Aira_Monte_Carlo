@@ -1,19 +1,6 @@
-/**
- * rothConversionPlan.test.js
- *
- * Tests for buildConversionPlan (needs_schedule / recommendedSchedule) and
- * checkRothWithdrawalPenalty (5-year conversion rule).
- *
- * Key invariant: recommendedSchedule[0].amount must equal
- * buildWithdrawalWaterfall(params).smart.rows[0].conversionAmount — the
- * Withdrawal Schedule tab's "Roth Conv" figure for year 0. This is the
- * cross-tab consistency the Conversion Plan numbers must satisfy.
- */
-
 import { buildConversionPlan, checkRothWithdrawalPenalty, buildConversionLadder } from "./engine/rothConversionPlan.js";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 
-// Sample retirement profile used to validate cross-tab consistency
 const TEST_PROFILE = {
   currentAge: 56, retireAge: 60, endAge: 85, sp: 110000, ssAge: 62, ssb: 30696,
   filingStatus: "mfj", stateOfResidence: "NJ", twoHousehold: false,
@@ -58,7 +45,6 @@ describe("buildConversionLadder — Conversion Plan tab matches Withdrawal Sched
   });
 
   test("a manual override is reflected in the ladder's conv and capReason", () => {
-    // TEST_PROFILE retires at 60 (currentAge 56), so the simulation starts in BASE_YEAR + 4.
     const yr = 2031;
     const p = { ...TEST_PROFILE, conversionOverrides: [{ year: yr, amount: 50_000 }] };
     const ladder = buildConversionLadder(p, "fill_22");
@@ -110,8 +96,6 @@ describe("buildConversionPlan — needs_schedule reasons", () => {
   });
 
   test("small pretax balance relative to headroom: headroomTooSmall is false when conversion can't exceed pretax", () => {
-    // Tiny pretax (e.g. $5,000) — headroom this year is capped at the pretax balance,
-    // so headroomYear0 ≈ totalTraditional, which is NOT < 20% of itself.
     const p = {
       ...TEST_PROFILE,
       accounts: [
@@ -161,7 +145,7 @@ describe("checkRothWithdrawalPenalty — 5-year conversion rule", () => {
       conversionHistory: [{ date: "2026-06-01", amount: 50_000 }],
     });
     expect(result.penalty_due).toBe(true);
-    expect(result.penaltyAmount).toBe(3_000); // 10% of 30,000
+    expect(result.penaltyAmount).toBe(3_000);
     expect(result.flaggedConversions).toHaveLength(1);
   });
 
@@ -177,17 +161,15 @@ describe("checkRothWithdrawalPenalty — 5-year conversion rule", () => {
   });
 
   test("FIFO ordering: withdrawal draws from oldest conversion first", () => {
-    // Older conversion (2024) is past its 5-year window by 2030; newer (2029) is not.
     const result = checkRothWithdrawalPenalty({
       withdrawalDate: "2030-01-01",
       withdrawalAmount: 40_000,
       ageAtWithdrawal: 50,
       conversionHistory: [
-        { date: "2024-01-01", amount: 30_000 }, // clock starts 2024-01-01, clear by 2029
-        { date: "2029-06-01", amount: 30_000 }, // clock starts 2029-01-01, not clear until 2034
+        { date: "2024-01-01", amount: 30_000 },
+        { date: "2029-06-01", amount: 30_000 },
       ],
     });
-    // First 30K comes from the 2024 conversion (clean), remaining 10K from 2029 (flagged)
     expect(result.penalty_due).toBe(true);
     expect(result.flaggedConversions).toHaveLength(1);
     expect(result.flaggedConversions[0].amountAffected).toBe(10_000);

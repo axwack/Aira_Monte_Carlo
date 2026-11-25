@@ -1,4 +1,3 @@
-// Stress Lab gap tests: pre-retirement return, sequence replay, failed-path drill-down.
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { runMC, historicalSequence, SequenceBuilder, FailedPathPanel } from "./App";
@@ -13,12 +12,9 @@ const P = {
     { id: "2", category: "cash", name: "Cash", balance: 100_000 },
   ],
 };
-// Retired-at-65 plan that fails often (for drill-down).
 const FAIL = { ...P, currentAge: 65, retireAge: 65, endAge: 95, sp: 120_000, ssb: 30_000, port: 1_000_000 };
 
 describe("pre-retirement return", () => {
-  // Captured from the pre-Stress-Lab commit c412186 (N=400, seed 42, GK on), then re-captured on 2026-11-14
-  // after spending began using the PRIOR year's inflation (inflPrev), and again on 2026-11-23 for the CMS 2027 IRMAA table. A blank rate must still equal "no feature".
   const BASE = { rate: 0.99, medR: 2403223, term: { p10: 2578499, p25: 5976693, p50: 11663708, p75: 22091820, p90: 37614217, mean: 16824665 } };
   const sig = (r) => ({ rate: r.rate, medR: r.medR, term: r.term });
 
@@ -255,7 +251,6 @@ describe("Stress Lab panels render", () => {
     act(() => a.root.unmount());
     const f = runMC(FAIL, 95, 200, 42, true, null, false, true).failures;
     const b = mount(<FailedPathPanel failures={f} n={200} />);
-    // Starts collapsed: the summary shows, the table does not, until the title is clicked.
     expect(b.host.textContent).toMatch(/simulated paths ran out of money/);
     expect(b.host.querySelectorAll("tbody tr").length).toBe(0);
     act(() => { b.host.querySelector("button[aria-expanded]").click(); });
@@ -266,11 +261,10 @@ describe("Stress Lab panels render", () => {
 });
 
 test("a flat pre-retirement rate leaves the retirement-year market draws unchanged", () => {
-  // Accumulates 55 -> 60, then overspends, so the single path always fails and keeps its rows.
   const plan = { ...P, retireAge: 60, sp: 400_000 };
   const stocks = (v) => runMC({ ...plan, preRetireReturn: v }, 90, 1, 7, false, null, false, true).failures.worst.rows.map((r) => r.stock);
   const [flat, blank] = [stocks(6), stocks("")];
-  const n = Math.min(flat.length, blank.length); // the richer plan may run out later
+  const n = Math.min(flat.length, blank.length);
   expect(n).toBeGreaterThan(3);
   expect(flat.slice(0, n)).toEqual(blank.slice(0, n));
 });

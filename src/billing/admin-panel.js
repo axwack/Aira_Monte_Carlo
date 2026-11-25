@@ -1,18 +1,8 @@
-/**
- * admin-panel.js — Hidden admin panel for testing the Stripe billing integration.
- *
- * Activation: add ?aira_admin=1 to the app URL.
- * The panel is only rendered when that param is present — invisible to normal users.
- *
- * All server calls go to /api/admin and require the ADMIN_SECRET you set
- * as a Cloudflare Pages env var (or in .dev.vars locally).
- */
-
 import { useState, useCallback, useEffect } from "react";
 import { syncCreditBalance, getStoredJWT } from "./credits.js";
 
 const JWT_KEY        = "airaJWT.v1";
-const ADMIN_CFG_KEY  = "aira_admin_cfg.v1";  // localStorage only — never committed
+const ADMIN_CFG_KEY  = "aira_admin_cfg.v1";
 
 function loadAdminCfg() {
   try {
@@ -33,14 +23,6 @@ export function useAdminMode() {
   return new URLSearchParams(window.location.search).has("aira_admin");
 }
 
-/* Owner verification (drives the un-nagged report preview).
- * `?aira_admin=1` alone can't unlock anything — the param name ships in the
- * bundle, so a client-side-only check would hand every reader a free
- * 250-credit report. The flag below only gets set after /api/admin answers
- * "ok" to a `ping` carrying ADMIN_SECRET, which is a server-side env var and
- * isn't in the bundle. It lives in memory, never persisted, so it has to be
- * re-earned by the auto-connect ping on every page load.
- */
 let ownerVerified = false;
 const ownerListeners = new Set();
 
@@ -50,7 +32,6 @@ function setOwnerVerified(v) {
   ownerListeners.forEach(fn => { try { fn(v); } catch {} });
 }
 
-/** True once the admin secret has been verified by the server this session. */
 export function useOwnerVerified() {
   const [v, setV] = useState(ownerVerified);
   useEffect(() => {
@@ -62,31 +43,6 @@ export function useOwnerVerified() {
 }
 
 async function adminCall(secret, action, params = {}) {
-  // A rejected fetch (DNS, offline, TLS, blocked request) used to propagate
-  // out of here. The section handlers do `setLoading(true); await
-  // adminCall(...)` with no try/catch, so the throw skipped
-  // `setLoading(false)` and left the button stuck on "…" rendering nothing —
-  // a silent hang that looked like "no response". So this always resolves to
-  // a result object, so the UI can show something even when the request
-  // never left the browser.
-  //
-  // Sanitize the pasted secret before it reaches fetch. Two paste hazards
-  // here, both of which used to show up as an unexplained failure:
-  //
-  //   1. A character outside ISO-8859-1 (a smart quote, an em dash, an
-  //      ellipsis) makes fetch refuse to build the request — "String
-  //      contains non ISO-8859-1 code point" — so nothing is sent and the
-  //      panel just looks like it's hung. Copying from formatted text (a
-  //      doc, a chat window) is enough to cause this.
-  //   2. A non-breaking space (U+00A0) is valid ISO-8859-1 though, so it
-  //      sails through that check and gets sent — then fails the server's
-  //      exact comparison and returns a bare "Unauthorized", indistinguishable
-  //      from a wrong password.
-  //
-  // So: trim outer whitespace including NBSP and zero-width characters
-  // (never meaningful in a secret, always a paste artifact), then reject
-  // anything left that a header can't carry — and say why, instead of just
-  // failing.
   const clean = String(secret ?? "").replace(/^[\s ​-‍﻿]+|[\s ​-‍﻿]+$/g, "");
   if (!clean) return { ok: false, error: "No secret entered." };
   const bad = [...clean].find((ch) => ch.charCodeAt(0) > 0x7e || ch.charCodeAt(0) < 0x21);
@@ -117,11 +73,6 @@ async function adminCall(secret, action, params = {}) {
            + `Check you are on the deployed site or wrangler pages dev, and that the deployment finished.`,
     };
   }
-  // A non-JSON body means we did not reach the Function at all. The overwhelming
-  // cause is running under `npm start`: react-scripts serves only src/, so
-  // /api/* returns the SPA's 404 HTML and this used to surface as a bare
-  // "HTTP 404" — indistinguishable from a wrong secret. That ambiguity cost real
-  // debugging time twice in one session, so it now says what happened.
   const data = await res.json().catch(() => ({
     ok: false,
     error: res.status === 404
@@ -131,8 +82,6 @@ async function adminCall(secret, action, params = {}) {
   if (!res.ok && data.ok === undefined) return { ok: false, error: `HTTP ${res.status}` };
   return data;
 }
-
-// ── Styles ────────────────────────────────────────────────────────────────────
 
 const S = {
   overlay: {
@@ -171,17 +120,6 @@ const S = {
   },
 };
 
-// ── Timestamps ────────────────────────────────────────────────────────
-// Every timestamp in D1 is an INTEGER unixepoch (db/schema.sql). Dumped straight
-// into JSON that renders as a bare 10-digit number, which no one can read — a
-// dispute trace had to be run from the wrangler CLI with datetime() wrapped round
-// every column because the panel's own output was useless. Format at the point of
-// display, once, here.
-//
-// Local time, not UTC: this is an operator tool and the operator is comparing
-// these rows against a Stripe dashboard and a customer's email, both of which
-// speak local time. The zone is named next to the value so a screenshot pasted
-// into a dispute response is unambiguous about which clock it is on.
 const ADMIN_TZ = (() => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "local"; }
   catch { return "local"; }
@@ -202,8 +140,6 @@ function fmtEpoch(sec) {
   }
 }
 
-// The question an operator actually asks of a support timestamp is "how long
-// ago", not "what date" — shown alongside the absolute value, never instead of it.
 function fmtAgo(sec) {
   const n = Number(sec);
   if (sec == null || !Number.isFinite(n)) return "";
@@ -218,8 +154,6 @@ function fmtAgo(sec) {
   if (days < 60)       return `${days}d ago`;
   return `${Math.floor(days / 30)}mo ago`;
 }
-
-// ── Sub-components ────────────────────────────────────────────────────────────
 
 function ResultBox({ data }) {
   if (!data) return null;
@@ -245,8 +179,6 @@ function Field({ label, value, onChange, type = "text", placeholder }) {
   );
 }
 
-// ── Section: Auth ─────────────────────────────────────────────────────────────
-
 function AuthSection({ secret, setSecret, onPing, loading, result }) {
   return (
     <div>
@@ -261,8 +193,6 @@ function AuthSection({ secret, setSecret, onPing, loading, result }) {
     </div>
   );
 }
-
-// ── Section: Stripe Ping ──────────────────────────────────────────────────────
 
 function StripePingSection({ secret, disabled }) {
   const [overrideKey, setOverrideKey] = useState("");
@@ -294,8 +224,6 @@ function StripePingSection({ secret, disabled }) {
     </div>
   );
 }
-
-// ── Section: Simulate Purchase ────────────────────────────────────────────────
 
 function SimulatePurchaseSection({ secret, disabled }) {
   const [email, setEmail]     = useState(() => loadAdminCfg().testEmail || "");
@@ -345,8 +273,6 @@ function SimulatePurchaseSection({ secret, disabled }) {
   );
 }
 
-// ── Section: Grant Credits ────────────────────────────────────────────────────
-
 function GrantCreditsSection({ secret, disabled }) {
   const [email, setEmail]     = useState(() => loadAdminCfg().testEmail || "");
   const [credits, setCredits] = useState("5000");
@@ -379,14 +305,6 @@ function GrantCreditsSection({ secret, disabled }) {
   );
 }
 
-// ── Section: Issue Restore Link ───────────────────────────────────────────────
-// The endpoint has supported `issue-restore-link` since restore tokens existed,
-// but nothing in this panel called it — so the one support task that actually
-// arrives from customers ("I lost my credits") could only be done by hand with
-// curl, which on Windows means fighting PowerShell quoting for a routine job.
-// Copy button included because the whole output is a URL you have to paste
-// somewhere else, and selecting it out of a JSON blob is where mistakes happen.
-
 function RestoreLinkSection({ secret, disabled }) {
   const [email, setEmail]   = useState(() => loadAdminCfg().testEmail || "");
   const [result, setResult] = useState(null);
@@ -397,10 +315,6 @@ function RestoreLinkSection({ secret, disabled }) {
 
   const run = async () => {
     setLoading(true); setResult(null); setCopied(false);
-    // days/maxUses left at the endpoint's defaults (14 days, 3 uses): a
-    // support-issued link is a one-off remedy, unlike the customer's own
-    // recovery link minted at checkout, which is deliberately long-lived.
-    // A `cus_` id goes as customerId: needed when several customers share an email.
     const id = email.trim();
     const r = await adminCall(secret, "issue-restore-link",
       id.startsWith("cus_") ? { customerId: id } : { email: id });
@@ -447,15 +361,10 @@ function RestoreLinkSection({ secret, disabled }) {
           </div>
         </div>
       )}
-      {/* Errors and the ambiguous-email 409 (which returns `candidates`) still
-          need the raw view — that is the case where you must re-run with an
-          explicit customerId. */}
       {result && !result.url && <ResultBox data={result} />}
     </div>
   );
 }
-
-// ── Section: Inspect ──────────────────────────────────────────────────────────
 
 function CustomerCard({ customer }) {
   const disputed  = customer.status === "disputed";
@@ -547,10 +456,6 @@ function InspectSection({ secret, disabled }) {
 
   const run = async () => {
     setLoading(true); setResult(null);
-    // The endpoint has always accepted either key, but the panel only ever sent
-    // `email` — so a Stripe customer id, which is what a dispute notification
-    // actually hands you, could not be looked up here at all. Route on the
-    // `cus_` prefix Stripe guarantees.
     const id = who.trim();
     const r = await adminCall(secret, "inspect",
       id.startsWith("cus_") ? { customerId: id } : { email: id });
@@ -581,15 +486,10 @@ function InspectSection({ secret, disabled }) {
           <TxnTable txns={result.transactions} />
         </>
       )}
-      {/* Not-found and error paths keep the raw view — that is where the
-          unformatted payload (candidates, D1 errors, the id that missed) is
-          the thing you need to read. */}
       {result && !found && <ResultBox data={result} />}
     </div>
   );
 }
-
-// ── Section: Clear local state ────────────────────────────────────────────────
 
 function LocalStateSection() {
   const [msg, setMsg] = useState(null);
@@ -605,7 +505,7 @@ function LocalStateSection() {
   const clearAdminCfg = () => {
     try {
       localStorage.removeItem(ADMIN_CFG_KEY);
-      setOwnerVerified(false);   // drops the un-nagged report preview too
+      setOwnerVerified(false);
       setMsg("Admin config cleared — secret and email wiped.");
     } catch (e) { setMsg("Error: " + e.message); }
   };
@@ -628,8 +528,6 @@ function LocalStateSection() {
   );
 }
 
-// ── Main export ───────────────────────────────────────────────────────────────
-
 export function AdminPanel() {
   const active = useAdminMode();
   const [open, setOpen]             = useState(true);
@@ -640,7 +538,6 @@ export function AdminPanel() {
 
   const handleSecret = v => { setSecret(v); saveAdminCfg({ adminSecret: v }); };
 
-  // Auto-connect on mount if a saved secret exists
   useEffect(() => {
     const saved = loadAdminCfg().adminSecret;
     if (saved && active) {
@@ -678,8 +575,6 @@ export function AdminPanel() {
           <SimulatePurchaseSection secret={secret} disabled={!authed} />
           <GrantCreditsSection secret={secret} disabled={!authed} />
           <InspectSection      secret={secret} disabled={!authed} />
-          {/* Inspect first, then issue — confirm you have the right customer
-              before handing out a bearer credential to their credits. */}
           <RestoreLinkSection  secret={secret} disabled={!authed} />
           <LocalStateSection />
         </div>

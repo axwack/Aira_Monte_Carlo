@@ -1,5 +1,3 @@
-// features.test.js — Pure logic tests for new AiRA features
-
 import {
   BLANK_PROFILE,
   getStrategyLabel,
@@ -15,8 +13,6 @@ describe('Withdrawal Strategy Dynamic Text', () => {
     expect(getStrategyLabel('gk')).toBe('Guyton‑Klinger');
     expect(getStrategyLabel('fixed')).toBe('Fixed Percentage');
     expect(getStrategyLabel('vpw')).toBe('VPW (Variable Percentage)');
-    // Retired ids keep their labels — a migration notice and a saved report
-    // both have to be able to name what the user used to have.
     expect(getStrategyLabel('vanguard')).toBe('Vanguard Dynamic Spending');
     expect(getStrategyLabel('unknown')).toBe('unknown');
   });
@@ -29,8 +25,6 @@ describe('Withdrawal Strategy Dynamic Text', () => {
   });
 
   test('getStrategyDescription resolves a retired id instead of falling through', () => {
-    // Retired ids have no description of their own; they must describe the
-    // strategy the plan will ACTUALLY run, not silently default to GK's text.
     RETIRED_IDS.forEach(s => {
       expect(getStrategyDescription(s)).toBe(getStrategyDescription(resolveStrategy(s)));
       expect(getStrategyDescription(s).length).toBeGreaterThan(10);
@@ -40,10 +34,6 @@ describe('Withdrawal Strategy Dynamic Text', () => {
 
 describe('Portfolio Checkpoints', () => {
   test('checkpoint age calculation from dob and checkpoint date', () => {
-    // Mid-year DOB avoids the `new Date('1970-01-01')` timezone edge case
-    // (which parses as UTC midnight → Dec 31 1969 local in a west-of-UTC
-    // timezone → age computed as 57 instead of 56). Also exercises the
-    // "birthday not yet passed" decrement branch.
     const dob = '1970-06-15';
     const checkpointDate = '2026-04-20';
     const birth = new Date(dob);
@@ -147,32 +137,14 @@ describe('Profile Import/Export', () => {
     expect(merged.checkpoints).toEqual([]);
   });
 
-  /* Progress check-ins (LS_CHECKINS_KEY) are NOT part of `assumptions`, so the
-   * "spread everything so nothing is silently omitted" export missed them
-   * entirely: exporting a profile, moving machines and importing it dropped the
-   * whole journal without a word. The only export that carried them was a second
-   * button on the Progress tab.
-   *
-   * The two tests above did not catch it because they round-trip a hand-built
-   * literal through JSON.stringify rather than inspecting the payload the app
-   * actually writes — so they pass no matter what the export button omits. These
-   * read the real call site.
-   *
-   * Note `checkIns` (progress journal) is a different thing from `checkpoints`
-   * (portfolio value snapshots, which live in assumptions and always exported).
-   */
   const fs   = require('fs');
   const path = require('path');
   const SRC  = fs.readFileSync(path.join(__dirname, 'App.jsx'), 'utf8');
 
   test('the export payload carries the progress check-ins', () => {
-    // Anchored on the BUTTON, not on `exportProfile(` — that string also matches
-    // the function definition ~10k lines earlier, and the resulting slice sweeps
-    // up an unrelated `checkIns,` prop destructure, so the assertion would pass
-    // whatever the export omits. An inert guard is worse than none.
     const i = SRC.indexOf('title="Export profile to JSON"');
     expect(i).toBeGreaterThan(-1);
-    const j = SRC.indexOf('</button>', i); // end of the Export button
+    const j = SRC.indexOf('</button>', i);
     expect(j).toBeGreaterThan(i);
     expect(SRC.slice(i, j)).toMatch(/^\s*checkIns,\s*$/m);
   });
@@ -182,8 +154,6 @@ describe('Profile Import/Export', () => {
     expect(i).toBeGreaterThan(-1);
     const handler = SRC.slice(i, i + 2000);
     expect(handler).toContain('data.checkIns');
-    // Merge, not replace: a profile imported onto a machine with its own journal
-    // must not wipe entries that exist only there.
     expect(handler).toContain('handleImportCheckIns');
     expect(handler).not.toMatch(/setCheckIns\(\s*data\.checkIns\s*\)/);
   });
@@ -219,7 +189,6 @@ describe('Success Rate Tooltip', () => {
     expect(tooltip).toContain(endAge.toString());
   });
 });
-// ─── Progress check-ins (v1.1.0.31) ────────────────────────────────────────────
 
 describe('Progress check-ins — storage + rendering', () => {
   const { loadCheckIns, saveCheckIns, ProgressTab } = require('./App');
@@ -271,21 +240,12 @@ describe('Progress check-ins — storage + rendering', () => {
     expect(div.textContent).toContain('Check-in history');
   });
 
-  /* ONE export. Check-ins ride in the profile export (see the Profile
-   * Import/Export suite above), so the Progress tab's own "Export progress"
-   * button — which emitted a different file shape, AiRA_Progress_*.json — was a
-   * second thing to remember to click and a second format to keep in step.
-   *
-   * IMPORT stays, and stays tolerant: users still have the old files on disk.
-   * Removing an export is safe; removing the only reader for files already
-   * written is not. */
   test('the Progress tab no longer offers a second, separate export', () => {
     const checkIns = [
       { id: 'ci_1', ts: '2026-01-05T12:00:00Z', successRate: 0.85, port: 700_000, sp: 70_000, retireAge: 62, endAge: 90, medianTerminal: 900_000 },
     ];
     const div = renderToDiv(React.createElement(ProgressTab, { checkIns, onDelete: () => {} }));
     expect(div.textContent).not.toContain('Export progress');
-    // ...and says where it went, rather than leaving a hole where a button was.
     expect(div.textContent).toContain('Included in');
     expect(div.textContent).toContain('Import progress');
   });
@@ -299,18 +259,10 @@ describe('Progress check-ins — storage + rendering', () => {
     const fs   = require('fs');
     const path = require('path');
     const SRC  = fs.readFileSync(path.join(__dirname, 'App.jsx'), 'utf8');
-    // Matched on EXECUTABLE syntax — a call, and the download assignment — rather
-    // than on the bare names, which the comment explaining the removal mentions.
-    // Stripping comments first was the obvious alternative and the wrong one: a
-    // regex comment-stripper run over 15k lines of JSX trips on `/*`-shaped
-    // sequences inside strings and regex literals, and a guard that mis-parses is
-    // a guard you cannot trust.
     expect(SRC).not.toMatch(/exportCheckInsFile\s*\(/);
     expect(SRC).not.toMatch(/download\s*=\s*[`'"]AiRA_Progress_/);
   });
 });
-
-// ─── Plan shape + progress import/export (v1.2.4) ──────────────────────────────
 
 describe('Plan shape scores + check-in merge', () => {
   const { planShapeScores, mergeCheckIns } = require('./App');
@@ -319,9 +271,9 @@ describe('Plan shape scores + check-in merge', () => {
     const s = planShapeScores({ successRate: 0.9, stressRate: 0.75, retireAge: 62.5, sp: 40_000, port: 1_000_000, medianTerminal: 500_000 });
     expect(s.confidence).toBe(90);
     expect(s.resilience).toBe(75);
-    expect(s.retireBy).toBe(50);          // (75 − 62.5) / 25 × 100
-    expect(s.spend).toBe(100);            // 4% × $1M = $40K = target → capped at 100
-    expect(s.legacy).toBe(50);            // $500K / $1M
+    expect(s.retireBy).toBe(50);
+    expect(s.spend).toBe(100);
+    expect(s.legacy).toBe(50);
   });
 
   test('planShapeScores clamps to [0,100] and tolerates missing fields', () => {
@@ -348,11 +300,6 @@ describe('Plan shape scores + check-in merge', () => {
   });
 });
 
-// ─── Age input bounds (v1.2.40) ────────────────────────────────────────────────
-// A user reported Social Security "capped at 68". These lock the statutory
-// claiming window so no future UI edit can silently narrow it again — the same
-// way the retire-age slider once capped at 68 while the wizard allowed 100.
-
 describe('AGE_LIMITS — statutory Social Security claiming window', () => {
   const { AGE_LIMITS } = require('./App');
 
@@ -373,11 +320,6 @@ describe('AGE_LIMITS — statutory Social Security claiming window', () => {
     }
   });
 });
-
-// ─── InfoIcon (v1.2.42) ────────────────────────────────────────────────────────
-// The Unicode "ⓘ" it replaces rendered at whatever weight and baseline the
-// resolving font chose, so it looked thin and misaligned at 10-11px. These lock
-// the vector in: no font dependency, scales, and inherits colour.
 
 describe('InfoIcon — SVG info affordance', () => {
   const { InfoIcon, InfoDot } = require('./App');
@@ -412,19 +354,10 @@ describe('InfoIcon — SVG info affordance', () => {
     expect(div.innerHTML).toContain('currentColor');
   });
 
-  // InfoDot used to expose its explanation through a `title=` attribute. That
-  // assertion had to change with the component: `title=` renders nothing on
-  // many desktop setups and cannot be opened at all on touch, so InfoDot now
-  // triggers the click-open InfoModal. The contract worth testing is therefore
-  // "the explanation is reachable by click", not "a title attribute exists" —
-  // asserting the old attribute would pin the bug in place.
   test('InfoDot exposes its explanation through a click, not a dead title attribute', () => {
     const div = renderToDiv(React.createElement(InfoDot, { title: 'Explains the number' }));
-    // Still renders the SVG affordance.
     expect(div.querySelector('svg')).not.toBeNull();
-    // No title= on the trigger any more — that was the unreachable pattern.
     expect(div.querySelector('[title="Explains the number"]')).toBeNull();
-    // Clicking the trigger opens the dialog, and the explanation is readable.
     const trigger = div.querySelector('span');
     expect(trigger).not.toBeNull();
     act(() => { trigger.dispatchEvent(new MouseEvent('click', { bubbles: true })); });

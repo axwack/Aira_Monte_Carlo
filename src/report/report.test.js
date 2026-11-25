@@ -1,21 +1,7 @@
-/**
- * PrintReport smoke tests — pure render-to-string checks (no RTL in this repo,
- * see banner.test.js / computations.test.js for the established convention of
- * either source-text checks or lightweight rendering). react-dom/server's
- * renderToStaticMarkup gives a synchronous, dependency-free way to render the
- * component tree and assert on the resulting HTML string.
- */
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import PrintReport, { formatMoney, IS_PLACEHOLDER } from "./PrintReport";
 
-// The real printable report is not part of the public repository (REQUIREMENTS §20):
-// what ships here is a placeholder with the same export shape, so `npm run build`
-// stays green for anyone who clones this. These assertions describe the PAID
-// report's content, so against the placeholder they would fail for an expected,
-// by-design reason — and a suite that is permanently red for a non-bug trains you
-// to stop reading it. Skip instead, loudly, and run in full wherever the private
-// implementation is present (it does not export IS_PLACEHOLDER).
 const describeReport = IS_PLACEHOLDER ? describe.skip : describe;
 
 if (IS_PLACEHOLDER) {
@@ -138,26 +124,11 @@ describeReport("PrintReport", () => {
       );
       expect(html).not.toMatch(/Print \/ Save as PDF/);
       expect(html).toMatch(/Printable Report/);
-      // Sold as a product now: a dollar price leads, the credit route is the
-      // secondary offer. Charging credits for a document that burns zero tokens
-      // priced it in a currency that means AI usage.
       expect(html).toMatch(/\$9\.00/);
       expect(html).toMatch(/Buy the report/);
       expect(html).toMatch(/no expiry/);
     });
 
-    // The paywall used to render every section and merely add a `pr-blurred`
-    // CSS class, so deleting one class in devtools revealed the whole report.
-    // Since every figure is computed client-side, withholding the MARKUP is the
-    // only gate that actually holds. These assert exactly that.
-    //
-    // NOTE: don't assert on /pr-blurred/ — PRINT_CSS is rendered inline in a
-    // <style> block, so that string is always present regardless of the class
-    // actually applied. The original test matched the stylesheet, not the DOM,
-    // and so could never have failed.
-    // Matched as <h2> specifically: the teaser intentionally NAMES these
-    // sections to sell the unlock, so bare-text matching would hit the teaser's
-    // own labels. Only a real rendered section emits the <h2>.
     const PAID_HEADINGS = [
       /<h2>Will the Money Last\?/,
       /<h2>Stress Test/,
@@ -184,8 +155,6 @@ describeReport("PrintReport", () => {
       const html = renderToStaticMarkup(
         <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={true} />
       );
-      // Nothing is withheld by showing the user their own inputs, and it makes
-      // the preview read as a real document rather than an error state.
       expect(html).toMatch(/Retirement Plan Report/);
       expect(html).toMatch(/Assumptions/);
       expect(html).toMatch(/Included in the full report/);
@@ -208,18 +177,6 @@ describeReport("PrintReport", () => {
       expect(html).toMatch(/Close/);
     });
 
-    // REGRESSION (v1.2.115): print produced a completely blank page.
-    // PRINT_CSS hides the rest of the SPA with `body * { display: none }`, but
-    // `body *` also matches #root — the overlay's own ancestor — and
-    // `display:revert` on a descendant cannot resurrect a subtree whose
-    // ancestor is display:none. The stylesheet hid the report it was trying to
-    // reveal. Verified against real Chrome: without the restore below the
-    // printed PDF is 1 empty page; with it, the full report paginates.
-    //
-    // Asserted on the stylesheet text (not the DOM) deliberately — jsdom does
-    // not evaluate @media print, so the rendered markup cannot show this. The
-    // ordering assertion is the part that matters: the restore MUST come after
-    // the blanket hide or the cascade drops it again.
     test("print CSS restores the overlay's ancestor chain after hiding the app", () => {
       const html = renderToStaticMarkup(
         <PrintReport params={BASE_PARAMS} mc={BASE_MC} stress={BASE_STRESS} rmdAge={75} buildTag="[test] v0.0.0.0" locked={false} />

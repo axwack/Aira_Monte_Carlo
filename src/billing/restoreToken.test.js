@@ -1,17 +1,3 @@
-/**
- * Tests for the account-restore client path (redeemRestoreToken).
- *
- * Context: a customer's JWT is minted once, at the Stripe redirect, and lives
- * only in that browser's localStorage. On 2026-07-26 a missing D1 table made
- * verify-session 503 on every purchase, so paying customers ended up with
- * credits in D1 they could never reach — and no login existed to recover them.
- * redeemRestoreToken is the recovery path: an admin-issued link that swaps an
- * opaque token for a JWT.
- *
- * These assert the client contract. Server-side atomicity (expiry + use cap
- * enforced in one UPDATE) lives in functions/api/restore.js.
- */
-
 import { redeemRestoreToken, getStoredJWT, clearStoredJWT, getCreditBalance } from "./credits.js";
 
 const JWT_KEY = "airaJWT.v1";

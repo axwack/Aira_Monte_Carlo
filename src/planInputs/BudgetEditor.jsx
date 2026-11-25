@@ -1,9 +1,6 @@
 import React from "react";
 
 const EMPTY_LINE = { category: "", frequency: "Monthly", mustSpend: "", likeToSpend: "" };
-// This editor feeds the recurring detailed-budget parser. One-off costs belong
-// in Planned One-Off Expenses; parseExpenseCsv treats unknown frequencies as
-// annual, so exposing "One-time" here would silently repeat the expense.
 const frequencies = ["Monthly", "Quarterly", "Annually"];
 
 function updateLine(lines, index, field, value) {
@@ -32,7 +29,6 @@ export function lineError(line) {
   return "";
 }
 
-/** Serialize editor rows into the CSV shape accepted by parseExpenseCsv. */
 export function budgetLinesToCsv(lines = []) {
   return ["Category,Frequency,Must Spend,Like to Spend", ...lines.map((line) => [
     line.category || "",

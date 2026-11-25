@@ -1,19 +1,8 @@
-/**
- * Disclaimers must not disappear.
- *
- * The owner's exposure concern is being perceived as giving financial advice.
- * The two surfaces that most resemble advice — a success probability, and a
- * year-by-year schedule saying how much to take from which account — carry an
- * inline notice, and the footer carries an app-wide one. A refactor that moves
- * or rewrites those components could drop them silently, and nothing else in
- * the suite would notice, so this asserts on the source directly.
- */
 const fs = require("fs");
 const path = require("path");
 
 const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
 
-/** Body of a top-level `function Name(` up to the next top-level function. */
 function bodyOf(name) {
   const start = SRC.indexOf(`function ${name}(`);
   expect(start).toBeGreaterThan(-1);
@@ -28,27 +17,15 @@ describe("advice disclaimers are present", () => {
     expect(body).toContain('role="note"');
   });
 
-  // The notice is collapsed by default (four lines of amber on every results
-  // tab was a lot of prime screen). That makes the ALWAYS-VISIBLE line the
-  // thing that has to carry the warning — so assert its two load-bearing hooks
-  // are in the default summary, not only in the expandable long form. Without
-  // this, a future edit could hollow the summary out to "Not financial advice."
-  // and move every other word behind the toggle, which is the version a
-  // regulator would call a buried disclosure.
   test("the always-visible short form carries the warning on its own", () => {
     const body = bodyOf("SectionDisclaimer");
-    // The default summary string (used when a section passes none).
     expect(body).toMatch(/Hypothetical model projections, not predictions/);
     expect(body).toMatch(/Consult a licensed professional before acting/);
-    // And it is a real control, not a tooltip: a button with aria-expanded.
     expect(body).toContain("aria-expanded={open}");
     expect(body).toMatch(/Full disclosure/);
   });
 
   test("Monte Carlo results carry an inline disclaimer", () => {
-    // v1.2.144: the disclaimer text moved out of MCTab into McTabDisclaimer so it
-    // renders at the very bottom of the Monte Carlo tab (after the fan chart +
-    // band table) instead of mid-page. Still present, still mounted on the tab.
     expect(bodyOf("McTabDisclaimer")).toContain("<SectionDisclaimer>");
     expect(SRC).toContain("<McTabDisclaimer");
   });
@@ -75,14 +52,6 @@ describe("advice disclaimers are present", () => {
   });
 });
 
-/**
- * The AI prompts and the AI output surface.
- *
- * "Fiduciary" is a legal term of art naming a duty of loyalty and care this
- * product does not assume. It sat in the system prompt of a PAID feature, in
- * two files, which both undercuts the disclaimers elsewhere and invites the
- * model to phrase output as advice. These lock the replacement in.
- */
 describe("AI analysis does not claim to be advice", () => {
   const CLIENT = fs.readFileSync(path.join(__dirname, "ai/ai-analysis.js"), "utf8");
   const SERVER = fs.readFileSync(
@@ -95,8 +64,6 @@ describe("AI analysis does not claim to be advice", () => {
   };
 
   test("no prompt calls Aira a fiduciary", () => {
-    // The word legitimately appears in the comment explaining its removal, so
-    // strip comment lines and assert only on live code.
     const codeOnly = (src) => src.split("\n")
       .filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l))
       .join("\n");
@@ -119,7 +86,6 @@ describe("AI analysis does not claim to be advice", () => {
   test("generated output carries an inline notice wherever it renders", () => {
     expect(CLIENT).toContain("function AiOutputNotice()");
     expect(CLIENT).toMatch(/AI-generated — not financial advice/);
-    // Every block that renders model output must include it.
     const rendered = (CLIENT.match(/<AiOutputNotice \/>/g) || []).length;
     expect(rendered).toBeGreaterThanOrEqual(5);
   });

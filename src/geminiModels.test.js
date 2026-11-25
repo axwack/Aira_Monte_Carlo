@@ -1,27 +1,5 @@
-/**
- * Gemini model selection.
- *
- * Reported: "Gemini 404 — this model models/gemini-2.5-flash is no longer
- * available to new users." The id was hardcoded, and Google retires ids PER
- * AUDIENCE: it kept working for the project that shipped it and 404'd for every
- * new key, so it was invisible in the author's own testing while breaking every
- * new user.
- *
- * Two defences, both tested here:
- *   1. Defaults are rolling "-latest" aliases Google repoints, so a retirement
- *      is an upgrade rather than an outage.
- *   2. The dropdown is built from a live ListModels call, filtered to models we
- *      can actually send an analysis prompt to.
- *
- * The filter is the part that needed real data. `generateContent` is also
- * supported by text-to-speech, image, computer-use and custom-tools variants, so
- * a suffix-shaped filter let `gemini-2.5-flash-preview-tts`,
- * `gemini-3.1-flash-image` and `gemini-2.5-computer-use-preview-10-2025` through
- * as candidate analysis engines. The ids below are a real ListModels response.
- */
 import { MODEL_IS_TEXT_ANALYSIS, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, GEMINI_PRICING } from './ai/ai-analysis.js';
 
-// Verbatim from a live GET /v1beta/models (2026-08), generateContent only.
 const LIVE_IDS = [
   'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-preview-tts',
   'gemini-2.5-pro-preview-tts', 'gemini-flash-latest', 'gemini-flash-lite-latest',
@@ -43,13 +21,13 @@ describe('MODEL_IS_TEXT_ANALYSIS — against a real ListModels response', () => 
   });
 
   test.each([
-    'gemini-2.5-flash-preview-tts',            // speech, not analysis
-    'gemini-2.5-flash-image',                  // "Nano Banana"
+    'gemini-2.5-flash-preview-tts',
+    'gemini-2.5-flash-image',
     'gemini-3.1-flash-image',
     'gemini-3.1-flash-lite-image',
     'gemini-3-pro-image',
-    'gemini-3.1-pro-preview-customtools',      // survived the old suffix filter
-    'gemini-2.5-computer-use-preview-10-2025', // ditto — dated suffix after "preview"
+    'gemini-3.1-pro-preview-customtools',
+    'gemini-2.5-computer-use-preview-10-2025',
     'gemini-robotics-er-2-preview',
   ])('rejects %s', (id) => {
     expect(MODEL_IS_TEXT_ANALYSIS(id)).toBe(false);
@@ -87,7 +65,6 @@ describe('MODEL_IS_TEXT_ANALYSIS — against a real ListModels response', () => 
 
 describe('shipped defaults', () => {
   test('the default is a rolling alias, not a pinned version', () => {
-    // A dated id here is the bug this whole suite exists for.
     expect(DEFAULT_GEMINI_MODEL).toMatch(/-latest$/);
   });
 

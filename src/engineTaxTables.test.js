@@ -1,16 +1,3 @@
-/**
- * 2026 tax-table boundaries, checked against the federal source that produced them.
- *
- * Source: IRS Rev. Proc. 2025-32 (tax year 2026)
- *   https://www.irs.gov/pub/irs-drop/rp-25-32.pdf
- *   - §.01 / Tables 1 and 3: rate brackets
- *   - §.03: maximum zero-rate and 15%-rate capital-gain amounts
- *   - §.14(3): additional standard deduction for the aged
- *
- * These are the only assertions that fail if a published figure is typed in
- * wrong, so they are the guard for every later year's re-indexing.
- */
-
 import {
   FED_BRACKETS_2026_MFJ,
   FED_BRACKETS_2026_SINGLE,
@@ -63,11 +50,6 @@ describe("2026 standard deduction — Rev. Proc. 2025-32 §.14", () => {
   });
 });
 
-// ── IRMAA 2026 surcharge (Part B + Part D) ────────────────────────────────────
-// Source: CMS, "2026 Medicare Parts A & B Premiums and Deductibles", 14 Nov 2025.
-// Part B per person per month: 81.20 / 202.90 / 324.60 / 446.30 / 487.00
-// Part D per person per month: 14.50 /  37.50 /  60.40 /  83.30 /  91.00
-// f is the annual two-person total, so per person per month = f / 24.
 import { IRMAA_2026 } from "./data/irmaa2026.js";
 import { irmaaCost } from "./App.jsx";
 
@@ -90,7 +72,6 @@ describe("IRMAA 2026 — Part B + Part D, CMS fact sheet", () => {
     }
   });
 
-  // CMS prints tiers 1-4 as "greater than $X": MAGI exactly at a ceiling pays nothing. The top tier is "greater than or equal".
   test("a MAGI exactly at a tier ceiling pays the tier below; one dollar more pays the tier", () => {
     expect(irmaaCost(218000, 2026, 0, true)).toBe(0);
     expect(irmaaCost(218001, 2026, 0, true)).toBe(2297);
@@ -103,10 +84,6 @@ describe("IRMAA 2026 — Part B + Part D, CMS fact sheet", () => {
   });
 });
 
-// ── IRMAA 2027 surcharge (Part B + Part D) ────────────────────────────────────
-// Source: CMS, "2027 Medicare Parts A & B Premiums and Deductibles", 17 Nov 2026.
-// Part B per person per month: 83.70 / 209.40 / 335.00 / 460.60 / 502.40
-// Part D per person per month: 15.40 /  39.70 /  64.00 /  88.30 /  96.40
 import { IRMAA_2027, irmaaTableFor } from "./data/irmaa2027.js";
 
 describe("IRMAA 2027 — Part B + Part D, CMS fact sheet", () => {
@@ -143,7 +120,6 @@ describe("IRMAA 2027 — Part B + Part D, CMS fact sheet", () => {
     expect(irmaaCost(750000, 2027, 0, true)).toBe(14371);
     expect(irmaaCost(112000, 2027, 0, false)).toBe(0);
     expect(irmaaCost(500000, 2027, 0, false)).toBe(7186);
-    // 2028 at 3% inflation: 2027 tier-1 floor x 1.03, surcharge x 1.03
     expect(irmaaCost(224000 * 1.03 + 1, 2028, 0.03, true)).toBe(Math.round(2378.4 * 1.03));
   });
 });

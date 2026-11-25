@@ -1,5 +1,3 @@
-// Monte Carlo properties — TASKS 2026-10-30 item 3, the runMC half.
-// Imports App's exported engine; edits nothing outside this file.
 import { runMC } from "./App";
 
 const P = {
@@ -53,7 +51,7 @@ describe("failed paths", () => {
       for (let i = 0; i < rows.length - 1; i++) {
         expect(rows[i].end).toBeGreaterThanOrEqual(0);
       }
-      expect(rows.at(-1).end).toBeLessThanOrEqual(1);   // the year it ran out
+      expect(rows.at(-1).end).toBeLessThanOrEqual(1);
       expect(rows.at(-1).age).toBe(f.exhaustAge);
     }
   });

@@ -1,6 +1,5 @@
 import { ABOUT_FEATURES } from "./about.js";
 
-// Help entries: the shape the Help modal's search and the future source check rely on.
 describe("ABOUT_FEATURES help entries", () => {
   test("every id is a unique lowercase slug (no spaces)", () => {
     const ids = ABOUT_FEATURES.map((e) => e.id);

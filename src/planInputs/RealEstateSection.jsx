@@ -63,7 +63,6 @@ function PropertyCard({ property, index, total, onUpdate, onRemove }) {
   );
 }
 
-/** Controlled Plan Inputs editor for properties and the primary mortgage. */
 export default function RealEstateSection({ properties: suppliedProperties, mortgage = {}, onUpdateProperty, onAddProperty, onRemoveProperty, onMortgageChange }) {
   const properties = suppliedProperties?.length ? suppliedProperties : [DEFAULT_PROPERTY];
   const primary = properties[0];

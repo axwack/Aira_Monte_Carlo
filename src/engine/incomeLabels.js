@@ -1,9 +1,3 @@
-/**
- * User-facing labels and provenance copy for the Income/Expenses view.
- *
- * This module deliberately contains no React and no engine math. It exists so
- * the chart legend, row labels, and future "not entered" state do not drift.
- */
 export const INCOME_LABELS = Object.freeze({
   savingsDrawdown: "Savings & 401(k)/IRA Drawdown",
   socialSecurity: "Social Security",
@@ -42,10 +36,6 @@ export const EXPENSE_TOOLTIPS = Object.freeze({
   capitalGainsTax: "Capital gains tax is not separately modeled in this chart; realized taxable-account gains are included in Income Tax.",
 });
 
-/**
- * Display a value without implying that an omitted input is a real zero.
- * Callers should pass entered=true when the user explicitly entered zero.
- */
 export function displayRow(label, amount, { entered = amount !== null && amount !== undefined } = {}) {
   if (!entered && (amount === null || amount === undefined || Number(amount) === 0)) {
     return "—";

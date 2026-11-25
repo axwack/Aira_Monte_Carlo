@@ -1,19 +1,10 @@
-/**
- * ACA Premium Tax Credit model — §16 / §17 Phase 1.
- *
- * Hand-calculated against TAX_REFERENCE.md → "ACA Premium Tax Credit". The point
- * of this engine is to stop the conversion planner recommending a conversion that
- * destroys more subsidy than it saves in tax, so the properties that matter are:
- * the cliff sits exactly where the law puts it, the marginal cost of the next
- * dollar is right, and both regimes are modelled rather than one being assumed.
- */
 import {
   federalPovertyLevel, applicablePercentage, computeAcaSubsidy,
   acaMagiCeiling, marginalSubsidyCost,
   FPL_TABLE, FPL_BASE_YEAR, CLIFF_PCT,
 } from './engine/aca.js';
 
-const Y = FPL_BASE_YEAR;   // no inflation indexing in the base year
+const Y = FPL_BASE_YEAR;
 
 describe('federalPovertyLevel', () => {
   test('single person, contiguous US, matches the published table', () => {
@@ -57,7 +48,6 @@ describe('applicablePercentage', () => {
   });
 
   test('interpolates linearly inside a band, as the statute defines it', () => {
-    // Enhanced 200–250% runs 2.0% → 4.0%; the midpoint must be 3.0%.
     expect(applicablePercentage(225, false)).toBeCloseTo(0.03, 6);
   });
 
@@ -73,13 +63,13 @@ describe('applicablePercentage', () => {
 
 describe('computeAcaSubsidy', () => {
   const BASE = { householdSize: 2, state: 'NJ', benchmarkPremium: 18_000, year: Y, cliffReturns: true };
-  const fpl2 = 15_650 + 5_500;   // $21,150
+  const fpl2 = 15_650 + 5_500;
 
   test('PTC = benchmark − applicable% × MAGI (hand-calculated)', () => {
-    const magi = fpl2 * 3;                       // exactly 300% FPL
+    const magi = fpl2 * 3;
     const r = computeAcaSubsidy({ ...BASE, magi });
     expect(r.fplPct).toBeCloseTo(300, 6);
-    expect(r.applicablePct).toBeCloseTo(0.0996, 6);   // statutory 300–400% flat
+    expect(r.applicablePct).toBeCloseTo(0.0996, 6);
     expect(r.ptc).toBeCloseTo(18_000 - 0.0996 * magi, 4);
     expect(r.netPremium).toBeCloseTo(0.0996 * magi, 4);
   });
@@ -96,8 +86,6 @@ describe('computeAcaSubsidy', () => {
   test('no cliff under the enhanced regime — the same income keeps a credit', () => {
     const over = computeAcaSubsidy({ ...BASE, cliffReturns: false, magi: fpl2 * 6 });
     expect(over.overCliff).toBe(false);
-    // 8.5% of a large MAGI exceeds the benchmark, so the credit is zero — but by
-    // the formula, not by a cliff. The distinction matters for the guard.
     expect(over.reason).not.toBe('over_cliff');
   });
 
@@ -140,8 +128,6 @@ describe('acaMagiCeiling — what the conversion sizer caps against', () => {
   });
 
   test('enhanced: Infinity — never invent a ceiling the law does not have', () => {
-    // A guard that caps here would under-convert for no reason: with no cliff the
-    // cost is smooth and belongs in the marginal price, not a hard limit.
     expect(acaMagiCeiling({ householdSize: 2, cliffReturns: false })).toBe(Infinity);
   });
 });
@@ -151,7 +137,6 @@ describe('marginalSubsidyCost — the number §17 needs', () => {
   const fpl2 = 15_650 + 5_500;
 
   test('inside a flat band the cost per dollar equals the applicable percentage', () => {
-    // 300–400% is flat at 9.96%, so each extra MAGI dollar costs 9.96c of subsidy.
     const r = marginalSubsidyCost({ ...BASE, magi: fpl2 * 3.2 }, 1_000);
     expect(r.costPerDollar).toBeCloseTo(0.0996, 4);
     expect(r.crossesCliff).toBe(false);
@@ -161,8 +146,6 @@ describe('marginalSubsidyCost — the number §17 needs', () => {
     const justUnder = fpl2 * 4 - 500;
     const r = marginalSubsidyCost({ ...BASE, magi: justUnder }, 1_000);
     expect(r.crossesCliff).toBe(true);
-    // Losing the entire remaining credit for $1,000 of extra income — the exact
-    // trade the planner must never make blindly.
     expect(r.subsidyLost).toBeGreaterThan(1_000);
     expect(r.costPerDollar).toBeGreaterThan(1);
   });

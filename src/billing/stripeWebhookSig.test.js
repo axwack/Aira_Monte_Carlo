@@ -1,23 +1,3 @@
-/**
- * Regression tests for verifyStripeWebhook (functions/_shared/jwt.js).
- *
- * Why this file exists: production shipped a verifier that stripped the
- * "whsec_" prefix off the endpoint secret before using it as the HMAC key.
- * Stripe signs with the FULL secret string, so every real delivery of
- * checkout.session.completed failed signature verification and returned 400.
- * Stripe retried, kept failing, and no purchase was ever credited to D1 —
- * customers were charged and got nothing. The endpoint looked healthy to every
- * probe that didn't carry a genuine Stripe signature.
- *
- * The guard below signs a payload exactly the way Stripe's official Node SDK
- * does (`createHmac('sha256', secret)` over `${timestamp}.${rawBody}`, secret
- * passed verbatim) and asserts the verifier accepts it. Any future change that
- * transforms the secret before importing it as a key will fail test 1.
- *
- * Runs under CRA's jest (jsdom), which lacks WebCrypto's subtle and TextEncoder,
- * so both are polyfilled from node: builtins before the assertions execute.
- */
-
 import { createHmac, webcrypto } from "node:crypto";
 import { TextEncoder as NodeTextEncoder } from "node:util";
 import { verifyStripeWebhook } from "../../functions/_shared/jwt.js";
@@ -37,7 +17,6 @@ const RAW_BODY = JSON.stringify({
 
 const nowTs = () => Math.floor(Date.now() / 1000);
 
-/** Sign the way Stripe does: HMAC-SHA256 over `${t}.${body}`, key = full secret. */
 function stripeSignature(rawBody, timestamp, secret = SECRET) {
   return createHmac("sha256", secret).update(`${timestamp}.${rawBody}`, "utf8").digest("hex");
 }
@@ -82,8 +61,6 @@ describe("verifyStripeWebhook — signature parity with Stripe", () => {
   test("6. accepts a multi-signature header (Stripe sends v1 more than once during secret rotation)", async () => {
     const t = nowTs();
     const good = stripeSignature(RAW_BODY, t);
-    // Stripe's format during rotation: t=...,v1=<old>,v1=<new>. Object.fromEntries
-    // keeps the LAST v1, so put the valid one last to match how the parser reads it.
     const header = `t=${t},v1=${"0".repeat(64)},v1=${good}`;
     await expect(verifyStripeWebhook(RAW_BODY, header, SECRET)).resolves.toBeUndefined();
   });

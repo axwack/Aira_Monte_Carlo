@@ -1,16 +1,3 @@
-/**
- * Joint & Last Survivor RMD Divisors (IRS Pub 590-B Table II)
- *
- * Generated from IRS Publication 590-B, Appendix B, Table II:
- * IRS Publication 590-B, Appendix B, Table II (Joint Life and Last Survivor Expectancy), https://www.irs.gov/pub/irs-pdf/p590b.pdf
- *
- * Source data: .agents/ds/irs-table2-joint.json
- *
- * Two-dimensional matrix keyed by owner age AND spouse age. Use
- * jointRmdDivisor(ownerAge, spouseAge) to look up a value -- it
- * enforces the IRS "spouse more than 10 years younger" rule.
- */
-
 export const JOINT_RMD_TABLE_II = {
   72: {
     20: 65.1,
@@ -3346,7 +3333,6 @@ export const JOINT_RMD_TABLE_II = {
   },
 };
 
-// Lookup helper - enforces the IRS "spouse more than 10 years younger" rule.
 export function jointRmdDivisor(ownerAge, spouseAge) {
   if (spouseAge == null || !Number.isFinite(spouseAge)) {
     return null;
@@ -3356,7 +3342,6 @@ export function jointRmdDivisor(ownerAge, spouseAge) {
   if (!Number.isFinite(oa)) {
     return null;
   }
-  // IRS rule: spouse must be MORE than 10 years younger
   if (sa >= oa - 10) {
     return null;
   }

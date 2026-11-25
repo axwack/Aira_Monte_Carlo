@@ -1,13 +1,3 @@
-/**
- * Guards the ❓ Help topics' shared reading format.
- *
- * The Help modal renders each topic's `body` as authored HTML
- * (dangerouslySetInnerHTML), so the info-modal kit's rhythm — one bold lede,
- * then supporting paragraphs, then tinted notes — is expressed as the
- * `.help-*` classes in App.jsx. Nothing else enforces that shape: a new topic
- * pasted in as a single prose block would still render, just off-family.
- * These are the two invariants a reader actually notices.
- */
 import { ABOUT_FEATURES } from "./about.js";
 
 describe("help topic format", () => {
@@ -30,7 +20,7 @@ describe("help topic format", () => {
   });
 
   test("keeps the shipped topic set and its labels", () => {
-    expect(ABOUT_FEATURES.length).toBeGreaterThanOrEqual(28); // entries may be added, not silently lost
+    expect(ABOUT_FEATURES.length).toBeGreaterThanOrEqual(28);
     ABOUT_FEATURES.forEach((e) => {
       expect(typeof e.id).toBe("string");
       expect(e.id.length).toBeGreaterThan(0);

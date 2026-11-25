@@ -1,16 +1,3 @@
-/**
- * PrintReport.jsx
- *
- * Free-tier printable CFP/CPA-ready report. Renders a portal overlay with an
- * on-screen preview (Print/Close controls) plus a `.print-report` subtree that
- * is the ONLY thing visible when the browser's native print dialog runs
- * (window.print()) — no jsPDF, no server rendering, no new dependency.
- *
- * Data source: everything here is derived from data already in memory (the
- * live `params`/`mc`/`stress` the app just computed) — the report never
- * re-fetches or re-simulates anything except the withdrawal waterfall, which
- * is deterministic and cheap to recompute from `params`.
- */
 import React, { useMemo, useState } from "react";
 import { buildWithdrawalWaterfall } from "../engine/buildWithdrawalWaterfall.js";
 import { selectPortfolioAtAge } from "../engine/mcSelectors.js";
@@ -25,7 +12,6 @@ import {
   CreditPackModal,
 } from "../billing/credits.js";
 
-/* ── Local formatting helpers — full comma dollars, never k/M abbreviations ── */
 export function formatMoney(v) {
   if (v == null || isNaN(v)) return "—";
   const n = Math.round(v);
@@ -38,13 +24,6 @@ function formatPct(v, decimals = 1) {
   return `${(v * 100).toFixed(decimals)}%`;
 }
 
-/**
- * A local copy of App.jsx's getStrategyLabel — this module deliberately does
- * NOT import from ../App.jsx (App.jsx imports THIS file to render the Report
- * button/overlay, and importing back would create a circular module
- * dependency). Kept in sync by hand, same convention as
- * buildWithdrawalWaterfall.js's local realizedGainFor() copy.
- */
 function getStrategyLabelLocal(strategy) {
   const labels = {
     smart: "Smart Waterfall",
@@ -76,12 +55,10 @@ function bucketTotals(accounts = []) {
     if (a.category === "pretax") totals.pretax += bal;
     else if (a.category === "roth") totals.roth += bal;
     else if (a.category === "taxable") totals.taxable += bal;
-    else totals.cash += bal; // cash + hsa
+    else totals.cash += bal;
   }
   return totals;
 }
-
-/* ════════════════════════ Section components ════════════════════════ */
 
 function CoverSection({ params }) {
   const today = new Date().toLocaleDateString();
@@ -166,18 +143,6 @@ function MonteCarloSection({ mc, params }) {
   if (!mc) return null;
   const thisYear = new Date().getFullYear();
   const currentAge = params.currentAge;
-  // Terminal percentiles read through the shared selector, the same call the
-  // Overview cards and provenance.js use for "final balance" (see
-  // provenance.js `ov-median` / `ov-best-case`): the raw `mc.term` aggregate is
-  // a SEPARATE field from `mc.pcts` and can silently disagree with the
-  // age-by-age table rendered below from `mc.pcts` — that drift is exactly what
-  // .eslintrc.json's no-restricted-properties pair and
-  // src/noRawMcAccess.test.js exist to catch.
-  //
-  // No `real`/`inf` here on purpose: this report prints nominal dollars
-  // throughout (mc.medR, the age table), with `params.inf` shown as an
-  // assumption on the Assumptions page, so the selector's default nominal
-  // basis is what keeps the printed figures internally consistent.
   const termAt = (pct) =>
     selectPortfolioAtAge(mc, params.endAge, { retireAge: params.retireAge, pct });
   return (
@@ -398,21 +363,6 @@ function DisclaimerSection() {
   );
 }
 
-/* ════════════════════════ Locked-mode unlock panel ════════════════════════
- * Soft client-side gate, by design: the report's data is entirely computed
- * in the browser from state the app already holds — nothing here is DRM.
- * The only thing actually enforced server-side is the credit deduction in
- * POST /api/report-unlock (and, in future, any AI-generated narrative added
- * to the report). This panel just decides whether to render the blurred vs.
- * clear version and lets the user pay to flip that decision.
- */
-/**
- * Placeholder shown in place of the paid sections while locked.
- *
- * Deliberately lists what the report contains rather than blurring the real
- * thing: it leaks no figures, it can't be un-blurred, and naming the sections
- * sells the unlock better than a smear of illegible text does.
- */
 function LockedSectionsTeaser() {
   const sections = [
     ["Monte Carlo Results",        "Success rate across 3,000 paths, with percentile bands"],
@@ -470,15 +420,11 @@ function UnlockPanel({ onUnlocked }) {
     }
   };
 
-  // Buying the report outright. Led with, because it is what the visitor came
-  // for: the credits route makes someone who only wants a document first
-  // understand a token currency, buy a pack, and spend a slice of it — and this
-  // report burns no tokens at all.
   const handleBuyReport = async () => {
     setBusy(true);
     setError(null);
     try {
-      await purchaseReport();           // redirects to Stripe; page unloads
+      await purchaseReport();
     } catch (e) {
       setError(e.message || "Checkout failed — please try again.");
       setBusy(false);
@@ -496,8 +442,6 @@ function UnlockPanel({ onUnlocked }) {
           {busy ? "Opening checkout…" : `💳 Buy the report — $${REPORT_PRICE_USD.toFixed(2)}`}
         </button>
 
-        {/* The credit route stays for people who already hold a balance — removing
-            it would strand them mid-balance — but it is the secondary offer now. */}
         <div className="pr-unlock-alt">
           {!authed
             ? "Already have AiRA credits?"
@@ -536,7 +480,6 @@ function UnlockPanel({ onUnlocked }) {
   );
 }
 
-/* ════════════════════════ Print CSS ════════════════════════ */
 const PRINT_CSS = `
   .aira-print-overlay {
     position: fixed; inset: 0; background: rgba(15,23,42,0.78); z-index: 20000;
@@ -684,16 +627,6 @@ const PRINT_CSS = `
   }
 `;
 
-/**
- * Main export — the overlay + printable report. Rendered by App.jsx only when
- * `mc` exists (the caller gates the "📄 Report" button on `mc != null`).
- *
- * `locked` (soft client-side gate — see UnlockPanel comment above): when
- * true, the report content renders blurred/non-interactive and an unlock
- * panel takes the place of the Print button. Once the user successfully
- * calls unlockReport(), internal state flips the view to unlocked in place
- * without needing to close/reopen the overlay.
- */
 export default function PrintReport({ params = {}, mc, stress, rmdAge, onClose, locked = false }) {
   const waterfall = useMemo(() => buildWithdrawalWaterfall(params), [params]);
   const rows = waterfall?.smart?.rows ?? [];
@@ -715,17 +648,10 @@ export default function PrintReport({ params = {}, mc, stress, rmdAge, onClose, 
       </div>
       <div className="pr-report-wrap">
         <div className="print-report">
-          {/* Cover and Assumptions are the user's OWN inputs — nothing is
-              withheld by showing them, and they make the preview feel real. */}
           <CoverSection params={params} />
           <AssumptionsSection params={params} rmdAge={rmdAge} />
 
           {isLocked ? (
-            /* The paid sections are NOT rendered while locked. They used to be
-               emitted in full and merely CSS-blurred (`pr-blurred`), so deleting
-               one class in devtools revealed the entire report — the paywall was
-               decorative. Withholding the markup is the only version that holds,
-               since every figure is computed in the browser. */
             <LockedSectionsTeaser />
           ) : (
             <>

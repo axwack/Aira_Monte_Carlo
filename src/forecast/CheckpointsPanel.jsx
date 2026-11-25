@@ -2,39 +2,13 @@ import React, { useState } from "react";
 import { ageFromDob, parseCalendarDate } from "../engine/ages.js";
 import { selectPortfolioAtAge } from "../engine/mcSelectors.js";
 
-/**
- * "Portfolio checkpoints (actual vs. forecast)" — lifted out of `MCTab`.
- *
- * Props in, callbacks out: this module never imports `App.jsx`, and it holds no
- * source of truth. `checkpoints` is owned by the caller (profile field
- * `checkpoints`); every mutation leaves through a callback.
- *
- * WHAT CHANGED WHEN IT MOVED
- * --------------------------
- *  1. The three emoji-only row buttons (✏️ 🗑️ 📍) now carry text labels and
- *     `aria-label`s. Emoji alone is not an accessible name, and "📍" told a
- *     screen-reader user nothing about rolling every balance forward.
- *  2. "Set baseline" asks first, and says what it will do. It rewrites every
- *     account balance, so a one-click action next to Edit/Delete was a trap.
- *  3. Save explains itself. It used to `return` silently on an empty date or
- *     value, which reads as a broken button.
- *  4. When the table shows only the most recent rows, it says how many exist.
- *
- * `fmtDollar` is a prop on purpose: App.jsx owns that formatter, and a second
- * copy is how two surfaces start rounding differently.
- */
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const defaultFmtDollar = (n) => `$${Math.round(Number(n) || 0).toLocaleString("en-US")}`;
 
-/** The reason Save cannot proceed, or "" when it can. Order matters: the date is
- *  the field a user is most likely to leave empty. */
 export function checkpointError({ date, value } = {}) {
   if (!date) return "Add the date this balance was true.";
   if (!DATE_RE.test(String(date))) return "Use a date in YYYY-MM-DD form.";
-  // A shape check is not enough: "2020-13-99" matches the pattern. Compare the
-  // parsed date back to the parts so a month 13 or a day 99 is refused here
-  // rather than silently becoming some other day on the calendar.
   const [y, m, d] = String(date).split("-").map(Number);
   const parsed = parseCalendarDate(String(date));
   if (isNaN(parsed.getTime()) || parsed.getFullYear() !== y || parsed.getMonth() !== m - 1 || parsed.getDate() !== d) {
@@ -165,7 +139,6 @@ export default function CheckpointsPanel({
                   </button>
                 )}
               </div>
-              {/* Says WHY nothing happened. The old handler returned silently. */}
               {error && (
                 <div role="alert" style={{ marginTop: 8, fontSize: "var(--fs-small)", color: "#fca5a5" }}>{error}</div>
               )}
@@ -184,9 +157,6 @@ export default function CheckpointsPanel({
                 <tbody>
                   {shown.map((cp) => {
                     const age = ageFromDob(dob, cp.date);
-                    // real: false on purpose — cp.value is an actual balance on a
-                    // real date, so it is inherently nominal. Deflating only the
-                    // forecast side would compare it to a basis it was never in.
                     const p50AtAge = age !== null
                       ? (selectPortfolioAtAge(mc, age, { retireAge, real: false }) ?? 0)
                       : 0;
@@ -266,10 +236,6 @@ export default function CheckpointsPanel({
                         {isExpanded && (
                           <tr style={{ background: "rgba(99,102,241,0.05)" }}>
                             <td colSpan={7} style={{ padding: "10px 16px" }}>
-                              {/* A tinted panel rather than a thick accent rule on
-                                  one side. border-left >1px on a callout is the
-                                  detector's "side-tab" tell, and the tint already
-                                  separates this from the row above it. */}
                               <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7, fontStyle: "italic",
                                 background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.16)",
                                 borderRadius: 8, padding: "10px 12px" }}>

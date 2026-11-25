@@ -1,6 +1,3 @@
-// Engine edges — TASKS_2026-10-27 item 1 (prove-it pass).
-// Assertions use the real row keys: totalPort (year end), needFromPort, totalTax,
-// ss, spending, and the four *Start balances.
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 
 const BASE = {
@@ -52,23 +49,17 @@ describe("zero and negative inputs", () => {
   });
 
   test("a $0-spend plan draws nothing for spending (the GK floor must not invent it)", () => {
-    // Regression: the floor used to raise a $0 plan to gkFloor from year 2 on,
-    // so a cleared spending field silently drew ~$48k/yr. Found 2026-10-30.
     const r = rowsOf({ ...BASE, sp: 0, ssb: 0, ab: 0 });
     for (const row of r) {
       expect(row.spending).toBe(0);
       expect(row.needFromPort).toBe(0);
     }
-    // Healthcare risk is deliberately independent of planned spending: it
-    // starts at 75, which is why totalTax is not 0 here.
     const hc = r.filter((x) => x.healthcareRisk > 0);
     expect(hc.length).toBeGreaterThan(0);
     for (const row of hc) expect(row.needFromPort).toBe(0);
   });
 
   test("the GK floor still applies to a plan that does have spending", () => {
-    // The fix above must not disable the guardrail: $10k of planned spending
-    // with a $48k floor is raised toward the floor, not left at $10k.
     const r = rowsOf({ ...BASE, sp: 10_000 });
     expect(r[1].spending).toBeGreaterThanOrEqual(48_000);
   });
@@ -86,8 +77,6 @@ describe("zero and negative inputs", () => {
 });
 
 describe("spouse benefit timing", () => {
-  // Primary 65 (b. 1960), spouse two years younger: the spouse's own benefit must
-  // start on the spouse's clock (primary age 69), not ride the primary's claim age.
   const P = {
     ...BASE,
     currentAge: 65, retireAge: 65, endAge: 85,
@@ -106,8 +95,8 @@ describe("spouse benefit timing", () => {
   });
 
   test("the spouse's benefit adds at the spouse's own claim age", () => {
-    const before = at(68);   // spouse is 66
-    const after = at(69);    // spouse is 67
+    const before = at(68);
+    const after = at(69);
     expect(after - before).toBeGreaterThanOrEqual(18_000);
     expect(after - before).toBeLessThan(19_000);
   });

@@ -1,33 +1,7 @@
-/**
- * Contribution bucket-routing tests.
- *
- * Three correctness bugs these lock down:
- *
- *  1. runMC added EVERY contribution stream to `pretax`. Brokerage savings
- *     therefore became ordinary income on withdrawal instead of LTCG against a
- *     cost basis, and inflated the RMD base at rmdStartAge. There was also no
- *     way to express after-tax savings at all — the only advice was "add it to
- *     your 401(k) box", which is precisely what corrupts the tax model.
- *
- *  2. runMC bucketed accounts with `else if (category === "cash")`, silently
- *     DROPPING every "hsa"-category balance. BLANK_PROFILE ships an HSA account,
- *     and accumulateToRetirement already counted hsa as cash — so the two
- *     engines disagreed about the size of the portfolio.
- *
- *  3. accumulateToRetirement (the waterfall engine's starting balances) applied
- *     no contributions whatsoever, understating the retirement portfolio for
- *     every user still working — while its docstring promised agreement with
- *     runMC.
- *
- * Expected values are hand-calculated from the accumulation recurrence
- * (grow, then contribute), not copied from engine output.
- */
-
 import { accumulateToRetirement } from "./engine/buildWithdrawalWaterfall";
 
 const acct = (category, balance, id = category) => ({ id, category, name: category, balance });
 
-/** Closed-form: grow-then-contribute for n years at rate r. */
 function growThenContribute(balance0, contribution, r, n) {
   let b = balance0;
   for (let i = 0; i < n; i++) b = b * (1 + r) + contribution;
@@ -37,9 +11,9 @@ function growThenContribute(balance0, contribution, r, n) {
 describe("accumulateToRetirement — contribution routing", () => {
   const base = {
     currentAge: 50,
-    retireAge:  60,          // 10 accumulation years
-    gr:         0.05,        // pin growth so expectations are exact
-    cashRealReturn: 0,       // cash flat, isolates HSA contribution effect
+    retireAge:  60,
+    gr:         0.05,
+    cashRealReturn: 0,
     taxableBasisPct: 100,
   };
 
@@ -48,7 +22,6 @@ describe("accumulateToRetirement — contribution routing", () => {
     const with401 = accumulateToRetirement({ ...base, accounts: [acct("pretax", 100_000)], contrib: 10_000 });
 
     expect(with401.pretax0).toBeGreaterThan(without.pretax0);
-    // Hand-calc: 100k grown 10yr @5% with 10k added after each year's growth.
     expect(with401.pretax0).toBeCloseTo(growThenContribute(100_000, 10_000, 0.05, 10), 2);
   });
 
@@ -69,9 +42,9 @@ describe("accumulateToRetirement — contribution routing", () => {
     const asPretax  = accumulateToRetirement({ ...base, accounts: [acct("pretax", 0)], contrib: 20_000 });
     const asTaxable = accumulateToRetirement({ ...base, accounts: [acct("pretax", 0), acct("taxable", 0)], taxableContrib: 20_000 });
 
-    expect(asTaxable.pretax0).toBe(0);                 // nothing forced into RMDs
-    expect(asTaxable.taxable0).toBeCloseTo(asPretax.pretax0, 2);  // same dollars, different bucket
-    expect(asTaxable.total).toBeCloseTo(asPretax.total, 2);       // total portfolio unchanged
+    expect(asTaxable.pretax0).toBe(0);
+    expect(asTaxable.taxable0).toBeCloseTo(asPretax.pretax0, 2);
+    expect(asTaxable.total).toBeCloseTo(asPretax.total, 2);
   });
 
   test("brokerage contributions add cost basis one-for-one; growth does not", () => {
@@ -79,9 +52,7 @@ describe("accumulateToRetirement — contribution routing", () => {
       ...base, accounts: [acct("taxable", 0)], taxableContrib: 10_000,
     });
 
-    // 10 contributions of $10k = $100k of after-tax dollars in.
     expect(r.taxableBasis0).toBeCloseTo(100_000, 2);
-    // Balance exceeds basis by exactly the unrealized growth.
     expect(r.taxable0).toBeGreaterThan(r.taxableBasis0);
     expect(r.taxable0 - r.taxableBasis0).toBeCloseTo(growThenContribute(0, 10_000, 0.05, 10) - 100_000, 2);
   });
@@ -91,16 +62,10 @@ describe("accumulateToRetirement — contribution routing", () => {
       ...base, accounts: [acct("taxable", 50_000)],
       taxableBasisPct: 60, taxableContrib: 1_000,
     });
-    // 60% of today's $50k = $30k, plus 10 × $1k of new after-tax dollars.
     expect(r.taxableBasis0).toBeCloseTo(30_000 + 10_000, 2);
   });
 
   test("HSA contributions grow at the equity glidepath rate, then fold into cash0", () => {
-    // HSA previously shared cashRealReturn with the "cash" category, silently
-    // understating HSA growth for every user through accumulation. It now
-    // grows at `gr` like pretax/roth/taxable, and is folded into cash0 only
-    // at the return boundary — so cash0 here reflects gr (0.05), not the
-    // cashRealReturn (0) pinned in `base`.
     const r = accumulateToRetirement({
       ...base, accounts: [acct("hsa", 0)], hsaContrib: 4_000,
     });
@@ -130,9 +95,6 @@ describe("accumulateToRetirement — contribution routing", () => {
   });
 
   test("HSA-only balance outgrows pure cashGr compounding under the real equity glidepath", () => {
-    // Same scenario, but through the actual preRetireEq/postRetireEq path
-    // (no `gr` override) — the regression this guards against is HSA quietly
-    // sharing the safe cash rate instead of the equity glidepath.
     const r = accumulateToRetirement({
       currentAge: 50, retireAge: 60,
       preRetireEq: 91, postRetireEq: 70, cashRealReturn: 3.0,

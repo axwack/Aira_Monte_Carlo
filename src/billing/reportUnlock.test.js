@@ -1,11 +1,3 @@
-/**
- * reportUnlock.test.js — client-side report paywall gate
- * (REPORT_COST_CREDITS, unlockReport(), isReportUnlocked())
- *
- * Follows the source-text-check convention established in banner.test.js
- * (reads App.jsx as raw text) to guard the "keep in sync" comment between
- * src/billing/credits.js and functions/api/report-unlock.js.
- */
 const fs = require("fs");
 const path = require("path");
 
@@ -53,13 +45,13 @@ describe("isReportUnlocked()", () => {
   });
 
   test("returns true for a fresh (future) unlock window", () => {
-    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // +1h
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     localStorage.setItem(REPORT_UNLOCK_KEY, JSON.stringify({ unlockedUntil: future }));
     expect(isReportUnlocked()).toBe(true);
   });
 
   test("returns false for an expired unlock window", () => {
-    const past = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // -1h
+    const past = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     localStorage.setItem(REPORT_UNLOCK_KEY, JSON.stringify({ unlockedUntil: past }));
     expect(isReportUnlocked()).toBe(false);
   });

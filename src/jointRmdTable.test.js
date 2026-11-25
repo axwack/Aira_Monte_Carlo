@@ -1,11 +1,3 @@
-/**
- * jointRmdTable — validates the generated JOINT_RMD_TABLE_II and the
- * jointRmdDivisor() gate that enforces the IRS "spouse more than 10 years
- * younger" rule (Variant 1 vs Variant 2).
- *
- * Source of truth: .agents/ds/irs-table2-joint.json (IRS Pub 590-B Table II).
- */
-
 import { JOINT_RMD_TABLE_II, jointRmdDivisor } from "./data/jointRmdTable.js";
 
 describe("JOINT_RMD_TABLE_II — full two-dimensional matrix", () => {
@@ -31,7 +23,6 @@ describe("JOINT_RMD_TABLE_II — full two-dimensional matrix", () => {
 });
 
 describe("jointRmdDivisor() — IRS Variant 1 gate", () => {
-  // Values from handoff: 73/62 → 27.2, 80/60 → 27.8, 90/70 → 19.1
   test("73 / spouse 62 → 27.2 (handoff)", () => {
     expect(jointRmdDivisor(73, 62)).toBe(27.2);
   });
@@ -44,17 +35,14 @@ describe("jointRmdDivisor() — IRS Variant 1 gate", () => {
     expect(jointRmdDivisor(90, 70)).toBe(19.1);
   });
 
-  // Edge: spouse exactly 10 years younger → NOT eligible for Joint table
   test("spouse exactly 10 years younger → null (not MORE than 10)", () => {
     expect(jointRmdDivisor(73, 63)).toBe(null);
   });
 
-  // Edge: spouse older → null
   test("spouse older than owner → null", () => {
     expect(jointRmdDivisor(73, 75)).toBe(null);
   });
 
-  // Edge: null/invalid inputs
   test("null spouse age → null", () => {
     expect(jointRmdDivisor(73, null)).toBe(null);
   });
@@ -67,17 +55,14 @@ describe("jointRmdDivisor() — IRS Variant 1 gate", () => {
     expect(jointRmdDivisor(NaN, 62)).toBe(null);
   });
 
-  // Boundary: first eligible row (72/20)
   test("72 / 20 → 65.1 (first eligible entry)", () => {
     expect(jointRmdDivisor(72, 20)).toBe(65.1);
   });
 
-  // Boundary: owner age before table range
   test("age 70 → null (before table range)", () => {
     expect(jointRmdDivisor(70, 59)).toBe(null);
   });
 
-  // Deep table lookups
   test("deep table: 100 / 75 → 15", () => {
     expect(jointRmdDivisor(100, 75)).toBe(15);
   });

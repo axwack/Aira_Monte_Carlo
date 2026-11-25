@@ -1,22 +1,3 @@
-/**
- * GET /api/balance
- * Header: Authorization: Bearer <jwt>
- * Returns: { credits, customerId, token? }
- *
- * Called by the client to refresh the displayed credit balance.
- *
- * SLIDING SESSION: this endpoint is hit on essentially every app open, so it is the
- * natural place to roll the customer's session forward. When the presented token is
- * more than halfway through its life we mint a fresh one and return it as `token`;
- * the client swaps it into localStorage. Before this, a JWT was minted exactly once
- * at the Stripe redirect and never renewed, so EVERY paying customer lost access to
- * their credits once the TTL elapsed — in the same browser, having done nothing
- * wrong — and the failure was silent (401 → clearStoredJWT → AI quietly degrades).
- *
- * `token` is omitted when no refresh is due, so the client must treat it as optional.
- * Required env vars: JWT_SECRET, DB
- */
-
 import {
   json, handleOptions, verifyJWT, mintCustomerJWT, shouldRefreshJWT,
 } from "../_shared/jwt.js";
@@ -44,7 +25,6 @@ export async function onRequestGet({ request, env }) {
   let credits = 0;
   let customerId = payload.customerId;
   try {
-    // A token minted before a customer merge carries the merged-away id.
     customerId = await canonicalCustomerId(env.DB, payload.customerId);
     const customer = await env.DB.prepare(
       "SELECT credits FROM customers WHERE stripe_customer_id = ?"
@@ -55,13 +35,8 @@ export async function onRequestGet({ request, env }) {
     return json({ error: "Database error: " + e.message }, 500);
   }
 
-  // Roll the session forward if it's past halfway. Deliberately AFTER the balance
-  // read and wrapped in its own try/catch: a refresh failure must never turn a
-  // working balance lookup into an error the customer sees. Worst case they keep
-  // their current token and get another chance on the next app open.
   let token;
   try {
-    // A merged-away id gets a fresh token for the kept row straight away.
     if (customerId !== payload.customerId || shouldRefreshJWT(payload)) {
       token = await mintCustomerJWT(customerId, env.JWT_SECRET);
       console.log(`[balance] refreshed session for ${customerId}`);

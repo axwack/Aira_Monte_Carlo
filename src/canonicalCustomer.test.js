@@ -1,6 +1,5 @@
 import { canonicalCustomerId } from "../functions/_shared/customers.js";
 
-// Minimal D1 stand-in: customers and aliases as arrays, matched by SQL text.
 function fakeDb({ customers = [], aliases = [] } = {}) {
   return {
     customers, aliases,

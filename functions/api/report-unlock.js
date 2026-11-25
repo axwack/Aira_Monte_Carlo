@@ -1,50 +1,13 @@
-/**
- * POST /api/report-unlock
- * Header: Authorization: Bearer <jwt>  (same auth model as /api/analyze)
- * Body:   {} (no payload needed — this is a flat-fee unlock, not a token-metered call)
- *
- * Unlocks the printable CFP report for 24 hours by deducting a flat credit
- * fee. Mirrors /api/analyze's atomic deduction pattern exactly (see
- * deductD1Credits in analyze.js): a conditional `WHERE credits >= ?` UPDATE
- * so concurrent requests can't overdraft, plus a credit_transactions audit
- * row for every attempt (deduct or overdraft).
- *
- * REPORT_COST_CREDITS default reasoning:
- *   CREDIT_PACKS (src/billing/credits.js) price a Starter Pack at 5,000
- *   credits for $5 — i.e. $1 ≈ 1,000 credits. The report is 100% client-
- *   computed (no AI/token cost), so it should cost a meaningful-but-small
- *   slice of a pack rather than a per-token rate. 250 credits (~$0.25,
- *   5% of a Starter Pack) means one $5 pack buys ~20 report unlocks —
- *   a "coffee-money" fee that still gates a valuable printable artifact.
- *   Keep in sync with src/billing/credits.js REPORT_COST_CREDITS.
- *
- * unlockedUntil = now + 24h, and the window is SERVER-authoritative: it is
- * derived from the ledger (latest 'report_unlock' row's created_at + 24h), not
- * from a localStorage flag. Idempotency used to be the client's job, which was
- * wrong in both directions — a customer who cleared localStorage got charged
- * 250 credits a second time, and anyone who hand-set the flag read the report
- * for free. POSTing while a window is still open now returns that window
- * without charging again.
- *
- * GET returns the current window without charging, so the UI can ask the server
- * whether the report is unlocked instead of trusting the browser.
- *
- * Required env vars: JWT_SECRET, DB. Optional: REPORT_COST_CREDITS (integer
- * override for the flat fee).
- */
-
 import { json, handleOptions, verifyJWT } from "../_shared/jwt.js";
 import { canonicalCustomerId } from "../_shared/customers.js";
 
-// Keep in sync with src/billing/credits.js REPORT_COST_CREDITS.
 const DEFAULT_REPORT_COST_CREDITS = 250;
-const UNLOCK_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+const UNLOCK_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export function onRequestOptions() {
   return handleOptions();
 }
 
-// Authenticate and return the customerId, or a Response to return as-is.
 async function authenticate(request, env) {
   const authHeader = request.headers.get("Authorization") || "";
   if (!authHeader.startsWith("Bearer ") || !env.JWT_SECRET) {
@@ -56,27 +19,11 @@ async function authenticate(request, env) {
   } catch {
     return { error: json({ error: "Invalid or expired token" }, 401) };
   }
-  // A token minted before a customer merge carries the merged-away id.
   const customerId = env.DB ? await canonicalCustomerId(env.DB, payload.customerId) : payload.customerId;
   return { customerId };
 }
 
-/**
- * The active unlock window, derived from the ledger rather than the client.
- * Returns { unlocked, unlockedUntil } where unlockedUntil is an ISO string or
- * null. A 'report_unlock' row younger than UNLOCK_WINDOW_MS means still open.
- */
 async function currentUnlockWindow(db, customerId) {
-  // A DIRECT PURCHASE NEVER EXPIRES.
-  //
-  // The 24h window is right for a credit spend — credits meter AI usage, and the
-  // report is a slice of that budget. It is wrong for someone who bought the
-  // report as a product: nobody expects a document they paid for to stop opening
-  // tomorrow. Checked first and separately so a purchase can never be aged out by
-  // the window logic below.
-  //
-  // Also deliberately independent of the credit balance: a report buyer may hold
-  // zero credits and must still be able to open what they bought.
   const bought = await db.prepare(`
     SELECT id FROM credit_transactions
     WHERE customer_id = ? AND type = 'report_purchase' LIMIT 1
@@ -97,8 +44,6 @@ async function currentUnlockWindow(db, customerId) {
     : { unlocked: false, unlockedUntil: null };
 }
 
-// Same atomic pattern as analyze.js's deductD1Credits, adapted for a flat
-// fee instead of a token-derived cost (no rawTokens to record).
 async function deductReportCredits(db, customerId, cost) {
   const upd = await db.prepare(`
     UPDATE customers
@@ -114,10 +59,6 @@ async function deductReportCredits(db, customerId, cost) {
     VALUES (?, ?, ?, ?)
   `).bind(
     customerId,
-    // 'report_unlock' rather than the generic 'deduct', so report spend is
-    // distinguishable from AI spend in the ledger AND so the 24h window can be
-    // derived from it. An overdraft stays 'overdraft' — no window was granted,
-    // and counting it as one would hand out a free unlock.
     deducted ? "report_unlock" : "overdraft",
     -cost,
     null
@@ -138,11 +79,6 @@ async function deductReportCredits(db, customerId, cost) {
   };
 }
 
-/**
- * GET /api/report-unlock — read the current window without charging.
- * The UI calls this so "is the report unlocked?" is answered by the ledger
- * rather than by a localStorage flag the user can edit.
- */
 export async function onRequestGet({ request, env }) {
   const auth = await authenticate(request, env);
   if (auth.error) return auth.error;
@@ -168,10 +104,6 @@ export async function onRequestPost({ request, env }) {
     ? Number(env.REPORT_COST_CREDITS)
     : DEFAULT_REPORT_COST_CREDITS;
 
-  // ── Already unlocked? Return the open window instead of charging again ──
-  // Previously this endpoint charged on every call and relied on the client not
-  // to ask twice, so a customer who cleared localStorage (or opened the report
-  // on a second device) paid 250 credits again for access they already had.
   try {
     const open = await currentUnlockWindow(env.DB, customerId);
     if (open.unlocked) {
@@ -184,12 +116,9 @@ export async function onRequestPost({ request, env }) {
       });
     }
   } catch (e) {
-    // Non-fatal: if this read fails we fall through and charge, which is the
-    // pre-existing behavior. Better to risk a re-charge than to deny access.
     console.warn("[report-unlock] existing-window check failed:", e.message);
   }
 
-  // ── Pre-check: same suspended/insufficient shape as analyze.js ────────
   let customer;
   try {
     customer = await env.DB.prepare(
@@ -210,7 +139,6 @@ export async function onRequestPost({ request, env }) {
     }, 402);
   }
 
-  // ── Atomic deduction ────────────────────────────────────────────────────
   let result;
   try {
     result = await deductReportCredits(env.DB, customerId, cost);
@@ -219,8 +147,6 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "Database error: " + e.message }, 500);
   }
 
-  // A concurrent request may have drained the balance between the pre-check
-  // and the atomic UPDATE above — surface the same 402 shape in that case.
   if (!result.deducted) {
     return json({
       error: "Insufficient AiRA credits. Please purchase a credit pack to continue.",

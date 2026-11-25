@@ -1,9 +1,3 @@
-// Help chat, retrieval half: pick the few Help entries that match a question and
-// hand the AI only those. Pure functions, no network, so they are unit-tested.
-//
-// KEEP IN SYNC with HELP_CHAT_RULES in functions/api/analyze.js: the server
-// holds its own copy because CRA cannot import from /functions.
-
 const STOP = new Set([
   "the", "and", "for", "are", "but", "not", "you", "can", "how", "what", "why", "when",
   "does", "did", "who", "was", "with", "this", "that", "from", "have", "has", "will",
@@ -12,7 +6,6 @@ const STOP = new Set([
 
 const words = (s) => String(s || "").toLowerCase().match(/[a-z0-9]+/g) || [];
 
-/** Entry body as plain text: <style> blocks and tags removed, spaces collapsed. */
 export function plainText(html) {
   return String(html || "")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -23,12 +16,6 @@ export function plainText(html) {
     .trim();
 }
 
-/**
- * The best `k` entries for a question, best first. A question word counts 4 in
- * the title, 3 in the keywords, 1 in the group and 1 in the body. Entries that
- * match nothing are dropped, so an off-topic question returns [] and the caller
- * can say "not in Help" without spending an AI call.
- */
 export function retrieveHelpEntries(question, entries, k = 3) {
   const q = [...new Set(words(question).filter((w) => w.length > 2 && !STOP.has(w)))];
   if (q.length === 0) return [];
@@ -53,7 +40,6 @@ export function retrieveHelpEntries(question, entries, k = 3) {
     .map((r) => r.e);
 }
 
-/** What the AI sees: each entry as "[id] Title" plus its plain text, capped. */
 export function helpContext(entries, maxChars = 1500) {
   return (entries || [])
     .map((e) => `[${e.id}] ${e.title}\n${plainText(e.body).slice(0, maxChars)}`)

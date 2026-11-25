@@ -1,41 +1,3 @@
-/**
- * expectedReturn.js
- *
- * One source of truth for the historical S&P 500 / bond data and the
- * expectedReturn(eqPct) formula that blends them by equity %. Every non-stochastic
- * "expected value" view of portfolio growth in this app — computeInitialWR, the
- * deterministic schedule, the Fan Chart, and the withdrawal-waterfall/Roth-
- * explorer/conversion-plan engines — needs to use the SAME data and formula,
- * keyed off the user's actual preRetireEq/postRetireEq sliders. Before this
- * file existed, buildWithdrawalWaterfall.js / buildRothExplorer.js /
- * rothConversionPlan.js each hardcoded a flat 7% and ignored the glide-path
- * sliders entirely, so two profiles that only differed in risk posture (say
- * postRetireEq 30 vs 70) got identical Smart Waterfall / Roth Explorer
- * trajectories even though the Monte Carlo diverged sharply between them.
- *
- * Data: Damodaran, "Historical Returns on Stocks, Bonds and Bills: 1928-2024"
- *   https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histretSP.html
- * 1928-2025 (98 years), updated annually.
- *   - SP500 = "S&P 500 (includes dividends)", nominal total return, reinvested.
- *   - BONDS = "US T. Bond (10-year)", nominal total return (price + coupon).
- *
- * Using Damodaran because it's the standard free dataset for retirement-planning
- * MC (Bengen, Kitces, Pfau all cite it), and the two series line up by calendar
- * year — which paired bootstrap sampling in runMC needs (portReturn draws
- * SP500[i] and BONDS[i] off one shared random index so real stock/bond
- * correlation, like the flight-to-quality flip in 2008, survives).
- *
- * No winsorization. The old arrays clamped to [-30, 30] for stocks and [-15, 20]
- * for bonds, which clipped exactly the tail years retirement MC exists to model
- * — 1931 (-43.84%), 1937 (-35.34%), 2008 (-36.55%) — quietly understating ruin
- * probability. If a stress test needs damped returns, scale the array in that
- * caller, don't touch the real dataset here.
- *
- * This is the only copy now. App.jsx used to carry its own byte-identical copy
- * of both arrays for portReturn/bootstrapDraw — that's gone, App.jsx imports
- * these. Add a year of data here only.
- */
-
 const SP500 = [
   43.81, -8.3, -25.12, -43.84, -8.64, 49.98, -1.19, 46.74, 31.94, -35.34,
   29.28, -1.1, -10.67, -12.77, 19.17, 25.06, 19.03, 35.82, -8.43, 5.2,
@@ -62,15 +24,6 @@ const BONDS = [
   -0.02, 9.64, 11.33, -4.42, -17.83, 3.88, -1.64, 7.8,
 ].map((r) => r / 100);
 
-// INFL — annual CPI-U year-over-year %, 1928-2025 (98 entries, aligned to
-// SP500/BONDS by calendar year). Source: US BLS CPI-U "annual average" series
-// as republished at usinflationcalculator.com, 2025 checked against BLS's
-// current release. Extended backward from the old 51-entry array (~1975-2025)
-// so inflation gets drawn from the same historical year as the stock/bond
-// return. Now the stagflation years pair up correctly — 1974's -25.9% S&P
-// with 11.0% CPI, 1979's 18.4% S&P with 11.3% CPI — instead of drawing them
-// independently, which could pair 2008's crash with 2015's 0.1% CPI. No
-// winsorization: 1932 (-9.9%) and 1946 (14.4%) are real years.
 const INFL = [
   -1.7, 0, -2.3, -9, -9.9, -5.1, 3.1, 2.2, 1.5, 3.6,
   -2.1, -1.4, 0.7, 5, 10.9, 6.1, 1.7, 2.3, 8.3, 14.4,
@@ -89,11 +42,6 @@ export { SP500, BONDS, INFL };
 export const SP500_MEAN = SP500.reduce((s, v) => s + v, 0) / SP500.length;
 export const BONDS_MEAN = BONDS.reduce((s, v) => s + v, 0) / BONDS.length;
 
-/**
- * Blends the historical S&P 500 / bond mean annual returns by equity %.
- * @param {number} eqPct — equity allocation, 0-100 (defaults to 91, App.jsx's preRetireEq default)
- * @returns {number} expected blended annual return, as a percentage (e.g. 7.6 for 7.6%)
- */
 export function expectedReturn(eqPct) {
   const w = (eqPct ?? 91) / 100;
   return parseFloat((w * SP500_MEAN * 100 + (1 - w) * BONDS_MEAN * 100).toFixed(2));

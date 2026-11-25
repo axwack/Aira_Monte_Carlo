@@ -1,6 +1,3 @@
--- Cloudflare D1 schema for AiRA credit billing
--- Run: wrangler d1 execute aira-credits --file=db/schema.sql --remote
-
 CREATE TABLE IF NOT EXISTS customers (
   stripe_customer_id  TEXT    PRIMARY KEY,
   email               TEXT,
@@ -10,37 +7,26 @@ CREATE TABLE IF NOT EXISTS customers (
   updated_at          INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
--- Audit log of every credit change (purchases + deductions)
 CREATE TABLE IF NOT EXISTS credit_transactions (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_id         TEXT    NOT NULL REFERENCES customers(stripe_customer_id),
-  -- 'deduct' = AI/token spend (raw_tokens set); 'report_unlock' = the flat-fee
-  -- printable report (also the source of truth for the active 24h window).
+
   type                TEXT    NOT NULL CHECK(type IN ('purchase', 'deduct', 'free_grant', 'overdraft', 'refund', 'dispute_lock', 'dispute_release', 'report_unlock', 'report_purchase')),
-  amount              INTEGER NOT NULL,   -- positive = added, negative = deducted
-  raw_tokens          INTEGER,            -- for 'deduct' rows: actual Gemini token count
-  stripe_session_id   TEXT,              -- for 'purchase' rows: Stripe session id
+  amount              INTEGER NOT NULL,
+  raw_tokens          INTEGER,
+  stripe_session_id   TEXT,
   created_at          INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 CREATE INDEX IF NOT EXISTS idx_txn_customer ON credit_transactions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_txn_type     ON credit_transactions(type, created_at);
 
--- Stripe webhook event dedup (Stripe retries with the same event.id on transient failure).
--- INSERT OR IGNORE into this table is the canonical idempotency check.
 CREATE TABLE IF NOT EXISTS webhook_events (
   event_id     TEXT    PRIMARY KEY,
   event_type   TEXT,
   received_at  INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
--- Audit fix H3: one-time purchase nonces.
--- /api/checkout writes a row with a nonce + session_id + 30-min expiry.
--- /api/verify-session atomically CONSUMES the row (sets consumed_at) AND
--- validates session_id match in a single UPDATE … WHERE … check. This
--- defeats session_id-leak based account takeover: an attacker who learns
--- a session_id (browser history / referrer / screenshot) cannot mint a
--- JWT without the matching nonce, and nonces are single-use + expiring.
 CREATE TABLE IF NOT EXISTS pending_checkouts (
   nonce       TEXT    PRIMARY KEY,
   session_id  TEXT    NOT NULL,
@@ -50,27 +36,17 @@ CREATE TABLE IF NOT EXISTS pending_checkouts (
 );
 CREATE INDEX IF NOT EXISTS idx_pending_session ON pending_checkouts(session_id);
 
--- H4: Admin audit trail and rate-limiting table.
--- Every authenticated admin request (success or rate_limited) is logged here.
--- Rate limiter counts rows per actor_ip in the last 60 seconds.
 CREATE TABLE IF NOT EXISTS admin_audit (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   action     TEXT    NOT NULL,
   actor_ip   TEXT,
-  result     TEXT    NOT NULL DEFAULT 'ok',   -- 'ok' | 'error' | 'rate_limited'
-  details    TEXT,                             -- JSON: { email?, customerId?, error? }
+  result     TEXT    NOT NULL DEFAULT 'ok',
+  details    TEXT,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 CREATE INDEX IF NOT EXISTS idx_admin_audit_ip_time ON admin_audit(actor_ip, created_at);
 
--- Account-restore tokens (migration 006).
--- The JWT is minted once, at the Stripe redirect, and lives only in that
--- browser's localStorage — there is no login. A restore token is an expiring,
--- use-capped credential an admin can email to a customer who paid but cannot
--- reach their credits. /api/restore swaps it for a JWT via an atomic consume.
--- max_uses > 1 so a customer opening the link on phone then laptop isn't locked
--- out; see db/migrations/006_restore_tokens.sql for the full rationale.
 CREATE TABLE IF NOT EXISTS restore_tokens (
   token        TEXT    PRIMARY KEY,
   customer_id  TEXT    NOT NULL REFERENCES customers(stripe_customer_id),
@@ -84,7 +60,6 @@ CREATE TABLE IF NOT EXISTS restore_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_restore_customer ON restore_tokens(customer_id);
 
--- Anonymous daily funnel counters (see db/migrations/009_events.sql).
 CREATE TABLE IF NOT EXISTS events (
   day   TEXT    NOT NULL,
   name  TEXT    NOT NULL,
@@ -92,7 +67,6 @@ CREATE TABLE IF NOT EXISTS events (
   PRIMARY KEY (day, name)
 );
 
--- One customers row per email (migration 010). Repeat Stripe ids alias to the first row.
 CREATE TABLE IF NOT EXISTS customer_aliases (
   alias_id    TEXT    PRIMARY KEY,
   customer_id TEXT    NOT NULL REFERENCES customers(stripe_customer_id),

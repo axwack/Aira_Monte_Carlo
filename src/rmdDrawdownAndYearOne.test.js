@@ -3,8 +3,6 @@ import path from "path";
 import { savingsDrawdownOf, computeInitialWR } from "./App";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 
-// Reported case: the income chart's savings bar fell to ~$0 at RMD age while
-// the accounts still held millions, because the forced RMD isn't in fromPretax.
 describe("savings drawdown bar includes RMDs", () => {
   const plan = {
     currentAge: 72, retireAge: 72, dob: "1954-06-01", endAge: 80,
@@ -30,8 +28,6 @@ describe("savings drawdown bar includes RMDs", () => {
   });
 });
 
-// Reported case: a $350k renovation in the retirement year was in the income
-// chart's first bar but not in the "Withdrawal rate at retirement" year-one draw.
 describe("year-one draw includes one-off expenses in the retirement year", () => {
   const year = new Date().getFullYear();
   const base = { currentAge: 44, retireAge: 46, port: 6_500_000, sp: 239_000, ssb: 0, inf: 2.5 };
@@ -59,8 +55,6 @@ describe("year-one draw includes one-off expenses in the retirement year", () =>
   });
 });
 
-// A one-off is real for year one but is not the plan's ongoing rate: the
-// verdict strip and the guardrail band judge the steady rate instead.
 describe("steady rate vs year-one rate", () => {
   const year = new Date().getFullYear();
   const base = { currentAge: 44, retireAge: 46, port: 6_500_000, sp: 239_000, ssb: 0, inf: 2.5 };
@@ -82,7 +76,6 @@ describe("steady rate vs year-one rate", () => {
     const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
     expect(SRC).toContain("const swr = computeInitialWR(params).steadyWRpct");
     expect(SRC).toContain("const inSafeBand = steadyWRpct >= 5.0 && steadyWRpct <= 5.5;");
-    // The panel's formula lists every term that makes up the draw.
     expect(SRC).toMatch(/other income \{fmtDollar\(otherIncAtRetire\)\}.*housing \{fmtDollar\(housingAtRetire\)\}.*carveouts \{fmtDollar\(carveoutAtRetire\)\} = portfolio draw \{fmtDollar\(steadyDraw\)\}/);
   });
 });

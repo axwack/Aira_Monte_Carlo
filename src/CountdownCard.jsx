@@ -2,11 +2,8 @@ import React, { useEffect, useState } from "react";
 import { retirementTarget, describeCountdown } from "./engine/retirementTarget";
 import { parseCalendarDate } from "./engine/ages";
 
-// Owns its own clock so a tick re-renders only this card, never the app root.
-// Once a minute is plenty: nothing here is finer than a day.
 export const COUNTDOWN_TICK_MS = 60000;
 
-/** % of the working career elapsed, start → target. null when it can't be said honestly. */
 export function careerProgress(startDate, target, now = new Date()) {
   if (!startDate || !target) return null;
   const s = parseCalendarDate(startDate);

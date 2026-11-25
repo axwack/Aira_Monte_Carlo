@@ -1,41 +1,16 @@
-/**
- * spousalSS.test.js — the DOLLAR ARITHMETIC of two-person Social Security.
- *
- * §21 listed this file as outstanding: `ghostSettings.test.js` already proves the
- * spouse fields are *wired* to an engine, but nothing proved the amounts are
- * *right*. Those are different failures — a wired field can be wired to the wrong
- * formula, which is what happened here.
- *
- * THE BUG THIS FILE EXISTS FOR (found 2026-07-30, shipped in v1.2.42):
- * every engine walks a single `age`, which is the PRIMARY's age. `computeHouseholdSS`
- * gated the spouse's benefit on `age >= spouse.ssAge` — i.e. it asked whether the
- * PRIMARY had reached the SPOUSE's claim age. For a spouse ten years younger
- * claiming at 67, the household was credited with the spouse's full benefit AND
- * the spousal top-up from the primary's 67th birthday, when the spouse was 57.
- * Ten years of income the household never receives, which inflates the success
- * rate. `spouse.dob` (§24) is what makes the two clocks distinguishable.
- *
- * Expected values here are hand-calculated with ssCola: 0 wherever possible, so a
- * failure points at the benefit rule and not at compounding.
- */
-
 import { computeHouseholdSS } from "./engine/buildRothExplorer.js";
 import { spouseAgeOffset, personAgeNow, ageFromDob } from "./engine/ages.js";
 
-// Frozen clock: these assertions depend on ages derived from real DOBs.
 const NOW = new Date("2026-07-30T12:00:00Z");
 beforeAll(() => { jest.useFakeTimers().setSystemTime(NOW); });
 afterAll(() => { jest.useRealTimers(); });
 
-// One earner at $30K/yr, spouse at $12K/yr. Both PIAs equal their benefits, so
-// the top-up is 0.5 × 30,000 − 12,000 = $3,000/yr exactly.
 const PRIMARY_SSB = 30_000;
 const SPOUSE_SSB  = 12_000;
-const TOP_UP      = 0.5 * PRIMARY_SSB - SPOUSE_SSB;   // 3,000
+const TOP_UP      = 0.5 * PRIMARY_SSB - SPOUSE_SSB;
 
-/** Couple with an explicit age gap. `gap` > 0 ⇒ spouse is younger. */
 function couple(gap, over = {}) {
-  const primaryBirthYear = NOW.getFullYear() - 60;            // primary is 60 today
+  const primaryBirthYear = NOW.getFullYear() - 60;
   return {
     ssCola: 0,
     dob: `${primaryBirthYear}-01-01`,
@@ -63,8 +38,6 @@ describe("spouseAgeOffset — the two clocks", () => {
   });
 
   test("zero — NOT NaN — when the spouse's age is unknown", () => {
-    // This is the regression lock: an unknown spouse age must reproduce the old
-    // same-age behaviour, never poison the arithmetic with NaN.
     const p = couple(10);
     delete p.spouse.dob;
     expect(spouseAgeOffset(p)).toBe(0);
@@ -76,8 +49,6 @@ describe("spouseAgeOffset — the two clocks", () => {
   });
 
   test("prefers dob over a stale stored currentAge", () => {
-    // dob is the input of record — a stored currentAge that nothing refreshes is
-    // how the "changed my birthday, chart kept the old age" bug happened.
     const p = couple(10);
     p.spouse.currentAge = 99;
     expect(spouseAgeOffset(p)).toBe(10);
@@ -86,11 +57,9 @@ describe("spouseAgeOffset — the two clocks", () => {
 });
 
 describe("computeHouseholdSS — spouse 10 years YOUNGER", () => {
-  const P = couple(10);   // primary 60, spouse 50, both claim at 67
+  const P = couple(10);
 
   test("primary alone from the primary's 67 (spouse is only 57)", () => {
-    // THE BUG: this returned 45,000 (30,000 + 12,000 + 3,000 top-up) because the
-    // spouse's claim was gated on the primary's age.
     expect(computeHouseholdSS(P, 67)).toBe(PRIMARY_SSB);
   });
 
@@ -108,18 +77,16 @@ describe("computeHouseholdSS — spouse 10 years YOUNGER", () => {
 });
 
 describe("computeHouseholdSS — spouse 6 years OLDER", () => {
-  const P = couple(-6);   // primary 60, spouse 66
+  const P = couple(-6);
 
   test("the older spouse collects first, alone", () => {
-    // Spouse reaches 67 when the primary is 61. No top-up yet: the higher earner
-    // (the primary) has not filed, and a spousal benefit requires that they have.
     expect(computeHouseholdSS(P, 61)).toBe(SPOUSE_SSB);
     expect(computeHouseholdSS(P, 66)).toBe(SPOUSE_SSB);
   });
 
   test("top-up waits for the HIGHER earner to file, not merely for both to be eligible", () => {
-    expect(computeHouseholdSS(P, 66)).toBe(SPOUSE_SSB);                      // primary hasn't filed
-    expect(computeHouseholdSS(P, 67)).toBe(PRIMARY_SSB + SPOUSE_SSB + TOP_UP); // primary files
+    expect(computeHouseholdSS(P, 66)).toBe(SPOUSE_SSB);
+    expect(computeHouseholdSS(P, 67)).toBe(PRIMARY_SSB + SPOUSE_SSB + TOP_UP);
   });
 });
 
@@ -135,7 +102,6 @@ describe("computeHouseholdSS — regression locks", () => {
   });
 
   test("no spouse dob ⇒ byte-identical to the pre-spouse-dob same-age model", () => {
-    // Locks the fallback: this is the number every existing saved profile gets.
     const P = couple(0);
     const noDob = { ...P, spouse: { ...P.spouse } };
     delete noDob.spouse.dob;
@@ -153,27 +119,20 @@ describe("computeHouseholdSS — regression locks", () => {
 });
 
 describe("computeHouseholdSS — the top-up keys off PIA, not the claimed check", () => {
-  // The rule most likely to be implemented wrong: delayed retirement credits
-  // raise the CHECK but never flow into the spousal benefit, which is 50% of the
-  // higher earner's PIA (the FRA amount).
   test("a delayed primary check does not enlarge the spousal top-up", () => {
     const base = couple(0);
-    // Same PIA, bigger claimed benefit (as if claiming at 70).
     const delayed = { ...base, ssb: PRIMARY_SSB * 1.24, ssPia: PRIMARY_SSB };
     const got = computeHouseholdSS(delayed, 67);
     expect(got).toBe(Math.round(PRIMARY_SSB * 1.24) + SPOUSE_SSB + TOP_UP);
-    // The top-up itself is unchanged from the un-delayed case.
     const plain = computeHouseholdSS(base, 67);
     expect(got - Math.round(PRIMARY_SSB * 1.24)).toBe(plain - PRIMARY_SSB);
   });
 
   test("the higher earner's PIA drives the top-up even when it is the spouse", () => {
-    // Spouse out-earns the primary: the top-up must attach to the PRIMARY's check.
     const P = couple(0, {
       ssb: 10_000, ssPia: 10_000,
       spouse: { enabled: true, dob: `${NOW.getFullYear() - 60}-01-01`, ssAge: 67, ssb: 40_000, ssPia: 40_000 },
     });
-    // 0.5 × 40,000 − 10,000 = 10,000 top-up on the primary's own $10,000.
     expect(computeHouseholdSS(P, 67)).toBe(10_000 + 40_000 + 10_000);
   });
 
@@ -182,7 +141,7 @@ describe("computeHouseholdSS — the top-up keys off PIA, not the claimed check"
       ssb: 30_000, ssPia: 30_000,
       spouse: { enabled: true, dob: `${NOW.getFullYear() - 60}-01-01`, ssAge: 67, ssb: 20_000, ssPia: 20_000 },
     });
-    expect(computeHouseholdSS(P, 67)).toBe(50_000);   // 0.5 × 30,000 = 15,000 < 20,000
+    expect(computeHouseholdSS(P, 67)).toBe(50_000);
   });
 });
 
@@ -190,8 +149,6 @@ describe("computeHouseholdSS — COLA compounds from each person's OWN claim yea
   test("the younger spouse's COLA starts at THEIR claim, not the primary's", () => {
     const P = couple(10, { ssCola: 2 });
     const cola = 1.02;
-    // Primary claims at 67; spouse claims when the primary is 77.
-    // At the primary's 78: primary has 11 years of COLA, spouse and top-up have 1.
     const expected = Math.round(
       PRIMARY_SSB * Math.pow(cola, 11) +
       SPOUSE_SSB  * Math.pow(cola, 1) +
@@ -205,14 +162,6 @@ describe("computeHouseholdSS — COLA compounds from each person's OWN claim yea
   });
 });
 
-// ─── Per-person tax amounts (§24) ─────────────────────────────────────────────
-//
-// The age-65 standard-deduction add-on ($1,650 each) and the OBBBA senior bonus
-// ($6,000 each) are PER FILER, but the engines carry one age. Both used to read
-// "primary is 65" as "both are 65", handing a couple with an age gap up to
-// $7,650/yr of deductions they are not entitled to — for as many years as the gap.
-// The reverse case was worse in the other direction: an OLDER spouse who
-// qualified got nothing, because the gate was the primary's age alone.
 describe("per-person age-65 amounts", () => {
   const { personsAtLeastAge } = require("./engine/ages.js");
   const { getStandardDeduction } = require("./App");
@@ -222,15 +171,14 @@ describe("per-person age-65 amounts", () => {
     test("single filer counts only themselves", () => {
       expect(personsAtLeastAge(64, null, false, 65)).toBe(0);
       expect(personsAtLeastAge(65, null, false, 65)).toBe(1);
-      // A spouse age must be ignored entirely when not filing jointly.
       expect(personsAtLeastAge(64, 80, false, 65)).toBe(0);
     });
 
     test("MFJ with a known spouse age counts each person", () => {
-      expect(personsAtLeastAge(66, 55, true, 65)).toBe(1);   // only the primary
-      expect(personsAtLeastAge(55, 66, true, 65)).toBe(1);   // only the spouse
-      expect(personsAtLeastAge(66, 67, true, 65)).toBe(2);   // both
-      expect(personsAtLeastAge(60, 61, true, 65)).toBe(0);   // neither
+      expect(personsAtLeastAge(66, 55, true, 65)).toBe(1);
+      expect(personsAtLeastAge(55, 66, true, 65)).toBe(1);
+      expect(personsAtLeastAge(66, 67, true, 65)).toBe(2);
+      expect(personsAtLeastAge(60, 61, true, 65)).toBe(0);
     });
 
     test("MFJ with an UNKNOWN spouse age keeps the legacy both-at-once rule", () => {
@@ -243,12 +191,12 @@ describe("per-person age-65 amounts", () => {
     const BASE_MFJ = 32_200, PER_HEAD = 1_650;
 
     test("unchanged when the spouse's age is unknown (regression lock)", () => {
-      expect(getStandardDeduction(65, "mfj", 1)).toBe(BASE_MFJ + 2 * PER_HEAD);   // 35,500
+      expect(getStandardDeduction(65, "mfj", 1)).toBe(BASE_MFJ + 2 * PER_HEAD);
       expect(getStandardDeduction(64, "mfj", 1)).toBe(BASE_MFJ);
     });
 
     test("only ONE add-on while the younger spouse is under 65", () => {
-      expect(getStandardDeduction(66, "mfj", 1, 55)).toBe(BASE_MFJ + PER_HEAD);   // 33,850
+      expect(getStandardDeduction(66, "mfj", 1, 55)).toBe(BASE_MFJ + PER_HEAD);
     });
 
     test("both add-ons once the younger spouse reaches 65", () => {
@@ -256,7 +204,6 @@ describe("per-person age-65 amounts", () => {
     });
 
     test("an OLDER spouse earns the add-on before the primary does", () => {
-      // Previously $32,200 — the household lost $1,650/yr it was entitled to.
       expect(getStandardDeduction(60, "mfj", 1, 67)).toBe(BASE_MFJ + PER_HEAD);
     });
 
@@ -266,7 +213,7 @@ describe("per-person age-65 amounts", () => {
   });
 
   describe("getSeniorBonusDeduction", () => {
-    const YR = 2026;   // inside the 2025–2028 OBBBA window
+    const YR = 2026;
 
     test("unchanged when the spouse's age is unknown (regression lock)", () => {
       expect(getSeniorBonusDeduction(65, "mfj", 0, YR)).toBe(12_000);
@@ -282,8 +229,6 @@ describe("per-person age-65 amounts", () => {
     });
 
     test("an OLDER spouse alone still earns a bonus (was $0 before)", () => {
-      // The old early-return `if (!(age >= 65)) return 0` denied the household the
-      // qualifying spouse's $6,000 entirely.
       expect(getSeniorBonusDeduction(60, "mfj", 0, YR, 67)).toBe(6_000);
     });
 
@@ -292,10 +237,7 @@ describe("per-person age-65 amounts", () => {
     });
 
     test("the phase-out scales with the number of QUALIFYING people", () => {
-      // 6% of MAGI above $150K MFJ, biting each qualifying person's own $6,000.
-      // One qualifier, $50K excess → 6,000 − 0.06 × 50,000 = 3,000.
       expect(getSeniorBonusDeduction(66, "mfj", 200_000, YR, 55)).toBe(3_000);
-      // Two qualifiers, same excess → 12,000 − 2 × 3,000 = 6,000.
       expect(getSeniorBonusDeduction(66, "mfj", 200_000, YR, 66)).toBe(6_000);
     });
 
@@ -306,21 +248,11 @@ describe("per-person age-65 amounts", () => {
   });
 });
 
-// ─── §22 — the widow's penalty ────────────────────────────────────────────────
-//
-// Requested by two separate users. The teachable point, and the reason it is
-// worth engine work: the TAX hit usually exceeds the benefit lost. The survivor
-// keeps the larger of the two checks but files Single, so brackets narrow, the
-// standard deduction roughly halves, IRMAA thresholds halve and the OBBBA senior
-// bonus halves — against a barely-reduced RMD and an unchanged portfolio.
-//
-// These are the five tests §22 named as required before it ships, plus the
-// cross-engine agreement check.
 describe("§22 widow's penalty", () => {
   const { buildWithdrawalWaterfall } = require("./engine/buildWithdrawalWaterfall.js");
   const { filesJointlyAt, filingStatusAt, spouseDeathOnPrimaryClock } = require("./engine/ages.js");
 
-  const PRIMARY_BY = NOW.getFullYear() - 65;   // primary is 65 today
+  const PRIMARY_BY = NOW.getFullYear() - 65;
   const COUPLE = {
     currentAge: 65, retireAge: 65, endAge: 92,
     dob: `${PRIMARY_BY}-01-01`,
@@ -336,14 +268,13 @@ describe("§22 widow's penalty", () => {
       { id: "d", category: "cash",    name: "Cash",    balance:    60_000 },
     ],
     spouse: {
-      enabled: true, dob: `${PRIMARY_BY}-01-01`,   // same age, so deathAge maps 1:1
+      enabled: true, dob: `${PRIMARY_BY}-01-01`,
       ssAge: 65, ssb: 24_000, ssPia: 24_000,
     },
   };
   const DEATH_AGE = 75;
   const withDeath = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: DEATH_AGE } };
 
-  // ── 1. deathAge null reproduces today's numbers byte-for-byte ──────────────
   test("1. deathAge null/absent reproduces the no-death plan exactly", () => {
     const a = buildWithdrawalWaterfall(COUPLE).smart.rows;
     const b = buildWithdrawalWaterfall({ ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: null } }).smart.rows;
@@ -355,18 +286,14 @@ describe("§22 widow's penalty", () => {
     });
   });
 
-  // ── 2. taxable income RISES the year after death, on an unchanged portfolio ─
   test("2. the year AFTER death, tax rises on materially the same income", () => {
     const alive = buildWithdrawalWaterfall(COUPLE).smart.rows;
     const dead  = buildWithdrawalWaterfall(withDeath).smart.rows;
     const at = (rows, age) => rows.find(r => r.age === age);
 
-    // Same year, both plans: the survivor's federal tax must be higher.
     const survivorYear = DEATH_AGE + 1;
     expect(at(dead, survivorYear).fedTax).toBeGreaterThan(at(alive, survivorYear).fedTax);
 
-    // And it is a STEP, not drift: the jump at the transition exceeds the
-    // ordinary year-over-year change in the joint plan.
     const deadStep  = at(dead,  survivorYear).fedTax - at(dead,  DEATH_AGE).fedTax;
     const aliveStep = at(alive, survivorYear).fedTax - at(alive, DEATH_AGE).fedTax;
     expect(deadStep).toBeGreaterThan(aliveStep);
@@ -374,34 +301,26 @@ describe("§22 widow's penalty", () => {
 
   test("2b. MFJ is kept THROUGH the death year (IRS Pub 501), Single after", () => {
     expect(filesJointlyAt(withDeath, DEATH_AGE - 1)).toBe(true);
-    expect(filesJointlyAt(withDeath, DEATH_AGE)).toBe(true);      // year of death
-    expect(filesJointlyAt(withDeath, DEATH_AGE + 1)).toBe(false); // year after
+    expect(filesJointlyAt(withDeath, DEATH_AGE)).toBe(true);
+    expect(filesJointlyAt(withDeath, DEATH_AGE + 1)).toBe(false);
     expect(filingStatusAt(withDeath, DEATH_AGE + 1)).toBe("single");
   });
 
-  // ── 3. SS drops to exactly max(primary, spouse), not the sum ───────────────
   test("3. Social Security becomes the LARGER single check, not the sum", () => {
     const dead  = buildWithdrawalWaterfall(withDeath).smart.rows;
     const alive = buildWithdrawalWaterfall(COUPLE).smart.rows;
     const at = (rows, age) => rows.find(r => r.age === age);
 
-    // It must step DOWN at the death year.
     expect(at(dead, DEATH_AGE).ss).toBeLessThan(at(dead, DEATH_AGE - 1).ss);
 
-    // Compared WITHIN the same year (so COLA cancels), the survivor keeps exactly
-    // the larger check out of the joint total. The ratio is 0.60 for these two
-    // benefits — decisively NOT the 0.67 literal the stress scenario used to
-    // hardcode, which is only right for a one-earner couple.
     const ratio = at(dead, DEATH_AGE).ss / at(alive, DEATH_AGE).ss;
-    expect(ratio).toBeCloseTo(36_000 / (36_000 + 24_000), 3);   // 0.600
+    expect(ratio).toBeCloseTo(36_000 / (36_000 + 24_000), 3);
     expect(ratio).not.toBeCloseTo(0.67, 2);
 
-    // And it stays the larger check for the rest of the plan, still growing by COLA.
     expect(at(dead, DEATH_AGE + 5).ss).toBeGreaterThan(at(dead, DEATH_AGE).ss);
     expect(at(dead, DEATH_AGE + 5).ss).toBeLessThan(at(alive, DEATH_AGE + 5).ss);
   });
 
-  // ── 4. deduction, IRMAA tier and senior bonus step down TOGETHER ───────────
   test("4. standard deduction, IRMAA tier and senior bonus all step down together", () => {
     const { getStandardDeduction } = require("./App");
     const { getSeniorBonusDeduction } = require("./engine/buildRothExplorer.js");
@@ -412,23 +331,16 @@ describe("§22 widow's penalty", () => {
     expect(jointYear).toBe("mfj");
     expect(survivorYear).toBe("single");
 
-    // One of these lagging is the likely bug, so assert all three in one place.
     expect(getStandardDeduction(76, survivorYear, 1)).toBeLessThan(getStandardDeduction(76, jointYear, 1));
     expect(getIrmaaCeiling(1, survivorYear, 1)).toBeLessThan(getIrmaaCeiling(1, jointYear, 1));
     expect(getSeniorBonusDeduction(76, survivorYear, 0, 2028)).toBeLessThan(
            getSeniorBonusDeduction(76, jointYear,    0, 2028));
   });
 
-  // ── 5. cross-engine agreement on the survivor year ────────────────────────
   test("5. runMC and the waterfall agree that the survivor year is taxed as Single", () => {
     const { runMC } = require("./App");
-    // The engines use different RNG, so compare the SHAPE both must share: each
-    // one's survivor-year filing status comes from the same helper. A drifting
-    // copy in either engine is what this catches.
     expect(filingStatusAt(withDeath, DEATH_AGE + 1)).toBe("single");
     expect(spouseDeathOnPrimaryClock(withDeath)).toBe(DEATH_AGE);
-    // And runMC must still produce a usable result with a death modelled
-    // (a thrown error or NaN success rate is the failure mode here).
     const mc = runMC({ ...withDeath, paths: 60 });
     expect(Number.isFinite(mc.rate)).toBe(true);
     expect(mc.rate).toBeGreaterThanOrEqual(0);
@@ -436,7 +348,6 @@ describe("§22 widow's penalty", () => {
   });
 
   test("the death age is the SPOUSE's own age, shifted onto the primary's clock", () => {
-    // Spouse 8 years younger dying at 75 ⇒ the primary is 83 that year.
     const gapped = {
       ...withDeath,
       spouse: { ...withDeath.spouse, dob: `${PRIMARY_BY + 8}-01-01`, deathAge: 75 },
@@ -459,23 +370,15 @@ describe("§22 widow's penalty", () => {
   });
 });
 
-// ─── §24 #3 — Medicare starts at EACH person's own 65 ─────────────────────────
-//
-// IRMAA thresholds are per TAX RETURN (so they follow filing status), but the
-// surcharge is per BENEFICIARY. MFJ used to charge two surcharges from the moment
-// the PRIMARY turned 65, overstating Medicare cost for the whole age gap — and
-// charged nothing at all when only the OLDER spouse qualified.
 describe("§24 per-person Medicare / IRMAA start", () => {
   const { irmaaCost } = require("./App");
   const YR = new Date().getFullYear();
-  const HIGH_MAGI = 400_000;   // comfortably into a surcharge tier
+  const HIGH_MAGI = 400_000;
 
   test("unchanged when the beneficiary count is not supplied (regression lock)", () => {
     const mfjBoth = irmaaCost(HIGH_MAGI, YR, 0.025, true);
     expect(mfjBoth).toBeGreaterThan(0);
-    // Explicitly passing 2 must equal the old MFJ default.
     expect(irmaaCost(HIGH_MAGI, YR, 0.025, true, 2)).toBe(mfjBoth);
-    // And 1 must equal the old single-filer amount at the MFJ threshold.
     expect(irmaaCost(HIGH_MAGI, YR, 0.025, true, 1)).toBe(Math.round(mfjBoth / 2));
   });
 
@@ -490,39 +393,18 @@ describe("§24 per-person Medicare / IRMAA start", () => {
   });
 
   test("the THRESHOLD still follows filing status, not the beneficiary count", () => {
-    // A one-beneficiary MFJ couple is measured against the MFJ threshold, so an
-    // income between the single and MFJ tier-1 thresholds owes nothing.
     const between = 150_000;
-    expect(irmaaCost(between, YR, 0.025, true, 1)).toBe(0);      // MFJ threshold
-    expect(irmaaCost(between, YR, 0.025, false, 1)).toBeGreaterThan(0); // single threshold
+    expect(irmaaCost(between, YR, 0.025, true, 1)).toBe(0);
+    expect(irmaaCost(between, YR, 0.025, false, 1)).toBeGreaterThan(0);
   });
 
   test("an age-gapped couple is charged ONE surcharge, then two", () => {
     const { personsAtLeastAge } = require("./engine/ages.js");
-    // Primary 66, spouse 55 → one on Medicare.
     expect(personsAtLeastAge(66, 55, true, 65)).toBe(1);
-    // Eleven years later both are on it.
     expect(personsAtLeastAge(77, 66, true, 65)).toBe(2);
   });
 });
 
-// ─── §30 — survivor benefit rules ─────────────────────────────────────────────
-//
-// v1.2.63 modelled the survivor's income as max(ownCheck, deceasedCheck) from the
-// death year. That was wrong in TWO OPPOSITE DIRECTIONS at once, and they do not
-// cancel — they hit different households:
-//
-//   OVERSTATED — it paid 100% of the deceased's check immediately. A survivor
-//   claiming below survivor FRA actually receives 71.5% (at 60) to 99%; the
-//   reduction is permanent.
-//
-//   UNDERSTATED, badly — the inherited check was gated on the DECEASED's claim age,
-//   so a death before they filed paid $0 until the year they *would* have filed.
-//   The survivor benefit actually derives from the deceased's PIA and is claimable
-//   from 60 whether or not the deceased ever filed. That is the early-death case
-//   the whole feature exists to explore.
-//
-// Constants cited from TAX_REFERENCE.md → "Survivor benefits".
 describe("§30 survivorBenefit — the statutory rules", () => {
   const {
     survivorFra, survivorReductionFactor, survivorBasis,
@@ -672,7 +554,7 @@ describe("§30 survivorBenefit — the statutory rules", () => {
 });
 
 describe("§30 — computeHouseholdSS honours the survivor rules end to end", () => {
-  const PRIMARY_BY = NOW.getFullYear() - 62;   // survivor born 1964 ⇒ survivor FRA 67
+  const PRIMARY_BY = NOW.getFullYear() - 62;
 
   function widow(over = {}) {
     return {
@@ -682,8 +564,8 @@ describe("§30 — computeHouseholdSS honours the survivor rules end to end", ()
       spouse: {
         enabled: true,
         dob: `${PRIMARY_BY}-01-01`,
-        ssAge: 70, ssb: 44640, ssPia: 36000,   // higher earner, delayed to 70
-        deathAge: 66,                          // dies BEFORE claiming
+        ssAge: 70, ssb: 44640, ssPia: 36000,
+        deathAge: 66,
       },
       ...over,
     };
@@ -732,21 +614,6 @@ describe("§30 — computeHouseholdSS honours the survivor rules end to end", ()
   });
 });
 
-// ─── §30 defect 2 — WHICH of the two dies first ───────────────────────────────
-//
-// Until now `spouse.deathAge` could only mean "the spouse dies". The engines kept
-// walking the PRIMARY's age, so modelling "the higher earner dies and a younger
-// spouse survives" — the more commonly asked case, since the higher earner is often
-// the older partner — applied a dead person's milestones to a living one:
-//
-//   • the PLAN HORIZON ended at the dead partner's end age, so a younger survivor's
-//     money was never required to last their whole life. That flattered every such
-//     plan, and it is the largest of the four errors.
-//   • Medicare and the age-65 deduction started on the dead partner's 65th.
-//   • RMDs were forced on the dead partner's birth year, up to a decade early.
-//   • the survivor benefit was priced off the dead partner's full retirement age.
-//
-// Owner decision (2026-07-30): the horizon follows whoever is alive.
 describe("§30 firstToDie — the survivor's identity drives everything", () => {
   const {
     firstToDie, survivorIsPrimary, firstDeathOnPrimaryClock,
@@ -754,8 +621,8 @@ describe("§30 firstToDie — the survivor's identity drives everything", () => 
   } = require("./engine/ages.js");
   const { buildWithdrawalWaterfall } = require("./engine/buildWithdrawalWaterfall.js");
 
-  const PRIMARY_BY = NOW.getFullYear() - 70;   // primary is 70
-  const SPOUSE_BY  = NOW.getFullYear() - 60;   // spouse is 60 ⇒ gap of 10
+  const PRIMARY_BY = NOW.getFullYear() - 70;
+  const SPOUSE_BY  = NOW.getFullYear() - 60;
 
   const COUPLE = {
     currentAge: 70, retireAge: 70, endAge: 90,
@@ -783,19 +650,15 @@ describe("§30 firstToDie — the survivor's identity drives everything", () => 
   });
 
   test("deathAge is always the DECEDENT's own age, translated onto one clock", () => {
-    // Spouse dies at 62; the spouse is 10 years younger, so the primary is 72.
     const spouseDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 62, firstToDie: "spouse" } };
     expect(firstDeathOnPrimaryClock(spouseDies)).toBe(72);
-    // Primary dies at 72; that IS the primary's clock, no translation.
     const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
     expect(firstDeathOnPrimaryClock(primaryDies)).toBe(72);
   });
 
   test("the survivor's own age is the primary's, shifted by the gap", () => {
     const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
-    // When the primary's clock reads 80, the surviving spouse is 70.
     expect(survivorAgeOnPrimaryClock(primaryDies, 80)).toBe(70);
-    // And when the PRIMARY survives, no shift at all.
     const spouseDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 62, firstToDie: "spouse" } };
     expect(survivorAgeOnPrimaryClock(spouseDies, 80)).toBe(80);
   });
@@ -812,8 +675,6 @@ describe("§30 firstToDie — the survivor's identity drives everything", () => 
     });
 
     test("EXTENDS by the age gap when a younger spouse survives", () => {
-      // Spouse is 10 years younger, so reaching 90 happens when the primary's clock
-      // would read 100. The plan must cover those extra ten years.
       const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
       expect(planEndAgeOnPrimaryClock(primaryDies, 90)).toBe(100);
     });
@@ -821,10 +682,9 @@ describe("§30 firstToDie — the survivor's identity drives everything", () => 
     test("SHORTENS symmetrically when an older spouse survives", () => {
       const olderSpouse = {
         ...COUPLE,
-        dob: `${NOW.getFullYear() - 60}-01-01`,          // primary 60
+        dob: `${NOW.getFullYear() - 60}-01-01`,
         spouse: { ...COUPLE.spouse, dob: `${NOW.getFullYear() - 70}-01-01`, deathAge: 65, firstToDie: "primary" },
       };
-      // Spouse is 10 years OLDER, so they reach 90 when the primary's clock reads 80.
       expect(planEndAgeOnPrimaryClock(olderSpouse, 90)).toBe(80);
     });
 
@@ -834,7 +694,6 @@ describe("§30 firstToDie — the survivor's identity drives everything", () => 
         dob: `${NOW.getFullYear() - 60}-01-01`,
         spouse: { ...COUPLE.spouse, dob: `${NOW.getFullYear() - 85}-01-01`, deathAge: 79, firstToDie: "primary" },
       };
-      // Spouse 25 years older would "reach 90" long before the death — clamp to it.
       expect(planEndAgeOnPrimaryClock(olderSpouse, 90)).toBeGreaterThanOrEqual(79);
     });
 
@@ -843,7 +702,6 @@ describe("§30 firstToDie — the survivor's identity drives everything", () => 
       const primaryDies = buildWithdrawalWaterfall({
         ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" },
       });
-      // 70..90 is 21 rows; 70..100 is 31.
       expect(base.smart.rows.length).toBe(21);
       expect(primaryDies.smart.rows.length).toBe(31);
       expect(primaryDies.smart.rows[primaryDies.smart.rows.length - 1].age).toBe(100);
@@ -851,38 +709,25 @@ describe("§30 firstToDie — the survivor's identity drives everything", () => 
   });
 
   test("the survivor benefit is priced off the SURVIVOR's FRA, not the deceased's", () => {
-    // Primary dies at 72 having claimed at 70; the surviving spouse is 62 that year,
-    // below their own survivor FRA, so the inherited $48,000 must be REDUCED.
     const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
     const got = computeHouseholdSS(primaryDies, 72);
     expect(got).toBeLessThan(48_000);
     expect(got).toBeGreaterThan(48_000 * 0.715);
-    // Hand-checked: the spouse was born 1966, so their survivor FRA is 67. Claiming
-    // at 62 is 5 of the 7 years early ⇒ 0.715 + 0.285 × (2/7) = 0.7964.
     expect(got).toBe(Math.round(48_000 * (0.715 + 0.285 * (2 / 7))));
 
-    // And the reduction is PERMANENT. Reaching survivor FRA later does not restore
-    // the full amount — that is the whole cost of claiming early, and an engine that
-    // quietly un-reduced it at FRA would make early claiming look free.
     expect(computeHouseholdSS(primaryDies, 77)).toBe(got);
 
-    // Claiming AT survivor FRA instead is unreduced.
     const waited = { ...primaryDies, spouse: { ...primaryDies.spouse, survivorClaimAge: 67 } };
     expect(computeHouseholdSS(waited, 77)).toBe(48_000);
   });
 
   test("a younger survivor's Medicare and RMDs do NOT start on the dead partner's clock", () => {
-    // Primary dies at 72. The spouse is 62 then and does not reach 65 until the
-    // primary's clock reads 75, nor their own RMD age until much later.
     const primaryDies = { ...COUPLE, spouse: { ...COUPLE.spouse, deathAge: 72, firstToDie: "primary" } };
     const rows = buildWithdrawalWaterfall(primaryDies).smart.rows;
-    const at73 = rows.find(r => r.age === 73);   // survivor is 63 — not on Medicare
-    const at77 = rows.find(r => r.age === 77);   // survivor is 67 — on Medicare
+    const at73 = rows.find(r => r.age === 73);
+    const at77 = rows.find(r => r.age === 77);
     expect(at73.irmaa).toBe(0);
 
-    // RMDs must not fire on the dead primary's schedule (their age 75 = row 75).
-    // The survivor was born ~1966 ⇒ their own RMD age is 75, reached when the
-    // primary's clock reads 85.
     const at75 = rows.find(r => r.age === 75);
     expect(at75.rmd).toBe(0);
     const at85 = rows.find(r => r.age === 85);
@@ -898,17 +743,6 @@ describe("§30 firstToDie — the survivor's identity drives everything", () => 
   });
 });
 
-// ─── §31 — the stress scenario must not be a SECOND death model ────────────────
-//
-// The Stress Test "spouse passes early" card and the Profile death fields both
-// modelled a first death, differently on every axis: day one vs a chosen age,
-// Single immediately vs MFJ through the death year, a max()/×0.67 haircut vs the
-// survivor reduction and PIA basis, spouse-only vs either partner, and no horizon
-// change vs a horizon that follows the survivor. The stress path also set
-// spouse.enabled: false, which silently DISCARDED whatever the user had authored.
-//
-// It is now a variation on the authored model — same rules, worse timing. These
-// tests assert the two surfaces cannot disagree about the household.
 describe("§31 stress death scenario reuses the authored model", () => {
   const { runMC } = require("./App");
   const { filesJointlyAt, planEndAgeOnPrimaryClock, firstDeathOnPrimaryClock } = require("./engine/ages.js");
@@ -934,27 +768,21 @@ describe("§31 stress death scenario reuses the authored model", () => {
     },
   };
 
-  // What the stress card now does: move the authored death earlier, change nothing else.
   const sooner = (yearsSooner = 10) => ({
     ...AUTHORED,
     spouse: { ...AUTHORED.spouse, deathAge: AUTHORED.spouse.deathAge - yearsSooner },
   });
 
   test("moving the death earlier keeps MFJ-through-the-death-year semantics", () => {
-    // The old scenario forced filingStatus "single" from day one, so this was false
-    // for every year. The rule must be the SAME rule the base plan uses.
     const s = sooner();
-    expect(filesJointlyAt(s, 69)).toBe(true);    // before the earlier death
-    expect(filesJointlyAt(s, 70)).toBe(true);    // the death year itself
-    expect(filesJointlyAt(s, 71)).toBe(false);   // Single after
-    // And the base plan's own flip is untouched.
+    expect(filesJointlyAt(s, 69)).toBe(true);
+    expect(filesJointlyAt(s, 70)).toBe(true);
+    expect(filesJointlyAt(s, 71)).toBe(false);
     expect(filesJointlyAt(AUTHORED, 80)).toBe(true);
     expect(filesJointlyAt(AUTHORED, 81)).toBe(false);
   });
 
   test("the scenario does NOT discard the authored death", () => {
-    // The old code set spouse.enabled: false, which made firstDeathOnPrimaryClock
-    // return Infinity — the user's setting vanished. It must still be a real death.
     const s = sooner();
     expect(Number.isFinite(firstDeathOnPrimaryClock(s))).toBe(true);
     expect(firstDeathOnPrimaryClock(s)).toBe(70);
@@ -962,27 +790,22 @@ describe("§31 stress death scenario reuses the authored model", () => {
   });
 
   test("an earlier death is WORSE — the whole point of the scenario", () => {
-    // Same seed and path count both sides, so the gap is the timing, not RNG.
     const base    = runMC(AUTHORED, AUTHORED.endAge, 200, 7, true).rate;
     const earlier = runMC(sooner(), AUTHORED.endAge, 200, 7, true).rate;
     expect(earlier).toBeLessThanOrEqual(base);
   });
 
   test("the horizon rule is the same rule, not a second one", () => {
-    // Both surfaces must agree, including when a younger spouse survives.
     const youngerSpouse = {
       ...AUTHORED,
       spouse: { ...AUTHORED.spouse, dob: `${BY + 8}-01-01`, firstToDie: "primary", deathAge: 80 },
     };
     const stressed = { ...youngerSpouse, spouse: { ...youngerSpouse.spouse, deathAge: 70 } };
-    // Spouse is 8 years younger, so the horizon extends by 8 in BOTH.
     expect(planEndAgeOnPrimaryClock(youngerSpouse, 90)).toBe(98);
     expect(planEndAgeOnPrimaryClock(stressed, 90)).toBe(98);
   });
 
   test("with NO authored death the day-one bound still works and is finite", () => {
-    // Profiles that never set a death age keep the legacy behaviour, relabelled in
-    // the UI as a worst-case bound rather than a forecast.
     const noDeath = { ...AUTHORED, spouse: { ...AUTHORED.spouse, deathAge: null } };
     const dayOne = {
       ...noDeath,
@@ -998,13 +821,6 @@ describe("§31 stress death scenario reuses the authored model", () => {
   });
 
   test("the widow's-penalty counterfactual differs from the base plan", () => {
-    // The card's two runs: the plan as authored, and the same plan with the death
-    // removed. If these were equal the card would always read 0.0pp and the feature
-    // would look inert.
-    // A financially TIGHT plan: AUTHORED is comfortable enough that both runs
-    // succeed on every path, so the difference is real but invisible in the success
-    // rate. A card built on an insensitive fixture reads 0.0pp and looks broken, so
-    // the test has to use a plan that can actually fail.
     const TIGHT = {
       ...AUTHORED,
       sp: 96_000,
@@ -1020,10 +836,8 @@ describe("§31 stress death scenario reuses the authored model", () => {
       { ...TIGHT, spouse: { ...TIGHT.spouse, deathAge: null } },
       TIGHT.endAge, 300, 7, true
     ).rate;
-    // Sanity: the fixture must be sensitive, or the assertions below prove nothing.
     expect(withDeath).toBeLessThan(1);
     expect(withDeath).not.toBe(without);
-    // Direction: removing a death cannot make the plan worse.
     expect(without).toBeGreaterThanOrEqual(withDeath);
   });
 });

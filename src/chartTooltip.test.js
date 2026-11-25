@@ -1,18 +1,3 @@
-/**
- * The shared chart tooltip must not label a calendar year as an age.
- *
- * Reported 2026-08-05 with a screenshot: hovering the Income/Expenses chart at
- * 2044 showed "Age 2044".
- *
- * Cause: `Tip` is shared by TEN charts that do not agree on their x-axis key.
- * Most use dataKey="age"; the Income/Expenses chart uses dataKey="yr". The
- * heading was a hardcoded `Age {label}`, so the year-keyed charts printed a year
- * behind the word "Age".
- *
- * tipHeading() reads the data ROW instead of the axis label. Tested as a pure
- * function rather than by rendering, so this needs no new test dependency.
- */
-
 import { tipHeading } from "./App";
 
 const row = (r) => [{ name: "Savings Drawdown", value: 99138, payload: r }];

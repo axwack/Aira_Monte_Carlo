@@ -1,4 +1,3 @@
-// Failed-path drill-down (Stress Lab slice 3): runMC(..., keepFailures).
 import { runMC } from "./App";
 
 const P = {

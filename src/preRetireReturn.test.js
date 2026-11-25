@@ -1,4 +1,3 @@
-// Flat "return until retirement" assumption (Stress Lab slice 1).
 import { runMC, simulateDeterministicWithStrategy } from "./App";
 
 const P = {

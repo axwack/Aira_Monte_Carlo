@@ -18,7 +18,7 @@ test("resetLocalProfile removes only the profile and cached results", () => {
 test("reload recovery: with no saved profile the landing gate is open", () => {
   saveProfileToLocal({ ...BLANK_PROFILE });
   resetLocalProfile();
-  expect(localStorage.getItem("aira_profile_v1")).toBeNull(); // showWelcome = !loadProfileFromLocal()
+  expect(localStorage.getItem("aira_profile_v1")).toBeNull();
 });
 
 test("dobIsEstimate round-trips through the saved profile and defaults to false", () => {

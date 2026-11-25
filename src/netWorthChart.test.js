@@ -1,29 +1,5 @@
-/**
- * Net Worth chart — the median lookup must never invent a number.
- *
- * THE BUG THIS PINS
- * -----------------
- * Reported 2026-08-03: a plan the engine scores at 99.2% success — median
- * $4,050,653 at age 68, rising to $10,974,327 at 90 — was drawn as a vertical
- * cliff to $0 at 68 and a flat $0 line through 90, with the summary card
- * announcing "Net worth at age 90: $0". Nothing distinguished that from a
- * portfolio that had genuinely died, and it is the kind of screen that would
- * talk someone out of a good plan.
- *
- * The chart did:
- *     const pctIndex = Math.min(age - retireAge, pcts.length - 1);
- *     port = pcts[pctIndex]?.p50 || 0;
- *
- * Two independent defects in two lines:
- *   • `|| 0` collapsed "really zero", "no data" and "NaN" into one value. NaN is
- *     falsy, so one broken input rendered as $0 for every year after it.
- *   • `Math.min` clamped past the end of the data, repeating the last row for
- *     every remaining age — fabricated years the summary card then quoted.
- */
-
 import { mcMedianAtAge, selectPortfolioAtAge, deflate } from "./App";
 
-// Shape runMC actually returns: each row carries its own `age`.
 const PCTS = [
   { age: 54, p10: 1_000_000, p50: 2_000_000, p90: 3_000_000 },
   { age: 55, p10: 1_050_000, p50: 2_100_000, p90: 3_200_000 },
@@ -36,8 +12,6 @@ describe("mcMedianAtAge — real figures", () => {
   });
 
   test("matches on the row's own age, so a stale retireAge cannot shift it", () => {
-    // `mc` computed at retireAge 54, but the profile now says 60. Positional
-    // arithmetic would read index 55-60 = -5; age matching is immune.
     expect(mcMedianAtAge(PCTS, 55, 60)).toBe(2_100_000);
   });
 
@@ -49,7 +23,6 @@ describe("mcMedianAtAge — real figures", () => {
 
 describe("mcMedianAtAge — never fabricates", () => {
   test("past the end of the data returns null, NOT the clamped last row", () => {
-    // THE regression: ages beyond the horizon used to repeat age 56's figure.
     expect(mcMedianAtAge(PCTS, 57, 54)).toBeNull();
     expect(mcMedianAtAge(PCTS, 90, 54)).toBeNull();
   });
@@ -67,8 +40,6 @@ describe("mcMedianAtAge — never fabricates", () => {
     expect(mcMedianAtAge(poisoned, 54, 54)).toBe(2_000_000);
     expect(mcMedianAtAge(poisoned, 55, 54)).toBeNull();
     expect(mcMedianAtAge(poisoned, 56, 54)).toBeNull();
-    // The distinction that matters: null breaks the chart line and is labelled;
-    // 0 draws a confident dead portfolio.
     expect(mcMedianAtAge(poisoned, 55, 54)).not.toBe(0);
   });
 
@@ -98,23 +69,8 @@ describe("mcMedianAtAge — legacy rows with no age field", () => {
   });
 });
 
-/**
- * selectPortfolioAtAge — the ONE place any UI is supposed to read a
- * simulated portfolio value from an mc run (see its doc comment in App.jsx
- * and src/noRawMcAccess.test.js, which fails the build if a new call site
- * bypasses it).
- *
- * THE BUG THIS PINS
- * -----------------
- * Reported 2026-09-04: the same run, same age, showed two different median
- * values in two tabs (~1.9x apart) — the Net Worth tab never deflated
- * `mc.pcts` when "Today's Dollars" was on, while the Forecast tab's fan chart
- * did. A third call site (the Checkpoints table) read `mc.pcts` with `|| 0`,
- * a separate bug (missing data silently becomes $0) that selecting through
- * this function also closes off.
- */
 describe("selectPortfolioAtAge — basis correctness", () => {
-  const mc = { pcts: PCTS }; // ages 54–56, p50 2.0M / 2.1M / 2.25M
+  const mc = { pcts: PCTS };
 
   test("real: false (default) returns the raw nominal figure", () => {
     expect(selectPortfolioAtAge(mc, 55)).toBe(2_100_000);
@@ -123,8 +79,6 @@ describe("selectPortfolioAtAge — basis correctness", () => {
 
   test("real: true deflates by the SAME factor deflate() would apply directly", () => {
     const inf = 2.5;
-    // Row 55 is index 1 in PCTS (row 0 = age 54 = retirement year), so it
-    // discounts by (1+inf/100)^1 — matching deflate()'s own row-position math.
     const expected = deflate(PCTS, inf, true)[1].p50;
     expect(selectPortfolioAtAge(mc, 55, { real: true, inf })).toBe(expected);
     expect(selectPortfolioAtAge(mc, 55, { real: true, inf })).not.toBe(2_100_000);

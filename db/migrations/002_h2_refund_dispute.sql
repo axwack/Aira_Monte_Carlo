@@ -1,14 +1,5 @@
--- H2 migration: refund / dispute handling
--- Run ONLY when upgrading an existing DB (schema was applied before 2026-06-15).
--- Fresh installs: run db/schema.sql instead — it already includes these columns.
---
---   wrangler d1 execute aira-credits --file=db/migrations/002_h2_refund_dispute.sql --remote
-
--- 1. Add status column to customers (default 'active' for all existing rows).
 ALTER TABLE customers ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
 
--- 2. Expand credit_transactions.type CHECK to include 'refund' and 'dispute_lock'.
---    SQLite cannot ALTER an existing CHECK constraint, so we recreate the table.
 PRAGMA foreign_keys = OFF;
 
 CREATE TABLE credit_transactions_new (

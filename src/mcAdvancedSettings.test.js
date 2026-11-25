@@ -1,15 +1,3 @@
-/**
- * Monte Carlo Advanced Settings — sampling-window and path-count behaviour.
- *
- * The load-bearing claim this file tests is DEFAULT PRESERVATION: an absent or
- * full-range window must not change a single number in an existing plan.
- * `resolveSampleRange` returns null for the full history on purpose, and every
- * sampler then takes its original code path — same rand() call count, same
- * index mapping. If that ever stops being true, every saved result and seed in
- * the app silently re-baselines, which is exactly the class of change that
- * looks harmless in review and moves every user's success rate.
- */
-
 import { runMC } from "./App";
 import { resolveSampleRange, SAMPLE_START_YEAR, SAMPLE_END_YEAR, MC_PATHS, MC_PATH_MIN, MC_PATH_MAX } from "./App";
 
@@ -74,7 +62,6 @@ test("degenerate or reversed ranges fall back to full history instead of throwin
 
 test("out-of-range years are clamped into the data window", () => {
   const r = resolveSampleRange({ ...BASE, mcRangeStart: 1800, mcRangeEnd: 2025 });
-  // Clamped to the data start; the end is the data end → full history again.
   expect(r).toBeNull();
   const r2 = resolveSampleRange({ ...BASE, mcRangeStart: 1800, mcRangeEnd: 1990 });
   expect(r2.start).toBe(0);
@@ -93,8 +80,6 @@ test("DEFAULT PRESERVATION: no range == full range, byte-identical results", () 
 test("a modern-only window can differ from the full history (the feature works)", () => {
   const full = runMC(BASE, 90, 600, 42, true);
   const modern = runMC({ ...BASE, mcRangeStart: 1980, mcRangeEnd: 2025 }, 90, 600, 42, true);
-  // Not asserting a DIRECTION (that would encode a market opinion); asserting
-  // the window actually reaches the engine and moves the answer.
   const differs = modern.rate !== full.rate || modern.term.p50 !== full.term.p50;
   expect(differs).toBe(true);
 });

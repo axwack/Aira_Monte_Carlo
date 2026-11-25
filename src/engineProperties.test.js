@@ -1,6 +1,3 @@
-// Engine properties — TASKS 2026-10-30 item 3.
-// Table-driven invariants that must hold for every plan, not one fixture:
-// determinism, monotone need, non-negative balances, and a closed balance sheet.
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 
 const BASE = {
@@ -37,7 +34,7 @@ describe("determinism", () => {
 describe("need is monotone in planned spending", () => {
   test("a plan that spends more never needs less from the portfolio", () => {
     for (const h of horizons) {
-      let prev = -Infinity;   // income can exceed spending, so the first need may be negative
+      let prev = -Infinity;
       for (const sp of spendLevels) {
         const row = rowsOf({ ...BASE, ...h, sp })[0];
         const need = row.spending + row.housingCost + row.carveoutCost - row.fixedIncomeTotal;
@@ -53,7 +50,7 @@ describe("balances", () => {
     for (const row of rowsOf(p)) {
       for (const k of ["cashEnd", "taxableEnd", "pretaxEnd", "rothEnd", "totalPort"]) {
         expect(Number.isFinite(row[k])).toBe(true);
-        expect(row[k]).toBeGreaterThanOrEqual(-1);   // rounding tolerance only
+        expect(row[k]).toBeGreaterThanOrEqual(-1);
       }
     }
   });

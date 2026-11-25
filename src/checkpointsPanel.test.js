@@ -1,13 +1,3 @@
-/**
- * `CheckpointsPanel` — lifted out of `MCTab`.
- *
- * Beyond "it renders", this pins the four things that changed in the move,
- * because each one was a defect rather than a preference:
- *   1. the row actions are named in text, not by emoji alone;
- *   2. "set baseline" confirms first and says what it will do;
- *   3. Save says WHY it did nothing;
- *   4. the panel admits when it is showing only some of the checkpoints.
- */
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import CheckpointsPanel, { checkpointError } from "./forecast/CheckpointsPanel";
@@ -73,7 +63,6 @@ test("save explains why it did nothing on an empty field", () => {
   expect(onUpdate).not.toHaveBeenCalled();
   expect(text()).toMatch(/Add the date this balance was true/);
 
-  // Fill the date, leave the value: the message must change to the new field.
   const dateInput = el.querySelector('input[aria-label="Checkpoint date"]');
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
   act(() => { set.call(dateInput, "2020-01-01"); dateInput.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -117,6 +106,6 @@ test("delete hands the id back rather than mutating anything", () => {
 test("compares the actual value against the median for that age", () => {
   const { text, unmount } = mount({ checkpoints: [cp()] });
   expect(text()).toMatch(/Ahead/);
-  expect(text()).toContain("$900,000"); // the p50 it was compared against
+  expect(text()).toContain("$900,000");
   unmount();
 });

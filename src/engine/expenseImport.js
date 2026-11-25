@@ -1,61 +1,25 @@
-/**
- * expenseImport.js
- *
- * Parses a user-uploaded CSV budget and turns it into something the
- * retirement engine can consume — replacing the single aggregate "core
- * lifestyle spend" (p.sp) with a detailed line-item budget.
- *
- * No external dependencies (keeps the Netlify bundle lean — CSV only, not
- * native .xlsx). Pure functions, fully unit-testable.
- *
- * Two outcomes, auto-detected from the file shape:
- *   - "single" : one budget (line items) → sum to a single annual total.
- *                Flows into the existing p.sp field and inflates forward
- *                exactly like a hand-typed spend number.
- *   - "multi"  : a year-by-year budget → an explicit nominal spend schedule
- *                [{year, amount}]. Used as the per-year base spend, overriding
- *                the distribution strategy's spend rule (a detailed multi-year
- *                budget IS the spending plan). Beyond the last listed year the
- *                last value is carried forward, inflation-adjusted.
- *
- * Supported CSV layouts (header row optional/auto-detected):
- *   A. Single-year, 2 columns:        Category,Amount
- *   B. Multi-year wide:               Category,2026,2027,2028   (one col per year)
- *   C. Multi-year long:               Year,Category,Amount      (one row per year/item)
- *   D. Bare single column of amounts: Amount                    (no labels)
- */
-
 const YEAR_RE = /^(19|20)\d{2}$/;
 
-/** A header cell that names the amount column. */
 function isAmountHeader(s) {
   return /amount|annual|cost|spend|expense|total|\$|usd|budget/i.test(s);
 }
 
-/** A header cell that names the year column (long format). */
 function isYearHeader(s) {
   return /^(year|yr|cal\.?\s*year|calendar\s*year)$/i.test(s.trim());
 }
 
-/** A header cell naming the discretionary/total ("Like to Spend") column. */
 function isLikeHeader(s) {
   return /like\s*to\s*spend|discretionary|nice\s*to|wants?/i.test(s);
 }
 
-/** A header cell naming the essential ("Must Spend") column. */
 function isMustHeader(s) {
   return /must\s*spend|essential|need|required/i.test(s);
 }
 
-/** A header cell naming the frequency column. */
 function isFreqHeader(s) {
   return /^(frequency|freq|period|recurrence)$/i.test(s.trim());
 }
 
-/**
- * Annualization multiplier for a frequency label. Unknown → 1 (assume already
- * annual). One-time entries are counted once (×1) and flagged by the caller.
- */
 function freqMultiplier(cell) {
   const s = String(cell || "").trim().toLowerCase();
   if (/month/.test(s)) return 12;
@@ -64,14 +28,9 @@ function freqMultiplier(cell) {
   if (/quarter/.test(s)) return 4;
   if (/semi.?annual|half.?year/.test(s)) return 2;
   if (/(^|[^a-z])day|daily/.test(s)) return 365;
-  return 1; // annual / yearly / annually / one-time / blank / unknown
+  return 1;
 }
 
-/**
- * Parse one CSV line into cells, honoring double-quoted fields (which may
- * themselves contain commas, e.g. a quoted "1,200"). Doubled quotes ("")
- * inside a quoted field are an escaped quote.
- */
 function splitCsvLine(line) {
   const cells = [];
   let cur = "";
@@ -93,11 +52,6 @@ function splitCsvLine(line) {
   return cells.map((c) => c.trim());
 }
 
-/**
- * Coerce a cell to a number, tolerating $, thousands commas, surrounding
- * whitespace, and accounting-style parentheses for negatives. Returns NaN if
- * the cell is not numeric.
- */
 function toNumber(cell) {
   if (cell == null) return NaN;
   let s = String(cell).trim();
@@ -112,30 +66,15 @@ function toNumber(cell) {
   return neg ? -n : n;
 }
 
-/** True if a row is entirely empty cells. */
 function isBlankRow(cells) {
   return cells.every((c) => c === "");
 }
 
-/**
- * Parse a CSV budget string.
- * @param {string} text raw file contents
- * @returns {{
- *   mode: "single"|"multi",
- *   total: number|null,             // single mode: summed annual budget
- *   schedule: Array<{year:number, amount:number}>|null, // multi mode
- *   lineItems: Array<{label:string, amount:number}>,    // single mode detail
- *   warnings: string[],
- *   rowCount: number
- * }}
- * @throws {Error} when the file has no usable numeric data.
- */
 export function parseExpenseCsv(text) {
   const warnings = [];
   if (text == null || String(text).trim() === "") {
     throw new Error("The file is empty.");
   }
-  // Strip a UTF-8 BOM if present, normalize newlines.
   const clean = String(text).replace(/^﻿/, "");
   const rawRows = clean
     .split(/\r\n|\r|\n/)
@@ -144,9 +83,6 @@ export function parseExpenseCsv(text) {
 
   if (rawRows.length === 0) throw new Error("The file has no rows.");
 
-  // --- Header detection -----------------------------------------------------
-  // A first row is a header if it contains any year-like or column-naming cell.
-  // Otherwise it "looks like data" when its amount cell (last column) is numeric.
   const first = rawRows[0];
   const firstHasYearCol = first.some((c) => YEAR_RE.test(c));
   const firstNamesCols = first.some(
@@ -159,7 +95,6 @@ export function parseExpenseCsv(text) {
   const header = hasHeader ? first : null;
   const dataRows = hasHeader ? rawRows.slice(1) : rawRows;
 
-  // --- Layout B: multi-year WIDE (multiple year columns in the header) ------
   if (header) {
     const yearCols = [];
     header.forEach((cell, idx) => {
@@ -182,9 +117,6 @@ export function parseExpenseCsv(text) {
     }
   }
 
-  // --- Locate columns -------------------------------------------------------
-  // "Like to Spend" (full budget) is preferred over a generic amount column;
-  // "Must Spend" (essential floor) and "Frequency" are captured when present.
   let amountIdx = -1;
   let yearIdx = -1;
   let likeIdx = -1;
@@ -195,12 +127,10 @@ export function parseExpenseCsv(text) {
     mustIdx = header.findIndex(isMustHeader);
     freqIdx = header.findIndex(isFreqHeader);
     yearIdx = header.findIndex(isYearHeader);
-    // The total/amount column: prefer Like-to-Spend, else a generic amount header.
     amountIdx = likeIdx >= 0 ? likeIdx : header.findIndex(isAmountHeader);
-    if (amountIdx < 0 && mustIdx >= 0) amountIdx = mustIdx; // only Must given
+    if (amountIdx < 0 && mustIdx >= 0) amountIdx = mustIdx;
   }
 
-  // Fall back: pick the last column whose data is consistently numeric.
   if (amountIdx < 0) {
     const width = Math.max(...dataRows.map((r) => r.length));
     for (let c = width - 1; c >= 0; c--) {
@@ -210,7 +140,6 @@ export function parseExpenseCsv(text) {
   }
   if (amountIdx < 0) throw new Error("Could not find a numeric amount column.");
 
-  // Detect a year column by data if not named: a column of all year-like ints.
   if (yearIdx < 0) {
     const width = Math.max(...dataRows.map((r) => r.length));
     for (let c = 0; c < width; c++) {
@@ -220,22 +149,17 @@ export function parseExpenseCsv(text) {
     }
   }
 
-  // Per-row total/essential, normalized to an annual figure via the frequency
-  // column (Boldin-style "Must Spend" / "Like to Spend" / "Monthly" exports).
   let oneTimeSeen = false;
   const rowAnnual = (row) => {
     const mult = freqIdx >= 0 ? freqMultiplier(row[freqIdx]) : 1;
     if (freqIdx >= 0 && /one.?time|once/i.test(row[freqIdx] || "")) oneTimeSeen = true;
     const totalCell = toNumber(row[amountIdx]);
     const mustCell = mustIdx >= 0 ? toNumber(row[mustIdx]) : NaN;
-    // "Like to Spend" already represents the full desired amount; if only Must
-    // was given, amountIdx === mustIdx so total === essential.
     const total = isNaN(totalCell) ? NaN : totalCell * mult;
     const essential = isNaN(mustCell) ? total : mustCell * mult;
     return { total, essential };
   };
 
-  // --- Layout C: multi-year LONG (a year column + amount column) -------------
   if (yearIdx >= 0) {
     const sums = new Map();
     for (const row of dataRows) {
@@ -250,7 +174,6 @@ export function parseExpenseCsv(text) {
       .sort((a, b) => a.year - b.year);
     if (oneTimeSeen) warnings.push("One-time entries were counted once in their row's year.");
     if (schedule.length === 1) {
-      // Only one year present → treat as a single-year budget total.
       return {
         mode: "single", total: schedule[0].amount, essentialTotal: null, schedule: null,
         lineItems: [{ label: String(schedule[0].year), amount: schedule[0].amount }],
@@ -260,7 +183,6 @@ export function parseExpenseCsv(text) {
     return { mode: "multi", total: null, essentialTotal: null, schedule, lineItems: [], warnings, rowCount: dataRows.length };
   }
 
-  // --- Layout A/D: single-year budget (sum the amount column) ---------------
   const labelIdx = [amountIdx, mustIdx, likeIdx, freqIdx, yearIdx].includes(0) ? -1 : 0;
   const lineItems = [];
   let total = 0;
@@ -287,23 +209,10 @@ export function parseExpenseCsv(text) {
   };
 }
 
-/**
- * Resolve the base spend for a given calendar year from a multi-year schedule.
- * - Exact year present → that nominal amount.
- * - Gap or year beyond the last entry → carry the most recent prior amount
- *   forward, inflated at infPct/yr for the elapsed years.
- * - Year before the first entry → the first entry's amount (no back-inflation).
- *
- * @param {Array<{year:number, amount:number}>} schedule sorted ascending
- * @param {number} calYear
- * @param {number} infPct annual inflation rate, percent (e.g. 2.5)
- * @returns {number}
- */
 export function scheduleSpendForYear(schedule, calYear, infPct) {
   if (!schedule || schedule.length === 0) return 0;
   const sorted = [...schedule].sort((a, b) => a.year - b.year);
   if (calYear <= sorted[0].year) return sorted[0].amount;
-  // Most recent entry at or before calYear.
   let base = sorted[0];
   for (const e of sorted) {
     if (e.year <= calYear) base = e; else break;
@@ -313,21 +222,6 @@ export function scheduleSpendForYear(schedule, calYear, infPct) {
   return Math.round(base.amount * Math.pow(1 + (infPct || 0) / 100, elapsed));
 }
 
-/**
- * Resolve the Guyton-Klinger spend floor and ceiling for a year-0 budget.
- *
- * When a one-year detailed budget carried a Must Spend / Like to Spend split
- * (`spImportMeta.essentialTotal` present), the budget — not the % sliders —
- * drives the guardrails: the floor is the essential ("Must Spend") total so
- * spending never drops below necessities, and the ceiling is the full
- * ("Like to Spend") total so spending never exceeds the stated desired budget.
- * Out-of-country spend is treated as committed and added to both bounds.
- *
- * Otherwise the legacy behavior applies: floor/ceiling = a percentage of
- * combined core spend.
- *
- * @returns {{ gkFloor:number, gkCeiling:number, source:"import"|"percent" }}
- */
 export function resolveSpendGuardrails({
   sp = 0,
   spOutOfCountry = 0,
@@ -353,13 +247,6 @@ export function resolveSpendGuardrails({
   };
 }
 
-/**
- * CSV text for the downloadable single-year template. Boldin-style: a
- * Frequency column (normalized to annual) and a Must Spend / Like to Spend
- * split (essentials vs. full desired budget → spend floor / ceiling).
- * Excludes mortgage/rent, debt, medical, long-term care, and income tax —
- * those are modeled elsewhere in the app.
- */
 export const SINGLE_YEAR_TEMPLATE =
   "Category,Frequency,Must Spend,Like to Spend\n" +
   "Groceries,Monthly,800,1000\n" +
@@ -371,7 +258,6 @@ export const SINGLE_YEAR_TEMPLATE =
   "Hobbies,Monthly,100,300\n" +
   "Miscellaneous,Monthly,250,400\n";
 
-/** CSV text for the downloadable multi-year (wide) template. */
 export const MULTI_YEAR_TEMPLATE =
   "Category,2026,2027,2028,2029,2030\n" +
   "Groceries,12000,12300,12600,12900,13200\n" +

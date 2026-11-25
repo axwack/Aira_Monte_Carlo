@@ -5,9 +5,6 @@ const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
 const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}]/u;
 const isComment = (l) => /^\s*(\/\/|\/\*|\*|\{\/\*)/.test(l);
 
-// Design #23: no emoji in the chrome (tabs, buttons, headings, labels). The ones left are status dots,
-// table legends and data glyphs, still to be decided one by one. This is a ratchet: a new emoji line
-// fails the build; after removing some, lower MAX to the new count so they cannot creep back.
 const MAX = 90;
 
 test("emoji lines in App.jsx never grow past the ratchet", () => {

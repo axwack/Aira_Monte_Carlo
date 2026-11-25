@@ -1,8 +1,3 @@
-/**
- * Tests for the detailed-expense CSV importer.
- * Hand-verified totals; no magic numbers beyond the literal CSV fixtures
- * (which ARE the inputs under test).
- */
 import {
   parseExpenseCsv,
   scheduleSpendForYear,
@@ -16,7 +11,7 @@ describe("parseExpenseCsv — single-year budgets", () => {
     const csv = "Category,Annual Amount\nGroceries,12000\nUtilities,4800\nTravel,15000\n";
     const r = parseExpenseCsv(csv);
     expect(r.mode).toBe("single");
-    expect(r.total).toBe(12000 + 4800 + 15000); // 31800
+    expect(r.total).toBe(12000 + 4800 + 15000);
     expect(r.lineItems).toHaveLength(3);
     expect(r.lineItems[0]).toEqual({ label: "Groceries", amount: 12000 });
   });
@@ -31,7 +26,7 @@ describe("parseExpenseCsv — single-year budgets", () => {
   test("tolerates $, thousands commas (quoted), and parentheses negatives", () => {
     const csv = 'Category,Amount\nGroceries,"$12,000"\nRefund,(2000)\nUtilities,$4800\n';
     const r = parseExpenseCsv(csv);
-    expect(r.total).toBe(12000 - 2000 + 4800); // 14800
+    expect(r.total).toBe(12000 - 2000 + 4800);
   });
 
   test("skips non-numeric rows and records a warning", () => {
@@ -51,29 +46,27 @@ describe("parseExpenseCsv — single-year budgets", () => {
   test("Boldin-style: Frequency column normalizes monthly to annual", () => {
     const csv =
       "Label,Frequency,Amount\n" +
-      "Groceries,Monthly,1000\n" +   // 12000/yr
-      "Property Tax,Annually,20000\n" + // 20000/yr
-      "Utilities,Monthly,500\n";     // 6000/yr
+      "Groceries,Monthly,1000\n" +
+      "Property Tax,Annually,20000\n" +
+      "Utilities,Monthly,500\n";
     const r = parseExpenseCsv(csv);
-    expect(r.total).toBe(12000 + 20000 + 6000); // 38000
+    expect(r.total).toBe(12000 + 20000 + 6000);
   });
 
   test("Boldin-style: Must Spend / Like to Spend → total uses Like, essential uses Must", () => {
     const csv =
       "Label,Frequency,Must Spend,Like to Spend\n" +
-      "Groceries,Monthly,400,600\n" +   // must 4800, like 7200
-      "Travel,Annually,5000,15000\n";   // must 5000, like 15000
+      "Groceries,Monthly,400,600\n" +
+      "Travel,Annually,5000,15000\n";
     const r = parseExpenseCsv(csv);
-    expect(r.total).toBe(7200 + 15000);        // 22200 (Like to Spend)
-    expect(r.essentialTotal).toBe(4800 + 5000); // 9800 (Must Spend)
+    expect(r.total).toBe(7200 + 15000);
+    expect(r.essentialTotal).toBe(4800 + 5000);
   });
 
   test("bundled single-year template parses with Must/Like split", () => {
     const r = parseExpenseCsv(SINGLE_YEAR_TEMPLATE);
     expect(r.mode).toBe("single");
-    // Like to Spend (annualized): 12000+4800+6000+2400+20000+8400+3600+4800
     expect(r.total).toBe(62000);
-    // Must Spend (annualized): 9600+4200+4800+1440+8000+3600+1200+3000
     expect(r.essentialTotal).toBe(35840);
   });
 });
@@ -117,7 +110,6 @@ describe("parseExpenseCsv — multi-year budgets", () => {
     const r = parseExpenseCsv(MULTI_YEAR_TEMPLATE);
     expect(r.mode).toBe("multi");
     expect(r.schedule).toHaveLength(5);
-    // 2026 column: 12000+4800+6000+9000+20000+8000+5000 = 64800
     expect(r.schedule[0]).toEqual({ year: 2026, amount: 64800 });
   });
 });
@@ -151,7 +143,6 @@ describe("scheduleSpendForYear", () => {
   });
 
   test("gap year carries the prior amount forward, inflation-adjusted", () => {
-    // 2028, 2029 carry 2027's 60000 forward at 2.5%
     expect(scheduleSpendForYear(sched, 2028, 2.5)).toBe(Math.round(60000 * 1.025));
     expect(scheduleSpendForYear(sched, 2029, 2.5)).toBe(Math.round(60000 * Math.pow(1.025, 2)));
   });
@@ -182,8 +173,8 @@ describe("resolveSpendGuardrails", () => {
       gkFloorPct: 60, gkCeilingPct: 115,
       spImportMeta: { mode: "single", total: 50000, essentialTotal: 30000 },
     });
-    expect(g.gkFloor).toBe(40000);   // 30000 + 10000
-    expect(g.gkCeiling).toBe(60000); // 50000 + 10000
+    expect(g.gkFloor).toBe(40000);
+    expect(g.gkCeiling).toBe(60000);
   });
 
   test("import without an essential (Must) total falls back to percent path", () => {
@@ -193,8 +184,8 @@ describe("resolveSpendGuardrails", () => {
       spImportMeta: { mode: "single", total: 80000, essentialTotal: null },
     });
     expect(g.source).toBe("percent");
-    expect(g.gkFloor).toBe(48000);   // 80000 × 0.60
-    expect(g.gkCeiling).toBe(92000); // 80000 × 1.15
+    expect(g.gkFloor).toBe(48000);
+    expect(g.gkCeiling).toBe(92000);
   });
 
   test("multi-year import uses percent path (schedule overrides spend directly)", () => {
@@ -207,7 +198,7 @@ describe("resolveSpendGuardrails", () => {
 
   test("no import → percent of combined core spend", () => {
     const g = resolveSpendGuardrails({ sp: 70000, spOutOfCountry: 30000, gkFloorPct: 60, gkCeilingPct: 115 });
-    expect(g.gkFloor).toBe(60000);    // 100000 × 0.60
-    expect(g.gkCeiling).toBe(115000); // 100000 × 1.15
+    expect(g.gkFloor).toBe(60000);
+    expect(g.gkCeiling).toBe(115000);
   });
 });

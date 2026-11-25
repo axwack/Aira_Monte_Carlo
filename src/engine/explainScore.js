@@ -1,43 +1,11 @@
-/**
- * explainScore.js — why is the success rate what it is?
- *
- * A user hit 3.3% success on a plan that was actually ~100%. Took a day to
- * track down: the bracket cap had zero room, so pre-tax draws got blocked and
- * paths scored as failed while sitting on $3-4M. Found three more bugs in the
- * same family right after, all invisible on screen — the app knew it had blown
- * a bracket target or broken a reserve and just showed a percentage. Can't
- * sanity-check a number with no explanation behind it, not the user and not us.
- *
- * So this module names the drivers behind the score and gives each one a
- * lever. Kept it pure on purpose — no React, no formatting beyond short display
- * strings — so the reasoning can actually be tested.
- *
- * Rule: never rank a driver by tax saved alone. On a real profile, filling to
- * the 32% bracket cut lifetime tax by $2.4M but ended $1.1M poorer than filling
- * to 22%, because tax paid early stops compounding. Ending wealth is the
- * yardstick — tax is just an input to it.
- */
-
-/** Withdrawal-rate bands. 4% is the Bengen rule of thumb, not a law. */
 const WR_SAFE = 0.035;
 const WR_WATCH = 0.045;
 
 const pct = (x) => `${Math.round(x * 100)}%`;
-// The success rate keeps one decimal, as the hero prints it: rounding 99.7%
-// to "100%" contradicted the number on screen.
 const pct1 = (x) => `${(x * 100).toFixed(1).replace(/\.0$/, "")}%`;
 const money = (x) =>
   `$${Math.round(x).toLocaleString("en-US")}`;
 
-/**
- * @param {object} p   profile/params (the same object the engines receive)
- * @param {object} mc  runMC result: { rate, pcts, term, medianExhaustAge,
- *                     bracketOverrideRate, rothReserveBrokenRate, mwRate }
- * @param {object} [initWR] computeInitialWR(p)'s result, when the caller has
- *                     it: the withdrawal rate the verdict strip shows.
- * @returns {{ rate:number, verdict:string, headline:string, drivers:Array }}
- *   driver: { id, label, value, detail, lever, severity: "good"|"watch"|"risk" }
- */
 export function explainScore(p = {}, mc = null, initWR = null) {
   // eslint-disable-next-line no-restricted-properties -- structural validity check (array-ness/length), not a dollar read.
   if (!mc || !Array.isArray(mc.pcts) || mc.pcts.length === 0) {
@@ -49,27 +17,13 @@ export function explainScore(p = {}, mc = null, initWR = null) {
   const endAge = p.endAge ?? 90;
   const spend = p.sp ?? 0;
 
-  // mc.medR, not mc.pcts[0]?.p50 — both claim to be "median portfolio at
-  // retirement" but runMC computes them with two DIFFERENT median-index
-  // formulas (medR: Math.floor(N/2); pcts' quantile: Math.floor(0.5*(N-1))),
-  // which pick adjacent-but-different order statistics for even N (500-3000
-  // here, always even). The gap is small for a smooth distribution, but it's
-  // the same "two readers, two answers" class as the bug this module exists
-  // to help catch — see CLAUDE.md rule 8. mc.medR is the value the
-  // "Portfolio at Retirement" card elsewhere in the app already treats as
-  // canonical, so this narrative now agrees with it by construction.
   const portAtRetire = mc.medR ?? 0;
 
-  // Income that arrives whether or not markets cooperate. `ssb` starts at ssAge,
-  // so at retirement it may be zero — that gap is itself a driver below.
   const rental = (p.propIncome || 0) + (p.ab > 0 ? p.ab : 0);
   const ssAtRetire = (p.ssAge ?? 67) <= retireAge ? (p.ssb || 0) : 0;
   const guaranteed = rental + ssAtRetire;
   const coverage = spend > 0 ? Math.min(1, guaranteed / spend) : 1;
 
-  // The first-year draw the portfolio must actually carry.
-  // computeInitialWR's figure when passed, so the driver and the verdict strip
-  // show one withdrawal rate; the rougher estimate here is only the fallback.
   const initialDraw = initWR ? initWR.initDrawEst : Math.max(0, spend - guaranteed);
   const wrPort = initWR ? initWR.projectedPort : portAtRetire;
   const wr = initWR ? initWR.initWRpct / 100 : wrPort > 0 ? initialDraw / wrPort : 0;
@@ -82,7 +36,6 @@ export function explainScore(p = {}, mc = null, initWR = null) {
 
   const drivers = [];
 
-  // ── 1. Withdrawal rate — the primary determinant of survival ──────────────
   drivers.push({
     id: "withdrawal_rate",
     label: "Withdrawal rate at retirement",
@@ -96,7 +49,6 @@ export function explainScore(p = {}, mc = null, initWR = null) {
     severity: initialDraw === 0 || wr <= WR_SAFE ? "good" : wr <= WR_WATCH ? "watch" : "risk",
   });
 
-  // ── 2. Guaranteed-income coverage ─────────────────────────────────────────
   drivers.push({
     id: "guaranteed_coverage",
     label: "Spending covered by income you don't have to sell for",
@@ -108,7 +60,6 @@ export function explainScore(p = {}, mc = null, initWR = null) {
     severity: coverage >= 0.6 ? "good" : coverage >= 0.3 ? "watch" : "risk",
   });
 
-  // ── 3. Where it fails, and when ───────────────────────────────────────────
   if (rate < 0.995 && mc.medianExhaustAge != null) {
     drivers.push({
       id: "depletion",
@@ -120,7 +71,6 @@ export function explainScore(p = {}, mc = null, initWR = null) {
     });
   }
 
-  // ── 4. Retiring before 59½ ────────────────────────────────────────────────
   if (retireAge < 59.5 && pretaxShare > 0.5) {
     const penaltyYears = Math.ceil(59.5 - retireAge);
     drivers.push({
@@ -135,7 +85,6 @@ export function explainScore(p = {}, mc = null, initWR = null) {
     });
   }
 
-  // ── 5. Pre-tax concentration → forced income later ────────────────────────
   if (pretaxShare > 0.7 && pretaxBal > 500_000) {
     drivers.push({
       id: "rmd_bomb",
@@ -147,9 +96,6 @@ export function explainScore(p = {}, mc = null, initWR = null) {
     });
   }
 
-  // ── 6. Preferences the engine had to yield ────────────────────────────────
-  // Used to enforce these silently as hard limits and just fail the plan.
-  // If a preference is getting overridden now, say so.
   if ((mc.bracketOverrideRate ?? 0) > 0.02) {
     drivers.push({
       id: "bracket_yielded",
@@ -171,8 +117,6 @@ export function explainScore(p = {}, mc = null, initWR = null) {
     });
   }
 
-  // Risk first, then watch, then good — someone scanning for a problem should
-  // hit it right away instead of reading past the reassurance.
   const order = { risk: 0, watch: 1, good: 2 };
   drivers.sort((a, b) => order[a.severity] - order[b.severity]);
 

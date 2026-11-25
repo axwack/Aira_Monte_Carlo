@@ -1,20 +1,3 @@
-/**
- * The dollar-basis label, and the year it names.
- *
- * WHY THIS FILE EXISTS
- * --------------------
- * `dollarBasisLabel` returned "Today's Dollars" while the module's own comment
- * says Real-$ figures are stated in the FIRST SIMULATED RETIREMENT YEAR, not
- * today. VerdictHeader and MCOverviewCards already printed the retirement year,
- * so the Forecast tab could show "2041 dollars", "Today's Dollars" and
- * "future $" for the very same figures. §41 A3 forbids exactly that phrasing,
- * and two existing tests already assert it never appears where the basis is
- * named.
- *
- * These pin the label itself, so the wrong phrasing cannot come back through
- * this function, and pin the shared year so VerdictHeader, MCOverviewCards and
- * the label cannot drift apart again.
- */
 import { dollarBasisLabel, retirementBasisYear } from "./engine/mcSelectors.js";
 
 describe("dollarBasisLabel", () => {
@@ -45,8 +28,6 @@ describe("dollarBasisLabel", () => {
   });
 
   test("an AGE is not a year — it must never print \"50 dollars\"", () => {
-    // Two call sites pass pcts[0].age today. Until they pass a year the label
-    // has to stay honest rather than render an age as a date.
     expect(dollarBasisLabel(true, 50)).toBe("Retirement-year dollars");
     expect(dollarBasisLabel(true, 65)).toBe("Retirement-year dollars");
     expect(dollarBasisLabel(true, 999999)).toBe("Retirement-year dollars");

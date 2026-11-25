@@ -1,20 +1,3 @@
-/**
- * Blanchett spending smile.
- *
- * This existed as a profile field, a sidebar toggle, a `params` entry, and three
- * pieces of UI copy asserting it as fact — including a card quoting "Go-go 115%
- * of base, Slow-go 85% of base" — while NO engine ever read it. The toggle was
- * inert and spending was flat in real terms. These tests exist so that can't
- * silently happen again: the last two assertions verify the value actually
- * reaches the plan, not merely that the helper returns a number.
- *
- * Model: real spending declines ~1%/yr through most of retirement, the decline
- * flattens around 80, and reverses from 85 as healthcare costs take over —
- * Blanchett, "Exploring the Retirement Consumption Puzzle" (2014). Implemented
- * as a compounding rate rather than age bands, since bands imply a ~26%
- * spending cliff on one birthday.
- */
-
 import { spendingSmileFactor } from "./engine/expenses";
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall";
 
@@ -54,8 +37,6 @@ describe("spendingSmileFactor", () => {
   });
 
   test("the curve is anchored to retirement age, not a fixed calendar age", () => {
-    // Someone retiring at 55 has had 25 years of decline by 80; someone
-    // retiring at 70 has had only 10.
     expect(spendingSmileFactor(80, 55)).toBeLessThan(spendingSmileFactor(80, 70));
   });
 
@@ -108,8 +89,6 @@ describe("the smile actually reaches the plan (regression: it used to be inert)"
   });
 
   test("nominal spending still RISES with inflation despite the real decline", () => {
-    // A common misreading: the smile is a real adjustment, so the dollar figures
-    // in the table keep climbing — inflation outpaces a 1%/yr real decline.
     const r = buildWithdrawalWaterfall({ ...P, smile: true });
     const first = r.smart.rows[0].spending;
     const late  = r.smart.rows.at(-1).spending;

@@ -2,7 +2,6 @@ import fs from "fs";
 import path from "path";
 import { pinnedConversionNote } from "./App";
 
-// Monte Carlo ignores manual conversion pins, so the verdict strip must say so.
 describe("pinned-conversion label on the verdict strip", () => {
   test("no pins, no label", () => {
     expect(pinnedConversionNote(0)).toBeNull();

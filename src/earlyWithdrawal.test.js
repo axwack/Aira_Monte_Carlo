@@ -1,12 +1,3 @@
-/**
- * IRC §72(t) 10% additional tax on early distributions.
- *
- * Neither engine charged this. A 56-year-old filling the 12% bracket from a
- * Rollover IRA was billed income tax only — understating the true cost of those
- * dollars by a tenth, and recommending an order that is wrong for anyone
- * retiring before 59½.
- */
-
 import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall";
 import {
   earlyWithdrawalPenalty, detectEmployerPlan, seppActive, seppMustRunUntil,
@@ -18,7 +9,7 @@ describe("detectEmployerPlan — name-based by design", () => {
     const d = detectEmployerPlan([
       { category: "pretax", name: "Alpha 401(k)", balance: 600_000 },
       { category: "pretax", name: "Rollover IRA", balance: 400_000 },
-      { category: "roth",   name: "Roth 401k",    balance: 200_000 }, // roth: ignored
+      { category: "roth",   name: "Roth 401k",    balance: 200_000 },
     ]);
     expect(d.hasEmployerPlan).toBe(true);
     expect(d.employerPlanBalance).toBe(600_000);
@@ -61,7 +52,6 @@ describe("earlyWithdrawalPenalty", () => {
       age: 56, pretaxDistribution: 100_000, retireAge: 56,
       ruleOf55: true, ruleOf55Share: 0.6,
     });
-    // 60% employer plan is exempt; the 40% IRA slice is still penalized.
     expect(r.exemptAmount).toBe(60_000);
     expect(r.penalty).toBe(4_000);
   });
@@ -77,7 +67,7 @@ describe("earlyWithdrawalPenalty", () => {
   test("Rule of 55 is worthless to a pure-IRA holder even if asserted", () => {
     const r = earlyWithdrawalPenalty({
       age: 56, pretaxDistribution: 40_000, retireAge: 56,
-      ruleOf55: true, ruleOf55Share: 0,   // everything was rolled to an IRA
+      ruleOf55: true, ruleOf55Share: 0,
     });
     expect(r.penalty).toBe(4_000);
   });
@@ -106,12 +96,10 @@ describe("earlyWithdrawalPenalty", () => {
 
 describe("SEPP duration — the longer of 5 years or 59½", () => {
   test("starting early, five years is not enough", () => {
-    // Start at 50 → 5 years ends at 55, but the series must run to 59½.
     expect(seppMustRunUntil(50)).toBe(EARLY_PENALTY_AGE);
   });
 
   test("starting late, 59½ is not enough — five years governs", () => {
-    // Start at 57 → must run to 62, well past 59½.
     expect(seppMustRunUntil(57)).toBe(62);
   });
 
@@ -122,13 +110,6 @@ describe("SEPP duration — the longer of 5 years or 59½", () => {
   });
 });
 
-/**
- * Wired into the plan, not just the helper.
- *
- * The helper being correct proves nothing if the waterfall never calls it — that
- * is exactly how `checkRothWithdrawalPenalty` ended up fully tested and reachable
- * only from its own test file.
- */
 describe("§72(t) reaches buildWithdrawalWaterfall", () => {
   const EARLY = {
     currentAge: 56, retireAge: 56, endAge: 90,
@@ -172,7 +153,6 @@ describe("§72(t) reaches buildWithdrawalWaterfall", () => {
   });
 
   test("Rule of 55 cannot rescue a Rollover IRA even if the user ticks it", () => {
-    // EARLY holds only a Rollover IRA — no employer plan to apply the exception to.
     const r = buildWithdrawalWaterfall({ ...EARLY, ruleOf55: true }).smart.rows.find(x => x.age === 56);
     expect(r.earlyPenalty).toBeGreaterThan(0);
   });

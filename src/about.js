@@ -1,12 +1,7 @@
-// AiRA About Content
-// Edit this file to update the About modal — no JSX required.
-
 export const ABOUT_ME = {
   name:    "TiredToRetire.com/AiRA",
   tagline: "Investor · Builder · Freedom Seeker",
-  // 2–4 sentences. Plain text only.
   bio: "I built AiRA because I couldn't find a retirement planner that spoke the language of a real DIY investor — one that accounts for rental income, Roth conversions, sequence-of-returns risk, and the nuance of spending less abroad. This tool is the one I wished existed when I started planning my own exit. I share everything I learn about financial independence and early retirement on my channel — subscribe if you want the unfiltered version.",
-  // Set url: "" to hide a link entirely.
   links: [
     { icon: "▶️", label: "YouTube Channel",  url: "https://youtube.com/@vincentplansfreedom" },
     { icon: "🐦", label: "Instagram",       url: "https://www.instagram.com/tiredtoretire/" },
@@ -15,13 +10,6 @@ export const ABOUT_ME = {
   ],
 };
 
-// Special thanks — people who took the time to find something wrong and say
-// so precisely.
-//
-// Display-only. Keep it to a real contribution — "gave feedback" doesn't
-// count, finding a defect nobody else saw does. `handle` is whatever the
-// person uses publicly; don't add real names, emails, or anything they
-// haven't published themselves.
 export const ABOUT_THANKS = {
   intro: "AiRA is better because people took the time to tell me what was wrong with it — precisely, with the numbers, and usually more than once. Named here with thanks.",
   people: [
@@ -51,7 +39,6 @@ export const ABOUT_THANKS = {
 export const ABOUT_PRODUCT = {
   name:        "AiRA Freedom Financial",
   tagline:     "A DIY retirement planner built for the modern retiree.",
-  // Shown at the top of the "How It Works" tab as orientation text.
   intro: "AiRA simulates thousands of possible retirement futures so you can stress-test your plan before you need it. Here's how the key pieces fit together — start with your profile, run the Monte Carlo, then use the withdrawal table to inspect individual years.",
   description: "AiRA runs 3,000 stochastic Monte Carlo paths using 99 years of S&P 500 data and 50 years of bond returns, layered with real historical inflation. Every dollar on screen is traceable to a formula — no magic numbers, no black boxes. It models 10 withdrawal strategies, Roth conversion optimization, IRMAA cliffs, RMDs, rental income reliability, healthcare shocks, and a Blanchett spending smile. The deterministic schedule and MC engine are kept in sync so your year-by-year plan always matches the probabilistic output.",
   bullets: [
@@ -65,16 +52,7 @@ export const ABOUT_PRODUCT = {
   ],
 };
 
-// Feature explanations shown in the ❓ Help modal (HelpButton in App.jsx).
-//
-// group: one of "Getting Started" | "Withdrawal Strategies" |
-// "Your Properties" | "Reading the Charts" (or any new label you add — it
-// auto-creates a section).
-//
-// Add a new entry here to add a new card. Order within a group follows the
-// array order below.
 export const ABOUT_FEATURES = [
-  // ── Getting Started ──────────────────────────────────────
   {
     id:    "first-plan",
     group: "Getting Started",
@@ -116,7 +94,6 @@ export const ABOUT_FEATURES = [
     verified: "",
   },
 
-  // ── Withdrawal Strategies ─────────────────────────────────
   {
     id:    "fixed-strategy",
     group: "Withdrawal Strategies",
@@ -148,7 +125,6 @@ export const ABOUT_FEATURES = [
     verified: "",
   },
 
-  // ── Risk & Returns ────────────────────────────────────────
   {
     id:    "equity-weight",
     group: "Risk & Returns",
@@ -171,7 +147,6 @@ export const ABOUT_FEATURES = [
     verified: "",
   },
 
-  // ── Your Spending ─────────────────────────────────────────
   {
     id:    "spending-smile",
     group: "Your Spending",
@@ -183,7 +158,6 @@ export const ABOUT_FEATURES = [
     verified: "",
   },
 
-  // ── Your Income ───────────────────────────────────────────
   {
     id:    "pension-types",
     group: "Your Income",
@@ -243,7 +217,6 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
     verified: "",
   },
 
-  // ── Your Properties ───────────────────────────────────────
   {
     id:    "property-income",
     group: "Your Properties",
@@ -255,7 +228,6 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
     verified: "",
   },
 
-  // ── Reading the Charts ────────────────────────────────────
   {
     id:    "todays-vs-future-dollars",
     group: "Reading the Charts",
@@ -379,7 +351,6 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
     source: "",
     verified: "",
      },
-  // ── Tax Modeling ──────────────────────────────────────────
   {
     id:    "tax-treatment-matrix",
     group: "Tax Modeling",
@@ -584,7 +555,6 @@ Claiming a survivor benefit before <em>survivor</em> full retirement age (66–6
     verified: "",
      },
 
-  // ── 3-Bucket Strategy ────────────────────────────────────
   {
     id:    "bucket-overview",
     group: "3-Bucket Strategy",
@@ -653,7 +623,6 @@ Act on this. The directive shows step-by-step which account to sell from, how mu
     verified: "",
   },
 
-  // ── AI Action Plan ────────────────────────────────────────
   {
     id:    "ai-analysis",
     group: "AI Action Plan",

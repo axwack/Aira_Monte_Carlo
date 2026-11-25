@@ -1,11 +1,3 @@
-/**
- * Comprehensive computation correctness tests for AiRA Forecaster.
- *
- * Covers: tax brackets, standard deductions, 85% SS inclusion, IRMAA,
- * state tax, Guyton-Klinger guardrails, RMD start age, progressive tax
- * math, and Monte Carlo integration (monotonicity, SS impact, determinism).
- */
-
 import {
   runMC,
   runStress,
@@ -28,7 +20,6 @@ import { buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall.js";
 import { LIVE_STRATEGIES } from "./engine/withdrawalStrategies.js";
 import { taxableYieldSplit } from "./engine/taxableYield.js";
 
-// ─── Shared MC baseline ───────────────────────────────────────────────────────
 const BASE = {
   currentAge: 60,
   retireAge: 60,
@@ -53,7 +44,7 @@ const BASE = {
   useJointRmdTable: false,
   twoHousehold: false,
   filingStatus: "mfj",
-  stateOfResidence: "FL", // no state tax — isolates federal math
+  stateOfResidence: "FL",
   accounts: [
     { id: "t1", category: "pretax",  name: "401k",    balance: 1_400_000 },
     { id: "t2", category: "roth",    name: "Roth",    balance:   400_000 },
@@ -62,9 +53,6 @@ const BASE = {
   ],
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// progTax — raw progressive bracket math
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("progTax — progressive bracket math", () => {
   const brackets = [
     { lo: 0,     hi: 10_000, rate: 0.10 },
@@ -77,17 +65,14 @@ describe("progTax — progressive bracket math", () => {
   });
 
   test("income entirely in first bracket", () => {
-    // $5K × 10% = $500
     expect(progTax(5_000, brackets)).toBeCloseTo(500, 0);
   });
 
   test("income spanning two brackets", () => {
-    // $10K×10% + $10K×20% = $1000 + $2000 = $3000
     expect(progTax(20_000, brackets)).toBeCloseTo(3_000, 0);
   });
 
   test("income spanning all three brackets", () => {
-    // $10K×10% + $30K×20% + $10K×30% = $1000 + $6000 + $3000 = $10000
     expect(progTax(50_000, brackets)).toBeCloseTo(10_000, 0);
   });
 
@@ -96,25 +81,7 @@ describe("progTax — progressive bracket math", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// irmaaCost — Medicare IRMAA surcharge
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("irmaaCost — IRMAA Medicare surcharges", () => {
-  // Tiers (2026 annual, MFJ) — each floor pairs with ITS OWN surcharge, per
-  // aira-forecaster-agents/knowledge/TAX_REFERENCE.md "IRMAA Thresholds (MFJ 2026)".
-  // REGRESSION (found by a from-scratch engine audit): the table previously
-  // paired every floor with the PRECEDING tier's surcharge — $218K carried
-  // $0 instead of $2,297, and the true top tier (>$750K, $13,872) was
-  // entirely absent (the $750K floor incorrectly carried $12,710, the
-  // NEXT-lower tier's amount). These tests locked in that wrong mapping;
-  // corrected here against the canonical reference, not against old code output.
-  //   < $218K      → $0
-  //   $218K–$274K  → $2,297
-  //   $274K–$342K  → $5,770
-  //   $342K–$410K  → $9,240
-  //   $410K–$750K  → $12,710
-  //   $750K+       → $13,872
-
   test("MAGI below $218K → $0 (no IRMAA)", () => {
     expect(irmaaCost(200_000, 2026)).toBe(0);
   });
@@ -140,7 +107,6 @@ describe("irmaaCost — IRMAA Medicare surcharges", () => {
   });
 
   test("future year thresholds inflate at 2.5%/yr from the 2027 table (first tier $224K)", () => {
-    // 2031 = 4 years past the published 2027 table
     const f = Math.pow(1.025, 4);
     const tierThreshold = Math.round(224_000 * f);
     expect(irmaaCost(tierThreshold - 1, 2031)).toBe(0);
@@ -148,12 +114,8 @@ describe("irmaaCost — IRMAA Medicare surcharges", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// calcYearTax — full tax engine
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("calcYearTax — federal tax, state tax, IRMAA", () => {
 
-  // Helper: call with minimal args in current year, no SS, no rental, MFJ, FL (no state tax)
   const taxFL = (age, withdrawal, opts = {}) =>
     calcYearTax(
       age, 2026, withdrawal,
@@ -177,14 +139,12 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
   });
 
   test("MFJ under-65 standard deduction = $32,200 (2026)", () => {
-    // Exactly at the standard deduction → taxable income = 0
     const r = taxFL(60, 32_200);
     expect(r.taxableIncome).toBe(0);
     expect(r.fedTax).toBe(0);
   });
 
   test("MFJ age 65+ gets extra $3,300 deduction → $35,500 total", () => {
-    // $35,500 income → taxable income = 0
     const r = taxFL(65, 35_500);
     expect(r.taxableIncome).toBe(0);
     expect(r.fedTax).toBe(0);
@@ -201,56 +161,38 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
   });
 
   test("MFJ income in 10% bracket only: correct federal tax", () => {
-    // $40K withdrawal, MFJ, FL → taxableIncome = 40000 - 32200 = 7800 → all at 10%
     const r = taxFL(60, 40_000);
     expect(r.taxableIncome).toBe(7_800);
     expect(r.fedTax).toBeCloseTo(780, 0);
   });
 
   test("MFJ income spanning 10%→12% brackets", () => {
-    // $60K withdrawal → taxable = 60000 - 32200 = 27800
-    // 10%: 24800 × 0.10 = 2480
-    // 12%: (27800 - 24800) × 0.12 = 360
-    // fedTax = 2840
     const r = taxFL(60, 60_000);
     expect(r.taxableIncome).toBe(27_800);
     expect(r.fedTax).toBeCloseTo(2_840, 0);
   });
 
   test("SS not taxable when provisional income ≤ $32K MFJ lower threshold (IRC §86)", () => {
-    // $24K SS + $20K withdrawal → provisional = 20000 + 12000 = 32000 ≤ 32000 → taxableSS = 0
-    // totalIncome = 20000; taxableIncome = max(0, 20000 - 32200) = 0
     const r = taxFL(60, 20_000, { ss: 24_000 });
     expect(r.taxableIncome).toBe(0);
   });
 
   test("85% of SS taxable at high income (provisional far above $44K MFJ)", () => {
-    // $24K SS + $100K withdrawal → provisional = 112000 >> 44000 → taxableSS = 20400 (85% cap)
-    // totalIncome = 120400; taxableIncome = 120400 - 32200 = 88200
     const r = taxFL(60, 100_000, { ss: 24_000 });
     expect(r.taxableIncome).toBe(88_200);
   });
 
   test("50% tier: provisional income between MFJ thresholds taxes half the excess", () => {
-    // $24K SS + $26K withdrawal → provisional = 26000 + 12000 = 38000 (between 32K and 44K)
-    // taxableSS = min(0.5 × (38000 − 32000), 0.5 × 24000) = 3000
-    // totalIncome = 29000; taxableIncome = max(0, 29000 - 32200) = 0
     const r = taxFL(60, 26_000, { ss: 24_000 });
     expect(r.taxableIncome).toBe(0);
     expect(r.fedTax).toBe(0);
   });
 
   test("Low-income: SS is the only income, spending funded by cash/Roth → ~$0 tax", () => {
-    // Cash and Roth withdrawals are non-taxable, so they are NOT passed as ordinary
-    // income (withdrawalAmount = 0). SS is the only income source.
-    // provisional = ½ × $24K = $12K < $32K MFJ lower threshold → taxableSS = 0
-    // → taxableIncome = 0 → fedTax = 0.
-    // Regression: before the IRC §86 fix, SS was always taxed at 85% ($20,400 of
-    // taxable income), producing a nonzero federal tax even with no real income.
     const r = taxFL(70, 0, { ss: 24_000 });
     expect(r.taxableIncome).toBe(0);
     expect(r.fedTax).toBe(0);
-    expect(r.stateTax).toBe(0); // FL has no state income tax
+    expect(r.stateTax).toBe(0);
   });
 
   test("Florida state tax = 0 regardless of income", () => {
@@ -260,8 +202,6 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
 
   test("California state tax uses progressive brackets for MFJ", () => {
     const r = calcYearTax(60, 2026, 60_000, 0, 0, 0, 0, false, 0.025, "mfj", "CA");
-    // taxableIncome = 27800 (60000 - 32200 MFJ std ded)
-    // CA MFJ progressive brackets → 341 (far below top 13.3% bracket)
     expect(r.stateTax).toBe(341);
   });
 
@@ -273,7 +213,6 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
   });
 
   test("IRMAA charged at age 65 when MAGI lands in the $274K-$342K tier", () => {
-    // MAGI = 300K (withdrawal=300K, ss=0) → falls in $274K–$342K tier → $5,770
     const r = calcYearTax(65, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
     expect(r.irmaa).toBe(5_770);
   });
@@ -295,45 +234,26 @@ describe("calcYearTax — federal tax, state tax, IRMAA", () => {
   });
 
   test("inflation adjusts brackets forward (year 2036 vs 2026)", () => {
-    // Same nominal income; 2036 should have larger deductions and lower taxable income
     const now    = taxFL(60, 60_000);
-    // Simulate 2036 by using a different year — via calcYearTax directly
     const future = calcYearTax(60, 2036, 60_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
     expect(future.taxableIncome).toBeLessThan(now.taxableIncome);
     expect(future.fedTax).toBeLessThanOrEqual(now.fedTax);
   });
 
   test("calcYearTax exposes this year's own MAGI on the result (magi field)", () => {
-    // magi = totalIncome (incl. taxable SS) + ltcgAmount — callers build a
-    // per-age history from this so future years can look it back up.
     const r = calcYearTax(60, 2026, 60_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
     expect(r.magi).toBe(60_000);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// IRMAA 2-year lookback (calcYearTax's magiLookback parameter) — 2026-07-18
-//
-// Medicare charges year T's IRMAA surcharge off the tax return filed two years
-// prior (MAGI[T-2]), not the current year's income. calcYearTax's new trailing
-// `magiLookback` parameter lets a caller with per-age MAGI history substitute
-// that 2-years-ago figure for the irmaaCost() lookup; the CURRENT year `yr`
-// still selects which bracket table to use. `null` (the default, and every
-// pre-existing call site above) preserves the old same-year-MAGI behavior.
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("calcYearTax — IRMAA 2-year lookback (magiLookback param)", () => {
   test("magiLookback above tier-1 charges IRMAA even when THIS year's MAGI is low", () => {
-    // Current-year withdrawal is only $100K (well under $218K tier-1), but the
-    // 2-years-ago MAGI of $300K (>$274K) is what actually gets charged.
     const r = calcYearTax(66, 2026, 100_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, 300_000);
     expect(r.irmaa).toBeGreaterThan(0);
-    expect(r.irmaa).toBe(5_770); // same $274K–$342K tier as the direct irmaaCost(300_000,...) test above
+    expect(r.irmaa).toBe(5_770);
   });
 
   test("magiLookback below tier-1 charges NO IRMAA even when THIS year's MAGI is high", () => {
-    // Current-year withdrawal of $300K would trigger IRMAA under the OLD
-    // same-year behavior, but the 2-years-ago MAGI of $100K is below tier-1 —
-    // the surcharge is charged on the OLD income, not the current one.
     const r = calcYearTax(66, 2026, 300_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 0, 100_000);
     expect(r.irmaa).toBe(0);
   });
@@ -352,15 +272,6 @@ describe("calcYearTax — IRMAA 2-year lookback (magiLookback param)", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// stateOfResidence fallback consistency (B1 regression)
-//
-// Every code path that defaults stateOfResidence when it's omitted must agree
-// on "NJ" — the documented, majority default (matches BLANK_PROFILE's UI
-// display defaults and buildWithdrawalWaterfall.js). Regression guard for the
-// bug where runMC's per-year tax calc and simulateDeterministicWithStrategy
-// silently fell back to "CA" while everything else in the app agreed on "NJ".
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("stateOfResidence fallback consistency (B1 regression)", () => {
   test("calcYearTax: omitted stateOfResidence defaults to NJ, not CA", () => {
     const omitted = calcYearTax(65, 2026, 150_000, 0, 0, 0, 0, false, 0.025, "mfj");
@@ -380,13 +291,10 @@ describe("stateOfResidence fallback consistency (B1 regression)", () => {
         { id: "t4", category: "cash",    name: "Cash",    balance:  20_000 },
       ],
     };
-    delete p.stateOfResidence; // simulate a profile that never set the field
+    delete p.stateOfResidence;
     const omitted = runMC(p, 90, 1, 42, true);
     const nj      = runMC({ ...p, stateOfResidence: "NJ" }, 90, 1, 42, true);
     const ca      = runMC({ ...p, stateOfResidence: "CA" }, 90, 1, 42, true);
-    // medR is portfolio-AT-RETIREMENT (pre-drawdown) — unaffected by state tax.
-    // Use the terminal portfolio value, which accumulates the annual state-tax
-    // drag over the whole retirement horizon.
     expect(omitted.term.p50).toBe(nj.term.p50);
     expect(omitted.term.p50).not.toBe(ca.term.p50);
   });
@@ -407,9 +315,6 @@ describe("stateOfResidence fallback consistency (B1 regression)", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// getRmdStartAge — SECURE Act 2.0 RMD start age
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("getRmdStartAge — SECURE Act 2.0 RMD start age", () => {
   test("born 1960 or later → RMD starts at 75", () => {
     expect(getRmdStartAge({ dob: "1960-01-01" })).toBe(75);
@@ -435,21 +340,15 @@ describe("getRmdStartAge — SECURE Act 2.0 RMD start age", () => {
   });
 
   test("birthYear takes precedence over dob", () => {
-    // birthYear=1960, dob says 1955 — birthYear wins
     expect(getRmdStartAge({ birthYear: 1960, dob: "1955-01-01" })).toBe(75);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// guytonKlingerWithdrawal — GK guardrails
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("guytonKlingerWithdrawal — GK guardrails", () => {
   const FLOOR   = 30_000;
   const CEILING = 80_000;
 
   test("positive return year: spending inflates by inflation rate", () => {
-    // portfolioValue=1M, initialWR=4%, lastW=40K, infl=2.5%
-    // WR after inflation: 41000/1000000 = 4.1% — within ±20% of 4% (3.2%–4.8%)
     const result = guytonKlingerWithdrawal(1_000_000, 0.04, 40_000, 0.10, 0.025, FLOOR, CEILING);
     expect(result).toBeCloseTo(41_000, 0);
   });
@@ -460,27 +359,21 @@ describe("guytonKlingerWithdrawal — GK guardrails", () => {
   });
 
   test("prosperity trigger: WR < 80% of initial → 10% raise", () => {
-    // portfolioValue=1.5M, initialWR=4%, lastW=40K, infl=2%
-    // inflated w = 40800; WR = 40800/1500000 = 0.0272 < 0.04*0.8=0.032 → +10%
     const result = guytonKlingerWithdrawal(1_500_000, 0.04, 40_000, 0.20, 0.02, FLOOR, CEILING);
     expect(result).toBeCloseTo(40_000 * 1.02 * 1.10, 0);
   });
 
   test("capital preservation: WR > 120% of initial → 10% cut", () => {
-    // portfolioValue=500K, initialWR=4%, lastW=40K, infl=2.5%
-    // inflated w = 41000; WR = 41000/500000 = 0.082 > 0.04*1.2=0.048 → -10%
     const result = guytonKlingerWithdrawal(500_000, 0.04, 40_000, 0.01, 0.025, FLOOR, CEILING);
     expect(result).toBeCloseTo(41_000 * 0.90, 0);
   });
 
   test("floor constraint: never drops below floor even after capital preservation", () => {
-    // lastW=25K → after cap-pres: 25K*0.9 = 22.5K < floor 30K
     const result = guytonKlingerWithdrawal(50_000, 0.04, 25_000, 0.01, 0.025, FLOOR, CEILING);
     expect(result).toBe(FLOOR);
   });
 
   test("ceiling constraint: never exceeds ceiling even after prosperity", () => {
-    // Large portfolio, high lastWithdrawal to push above ceiling
     const result = guytonKlingerWithdrawal(10_000_000, 0.04, 120_000, 0.20, 0.025, FLOOR, CEILING);
     expect(result).toBe(CEILING);
   });
@@ -491,9 +384,6 @@ describe("guytonKlingerWithdrawal — GK guardrails", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// runMC — Monte Carlo integration tests
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("runMC — Monte Carlo integration", () => {
   test("determinism: same seed always yields identical results", () => {
     const r1 = runMC(BASE, 90, 1000, 42, true);
@@ -503,11 +393,8 @@ describe("runMC — Monte Carlo integration", () => {
   });
 
   test("different seeds produce different median portfolio paths", () => {
-    // The scenario is very favorable (success ~99%), so rates may tie.
-    // But the random paths themselves differ — median portfolio at year 10 will diverge.
     const r1 = runMC(BASE, 90, 500, 42,  true);
     const r2 = runMC(BASE, 90, 500, 99,  true);
-    // At least one mid-point percentile should differ between seeds
     const p50_r1 = r1.pcts[10].p50;
     const p50_r2 = r2.pcts[10].p50;
     expect(p50_r1).not.toBe(p50_r2);
@@ -517,7 +404,7 @@ describe("runMC — Monte Carlo integration", () => {
     const r = runMC(BASE, 90, 500, 42, true);
     expect(r.rate).toBeGreaterThanOrEqual(0);
     expect(r.rate).toBeLessThanOrEqual(1);
-    expect(r.pcts).toHaveLength(31); // age 60–90 inclusive
+    expect(r.pcts).toHaveLength(31);
   });
 
   test("terminal percentiles are monotonically ordered", () => {
@@ -529,13 +416,6 @@ describe("runMC — Monte Carlo integration", () => {
   });
 
   test("terminal percentiles match pcts' final-year row even when paths exhaust early", () => {
-    // Regression: a path that runs out of money `break`s out of the retirement
-    // loop before that year's `path.push`, so its `path` array used to be
-    // shorter than a survivor's. `term` (the Forecast tab's headline number)
-    // read each path's LAST recorded entry — a stale mid-run balance for an
-    // exhausted path, not $0 at the terminal age — while `pcts` (the Net Worth
-    // tab chart) correctly zeroed it via `?? 0`. A high failure rate exercises
-    // enough exhausted paths that the two diverge sharply if this regresses.
     const r = runMC({ ...BASE, port: 100_000, sp: 200_000, accounts: [
       { id: "t1", category: "pretax", name: "401k", balance: 100_000 },
     ]}, 90, 500, 42, true);
@@ -554,16 +434,6 @@ describe("runMC — Monte Carlo integration", () => {
   });
 
   test("monotonicity: longer horizon → lower success rate", () => {
-    // The spending path must be held constant across the two horizons, or this
-    // measures Guyton-Klinger rather than horizon length. GK's longevity rule
-    // suspends capital-preservation cuts inside the final 15 years, so an
-    // endAge of 85 disables cuts for the WHOLE retirement while 95 keeps them
-    // active until 80 — the shorter plan never self-corrects and can genuinely
-    // score worse, inverting the property under test. Pinning the GK floor and
-    // ceiling to the same value clamps spending flat regardless of which rules
-    // fire, leaving horizon as the only difference. Leaner than BASE too, since
-    // at $2M against $80k both horizons succeed ~100% and the comparison
-    // becomes rounding noise.
     const LEAN = { ...BASE, port: 1_100_000, gkFloor: 80_000, gkCeiling: 80_000 };
     const shorter = runMC(LEAN, 85, 1000, 42, true);
     const longer  = runMC(LEAN, 95, 1000, 42, true);
@@ -595,12 +465,6 @@ describe("runMC — Monte Carlo integration", () => {
   });
 
   test("FL (no state tax) has higher success rate than CA (13.3% state tax)", () => {
-    // Use a tighter scenario so the 13.3% state tax drag is detectable.
-    // Bengen (non-adaptive) spending: GK guardrails now correctly track NET
-    // portfolio need, so they adaptively spend part of any tax savings
-    // (prosperity raises), which can shrink the FL-vs-CA survival gap into
-    // sampling noise. Tax drag → survival is only monotone for a fixed-real
-    // spending rule, which is what this test is actually about.
     const tight = { ...BASE, withdrawalStrategy: "bengen", ssb: 0, sp: 90_000,
       accounts: [
         { id: "t1", category: "pretax",  name: "401k",    balance: 900_000 },
@@ -608,19 +472,12 @@ describe("runMC — Monte Carlo integration", () => {
         { id: "t3", category: "taxable", name: "Taxable", balance:  80_000 },
         { id: "t4", category: "cash",    name: "Cash",    balance:  20_000 },
       ] };
-    // The gap is real but small, so at n=2000 the sign depends on the seed. Checked on 2026-11-14:
-    // at n=10,000 FL beats CA by 0.65 to 1.5 points on seeds 1, 7 and 42; at n=2000 five of six
-    // seeds show FL ahead and seed 1 lands in the noise (-0.4). Seed 42 shows +2.2 points.
-    // (Root cause: a path that fails early stops drawing random numbers, so scenarios are not
-    // paired path by path. Per-path seeding is on the audit backlog.)
     const fl = runMC({ ...tight, stateOfResidence: "FL" }, 90, 2000, 42, true);
     const ca = runMC({ ...tight, stateOfResidence: "CA" }, 90, 2000, 42, true);
-    // 13.3% state tax = meaningfully higher annual draw → lower success rate
     expect(fl.rate).toBeGreaterThan(ca.rate);
   });
 
   test("twoHousehold mode (no state tax) has higher success rate than single CA household", () => {
-    // Bengen spending — same reasoning as the FL-vs-CA test above.
     const tight = { ...BASE, withdrawalStrategy: "bengen", stateOfResidence: "CA", ssb: 0, sp: 90_000,
       accounts: [
         { id: "t1", category: "pretax",  name: "401k",    balance: 900_000 },
@@ -628,15 +485,12 @@ describe("runMC — Monte Carlo integration", () => {
         { id: "t3", category: "taxable", name: "Taxable", balance:  80_000 },
         { id: "t4", category: "cash",    name: "Cash",    balance:  20_000 },
       ] };
-    // Seed 42 — same reasoning as the FL-vs-CA test above (this pair is the same comparison).
     const two = runMC({ ...tight, twoHousehold: true  }, 90, 2000, 42, true);
     const one = runMC({ ...tight, twoHousehold: false }, 90, 2000, 42, true);
-    // Skipping CA 13.3% state tax is a meaningful annual saving → higher success
     expect(two.rate).toBeGreaterThan(one.rate);
   });
 
   test("RMD at age 73: pretax-heavy portfolio has lower success than Roth-heavy (same total)", () => {
-    // Pretax triggers RMDs at 73 — forces taxable withdrawals earlier, increasing tax burden
     const pretaxHeavy = runMC({
       ...BASE,
       stateOfResidence: "CA",
@@ -659,8 +513,6 @@ describe("runMC — Monte Carlo integration", () => {
       ],
     }, 90, 1000, 42, true);
 
-    // With source-aware taxes both variants can saturate at 100% survival on this
-    // portfolio; the RMD tax drag still shows up in median terminal wealth.
     expect(rothHeavy.rate).toBeGreaterThanOrEqual(pretaxHeavy.rate);
     expect(rothHeavy.term.p50).toBeGreaterThan(pretaxHeavy.term.p50);
   });
@@ -668,9 +520,6 @@ describe("runMC — Monte Carlo integration", () => {
   test("joint RMD table gives lower RMD draw than uniform table (divisors are higher)", () => {
     const uniform = runMC({ ...BASE, stateOfResidence: "CA", useJointRmdTable: false }, 90, 1000, 42, true);
     const joint   = runMC({ ...BASE, stateOfResidence: "CA", useJointRmdTable: true  }, 90, 1000, 42, true);
-    // Joint Table II (spouse >10y younger) has LARGER divisors than Uniform Table III
-    // at most ages (e.g. 26.5 uniform vs 25.3 joint at 73 — joint is smaller there, but
-    // crosses over by ~80), so direction varies by age mix; just verify both run validly.
     expect(uniform.rate).toBeGreaterThanOrEqual(0);
     expect(joint.rate).toBeGreaterThanOrEqual(0);
   });
@@ -686,63 +535,34 @@ describe("runMC — Monte Carlo integration", () => {
   });
 
   test("fixed 4% strategy: produces different median terminal portfolio than GK", () => {
-    // With a well-funded scenario, both strategies may hit ~100% success, but the
-    // wealth accumulation paths differ because withdrawal amounts differ each year.
     const gk    = runMC({ ...BASE, withdrawalStrategy: "gk"    }, 90, 1000, 42, true);
     const fixed = runMC({ ...BASE, withdrawalStrategy: "fixed" }, 90, 1000, 42, true);
     const gkMedian    = gk.pcts[gk.pcts.length - 1].p50;
     const fixedMedian = fixed.pcts[fixed.pcts.length - 1].p50;
-    // The two strategies generate different wealth paths even if both succeed
     expect(gkMedian).not.toBe(fixedMedian);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Roth conversion tax cost — progressive bracket stacking (A1 regression)
-//
-// The conversion cost must be the DELTA in full progressive tax (with the
-// conversion stacked as ordinary income) vs. the no-conversion tax — not a flat
-// marginal-rate estimate priced off the PRE-conversion income level. A flat rate
-// badly under-costs any conversion whose `room` spans multiple brackets above the
-// pre-conversion bracket (in the extreme, starting from $0 taxable income, the
-// pre-conversion marginal bracket is 0% — the old code would have priced a
-// six-figure bracket-fill conversion at $0 tax).
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("Roth conversion tax cost — progressive bracket stacking (A1 regression)", () => {
   test("calcYearTax: real progressive cost of a bracket-spanning conversion is far above a flat pre-conversion marginal-rate estimate", () => {
-    // Zero baseline ordinary income → pre-conversion marginal bracket is 0%
-    // (the old flat-rate bug's worst case: convTax = round(convAmt × 0) = $0).
     const noConv = calcYearTax(65, 2026, 0, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
     expect(noConv.marginalBracket).toBe(0);
 
-    // conversionAmount is ORDINARY INCOME (pre-deduction); at age 65 MFJ the std
-    // deduction is 35,500, PLUS the OBBBA senior bonus (2026 is inside the
-    // 2025–2028 window). MAGI here is the full 211,400, which is above the
-    // 150,000 MFJ phase-out start, so the bonus is partly phased out:
-    //   excess    = 211,400 − 150,000 = 61,400
-    //   reduction = 6% × 61,400 × 2 persons = 7,368
-    //   bonus     = 12,000 − 7,368       = 4,632
-    // taxable income = 211,400 − 35,500 − 4,632 = 171,268 — still inside the 22%
-    // bracket (100,800–211,400), which is what this test is really about.
     const convAmt = 211_400;
     const withConv = calcYearTax(65, 2026, 0, 0, 0, 0, convAmt, false, 0.025, "mfj", "FL");
     const trueCost = withConv.totalTax - noConv.totalTax;
     expect(withConv.taxableIncome).toBe(171_268);
 
-    // Old buggy cost estimate: convAmt × pre-conversion marginal bracket (0%) = $0.
     const buggyCost = Math.round(convAmt * (noConv.marginalBracket || 0));
     expect(buggyCost).toBe(0);
 
-    // True progressive-stacked cost: 10% × $24,800 + 12% × $76,000 + 22% × $75,100
-    // = 2,480 + 9,120 + 16,522 = $28,122 — the fix must charge the real stacked
-    // amount, not $0.
     expect(trueCost).toBeGreaterThan(25_000);
     expect(trueCost).toBeGreaterThan(buggyCost);
   });
 
   test("runMC: a bracket-filling conversion from zero baseline income reduces terminal portfolio by a real, materially-nonzero tax cost", () => {
     const base = {
-      currentAge: 65, retireAge: 65, endAge: 66, // single retirement year — isolates the conversion cost
+      currentAge: 65, retireAge: 65, endAge: 66,
       port: 5_000_000, contrib: 0, inf: 2.5,
       sp: 0, ssAge: 90, ssb: 0, ab: 0, useAb: false,
       tax: 22, smile: false,
@@ -756,35 +576,15 @@ describe("Roth conversion tax cost — progressive bracket stacking (A1 regressi
         { id: "t1", category: "pretax", name: "401k", balance: 5_000_000 },
       ],
     };
-    // Single deterministic path (N=1, fixed seed) — the equity/inflation draws
-    // are identical between the two runs since the conversion branch consumes
-    // no RNG calls, so any portfolio difference is purely the conversion tax cost.
     const withConv = runMC(base, 66, 1, 42, true);
     const noConv   = runMC({ ...base, rothConversionTarget: "off" }, 66, 1, 42, true);
     const diff = noConv.pcts[1].p50 - withConv.pcts[1].p50;
 
-    // Old bug (flat rate off $0 pre-conversion income) would have priced this at
-    // ~$0 cost. The fix must show a real, substantial tax drag (comfortably above
-    // MC/rounding noise, safely below the true ~$35,932 cost even after applying
-    // a plausible single-year growth factor).
     expect(diff).toBeGreaterThan(20_000);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// runStress — Stress Test pivot must share runMC's tax model (uniformity)
-//
-// The stress pivot delegates to runMC with the 2000–2012 equity sequence forced at
-// retirement. These tests pin the property the user cares about: every tax lever that
-// moves the Monte Carlo must move the stress number the SAME way — no pivot can read
-// differently. Regression guard for the old flat taxDragRate heuristic, which ignored
-// the non-resident (twoHousehold) toggle and state of residence entirely.
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("runStress — tax model uniformity with runMC", () => {
-  // Scenario tuned to sit on the steep part of the stress survival curve (~40%), with
-  // the non-adaptive Bengen rule and uncapped sourcing so a state-tax-sized drag is
-  // visible in the success rate. (GK guardrails would absorb the crash via spending
-  // cuts and mask the tax difference; Bengen holds spending and lets tax bite.)
   const stressBand = {
     ...BASE, stateOfResidence: "CA", ssb: 24_000, ssAge: 62, sp: 90_000,
     withdrawalStrategy: "bengen", withdrawalBracketTarget: "off",
@@ -797,9 +597,6 @@ describe("runStress — tax model uniformity with runMC", () => {
   };
 
   test("non-resident toggle (twoHousehold) raises the stress success rate — the reported bug", () => {
-    // This is the exact pivot the user flagged: flipping non-resident ON must change
-    // the stress number. Skipping CA's state tax is a real annual saving. (Empirically
-    // ~0.407 → ~0.444 at this fixture; the old taxDragRate heuristic ignored the flag.)
     const resident    = runStress({ ...stressBand, twoHousehold: false }, 90, 2000, 99);
     const nonResident = runStress({ ...stressBand, twoHousehold: true  }, 90, 2000, 99);
     expect(nonResident.rate).toBeGreaterThan(resident.rate);
@@ -812,8 +609,6 @@ describe("runStress — tax model uniformity with runMC", () => {
   });
 
   test("non-resident equals a no-state-tax state (both zero out state tax identically)", () => {
-    // Same engine, same seed: claiming non-residency in CA must land exactly where a
-    // genuinely tax-free state (FL) lands — proof the toggle routes through one tax path.
     const flResident = runStress({ ...stressBand, stateOfResidence: "FL", twoHousehold: false }, 90, 2000, 99);
     const caNonRes   = runStress({ ...stressBand, stateOfResidence: "CA", twoHousehold: true  }, 90, 2000, 99);
     expect(caNonRes.rate).toBe(flResident.rate);
@@ -832,28 +627,18 @@ describe("runStress — tax model uniformity with runMC", () => {
     expect(s.rate).toBeGreaterThanOrEqual(0);
     expect(s.rate).toBeLessThanOrEqual(1);
     expect(Array.isArray(s.pcts)).toBe(true);
-    expect(s.pcts.length).toBe(90 - stressBand.retireAge + 1);   // initial + one row per retirement year
+    expect(s.pcts.length).toBe(90 - stressBand.retireAge + 1);
     const row = s.pcts[0];
     ["age", "p10", "p25", "p50", "p75", "p90"].forEach((k) => expect(row).toHaveProperty(k));
   });
 
   test("2000–2012 sequence makes stress no kinder than the random MC (sequence-of-returns risk)", () => {
-    // Same engine, same seed — the only difference is the forced bad sequence at
-    // retirement. A front-loaded crash can only hurt or tie, never help.
     const stress = runStress(stressBand, 90, 2000, 99);
     const random = runMC(stressBand, 90, 2000, 99, true);
     expect(stress.rate).toBeLessThanOrEqual(random.rate);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tax master toggle — p.tax === false zeroes ALL tax, uniformly across pivots
-//
-// The "🏛 Tax" toggle (OFF) must produce a genuine pre-tax view: zero federal/state/
-// IRMAA in the Monte Carlo, the Stress Test (which delegates to runMC), and the
-// deterministic year-by-year table. Only an explicit boolean false disables tax — a
-// numeric or true value (the default) keeps it on, so existing tax-ON tests are unaffected.
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("Tax master toggle — OFF zeroes all tax uniformly", () => {
   const taxy = { ...BASE, stateOfResidence: "CA", ssb: 0, sp: 95_000,
     withdrawalStrategy: "bengen", withdrawalBracketTarget: "off",
@@ -871,9 +656,6 @@ describe("Tax master toggle — OFF zeroes all tax uniformly", () => {
   });
 
   test("Stress Test inherits the toggle: tax OFF beats tax ON (uniform with runMC)", () => {
-    // Larger portfolio so survival sits on the steep part of the stress curve — the
-    // harsher `taxy` scenario collapses to 0% under the forced crash regardless of tax,
-    // which can't discriminate. This band (~40% with tax on) reacts to zeroing tax.
     const band = { ...taxy, ssb: 24_000, ssAge: 62, sp: 90_000,
       accounts: [
         { id: "t1", category: "pretax",  name: "401k",    balance: 1_470_000 },
@@ -903,54 +685,23 @@ describe("Tax master toggle — OFF zeroes all tax uniformly", () => {
   });
 
   test("a numeric tax value (legacy fixtures) is treated as ON, not OFF", () => {
-    // Regression guard: the gate is `p.tax !== false`, so tax: 22 must keep tax on.
     const num  = runMC({ ...taxy, tax: 22    }, 90, 1000, 42, true);
     const off  = runMC({ ...taxy, tax: false }, 90, 1000, 42, true);
-    expect(num.rate).toBeLessThan(off.rate);   // numeric → taxed → lower success
+    expect(num.rate).toBeLessThan(off.rate);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// User scenario validation — $266K portfolio, SS $1,400/mo, Single filer
-//
-// Numbers given:
-//   Portfolio:        $266,000 (all pre-tax IRA)
-//   SS benefit:       $1,400/mo = $16,800/yr (starts at 67)
-//   Annual spending:  $72,000/yr  ← spending TARGET, not what Fixed % delivers
-//   401k contrib:     $200/yr  ← NOTE: very low; likely a typo for $2,400 or $20,000/yr
-//   HSA:              $10/mo = $120/yr
-//   Employer match:   1.5% of 401k contrib
-//   Filing status:    Single
-//   No other income
-//
-// ─── IMPORTANT: How Fixed % success rate works ───────────────────────────────
-// Fixed % strategy draws exactly (rate × portfolio) each year. Because you
-// always take a percentage of what remains, the portfolio approaches zero
-// asymptotically but almost never hits $0. That means the MC "success rate"
-// (portfolio survives to end age) will be HIGH (near 100%) even on a tiny
-// portfolio. High success rate ≠ adequate income.
-//
-// The real concern is SPENDING ADEQUACY:
-//   Portfolio draw:  0.04 × $266K = $10,640/yr
-//   Social Security: $16,800/yr (starts at 67)
-//   Total income:    ~$27,440/yr vs $72,000 spending target
-//   Annual gap:      ~$44,560/yr — user will have to spend less or work longer
-//
-// For a $72K lifestyle with Fixed 4%, the user needs ~$1.38M in the portfolio
-// ($72K - $16.8K SS = $55.2K needed from portfolio → $55.2K / 0.04 = $1.38M).
-// ═══════════════════════════════════════════════════════════════════════════════
-
 const USER_PROFILE = {
-  currentAge:      55,   // assumed — adjust to match real age
+  currentAge:      55,
   retireAge:       65,
   endAge:          90,
   port:        266_000,
-  contrib:         200,  // $200/yr as given (likely should be $2,400 or $20,000 — see test below)
-  hsaMonthly:       10,  // $10/mo = $120/yr
+  contrib:         200,
+  hsaMonthly:       10,
   inf:             2.5,
-  sp:           72_000,  // spending target (not what Fixed % will deliver)
+  sp:           72_000,
   ssAge:            67,
-  ssb:          16_800,  // $1,400/mo × 12
+  ssb:          16_800,
   ssCola:          2.4,
   ab:                0,
   useAb:         false,
@@ -966,7 +717,7 @@ const USER_PROFILE = {
   useJointRmdTable: false,
   twoHousehold:  false,
   filingStatus: "single",
-  stateOfResidence: "FL",  // no state tax — isolates federal math
+  stateOfResidence: "FL",
   accounts: [
     { id: "u1", category: "pretax", name: "IRA", balance: 266_000 },
   ],
@@ -975,21 +726,15 @@ const USER_PROFILE = {
 describe("User scenario — $266K portfolio, single filer, Fixed 4%", () => {
 
   test("Fixed % simulation runs without error and returns valid rate", () => {
-    // This was broken before (ReferenceError at y=0). Now it must complete cleanly.
     const profile = { ...USER_PROFILE, currentAge: 65, retireAge: 65 };
     const r = runMC(profile, 90, 500, 42, true);
     expect(r.rate).toBeGreaterThanOrEqual(0);
     expect(r.rate).toBeLessThanOrEqual(1);
-    expect(r.pcts).toHaveLength(26); // 90 - 65 + 1 years including retirement year
-    expect(r.pcts.every(p => isFinite(p.p50))).toBe(true); // no NaN in any percentile
+    expect(r.pcts).toHaveLength(26);
+    expect(r.pcts.every(p => isFinite(p.p50))).toBe(true);
   });
 
   test("Fixed 4%: success rate is HIGH (portfolio never hits $0) — but income is inadequate", () => {
-    // Because sp = 4% × remaining portfolio each year, the portfolio mathematically
-    // never depletes. Expect high success rate (> 70%). This does NOT mean the plan
-    // is adequate — 4% of ~$266K is ~$10.6K/yr vs the $72K target.
-    // With source-aware taxes the median-return path outgrows the 4% draw, so the
-    // median terminal portfolio ends ABOVE the starting $266K.
     const profile = { ...USER_PROFILE, currentAge: 65, retireAge: 65 };
     const r = runMC(profile, 90, 1000, 42, true);
     expect(r.rate).toBeGreaterThan(0.70);
@@ -997,19 +742,14 @@ describe("User scenario — $266K portfolio, single filer, Fixed 4%", () => {
   });
 
   test("GK strategy on same portfolio WILL show low success rate (underfunded)", () => {
-    // Guyton-Klinger tries to deliver the full $72K spending target each year.
-    // $72K spend - $16.8K SS = $55.2K needed from a $266K portfolio = 20.8% WR.
-    // That is 5× the safe withdrawal rate. GK will deplete the portfolio rapidly.
-    // Expect success rate well below 50%.
     const profile = { ...USER_PROFILE, currentAge: 65, retireAge: 65, withdrawalStrategy: "gk" };
     const r = runMC(profile, 90, 1000, 42, true);
     expect(r.rate).toBeLessThan(0.40);
   });
 
   test("portfolio required for $72K spend at Fixed 4% with $16.8K SS = ~$1.38M", () => {
-    // ($72K spend - $16.8K SS) / 0.04 = $1.38M needed
     const needed = (72_000 - 16_800) / 0.04;
-    expect(needed).toBeCloseTo(1_380_000, -3); // within $1K
+    expect(needed).toBeCloseTo(1_380_000, -3);
   });
 
   test("Single filer pays more federal tax than MFJ on same income", () => {
@@ -1024,16 +764,12 @@ describe("User scenario — $266K portfolio, single filer, Fixed 4%", () => {
     const base = { ...USER_PROFILE, currentAge: 65, retireAge: 65 };
     const withToggle    = runMC({ ...base, useJointRmdTable: true  }, 90, 200, 42, true);
     const withoutToggle = runMC({ ...base, useJointRmdTable: false }, 90, 200, 42, true);
-    // Identical results — joint table is suppressed for single filers
     expect(withToggle.rate).toBeCloseTo(withoutToggle.rate, 2);
   });
 
   test("$20K/yr contrib gives materially larger portfolio at retirement than $200/yr", () => {
-    // $200/yr × 10 years ≈ ~$2,400 added (negligible)
-    // $20,000/yr × 10 years ≈ ~$279K added at 7% growth (material)
     const low  = runMC({ ...USER_PROFILE, contrib:    200 }, 90, 500, 42, true);
     const high = runMC({ ...USER_PROFILE, contrib: 20_000 }, 90, 500, 42, true);
-    // Higher contributions → larger portfolio at retirement → higher terminal median
     expect(high.term.p50).toBeGreaterThan(low.term.p50);
   });
 
@@ -1041,25 +777,13 @@ describe("User scenario — $266K portfolio, single filer, Fixed 4%", () => {
     const base = { ...USER_PROFILE, currentAge: 65, retireAge: 65 };
     const ssAt65 = runMC({ ...base, ssAge: 65 }, 90, 500, 42, true);
     const ssAt67 = runMC({ ...base, ssAge: 67 }, 90, 500, 42, true);
-    // Earlier SS is slightly better (more income sooner)
     expect(ssAt65.rate).toBeGreaterThanOrEqual(ssAt67.rate);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// FINANCIAL ACCURACY SUITE — Single filer taxes, net income, RMDs, cash flow,
-// and each withdrawal strategy with hand-verified dollar amounts.
-//
-// These tests were added after a user reported that switching Filing Status to
-// "Single" did not change their tax burden. They serve as the regression fence.
-// ═══════════════════════════════════════════════════════════════════════════════
-
 const tax26 = (age, withdrawal, filing, state = "FL") =>
   calcYearTax(age, 2026, withdrawal, 0, 0, 0, 0, false, 0.025, filing, state);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 1. SINGLE-FILER TAX RATES — the exact bug the user hit
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("Single filer tax accuracy — regression for filing-status bug", () => {
 
   test("Single under-65: std deduction = $16,100 — income at deduction = $0 tax", () => {
@@ -1086,24 +810,18 @@ describe("Single filer tax accuracy — regression for filing-status bug", () =>
     expect(r.fedTax).toBe(0);
   });
 
-  // Single 2026 brackets: 10% to $12,400 | 12% to $50,400 | 22% to $105,700
-  // Std deduction under-65: $16,100
-  //
-  // $30K: taxable = 13,900 → 10%×12,400=1,240 + 12%×1,500=180 = 1,420
   test("Single under-65: $30K withdrawal — hand-calculated fedTax = $1,420", () => {
     const r = tax26(60, 30_000, "single");
     expect(r.taxableIncome).toBe(13_900);
     expect(r.fedTax).toBeCloseTo(1_420, 0);
   });
 
-  // $60K: taxable = 43,900 → 10%×12,400=1,240 + 12%×31,500=3,780 = 5,020
   test("Single under-65: $60K withdrawal — hand-calculated fedTax = $5,020", () => {
     const r = tax26(60, 60_000, "single");
     expect(r.taxableIncome).toBe(43_900);
     expect(r.fedTax).toBeCloseTo(5_020, 0);
   });
 
-  // $120K: taxable = 103,900 → 10%×12,400 + 12%×38,000 + 22%×53,500 = 17,570
   test("Single under-65: $120K withdrawal — spans 10/12/22% brackets, fedTax = $17,570", () => {
     const r = tax26(60, 120_000, "single");
     expect(r.taxableIncome).toBe(103_900);
@@ -1143,12 +861,8 @@ describe("Single filer tax accuracy — regression for filing-status bug", () =>
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 2. NET INCOME — what you actually keep after all taxes
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("Net income = gross withdrawal − total taxes", () => {
 
-  // Single, age 62, FL, $50K: taxable=33,900 → 10%×12,400+12%×21,500 = 3,820
   test("Single, age 62, FL, $50K: net income = $50K − fedTax ($3,820)", () => {
     const r = tax26(62, 50_000, "single", "FL");
     expect(r.taxableIncome).toBe(33_900);
@@ -1157,7 +871,6 @@ describe("Net income = gross withdrawal − total taxes", () => {
     expect(50_000 - r.totalTax).toBeCloseTo(46_180, 0);
   });
 
-  // NJ progressive brackets on $33,900 taxable → 523 (much lower than old flat 10.75%)
   test("Single, age 62, NJ, $50K: NJ progressive state tax, net lower than FL", () => {
     const rFL = tax26(62, 50_000, "single", "FL");
     const rNJ = tax26(62, 50_000, "single", "NJ");
@@ -1165,13 +878,6 @@ describe("Net income = gross withdrawal − total taxes", () => {
     expect(50_000 - rFL.totalTax).toBeGreaterThan(50_000 - rNJ.totalTax);
   });
 
-  // IRC §86: $30K draw + $24K SS → provisional = 30000 + 12000 = 42000 (single, above $34K)
-  // taxableSS = min(0.85 × (42000 − 34000) + min(0.5 × 9000, 12000), 20400) = 6800 + 4500 = 11300
-  // totalIncome = 41,300; single 65+ std ded = 17,750
-  // OBBBA senior bonus: MAGI 41,300 is below the 75,000 single phase-out start,
-  // so the full 6,000 applies → total deduction 23,750
-  // taxable = 41,300 − 23,750 = 17,550
-  // fedTax = 12,400 × 10% + (17,550 − 12,400) × 12% = 1,240 + 618 = 1,858
   test("Single, age 68, FL: SS taxed per provisional-income tiers, correct taxableIncome", () => {
     const r = calcYearTax(68, 2026, 30_000, 24_000, 0, 0, 0, false, 0.025, "single", "FL");
     expect(r.taxableIncome).toBe(17_550);
@@ -1184,12 +890,8 @@ describe("Net income = gross withdrawal − total taxes", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 3. RMD CALCULATIONS — forced withdrawals from pre-tax accounts
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("RMD calculations — SECURE Act 2.0 divisors and tax impact", () => {
 
-  // Divisors from IRS Pub 590-B Table III (Uniform Lifetime), 2022+ table
   test("RMD at age 73: $1M / 26.5 = $37,736", () => {
     expect(Math.round(1_000_000 / 26.5)).toBe(37_736);
   });
@@ -1236,9 +938,6 @@ describe("RMD calculations — SECURE Act 2.0 divisors and tax impact", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 4. CASH FLOW — portfolio draw, taxes, spending
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("Cash flow accuracy — portfolio draw, taxes, and spending", () => {
 
   test("Deterministic GK: year-1 portfolio draw = spending − SS (SS offsets need)", () => {
@@ -1255,15 +954,10 @@ describe("Cash flow accuracy — portfolio draw, taxes, and spending", () => {
     const yr1 = schedule[0];
     expect(yr1.portfolioDraw).toBeCloseTo(56_000, -3);
     expect(yr1.ss).toBe(24_000);
-    // Year 1 is funded from cash/taxable (waterfall order), so provisional income
-    // is just ½ SS = $12K — below the $25K single threshold → $0 tax is correct
-    // under IRC §86. Taxes must appear once pretax draws/RMDs kick in.
     expect(yr1.totalWithdrawal).toBeGreaterThanOrEqual(yr1.portfolioDraw);
     expect(schedule.some(r => r.totalTax > 0)).toBe(true);
   });
 
-  // Fixed 4%: at year 0 spending = p.sp (target), SS still offsets portfolioDraw.
-  // From year 1 onward, spending = port × 4%.
   test("Deterministic Fixed 4%: year-2 spending = 4% × portfolioEnd[0]", () => {
     const p = { ...BASE, currentAge: 65, retireAge: 65, endAge: 90,
       sp: 80_000, ssAge: 65, ssb: 24_000, filingStatus: "mfj",
@@ -1273,10 +967,6 @@ describe("Cash flow accuracy — portfolio draw, taxes, and spending", () => {
   });
 
   test("Total portfolio draw increases more than linearly as spending rises (progressive tax drag)", () => {
-    // Force draws from pre-tax so we actually see ordinary-income tax drag.
-    // With cash/taxable available, the Smart Waterfall correctly skips fed tax
-    // on the low-spend case, so the progressive-bracket test only holds when
-    // both years draw entirely from pre-tax.
     const base = { ...BASE, currentAge: 65, retireAge: 65, endAge: 90,
       ssAge: 70, ssb: 0, filingStatus: "single", stateOfResidence: "FL",
       accounts: [{ id: "p", category: "pretax", name: "401k", balance: 2_000_000 }] };
@@ -1286,9 +976,6 @@ describe("Cash flow accuracy — portfolio draw, taxes, and spending", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 5. WITHDRAWAL STRATEGY COMPARISON — year-1 deterministic draws
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("Withdrawal strategy accuracy — year-1 deterministic draws", () => {
 
   const PORT = 2_000_000;
@@ -1321,19 +1008,14 @@ describe("Withdrawal strategy accuracy — year-1 deterministic draws", () => {
       { ...baseStrat, withdrawalStrategy: "fixed", fixedWithdrawalRate: 0.03 }, 2.5, "fixed");
     const { schedule: s4 } = simulateDeterministicWithStrategy(
       { ...baseStrat, withdrawalStrategy: "fixed", fixedWithdrawalRate: 0.04 }, 2.5, "fixed");
-    // Year 0 uses p.sp for all strategies; Fixed rate first applies at year 1
     expect(s3[1].spending).toBeCloseTo(s3[0].portfolioEnd * 0.03, -2);
     expect(s3[1].spending).toBeLessThan(s4[1].spending);
   });
 
   test("Fixed 4% SS-offset regression: year-1 draw = 4% × port, year-2 draw is SS-reduced", () => {
-    // Year 0: spending = p.sp (target), SS offsets need → portfolioDraw = sp - SS
-    // Year 1+: spending = port × fixedRate, SS still offsets portfolioDraw
     const p = { ...baseStrat, ssAge: 65, ssb: 24_000, withdrawalStrategy: "fixed" };
     const { schedule } = simulateDeterministicWithStrategy(p, 2.5, "fixed");
-    // Year 1 spending = port[0] × 4%
     expect(schedule[1].spending).toBeCloseTo(schedule[0].portfolioEnd * 0.04, -3);
-    // portfolioDraw = spending - SS (SS reduces the draw from portfolio; SS grows with COLA)
     expect(schedule[1].portfolioDraw).toBeCloseTo(schedule[1].spending - schedule[1].ss, -2);
   });
 
@@ -1343,9 +1025,6 @@ describe("Withdrawal strategy accuracy — year-1 deterministic draws", () => {
     expect(Math.abs((gk.schedule[4]?.spending ?? 0) - (fixed.schedule[4]?.spending ?? 0))).toBeGreaterThan(100);
   });
 
-  // Sweeps the live set from the registry rather than a literal list, so
-  // retiring or adding a strategy cannot leave this test silently narrower
-  // than the app. Retired ids are covered in withdrawalStrategyMigration.test.js.
   test("Every live strategy produces a valid deterministic schedule with positive draws", () => {
     for (const s of LIVE_STRATEGIES) {
       const { schedule } = simulateDeterministicWithStrategy({ ...baseStrat, withdrawalStrategy: s }, 2.5, s);
@@ -1356,9 +1035,6 @@ describe("Withdrawal strategy accuracy — year-1 deterministic draws", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 6. FULL SINGLE-FILER SCENARIO — $500K pretax IRA, age 65, FL, $40K GK spend
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("Full scenario: single filer, age 65, FL, $500K IRA, $40K GK spend", () => {
 
   const SINGLE_FL = {
@@ -1381,11 +1057,6 @@ describe("Full scenario: single filer, age 65, FL, $500K IRA, $40K GK spend", ()
     expect(schedule[0].portfolioDraw).toBeCloseTo(40_000, -2);
   });
 
-  // Age 65, single 65+, $40K, FL:
-  //   std ded = 17,750; OBBBA senior bonus = full 6,000 (MAGI 40,000 < 75,000
-  //   single phase-out start) → total deduction 23,750
-  //   taxable = 40,000 − 23,750 = 16,250
-  //   10%×12,400=1,240 + 12%×3,850=462 → fedTax = 1,702
   test("Year-1 federal tax: single 65+, $40K, FL → fedTax ≈ $1,702", () => {
     const r = calcYearTax(65, 2026, 40_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
     expect(r.taxableIncome).toBe(16_250);
@@ -1400,10 +1071,6 @@ describe("Full scenario: single filer, age 65, FL, $500K IRA, $40K GK spend", ()
     expect(yr3.portfolioDraw).toBeLessThan(yr3.spending);
   });
 
-  // Aggressive WR stress scenario. With source-aware taxes (v1.1.0.29) the original
-  // $40K spend became safely fundable (~99.6% success), so the stress point moved:
-  // $48K (9.6% initial WR, guardrails at 65/135%) keeps this scenario in the
-  // discriminating mid-band (~87% at seed 42).
   test("MC: scenario runs successfully and rate is between 10–95% (not trivially safe or failed)", () => {
     const r = runMC({ ...SINGLE_FL, sp: 48_000, gkFloor: 31_200, gkCeiling: 64_800 }, 90, 1000, 42, true);
     expect(r.rate).toBeGreaterThan(0.10);
@@ -1418,14 +1085,7 @@ describe("Full scenario: single filer, age 65, FL, $500K IRA, $40K GK spend", ()
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 7. WITHDRAWAL STRATEGY IMPLIED DRAWS — year-2 formula verification
-//    Each test extracts the year-0 ending portfolio and independently computes
-//    the formula-implied year-1 (schedule[1]) spending, then verifies the
-//    deterministic engine produces that amount within $500.
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("Withdrawal strategy implied draws — year-2 formula verification", () => {
-  // Shared setup: $2M portfolio, retire at 65, SS delayed to 70, MFJ, FL, 2.5% inflation
   const PORT = 2_000_000;
   const INF  = 2.5;
   const GK_FLOOR   = 48_000;
@@ -1447,22 +1107,16 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
   };
   const sim = (p, s) => simulateDeterministicWithStrategy(p, INF, s);
   const inflY = INF / 100;
-  const adjFloor1   = Math.round(GK_FLOOR   * (1 + inflY)); // 49,200
-  const adjCeiling1 = Math.round(GK_CEILING * (1 + inflY)); // 117,875
+  const adjFloor1   = Math.round(GK_FLOOR   * (1 + inflY));
+  const adjCeiling1 = Math.round(GK_CEILING * (1 + inflY));
 
-  // ── Guyton-Klinger ─────────────────────────────────────────────────────────
-  // Year 1: no capital-preservation trigger (7%+ return), no excess-spending
-  // trigger (WR ≈ 3.88% < 120% of 4%). Formula: sp_0 × (1 + inflY).
   test("GK: year-2 spending = year-1 spend × (1 + 2.5%) inflation adjustment", () => {
     const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "gk" }, "gk");
-    const sp0 = schedule[0].spending; // 80,000
+    const sp0 = schedule[0].spending;
     const expected = Math.min(adjCeiling1, Math.max(adjFloor1, Math.round(sp0 * (1 + inflY))));
     expect(schedule[1].spending).toBeCloseTo(expected, -1);
   });
 
-  // ── Fixed % ────────────────────────────────────────────────────────────────
-  // Year 1: pure portfolio percentage — draw = rate × portfolio_end_yr0.
-  // SS is NOT an offset. No GK clamp.
   test("Fixed 4%: year-2 spending = 4% × portfolio at end of year 1", () => {
     const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "fixed" }, "fixed");
     const port1 = schedule[0].portfolioEnd;
@@ -1477,29 +1131,16 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
     expect(schedule[1].spending).toBeLessThan(s4[1].spending);
   });
 
-  // ── Variable Percentage Withdrawal (VPW) ───────────────────────────────────
-  // Year 1 (age 66): n = horizon − age, r = 3.76%.
-  // Canonical PMT payout rate (fixed 2026-06-10): rate = r / (1 − (1+r)^(−n)),
-  // capped at 10%. spending = port × rate, clamped to the GK band.
-  //
-  // The horizon is the profile's PLAN-TO age (endAge), not a hardcoded 100.
-  // vpwEndAge used to default to 100 independently of endAge, so a plan to age
-  // 105 still amortized to 100 and the spend-to-zero answer was five years off.
-  // `n` is derived from the fixture here so the test can't re-freeze that.
   test("VPW: year-2 spending = port × vpw_rate(age=66, n=endAge−66, r=3.76%), clamped", () => {
     const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "vpw" }, "vpw");
     const port1 = schedule[0].portfolioEnd;
-    const n = (baseStrat.vpwEndAge ?? baseStrat.endAge) - 66; // age=66 at y=1
+    const n = (baseStrat.vpwEndAge ?? baseStrat.endAge) - 66;
     const r = 0.0376;
     const rate = Math.min(0.10, r / (1 - Math.pow(1 + r, -n)));
     const expected = Math.min(adjCeiling1, Math.max(adjFloor1, Math.round(port1 * rate)));
     expect(schedule[1].spending).toBeCloseTo(expected, -2);
   });
 
-  // ── 95% Rule ─────────────────────────────────────────────────────────────────
-  // Year 1 (y=1 in code): sp = p.sp (slider reset), then clamped.
-  // Years 2+: max(sp × 0.95, sp × (1+inflY)) — with positive returns and 2.5% inflation
-  // the inflated value wins, so spending trends upward at the inflation rate.
   test("95% Rule: year-2 spending = p.sp (slider), clamped to GK band", () => {
     const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "ninety_five_rule" }, "ninety_five_rule");
     const expected = Math.min(adjCeiling1, Math.max(adjFloor1, baseStrat.sp));
@@ -1508,31 +1149,16 @@ describe("Withdrawal strategy implied draws — year-2 formula verification", ()
 
   test("95% Rule: year-3 spending ≥ year-2 spending (inflation > 5% deflation floor)", () => {
     const { schedule } = sim({ ...baseStrat, withdrawalStrategy: "ninety_five_rule" }, "ninety_five_rule");
-    // With 2.5% inflation, inflated value (×1.025) always > 95% floor (×0.95)
-    // so spending should grow
     expect(schedule[2].spending).toBeGreaterThanOrEqual(schedule[1].spending);
   });
 
-  // ── Cross-strategy ordering at year 2 ──────────────────────────────────────
-  // On a growing $2M portfolio at 2.5% inflation, VPW's payout rate at age 66
-  // (~5.1%) exceeds a flat 4%, so it draws more per dollar of portfolio.
   test("Year-2: VPW draws more than Fixed 4% on same portfolio (higher VPW rate at age 66)", () => {
     const fixed = sim({ ...baseStrat, withdrawalStrategy: "fixed" }, "fixed");
     const vpw   = sim({ ...baseStrat, withdrawalStrategy: "vpw"   }, "vpw");
-    // VPW rate at 66 ≈ 5.1% > 4%, so VPW draws more per dollar of portfolio
     expect(vpw.schedule[1].spending).toBeGreaterThan(fixed.schedule[1].spending);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 7.5 SOCIAL SECURITY COLA ANCHORING — regression for A2
-//
-// COLA must compound from the SS CLAIMING age (ssAge), not from the number of
-// years since retirement (`y`). Someone who retires before claiming SS would
-// otherwise get bogus pre-claim COLA compounding baked into their very first
-// check (retire at 60, claim at 67 → y=7 at the first check, so the bug applies
-// 7 years of compounding that should not have happened yet).
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("Social Security COLA anchoring — regression for A2 (simulateDeterministicWithStrategy)", () => {
   const profile = {
     currentAge: 60, retireAge: 60, endAge: 90,
@@ -1544,7 +1170,6 @@ describe("Social Security COLA anchoring — regression for A2 (simulateDetermin
     accounts: [{ id: "a1", category: "pretax", name: "401k", balance: 2_000_000 }],
   };
   const { schedule } = simulateDeterministicWithStrategy(profile, 2.5, "gk");
-  // retireAge=60 → schedule index i is age (60+i)
   const scheduleByAge = (age) => schedule[age - 60];
 
   test("pre-claim year (age 66, before ssAge=67): ss = 0", () => {
@@ -1552,27 +1177,14 @@ describe("Social Security COLA anchoring — regression for A2 (simulateDetermin
   });
 
   test("first claim year (age 67 = ssAge): ss = ssb exactly — NOT compounded by y=7 years of COLA", () => {
-    // Buggy formula would give round(24_000 × 1.024^7) ≈ 28,337 — 18%+ too high.
     expect(scheduleByAge(67).ss).toBe(24_000);
   });
 
   test("second claim year (age 68): ss = ssb × (1 + cola) — one year of COLA, not y=8 years", () => {
-    // Buggy formula would give round(24_000 × 1.024^8) ≈ 29,017.
     expect(scheduleByAge(68).ss).toBe(Math.round(24_000 * 1.024));
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 8. INCOME FLOW-THROUGH — every income source must reach the schedule
-//
-// Regression suite for the class of bug where an income field is set by the
-// user but silently zeroed before reaching the simulation (e.g. ab hardcoded
-// to 0 in params, useAb gate defaulting false with no UI toggle).
-//
-// Rule: if you set an income field to a non-zero value, it MUST appear non-zero
-// in the withdrawal schedule's corresponding column AND reduce portfolio draw
-// compared to a baseline with that income absent.
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("Income flow-through — all sources must reach the withdrawal schedule", () => {
 
   const BASE_INCOME = {
@@ -1582,7 +1194,6 @@ describe("Income flow-through — all sources must reach the withdrawal schedule
     withdrawalStrategy: "gk", stateOfResidence: "FL",
   };
 
-  // ── Rental / Airbnb (ab) ───────────────────────────────────────────────────
   test("ab > 0: Rental column is non-zero in year-1 schedule", () => {
     const { schedule } = simulateDeterministicWithStrategy(
       { ...BASE_INCOME, ab: 18_000 }, 2.5, "gk"
@@ -1619,7 +1230,7 @@ describe("Income flow-through — all sources must reach the withdrawal schedule
   });
 
   test("abEndYear: rental is zero after end year, non-zero before", () => {
-    const endYear = 2026 + 5; // 5 years into retirement
+    const endYear = 2026 + 5;
     const { schedule } = simulateDeterministicWithStrategy(
       { ...BASE_INCOME, ab: 12_000, abEndYear: endYear }, 2.5, "gk"
     );
@@ -1629,7 +1240,6 @@ describe("Income flow-through — all sources must reach the withdrawal schedule
     expect(afterEnd.Rental).toBe(0);
   });
 
-  // ── Social Security (ssb) ─────────────────────────────────────────────────
   test("ssb > 0: SS column is non-zero once ssAge is reached", () => {
     const { schedule } = simulateDeterministicWithStrategy(
       { ...BASE_INCOME, ssb: 24_000, ssAge: 67 }, 2.5, "gk"
@@ -1662,7 +1272,6 @@ describe("Income flow-through — all sources must reach the withdrawal schedule
     expect(withSS.rate).toBeGreaterThan(noSS.rate);
   });
 
-  // ── Other Income (otherIncomes) ───────────────────────────────────────────
   test("otherIncomes > 0: OtherIncome column is non-zero in active years", () => {
     const income = [{ id: "oi1", name: "Pension", annual: 15_000,
       startYear: 2030, endYear: 2050, growthRate: 0, growthCapYears: null, taxable: true }];
@@ -1694,7 +1303,6 @@ describe("Income flow-through — all sources must reach the withdrawal schedule
     expect(withOther.schedule[0].portfolioDraw).toBeLessThan(noOther.schedule[0].portfolioDraw);
   });
 
-  // ── Property Income (propIncome) ──────────────────────────────────────────
   test("propIncome > 0: included in Rental column (propIncome + ab)", () => {
     const p = {
       ...BASE_INCOME,
@@ -1715,7 +1323,6 @@ describe("Income flow-through — all sources must reach the withdrawal schedule
     expect(schedule[0].Rental).toBeCloseTo(18_000, -2);
   });
 
-  // ── Combined income sources reduce draw proportionally ────────────────────
   test("All income sources together: portfolio draw = spending − SS − rental − otherIncome", () => {
     const income = [{ id: "c1", name: "Pension", annual: 10_000,
       startYear: 2026, endYear: 2099, growthRate: 0, growthCapYears: null, taxable: true }];
@@ -1727,11 +1334,7 @@ describe("Income flow-through — all sources must reach the withdrawal schedule
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tax-constant helpers — single source of truth (TAX_REFERENCE.md, CLAUDE.md Rule 6)
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("getStandardDeduction / getIrmaaCeiling / getBracketCeiling helpers", () => {
-  // Values per TAX_REFERENCE.md "Standard Deduction (MFJ 2026)".
   test("std deduction MFJ base (<65) = $32,200 at inflFactor 1", () => {
     expect(getStandardDeduction(60, "mfj", 1)).toBe(32_200);
   });
@@ -1745,7 +1348,6 @@ describe("getStandardDeduction / getIrmaaCeiling / getBracketCeiling helpers", (
   test("std deduction scales by inflation factor", () => {
     expect(getStandardDeduction(60, "mfj", 1.025)).toBe(Math.round(32_200 * 1.025));
   });
-  // Values per TAX_REFERENCE.md "IRMAA Thresholds (MFJ 2026)".
   test("IRMAA tier-1 ceiling = $218K MFJ / $109K single", () => {
     expect(getIrmaaCeiling(1, "mfj", 1)).toBe(218_000);
     expect(getIrmaaCeiling(1, "single", 1)).toBe(109_000);
@@ -1756,16 +1358,11 @@ describe("getStandardDeduction / getIrmaaCeiling / getBracketCeiling helpers", (
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// VPW — canonical PMT payout rate: rate = r / (1 − (1+r)^(−n)), n = vpwEndAge − age
-// Regression guard for the 2026-06-10 fix (wrong exponent −(n−1) + spurious +r term).
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("VPW withdrawal — PMT amortization formula", () => {
-  // Wide GK bands so the floor/ceiling clamp never masks the raw VPW rate.
   const VPW_BASE = {
     ...BASE,
     withdrawalStrategy: "vpw",
-    ssb: 0, ssAge: 99, ab: 0, propIncome: 0,   // no offsets → draw == spend
+    ssb: 0, ssAge: 99, ab: 0, propIncome: 0,
     gkFloor: 1_000, gkCeiling: 5_000_000,
     vpwRealReturn: 0.0376, vpwEndAge: 100,
     accounts: [{ id: "p", category: "pretax", name: "401k", balance: 2_000_000 }],
@@ -1777,16 +1374,13 @@ describe("VPW withdrawal — PMT amortization formula", () => {
 
   test("year-N spend = prior-year end balance × PMT rate at that age", () => {
     const { schedule } = simulateDeterministicWithStrategy(VPW_BASE, 2.5, "vpw");
-    // Check an interior year (y=5, age 65) — strategy applies for y>0, and the
-    // VPW rate is applied to the START-of-year balance = prior row's portfolioEnd.
-    const age = schedule[5].age;            // 65
+    const age = schedule[5].age;
     const expected = schedule[4].portfolioEnd * rate(age);
     expect(Math.abs(schedule[5].spending / expected - 1)).toBeLessThan(0.01);
   });
 
   test("long-horizon VPW rate stays well below the 10% cap (old bug hit the cap)", () => {
     const { schedule } = simulateDeterministicWithStrategy(VPW_BASE, 2.5, "vpw");
-    // Age 61, n=39 → correct rate ≈ 4.9%. The pre-fix formula inflated this past 10%.
     const impliedRate = schedule[1].spending / schedule[0].portfolioEnd;
     expect(impliedRate).toBeLessThan(0.07);
     expect(impliedRate).toBeCloseTo(rate(schedule[1].age), 3);
@@ -1798,9 +1392,6 @@ describe("VPW withdrawal — PMT amortization formula", () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Account bucket splits (Quicken-style: one balance, many bucket allocations)
-// ───────────────────────────────────────────────────────────────────────────
 describe("account bucket splits", () => {
   test("no splits → single piece carrying the full balance in the assigned bucket", () => {
     const a = { id: "1", category: "pretax", balance: 100_000, bucket: 2 };
@@ -1813,26 +1404,23 @@ describe("account bucket splits", () => {
   test("no bucket + no splits → falls back to _defaultBucket(category)", () => {
     const a = { id: "1", category: "cash", balance: 50_000 };
     const pieces = accountBucketPieces(a);
-    expect(pieces[0].bucket).toBe(_defaultBucket("cash")); // cash → 1
+    expect(pieces[0].bucket).toBe(_defaultBucket("cash"));
     expect(pieces[0].balance).toBe(50_000);
   });
 
   test("split distributes balance by pct and rolls up to the original total", () => {
-    // category: cash, not pretax — bucket 1 is cash-only (clampBucket);
-    // this test is about the split/rollup math, not the clamp itself.
     const a = { id: "1", category: "cash", balance: 100_000,
       splits: [{ bucket: 1, pct: 30 }, { bucket: 3, pct: 70 }] };
     const pieces = accountBucketPieces(a);
     expect(pieces).toHaveLength(2);
     expect(pieces.find(p => p.bucket === 1).balance).toBeCloseTo(30_000, 6);
     expect(pieces.find(p => p.bucket === 3).balance).toBeCloseTo(70_000, 6);
-    // Rollup invariant: pieces sum back to the single account balance
     expect(pieces.reduce((s, p) => s + p.balance, 0)).toBeCloseTo(100_000, 6);
   });
 
   test("pct that doesn't total 100 is normalized (still rolls up to balance)", () => {
     const a = { id: "1", category: "cash", balance: 100_000,
-      splits: [{ bucket: 1, pct: 1 }, { bucket: 2, pct: 3 }] }; // 1:3 ratio
+      splits: [{ bucket: 1, pct: 1 }, { bucket: 2, pct: 3 }] };
     const pieces = accountBucketPieces(a);
     expect(pieces.find(p => p.bucket === 1).balance).toBeCloseTo(25_000, 6);
     expect(pieces.find(p => p.bucket === 2).balance).toBeCloseTo(75_000, 6);
@@ -1845,7 +1433,7 @@ describe("account bucket splits", () => {
       { id: "2", category: "roth", balance: 50_000,  bucket: 3 },
     ];
     const pieces = expandAccountBuckets(accts);
-    expect(pieces).toHaveLength(3); // 2 from the split + 1 single
+    expect(pieces).toHaveLength(3);
     const total = pieces.reduce((s, p) => s + p.balance, 0);
     expect(total).toBeCloseTo(150_000, 6);
     const b1 = pieces.filter(p => p.bucket === 1).reduce((s, p) => s + p.balance, 0);
@@ -1853,9 +1441,6 @@ describe("account bucket splits", () => {
   });
 
   test("bucket 1 is cash-only: a non-cash account tagged 1 clamps to 2 (regression)", () => {
-    // Bucket 1 has to be spendable without triggering tax or an early-
-    // withdrawal penalty — only cash can promise that. A pretax account
-    // tagged 1 (directly, or via a split) is treated as 2 everywhere.
     const whole = accountBucketPieces({ id: "1", category: "pretax", balance: 100_000, bucket: 1 });
     expect(whole[0].bucket).toBe(2);
 
@@ -1864,18 +1449,13 @@ describe("account bucket splits", () => {
     expect(split.find(p => p._splitPct === 40).bucket).toBe(2);
     expect(split.find(p => p._splitPct === 60).bucket).toBe(3);
 
-    // A cash account is unaffected — the clamp only fires on non-cash.
     const cashOk = accountBucketPieces({ id: "3", category: "cash", balance: 50_000, bucket: 1 });
     expect(cashOk[0].bucket).toBe(1);
   });
 });
 
-// ─── v1.1.0.30: 35%/37% federal brackets exist above $512K ─────────────────────
-
 describe("Federal brackets — 35% and 37% tiers (v1.1.0.30)", () => {
   test("MFJ $1M ordinary income: taxed through 35% and 37% brackets, not capped at 32%", () => {
-    // taxable = 1,000,000 − 32,200 = 967,800
-    // 2,480 + 9,120 + 24,332 + 46,116 + 34,848 + 89,687.50 + 73,667 = 280,250.50
     const r = calcYearTax(60, 2026, 1_000_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
     expect(r.taxableIncome).toBe(967_800);
     expect(r.fedTax).toBeCloseTo(280_250.5, 0);
@@ -1883,17 +1463,6 @@ describe("Federal brackets — 35% and 37% tiers (v1.1.0.30)", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// twoHousehold default consistency — regression for B3
-//
-// A brand-new profile (BLANK_PROFILE) and a profile restored from an older
-// exported JSON missing the `twoHousehold` field must agree on the default
-// (false — full state tax). Before the fix, the import-restore handler
-// defaulted to `true` (zero state tax), silently flipping identical financial
-// data depending on whether it was hand-entered or imported. Source-text
-// check (same convention as banner.test.js) since the restore handler lives
-// inside a file-input React event handler, not an exportable pure function.
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("twoHousehold default consistency (B3 regression)", () => {
   const fs = require("fs");
   const path = require("path");
@@ -1911,18 +1480,6 @@ describe("twoHousehold default consistency (B3 regression)", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CURRENT_YEAR — dynamic "today" anchor for tax-year math (C2 regression)
-//
-// App.jsx previously hardcoded the literal 2026 as "today" in several places
-// (calcYearTax's inflation factor, runMC/simulateDeterministicWithStrategy's
-// age→calendar-year conversion, the bracket/IRMAA inflation factors, irmaaCost,
-// and a Conversion Plan UI recompute) instead of computing it dynamically —
-// unlike buildWithdrawalWaterfall.js's BASE_YEAR / buildRothExplorer.js's
-// ROTH_BASE_YEAR, both `new Date().getFullYear()`. That silently goes one year
-// stale every time the real calendar rolls past 2026. CURRENT_YEAR fixes this
-// by matching the same dynamic pattern the sibling engines already use.
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("CURRENT_YEAR — dynamic 'today' anchor for tax-year math (C2 regression)", () => {
   const fs = require("fs");
   const path = require("path");
@@ -1934,9 +1491,7 @@ describe("CURRENT_YEAR — dynamic 'today' anchor for tax-year math (C2 regressi
   });
 
   test("irmaaCost's inflation factor at the real current year is 1.0 (no spurious inflation) regardless of the assumed inflation rate", () => {
-    // yr - CURRENT_YEAR === 0 this year, so (1+infR)^0 === 1 regardless of infR —
-    // the surcharge for THIS year must not depend on the assumed future inflation rate.
-    const magi = 250_000; // above IRMAA tier-1 (218K MFJ)
+    const magi = 250_000;
     const atOnePctInfl = irmaaCost(magi, thisYear, 0.01, true);
     const atTenPctInfl = irmaaCost(magi, thisYear, 0.10, true);
     expect(atOnePctInfl).toBe(atTenPctInfl);
@@ -1949,20 +1504,7 @@ describe("CURRENT_YEAR — dynamic 'today' anchor for tax-year math (C2 regressi
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// GK calibration — cross-engine consistency (audit regression)
-//
-// buildWithdrawalWaterfall's gkWithdraw and App.jsx's guytonKlingerWithdrawal
-// must use the IDENTICAL net-portfolio-need formula for both the baseline
-// initWR and the tracked yearly ratio, so the two engines agree on the very
-// first few years' spending direction for the same profile — neither should
-// cut toward the floor while the other holds steady at inflation-only growth.
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("GK calibration — cross-engine consistency (audit regression)", () => {
-  // Retires AT ssAge with substantial SS, healthy portfolio. `port` (used by
-  // simulateDeterministicWithStrategy's standalone "gk" fallback path) is set
-  // to match the `accounts` total (used by buildWithdrawalWaterfall) so both
-  // engines start from the identical portfolio.
   const gkProfile = {
     currentAge: 65, retireAge: 65, endAge: 95,
     sp: 80_000, ssAge: 65, ssb: 30_000, ssCola: 2.4,
@@ -1989,8 +1531,6 @@ describe("GK calibration — cross-engine consistency (audit regression)", () =>
       wfRatios.push(wf.smart.rows[i].spending / wf.smart.rows[i - 1].spending);
       detRatios.push(det.schedule[i].spending / det.schedule[i - 1].spending);
     }
-    // Neither engine should collapse (ratio << 1) while the other grows — both
-    // must agree on direction every year.
     for (let i = 0; i < wfRatios.length; i++) {
       expect(Math.sign(wfRatios[i] - 1)).toBe(Math.sign(detRatios[i] - 1));
     }
@@ -2020,7 +1560,6 @@ describe("probability analogies — revolving context messages", () => {
   });
 
   test("every band offers at least two analogies so the display can revolve", () => {
-    // Sample one rate inside each band floor
     for (const pct of [97, 92, 87, 82, 77, 72, 65, 55, 30]) {
       expect(getAnalogues(pct / 100).length).toBeGreaterThanOrEqual(2);
     }
@@ -2062,40 +1601,19 @@ describe("per-age funded fraction (MC band table)", () => {
     for (let i = 1; i < r.pcts.length; i++) {
       expect(r.pcts[i].alive).toBeLessThanOrEqual(r.pcts[i - 1].alive);
     }
-    // Paths that exhaust exactly at the final age still count as failures in
-    // `rate`, so the last alive value can only be ≥ rate.
     expect(r.pcts[r.pcts.length - 1].alive).toBeGreaterThanOrEqual(r.rate);
-    // And in a scenario with real failures, alive must actually drop below 1
     expect(r.pcts[r.pcts.length - 1].alive).toBeLessThan(1.0);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Capital-gains / cost-basis model on taxable brokerage draws (2026-07-18)
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("calcYearTax — LTCG stacking (ltcgAmount param)", () => {
   test("ordinary income $0 + $80K LTCG, current year → LTCG tax $0 (fits entirely in the 0% band after the std deduction)", () => {
-    // MFJ std deduction (age 60, no 65+ bonus) = $32,200.
-    // gainTaxable = max(0, 0 + 80,000 - 32,200) - 0 = 47,800, stacked in [0, 47,800).
-    // 2026 MFJ 0% LTCG band runs 0–98,700 → entirely 0% → ltcgTax = $0 → fedTax = $0.
     const r = calcYearTax(60, 2026, 0, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 80_000);
     expect(r.ltcgTax).toBe(0);
     expect(r.fedTax).toBe(0);
   });
 
   test("ordinary income $150K + $100K LTCG → gains straddle into the 15% band (hand-computed)", () => {
-    // std deduction (age 60, MFJ) = 32,200.
-    // ordTaxable = 150,000 - 32,200 = 117,800 (std deduction fully absorbed by ordinary income).
-    // gainTaxable = (150,000 + 100,000 - 32,200) - 117,800 = 100,000, stacked over
-    // the interval [117,800, 217,800) — entirely inside the 2026 MFJ 15% LTCG band
-    // (98,700–613,700) → ltcgTax = 100,000 × 15% = $15,000.
-    // fedTaxOrdinary on $117,800 (2026 MFJ brackets):
-    //   10% × 24,800 = 2,480
-    //   12% × (100,800-24,800) = 12% × 76,000 = 9,120
-    //   22% × (117,800-100,800) = 22% × 17,000 = 3,740
-    //   = 15,340
-    // MAGI = 250,000 = exactly the NIIT threshold → niit = 0.
-    // fedTax = 15,340 (ordinary) + 15,000 (LTCG) + 0 (NIIT) = 30,340.
     const r = calcYearTax(60, 2026, 150_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 100_000);
     expect(r.ltcgTax).toBeCloseTo(15_000, 0);
     expect(r.niit).toBe(0);
@@ -2103,9 +1621,6 @@ describe("calcYearTax — LTCG stacking (ltcgAmount param)", () => {
   });
 
   test("NIIT: MFJ MAGI over $250K with $100K LTCG adds 3.8% on the excess (hand-computed)", () => {
-    // ordinary $200,000 + $100,000 LTCG → MAGI = 300,000.
-    // excess over the (non-inflation-indexed) $250,000 MFJ NIIT threshold = 50,000.
-    // niit = 3.8% × min(100,000, 50,000) = 3.8% × 50,000 = $1,900.
     const r = calcYearTax(60, 2026, 200_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL", 100_000);
     expect(r.niit).toBe(1_900);
   });
@@ -2126,10 +1641,6 @@ describe("calcYearTax — LTCG stacking (ltcgAmount param)", () => {
 
 describe("runMC — taxable cost-basis (taxableBasisPct) success-rate impact", () => {
   test("a taxable-heavy profile with a lower cost basis has success rate <= the same profile at 100% basis (same seed)", () => {
-    // No SS, no pretax — spending is funded almost entirely from the taxable
-    // bucket, so a lower basis (more unrealized gain realized every draw) can
-    // only add tax drag relative to the 100%-basis run, never remove it. Same
-    // seed → identical market/inflation draw sequence for both runs.
     const taxableHeavy = {
       ...BASE, ssb: 0, sp: 100_000,
       accounts: [
@@ -2139,27 +1650,10 @@ describe("runMC — taxable cost-basis (taxableBasisPct) success-rate impact", (
     };
     const lowBasis  = runMC({ ...taxableHeavy, taxableBasisPct: 40  }, 90, 1000, 42, true);
     const highBasis = runMC({ ...taxableHeavy, taxableBasisPct: 100 }, 90, 1000, 42, true);
-    // 1pp tolerance: with paired stock/bond/inflation sampling (v1.2.105) both
-    // runs sit at ~95% success for this taxable-heavy fixture, so per-seed
-    // stagflation-year draws can flip the ordering by less than a percent even
-    // though the tax-drag mechanism is directionally correct. The semantic
-    // claim ("low basis is never meaningfully better") holds within tolerance.
     expect(lowBasis.rate).toBeLessThanOrEqual(highBasis.rate + 0.01);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// runMC — IRMAA 2-year lookback wiring (2026-07-18)
-//
-// runMC now threads a rolling magiTwoYearsAgo/magiOneYearAgo history into
-// calcYearTax's magiLookback param every year (both the spending-draw tax
-// convergence loop and the Roth-conversion delta calls). This is a directional/
-// wiring check, not an exact-value assertion (the fixed point + bracket-fill
-// conversion + RNG paths make a hand-computed expected rate impractical): a
-// profile whose income crosses the IRMAA threshold via large ordinary-bracket
-// conversions from 63-70 must still produce a finite, valid success rate with
-// no NaN anywhere in the aggregated bands.
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("runMC — IRMAA 2-year lookback wiring", () => {
   test("completes with a finite, in-range success rate for an IRMAA-crossing conversion profile", () => {
     const irmaaHeavy = {
@@ -2170,9 +1664,6 @@ describe("runMC — IRMAA 2-year lookback wiring", () => {
       cashRealReturn: 1.0, useJointRmdTable: false, twoHousehold: false,
       filingStatus: "mfj", stateOfResidence: "FL",
       withdrawalBracketTarget: "off", irmaaGuard: false,
-      // Large bracket-fill conversions every year — pushes MAGI well past the
-      // IRMAA tier-1 threshold in some years, so the lookback history actually
-      // gets exercised (non-null magiLookback) for most of retirement.
       rothConversionTarget: "24",
       accounts: [
         { id: "m1", category: "pretax", name: "401k", balance: 3_000_000 },
@@ -2192,12 +1683,6 @@ describe("runMC — IRMAA 2-year lookback wiring", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// MCBandTable "Still Funded" explainer — source-text check (same convention as
-// the twoHousehold default-consistency regression above / banner.test.js) since
-// the explainer toggle lives inside a component's JSX, not an exportable pure
-// function.
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("MCBandTable 'What do these numbers mean?' explainer", () => {
   const fs = require("fs");
   const path = require("path");
@@ -2210,9 +1695,6 @@ describe("MCBandTable 'What do these numbers mean?' explainer", () => {
   test("explainer panel condenses Still Funded / 10th percentile pairing guidance and links back to the About page", () => {
     expect(SRC).toMatch(/Still Funded<\/strong> is the share of simulated retirement/);
     expect(SRC).toMatch(/10th percentile/);
-    // The tab this points at was renamed About -> "❓ Help"; the pointer prose in
-    // App.jsx followed, this assertion did not. Matching on "Help → ..." rather than the
-    // full label keeps the cross-reference asserted without re-breaking on the emoji.
     expect(SRC).toMatch(/Help → Reading the Charts → "What does Still Funded % actually mean\?"/);
   });
 });
@@ -2246,15 +1728,12 @@ describe("mortality-weighted success rate (money outlives you)", () => {
       { id: "t1", category: "pretax", name: "401k", balance: 1_000_000 },
     ]};
     const r = runMC(tight, 90, 500, 42, true);
-    expect(r.rate).toBeLessThan(1); // fixture must actually produce failures
+    expect(r.rate).toBeLessThan(1);
     expect(r.mwRate).toBeGreaterThan(r.rate);
     expect(r.mwRate).toBeLessThanOrEqual(1);
   });
 
   test("late failures are discounted more than early ones: same failure count, older exhaust ages -> higher mwRate boost", () => {
-    // Indirect but deterministic: for any failing run, the boost (mwRate - rate)
-    // equals the average mortality discount of the failed paths, which must be
-    // strictly between 0 and the failure mass.
     const tight = { ...BASE, ssb: 0, sp: 120_000, accounts: [
       { id: "t1", category: "pretax", name: "401k", balance: 1_000_000 },
     ]};
@@ -2262,49 +1741,33 @@ describe("mortality-weighted success rate (money outlives you)", () => {
     const failureMass = 1 - r.rate;
     const boost = r.mwRate - r.rate;
     expect(boost).toBeGreaterThan(0);
-    expect(boost).toBeLessThan(failureMass); // discount can't exceed the failures themselves
+    expect(boost).toBeLessThan(failureMass);
   });
 });
 
-// ─── OBBBA senior bonus deduction (REQUIREMENTS §13.1 #6) ─────────────────────
-// Constants per TAX_REFERENCE.md → "OBBBA Senior Bonus Deduction": $6,000 per
-// qualifying person 65+, tax years 2025–2028 only, MAGI phase-out from
-// $75,000 single / $150,000 MFJ at 6% of the excess, NOT inflation-indexed.
-
 describe("OBBBA senior bonus deduction", () => {
   test("below the phase-out: single 65+ gets the full per-person amount", () => {
-    // MAGI = 50,000 < 75,000 → no phase-out.
-    // std ded (single 65+, 2026) = 16,100 + 1,650 = 17,750; bonus = 6,000
-    // taxable = 50,000 − 17,750 − 6,000 = 26,250
     const r = calcYearTax(66, 2026, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
     expect(r.seniorBonus).toBe(6_000);
     expect(r.taxableIncome).toBe(26_250);
   });
 
   test("MFJ both 65+ gets 2x the per-person amount", () => {
-    // MAGI = 100,000 < 150,000 MFJ threshold → full 2 × 6,000 = 12,000.
-    // std ded (MFJ 65+, 2026) = 32,200 + 3,300 = 35,500
-    // taxable = 100,000 − 35,500 − 12,000 = 52,500
     const r = calcYearTax(70, 2026, 100_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
     expect(r.seniorBonus).toBe(12_000);
     expect(r.taxableIncome).toBe(52_500);
   });
 
   test("partial phase-out reduces the bonus by 6% of excess MAGI, per person", () => {
-    // MFJ, MAGI 180,000 → excess 30,000 over 150,000.
-    // reduction = 6% × 30,000 × 2 = 3,600 → bonus = 12,000 − 3,600 = 8,400
     const r = calcYearTax(70, 2026, 180_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
     expect(r.seniorBonus).toBe(8_400);
   });
 
   test("fully phased out at threshold + $100,000 of MAGI", () => {
-    // Single: 75,000 + 100,000 = 175,000 → 6% × 100,000 = 6,000 = the whole bonus.
     const atCliff = calcYearTax(66, 2026, 175_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
     expect(atCliff.seniorBonus).toBe(0);
-    // MFJ: 150,000 + 100,000 = 250,000, since the 6% bites each person's own 6,000.
     const mfjAtCliff = calcYearTax(70, 2026, 250_000, 0, 0, 0, 0, false, 0.025, "mfj", "FL");
     expect(mfjAtCliff.seniorBonus).toBe(0);
-    // Never negative beyond the cliff.
     const beyond = calcYearTax(66, 2026, 400_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
     expect(beyond.seniorBonus).toBe(0);
   });
@@ -2319,13 +1782,10 @@ describe("OBBBA senior bonus deduction", () => {
     const in2029 = calcYearTax(70, 2029, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
     expect(in2028.seniorBonus).toBe(6_000);
     expect(in2029.seniorBonus).toBe(0);
-    // The sunset must RAISE tax, all else equal — this is the 2028→2029 cliff the
-    // UI discloses. Compared on taxableIncome so bracket indexing doesn't muddy it.
     expect(in2029.taxableIncome).toBeGreaterThan(in2028.taxableIncome);
   });
 
   test("is NOT inflation-indexed: same nominal amount in 2026 and 2028", () => {
-    // Both years below the phase-out, so any indexing would show up directly.
     const a = calcYearTax(70, 2026, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
     const b = calcYearTax(70, 2028, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
     expect(a.seniorBonus).toBe(6_000);
@@ -2333,10 +1793,6 @@ describe("OBBBA senior bonus deduction", () => {
   });
 
   test("REGRESSION (CLAUDE.md rule 3): the bonus must not reduce MAGI", () => {
-    // Same income, one year inside the window and one after it. taxableIncome must
-    // differ (the deduction works) while MAGI must be identical (it is an
-    // AGI-level quantity that no deduction touches). If MAGI ever moves here, the
-    // IRMAA tier check has been corrupted.
     const inWindow = calcYearTax(70, 2028, 120_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
     const afterSunset = calcYearTax(70, 2029, 120_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
     expect(inWindow.seniorBonus).toBeGreaterThan(0);
@@ -2345,8 +1801,6 @@ describe("OBBBA senior bonus deduction", () => {
   });
 
   test("stacks additively on top of the standard deduction, not merged into it", () => {
-    // getStandardDeduction must be unchanged by OBBBA — it is a separate line so an
-    // itemizer model stays possible later (OBBBA is available to itemizers too).
     expect(getStandardDeduction(70, "single", 1)).toBe(17_750);
     expect(getStandardDeduction(70, "mfj", 1)).toBe(35_500);
     const r = calcYearTax(70, 2026, 50_000, 0, 0, 0, 0, false, 0.025, "single", "FL");
@@ -2399,47 +1853,18 @@ describe("taxableYieldSplit — pure function", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// waterfallForActiveStrategy — Section 1's waterfall must pace spending with
-// the SAVED distribution strategy, not always the Smart Waterfall hybrid
-// ═══════════════════════════════════════════════════════════════════════════════
 describe("waterfallForActiveStrategy — Section 1 waterfall matches the saved distribution strategy", () => {
-  // Regression for the bug found 2026-09-17: buildWithdrawalWaterfall(p) with
-  // no spSchedule override paces spending with its own internal GK-guardrail/
-  // Bengen-at-15yr hybrid ("Smart Waterfall") REGARDLESS of
-  // p.withdrawalStrategy. A user whose saved strategy was Guyton-Klinger saw
-  // a "Smart Lifetime Tax" card, B1 End balances, and Buckets-tab runway
-  // estimate that all silently described the Smart Waterfall plan instead of
-  // their own — the same defect class simulateDeterministicWithStrategy's own
-  // comment documents fixing for its tax column ("five strategies... all
-  // displayed the same $210,686 of tax"). waterfallForActiveStrategy applies
-  // that identical fix to every OTHER consumer of buildWithdrawalWaterfall.
   const FIXED = { ...BASE, withdrawalStrategy: "fixed", fixedWithdrawalRate: 0.05 };
 
   test("fixed-% strategy: wired waterfall's spend path matches simulateDeterministicWithStrategy's own schedule, not the raw Smart Waterfall hybrid", () => {
     const wired = waterfallForActiveStrategy(FIXED);
     const det = simulateDeterministicWithStrategy(FIXED, FIXED.inf, "fixed");
-    const raw = buildWithdrawalWaterfall(FIXED); // the pre-fix call every consumer used to make directly
+    const raw = buildWithdrawalWaterfall(FIXED);
 
-    // Compared against det.spByYear (pass 1's own spend path — the exact
-    // schedule waterfallForActiveStrategy feeds the waterfall as spSchedule),
-    // not det.schedule (pass 2's further-adjusted display figures). Pass 2
-    // recomputes sp against its own corrected-tax portfolio trajectory — a
-    // documented, accepted single-iteration residual ("That residual is
-    // second-order... still a residual", simulateDeterministicWithStrategy's
-    // own comment above pass 2) — so det.schedule and det.spByYear
-    // legitimately differ by a small amount already, independent of this fix.
-    // What this fix guarantees is that Section 1 is built from THIS
-    // strategy's spend path (the same one Section 2's own tax figures are
-    // built from via wf2), not an unrelated Smart Waterfall hybrid.
     for (let i = 0; i < det.spByYear.length; i++) {
       expect(wired.smart.rows[i].spending).toBe(Math.round(det.spByYear[i].amount));
     }
 
-    // And it must actually be DIFFERENT from what the old, unfixed call
-    // produced — proving this isn't a no-op. Fixed 5%-of-portfolio reacts to
-    // the portfolio every year; the Smart Waterfall hybrid's GK guardrails +
-    // Bengen switch do not, so a few years in they diverge meaningfully.
     const laterIdx = Math.min(5, wired.smart.rows.length - 1, raw.smart.rows.length - 1);
     expect(wired.smart.rows[laterIdx].spending).not.toBe(raw.smart.rows[laterIdx].spending);
   });

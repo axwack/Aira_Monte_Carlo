@@ -19,13 +19,11 @@ test("Plan inputs has a Real Estate & Debt step that edits the profile (single s
   const { el, root, calls } = mount({ ...BLANK_PROFILE, properties: [home], mortBalance: 300000 });
   ["Real Estate & Debt", "Gross value", "Mortgage balance", "Annual income (opt)", "Original term (yrs)", "Start date"]
     .forEach((t) => expect(el.textContent).toContain(t));
-  // the app's own slider inputs, not bare number fields
   expect(el.querySelector('input[type="number"]')).toBeNull();
   act(() => Array.from(el.querySelectorAll("button")).find((b) => b.textContent.includes("Add property")).click());
   const props = calls.filter(([k]) => k === "properties").pop()[1];
   expect(props).toHaveLength(2);
   expect(props[0]).toEqual(home);
-  // only the primary mortgage is charged as a payment, and a second property's card says so
   expect(el.querySelector('[data-testid="p1-payment-note"]')).toBeNull();
   act(() => root.unmount());
   el.remove();

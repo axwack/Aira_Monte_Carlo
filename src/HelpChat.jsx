@@ -4,14 +4,9 @@ import { askHelp } from "./ai/ai-analysis.js";
 
 const NOT_FOUND = "I could not find that in Help. Try different words in the search box, or use Feedback to ask directly.";
 
-/**
- * "Ask Aira" box for the Help modal. Picks the 3 best Help entries for the
- * question, asks the AI to answer only from those, and shows them as links.
- * A question that matches no entry never reaches the AI, so it costs nothing.
- */
 export default function HelpChat({ entries, geminiApiKey, geminiModel, onOpenEntry }) {
   const [q, setQ] = useState("");
-  const [turns, setTurns] = useState([]); // { question, answer, sources:[{id,title}] }
+  const [turns, setTurns] = useState([]);
   const [busy, setBusy] = useState(false);
 
   const send = async () => {

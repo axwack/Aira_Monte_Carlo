@@ -1,44 +1,11 @@
-/**
- * ai-analysis.js — Direct Gemini API calls from the browser
- *
- * Each user provides their own Gemini API key via Profile → Assumptions.
- * No server proxy needed — calls go directly to Google's API.
- *
- * Get a free key at: https://aistudio.google.com/app/apikey
- *
- * Path A billing stub:
- *   Set BILLING_ENABLED = true to activate credit checks + deductions.
- *   False (default) = pure BYOK — existing behavior, no changes.
- */
-
 import { useState, useEffect, useCallback } from "react";
 import { plainText, helpContext, HELP_CHAT_RULES } from "../helpChat.js";
 import { hasEnoughCredits, deductCredits, MIN_CREDITS_TO_RUN, getStoredJWT, fetchCreditBalance, syncCreditBalance } from "../billing/credits.js";
-/**
- * Shared persona for every Gemini call.
- *
- * Used to open with "You are Aira, a fiduciary retirement planning AI."
- * Fiduciary is a legal term for a duty of loyalty and care this product
- * doesn't have and isn't licensed to claim — putting it in the system prompt
- * of a paid feature undercuts every disclaimer elsewhere in the app, and
- * nudges the model to phrase output as advice instead of analysis.
- *
- * Duplicated verbatim in functions/api/analyze.js because the browser bundle
- * and the Cloudflare Function can't share a module. aiPersona.test.js checks
- * the two copies stay byte-identical and that neither brings the word back.
- */
 
 const AIRA_PERSONA = "You are Aira, a retirement planning assistant. You explain a plan the user has already modelled themselves. This is educational information about their own figures — NOT personalised financial, investment, tax, or legal advice, and never a recommendation to buy, sell, or hold any security. Present findings as observations and trade-offs to raise with a licensed professional, not as instructions to act on. Be honest about uncertainty and about what the model cannot see.";
 
 
-// Billing mode flag. Flip to true when Path A (token-resale) goes live.
-// When false, all credit logic is bypassed — pure BYOK, no code path changes.
 export const BILLING_ENABLED = true;
-
-// Billing proxy — routes all AI calls through /api/analyze when
-// BILLING_ENABLED = true. The Worker verifies the JWT, deducts credits from
-// D1, and calls Gemini with the server-side key, so the user's BYOK key
-// isn't needed.
 
 async function callViaProxy(type, data) {
   const jwt = getStoredJWT();
@@ -55,9 +22,6 @@ async function callViaProxy(type, data) {
     throw new Error(err.error || `API error ${res.status}`);
   }
   const result = await res.json();
-  // Sync balance from the server's response to avoid a second round-trip.
-  // Fall back to a live fetch if the server didn't include the remaining balance
-  // (e.g. BYOK mode or deduction failed non-fatally).
   if (typeof result._credits_remaining === "number") {
     syncCreditBalance(result._credits_remaining);
   } else {
@@ -68,17 +32,6 @@ async function callViaProxy(type, data) {
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-// Pricing & session usage tracking
-
-// $ per 1M tokens. Google AI Studio public pricing — update as Google revises.
-// Thinking ("thoughts") tokens are billed at the output rate.
-// Not verified for the rolling aliases and the 3.x line — these are the
-// published 2.5-family rates, carried over because an alias currently
-// resolves to a model in that family. They only drive the BYOK "session
-// cost" badge, an estimate for the user's own info. Real billing doesn't
-// depend on this table — credits are metered on token counts read from each
-// response's usageMetadata. Check https://ai.google.dev/pricing before
-// quoting these numbers to anyone.
 export const GEMINI_PRICING = {
   "gemini-flash-latest":      { inputPerM: 0.30,  outputPerM: 2.50  },
   "gemini-pro-latest":        { inputPerM: 1.25,  outputPerM: 10.00 },
@@ -94,7 +47,7 @@ export const GEMINI_PRICING = {
 };
 
 const USAGE_STORAGE_KEY = "airaAiUsage.v1";
-const USAGE_MAX_RECORDS = 1000;  // Cap to prevent unbounded localStorage growth.
+const USAGE_MAX_RECORDS = 1000;
 
 function _loadPersistedUsage() {
   try {
@@ -110,15 +63,12 @@ function _persistUsage() {
     if (typeof localStorage === "undefined") return;
     const trimmed = _usageRecords.slice(-USAGE_MAX_RECORDS);
     localStorage.setItem(USAGE_STORAGE_KEY, JSON.stringify(trimmed));
-  } catch { /* quota exceeded or storage disabled — silently drop */ }
+  } catch { }
 }
 
 const _usageRecords = _loadPersistedUsage();
 const _usageListeners = new Set();
 
-/* Whole dollars, grouped, never abbreviated — matches `fmtDollar` in App.jsx.
- * Duplicated rather than imported because App.jsx imports from this module, so
- * importing back would be circular. Keep the two in step. */
 const fmtDollar = (n) => `$${Math.round(n).toLocaleString()}`;
 
 export function calcCost(model, inputTokens, outputTokens) {
@@ -127,7 +77,7 @@ export function calcCost(model, inputTokens, outputTokens) {
 }
 
 function _notify() {
-  _usageListeners.forEach(l => { try { l(); } catch { /* ignore */ } });
+  _usageListeners.forEach(l => { try { l(); } catch { } });
 }
 
 function recordUsage(model, fnLabel, usage) {
@@ -135,7 +85,6 @@ function recordUsage(model, fnLabel, usage) {
   const promptTokens   = usage.promptTokenCount      || 0;
   const outputTokens   = usage.candidatesTokenCount  || 0;
   const thoughtsTokens = usage.thoughtsTokenCount    || 0;
-  // Thinking tokens bill at the output rate.
   const billableOutput = outputTokens + thoughtsTokens;
   const totalTokens    = usage.totalTokenCount || (promptTokens + billableOutput);
   const costUsd        = calcCost(model, promptTokens, billableOutput);
@@ -170,24 +119,8 @@ export function useAiUsage() {
   return usage;
 }
 
-// Default model when values.geminiModel is not set.
-//
-// This is a rolling alias on purpose. Pinning a dated id is what broke things
-// before: Google retires ids per-audience, so "gemini-2.5-flash" kept working
-// for the project that shipped it and 404'd for every new key — "no longer
-// available to new users" — invisible in the author's own testing.
-// `gemini-flash-latest` gets repointed by Google at the current Flash model,
-// so a retirement becomes a silent upgrade instead of a dead feature.
-//
-// The trade-off is that cost-per-call can move under us. That's fine here
-// because usage is measured, not assumed — recordUsage() reads the real
-// usageMetadata off every response, so the billing figures come from what
-// actually happened, not from the price table below.
 export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
 
-// Fallback list, used only until a key is present and fetchAvailableModels()
-// returns the live set. Kept short and stable-only; the live list is the source
-// of truth (see the AI Model row in AssumptionsPanel).
 export const GEMINI_MODELS = [
   { id: "gemini-flash-latest",      label: "Gemini Flash (latest) — recommended", note: "Rolling alias — Google keeps this pointed at the current Flash model" },
   { id: "gemini-pro-latest",        label: "Gemini Pro (latest)",                 note: "Highest quality, several × the cost" },
@@ -200,20 +133,6 @@ function resolveModel(values) {
   return (values?.geminiModel || "").trim() || DEFAULT_GEMINI_MODEL;
 }
 
-// ─── Gemini helpers ───────────────────────────────────────────────────────────
-
-/**
- * Ask Google which models this key can actually call.
- *
- * A hardcoded list is guaranteed to rot: Google retires model ids on their own
- * schedule, and the failure is a 404 at the moment a user clicks Analyse —
- * "This model models/gemini-2.5-flash is no longer available to new users".
- * Worse, the retirement is per-audience, so the id keeps working for existing
- * projects and breaks only for new keys, which makes it invisible in testing.
- *
- * Returns [] on any failure so callers fall back to the static list rather than
- * rendering an empty dropdown.
- */
 export async function fetchAvailableModels(apiKey) {
   const key = (apiKey || "").trim();
   if (!key) return [];
@@ -225,8 +144,6 @@ export async function fetchAvailableModels(apiKey) {
       .filter(m => (m.supportedGenerationMethods || []).includes("generateContent"))
       .map(m => String(m.name || "").replace(/^models\//, ""))
       .filter(id => MODEL_IS_TEXT_ANALYSIS(id));
-    // "…-latest" aliases first: Google repoints them at the current model, which
-    // is the whole reason this feature broke. Then stable versions, newest first.
     return ids.sort((a, b) => {
       const la = a.endsWith("-latest"), lb = b.endsWith("-latest");
       if (la !== lb) return la ? -1 : 1;
@@ -235,20 +152,6 @@ export async function fetchAvailableModels(apiKey) {
   } catch { return []; }
 }
 
-/**
- * Is this id a general text model we can send an analysis prompt to?
- *
- * Filtering on the name suffix alone was wrong, and testing it against a real
- * ListModels response is what showed it: `generateContent` is also supported by
- * text-to-speech, image ("Nano Banana"), computer-use and custom-tools variants,
- * so `gemini-2.5-flash-preview-tts`, `gemini-3.1-flash-image` and
- * `gemini-2.5-computer-use-preview-10-2025` all sailed through and would have
- * been offered as analysis engines. Excluding by purpose, not by suffix shape.
- *
- * Previews are excluded too: they churn on Google's schedule and a user picking
- * one is choosing a moving target without knowing it. There are enough stable
- * options that this costs nothing.
- */
 const MODEL_SPECIALIZED = /(image|tts|audio|robotics|computer-use|embedding|customtools|nano-banana|deep-research|lyria|veo|imagen)/;
 export function MODEL_IS_TEXT_ANALYSIS(id) {
   return typeof id === "string"
@@ -257,27 +160,17 @@ export function MODEL_IS_TEXT_ANALYSIS(id) {
     && !/(preview|exp)/.test(id);
 }
 
-/** A 404/NOT_FOUND from Google means the id is gone, not that the call failed. */
 function isModelGoneError(status, err) {
   const msg = String(err?.error?.message || "");
   return status === 404 || /no longer available|not found|NOT_FOUND/i.test(msg);
 }
 
-// Remembers a model that answered 404 this session, so every subsequent call
-// skips it instead of paying the round-trip and failing again.
 const _deadModels = new Set();
 
 async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel = "unknown") {
-  // callGemini is the BYOK path only — the billing/proxy path uses callViaProxy.
-  // No credit guards here; credits are managed server-side for proxy calls.
-  //
-  // Candidate order: what was asked for, then the rest of the shipped list. A
-  // retired id used to surface as a raw Gemini 404 to the user, who has no way
-  // to know which of the four dropdown entries still exists. Falling through
-  // means one dead id degrades the model choice rather than the feature.
   const candidates = [model, ...GEMINI_MODELS.map(m => m.id)]
     .filter((id, i, a) => id && a.indexOf(id) === i && !_deadModels.has(id));
-  if (candidates.length === 0) candidates.push(model);   // all dead: try anyway, surface the real error
+  if (candidates.length === 0) candidates.push(model);
 
   let lastErr = null;
   for (const id of candidates) {
@@ -287,7 +180,6 @@ async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel
       body: JSON.stringify(body),
     });
     let res = await post(payload);
-    // gemini-flash-lite-latest answers HTTP 400 to thinkingBudget:0 (found 2026-11-12).
     if (res.status === 400 && payload.generationConfig?.thinkingConfig) {
       const { thinkingConfig, ...generationConfig } = payload.generationConfig;
       res = await post({ ...payload, generationConfig });
@@ -304,9 +196,8 @@ async function callGemini(apiKey, payload, model = DEFAULT_GEMINI_MODEL, fnLabel
         `Gemini model "${id}" is no longer available. ` +
         `Pick a different model in Profile → Assumptions → AI Model.`
       );
-      continue;                       // try the next candidate
+      continue;
     }
-    // A real error (bad key, quota, safety block) — don't burn the fallbacks on this.
     throw new Error(err.error?.message || `Gemini HTTP ${res.status}`);
   }
   throw lastErr || new Error("No available Gemini model — check your API key in Profile → Assumptions.");
@@ -318,9 +209,6 @@ function fnCall(apiKey, maxTokens, systemText, userText, fnDecl, model = DEFAULT
     contents: [{ role: "user", parts: [{ text: userText }] }],
     tools: [{ functionDeclarations: [fnDecl] }],
     toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [fnDecl.name] } },
-    // Disable thinking for function calls — Gemini 2.5 thinking mode emits
-    // function calls as Python-style code (`print(default_api.foo(...))`) 
-    // which the API rejects as MALFORMED_FUNCTION_CALL. No-op for non-thinking models.
     generationConfig: { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } },
   }, model, fnLabel);
 }
@@ -333,8 +221,6 @@ function getText(res) {
   return res.candidates?.[0]?.content?.parts?.[0]?.text || "";
 }
 
-// ─── Data quality gate ────────────────────────────────────────────────────────
-
 export function profileIsComplete(values, mcResults) {
   if (!mcResults || !(mcResults.rate > 0)) return false;
   if (!values) return false;
@@ -344,8 +230,6 @@ export function profileIsComplete(values, mcResults) {
   if (filledAccounts.length < 1) return false;
   return true;
 }
-
-// ─── Context builders ─────────────────────────────────────────────────────────
 
 function ctxHealth(values, mcResults) {
   const swr = values.port > 0 ? ((values.sp / values.port) * 100).toFixed(1) : "N/A";
@@ -409,8 +293,6 @@ function ctxActionPlan(values, mcResults, cards) {
   ].join("\n");
 }
 
-// ─── Rules-based fallbacks ────────────────────────────────────────────────────
-
 function healthFallback(values, mcResults) {
   const rate  = mcResults?.rate ?? 0;
   const score = Math.round(rate * 100);
@@ -422,8 +304,6 @@ function healthFallback(values, mcResults) {
   if (["CA","NJ"].includes(values.stateOfResidence))  flags.push(`${values.stateOfResidence} has high income tax — consider domicile planning.`);
   return { score, grade, summary: `Rules-based score (AI unavailable). ${(rate * 100).toFixed(1)}% MC success rate.`, flags };
 }
-
-// ─── 1. Retirement Health Score ───────────────────────────────────────────────
 
 export async function analyzeRetirementHealth(values, mcResults) {
   if (BILLING_ENABLED && getStoredJWT()) {
@@ -459,8 +339,6 @@ export async function analyzeRetirementHealth(values, mcResults) {
   }
 }
 
-// ─── 2. Narrative Summary ─────────────────────────────────────────────────────
-
 export async function generateNarrativeSummary(values, mcResults) {
   if (BILLING_ENABLED && getStoredJWT()) {
     const rate = mcResults?.rate ?? 0;
@@ -486,8 +364,6 @@ export async function generateNarrativeSummary(values, mcResults) {
   }
 }
 
-// ─── 3. Withdrawal Strategy Optimization ─────────────────────────────────────
-
 export async function suggestWithdrawalOptimization(values, mcResults) {
   const current = values.withdrawalStrategy || "gk";
   if (BILLING_ENABLED && getStoredJWT()) {
@@ -496,10 +372,6 @@ export async function suggestWithdrawalOptimization(values, mcResults) {
   }
   const apiKey  = values.geminiApiKey?.trim();
   if (!apiKey) return { recommended: current, reason: "AI unavailable — add your Gemini API key in Profile.", projectedRateImprovement: "N/A" };
-  // Needs to stay the set the app can actually run (engine/withdrawalStrategies.js
-  // LIVE_STRATEGIES) — a model told about a retired strategy would recommend
-  // one the picker no longer offers. "smart" is left out on purpose: it's the
-  // tax-optimal sourcing hybrid, not a peer spending rule to compare here.
   const strategies = ["gk","bengen","fixed","ninety_five_rule","vpw"];
   try {
     const res = await fnCall(apiKey, 256,
@@ -527,12 +399,10 @@ export async function suggestWithdrawalOptimization(values, mcResults) {
   }
 }
 
-// ─── 4. Roth Conversion Strategy ─────────────────────────────────────────────
-
 export async function evaluateRothStrategy(values) {
   if (BILLING_ENABLED && getStoredJWT()) {
     try { return await callViaProxy("roth", { values }); }
-    catch { /* fall through to rules fallback */ }
+    catch { }
   }
   const apiKey = values.geminiApiKey?.trim();
   const accounts  = values.accounts || [];
@@ -572,8 +442,6 @@ export async function evaluateRothStrategy(values) {
   }
 }
 
-// ─── 5. Conversational Chat Response ─────────────────────────────────────────
-
 export async function generateChatResponse(values, mcResults, question, history = []) {
   if (BILLING_ENABLED && getStoredJWT()) {
     try {
@@ -606,13 +474,6 @@ export async function generateChatResponse(values, mcResults, question, history 
   }
 }
 
-// ─── 5b. Help Chat (grounded on Help entries only) ──────────────────────────
-
-/**
- * Answer a how-do-I question from the given Help entries (already picked by
- * retrieveHelpEntries). Same two paths as the plan chat: the billing proxy when
- * signed in, else the user's own Gemini key. No plan numbers are sent.
- */
 export async function askHelp(question, history, entries, geminiApiKey, geminiModel) {
   const helpEntries = entries.map(e => ({ id: e.id, title: e.title, text: plainText(e.body).slice(0, 1500) }));
   if (BILLING_ENABLED && getStoredJWT()) {
@@ -635,8 +496,6 @@ export async function askHelp(question, history, entries, geminiApiKey, geminiMo
   }, resolveModel({ geminiModel }), "helpchat");
   return getText(res);
 }
-
-// ─── 6. AI-Enhanced Action Plan ───────────────────────────────────────────────
 
 export async function runAIActionPlan(values, mcResults, cards = []) {
   const slimValues = {
@@ -723,9 +582,6 @@ export async function runAIActionPlan(values, mcResults, cards = []) {
   return merged;
 }
 
-// ─── 7. Retirement Date Solver ────────────────────────────────────────────────
-// ─── 8. Live Internet Search Cards ───────────────────────────────────────────
-
 function getSearchTopics(values) {
   const age       = values.currentAge || 56;
   const retireAge = values.retireAge  || 65;
@@ -734,7 +590,6 @@ function getSearchTopics(values) {
   const hasPreTax = (values.accounts || []).some(a => a.category === "pretax" && (a.balance || 0) > 0);
   const topics    = [];
 
-  // Always relevant
   topics.push("IRS 401k IRA HSA contribution limits catch-up amounts 2026");
   topics.push("IRS federal income tax brackets standard deduction 2026 married filing jointly single");
   topics.push("long-term capital gains tax rates income thresholds 2026");
@@ -824,14 +679,6 @@ export async function generateTimeSensitiveCards(values, mcResults) {
   } catch { return []; }
 }
 
-/**
- * Pure deterministic solver — no API call needed.
- * Projects the accumulation path at three return scenarios and finds the age
- * at which the portfolio crosses the target value.
- *
- * @param {object} values  ProfileWizard values (uses port, contrib, currentAge, earlyRetireTarget)
- * @returns {{ target, currentPort, results: [{ label, rate, crossoverAge, portAtCrossover }] }}
- */
 export function solveRetirementDate(values) {
   const currentAge  = values.currentAge  || 56;
   const currentPort = values.port        || 0;
@@ -857,14 +704,6 @@ export function solveRetirementDate(values) {
   return { target, currentPort, currentAge, results };
 }
 
-/**
- * AI-enhanced retirement date analysis. Falls back to a deterministic narrative when
- * no Gemini key is present or the API call fails.
- *
- * @param {object} values     ProfileWizard values
- * @param {object} mcResults  runMC() output
- * @returns {{ solver, narrative }} solver = solveRetirementDate output, narrative = string
- */
 export async function analyzeRetirementDate(values, mcResults) {
   const solver = solveRetirementDate(values);
   const apiKey = values?.geminiApiKey?.trim();
@@ -915,8 +754,6 @@ export async function analyzeRetirementDate(values, mcResults) {
     return { solver, narrative };
   }
 }
-
-// ─── AIAnalysisPanel Component ────────────────────────────────────────────────
 
 function formatTokens(n) {
   return n.toLocaleString();
@@ -1033,17 +870,6 @@ export function AIAnalysisPanel({ values, mcResults }) {
   );
 }
 
-// ─── AiraAITab — full AI workspace ───────────────────────────────────────────
-//
-// Hosts all 6 AI features in one place. Each section is independent — load on
-// demand, no auto-run. Wired into App.jsx as a top-level tab.
-//
-// Props:
-//   values      — assumptions / params object (geminiApiKey, accounts, etc.)
-//   mcResults   — runMC() output
-//   onApplyWithdrawal(strategy) — optional callback to write recommended
-//     withdrawal strategy back to App.jsx state
-
 const sectionStyle = {
   padding: "14px 16px",
   border: "1px solid rgba(255,255,255,0.08)",
@@ -1122,16 +948,6 @@ function HealthAndNarrativeSection({ values, mcResults }) {
   );
 }
 
-/**
- * Notice shown beneath AI-generated text.
- *
- * Generated prose is the most advice-shaped thing in the product — it's
- * fluent, personalized to the user's own numbers, and doesn't have the
- * visible machinery that marks a chart or table as model output. It also
- * carries the usual risk of a language model saying something confidently
- * and wrongly. So every rendered block says so inline instead of relying on
- * a page footer.
- */
 function AiOutputNotice() {
   return (
     <div style={{

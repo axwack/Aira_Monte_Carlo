@@ -1,8 +1,3 @@
-/**
- * Guards for three billing bugs: anonymous callers spending the server Gemini key,
- * an overdraft being "refunded" credits it never took, and a failed webhook being
- * swallowed by its own dedup row on Stripe's retry. Fake D1 + stubbed fetch; no network.
- */
 import { createHmac, webcrypto } from "node:crypto";
 import { TextEncoder as NodeTextEncoder } from "node:util";
 import { onRequestPost as analyze } from "../../functions/api/analyze.js";
@@ -14,7 +9,6 @@ if (!global.crypto || !global.crypto.subtle) {
   Object.defineProperty(global, "crypto", { value: webcrypto, configurable: true, writable: true });
 }
 
-/** Fake D1: every statement is recorded; `rules` pick the result by SQL substring. */
 function fakeDb(rules = {}) {
   const log = [];
   const pick = (sql) => Object.entries(rules).find(([k]) => sql.includes(k))?.[1];
@@ -49,7 +43,6 @@ describe("/api/analyze", () => {
   test("3. an overdraft with an empty result is not refunded", async () => {
     const SECRET = "s".repeat(32);
     const token = await signJWT({ customerId: "cus_1", exp: Math.floor(Date.now() / 1000) + 600 }, SECRET);
-    // 200k tokens = 200 credits against a balance of 60: the conditional UPDATE matches nothing.
     global.fetch = jest.fn(async () => ({
       ok: true,
       json: async () => ({ candidates: [{ content: { parts: [{ text: "no cards" }] } }], usageMetadata: { totalTokenCount: 200000 } }),
@@ -68,7 +61,6 @@ describe("/api/analyze", () => {
     const body = await res.json();
     expect(body._refunded).toBeUndefined();
     expect(db.log.some((s) => s.includes("credits = credits + ?"))).toBe(false);
-    // ...and the balance is drained, or every later call above the guard is free.
     expect(db.log.some((s) => s.includes("SET credits = 0"))).toBe(true);
   });
 });
@@ -135,7 +127,6 @@ describe("/api/webhook", () => {
     const sig = createHmac("sha256", WH).update(`${t}.${raw}`).digest("hex");
     const db = fakeDb();
     const prepare = db.prepare.bind(db);
-    // e.g. migration 010 not applied yet: the alias lookup throws.
     db.prepare = (sql) => { if (sql.includes("customer_aliases")) throw new Error("no such table"); return prepare(sql); };
     const res = await webhook({
       request: new Request("https://x/api/webhook", { method: "POST", headers: { "Stripe-Signature": `t=${t},v1=${sig}` }, body: raw }),
@@ -160,7 +151,6 @@ describe("/api/admin", () => {
     expect(JSON.stringify(await res.json())).not.toMatch(/length|serverExpects/);
     expect(db.log.some((s) => s.startsWith("INSERT INTO admin_audit"))).toBe(true);
 
-    // Ten recent rows from this IP: the next wrong guess is refused before the secret is even checked.
     const busy = fakeDb({ "COUNT(*)": { first: { cnt: 10 } } });
     expect((await call(busy)).status).toBe(429);
   });

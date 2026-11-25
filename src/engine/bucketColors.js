@@ -1,14 +1,7 @@
-/**
- * Stable display palette for the three time-horizon buckets.
- *
- * These are presentation tokens only. Bucket assignment, clamping, and
- * accounting remain in engine/buckets.js. Keeping this table separate lets
- * every surface use the same colors without coupling UI code to React.
- */
 export const BUCKET_COLORS = Object.freeze({
-  b1: "#0ea5e9", // cash cushion / near-term spending
-  b2: "#a78bfa", // income bridge / intermediate horizon
-  b3: "#14b8a6", // growth / long-term reserve
+  b1: "#0ea5e9",
+  b2: "#a78bfa",
+  b3: "#14b8a6",
 });
 
 export function bucketColor(bucket) {

@@ -1,26 +1,3 @@
-/**
- * VerdictHeader — the persistent four-answer strip (REQUIREMENTS §41 verdict #3).
- *
- * The brief's acceptance test (§7) is that a cold user answers the questions that
- * matter in 30 seconds WITHOUT CLICKING. "Will the money last" is answered by the
- * hero success number on the card directly above this strip, so the strip no
- * longer repeats it; it leads with the starting withdrawal rate, then the three
- * survival answers: will it outlive me · what is my worst case · when does it run
- * out. This strip is mounted above the tab bar so all are on screen before any
- * navigation.
- *
- * What this pins down:
- *  1. All four figures render from ONE `mc` object — the strip is a read.
- *  2. The pessimistic balance goes through `selectPortfolioAtAge` (the guarded
- *     field; a direct `mc.term.p10` read fails noRawMcAccess).
- *  3. The 10th-percentile figure is labelled as a BALANCE, not a "floor spend".
- *     The brief calls it spend; `term.p10` is an ending portfolio value, and
- *     mislabelling it is the provenance defect class (§28) this repo keeps
- *     paying for. A test asserts the wrong word never appears.
- *  4. Basis is named with the retirement YEAR, never "today's dollars" (§41 A3).
- *  5. Before a run it says so plainly rather than rendering zeros.
- */
-
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { VerdictHeader, runMC } from "./App";
@@ -60,22 +37,16 @@ const base = { inf: 2.5, endAge: P.endAge, currentAge: P.currentAge, retireAge: 
 
 test("renders all four headline cards from one mc object", () => {
   const text = renderToText(<VerdictHeader mc={MC} {...base} real={false} />);
-  // "Funded to age" is no longer duplicated here — the success rate is the hero
-  // number on the card above the strip. The strip leads with the withdrawal rate
-  // instead, then the three survival answers.
   expect(text).toContain("Withdrawal rate");
   expect(text).not.toContain("Funded to age");
   expect(text).toContain("Money outlives you");
   expect(text).toContain(`Worst case at ${P.endAge}`);
   expect(text).toContain("Runs out");
-  // The withdrawal rate is passed in as the already-formatted swr string.
   expect(text).toContain(`${base.swr}%`);
   if (MC.mwRate != null) expect(text).toContain(`${(MC.mwRate * 100).toFixed(1)}%`);
 });
 
 test("a FAILING plan shows the failure age and a worst case of zero — the case that matters", () => {
-  // The happy path above is 100%/Never, which exercises almost nothing. This is
-  // the plan the strip exists for: modest portfolio, oversized spend.
   const rough = {
     ...P,
     sp: 260_000,
@@ -91,17 +62,13 @@ test("a FAILING plan shows the failure age and a worst case of zero — the case
   const mc = runMC(rough, rough.endAge, 300, 13, true);
   expect(mc.rate).toBeLessThan(1);
   const text = renderToText(<VerdictHeader mc={mc} {...base} real={false} />);
-  // Where it fails must be an AGE, not the word Never.
   if (mc.medianExhaustAge != null) expect(text).toContain(`Age ${mc.medianExhaustAge}`);
   else expect(text).toContain("Never");
-  // Mortality weighting can only raise the figure, never lower it.
   if (mc.mwRate != null) expect(mc.mwRate).toBeGreaterThanOrEqual(mc.rate);
 });
 
 test("the worst case is labelled a BALANCE, never a floor spend", () => {
   const text = renderToText(<VerdictHeader mc={MC} {...base} real={false} />);
-  // The brief's wording. term.p10 is an ending portfolio value, so calling it
-  // spend would be a Rule-1 mislabel.
   expect(text).not.toMatch(/floor spend/i);
   expect(text).toMatch(/Worst case/i);
 });

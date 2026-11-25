@@ -1,5 +1,3 @@
-// ai-analysis.cost.test.js — Pure tests for token usage tracking + cost calc
-
 import {
   GEMINI_PRICING,
   calcCost,
@@ -7,9 +5,6 @@ import {
   resetAiUsage,
   subscribeAiUsage,
 } from './ai-analysis';
-
-// Internal accumulator is exercised via subscribe/get; recordUsage isn't exported,
-// so these tests cover the public surface and the math.
 
 beforeEach(() => resetAiUsage());
 
@@ -47,7 +42,7 @@ describe('pricing table shape', () => {
       expect(typeof p.outputPerM).toBe('number');
       expect(p.inputPerM).toBeGreaterThan(0);
       expect(p.outputPerM).toBeGreaterThan(0);
-      expect(p.outputPerM).toBeGreaterThanOrEqual(p.inputPerM); // output always >= input
+      expect(p.outputPerM).toBeGreaterThanOrEqual(p.inputPerM);
       expect(model).toBeTruthy();
     }
   });
@@ -79,7 +74,7 @@ describe('session usage accumulator', () => {
     expect(fired).toBe(1);
     unsub();
     resetAiUsage();
-    expect(fired).toBe(1); // didn't fire again after unsub
+    expect(fired).toBe(1);
   });
 
   test('getAiUsage returns a snapshot, not a live reference', () => {
@@ -90,37 +85,27 @@ describe('session usage accumulator', () => {
 });
 
 describe('localStorage persistence', () => {
-  // beforeEach already calls resetAiUsage(), which clears localStorage.
-
   test('resetAiUsage clears the localStorage key', () => {
     localStorage.setItem('airaAiUsage.v1', JSON.stringify([{ fake: true }]));
     resetAiUsage();
     const raw = localStorage.getItem('airaAiUsage.v1');
-    // After reset we write an empty array, not null.
     expect(raw).toBe('[]');
   });
 
   test('storage key is versioned for forward-compat', () => {
-    // If we change the record shape later, bump v1 → v2 to avoid hydrating bad data.
     expect(typeof localStorage.getItem('airaAiUsage.v1')).not.toBe('undefined');
   });
 
   test('survives bad/corrupt JSON gracefully (does not throw on module load)', () => {
-    // We can't re-trigger module load mid-test, but we can verify the load helper's
-    // contract: it returns [] when storage is broken. Simulate by writing junk and
-    // re-reading via getAiUsage's snapshot (which mirrors _usageRecords).
     localStorage.setItem('airaAiUsage.v1', 'not valid json{{{');
-    // resetAiUsage is what we have available — it should clear without throwing.
     expect(() => resetAiUsage()).not.toThrow();
     expect(getAiUsage().records).toEqual([]);
   });
 
   test('disabled localStorage does not crash (silently drops persistence)', () => {
-    // Monkey-patch to simulate quota error.
     const origSetItem = Storage.prototype.setItem;
     Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); };
     try {
-      // resetAiUsage internally calls _persistUsage, which should swallow the throw.
       expect(() => resetAiUsage()).not.toThrow();
     } finally {
       Storage.prototype.setItem = origSetItem;

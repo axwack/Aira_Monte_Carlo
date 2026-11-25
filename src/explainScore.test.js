@@ -1,25 +1,8 @@
-/**
- * explainScore — the score has to explain itself.
- *
- * Every engine defect found on 2026-08-05 (bracket cap starving solvent plans,
- * Roth reserve unreachable, Rule of 55 boundary, surplus income evaporating) was
- * invisible on screen. The user saw a percentage and nothing else, so neither he
- * nor we could sanity-check it — which is precisely how they survived.
- *
- * These tests cover the reasoning, not the styling.
- */
-
 import { explainScore } from "./engine/explainScore.js";
 
 const mc = (over = {}) => ({
   rate: 0.95,
   pcts: [{ age: 65, p10: 800_000, p50: 1_000_000, p90: 1_400_000 }],
-  // Real runMC always sets both medR and pcts[0].p50 from the same
-  // portAtRetire distribution (two slightly different median-index formulas
-  // that normally land within a rounding error of each other — see
-  // explainScore.js's own comment on why it reads medR, not pcts[0].p50).
-  // Kept equal here so this fixture matches that invariant instead of
-  // silently testing a shape production never produces.
   medR: 1_000_000,
   medianExhaustAge: null,
   bracketOverrideRate: 0,
@@ -46,7 +29,6 @@ describe("guard rails", () => {
 
 describe("withdrawal rate — the primary driver", () => {
   test("computed net of guaranteed income, not gross spending", () => {
-    // $60k spend - $24k SS = $36k drawn from $1M = 3.6%.
     const r = explainScore(profile(), mc());
     expect(byId(r, "withdrawal_rate").value).toBe("3.6%");
   });
@@ -118,8 +100,6 @@ describe("early retirement and pre-tax concentration", () => {
   });
 
   test("and its lever refuses to rank conversions on tax alone", () => {
-    // Measured on a real profile: filling to 32% cut lifetime tax by $2.4M and
-    // ended $1.1M POORER than 22%. Ranking on tax saved recommends the wrong one.
     expect(byId(explainScore(profile(), mc()), "rmd_bomb").lever).toMatch(/ending wealth/i);
   });
 

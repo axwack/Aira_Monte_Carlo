@@ -1,11 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom";
 
-// Full-page Help hub. Content stays in ABOUT_FEATURES (src/about.js); this is
-// presentation only. Design: contents-page, type and hairlines carry the
-// hierarchy. No icons, colour categories, shadows or gradients.
-
-// 11 authored groups -> 6 tabs. shortcut: a group not listed keeps its own name.
 const TAB_OF = {
   "Getting Started": "Getting Started",
   "Your Income": "Income and Spending", "Your Spending": "Income and Spending", "Your Properties": "Income and Spending",
@@ -18,7 +13,6 @@ const CHIPS = ["Roth", "IRMAA", "Buckets", "Social Security", "Check-In"];
 
 const noStyle = (html) => html.replace(/<style[\s\S]*?<\/style>/gi, " ");
 const plain = (html) => noStyle(html).replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
-// One-sentence description: the entry's lede, else its first paragraph.
 const blurb = (e) => {
   const m = noStyle(e.body).match(/<p class=['"]help-lede['"]>([\s\S]*?)<\/p>/) || noStyle(e.body).match(/<p[^>]*>([\s\S]*?)<\/p>/);
   return plain(m ? m[1] : e.body);
@@ -131,7 +125,6 @@ export default function HelpPage({ entries, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [openId, onClose]);
   React.useEffect(() => { rootRef.current?.scrollTo?.(0, 0); }, [openId]);
-  // 'On This Page': the entry's own section headings, given ids after render.
   React.useEffect(() => {
     const hs = [...(rootRef.current?.querySelectorAll(".hp-read .help-sub") || [])];
     hs.forEach((h, i) => { h.id = `hp-h-${i}`; });
@@ -139,7 +132,6 @@ export default function HelpPage({ entries, onClose }) {
   }, [openId]);
 
   const q = query.trim().toLowerCase();
-  // Title 3, keyword 2, group 1, body 1: title matches sort first.
   const score = (e) => (e.title.toLowerCase().includes(q) ? 3 : 0) + ((e.keywords || []).join(" ").toLowerCase().includes(q) ? 2 : 0) + (e.tab.toLowerCase().includes(q) ? 1 : 0) + (e.text.includes(q) ? 1 : 0);
   const shown = q ? items.map((e) => [score(e), e]).filter(([s]) => s > 0).sort((a, b) => b[0] - a[0]).map(([, e]) => e)
     : tab === "All" ? items : items.filter((e) => e.tab === tab);

@@ -1,60 +1,15 @@
-/**
- * POST /api/analyze
- * Body: { type, values, mcResults?, question?, history?, cards? }
- * Header (billing mode): Authorization: Bearer <jwt>
- *
- * Dual-mode:
- *   - JWT present  → use server GEMINI_API_KEY, check/deduct D1 credits
- *   - No JWT       → BYOK: use body.apiKey or env.GEMINI_API_KEY (legacy)
- *
- * Required env vars: GEMINI_API_KEY, JWT_SECRET (billing), DB (billing)
- */
-
 import { json, handleOptions, verifyJWT } from "../_shared/jwt.js";
 import { canonicalCustomerId } from "../_shared/customers.js";
-/**
- * Shared persona for every Gemini call.
- *
- * This previously opened "You are Aira, a fiduciary retirement planning AI."
- * Fiduciary is a legal term of art naming a duty of loyalty and care that this
- * product does not assume and is not licensed to assume — asserting it in the
- * system prompt of a PAID feature undercuts every disclaimer elsewhere in the
- * app, and invites the model to phrase output as advice rather than analysis.
- *
- * Duplicated verbatim in src/ai/ai-analysis.js because the browser bundle and the
- * Cloudflare Function cannot share a module. aiPersona.test.js asserts the two
- * copies stay byte-identical and that neither reintroduces the word.
- */
 
 const AIRA_PERSONA = "You are Aira, a retirement planning assistant. You explain a plan the user has already modelled themselves. This is educational information about their own figures — NOT personalised financial, investment, tax, or legal advice, and never a recommendation to buy, sell, or hold any security. Present findings as observations and trade-offs to raise with a licensed professional, not as instructions to act on. Be honest about uncertainty and about what the model cannot see.";
 
 
 const GEMINI_BASE        = "https://generativelanguage.googleapis.com/v1beta/models";
-// ROLLING ALIASES, deliberately not pinned versions.
-//
-// This is the path PAYING customers take, and it is the one with no user-facing
-// escape hatch: the BYOK client can fall through to another model and tell the
-// user to pick a different one in Profile, but a proxy call has no dropdown to
-// point at. A pinned id here fails everyone at once, silently, on Google's
-// schedule — which is exactly what happened to "gemini-2.5-flash" ("no longer
-// available to new users"). Google repoints the "-latest" aliases at the current
-// model, so a retirement becomes an upgrade rather than an outage.
-//
-// Credits are metered from each response's real usageMetadata, so a model swap
-// changes quality/latency but never silently mis-bills.
 const MODEL_FAST         = "gemini-flash-lite-latest";
 const MODEL_STANDARD     = "gemini-flash-latest";
-const RAW_TOKENS_PER_CREDIT = 1_000;  // must match src/billing/credits.js
-// Refuse calls if balance is below this. Set above the expected max single-call
-// cost so a parallel-request overdraft can't open more than one call's worth of
-// free spend. Typical Gemini health/narrative call uses ~30-60 credits; 50 here
-// caps the worst-case parallel overdraft to ~1 free call's value.
+const RAW_TOKENS_PER_CREDIT = 1_000;
 const MIN_CREDITS_GUARD  = 50;
 
-// ─── Gemini helpers ───────────────────────────────────────────────────────────
-
-// usageBucket is a per-request array; callGemini pushes usageMetadata into it.
-// This avoids module-level state and is concurrent-request safe.
 async function callGemini(apiKey, model, payload, usageBucket) {
   const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
@@ -63,8 +18,6 @@ async function callGemini(apiKey, model, payload, usageBucket) {
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    // gemini-flash-lite-latest answers HTTP 400 to thinkingBudget:0 (found 2026-11-12).
-    // Retry once without it; a 400 is not billed, so a failed first try costs nothing.
     if (res.status === 400 && payload.generationConfig?.thinkingConfig) {
       const { thinkingConfig, ...generationConfig } = payload.generationConfig;
       return callGemini(apiKey, model, { ...payload, generationConfig }, usageBucket);
@@ -94,8 +47,6 @@ function getFnArgs(res) {
 function getText(res) {
   return res.candidates?.[0]?.content?.parts?.[0]?.text || "";
 }
-
-// ─── Context builders ─────────────────────────────────────────────────────────
 
 function ctxActionPlan(values, mcResults, cards) {
   const swr = values.port > 0 ? ((values.sp / values.port) * 100).toFixed(1) : "N/A";
@@ -157,8 +108,6 @@ function ctxWithdrawal(values, mcResults) {
     `Current strategy: ${values.withdrawalStrategy || "gk"}`,
   ].join("\n");
 }
-
-// ─── Handlers ───────────────────────────────────────────────────────────────
 
 async function handleActionPlan(apiKey, values, mcResults, cards, usageBucket) {
   const ctx      = ctxActionPlan(values, mcResults, cards);
@@ -311,16 +260,12 @@ async function handleChat(apiKey, values, mcResults, question, history, usageBuc
   return { text: getText(res) };
 }
 
-// KEEP IN SYNC with HELP_CHAT_RULES in src/helpChat.js (CRA cannot import from /functions).
 const HELP_CHAT_RULES =
   "You are Aira, the in-app help assistant for a retirement forecaster. Answer ONLY from the HELP ENTRIES below. " +
   "If they do not answer the question, say you could not find it in Help and suggest the Feedback button. " +
   "Do not ask for or use the user's personal numbers. This is not personalised financial, tax or legal advice. " +
   "Be concise (under 120 words) and use plain English. Name the entry you used by its title.";
 
-// Help chat: grounded on at most 3 help entries the client picked. Every input is
-// clamped here because the entries come from the caller, and the caller's credits
-// (or the operator's key) pay for the tokens.
 async function handleHelpChat(apiKey, question, history, helpEntries, usageBucket) {
   const q = String(question || "").slice(0, 500);
   if (!q.trim()) throw new Error("Missing question");
@@ -395,9 +340,7 @@ async function handleTimeSensitive(apiKey, values, mcResults, usageBucket) {
   const text = res.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
   console.log("[timesensitive] raw text length:", text.length, "| finish:", res.candidates?.[0]?.finishReason);
 
-  // Primary: look for <cards>...</cards> wrapper
   const tagged = text.match(/<cards>([\s\S]*?)<\/cards>/);
-  // Fallback: look for a bare JSON array if the model skipped the wrapper
   const raw = tagged?.[1]?.trim() ?? text.match(/\[\s*\{[\s\S]*?\}\s*\]/)?.[0];
 
   if (!raw) {
@@ -417,17 +360,10 @@ async function handleTimeSensitive(apiKey, values, mcResults, usageBucket) {
   }
 }
 
-// ─── D1 credit deduction ──────────────────────────────────────────────────────
-
 async function deductD1Credits(db, customerId, rawTokens) {
   const creditCost = Math.ceil(rawTokens / RAW_TOKENS_PER_CREDIT);
   if (creditCost <= 0) return { creditsUsed: 0, creditsRemaining: null, txnId: null, deducted: false };
 
-  // Audit fix C4: atomic conditional UPDATE. The WHERE clause guarantees we
-  // only deduct when balance covers the cost. meta.changes === 0 means a
-  // concurrent request already drained the balance below the threshold; we
-  // record the overdraft as an audit row so reconciliation can detect drift
-  // between customer.credits and SUM(credit_transactions.amount).
   const upd = await db.prepare(`
     UPDATE customers
     SET credits    = credits - ?,
@@ -437,15 +373,12 @@ async function deductD1Credits(db, customerId, rawTokens) {
 
   const deducted = upd.meta?.changes === 1;
 
-  // Balance is above the pre-call guard but below this call's cost: take what is
-  // left. Without this the balance never moves and every later call is free.
   if (!deducted) {
     await db.prepare(
       "UPDATE customers SET credits = 0, updated_at = unixepoch() WHERE stripe_customer_id = ?"
     ).bind(customerId).run();
   }
 
-  // Capture last_row_id so AI-2 can reference this deduction row in its refund.
   const ins = await db.prepare(`
     INSERT INTO credit_transactions (customer_id, type, amount, raw_tokens)
     VALUES (?, ?, ?, ?)
@@ -472,10 +405,6 @@ async function deductD1Credits(db, customerId, rawTokens) {
   };
 }
 
-// ─── AI-2: Refund on empty/unusable result ────────────────────────────────────
-
-// Returns true when Gemini responded but with no usable structured data,
-// meaning the user was charged tokens but got nothing actionable.
 function isEmptyResult(type, result) {
   if (!result) return true;
   switch (type) {
@@ -486,13 +415,10 @@ function isEmptyResult(type, result) {
     case "chat":          return !result.text;
     case "helpchat":      return !result.text;
     case "timesensitive": return !result.cards || result.cards.length === 0;
-    // actionplan always echoes the original cards back — conservatively don't refund
     default:              return false;
   }
 }
 
-// Issues a compensating credit for a failed AI call. Keyed to the deduction
-// transaction id (stored in stripe_session_id column) so retries are idempotent.
 async function refundD1Credits(db, customerId, creditCost, deductTxnId) {
   if (creditCost <= 0 || !deductTxnId) return;
   const ref = String(deductTxnId);
@@ -516,8 +442,6 @@ async function refundD1Credits(db, customerId, creditCost, deductTxnId) {
   console.log(`[analyze] AI-2 refunded ${creditCost} credits to ${customerId} (deduct txn ${ref})`);
 }
 
-// ─── Main handler ────────────────────────────────────────────────────────────
-
 export function onRequestOptions() {
   return handleOptions();
 }
@@ -527,7 +451,6 @@ export async function onRequestPost({ request, env }) {
   try { body = await request.json(); }
   catch { return json({ error: "Invalid JSON" }, 400); }
 
-  // ── Auth: try to extract JWT for billing mode ──────────────────────────
   const authHeader = request.headers.get("Authorization") || "";
   let customerId  = null;
 
@@ -540,9 +463,6 @@ export async function onRequestPost({ request, env }) {
     }
   }
 
-  // ── API key: billing uses server key, BYOK uses request/env key ───────────
-  // Never fall back to env.GEMINI_API_KEY without a verified customer: that would
-  // let any anonymous caller spend the operator's key for free.
   const apiKey = customerId ? env.GEMINI_API_KEY : body.apiKey;
 
   if (!apiKey) {
@@ -551,17 +471,12 @@ export async function onRequestPost({ request, env }) {
       : "No API key — add your Gemini API key in Profile → Assumptions" }, customerId ? 500 : 401);
   }
 
-  // ── Pre-call balance check (billing mode only) ─────────────────────────
   if (customerId && env.DB) {
-    // A token minted before a customer merge carries the merged-away id.
     customerId = await canonicalCustomerId(env.DB, customerId);
     const customer = await env.DB.prepare(
       "SELECT credits, status FROM customers WHERE stripe_customer_id = ?"
     ).bind(customerId).first();
 
-    // Suspended-account check MUST precede the balance check: a disputed account
-    // that is also drained should see "Account suspended" (403), not the
-    // misleading "Insufficient credits" (402).
     if (customer && customer.status === "disputed") {
       return json({ error: "Account suspended. Please contact support." }, 403);
     }
@@ -573,7 +488,6 @@ export async function onRequestPost({ request, env }) {
   const { type, values, mcResults, question, history, cards } = body;
   if (!type || !values) return json({ error: "Missing type or values" }, 400);
 
-  // ── Gemini call ──────────────────────────────────────────────────
   const usageBucket = [];
   let result;
 
@@ -594,7 +508,6 @@ export async function onRequestPost({ request, env }) {
     return json({ error: err.message }, 502);
   }
 
-  // ── Post-call credit deduction (billing mode only) ────────────────────
   let creditsUsed = 0;
   let creditsRemaining = null;
   let deductTxnId = null;
@@ -608,7 +521,6 @@ export async function onRequestPost({ request, env }) {
     }
   }
 
-  // ── AI-2: Refund if result is empty/unusable ──────────────────────────
   let refunded = false;
   if (customerId && env.DB && creditsUsed > 0 && wasDeducted && deductTxnId && isEmptyResult(type, result)) {
     try {

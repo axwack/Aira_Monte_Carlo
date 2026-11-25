@@ -4,7 +4,6 @@ import { bucketColor, BUCKET_COLORS } from "./engine/bucketColors";
 
 const SRC = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
 
-// Approved scheme: green/amber/red = outcome only; calculated values neutral; things the user typed = accent blue.
 test("withdrawal rate / worst case / runs-out figures are not status-colored", () => {
   expect(SRC).not.toMatch(/\+swr <= 3 \? "var\(--positive\)"/);
   expect(SRC).not.toMatch(/worst > 0 \? "var\(--accent-gold\)"/);

@@ -1,17 +1,3 @@
-/**
- * expenses.js
- *
- * Shared "real-world cash needs" helpers — mortgage amortization and
- * other-income streams — used by both the Monte Carlo engine (runMC, in
- * App.jsx) and the deterministic withdrawal waterfall
- * (buildWithdrawalWaterfall.js), so housing costs, carveouts, and other
- * income are computed identically everywhere they affect a year's "need".
- */
-
-/**
- * Amortization schedule for a mortgage, given today's balance/rate/term.
- * @returns {{ years, pmt, payoffYr, totalInt, interestSaved }}
- */
 export function mortgageSchedule(balance, annualRate, startDate, termYrs, extraMonthly) {
   const mRate = annualRate / 100 / 12;
   const totalMonths = termYrs * 12;
@@ -76,32 +62,12 @@ export function mortgageSchedule(balance, annualRate, startDate, termYrs, extraM
   };
 }
 
-/**
- * Actual cash paid (P&I + extra) per calendar year, including the partial
- * final (payoff) year — mortgageSchedule's `years[]` entries already only
- * cover the months actually paid in that year, and `pPaid` already includes
- * any extraMonthly principal, so this is a straight per-year sum, not a
- * flat pmt*12 estimate (which both drops the payoff-year cost to $0 too
- * early and ignores extra payments entirely).
- * @returns {Map<number, number>} calendar year → total P&I paid that year
- */
 export function mortgageAnnualPayments(ms) {
   const m = new Map();
   for (const y of ms.years) m.set(y.yr, y.pPaid + y.iPaid);
   return m;
 }
 
-/**
- * Sums a profile's "other income" streams (e.g. pensions, part-time work,
- * royalties) active in a given calendar year, applying each stream's own
- * growth (capped at growthCapYears).
- *
- * Growth mode (per stream):
- *   - "fixed" → a flat dollar COLA each year: amount = annual + growthAmount × years
- *     (matches many pensions that raise by a set $ amount, not a %).
- *   - anything else (default "pct") → compounding: annual × (1 + growthRate%)^years.
- * @returns {{ total: number, totalTaxable: number }}
- */
 export function computeOtherIncome(otherIncomes, calYear) {
   let total = 0, totalTaxable = 0;
   if (!otherIncomes?.length) return { total, totalTaxable };
@@ -114,8 +80,8 @@ export function computeOtherIncome(otherIncomes, calYear) {
       const years = Math.min(yearsElapsed, cap);
       const base = inc.annual || 0;
       const amt = inc.growthMode === "fixed"
-        ? Math.max(0, base + (inc.growthAmount || 0) * years)          // flat $/yr increase
-        : base * Math.pow(1 + (inc.growthRate || 0) / 100, years);     // compounding %
+        ? Math.max(0, base + (inc.growthAmount || 0) * years)
+        : base * Math.pow(1 + (inc.growthRate || 0) / 100, years);
       total += amt;
       if (inc.taxable) totalTaxable += amt;
     }
@@ -123,44 +89,6 @@ export function computeOtherIncome(otherIncomes, calYear) {
   return { total, totalTaxable };
 }
 
-/**
- * One-off and periodic planned expenses ("cash flow events") for a calendar year.
- *
- * The gap this fills: the model had recurring spend (sp), recurring committed
- * obligations (carveouts, which run from today to an optional endYear), and
- * nothing for a cost that lands in one future year — a new roof, a wedding, a
- * car replaced every seven years. The only workaround was a multi-year CSV
- * budget, which replaces the withdrawal strategy outright and silently
- * switches off the Guyton-Klinger guardrails. Events are additive instead —
- * the strategy still governs the recurring base, these just ride on top.
- *
- * Event shape:
- *   { id, label, year, amount, recurEveryYears, recurUntilYear, inflate, deferrable }
- *
- *   year            first occurrence (calendar year)
- *   amount          cost per occurrence
- *   recurEveryYears 0/null = one-time; 7 = every seven years
- *   recurUntilYear  last year a repeat may occur; null = no end
- *   inflate         true (default) = `amount` is in TODAY's dollars and is
- *                   inflated to the occurrence year; false = already nominal
- *   direction       "out" (default) = an expense; "in" = money arriving
- *   bucket          inflows only — which account receives it: "pretax" |
- *                   "roth" | "taxable" | "cash". Deposited there rather than
- *                   offsetting spending, so a surplus compounds instead of
- *                   being thrown away.
- *   taxable         inflows only — ordinary income in the year received?
- *                   A pension lump sum taken as cash is; a rollover is not.
- *   deferrable      true = discretionary, guardrails may cut it (a big travel
- *                   year); false (default) = committed, they may not (a roof).
- *                   Mirrors the Must Spend / Like to Spend split the CSV
- *                   importer already uses for the recurring base.
- *
- * @param {Array} events
- * @param {number} calYear
- * @param {number} infPct annual inflation, percent
- * @param {number} baseYear year in which `amount` is expressed (today)
- * @returns {{ total:number, committed:number, deferrable:number, hits:Array }}
- */
 export function computeCashFlowEvents(events, calYear, infPct = 2.5, baseYear = new Date().getFullYear()) {
   let total = 0, committed = 0, deferrable = 0, inflow = 0, inflowTaxable = 0;
   const byBucket = {};
@@ -175,33 +103,21 @@ export function computeCashFlowEvents(events, calYear, infPct = 2.5, baseYear = 
 
     const every = Number(e.recurEveryYears) || 0;
     if (every > 0) {
-      // Repeats every `every` years from `start`, optionally stopping at
-      // recurUntilYear. A year only counts if it is exactly on the cycle.
       if ((calYear - start) % every !== 0) continue;
       const until = e.recurUntilYear == null ? Infinity : Number(e.recurUntilYear);
       if (calYear > until) continue;
     } else if (calYear !== start) {
-      continue; // one-time event, wrong year
+      continue;
     }
 
-    // Default to inflating: users think in today's dollars, and a roof quoted at
-    // today's price will not cost that in fifteen years.
     const inflate = e.inflate !== false;
     const yrs = Math.max(0, calYear - baseYear);
     const amt = inflate ? amount * Math.pow(1 + (infPct || 0) / 100, yrs) : amount;
 
     if (e.direction === "in") {
-      // Inflow: money arriving (lump-sum pension, cash-balance rollover,
-      // inheritance, home sale). Has to be deposited into an account bucket,
-      // not netted against this year's spending — need is
-      // Math.max(0, sp - income), so anything beyond one year's need would
-      // get silently discarded. A $500k inheritance against an $80k gap used
-      // to lose $420k that way.
       inflow += amt;
       const bucket = e.bucket || "taxable";
       byBucket[bucket] = (byBucket[bucket] || 0) + amt;
-      // Taxable inflows are ordinary income in the year received (a pension
-      // lump sum taken as cash). Rollovers and inherited basis are not.
       if (e.taxable) inflowTaxable += amt;
       hits.push({ id: e.id, label: e.label || "Income", amount: Math.round(amt), direction: "in", bucket });
       continue;
@@ -215,44 +131,14 @@ export function computeCashFlowEvents(events, calYear, infPct = 2.5, baseYear = 
   return { total, committed, deferrable, inflow, inflowTaxable, byBucket, hits };
 }
 
-// ─── Blanchett spending smile ────────────────────────────────────────────────
-//
-// Real retirement spending doesn't hold flat at inflation. David Blanchett's
-// research ("Exploring the Retirement Consumption Puzzle", Journal of
-// Financial Planning, 2014) found it declines roughly 1%/yr in real terms
-// through most of retirement, easing and then reversing late in life as
-// healthcare and care costs take over. Plotted, that's a shallow U — the
-// "smile": go-go years, slow-go years, no-go years.
-//
-// Modeled as an annual real rate of change rather than fixed age bands.
-// Bands ("115% until 74, then 85%") imply a 26% spending cliff on a single
-// birthday, which no household actually experiences and which makes the
-// year-by-year table look broken. A rate compounds smoothly and matches what
-// the research actually measures.
-//
-// The factor is relative to spending at retirement (factor = 1.0 in year
-// one), so a user entering "$80,000/yr" is stating what they plan to spend
-// when they stop working — the intuitive reading — not a lifetime average.
-
-/** Real change in spending per year, by age band. Negative = declining. */
-const SMILE_RATE_GO_GO   = -0.010; // retirement → 80: the ~1%/yr Blanchett decline
-const SMILE_RATE_SLOW_GO = -0.003; // 80 → 85: decline flattens out
-const SMILE_RATE_NO_GO   =  0.012; // 85+: healthcare and care push spending back up
+const SMILE_RATE_GO_GO   = -0.010;
+const SMILE_RATE_SLOW_GO = -0.003;
+const SMILE_RATE_NO_GO   =  0.012;
 const SMILE_AGE_SLOW_GO  = 80;
 const SMILE_AGE_NO_GO    = 85;
-// Sanity band. Keeps a very long retirement from drifting somewhere absurd, and
-// bounds the effect for anyone retiring unusually early.
 const SMILE_MIN = 0.75;
 const SMILE_MAX = 1.10;
 
-/**
- * Real spending multiplier for a given age, relative to spending at retirement.
- *
- * @param {number} age        age in the year being simulated
- * @param {number} retireAge  age spending starts (factor is 1.0 here)
- * @param {boolean} enabled   profile's `smile` toggle; false ⇒ flat spending
- * @returns {number} multiplier to apply to that year's spend
- */
 export function spendingSmileFactor(age, retireAge, enabled = true) {
   if (!enabled) return 1;
   const a = Number(age), r = Number(retireAge);
@@ -260,7 +146,6 @@ export function spendingSmileFactor(age, retireAge, enabled = true) {
 
   let f = 1;
   for (let y = r; y < a; y++) {
-    // The rate that applies for the year running from age y to y+1.
     const rate = y >= SMILE_AGE_NO_GO   ? SMILE_RATE_NO_GO
                : y >= SMILE_AGE_SLOW_GO ? SMILE_RATE_SLOW_GO
                : SMILE_RATE_GO_GO;
@@ -269,28 +154,6 @@ export function spendingSmileFactor(age, retireAge, enabled = true) {
   return Math.min(SMILE_MAX, Math.max(SMILE_MIN, f));
 }
 
-// ─── Healthcare shocks ───────────────────────────────────────────────────────
-//
-// A late-retirement medical or long-term-care event: infrequent, expensive,
-// and the single most common reason an otherwise sound plan fails. Modeled
-// as an annual probability of a randomly-sized cost from hcShockAge onward.
-//
-// Costs are entered in today's dollars and inflated to the year they occur.
-// Matters more than it looks — a $100,000 shock at age 90 is a 2050s expense
-// on a 2020s number. Leaving it un-inflated understates it by roughly half
-// over a 25-year horizon, and medical inflation has historically outpaced
-// CPI anyway, so even inflating at general CPI is the conservative floor.
-
-/**
- * Stochastic draw for one simulated year. Used by the Monte Carlo, where each
- * path needs its own outcome.
- *
- * @param {number} age
- * @param {function} rand   seeded RNG returning [0,1)
- * @param {object} p        profile (hcShockAge, hcProb, hcMin, hcMax)
- * @param {number} cumInfl  inflation factor from today to this year
- * @returns {number} shock cost in nominal dollars for this year (0 if none)
- */
 export function healthcareShockDraw(age, rand, p = {}, cumInfl = 1) {
   const startAge = p.hcShockAge ?? 72;
   const prob     = (p.hcProb ?? 3.5) / 100;
@@ -303,14 +166,6 @@ export function healthcareShockDraw(age, rand, p = {}, cumInfl = 1) {
   return todaysCost * (cumInfl || 1);
 }
 
-/**
- * Deterministic analogue: the EXPECTED annual healthcare cost.
- *
- * The year-by-year schedule is a single median path, so it cannot show a
- * coin-flip event. Charging the expected value (probability x mean cost) each
- * eligible year keeps the deterministic plan consistent in expectation with the
- * Monte Carlo, instead of quietly ignoring a cost the MC does model.
- */
 export function expectedHealthcareShock(age, p = {}, cumInfl = 1) {
   const startAge = p.hcShockAge ?? 72;
   const prob     = (p.hcProb ?? 3.5) / 100;

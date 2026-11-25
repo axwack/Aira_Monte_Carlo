@@ -1,27 +1,4 @@
 #!/usr/bin/env node
-/**
- * Guarded production deploy to Cloudflare Pages.
- *
- * WHY THIS EXISTS
- * ---------------
- * `src/report/PrintReport.jsx` is committed to git as a 68-line PUBLIC STUB that
- * renders "Report module not included". The real 651-line implementation lives on
- * local disk only, hidden from git by `git update-index --skip-worktree`, and
- * reaches production solely because `wrangler pages deploy` builds from disk
- * rather than from a git checkout. (See REQUIREMENTS.md "Done this session".)
- *
- * That makes shipping the stub a completely silent failure: `npm run build`
- * succeeds, wrangler succeeds, the site loads, and the report is simply gone —
- * a dialog telling paying customers the feature "isn't bundled in this build".
- * It has already happened once in production.
- *
- * The old `deploy` script was `npm run build && wrangler pages deploy …`, which
- * had no idea any of this was true. This one refuses to deploy unless the real
- * report is present BOTH on disk and in the compiled bundle.
- *
- * Usage:  npm run deploy
- * Machines known to hold the real file: red-dragon, t14.
- */
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -31,10 +8,6 @@ const BRANCH  = "main";
 const SITE    = "https://aira.tiredtoretire.com";
 
 const STUB_MARKER = "Report module not included";
-// Strings that exist ONLY in the real PrintReport.jsx. Verified unique against
-// the whole of src/ — "Vanguard Dynamic Spending" is NOT usable here, it is also
-// a strategy label in engine/withdrawalStrategies.js. That false positive once
-// made a stubbed bundle look correct.
 const REAL_MARKERS = ["pr-btn-unlock-secondary", "Year-by-Year Withdrawals", "Roth Conversion Schedule"];
 
 const red   = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -52,7 +25,6 @@ function run(cmd, args) {
   if (r.status !== 0) die(`\`${cmd} ${args.join(" ")}\` failed`, "Nothing was deployed.");
 }
 
-// ── Gate 1: the real report is on THIS machine ───────────────────────────────
 const SRC = "src/report/PrintReport.jsx";
 let src;
 try { src = readFileSync(SRC, "utf8"); }
@@ -69,11 +41,9 @@ Note it is marked skip-worktree, so git will not show it as changed.`);
 }
 console.log(green("✓") + ` real report on disk ${dim(`(${src.split("\n").length} lines)`)}`);
 
-// ── Gate 2: build ────────────────────────────────────────────────────────────
 console.log("\n▸ building…\n");
 run("npx", ["react-scripts", "build"]);
 
-// ── Gate 3: the real report survived into the bundle ─────────────────────────
 const dir = "build/static/js";
 const bundle = readdirSync(dir)
   .filter((f) => /^main\..*\.js$/.test(f))
@@ -95,15 +65,10 @@ Try a clean build (delete build/ and node_modules/.cache) before deploying.`);
 }
 console.log(green("✓") + ` report present in ${bundle.f} ${dim(`(${REAL_MARKERS.length}/${REAL_MARKERS.length} markers)`)}`);
 
-// ── Deploy ───────────────────────────────────────────────────────────────────
 console.log("\n▸ deploying to Cloudflare Pages…\n");
 run("npx", ["wrangler", "pages", "deploy", "build",
             "--project-name=" + PROJECT, "--branch=" + BRANCH, "--commit-dirty=true"]);
 
-// ── Gate 4: confirm what production actually serves ──────────────────────────
-// The deploy can succeed and the CDN still serve the previous bundle, and a
-// git-triggered Pages build can land on top at any moment. Checking the live
-// origin is the only statement worth making.
 console.log("\n▸ verifying production…\n");
 try {
   const ac = new AbortController();

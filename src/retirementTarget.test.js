@@ -1,6 +1,6 @@
 import { retirementTarget, formatRemaining, describeCountdown } from "./engine/retirementTarget";
 
-const at = (y, m, d) => new Date(y, m - 1, d, 15, 30); // afternoon, local
+const at = (y, m, d) => new Date(y, m - 1, d, 15, 30);
 
 describe("retirementTarget", () => {
   test("real dob → day precision on the birthday at retireAge", () => {
@@ -21,7 +21,7 @@ describe("retirementTarget", () => {
     expect(t.date.getDate()).toBe(27);
   });
   test("Feb 29 birthday rolls to Mar 1 in a non-leap target year", () => {
-    const t = retirementTarget({ dob: "1976-02-29", retireAge: 61 }); // 2037
+    const t = retirementTarget({ dob: "1976-02-29", retireAge: 61 });
     expect([t.date.getMonth(), t.date.getDate()]).toEqual([2, 1]);
   });
 });

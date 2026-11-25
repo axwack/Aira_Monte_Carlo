@@ -1,7 +1,5 @@
-// Sequence replay (Stress Lab slice 2): paired historical years, start-today anchor.
 import { runMC, historicalSequence } from "./App";
 
-// Copy of App.jsx SEQ_2000_2012 (not exported there).
 const SEQ_2000_2012 = [-0.091, -0.119, -0.221, 0.287, 0.109, 0.048, 0.158, 0.055, -0.37, 0.265, 0.151, 0.021, 0.16];
 
 const P = {
@@ -41,8 +39,6 @@ describe("historicalSequence", () => {
 });
 
 describe("spending inflation timing in a prescribed sequence", () => {
-  // Bengen raises each year's spending by the PRIOR year's inflation, which is already known.
-  // Using the same year's inflation looks ahead and overspends when inflation is rising (1966-1980).
   const M = {
     currentAge: 65, retireAge: 65, endAge: 70, sp: 40_000, port: 100_000, inf: 2.5,
     tax: false, smile: false, withdrawalStrategy: "bengen", preRetireEq: 60, postRetireEq: 60,
@@ -52,7 +48,6 @@ describe("spending inflation timing in a prescribed sequence", () => {
   const flat = (infl) => ({ stock: 0, bond: 0, infl });
 
   test("Bengen year 2 spend uses year 1 inflation, not year 2", () => {
-    // Year 1 inflation 10%, year 2 inflation 0%: a look-ahead would leave year 2 at 40,000.
     const r = runMC(M, 70, 20, 42, true, [flat(0.10), flat(0), flat(0), flat(0), flat(0), flat(0)], false, true);
     const rows = r.failures.typical.rows;
     expect(rows[0].spend).toBe(40_000);
@@ -79,7 +74,6 @@ describe("runMC with a prescribed sequence", () => {
     const crash = [-0.4, -0.4];
     const atRetire = runMC(P, 90, 300, 42, true, crash, false);
     const today = runMC(P, 90, 300, 42, true, crash, true);
-    // Hits 10 years earlier, so the portfolio at retirement is hurt and then regrows.
     expect(today.medR).toBeLessThan(atRetire.medR);
   });
 });

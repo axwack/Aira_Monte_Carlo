@@ -1,32 +1,7 @@
-/**
- * rulesEngine.js — Declarative, extensible action-card rules registry.
- *
- * To add a new rule: append an object to RULES. No other file needs changing.
- *
- * Each rule shape:
- *   id        — unique string key
- *   category  — display label (e.g. "Tax", "RMD")
- *   law       — optional citation (e.g. "SECURE 2.0 §107")
- *   priority  — "red"|"yellow"|"green" OR (ctx) => "red"|"yellow"|"green"
- *   condition — (ctx) => boolean
- *   action    — string OR (ctx) => string
- *   reason    — string OR (ctx) => string
- *   deadline  — string OR (ctx) => string
- *
- * ctx = { params, mc, assumptions, currentYear, retireYear, daysToRetire }
- */
-
-// buildRothExplorer.js only imports expectedReturn.js, so pulling from it here
-// can't create a cycle back through App.jsx. Same RMD symbols the sim engines
-// use, so the Action Plan cards can never quote a different RMD age or divisor.
 import { getRmdStartAge, RMD_DIV } from "./buildRothExplorer.js";
 import { filesJointlyAt, spouseAgeAt } from "./ages.js";
-// Table II (joint) divisors come from the shared src/data table, keyed by BOTH
-// ages and gated on the IRS ">10 years younger" rule inside jointRmdDivisor.
 import { jointRmdDivisor } from "../data/jointRmdTable.js";
 import { selectPortfolioAtAge } from "./mcSelectors.js";
-
-// ─── Shared helpers ────────────────────────────────────────────────────────────
 
 function accts(params) { return params.accounts || []; }
 function preTaxTotal(params) {
@@ -45,23 +20,6 @@ function preTaxPct(params) { return params.port > 0 ? preTaxTotal(params) / para
 function rothPct(params)   { return params.port > 0 ? rothTotal(params)   / params.port : 0; }
 function swr(params)       { return params.port > 0 ? (params.sp / params.port) * 100 : 0; }
 
-/**
- * RMD start age for the Action Plan cards — has to match every engine.
- *
- * Used to have its own getRMDAge(currentAge, currentYear) here that derived
- * birthYear as currentYear - currentAge and bucketed into 72/73/75 itself.
- * Two bugs in that: it lost dob precision near a birthday, and it ignored
- * params.rmdStartAge (the user's explicit override), so a card could show a
- * different RMD age than the engines actually used.
- *
- * Pulling getRmdStartAge from buildRothExplorer.js instead of reimplementing
- * it — that file only imports expectedReturn.js, so this stays acyclic (App.jsx
- * imports rulesEngine.js, never the other way), and we don't end up with a
- * fourth copy of the SECURE 2.0 ladder.
- *
- * Same resolution order as the engines: explicit override wins, otherwise the
- * statutory age from dob/birthYear.
- */
 function resolveRmdAge(params) {
   if (typeof params.rmdStartAge === "number" && params.rmdStartAge > 0) return params.rmdStartAge;
   return getRmdStartAge({
@@ -71,20 +29,9 @@ function resolveRmdAge(params) {
   });
 }
 
-/**
- * RMD divisor at a given age — Table II (joint) or the Uniform Lifetime table.
- * Used to be a hardcoded 24.0 that didn't match any age in either IRS table.
- *
- * The joint table needs BOTH ages (owner and spouse) and the IRS rule that the
- * spouse be more than 10 years younger, so this delegates to the shared
- * jointRmdDivisor; the guard is filesJointlyAt, which covers a "single" filing
- * status and a spouse who has already died — the same gate the waterfall
- * engine uses.
- */
 function rmdDivisorAt(params, age) {
   const useJoint = (params.useJointRmdTable ?? false) && filesJointlyAt(params, age);
   const joint = useJoint ? jointRmdDivisor(age, spouseAgeAt(params, age)) : null;
-  // Tables run to 105+; fall back to the oldest defined entry rather than NaN.
   return joint ?? RMD_DIV[age] ?? RMD_DIV[105] ?? 2.0;
 }
 
@@ -92,12 +39,7 @@ function yearsToRMD(params) {
   return resolveRmdAge(params) - params.currentAge;
 }
 
-// ─── Rules registry ────────────────────────────────────────────────────────────
-// Add new rules here. Order within priority tier does not matter — evaluateRules sorts.
-
 export const RULES = [
-
-  // ── RED ────────────────────────────────────────────────────────────────────
 
   {
     id: "mc-below-80",
@@ -153,7 +95,6 @@ export const RULES = [
     category: "Savings",
     priority: "red",
     condition: ({ params, assumptions, mc }) => {
-      // Fire if MC rate is critically low, OR if no MC has been run yet and portfolio is severely underfunded
       if (mc) return mc.rate < 0.70;
       const goal = assumptions?.portfolioGoal || 1_000_000;
       return (params.port / goal) * 100 < 60;
@@ -168,12 +109,6 @@ export const RULES = [
       if (!mc) {
         return `$${Math.round(goal - params.port).toLocaleString()} gap to ${fmt(goal)} Reassess goal — run Monte Carlo to assess real risk`;
       }
-      // selectPortfolioAtAge, not a raw mc.pcts.find() — a duplicated inline
-      // version of this same lookup lived here AND at the "portfolio-underfunded-75"
-      // rule below, each with its own `if (p25 && p50)` gate that treats a
-      // genuine $0 median the same as "no data" (0 is falsy). null (missing)
-      // vs 0 (really zero) now stay distinguishable, same as everywhere else
-      // this figure is read — see CLAUDE.md rule 8.
       const p25 = selectPortfolioAtAge(mc, params.retireAge, { retireAge: params.retireAge, pct: "p25" });
       const p50 = selectPortfolioAtAge(mc, params.retireAge, { retireAge: params.retireAge, pct: "p50" });
       let msg = `Only ${(mc.rate * 100).toFixed(1)}% of 3,000 paths reach age ${params.endAge || 90} — plan failure is likely`;
@@ -184,8 +119,6 @@ export const RULES = [
     },
     deadline: "Now",
   },
-
-  // ── SECURE 2.0 / RMD countdown rules ─────────────────────────────────────
 
   {
     id: "rmd-window-close",
@@ -217,18 +150,10 @@ export const RULES = [
       const preTax = preTaxTotal(params);
       const yearsLeft = rmdAge - params.currentAge;
       if (yearsLeft <= 0 || preTax <= 0) return false;
-      // Divisor at the RMD START age (not today's age — the IRS tables aren't even
-      // defined below 72, so RMD_DIV[currentAge] would be undefined → NaN for the
-      // pre-retirement users this card is aimed at).
       const projectedRMD = preTax / rmdDivisorAt(params, rmdAge);
       return projectedRMD > 50_000;
     },
     action: "First RMD would land in a higher bracket",
-    // Uses today's pre-tax balance on purpose, not a balance grown forward to
-    // rmdAge — everything else in this file reads raw current params, and
-    // reimplementing portfolio compounding here is exactly the kind of copy
-    // that drifts from the real engines. Copy states the basis plainly instead
-    // of pretending it's a forecast.
     reason: ({ params }) => {
       const preTax = preTaxTotal(params);
       const rmdAge = resolveRmdAge(params);
@@ -240,8 +165,6 @@ export const RULES = [
     deadline: ({ params, currentYear }) =>
       `Before age ${resolveRmdAge(params)}`,
   },
-
-  // ── YELLOW ─────────────────────────────────────────────────────────────────
 
   {
     id: "fafsa-window",
@@ -260,8 +183,6 @@ export const RULES = [
     category: "Savings",
     priority: "yellow",
     condition: ({ params, mc }) => {
-      // Only fire when MC has been run and success rate is below 85%
-      // Suppresses when the plan is healthy regardless of funding ratio vs goal
       if (!mc) return false;
       return mc.rate >= 0.70 && mc.rate < 0.85;
     },
@@ -269,9 +190,6 @@ export const RULES = [
     reason: ({ params, assumptions, mc }) => {
       const fmt = v => `$${Math.round(v).toLocaleString()}`;
       const rate = (mc.rate * 100).toFixed(1);
-      // See the same fix in "portfolio-critical-low" above — selectPortfolioAtAge,
-      // and null/missing distinguished from a genuine $0 rather than `&&`-testing
-      // a value that could legitimately be 0.
       const p25 = selectPortfolioAtAge(mc, params.retireAge, { retireAge: params.retireAge, pct: "p25" });
       const p50 = selectPortfolioAtAge(mc, params.retireAge, { retireAge: params.retireAge, pct: "p50" });
       const goal = assumptions?.portfolioGoal || 1_000_000;
@@ -357,8 +275,6 @@ export const RULES = [
     deadline: "Now",
   },
 
-  // ── GREEN ──────────────────────────────────────────────────────────────────
-
   {
     id: "mc-healthy",
     category: "Monte Carlo",
@@ -430,7 +346,6 @@ export const RULES = [
     },
     deadline: "D-Day",
   },
-  // ── WITHDRAWAL ORDER ────────────────────────────────────────────────────────
 
   {
     id: "irmaa-guard-off",
@@ -439,8 +354,6 @@ export const RULES = [
     condition: ({ params }) =>
       preTaxTotal(params) > 200_000 &&
       !params.irmaaGuard &&
-      // Five years out, or already retired. A profile imported from JSON can
-      // lack retireAge; treat that as retired now so the card still shows.
       (params.retireAge ?? params.currentAge) - params.currentAge <= 5 &&
       params.currentAge >= 55,
     action: "Enable IRMAA guard in Withdrawal Order settings",
@@ -495,14 +408,8 @@ export const RULES = [
 
 ];
 
-// ─── Evaluator ─────────────────────────────────────────────────────────────────
-
 const PRIORITY_ORDER = { red: 0, yellow: 1, green: 2 };
 
-/**
- * Run all rules against the given context.
- * Returns sorted array of action card objects.
- */
 export function evaluateRules(ctx) {
   const currentYear = ctx.currentYear || new Date().getFullYear();
   const enriched = { ...ctx, currentYear };

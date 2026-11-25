@@ -1,11 +1,3 @@
-/**
- * Year-end deadline helpers.
- *
- * Tax room is use-it-or-lose-it on Dec 31 — a conversion must SETTLE, not merely
- * be requested. These are pure so the trigger window and room math are provable
- * without a clock or a DOM.
- */
-
 import { isYearEndWindow, daysLeftInTaxYear, yearEndTaxRoom } from "./engine/yearEnd";
 import { getBracketCeiling, getIrmaaCeiling } from "./App";
 
@@ -48,7 +40,6 @@ describe("yearEndTaxRoom", () => {
   test("reports honestly when there is no row for the year", () => {
     const r = yearEndTaxRoom([], { year: 2026, ...deps });
     expect(r.hasData).toBe(false);
-    // Must explain WHY rather than render a misleading $0 of room.
     expect(r.reason).toMatch(/wage income/i);
   });
 
@@ -61,7 +52,6 @@ describe("yearEndTaxRoom", () => {
   });
 
   test("conversion room takes the TIGHTER of the two ceilings", () => {
-    // IRMAA binds: only $8k of MAGI headroom despite $61k of bracket room.
     const rows = [{ yr: 2026, taxableIncome: 150_000, magi: 210_000 }];
     const r = yearEndTaxRoom(rows, { year: 2026, ...deps });
     expect(r.conversionRoom).toBe(8_000);

@@ -1,18 +1,3 @@
-/**
- * POST /api/webhook
- * Stripe webhook handler — listens for:
- *   checkout.session.completed  — credit customer on purchase
- *   charge.refunded             — deduct credits proportional to refund (H2)
- *   charge.dispute.created      — lock customer account on chargeback (H2)
- *
- * Security model:
- *   1. Reject any request without a valid Stripe v1 signature.
- *   2. Per-event idempotency on event.id (Stripe retries at-least-once).
- *   3. Per-session idempotency on stripe_session_id for purchase events.
- *
- * Required env vars: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, DB
- */
-
 import { json, handleOptions, stripeGet, verifyStripeWebhook } from "../_shared/jwt.js";
 import { canonicalCustomerId } from "../_shared/customers.js";
 import { refundCreditsDelta } from "../_shared/billing-math.js";
@@ -35,7 +20,6 @@ export async function onRequestPost({ request, env }) {
   if (!env.STRIPE_SECRET_KEY) return json({ error: "STRIPE_SECRET_KEY not configured" }, 500);
   if (!env.DB)                return json({ error: "D1 not bound" }, 500);
 
-  // Read raw body BEFORE JSON.parse — signature is computed against the raw bytes.
   const rawBody = await request.text();
   const sigHdr  = request.headers.get("Stripe-Signature");
 
@@ -53,8 +37,6 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  // Per-event idempotency (Stripe retries event.id on transient failure).
-  // INSERT OR IGNORE is atomic in D1 — meta.changes === 0 means already processed.
   if (event.id) {
     try {
       const dedup = await env.DB.prepare(
@@ -65,13 +47,10 @@ export async function onRequestPost({ request, env }) {
         return json({ received: true, note: "duplicate event" });
       }
     } catch (e) {
-      // If the dedup table doesn't exist yet (pre-migration), log and continue.
       console.warn("[webhook] event dedup table missing or query failed:", e.message);
     }
   }
 
-  // A throw (e.g. a D1 error in canonicalCustomerId) must become a 500 so the
-  // dedup row below is cleared; otherwise Stripe's retry is ignored as a duplicate.
   let res;
   try {
     res = await dispatch(event, env);
@@ -80,8 +59,6 @@ export async function onRequestPost({ request, env }) {
     res = json({ error: "Internal error" }, 500);
   }
 
-  // A 5xx makes Stripe retry this event.id. Forget it, or the retry would hit the
-  // dedup row above and be ignored, leaving a paid purchase never credited.
   if (res.status >= 500 && event.id) {
     await env.DB.prepare("DELETE FROM webhook_events WHERE event_id = ?").bind(event.id).run()
       .catch(e => console.warn("[webhook] could not clear dedup row:", e.message));
@@ -104,13 +81,10 @@ function dispatch(event, env) {
   }
 }
 
-// ─── checkout.session.completed ──────────────────────────────────────────────
-
 async function handleCheckoutCompleted(event, env) {
   const sessionId = event.data?.object?.id;
   if (!sessionId) return json({ error: "No session ID in event" }, 400);
 
-  // Re-fetch the session via Stripe API — defense in depth against spoofed payloads.
   let session;
   try {
     session = await stripeGet(env.STRIPE_SECRET_KEY, `/checkout/sessions/${sessionId}`);
@@ -124,7 +98,6 @@ async function handleCheckoutCompleted(event, env) {
   }
 
   const email      = session.customer_details?.email ?? session.customer_email ?? null;
-  // Fold a repeat buyer's new Stripe id into their existing row (one row per email).
   const customerId = await canonicalCustomerId(env.DB, session.customer, email);
   const packId     = session.metadata?.packId;
   const credits    = PACK_CREDITS[packId] ?? 0;
@@ -133,15 +106,6 @@ async function handleCheckoutCompleted(event, env) {
     console.error("[webhook] No customer on session:", sessionId);
     return json({ received: true, note: "no customer" });
   }
-  // ── The printable report, sold as a product rather than as credits ──────────
-  // It burns ZERO tokens — the whole document is computed client-side from the
-  // engines — so pricing it in a currency that means "AI usage" was a category
-  // error. It also forced a buyer who only wants the report to first understand
-  // credits, buy a pack, and spend a slice of it.
-  //
-  // Handled BEFORE the credits path because `PACK_CREDITS` has no entry for it,
-  // so it would otherwise fall into the "unknown pack" rejection below and the
-  // customer would have paid for nothing.
   if (packId === "report") {
     try {
       const existing = await env.DB.prepare(
@@ -150,9 +114,6 @@ async function handleCheckoutCompleted(event, env) {
       if (existing) return json({ received: true, note: "report already granted" });
 
       await env.DB.batch([
-        // The customer row must exist for the unlock lookup to find anything, but
-        // this grants NO credits — amount 0 keeps the ledger honest about what was
-        // actually bought, and report-unlock.js keys off the row's type, not a balance.
         env.DB.prepare(`
           INSERT INTO customers (stripe_customer_id, email, credits)
           VALUES (?, ?, 0)
@@ -178,7 +139,6 @@ async function handleCheckoutCompleted(event, env) {
     return json({ received: true, note: "unknown pack" });
   }
 
-  // Session-level idempotency (belt + suspenders on top of event.id dedup).
   try {
     const existing = await env.DB.prepare(
       "SELECT id FROM credit_transactions WHERE stripe_session_id = ? AND type = 'purchase'"
@@ -215,8 +175,6 @@ async function handleCheckoutCompleted(event, env) {
   return json({ received: true });
 }
 
-// ─── charge.refunded ─────────────────────────────────────────────────────────
-
 async function handleChargeRefunded(event, env) {
   const charge     = event.data?.object;
   const customerId = await canonicalCustomerId(env.DB, charge?.customer);
@@ -226,15 +184,10 @@ async function handleChargeRefunded(event, env) {
     return json({ received: true, note: "no customer" });
   }
 
-  // Per-event idempotency, independent of the webhook_events table (which may be
-  // absent on a DB migrated before it existed). We stamp event.id into the audit
-  // row's stripe_session_id and refuse to process the same event.id twice.
   if (await alreadyProcessed(env, event.id, "refund")) {
     return json({ received: true, note: "duplicate refund event" });
   }
 
-  // Credits to deduct for *this* event only (handles partial refunds via the
-  // previous_attributes delta — see refundCreditsDelta).
   const deltaCents      = (charge.amount_refunded ?? 0) - (event.data?.previous_attributes?.amount_refunded ?? 0);
   const creditsToDeduct = refundCreditsDelta(
     charge.amount_refunded,
@@ -267,9 +220,6 @@ async function handleChargeRefunded(event, env) {
   return json({ received: true });
 }
 
-// Secondary idempotency guard: has this exact event.id already produced an audit
-// row of the given type? Independent of the webhook_events dedup table so refund/
-// dispute handlers stay safe even if that table was never migrated in.
 async function alreadyProcessed(env, eventId, type) {
   if (!eventId) return false;
   try {
@@ -283,8 +233,6 @@ async function alreadyProcessed(env, eventId, type) {
   }
 }
 
-// ─── charge.dispute.created ───────────────────────────────────────────────────
-
 async function handleDisputeCreated(event, env) {
   const dispute  = event.data?.object;
   const chargeId = dispute?.charge;
@@ -294,7 +242,6 @@ async function handleDisputeCreated(event, env) {
     return json({ received: true, note: "no charge" });
   }
 
-  // Disputes don't carry the customer directly — fetch the charge to resolve it.
   let charge;
   try {
     charge = await stripeGet(env.STRIPE_SECRET_KEY, `/charges/${chargeId}`);
@@ -334,16 +281,10 @@ async function handleDisputeCreated(event, env) {
   return json({ received: true });
 }
 
-// ─── charge.dispute.closed ────────────────────────────────────────────────────
-// A dispute that closes in the merchant's favor ('won') should lift the account
-// lock — otherwise a customer who wins is suspended forever. A 'lost' dispute
-// leaves the account suspended (the chargeback stands). 'warning_closed' and
-// other non-final states are ignored.
-
 async function handleDisputeClosed(event, env) {
   const dispute  = event.data?.object;
   const chargeId = dispute?.charge;
-  const status   = dispute?.status; // 'won' | 'lost' | 'warning_closed' | ...
+  const status   = dispute?.status;
 
   if (status !== "won") {
     return json({ received: true, note: `dispute closed as '${status}' — lock unchanged` });
@@ -372,8 +313,6 @@ async function handleDisputeClosed(event, env) {
 
   try {
     await env.DB.batch([
-      // Only lift the lock if it's still 'disputed' — never resurrect an account
-      // suspended for some other reason.
       env.DB.prepare(`
         UPDATE customers
         SET status = 'active', updated_at = unixepoch()

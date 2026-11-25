@@ -1,19 +1,3 @@
-/**
- * Already-retired users: entering the age you ACTUALLY retired at must not
- * replay years that have already happened.
- *
- * Reported by a user (2026-07-26): "The age starting calculator only goes to 62.
- * What if already retired and 67 years old?"
- *
- * All three engines walk the drawdown as `age = retireAge … endAge` and map it
- * to calendar years via `BASE_YEAR + (age - currentAge)`, while account balances
- * are always TODAY's balances. So a 67-year-old who retired at 65 and enters 65
- * would start the projection two years in the PAST and draw two extra years of
- * spending out of a balance that already lived through them — the plan looks
- * worse than it is, and the year-by-year table lists years that already
- * happened. effectiveRetireAge clamps the start to currentAge.
- */
-
 import { effectiveRetireAge, buildWithdrawalWaterfall } from "./engine/buildWithdrawalWaterfall";
 import { runMC } from "./App";
 
@@ -80,8 +64,6 @@ describe("buildWithdrawalWaterfall — already retired", () => {
   });
 
   test("Social Security is recognized as already claimable at the clamped age", () => {
-    // retireAge 60 < ssAge 67, but the user is 67 TODAY, so SS applies in year 1.
-    // Keyed off the raw 60 this would have reported no SS income at all.
     const r = buildWithdrawalWaterfall({ ...RETIREE, retireAge: 60, ssAge: 67 });
     expect(r.smart.rows[0].ss).toBeGreaterThan(0);
   });

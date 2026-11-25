@@ -1,7 +1,3 @@
-// Golden master for the Monte Carlo engine. Pins fixed-seed runMC output so a
-// refactor (e.g. splitting App.jsx by feature seam) cannot silently change the
-// money math. If a number moves, either the refactor broke something or the
-// change is intended: in that case review the diff, then `npm test -- -u goldenMaster`.
 import { runMC } from "./App";
 
 const ACCOUNTS = [
@@ -27,7 +23,6 @@ const SCENARIOS = {
   single: { ...BASE, filingStatus: "single", ssb: 18_000 },
 };
 
-// Round so float noise across Node versions cannot fail the pin; real drift is far larger.
 const r = (x) => (typeof x === "number" ? Math.round(x * 1e6) / 1e6 : x);
 const headline = (m) => ({
   rate: r(m.rate), mwRate: r(m.mwRate), medR: r(m.medR),
